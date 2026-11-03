@@ -122,7 +122,7 @@ impl SupportBundleZip {
         let mut collection_meta = Vec::with_capacity(bundles.len());
         let mut used_dirs: HashSet<String> = HashSet::with_capacity(bundles.len());
 
-        // Collections stored before the secret fix are exported as stored.
+        // Reapply the current policy to collections produced by older scrubbers.
         let bundles: Vec<SupportBundleData> = bundles
             .into_iter()
             .map(|data| {
@@ -638,6 +638,64 @@ mod tests {
         }
     }
 
+    /// A collection stored before this version is scrubbed again at export.
+    /// Round-trip the actual stored encoding before export with collect=false.
+    #[tokio::test]
+    async fn older_collections_are_scrubbed_again_on_export() {
+        for uri in [
+            "postgres://u@host/db?%70assword=legacy-secret-2136",
+            "postgres://u:legacy-secret-2136 with space@host/db",
+            r"host=host password='head\'legacy-secret-2136' dbname=db",
+            "host=host password='head\nlegacy-secret-2136' dbname=db",
+        ] {
+            let mut data = SupportBundleData::test_data();
+            data.version = 5;
+            let record = serde_json::json!({
+                "program_code": "CREATE TABLE t (s VARCHAR); -- inline-config-stays",
+                "deployment_error": {"message": uri, "error_code": "InitializationError"},
+            });
+            let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            gz.write_all(&serde_json::to_vec(&record).unwrap()).unwrap();
+            data.pipeline_config = Ok(gz.finish().unwrap());
+            data.stats = Ok(serde_json::to_vec(&serde_json::json!({"message": uri})).unwrap());
+            data.pipeline_events =
+                Ok(serde_json::to_vec(&serde_json::json!([{"message": uri}])).unwrap());
+            data.logs = Ok(uri.to_owned());
+            let stored = rmp_serde::to_vec(&data).unwrap();
+            let restored = rmp_serde::from_slice(&stored).unwrap();
+            let params = SupportBundleParameters {
+                collect: false,
+                ..Default::default()
+            };
+            let bundle = SupportBundleZip::create(&fake_pipeline("p1"), vec![restored], &params)
+                .await
+                .unwrap();
+            let mut archive = read_zip(&bundle.buffer);
+            for index in 0..archive.len() {
+                let mut file = archive.by_index(index).unwrap();
+                let name = file.name().unwrap().to_string();
+                if [
+                    "pipeline_config.json",
+                    "stats.json",
+                    "pipeline_events.json",
+                    "logs.txt",
+                ]
+                .iter()
+                .any(|suffix| name.ends_with(suffix))
+                {
+                    let mut text = String::new();
+                    file.read_to_string(&mut text).unwrap();
+                    assert!(!text.contains("legacy-secret-2136"), "{name}: {text}");
+                    assert!(text.contains("[REDACTED]"), "{name}: {text}");
+                    if name.ends_with("pipeline_config.json") {
+                        assert!(text.contains("inline-config-stays"));
+                        assert!(text.contains("InitializationError"));
+                    }
+                }
+            }
+        }
+    }
+
     /// Failed requests have no file payload: their error goes into both
     /// manifests. Cover stored MessagePack collections and fresh collections.
     #[tokio::test]
@@ -647,6 +705,10 @@ mod tests {
                 "postgres://u:metadata-secret-2136@host/db",
                 "postgres://u@host/db?password=metadata-secret-2136",
                 "host=host password='metadata-secret-2136' dbname=db",
+                "postgres://u@host/db?%70assword=metadata-secret-2136",
+                "postgres://u:metadata-secret-2136 with space@host/db",
+                r"host=host password='head\'metadata-secret-2136' dbname=db",
+                "host=host password='head\nmetadata-secret-2136' dbname=db",
             ] {
                 let error =
                     format!("HTTP 500: pg_in: Unable to connect to postgres instance '{uri}'");

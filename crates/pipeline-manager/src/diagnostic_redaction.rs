@@ -6,8 +6,9 @@
 //! runtimes can still send it connection strings in errors, and stored
 //! support collections from before the fix hold them too. The manager
 //! replaces the password of a URL's userinfo and the value of a `password=`
-//! parameter, one line at a time, so the rest of a diagnostic or a log
-//! stays readable.
+//! parameter and keeps the text around them. Where the end of a credential
+//! cannot be proven, the text is cut off at the credential: what comes
+//! before it stays, what comes after it goes.
 //!
 //! The manager applies this to the diagnostics it writes (a pipeline on a
 //! runtime from before the fix still reports such errors), to the
@@ -17,52 +18,81 @@
 use serde_json::Value;
 use std::borrow::Cow;
 
-/// Replacement for the password component of a URL or of a parameter.
+/// Replacement for the password component of a URL or of a parameter, and
+/// for the rest of a text cut off at an unbounded credential.
 pub const REDACTED: &str = "[REDACTED]";
 
-/// Replaces connection passwords in `text`, line by line: the password of a
-/// URL's userinfo, and the value of a `password=` parameter in a query
-/// string or a keyword connection string.
+/// Replaces connection passwords in `text` and keeps the text around them.
+///
+/// Free text has no reliable connection-string boundaries. A password with
+/// whitespace in it, an unterminated quote, or a query value without a `&`
+/// after it has no provable end, and a percent-encoded parameter name hides
+/// where its value starts. In those cases the text is cut off at the
+/// credential. The scan does not split lines first: a quoted or escaped
+/// keyword password can contain a newline.
 pub fn redact_connection_credentials(text: &str) -> Cow<'_, str> {
-    let mut out = String::new();
-    let mut changed = false;
-    for line in text.split_inclusive('\n') {
-        match redact_line(line) {
-            Cow::Borrowed(line) => out.push_str(line),
-            Cow::Owned(redacted) => {
-                changed = true;
-                out.push_str(&redacted);
-            }
-        }
-    }
-    if changed {
-        Cow::Owned(out)
-    } else {
-        Cow::Borrowed(text)
+    match redact_url_passwords(text) {
+        Cow::Borrowed(_) => redact_password_parameters(text),
+        Cow::Owned(urls) => Cow::Owned(redact_password_parameters(&urls).into_owned()),
     }
 }
 
-fn redact_line(line: &str) -> Cow<'_, str> {
-    match redact_url_passwords(line) {
-        Cow::Borrowed(_) => redact_password_parameters(line),
-        Cow::Owned(redacted) => Cow::Owned(redact_password_parameters(&redacted).into_owned()),
+/// Whether `query` holds a `password=` parameter that only shows once
+/// decoded, such as `%70assword=`. The driver decodes parameter names, the
+/// scrub reads the original text, so such a value cannot be located safely.
+fn hides_a_password_parameter(query: &str) -> bool {
+    let decoded = urlencoding::decode_binary(query.as_bytes());
+    if decoded == query.as_bytes() {
+        return false;
     }
+    let count = |text: &str| {
+        text.to_ascii_lowercase()
+            .split("password")
+            .skip(1)
+            .filter(|tail| tail.trim_start().starts_with('='))
+            .count()
+    };
+    count(&String::from_utf8_lossy(&decoded)) > count(query)
 }
 
-/// Replaces the userinfo password of every URL in `line`. A URL runs to the
+/// Replaces the userinfo password of every URL in `text`. A URL runs to the
 /// next whitespace; its last `@` ends the userinfo, so a password that holds
-/// `@`, `/`, `?` or a quote is covered whole. A `@` later on the line, such
-/// as an email address, is not part of the URL.
-fn redact_url_passwords(line: &str) -> Cow<'_, str> {
+/// `@`, `/`, `?` or a quote is covered whole. Whitespace does not prove that
+/// a password ended: a URL with a userinfo `:` and no `@`, followed by an
+/// `@` before the next URL, may be a password split by whitespace, and the
+/// text is cut off at that URL. A port, digits after the host, is not such
+/// a colon. A `@` after a URL with a complete authority, such as an email
+/// address on the next line, is not part of it.
+fn redact_url_passwords(text: &str) -> Cow<'_, str> {
     let mut out = String::new();
     let mut changed = false;
-    let mut rest = line;
+    let mut rest = text;
     while let Some(scheme_end) = rest.find("://") {
         let url_start = scheme_end + 3;
         let url_end = rest[url_start..]
             .find(char::is_whitespace)
             .map_or(rest.len(), |i| url_start + i);
         let url = &rest[url_start..url_end];
+        let tail = rest[url_end..].split("://").next().unwrap_or_default();
+        let complete_authority = url
+            .rsplit_once('@')
+            .is_some_and(|(_, host)| host.contains('/'));
+        let authority = url.split(['/', '?', '#']).next().unwrap_or_default();
+        let userinfo_colon = authority.split_once(':').is_some_and(|(_, after)| {
+            after.is_empty() || !after.bytes().all(|b| b.is_ascii_digit())
+        });
+        if !complete_authority && (url.is_empty() || userinfo_colon) && tail.contains('@') {
+            out.push_str(&rest[..url_start]);
+            out.push_str(REDACTED);
+            return Cow::Owned(out);
+        }
+        if let Some(query_start) = url.find('?')
+            && hides_a_password_parameter(&url[query_start + 1..])
+        {
+            out.push_str(&rest[..url_start + query_start + 1]);
+            out.push_str(REDACTED);
+            return Cow::Owned(out);
+        }
         let password = url
             .rfind('@')
             .and_then(|at| url[..at].find(':').map(|colon| (colon + 1, at)));
@@ -83,39 +113,96 @@ fn redact_url_passwords(line: &str) -> Cow<'_, str> {
         out.push_str(rest);
         Cow::Owned(out)
     } else {
-        Cow::Borrowed(line)
+        Cow::Borrowed(text)
     }
 }
 
-/// Replaces the value of every `password=` parameter in `line`, in any
-/// letter case and with spaces around the `=`. A quoted value runs to its
-/// closing quote, any other to the next whitespace, `&`, `;` or quote.
-fn redact_password_parameters(line: &str) -> Cow<'_, str> {
+/// Length of a libpq keyword value, including escapes. A `'` opens a quoted
+/// value; an unquoted value ends at unescaped whitespace, not at `&` or `;`.
+/// libpq does not quote with `"`, but other connection strings do: a value
+/// that starts with `"` is covered up to its closing quote and up to the
+/// next whitespace, whichever is longer, so both readings are inside the
+/// replaced span. An unterminated `'` or a trailing backslash has no end.
+fn keyword_value_len(value: &str) -> Option<usize> {
+    match value.chars().next() {
+        Some('\'') => quoted_value_len(value, '\''),
+        Some('"') => {
+            let unquoted = unquoted_value_len(value)?;
+            Some(quoted_value_len(value, '"').map_or(unquoted, |quoted| quoted.max(unquoted)))
+        }
+        _ => unquoted_value_len(value),
+    }
+}
+
+/// Length of `value` up to and including its closing `quote`, honoring
+/// backslash escapes. `None` when the quote never closes.
+fn quoted_value_len(value: &str, quote: char) -> Option<usize> {
+    let mut chars = value[quote.len_utf8()..].char_indices();
+    while let Some((index, c)) = chars.next() {
+        if c == '\\' {
+            chars.next()?;
+        } else if c == quote {
+            return Some(quote.len_utf8() + index + c.len_utf8());
+        }
+    }
+    None
+}
+
+/// Length of `value` up to its first unescaped whitespace. `None` when a
+/// backslash has nothing to escape.
+fn unquoted_value_len(value: &str) -> Option<usize> {
+    let mut chars = value.char_indices();
+    while let Some((index, c)) = chars.next() {
+        if c == '\\' {
+            chars.next()?;
+        } else if c.is_whitespace() {
+            return Some(index);
+        }
+    }
+    Some(value.len())
+}
+
+/// Replaces the value of every `password=` parameter, in any letter case and
+/// with spaces around the `=`. In a URL query the value runs to the next
+/// `&`; in a keyword connection string it is a libpq value. A query value
+/// with whitespace in it or without a `&` after it, an unterminated quote,
+/// or a trailing backslash has no provable end: the text is cut off at the
+/// value.
+fn redact_password_parameters(text: &str) -> Cow<'_, str> {
     const KEY: &str = "password";
-    let lower = line.to_ascii_lowercase();
+    let lower = text.to_ascii_lowercase();
     let mut out = String::new();
     let mut changed = false;
     let mut from = 0;
     while let Some(found) = lower[from..].find(KEY) {
-        let key_end = from + found + KEY.len();
-        let after_key = line[key_end..].trim_start();
+        let key_start = from + found;
+        let key_end = key_start + KEY.len();
+        let after_key = text[key_end..].trim_start();
         let Some(after_equals) = after_key.strip_prefix('=') else {
-            out.push_str(&line[from..key_end]);
+            out.push_str(&text[from..key_end]);
             from = key_end;
             continue;
         };
-        let value_start = line.len() - after_equals.trim_start().len();
-        let value = &line[value_start..];
-        let value_len = match value.chars().next() {
-            Some(quote @ ('\'' | '"')) => value[1..]
-                .find(quote)
-                .map_or(value.len(), |close| close + 2),
-            Some(_) => value
-                .find(|c: char| c.is_whitespace() || matches!(c, '&' | ';' | '\'' | '"'))
-                .unwrap_or(value.len()),
-            None => 0,
+        let value_start = text.len() - after_equals.trim_start().len();
+        let value = &text[value_start..];
+        // The token before the key tells a URL query from a keyword string.
+        let prefix = text[..key_start]
+            .rsplit(char::is_whitespace)
+            .next()
+            .unwrap_or_default();
+        let in_query = prefix.contains("://") && prefix.contains('?');
+        let value_len = if in_query {
+            value
+                .find('&')
+                .filter(|end| !value[..*end].chars().any(char::is_whitespace))
+        } else {
+            keyword_value_len(value)
         };
-        out.push_str(&line[from..value_start]);
+        out.push_str(&text[from..value_start]);
+        let Some(value_len) = value_len else {
+            out.push_str(REDACTED);
+            return Cow::Owned(out);
+        };
         if value_len > 0 {
             out.push_str(REDACTED);
             changed = true;
@@ -123,13 +210,12 @@ fn redact_password_parameters(line: &str) -> Cow<'_, str> {
         from = value_start + value_len;
     }
     if changed {
-        out.push_str(&line[from..]);
+        out.push_str(&text[from..]);
         Cow::Owned(out)
     } else {
-        Cow::Borrowed(line)
+        Cow::Borrowed(text)
     }
 }
-
 /// Applies [`redact_connection_credentials`] to every string in `value`,
 /// keys included. Two keys that redact to the same text are kept apart by a
 /// counter, so no value is dropped.
@@ -201,7 +287,160 @@ mod tests {
         }
     }
 
-    /// One line with a credential leaves the other lines
+    /// Where a credential has no provable end, the text is cut off at it:
+    /// the text before it stays, the text after it goes.
+    #[test]
+    fn an_unbounded_credential_cuts_the_text_from_its_start() {
+        for (text, expected) in [
+            (
+                "postgres://u@host/db?%70assword=encoded-secret-2136",
+                "postgres://u@host/db?[REDACTED]",
+            ),
+            (
+                "postgres://u@host/db?%70assword=byte%FFsecret2136",
+                "postgres://u@host/db?[REDACTED]",
+            ),
+            (
+                "postgres://u:secret with space@host/db",
+                "postgres://[REDACTED]",
+            ),
+            ("postgres:// user:secret@host/db", "postgres://[REDACTED]"),
+            (
+                "postgres://u:head@secret with space@host/db",
+                "postgres://[REDACTED]",
+            ),
+            (
+                "postgres://u:secret\ncontinuation@host/db",
+                "postgres://[REDACTED]",
+            ),
+            (
+                "postgres://u@host/db?password=a b&sslmode=require",
+                "postgres://u@host/db?password=[REDACTED]",
+            ),
+            (
+                "connect 'postgres://u@h/db?password=tail-secret-2136': refused",
+                "connect 'postgres://u@h/db?password=[REDACTED]",
+            ),
+            (
+                "password='unterminated secret\ncontinuation",
+                "password=[REDACTED]",
+            ),
+            ("password=secret\\", "password=[REDACTED]"),
+            (
+                "INFO line one\nERROR connect postgres://u:secret with space@host/db\nINFO line three",
+                "INFO line one\nERROR connect postgres://[REDACTED]",
+            ),
+        ] {
+            assert_eq!(redact_connection_credentials(text), expected, "{text}");
+        }
+    }
+
+    /// A port is digits after the host, not the start of a password: a
+    /// later `@` leaves the log alone.
+    #[test]
+    fn a_port_is_not_a_userinfo_colon() {
+        let logs = "INFO GET http://localhost:8080/v0/stats\n\
+                    INFO user alice@example.com logged in\n\
+                    ERROR connect postgres://u:log-secret-2136@h:5432/db refused\n";
+        assert_eq!(
+            redact_connection_credentials(logs),
+            "INFO GET http://localhost:8080/v0/stats\n\
+             INFO user alice@example.com logged in\n\
+             ERROR connect postgres://u:[REDACTED]@h:5432/db refused\n"
+        );
+        let same_line = "http://minio:9000 for bob@x";
+        assert!(matches!(
+            redact_connection_credentials(same_line),
+            Cow::Borrowed(t) if t == same_line
+        ));
+    }
+
+    /// A percent-escape elsewhere in a log, or an encoded byte in a bounded
+    /// query value, is no reason to drop the log.
+    #[test]
+    fn an_escape_elsewhere_keeps_the_log() {
+        let logs = "GET /v0/pipelines?name=a%20b\n\
+                    ERROR host=h password=kw-secret-2136 dbname=db\n\
+                    WARN postgres://u@h/db?password=x%26y&sslmode=require\n\
+                    INFO done\n";
+        assert_eq!(
+            redact_connection_credentials(logs),
+            "GET /v0/pipelines?name=a%20b\n\
+             ERROR host=h password=[REDACTED] dbname=db\n\
+             WARN postgres://u@h/db?password=[REDACTED]&sslmode=require\n\
+             INFO done\n"
+        );
+    }
+
+    /// A `"` is a plain character to libpq and a quote to other connection
+    /// strings: the replaced span covers both readings.
+    #[test]
+    fn a_double_quoted_value_is_covered_under_both_readings() {
+        for (text, expected) in [
+            (
+                "password=\"x y\" dbname=db",
+                "password=[REDACTED] dbname=db",
+            ),
+            (
+                "password=\"head\"secret-tail-2136 dbname=db",
+                "password=[REDACTED] dbname=db",
+            ),
+            ("password=\"open x", "password=[REDACTED] x"),
+        ] {
+            assert_eq!(redact_connection_credentials(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn escaped_and_multiline_keyword_passwords_are_covered_whole() {
+        for value in [
+            r"'head\'secret-tail-2136'",
+            r"'head\\secret-tail-2136'",
+            "'head\nsecret-tail-2136'",
+            "head\\\nsecret-tail-2136",
+            r"head\ secret-tail-2136",
+            "head&secret-tail-2136",
+            "head;secret-tail-2136",
+        ] {
+            let config = format!("host=host password={value} dbname=db");
+            let parsed = config.parse::<tokio_postgres::Config>().unwrap();
+            assert!(
+                parsed
+                    .get_password()
+                    .unwrap()
+                    .ends_with(b"secret-tail-2136")
+            );
+            assert_eq!(
+                redact_connection_credentials(&config),
+                "host=host password=[REDACTED] dbname=db"
+            );
+        }
+    }
+
+    #[test]
+    fn postgres_query_fragments_and_unquoted_double_quotes_are_credentials() {
+        for (config, expected) in [
+            (
+                "postgres://u@host/db?password=head#secret-tail-2136&sslmode=disable",
+                "postgres://u@host/db?password=[REDACTED]&sslmode=disable",
+            ),
+            (
+                "host=host password=\"head\"secret-tail-2136 dbname=db",
+                "host=host password=[REDACTED] dbname=db",
+            ),
+        ] {
+            let parsed = config.parse::<tokio_postgres::Config>().unwrap();
+            assert!(
+                parsed
+                    .get_password()
+                    .unwrap()
+                    .ends_with(b"secret-tail-2136")
+            );
+            assert_eq!(redact_connection_credentials(config), expected);
+        }
+    }
+
+    /// Fred's QA cases: one line with a credential leaves the other lines
     /// of a log as they are, and a `@` after a URL is not its userinfo.
     #[test]
     fn only_the_credential_changes_in_a_multi_line_log() {
@@ -251,7 +490,7 @@ mod tests {
     fn password_parameter_values_are_replaced() {
         assert_eq!(
             redact_connection_credentials("Password = 'a b' x password=c&d password=e;f"),
-            "Password = [REDACTED] x password=[REDACTED]&d password=[REDACTED];f"
+            "Password = [REDACTED] x password=[REDACTED] password=[REDACTED]"
         );
         for text in ["password=", "the password is wrong", "password"] {
             assert!(matches!(

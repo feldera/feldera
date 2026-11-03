@@ -468,7 +468,6 @@ fn parse_from_row_deployment_has_error(row: &Row) -> bool {
     row.get::<_, bool>("deployment_has_error")
 }
 
-/// Parses string as a JSON value.
 /// A stored diagnostic as JSON, with URL passwords replaced: a row written
 /// before the secret fix, or by a pipeline on an older runtime, can hold one.
 fn deserialize_diagnostic_json(s: &str) -> Result<serde_json::Value, DBError> {
@@ -477,6 +476,7 @@ fn deserialize_diagnostic_json(s: &str) -> Result<serde_json::Value, DBError> {
     Ok(value)
 }
 
+/// Parses string as a JSON value.
 fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
     serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
         data: s.to_string(),
@@ -954,6 +954,38 @@ mod tests {
                 }),
             }
         );
+    }
+
+    #[test]
+    fn connection_syntax_regressions_are_scrubbed_on_read_and_write() {
+        for uri in [
+            "postgres://u@host/db?%70assword=db-secret-2136",
+            "postgres://u:db-secret-2136 with space@host/db",
+            r"host=host password='head\'db-secret-2136' dbname=db",
+            "host=host password='head\ndb-secret-2136' dbname=db",
+        ] {
+            let original = ErrorResponse {
+                message: format!("Failed to connect to {uri}"),
+                error_code: Cow::from("InitializationError"),
+                details: json!({"error": uri}),
+            };
+            let old_row = serde_json::to_string(&original).unwrap();
+            let stored = serialize_error_response(&original).unwrap();
+            assert!(!stored.contains("db-secret-2136"), "{stored}");
+            for row in [&old_row, &stored] {
+                let error = deserialize_error_response(row).unwrap();
+                assert_eq!(error.error_code, "InitializationError");
+                assert!(
+                    !serde_json::to_string(&error)
+                        .unwrap()
+                        .contains("db-secret-2136")
+                );
+            }
+            let details =
+                deserialize_diagnostic_json(&serde_json::to_string(&original.details).unwrap())
+                    .unwrap();
+            assert!(!details.to_string().contains("db-secret-2136"));
+        }
     }
 
     #[test]

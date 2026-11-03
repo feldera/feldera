@@ -411,8 +411,8 @@ impl SupportBundleData {
         6
     }
 
-    /// Collections at this version or later also redact failed requests and
-    /// Postgres keyword/query passwords when collected.
+    /// Collections at this version or later were written with this scrub;
+    /// older ones are scrubbed again at export.
     pub const REDACTED_SINCE_VERSION: u32 = 6;
 
     #[cfg(test)]

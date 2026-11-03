@@ -46,7 +46,11 @@ The API server does not resolve secret references, but an older runtime can
 send it an error containing a resolved value. The server replaces the
 password of a URL and the value of a `password=` parameter in stored
 deployment errors, returned status details, and exported diagnostics with
-`[REDACTED]`, one line at a time; the rest of the text stays. This also
+`[REDACTED]` and keeps the text around them, including for quoted and
+escaped keyword passwords that span lines. Where the end of a credential
+cannot be established, such as a password with whitespace in it, a query
+value with nothing after it, or a percent-encoded parameter name, the
+diagnostic is cut off at the credential: the text before it stays. This also
 covers failure reasons in support bundle metadata and collections stored
 before the fix. Error codes and endpoint identities in separate fields are
 preserved.
