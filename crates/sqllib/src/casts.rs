@@ -1265,15 +1265,17 @@ pub fn cast_to_s_u64(value: u64, size: i32, fixed: bool) -> SqlResult<SqlString>
 #[allow(deprecated)]
 pub fn cast_to_s_V(value: Variant, size: i32, fixed: bool) -> SqlResult<SqlString> {
     // This function should never be called
-    let result: SqlString = value.try_into().unwrap();
+    let result: SqlString = value.try_into()?;
     limit_or_size_string(result.str(), size, fixed)
 }
 
 #[doc(hidden)]
 #[allow(deprecated)]
 pub fn cast_to_s_VN(value: Option<Variant>, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    // This function should never be called
-    cast_to_s_V(value.unwrap(), size, fixed)
+    match value {
+        None => Err(cast_null("VARCHAR")),
+        Some(value) => cast_to_s_V(value, size, fixed),
+    }
 }
 
 #[doc(hidden)]
@@ -3901,7 +3903,10 @@ pub fn cast_to_bytes_sN(
     precision: i32,
     fixed: bool,
 ) -> SqlResult<ByteArray> {
-    cast_to_bytes_s(value.unwrap(), precision, fixed)
+    match value {
+        None => Err(cast_null("BINARY")),
+        Some(value) => cast_to_bytes_s(value, precision, fixed),
+    }
 }
 
 #[doc(hidden)]
@@ -3978,11 +3983,10 @@ pub fn cast_to_bytes_UuidN(
     precision: i32,
     fixed: bool,
 ) -> SqlResult<ByteArray> {
-    Ok(ByteArray::with_size(
-        value.unwrap().to_bytes(),
-        precision,
-        fixed,
-    ))
+    match value {
+        None => Err(cast_null("BINARY")),
+        Some(value) => cast_to_bytes_Uuid(value, precision, fixed),
+    }
 }
 
 #[doc(hidden)]
