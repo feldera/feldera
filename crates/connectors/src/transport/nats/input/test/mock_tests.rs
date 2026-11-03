@@ -155,6 +155,17 @@ pub(crate) enum NatsMockAction {
         count: usize,
         timeout: Duration,
     },
+    /// Poll the server until it reports exactly `count` consumers on the
+    /// stream.
+    ///
+    /// Use this instead of `WaitForConsumerCount` after `DeleteConsumers`.
+    /// The connector does not count deletes it did not make, or consumers
+    /// that the client library recreates, so its own count cannot follow
+    /// those changes.
+    WaitForServerConsumerCount {
+        count: usize,
+        timeout: Duration,
+    },
     /// Assert that every consumer on the stream is named `<prefix>_<suffix>`.
     AssertConsumerNamesStartWith(&'static str),
 
@@ -756,13 +767,14 @@ impl<'a> NatsMockRunner<'a> {
                 // with no network round trip. NATS acks a create or delete
                 // only after applying it server-side (confirmed with
                 // Synadia), so this counter is never ahead of the server's
-                // real state. Polling it instead of the server itself turns
-                // a test that raced a live network round trip under
-                // whatever load the CI host was under into one bounded only
-                // by how long our own code takes, which is normally
-                // microseconds. `timeout` is a backstop against a genuinely
-                // stuck connector, not a budget this loop is expected to
-                // spend.
+                // real state, as long as the connector made every create
+                // and delete (see `WaitForServerConsumerCount`). Polling it
+                // instead of the server itself turns a test that raced a
+                // live network round trip under whatever load the CI host
+                // was under into one bounded only by how long our own code
+                // takes, which is normally microseconds. `timeout` is a
+                // backstop against a genuinely stuck connector, not a
+                // budget this loop is expected to spend.
                 //
                 // A fully event-driven wait (e.g. a `Notify` the connector
                 // signals on every create/delete) would remove the poll
@@ -813,6 +825,30 @@ impl<'a> NatsMockRunner<'a> {
                         .map(|info| info.name.as_str())
                         .collect::<Vec<_>>()
                 );
+            }
+
+            NatsMockAction::WaitForServerConsumerCount { count, timeout } => {
+                let nats_url = self.nats_url().to_string();
+                let deadline = Instant::now() + *timeout;
+                loop {
+                    let consumers = self
+                        .rt
+                        .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                    if consumers.len() == *count {
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        anyhow::bail!(
+                            "Timed out after {timeout:?} waiting for the server to report \
+                             {count} consumers on stream '{STREAM_NAME}', last seen: {:?}",
+                            consumers
+                                .iter()
+                                .map(|info| info.name.as_str())
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    sleep(Duration::from_millis(50));
+                }
             }
 
             NatsMockAction::AssertConsumerNamesStartWith(prefix) => {
