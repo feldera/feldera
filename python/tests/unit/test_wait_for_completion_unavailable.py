@@ -6,6 +6,7 @@ These mock the `Pipeline` accessors, without a running pipeline.
 """
 
 import itertools
+import uuid
 from types import SimpleNamespace
 from unittest import mock
 
@@ -14,6 +15,7 @@ import requests
 
 from feldera.enums import PipelineStatus
 from feldera.pipeline import Pipeline
+from feldera.runtime_config import RuntimeConfig
 from feldera.rest.errors import (
     FelderaAPIError,
     FelderaCommunicationError,
@@ -27,8 +29,16 @@ def _pipeline() -> Pipeline:
     return pipeline
 
 
-def _stats(complete: bool):
-    return SimpleNamespace(global_metrics=SimpleNamespace(pipeline_complete=complete))
+INCARNATION_A = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000000")
+INCARNATION_B = uuid.UUID("bbbbbbbb-0000-0000-0000-000000000000")
+
+
+def _stats(complete: bool, incarnation: uuid.UUID = INCARNATION_A):
+    return SimpleNamespace(
+        global_metrics=SimpleNamespace(
+            pipeline_complete=complete, incarnation_uuid=incarnation
+        )
+    )
 
 
 def _api_error(status_code: int = 503) -> FelderaAPIError:
@@ -42,8 +52,10 @@ def _api_error(status_code: int = 503) -> FelderaAPIError:
     return FelderaAPIError("unavailable", resp)
 
 
-def _run(pipeline, statuses, stats, clock=None, **kwargs):
-    """Run `wait_for_completion` with the given `status()` and `stats()` results."""
+def _run(pipeline, statuses, stats, clock=None, ft_model="none", **kwargs):
+    """Run `wait_for_completion` with the given `status()` and `stats()`
+    results, for a pipeline with fault-tolerance model `ft_model`."""
+    runtime_config = RuntimeConfig.from_dict({"fault_tolerance": {"model": ft_model}})
     with (
         mock.patch.object(Pipeline, "status", side_effect=statuses),
         mock.patch.object(Pipeline, "stats", side_effect=stats) as stats_mock,
@@ -52,6 +64,7 @@ def _run(pipeline, statuses, stats, clock=None, **kwargs):
             "deployment_runtime_status_details",
             return_value={"reason": "probe timed out"},
         ),
+        mock.patch.object(Pipeline, "runtime_config", return_value=runtime_config),
         mock.patch("feldera.pipeline.time.sleep"),
         # The fake clock below is global, so the slow-wait warning could fire.
         mock.patch("feldera.pipeline.LongOperationWarning"),
@@ -163,4 +176,62 @@ def test_stats_error_on_running_pipeline_propagates():
             _pipeline(),
             [PipelineStatus.RUNNING, PipelineStatus.RUNNING],
             [_api_error(500)],
+        )
+
+
+@pytest.mark.parametrize("ft_model", ["none", "at_least_once"])
+def test_restart_during_unavailable_raises(ft_model):
+    """A pod that is replaced goes UNAVAILABLE, then can report completion
+    with input lost. This must not count as completion."""
+    with pytest.raises(RuntimeError, match=r"restarted while waiting"):
+        _run(
+            _pipeline(),
+            [PipelineStatus.RUNNING, PipelineStatus.UNAVAILABLE],
+            [_stats(False), _api_error(), _stats(True, INCARNATION_B)],
+            ft_model=ft_model,
+        )
+
+
+def test_restart_with_exactly_once_is_accepted():
+    """Exactly-once fault tolerance recovers all input after a restart, so
+    completion of the new incarnation counts."""
+    stats = _run(
+        _pipeline(),
+        [PipelineStatus.RUNNING, PipelineStatus.UNAVAILABLE],
+        [
+            _stats(False),
+            _api_error(),
+            _stats(False, INCARNATION_B),
+            _stats(True, INCARNATION_B),
+        ],
+        ft_model="exactly_once",
+    )
+    assert stats.call_count == 4
+
+
+def test_restart_into_initializing_raises():
+    """A replaced pod that is still initializing fails `stats()`; the wait
+    fails with that error instead of waiting for the new incarnation."""
+    with pytest.raises(FelderaAPIError):
+        _run(
+            _pipeline(),
+            [
+                PipelineStatus.RUNNING,
+                PipelineStatus.UNAVAILABLE,
+                PipelineStatus.INITIALIZING,
+            ],
+            [_stats(False), _api_error(), _api_error()],
+        )
+
+
+def test_restart_into_replaying_raises_with_status():
+    with pytest.raises(RuntimeError, match=r"status: REPLAYING"):
+        _run(
+            _pipeline(),
+            [
+                PipelineStatus.RUNNING,
+                PipelineStatus.UNAVAILABLE,
+                PipelineStatus.REPLAYING,
+            ],
+            [_stats(False), _api_error(), _api_error()],
         )

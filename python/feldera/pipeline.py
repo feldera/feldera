@@ -495,6 +495,12 @@ class Pipeline:
         PipelineStatus.SYNCHRONIZING,
     )
 
+    def _is_exactly_once(self) -> bool:
+        """True if the pipeline uses exactly-once fault tolerance, which
+        recovers all of its input after a restart."""
+        ft = self.runtime_config().__dict__.get("fault_tolerance") or {}
+        return ft.get("model") == "exactly_once"
+
     def _not_running_error(self, status: PipelineStatus) -> RuntimeError:
         """The error for a pipeline that is not in a status to complete."""
         msg = f"Pipeline must be running to wait for completion (status: {status.name}"
@@ -537,7 +543,8 @@ class Pipeline:
             is usually transient. 60 seconds by default.
 
         :raises RuntimeError: If the pipeline is not running, stays
-            UNAVAILABLE for longer than `unavailable_timeout_s`, or returns
+            UNAVAILABLE for longer than `unavailable_timeout_s`, restarts
+            during the wait without exactly-once fault tolerance, or returns
             unknown metrics.
         """
 
@@ -550,6 +557,7 @@ class Pipeline:
 
         start_time = time.monotonic()
         unavailable_since: Optional[float] = None
+        first_incarnation: Optional[UUID] = None
         # Reused by the warning message below; is_complete() would fetch and
         # discard the same stats, hiding whether the wait is stalled or just
         # slow (e.g. mid-transaction-commit).
@@ -594,6 +602,30 @@ class Pipeline:
                 time.sleep(1)
                 continue
             unavailable_since = None
+
+            # Without exactly-once fault tolerance, a restarted pipeline can
+            # lose input, so its completion does not cover what we wait for.
+            incarnation = latest_stats.global_metrics.incarnation_uuid
+            if first_incarnation is None:
+                first_incarnation = incarnation
+            elif incarnation != first_incarnation:
+                if not self._is_exactly_once():
+                    raise RuntimeError(
+                        f"pipeline '{self.name}' restarted while waiting for"
+                        f" completion (incarnation {first_incarnation} became"
+                        f" {incarnation}) without exactly-once fault"
+                        " tolerance; input received since the last"
+                        " checkpoint may be lost"
+                    )
+                logger.info(
+                    "pipeline %s restarted while waiting for completion"
+                    " (incarnation %s became %s); exactly-once fault tolerance"
+                    " replays its input",
+                    self.name,
+                    first_incarnation,
+                    incarnation,
+                )
+                first_incarnation = incarnation
 
             pipeline_complete: Optional[bool] = (
                 latest_stats.global_metrics.pipeline_complete
