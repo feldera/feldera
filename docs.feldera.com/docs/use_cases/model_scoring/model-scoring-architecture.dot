@@ -1,0 +1,93 @@
+// Dataflow of the model-scoring pipeline.
+// Render with:  dot -Tsvg model-scoring-architecture.dot -o model-scoring-architecture.svg
+digraph model_scoring {
+    rankdir=TB;
+    newrank=true;
+    bgcolor="transparent";
+    node [shape=box, fontname="Helvetica", fontsize=11, style=filled, margin="0.12,0.07"];
+    edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+    subgraph cluster_pipeline {
+        label="FELDERA PIPELINE";
+        fontname="Helvetica"; fontsize=13; color="#64748b"; style=rounded; penwidth=3;
+
+        subgraph cluster_compute {
+            label="compute features";
+            fontname="Helvetica"; fontsize=11; fontcolor="#1d4ed8";
+            style="rounded,filled"; fillcolor="#eff6ff"; color="#93c5fd"; penwidth=1.5;
+
+            node [fillcolor="#dbeafe", color="#60a5fa"];
+            transaction [label="transaction"];
+            cardholder  [label="cardholder"];
+
+            node [fillcolor="#fde68a", color="#d97706"];
+            asof_features [label="ASOF JOIN\nt.ts >= c.ts"];
+
+            node [fillcolor="#ffffff", color="#94a3b8"];
+            recent_transaction     [label="recent_transaction"];
+            features               [label="features"];
+            fingerprinted_features [label="fingerprinted_features"];
+
+            // The queue handed to the model, and the join that computes it.
+            node [fillcolor="#fde68a", color="#d97706"];
+            anti_pending [label="ANTI JOIN\nfingerprint, event_time"];
+            node [fillcolor="#ffffff", color="#94a3b8"];
+            unpredicted_features [label="unpredicted_features"];
+        }
+
+        subgraph cluster_consume {
+            label="analyze predictions";
+            fontname="Helvetica"; fontsize=11; fontcolor="#15803d";
+            style="rounded,filled"; fillcolor="#f0fdf4"; color="#86efac"; penwidth=1.5;
+
+            node [fillcolor="#dbeafe", color="#60a5fa"];
+            model_prediction      [label="model_prediction"];
+            confirmed_fraud_label [label="confirmed_fraud_label"];
+
+            node [fillcolor="#fde68a", color="#d97706"];
+            join_scored    [label="JOIN\nfingerprint, event_time"];
+            left_confusion [label="LEFT JOIN\ntrans_id, event_time"];
+
+            node [fillcolor="#ffffff", color="#94a3b8"];
+            live_prediction [label="live_prediction"];
+            model_confusion [label="model_confusion"];
+            model_score     [label="model_score", fillcolor="#dcfce7", color="#4ade80"];
+
+            node [fillcolor="#ffffff", color="#cbd5e1", style="filled,dashed"];
+            predicted_transaction [label="predicted_transaction\n(debug)"];
+        }
+
+        { rank=min; transaction; cardholder; confirmed_fraud_label; model_prediction; }
+    }
+
+    // The model server runs outside the pipeline.
+    model_server [label="MODEL\nSERVER", fillcolor="#fef3c7", color="#f59e0b",
+                  style=filled, penwidth=2, fontsize=15, width=1.9, height=1.3];
+
+    // Feature extraction.
+    transaction            -> recent_transaction [label="30 days"];
+    recent_transaction     -> asof_features;
+    cardholder             -> asof_features;
+    asof_features          -> features;
+    features               -> fingerprinted_features [label="fingerprint"];
+
+    // The request/response loop with the model.
+    fingerprinted_features -> anti_pending;
+    live_prediction        -> anti_pending;
+    anti_pending           -> unpredicted_features;
+    unpredicted_features:s -> model_server:s     [style=bold, color="#b45309", constraint=false];
+    model_server:n         -> model_prediction:n [style=bold, color="#b45309", constraint=false];
+    model_prediction       -> live_prediction  [label="90 days"];
+
+    // Consuming predictions.
+    fingerprinted_features -> join_scored [style=dashed];
+    live_prediction        -> join_scored [style=dashed];
+    join_scored            -> predicted_transaction [style=dashed];
+    live_prediction        -> left_confusion;
+    confirmed_fraud_label  -> left_confusion;
+    left_confusion         -> model_confusion;
+    model_confusion        -> model_score;
+
+    // Keep the server alongside the middle of the loop.
+    { rank=same; anti_pending; model_server; }
+}
