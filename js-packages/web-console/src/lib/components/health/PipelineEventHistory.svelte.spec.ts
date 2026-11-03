@@ -58,7 +58,7 @@ const openIncident = (description: string) =>
 describe('PipelineEventHistory', () => {
   it('reports the status of the newest event', async () => {
     renderHistory({ events: [makeEvent(10), failed(20)] })
-    await expect.element(document.body).toHaveTextContent('Pipeline status — Operational')
+    await expect.element(document.body).toHaveTextContent('Pipeline status Operational')
   })
 
   it('lists an incident that has not ended as ongoing', async () => {
@@ -88,7 +88,7 @@ describe('PipelineEventHistory', () => {
 
   it('shows a progress bar only while loading', async () => {
     renderHistory({ events: [makeEvent(10)] })
-    await expect.element(document.body).toHaveTextContent('Pipeline status — Operational')
+    await expect.element(document.body).toHaveTextContent('Pipeline status Operational')
     expect(page.getByRole('progressbar').elements()).toHaveLength(0)
   })
 
@@ -96,7 +96,7 @@ describe('PipelineEventHistory', () => {
     renderHistory({ events: [makeEvent(10)], updatedText: 'updated 5m ago' })
     await expect
       .element(document.body)
-      .toHaveTextContent('Pipeline status — Operational — updated 5m ago')
+      .toHaveTextContent('Pipeline status Operational updated 5m ago')
   })
 
   it.each([

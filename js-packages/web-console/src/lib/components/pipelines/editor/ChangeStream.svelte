@@ -50,7 +50,7 @@
 
 <SQLValueTooltip bind:popupRef tooltipData={tooltip.data}></SQLValueTooltip>
 
-<div class="bg-white-dark relative flex w-full flex-1 flex-col rounded">
+<div class="relative flex w-full flex-1 flex-col">
   {#if changeStream.totalSkippedBytes}
     <WarningBanner>
       Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
@@ -88,11 +88,15 @@
         </tr>
       {:else if 'columns' in row}
         <tr class="h-7" style="{style} {padding}">
-          <th class="pl-2 font-normal {isSticky ? 'bg-white-dark sticky top-0 z-10' : ''}"
-            >{row.relationName}</th
+          <!-- The header sits on the panel colour and keeps it while pinned to the top. -->
+          <th
+            class="bg-white px-3 text-left font-medium dark:bg-[#2a2a2a] {isSticky
+              ? 'sticky top-0 z-10'
+              : ''}">{row.relationName}</th
           >
           {#each row.columns as column}
-            <SqlColumnHeader {column} {isSticky} class="bg-white-dark px-2"></SqlColumnHeader>
+            <SqlColumnHeader {column} {isSticky} class="bg-white dark:bg-[#2a2a2a]"
+            ></SqlColumnHeader>
           {/each}
         </tr>
       {:else}
@@ -100,19 +104,26 @@
         <tr
           data-testid="box-changestream-row"
           style="{style} {padding}"
-          class="h-7 whitespace-nowrap select-none even:bg-surface-50-950"
+          class="h-7 whitespace-nowrap select-none even:bg-surface-950-50/[0.03]"
           oncopy={(e) => {
             e.clipboardData!.setData('text/plain', JSONbig.stringify(row))
             e.preventDefault()
           }}
         >
-          {#if 'insert' in row}
-            <td class=" block h-7 w-20 bg-success-100-900/70 pt-1 text-center font-mono">
-              Insert
-            </td>
-          {:else}
-            <td class=" block h-7 w-20 bg-error-100-900/70 pt-1 text-center font-mono"> Delete </td>
-          {/if}
+          <!-- A small chip in the status colours marks whether the change adds or removes a row. -->
+          <td class="w-20 px-3">
+            {#if 'insert' in row}
+              <span
+                class="inline-flex h-5 items-center rounded bg-status-jade-subtle px-1.5 text-xs font-medium text-status-jade"
+                >Insert</span
+              >
+            {:else}
+              <span
+                class="inline-flex h-5 items-center rounded bg-status-error-subtle px-1.5 text-xs font-medium text-status-error"
+                >Delete</span
+              >
+            {/if}
+          </td>
 
           {#each Object.values(data) as value}
             <SQLValue

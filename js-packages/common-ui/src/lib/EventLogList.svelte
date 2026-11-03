@@ -177,11 +177,11 @@
 
 {#snippet eventGroup(events: Bucket, iconClass: string = '')}
   <div
-    class="-mx-2 flex flex-nowrap items-center gap-6 rounded px-2 py-2 {selectedEventBuckets.has(events)
+    class="-mx-2 flex flex-nowrap items-center gap-4 rounded px-2 py-1 {selectedEventBuckets.has(events)
       ? 'bg-row-hover'
       : ''}"
   >
-    <span class="w-[180px] shrink-0 text-surface-600-400 sm:w-[240px]">
+    <span class="w-[180px] shrink-0 text-surface-600-400 sm:w-[210px]">
       {formatDateTimeRange(events.timestampFrom, events.timestampTo)}
     </span>
     <div class="flex flex-col gap-4">
@@ -226,7 +226,7 @@
             )}
           {/snippet}
           {#snippet content()}
-            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-2">
+            <div transition:slide={{ duration: 150 }} class="flex flex-col gap-0.5">
               {#each unresolvedEvents as events, i}
                 {@render eventGroup(events)}
               {/each}
@@ -242,7 +242,7 @@
           Previous incidents
         </span>
 
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-0.5">
           {#each previousEvents as events}
             {@render eventGroup(events, 'text-surface-900-100')}
           {/each}

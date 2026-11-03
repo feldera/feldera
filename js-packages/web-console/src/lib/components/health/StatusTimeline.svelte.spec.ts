@@ -58,21 +58,21 @@ const barRect = (index: number) =>
 describe('StatusTimeline header', () => {
   it('reports the newest status while the data is fresh', async () => {
     renderTimeline()
-    await expect.element(document.body).toHaveTextContent('Runner — Operational')
+    await expect.element(document.body).toHaveTextContent('Runner Operational')
   })
 
-  it('colors the status label with the text color of its tone', async () => {
+  it('shows the status as a chip in the colors of its tone', async () => {
     const { container } = renderTimeline({ events: [event('major_issue')] })
-    await expect.element(document.body).toHaveTextContent('Runner — Major Issue')
+    await expect.element(document.body).toHaveTextContent('Runner Major Issue')
     const label = [...container.querySelectorAll('span')].find(
       (s) => s.textContent === 'Major Issue'
     )
-    expect(label?.className).toBe(statusToneColors.error.healthText)
+    expect(label?.className).toContain(statusToneColors.error.chip)
   })
 
   it('reports no data instead of a stale status', async () => {
     renderTimeline({ stale: true })
-    await expect.element(document.body).toHaveTextContent('Runner — No data')
+    await expect.element(document.body).toHaveTextContent('Runner No data')
     expect(document.body.textContent).not.toContain('Operational')
   })
 
@@ -80,18 +80,18 @@ describe('StatusTimeline header', () => {
     renderTimeline({ stale: true, events: [event('major_issue')] })
     await expect
       .element(document.body)
-      .toHaveTextContent('Runner — No data (last recorded: Major Issue)')
+      .toHaveTextContent('Runner No data (last recorded: Major Issue)')
   })
 
   it('does not name a stale status that is not an issue', async () => {
     renderTimeline({ stale: true, events: [event('idle')] })
-    await expect.element(document.body).toHaveTextContent('Runner — No data')
+    await expect.element(document.body).toHaveTextContent('Runner No data')
     expect(document.body.textContent).not.toContain('last recorded')
   })
 
   it('shows the updated text after the status', async () => {
     renderTimeline({ updatedText: 'updated 10m ago' })
-    await expect.element(document.body).toHaveTextContent('Runner — Operational — updated 10m ago')
+    await expect.element(document.body).toHaveTextContent('Runner Operational updated 10m ago')
   })
 })
 
@@ -142,7 +142,7 @@ describe('StatusTimeline legend', () => {
 
   it('hides the legend when it lists no statuses', async () => {
     renderTimeline()
-    await expect.element(document.body).toHaveTextContent('Runner — Operational')
+    await expect.element(document.body).toHaveTextContent('Runner Operational')
     expect(document.body.textContent).not.toContain('No data')
   })
 })
