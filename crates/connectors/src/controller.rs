@@ -7473,9 +7473,9 @@ pub struct TransactionInfo {
     last_transaction_id: TransactionId,
 
     /// The last transaction that `/commit_transaction` asked to commit.  A
-    /// retry of that request succeeds without doing anything.  This is not
-    /// any transaction up to `last_transaction_id`, because that would accept
-    /// a commit of an automatic or connector transaction, or of a transaction
+    /// retry of that request succeeds without doing anything.  A request that
+    /// names another transaction up to `last_transaction_id` fails, because
+    /// that transaction can be an automatic or connector transaction, or one
     /// that a restart lost.
     last_api_commit: Option<TransactionId>,
 
@@ -11432,9 +11432,10 @@ mod commit_transaction_id_tests {
         TransactionInfo::new(false, sender)
     }
 
-    /// A commit that names the transaction that the API started commits it,
-    /// and a retry of that commit succeeds without doing anything, at every
-    /// stage of the commit, even after the API starts the next transaction.
+    /// Checks that a commit that names the API's transaction commits it, and
+    /// that a retry of that commit succeeds and does nothing: while the
+    /// transaction commits, after it commits, and after the API starts the
+    /// next transaction.
     #[test]
     fn retried_commit_succeeds() {
         let mut info = single_host();
@@ -11464,7 +11465,8 @@ mod commit_transaction_id_tests {
         ));
     }
 
-    /// A commit fails if it names a transaction that the API did not start.
+    /// Checks that a commit fails if it names a transaction that the API did
+    /// not start.
     #[test]
     fn commit_of_another_transaction_fails() {
         let mut info = single_host();
@@ -11497,9 +11499,9 @@ mod commit_transaction_id_tests {
         ));
     }
 
-    /// While a connector's transaction runs after the API's transaction
-    /// committed, a retry of the API's commit succeeds, and a commit of the
-    /// connector's transaction fails.
+    /// Checks that, while a connector's transaction runs after the API's
+    /// transaction committed, a retry of the API's commit succeeds, and a
+    /// commit of the connector's transaction fails.
     #[test]
     fn connector_transaction_running_after_api_commit() {
         let mut info = single_host();
@@ -11529,9 +11531,9 @@ mod commit_transaction_id_tests {
         ));
     }
 
-    /// A commit fails if it names a transaction that `/commit_transaction`
-    /// did not commit: one that a connector committed, or one that a restart
-    /// lost while later transactions reused its ID.
+    /// Checks that a commit fails if it names a transaction that
+    /// `/commit_transaction` did not commit: one that a connector committed,
+    /// or one that a restart lost while later transactions reused its ID.
     #[test]
     fn commit_of_unrequested_transaction_fails() {
         let mut info = single_host();
@@ -11567,7 +11569,8 @@ mod commit_transaction_id_tests {
         ));
     }
 
-    /// Without a transaction ID, a commit needs an open API transaction.
+    /// Checks that a commit without a transaction ID needs an open API
+    /// transaction.
     #[test]
     fn commit_without_id() {
         let mut info = single_host();
