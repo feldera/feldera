@@ -27,7 +27,7 @@ A mock model server that closes the loop, and drives the whole lifecycle, is in
 * The pipeline reads that table like any other input and scores the predictions
   against ground truth as it arrives (possibly much later).
 
-![Model scoring architecture](./model-scoring-architecture.svg)
+![Model scoring architecture](./model-scoring-architecture.png)
 
 ## Input data
 
