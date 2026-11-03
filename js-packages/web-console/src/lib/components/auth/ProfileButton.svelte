@@ -22,6 +22,7 @@
     healthStatus
   }: { compactBreakpoint?: string; healthStatus: ClusterHealthStatus | undefined } = $props()
   const auth = page.data.auth as AuthDetails | undefined
+  const tenantName = $derived(page.data.feldera?.tenantName)
 
   const globalDialog = useGlobalDialog()
 
@@ -68,8 +69,17 @@
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="fd fd-circle-user btn-icon preset-tonal-surface text-[16px]">
-          <div class="hidden {compactBreakpoint}block w-2"></div>
+        <div class="btn preset-tonal-surface px-2">
+          <span class="fd fd-circle-user text-[16px]"></span>
+          {#if tenantName}
+            <span
+              class="max-w-48 truncate pr-1 font-normal"
+              title={tenantName}
+              data-testid="box-profile-tenant-name"
+            >
+              {tenantName}
+            </span>
+          {/if}
         </div>
       </button>
     {:else}
