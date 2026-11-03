@@ -387,7 +387,7 @@ fn i128_mul_pow10_round_even(value: i128, exponent: i32) -> Option<i128> {
                     Ordering::Greater => true,
                 };
                 if round_away_from_zero {
-                    quotient + quotient.signum()
+                    quotient + value.signum()
                 } else {
                     quotient
                 }
