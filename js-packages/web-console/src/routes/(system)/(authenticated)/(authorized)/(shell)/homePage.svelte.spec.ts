@@ -315,11 +315,13 @@ describe('/ (home) scroll layout', () => {
     const visible = scrollArea.getBoundingClientRect()
 
     click(demosHeader(section))
+    // The section scrolls into view: its top reaches the upper half of the scroll area. A
+    // section taller than the lower half scrolls its top all the way up instead.
     await expect
-      .poll(() => section.getBoundingClientRect().bottom)
-      .toBeLessThanOrEqual(visible.bottom + 1)
+      .poll(() => section.getBoundingClientRect().top - visible.top)
+      .toBeLessThanOrEqual(SCROLL_AREA_HEIGHT / 2)
 
-    // All of the section shows now, so this click reaches the collapse toggle.
+    // The section is in view now, so this click reaches the collapse toggle.
     click(demosHeader(section))
 
     await expect.poll(() => section.textContent).not.toContain('Demo 0')

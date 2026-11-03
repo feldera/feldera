@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass, errorTextHoverClass } from 'common-ui/statusTone'
   import { partition } from 'common-lib/array'
   import { promisePool } from 'common-lib/promise'
   import { Tooltip } from 'common-ui'
@@ -522,7 +523,7 @@
     <span class="text-sm font-medium">{opts.title}</span>
     {#if opts.onDelete}
       <button
-        class="ml-auto btn-icon h-7 w-7 text-surface-600-400 hover:text-status-error-dot"
+        class="ml-auto btn-icon h-7 w-7 text-surface-600-400 {errorTextHoverClass}"
         onclick={opts.onDelete}
         aria-label="Delete tag"
         title="Delete tag"
@@ -550,7 +551,7 @@
         placeholder="e.g. production"
       />
       {#if opts.validationError}
-        <span class="text-xs font-normal text-status-error-dot">{opts.validationError}</span>
+        <span class="text-xs font-normal {errorTextClass}">{opts.validationError}</span>
       {/if}
     </label>
     <div class="flex flex-col gap-1.5 text-sm text-surface-600-400">

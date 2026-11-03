@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from './statusTone'
   import { count } from 'common-lib/array'
   import { formatDuration, formatQty } from 'common-lib/format'
   import { humanSize } from 'common-lib/string'
@@ -191,7 +192,7 @@
   {:else if hasErrors}
     <span
       data-testid="btn-icon-input-errors"
-      class="fd fd-circle-alert text-[16px] text-status-error-dot {onErrorClick ? 'cursor-pointer' : ''}"
+      class="fd fd-circle-alert text-[16px] {errorTextClass} {onErrorClick ? 'cursor-pointer' : ''}"
       {...gotoErrorsBtnProps}
     ></span>
     <Tooltip placement="top"
@@ -211,7 +212,7 @@
   {:else if hasFatalError}
     <span
       data-testid="btn-icon-input-fatal-error"
-      class="fd fd-circle-x text-[16px] text-status-error-dot"
+      class="fd fd-circle-x text-[16px] {errorTextClass}"
       {...gotoErrorsBtnProps}
     ></span>
     <Tooltip placement="top"
@@ -256,7 +257,7 @@
       data-testid="btn-icon-output-errors"
       class="fd {hasFatalError
         ? 'fd-circle-x'
-        : 'fd-circle-alert'} text-[16px] text-status-error-dot {onErrorClick ? 'cursor-pointer' : ''}"
+        : 'fd-circle-alert'} text-[16px] {errorTextClass} {onErrorClick ? 'cursor-pointer' : ''}"
       {...onErrorClick
         ? {
             onclick: (e) => {
@@ -526,13 +527,13 @@
   <td
     class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.groupCount} {groupGap} {m.num_parse_errors >
     0
-      ? 'text-status-error-dot'
+      ? errorTextClass
       : ''}"
   >
     {#if m.num_parse_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-parse-errors"
-        class="-m-2 cursor-pointer p-2 font-dm-mono text-status-error-dot hover:underline"
+        class="-m-2 cursor-pointer p-2 font-dm-mono {errorTextClass} hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'input', 'parse')
@@ -545,13 +546,13 @@
   <td
     class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.count} {m.num_transport_errors >
     0
-      ? 'text-status-error-dot'
+      ? errorTextClass
       : ''}"
   >
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-input-transport-errors"
-        class="-m-2 cursor-pointer p-2 font-dm-mono text-status-error-dot hover:underline"
+        class="-m-2 cursor-pointer p-2 font-dm-mono {errorTextClass} hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'input', 'transport')
@@ -618,7 +619,7 @@
     {#if m.num_encode_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-encode-errors"
-        class="-m-2 cursor-pointer p-2 font-dm-mono text-status-error-dot hover:underline"
+        class="-m-2 cursor-pointer p-2 font-dm-mono {errorTextClass} hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'output', 'encode')
@@ -632,7 +633,7 @@
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-output-transport-errors"
-        class="-m-2 cursor-pointer p-2 font-dm-mono text-status-error-dot hover:underline"
+        class="-m-2 cursor-pointer p-2 font-dm-mono {errorTextClass} hover:underline"
         onclick={(e) => {
           e.stopPropagation()
           onConnectorSelect(relation, connectorEndpointName, 'output', 'transport')

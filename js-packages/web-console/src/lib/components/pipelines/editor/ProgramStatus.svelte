@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import { match, P } from 'ts-pattern'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import type { ProgramStatus } from '#lib/services/pipelineManager.ts'
@@ -23,14 +24,14 @@
       .with(
         'SqlError',
         'SystemError',
-        () => 'fd fd-circle-x inline-block text-[16px] text-status-error-dot'
+        () => `fd fd-circle-x inline-block text-[16px] ${errorTextClass}`
       )
       .exhaustive()
   )
   const rustClass = $derived(
     match(programStatus)
       .with('CompilingRust', () => spinnerClass)
-      .with('RustError', () => 'fd fd-circle-x text-[16px] text-status-error-dot')
+      .with('RustError', () => `fd fd-circle-x text-[16px] ${errorTextClass}`)
       .with(
         'Success',
         'Pending',

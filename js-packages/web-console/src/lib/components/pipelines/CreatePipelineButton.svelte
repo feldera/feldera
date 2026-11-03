@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import RBAC from '#lib/components/auth/RBAC.svelte'
   import PipelineNameInput from '#lib/components/pipelines/PipelineNameInput.svelte'
 
@@ -40,7 +41,7 @@
       <div class="absolute top-10 z-20">
         {#if error}
           <div
-            class="bg-white-dark bg-white-dark rounded-container px-2 py-2 text-status-error-dot shadow"
+            class="bg-white-dark bg-white-dark rounded-container px-2 py-2 {errorTextClass} shadow"
           >
             {error}
           </div>
