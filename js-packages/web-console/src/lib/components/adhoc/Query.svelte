@@ -223,7 +223,7 @@
           bind:value={query}
           style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
           wrap={wrapSql ? 'soft' : 'off'}
-          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 leading-5 text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {sqlMinimized
+          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 text-[13px] leading-5 text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {sqlMinimized
             ? 'max-h-[80px] resize-none'
             : 'resize-y'} {wrapSql ? '' : 'whitespace-pre'}"
           placeholder="SELECT * FROM ..."

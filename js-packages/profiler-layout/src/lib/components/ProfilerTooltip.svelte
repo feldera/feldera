@@ -267,7 +267,7 @@
     }
 
     .profiler-tooltip table td.source-code {
-        font-family: monospace;
+        font-family: var(--font-mono, monospace);
         white-space: pre-wrap;
         text-align: left;
         min-width: 80ch;

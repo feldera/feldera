@@ -29,6 +29,8 @@
 
   --font-brands: 'Font Awesome 6 Brands';
   --font-dm-mono: 'Geist Mono Variable';
+  /* Every monospace text uses Geist Mono, the code editor's font, so `font-mono` matches it. */
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --color-dark: rgb(24 24 24);
 
@@ -406,4 +408,17 @@ input:focus {
 .monaco-scrollable-element > .scrollbar.horizontal > .slider {
   height: 6px !important;
   top: 2px !important;
+}
+
+/* Log colours (ANSI escape codes in pipeline logs) follow the status palette instead of the
+   terminal defaults, so ERROR, WARN and INFO match the rest of the console in both themes. */
+:root {
+  --ansi-red: var(--color-status-error-dot);
+  --ansi-bright-red: var(--color-status-error-dot);
+  --ansi-yellow: var(--color-status-warning-dot);
+  --ansi-bright-yellow: var(--color-status-warning-dot);
+  --ansi-green: var(--color-status-jade-dot);
+  --ansi-bright-green: var(--color-status-jade-dot);
+  --ansi-blue: var(--color-status-blue-dot);
+  --ansi-bright-blue: var(--color-status-blue-dot);
 }
