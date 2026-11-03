@@ -325,7 +325,8 @@
   <!-- The areas sit flush against each other, with no gaps, card corners or card borders:
        the header's bottom line and the 1px pane dividers are the only separators. `!` beats
        the `.panel` corners and border, which other pages keep. The tabbed panels drop their
-       side padding so the tab bar runs edge to edge, and pad the tab content instead. -->
+       side padding so the tab bar runs edge to edge, and pad the tab content instead. In dark mode the dividers between the #2a2a2a panels
+       take the line colour over #2a2a2a, since the translucent line vanishes between them. -->
   <PaneGroup
     direction="horizontal"
     class="!overflow-visible [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-2 [&_.panel[data-scope=tabs]]:px-0!"
@@ -422,7 +423,7 @@
               {/if}
             </Pane>
             {#if showInteractionPanel.value}
-              <PaneResizer class="pane-divider-vertical w-px! bg-line"></PaneResizer>
+              <PaneResizer class="pane-divider-vertical w-px! bg-line dark:bg-[#3f3f3f]"></PaneResizer>
               <Pane defaultSize={40} minSize={20} class="flex flex-col !overflow-visible">
                 {#if pipeline.current && metrics.current}
                   <InteractionPanel
@@ -440,7 +441,7 @@
         </Pane>
 
         {#if showMonitoringPanel.value}
-          <PaneResizer class="pane-divider-horizontal h-px! bg-line" />
+          <PaneResizer class="pane-divider-horizontal h-px! bg-line dark:bg-[#3f3f3f]" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
               <MonitoringPanel
