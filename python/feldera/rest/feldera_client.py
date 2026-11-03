@@ -276,12 +276,24 @@ class FelderaClient:
                 if expected_program_version is None:
                     return self.get_pipeline(name, PipelineFieldSelector.ALL)
 
+                # Accept a newer version: the compiler also bumps the version
+                # when it adopts a pipeline whose platform version differs
+                # from its own (e.g. during a rolling upgrade).
                 current_version = p.program_version or 0
-                if current_version == expected_program_version:
+                if current_version > expected_program_version:
+                    # Also the result of a concurrent edit by another client.
+                    logger.warning(
+                        "pipeline '%s' compiled program version %d, newer than "
+                        "the expected version %d",
+                        name,
+                        current_version,
+                        expected_program_version,
+                    )
+                if current_version >= expected_program_version:
                     return self.get_pipeline(name, PipelineFieldSelector.ALL)
                 else:
                     raise RuntimeError(
-                        f"program version ({current_version}) != expected program version ({expected_program_version})"
+                        f"program version ({current_version}) < expected program version ({expected_program_version})"
                     )
             elif status not in wait:
                 p = self.get_pipeline(name, PipelineFieldSelector.ALL)
