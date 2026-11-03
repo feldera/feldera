@@ -558,7 +558,7 @@
         Label color
         <span class="text-surface-950-50">· {colorName}</span>
       </span>
-      <!-- Solid swatches; the chosen one gets a ring around it and a check mark. -->
+      <!-- Solid swatches; the chosen one gets a ring around it. -->
       <div class="flex flex-wrap gap-2.5 py-1 pl-0.5">
         {#each tagColorPalette as paletteColor (paletteColor.name)}
           <button
@@ -574,9 +574,6 @@
             aria-pressed={paletteColor.color === selectedColor}
             onclick={() => (newTagColor = paletteColor.color)}
           >
-            {#if paletteColor.color === selectedColor}
-              <span class="fd fd-check text-[12px] text-white"></span>
-            {/if}
           </button>
         {/each}
       </div>

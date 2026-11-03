@@ -42,6 +42,7 @@
   import List from '#lib/components/common/virtualList/HeadlessVirtualList.svelte'
   import {
     ClipboardCopyButton,
+    Tooltip,
     ScrollDownFab,
     selectScope,
     useReverseScrollContainer
@@ -60,14 +61,23 @@
     onDeleteQuery,
     onCancelQuery,
     disabled,
-    isLastQuery
+    isLastQuery,
+    number = 1
   }: {
     onSubmitQuery: (query: string) => void
     onDeleteQuery: () => void
     onCancelQuery?: () => void
     disabled: boolean
     isLastQuery: boolean
+    /** The query's position in the list, shown as "Ad-hoc query #n" once it has run. */
+    number?: number
   } & QueryData = $props()
+
+  // The chevron folds the whole query (SQL and results) down to its header.
+  let collapsed = $state(false)
+  // The SQL can be limited to three lines, and its long lines wrapped or scrolled sideways.
+  let sqlMinimized = $state(false)
+  let wrapSql = $state(true)
 
   const theme = useSkeletonTheme()
 
@@ -129,65 +139,153 @@
     }
   }}
 >
-  <div class="w-full">
-    <!-- The query box: SQL on top, a toolbar with the actions and the result status below. -->
-    <div
-      class="flex max-w-[1000px] flex-col overflow-hidden rounded-lg border border-surface-200-800 transition-colors focus-within:border-surface-400-600"
-    >
-      <textarea
-        bind:value={query}
-        style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-        class="scrollbar min-h-16 w-full resize-y overflow-auto border-0 bg-transparent px-3 py-2.5 text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0"
-        placeholder="SELECT * FROM ..."
-        onkeydown={handleKeyDown(onSubmitQuery, disabled)}
-      ></textarea>
-      <div class="flex flex-nowrap items-center gap-3 border-t border-surface-200-800 px-2 py-2">
+  <!-- Each query and its results form one block on a darker background that hugs its
+       content: the 1000px SQL box, or wider results. -->
+  <div
+    class="flex w-fit max-w-full min-w-0 flex-col gap-2 rounded-xl border border-line bg-surface-950-50/[0.03] p-2 dark:border-[#3f3f3f] dark:bg-black/20"
+  >
+    <!-- A header on the block's darker background with the title, the result status and the
+         actions; then the framed SQL, which can collapse once the query has run; then results. -->
+    <div class="flex h-8 w-full flex-nowrap items-center gap-2">
+      {#if result}
+        <button
+          class="fd fd-chevron-down btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[16px] text-surface-600-400 transition-transform hover:bg-row-hover hover:text-surface-950-50 {collapsed
+            ? '-rotate-90'
+            : ''}"
+          onclick={() => (collapsed = !collapsed)}
+          aria-label={collapsed ? 'Expand query' : 'Collapse query'}
+          aria-expanded={!collapsed}
+        ></button>
+      {/if}
+      <span class="shrink-0 font-medium text-surface-950-50">
+        {result ? `Ad-hoc query #${number}` : 'Add an ad-hoc query'}
+      </span>
+      {#if result && rowCount}
+        <span class="text-surface-500" aria-hidden="true">·</span>
+        <span class="shrink-0 whitespace-nowrap text-surface-600-400">{rowCount}</span>
+      {/if}
+      {#if collapsed}
+        <span
+          class="min-w-0 truncate text-sm text-surface-500"
+          style="font-family: {theme.config.monospaceFontFamily}">{query.split('\n')[0]}</span
+        >
+      {/if}
+      <div class="flex min-w-0 flex-1 items-center">
         {#if progress}
-          <button
-            class="btn h-8 preset-outlined-surface-200-800 px-3"
-            onclick={onCancelQuery}
-            aria-label="Stop query"
-          >
-            <span class="fd fd-square text-[14px]"></span>
-            Stop
-          </button>
-        {:else}
-          <button
-            {disabled}
-            class="btn h-8 preset-filled-primary-500 px-3"
-            onclick={() => onSubmitQuery(query)}
-            aria-label="Run query"
-          >
-            <span class="fd fd-play text-[14px]"></span>
-            Run
-          </button>
-        {/if}
-        <div class="flex h-6 min-w-0 flex-1 flex-nowrap items-center gap-4 whitespace-nowrap">
-          {#if result}
-            <span class="text-surface-600-400">{rowCount}</span>
-          {/if}
-          {#if progress}
-            <Progress class="h-1 max-w-[1000px]" value={null}>
-              <Progress.Track>
-                <Progress.Range class="bg-secondary-500" />
-              </Progress.Track>
-            </Progress>
-          {/if}
-        </div>
-        {#if !isLastQuery}
-          <button
-            class="fd fd-trash-2 btn-icon h-8 w-8 text-[16px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
-            onclick={onDeleteQuery}
-            aria-label="Delete query"
-          ></button>
+          <Progress class="h-1 max-w-[240px]" value={null}>
+            <Progress.Track>
+              <Progress.Range class="bg-secondary-500" />
+            </Progress.Track>
+          </Progress>
         {/if}
       </div>
+      {#if progress}
+        <button
+          class="btn h-6 preset-outlined-surface-200-800 btn-sm px-2.5"
+          onclick={onCancelQuery}
+          aria-label="Stop query"
+        >
+          <span class="fd fd-square text-[12px]"></span>
+          Stop
+        </button>
+      {:else}
+        <button
+          {disabled}
+          class="btn h-6 preset-filled-primary-500 btn-sm px-2.5"
+          onclick={() => onSubmitQuery(query)}
+          aria-label="Run query"
+        >
+          <span class="fd fd-play text-[12px]"></span>
+          Run
+        </button>
+      {/if}
+      {#if result && result.columns.length && !collapsed}
+        <!-- Copies the results, as comma-separated JSON values. -->
+        <ClipboardCopyButton
+          class="btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+          value={() => tableToCSJV(result)}
+        ></ClipboardCopyButton>
+        <Tooltip placement="top">Copy results</Tooltip>
+      {/if}
+      {#if !isLastQuery}
+        <button
+          class="fd fd-trash-2 btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+          onclick={onDeleteQuery}
+          aria-label="Delete query"
+        ></button>
+      {/if}
     </div>
+    {#if !collapsed}
+      <div
+        class="relative flex w-[1000px] max-w-full flex-col overflow-hidden rounded-lg border border-surface-200-800 bg-white transition-colors focus-within:border-surface-400-600 dark:bg-[#2a2a2a]"
+      >
+        <textarea
+          bind:value={query}
+          style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
+          wrap={wrapSql ? 'soft' : 'off'}
+          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 leading-5 text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {sqlMinimized
+            ? 'max-h-[80px] resize-none'
+            : 'resize-y'} {wrapSql ? '' : 'whitespace-pre'}"
+          placeholder="SELECT * FROM ..."
+          onkeydown={handleKeyDown(onSubmitQuery, disabled)}
+        ></textarea>
+        <!-- View controls in the box's top-right corner: wrap long lines, and show at most three
+             lines of SQL. -->
+        <div class="absolute top-1.5 right-1.5 flex items-center gap-0.5">
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm h-6 w-6 text-surface-500 hover:bg-row-hover hover:text-surface-950-50 {wrapSql
+              ? 'text-surface-950-50'
+              : ''}"
+            onclick={() => (wrapSql = !wrapSql)}
+            aria-label={wrapSql ? "Don't wrap lines" : 'Wrap lines'}
+            aria-pressed={wrapSql}
+            title={wrapSql ? "Don't wrap lines" : 'Wrap lines'}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              ><path d="M3 6h18M3 12h15a3 3 0 1 1 0 6h-4M3 18h7" /><path d="m16 16-2 2 2 2" /></svg
+            >
+          </button>
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm h-6 w-6 text-surface-500 hover:bg-row-hover hover:text-surface-950-50"
+            onclick={() => (sqlMinimized = !sqlMinimized)}
+            aria-label={sqlMinimized ? 'Show all lines' : 'Show three lines'}
+            title={sqlMinimized ? 'Show all lines' : 'Show three lines'}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              {#if sqlMinimized}
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+              {:else}
+                <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+              {/if}
+            </svg>
+          </button>
+        </div>
+      </div>
+    {/if}
 
-    {#if result}
+    {#if result && !collapsed}
       {@const itemHeight = 'h-7'}
       {#key result.columns}
-        <div class="pt-2 pr-4">
+        <div class="pr-4">
           <div class="relative flex h-full w-fit max-w-full flex-nowrap items-end">
             {#snippet listContainer(
               items: Snippet,
@@ -207,22 +305,29 @@
                 }
               }}
               <div
-                class="relative scrollbar h-full max-h-64 w-fit max-w-full overflow-auto rounded pb-3"
+                class="relative scrollbar h-full max-h-[80cqh] w-fit max-w-full overflow-auto rounded-lg border border-line dark:border-[#3f3f3f]"
                 use:reverseScroll.action
                 {onscroll}
                 bind:clientHeight={_.clientHeight}
               >
-                <table style:height class="w-fit" use:keepMaxWidth>
+                <!-- A framed table with a line between rows. The lines are inset shadows, so
+                     every row stays exactly 28px for the virtual list. -->
+                <table
+                  style:height
+                  class="w-fit border-separate border-spacing-0 [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--color-line)] dark:[&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_#3f3f3f] [&_th]:shadow-[inset_0_-1px_0_var(--color-line)] dark:[&_th]:shadow-[inset_0_-1px_0_#3f3f3f]"
+                  use:keepMaxWidth
+                >
                   {#if result.columns.length}
                     <thead>
                       <tr>
-                        <th class="bg-white-dark sticky top-0 z-10 pl-2 font-light {itemHeight}"
+                        <th
+                          class="sticky top-0 z-10 bg-white px-3 text-right font-normal text-surface-500 dark:bg-[#2a2a2a] {itemHeight}"
                           >#</th
                         >
                         {#each result.columns as column}
                           <SqlColumnHeader
                             {column}
-                            class="bg-white-dark sticky top-0 z-10 {itemHeight}"
+                            class="sticky top-0 z-10 bg-white dark:bg-[#2a2a2a] {itemHeight}"
                           ></SqlColumnHeader>
                         {/each}
                       </tr>
@@ -237,8 +342,8 @@
             {#snippet item({ index, style }: { index: number; style?: string })}
               {@const row = rows[index]}
               {#if !row}{:else if isDataRow(row)}
-                <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:dark:bg-black">
-                  <td class="text-right font-mono select-none">{index}</td>
+                <tr {style} class="{itemHeight} whitespace-nowrap hover:bg-row-hover">
+                  <td class="px-3 text-right text-surface-500 tabular-nums select-none">{index}</td>
                   {#each row.cells as value}
                     <SQLValue
                       {value}
@@ -297,8 +402,6 @@
               </List>
             {/if}
             <ScrollDownFab class="mr-7" {reverseScroll}></ScrollDownFab>
-            <ClipboardCopyButton class="-mr-4 mb-2.5" value={() => tableToCSJV(result)}
-            ></ClipboardCopyButton>
           </div>
         </div>
       {/key}
