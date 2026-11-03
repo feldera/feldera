@@ -76,6 +76,7 @@
   import { unionName, type NamesInUnion } from 'common-lib/union'
   import LogsStreamList from '#lib/components/pipelines/editor/LogsStreamList.svelte'
   import { emptySearchState, type SearchState } from 'common-ui'
+  import type { Snippet } from 'svelte'
 
   import {
     newlineTextDecoder,
@@ -96,6 +97,7 @@
     pipeline,
     deleted = false,
     logSearch = emptySearchState,
+    logSearchBar,
     onLogMatchCountChange
   }: {
     pipeline: { current: ExtendedPipeline }
@@ -103,6 +105,8 @@
     /** Submitted search state, owned by the monitoring panel (which hosts the search bar in
      *  its toolbar). */
     logSearch?: SearchState
+    /** The panel's search field, shown above the log lines. */
+    logSearchBar?: Snippet
     /** Reports the current match count so the panel can drive its search counter/nav buttons. */
     onLogMatchCountChange?: (count: number) => void
   } = $props()
@@ -367,6 +371,11 @@
 </script>
 
 <div class="relative flex h-full flex-1 flex-col rounded">
+  {#if logSearchBar}
+    <div class="shrink-0 border-b border-line px-3 py-3 dark:border-[#3f3f3f]">
+      {@render logSearchBar()}
+    </div>
+  {/if}
   {#if deleted}
     {#if pipelineLogs.rows.length}
       <WarningBanner variant="info">

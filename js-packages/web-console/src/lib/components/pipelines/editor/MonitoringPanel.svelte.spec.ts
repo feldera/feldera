@@ -1,7 +1,7 @@
 /**
  * Real-wiring tests for the Logs-tab search experience in MonitoringPanel:
  *
- *   SearchBar (popup overlay, owned by TabLogs)
+ *   SearchBar (inline field above the logs, owned by MonitoringPanel)
  *        ↳ logSearch ────▶ LogsStreamList ▶ LogList (virtualised)
  *        ↳ focusInput() ◀── Ctrl/Cmd-F handler in LogList
  *
@@ -10,8 +10,7 @@
  * 42, 142, 242, ...) through a mocked `pipelineLogsStream`. Every component in the
  * SearchBar → LogList chain is the real one — nothing is re-wired in the test file itself.
  *
- * The search is a popup: collapsed it is just a search-icon button, so tests open it first
- * (click the button, or trigger Ctrl/Cmd-F which opens + focuses it).
+ * The search field is always shown above the logs; Ctrl/Cmd-F focuses it and Esc clears it.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -152,10 +151,8 @@ async function expectRowMounted(rowIndex: number) {
     .toBeTruthy()
 }
 
-// The search bar is collapsed to an icon button by default; open its popup and wait for the
-// query input to appear.
+// The search field is always shown above the logs; wait for it to appear.
 async function openSearch() {
-  ;(page.getByRole('button', { name: 'Search' }).element() as HTMLButtonElement).click()
   await expect.element(page.getByPlaceholder('Search logs')).toBeInTheDocument()
 }
 
@@ -209,10 +206,14 @@ describe('MonitoringPanel — log-search wiring', () => {
     await userEvent.keyboard('7')
     await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
     await expect.element(page.getByText(/\d+ of \d+/)).not.toBeInTheDocument()
-    await expect.poll(() => (next.element() as HTMLButtonElement).disabled).toBe(true)
+    // The nav buttons hide until the next search runs, so look them up directly.
+    const hiddenNext = () =>
+      document.querySelector<HTMLButtonElement>('button[aria-label="Next match"]')
+    await expect.poll(() => hiddenNext()?.disabled).toBe(true)
+    expect(hiddenNext()?.checkVisibility()).toBe(false)
   })
 
-  it('Escape closes the popup and removes the highlight', async () => {
+  it('Escape clears the query and removes the highlight', async () => {
     await mountLogsTab()
     await openSearch()
 
@@ -226,18 +227,18 @@ describe('MonitoringPanel — log-search wiring', () => {
       .toBe(true)
 
     await userEvent.keyboard('{Escape}')
-    await expect.element(page.getByPlaceholder('Search logs')).not.toBeInTheDocument()
+    await expect.element(page.getByPlaceholder('Search logs')).toHaveValue('')
     await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
   })
 
-  it('Ctrl+F opens, Esc closes and returns focus to the container, Ctrl+F reopens', async () => {
+  it('Ctrl+F focuses, Esc clears and returns focus to the container, Ctrl+F refocuses', async () => {
     await mountLogsTab()
 
     // The reported flow: focus the log container, then drive the search entirely by keyboard.
     const scrollContainer = document.querySelector<HTMLElement>('.log-list-scroll')!
     scrollContainer.focus()
 
-    // Ctrl+F opens the search (handled at the window level, so it works regardless of focus).
+    // Ctrl+F focuses the search (handled at the window level, so it works regardless of focus).
     await userEvent.keyboard('{Control>}f{/Control}')
     const input = page.getByPlaceholder('Search logs')
     expect(document.activeElement).toBe(input.element())
@@ -246,37 +247,37 @@ describe('MonitoringPanel — log-search wiring', () => {
     await userEvent.keyboard('{Enter}')
     await expectRowMounted(41)
 
-    // Esc closes the popup and hands focus back to the log container (so Arrow keys scroll it).
+    // Esc clears the query and hands focus back to the log container (so Arrow keys scroll it).
     await userEvent.keyboard('{Escape}')
-    await expect.element(page.getByPlaceholder('Search logs')).not.toBeInTheDocument()
+    await expect.element(page.getByPlaceholder('Search logs')).toHaveValue('')
     expect(document.activeElement).toBe(scrollContainer)
 
-    // Ctrl+F reopens — the whole point of the fix.
+    // Ctrl+F focuses the search again.
     await userEvent.keyboard('{Control>}f{/Control}')
-    await expect.element(page.getByPlaceholder('Search logs')).toBeInTheDocument()
+    expect(document.activeElement).toBe(input.element())
   })
 
-  it('Ctrl+F reopens the search even when focus is not on the log container', async () => {
+  it('Ctrl+F focuses the search even when focus is not on the log container', async () => {
     // Regression guard for the Chrome failure: reopening must not depend on where focus sits. The
     // window-level shortcut handler makes Ctrl+F reach the search bar wherever focus landed (e.g.
     // on the toolbar trigger button after a mouse-open, which Chrome focuses on click).
     await mountLogsTab()
 
-    // Open via the toolbar search button (real mouse click, so Chrome's focus-on-click applies).
-    await userEvent.click(page.getByRole('button', { name: 'Search', exact: true }))
+    // Click into the field (real mouse click, so Chrome's focus-on-click applies).
     const input = page.getByPlaceholder('Search logs')
-    await expect.element(input).toBeInTheDocument()
+    await userEvent.click(input)
 
     await input.fill('42')
     await userEvent.keyboard('{Enter}')
     await expectRowMounted(41)
 
     await userEvent.keyboard('{Escape}')
-    await expect.element(page.getByPlaceholder('Search logs')).not.toBeInTheDocument()
+    await expect.element(input).toHaveValue('')
+    ;(document.activeElement as HTMLElement | null)?.blur()
 
-    // Regardless of what holds focus now, Ctrl+F reopens the search.
+    // Regardless of what holds focus now, Ctrl+F focuses the search.
     await userEvent.keyboard('{Control>}f{/Control}')
-    await expect.element(page.getByPlaceholder('Search logs')).toBeInTheDocument()
+    expect(document.activeElement).toBe(input.element())
   })
 
   it('Ctrl+F from the log list focuses the search input; typing + Enter searches', async () => {

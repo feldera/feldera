@@ -130,54 +130,57 @@
   }}
 >
   <div class="w-full">
-    <div class="flex max-w-[1000px] flex-col rounded border border-surface-100-900 p-2">
-      <div class="flex w-full flex-col gap-2">
-        <textarea
-          bind:value={query}
-          style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
-          class="bg-white-dark scrollbar w-full overflow-auto rounded border-0 px-3 py-2 text-surface-950-50 outline-none"
-          placeholder="SELECT * FROM ..."
-          onkeydown={handleKeyDown(onSubmitQuery, disabled)}
-        ></textarea>
-        <div class="flex flex-nowrap items-center">
-          <div class="flex h-10 flex-none">
-            {#if progress}
-              <button
-                class="fd fd-square w-10 p-2 text-[20px]"
-                onclick={onCancelQuery}
-                aria-label="Stop query"
-              ></button>
-            {:else}
-              <button
-                {disabled}
-                class="fd fd-play w-10 p-2 text-[20px]"
-                onclick={() => onSubmitQuery(query)}
-                aria-label="Run query"
-              ></button>
-            {/if}
-            {#if !isLastQuery}
-              <button
-                class="fd fd-trash-2 w-10 p-2 text-[20px]"
-                onclick={onDeleteQuery}
-                aria-label="Delete query"
-              ></button>
-            {:else}
-              <div class="w-10"></div>
-            {/if}
-          </div>
-          <div class="flex h-6 w-full flex-nowrap items-center gap-4 whitespace-nowrap">
-            {#if result}
-              {rowCount}
-            {/if}
-            {#if progress}
-              <Progress class="h-1 max-w-[1000px]" value={null}>
-                <Progress.Track>
-                  <Progress.Range class="bg-secondary-500" />
-                </Progress.Track>
-              </Progress>
-            {/if}
-          </div>
+    <!-- The query box: SQL on top, a toolbar with the actions and the result status below. -->
+    <div
+      class="flex max-w-[1000px] flex-col overflow-hidden rounded-lg border border-surface-200-800 transition-colors focus-within:border-surface-400-600"
+    >
+      <textarea
+        bind:value={query}
+        style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
+        class="scrollbar min-h-16 w-full resize-y overflow-auto border-0 bg-transparent px-3 py-2.5 text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0"
+        placeholder="SELECT * FROM ..."
+        onkeydown={handleKeyDown(onSubmitQuery, disabled)}
+      ></textarea>
+      <div class="flex flex-nowrap items-center gap-3 border-t border-surface-200-800 px-2 py-2">
+        {#if progress}
+          <button
+            class="btn h-8 preset-outlined-surface-200-800 px-3"
+            onclick={onCancelQuery}
+            aria-label="Stop query"
+          >
+            <span class="fd fd-square text-[14px]"></span>
+            Stop
+          </button>
+        {:else}
+          <button
+            {disabled}
+            class="btn h-8 preset-filled-primary-500 px-3"
+            onclick={() => onSubmitQuery(query)}
+            aria-label="Run query"
+          >
+            <span class="fd fd-play text-[14px]"></span>
+            Run
+          </button>
+        {/if}
+        <div class="flex h-6 min-w-0 flex-1 flex-nowrap items-center gap-4 whitespace-nowrap">
+          {#if result}
+            <span class="text-surface-600-400">{rowCount}</span>
+          {/if}
+          {#if progress}
+            <Progress class="h-1 max-w-[1000px]" value={null}>
+              <Progress.Track>
+                <Progress.Range class="bg-secondary-500" />
+              </Progress.Track>
+            </Progress>
+          {/if}
         </div>
+        {#if !isLastQuery}
+          <button
+            class="fd fd-trash-2 btn-icon h-8 w-8 text-[16px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+            onclick={onDeleteQuery}
+            aria-label="Delete query"
+          ></button>
+        {/if}
       </div>
     </div>
 

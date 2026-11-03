@@ -179,7 +179,7 @@ describe('Deleted pipeline state', () => {
         metrics: metricsProp(),
         deleted: true
       })
-      const msg = page.getByText('Pipeline is not running')
+      const msg = page.getByText('Pipeline isn’t running')
       await expect.element(msg).toBeInTheDocument()
       unmount()
     })
@@ -190,7 +190,7 @@ describe('Deleted pipeline state', () => {
         metrics: metricsProp(),
         deleted: false
       })
-      const msg = page.getByText('Pipeline is not running')
+      const msg = page.getByText('Pipeline isn’t running')
       await expect.element(msg).toBeInTheDocument()
       unmount()
     })

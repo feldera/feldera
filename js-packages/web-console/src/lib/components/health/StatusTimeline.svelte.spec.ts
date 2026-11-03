@@ -114,7 +114,7 @@ describe('StatusTimeline bars', () => {
 
   it('fills a bar without events with the "no data" color', async () => {
     renderTimeline({ events: [event('healthy', 30)] })
-    await expect.poll(() => barRect(0).getAttribute('class')).toContain('fill-surface-300-700')
+    await expect.poll(() => barRect(0).getAttribute('class')).toContain('fill-status-nodata')
   })
 
   it('fills a bar under the pointer with the highlight color of its status tone', async () => {
@@ -134,7 +134,7 @@ describe('StatusTimeline legend', () => {
     await expect.element(document.body).toHaveTextContent('No data Operational Major Issue')
     const swatches = [...container.querySelectorAll('.rounded-md')].map((e) => e.className)
     expect(swatches).toEqual([
-      expect.stringContaining('bg-surface-300-700'),
+      expect.stringContaining('bg-status-nodata'),
       expect.stringContaining(statusToneColors.jade.healthDot),
       expect.stringContaining(statusToneColors.error.healthDot)
     ])

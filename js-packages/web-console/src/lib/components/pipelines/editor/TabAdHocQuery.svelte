@@ -162,7 +162,7 @@
     }
 </script>
 
-<div class="scrollbar h-full min-h-full overflow-y-auto" use:reverseScroll.action>
+<div class="scrollbar h-full min-h-full overflow-y-auto px-3 pt-4" use:reverseScroll.action>
   <div class="flex flex-col gap-6">
     {#if deleted}
       <div data-testid="box-adhoc-banner">

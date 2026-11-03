@@ -288,61 +288,66 @@
   {:else if pipelineNotRunning}
     <WarningBanner>Start the pipeline to collect the profile</WarningBanner>
   {/if}
-  <div class="flex flex-nowrap gap-4 p-2">
+  <div class="flex flex-wrap items-center gap-6 px-4 pt-6 pb-4">
     <Progress value={progressValue} class="relative h-fit w-fit items-center" max={progressMax}>
       <div class="absolute inset-0 flex items-center justify-center">
-        <span>{displayTime}</span>
+        <span class="text-lg font-medium">{displayTime}</span>
       </div>
       <Progress.Circle>
         <Progress.CircleTrack />
         <Progress.CircleRange />
       </Progress.Circle>
     </Progress>
-    <div class="grid grid-cols-3 gap-2">
-      <span class="col-span-3">Select Samply profile duration:</span>
-      {#each [30, 60, 120, 300] as time}
+    <div class="flex flex-col gap-3">
+      <span class="text-surface-600-400">Select Samply profile duration</span>
+      <div class="flex flex-wrap items-center gap-2">
+        {#each [30, 60, 120, 300] as time}
+          <button
+            class="btn h-8 min-w-14 px-3 {time === duration
+              ? 'preset-outlined-primary-500'
+              : 'preset-tonal-surface'}"
+            onclick={() => {
+              duration = time
+            }}
+            disabled={isCollecting}
+          >
+            {formatTime(time)}
+          </button>
+        {/each}
+        <label class="ml-2 flex items-center gap-2">
+          <Input
+            type="number"
+            class="input h-8 w-24 text-base"
+            bind:value={duration}
+            min={minDuration}
+            max={maxDuration}
+            disabled={isCollecting}
+          />
+          <span class="text-surface-600-400">seconds</span>
+        </label>
+      </div>
+      <div class="flex flex-wrap gap-2 pt-1">
         <button
-          class="btn {time === duration
-            ? '-mx-px preset-outlined-primary-500'
-            : 'preset-tonal-surface'}"
-          onclick={() => {
-            duration = time
-          }}
-          disabled={isCollecting}
+          class="btn h-8 preset-filled-primary-500 px-4"
+          onclick={handleCollectProfile}
+          disabled={disabled || isCollecting}
         >
-          {formatTime(time)}
+          {isCollecting ? `Collecting (${displayTime})` : 'Collect profile'}
         </button>
-      {/each}
-      <Input
-        type="number"
-        class="col-span-2 input text-base"
-        bind:value={duration}
-        min={minDuration}
-        max={maxDuration}
-        disabled={isCollecting}
-      />
-    </div>
-    <div class="flex flex-col justify-end gap-2">
-      {#if hasAvailableProfile}
-        <button
-          class="btn preset-tonal-surface"
-          {disabled}
-          onclick={() => handleDownloadProfile(!isCollecting)}
-        >
-          {#if isCollecting}
-            Download last profile
-          {:else}
-            Download profile
-          {/if}
-        </button>
-      {/if}
-      <button
-        class="btn preset-tonal-surface"
-        onclick={handleCollectProfile}
-        disabled={disabled || isCollecting}
-      >
-        {isCollecting ? `Collecting (${displayTime})` : 'Collect profile'}
-      </button>
+        {#if hasAvailableProfile}
+          <button
+            class="btn h-8 preset-tonal-surface px-4"
+            {disabled}
+            onclick={() => handleDownloadProfile(!isCollecting)}
+          >
+            {#if isCollecting}
+              Download last profile
+            {:else}
+              Download profile
+            {/if}
+          </button>
+        {/if}
+      </div>
     </div>
   </div>
 </div>

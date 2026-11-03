@@ -4,6 +4,9 @@
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
   import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
   import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import AllClearLight from '#assets/illustrations/all-clear-light.svg?component'
+  import AllClearDark from '#assets/illustrations/all-clear-dark.svg?component'
 
   const { hideWarnings, verbatimErrors } = useLayoutSettings()
 
@@ -16,7 +19,20 @@
   } = $props()
 
   const theme = useSkeletonTheme()
+  const darkMode = useDarkMode()
 </script>
+
+{#snippet noErrors(text: string)}
+  <!-- The viewBox crops the drawing's empty margins so the label sits close to it -->
+  <div class="flex flex-1 flex-col items-center justify-center gap-3 p-2 text-center">
+    {#if darkMode.current === 'dark'}
+      <AllClearDark viewBox="60 55 120 64" class="h-[51px] w-[96px]"></AllClearDark>
+    {:else}
+      <AllClearLight viewBox="60 55 120 64" class="h-[51px] w-[96px]"></AllClearLight>
+    {/if}
+    <span class="text-surface-600-400">{text}</span>
+  </div>
+{/snippet}
 
 <div class="scrollbar h-full w-full overflow-y-auto">
   <div
@@ -35,7 +51,7 @@
           {stderr}
         </div>
       {:else}
-        <span class="text-surface-600-400">No errors</span>
+        {@render noErrors('No errors')}
       {/if}
     {:else}
       {#each hideWarnings.value ? errors.filter((e) => !e.cause.warning) : errors as systemError}
@@ -59,13 +75,9 @@
           </span>
         </div>
       {:else}
-        <span class="text-surface-600-400">
-          {#if hideWarnings.value && errors.length}
-            No errors, warnings hidden
-          {:else}
-            No errors
-          {/if}
-        </span>
+        {@render noErrors(
+          hideWarnings.value && errors.length ? 'No errors, warnings hidden' : 'No errors'
+        )}
       {/each}
     {/if}
   </div>

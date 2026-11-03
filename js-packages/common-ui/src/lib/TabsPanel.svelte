@@ -138,7 +138,7 @@
           {disabled}
           {title}
           class={isUnderline
-            ? 'relative my-3 flex h-6 items-center gap-2 px-3 text-base whitespace-nowrap text-surface-600-400 hover:bg-transparent hover:text-surface-950-50 hover:filter-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:text-surface-950-50 data-[selected]:after:absolute data-[selected]:after:inset-x-0 data-[selected]:after:-bottom-3 data-[selected]:after:h-0.5 data-[selected]:after:bg-primary-500'
+            ? 'relative mt-3 mb-2 flex h-6 items-center gap-2 self-end px-3 text-base whitespace-nowrap text-surface-600-400 hover:bg-transparent hover:text-surface-950-50 hover:filter-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:text-surface-950-50 data-[selected]:after:absolute data-[selected]:after:inset-x-0 data-[selected]:after:-bottom-2 data-[selected]:after:h-0.5 data-[selected]:after:bg-chart-line'
             : 'tab'}
         >
           {@render label()}

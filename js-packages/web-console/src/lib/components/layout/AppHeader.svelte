@@ -25,7 +25,7 @@
 
 <div class="flex flex-row items-center justify-between gap-2 border-b border-line py-1 {class_}">
   <a class="flex h-12 items-center lg:items-start lg:pr-2.5" href={resolve('/')}>
-    <span class="hidden lg:flex">
+    <span class="relative top-1.5 hidden lg:flex">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogoWhite class="h-[30px]"></FelderaModernLogoWhite>
       {:else}
@@ -34,9 +34,9 @@
     </span>
     <span class="flex lg:hidden">
       {#if darkMode.current === 'dark'}
-        <FelderaModernLogomarkWhite class="h-8"></FelderaModernLogomarkWhite>
+        <FelderaModernLogomarkWhite class="h-7"></FelderaModernLogomarkWhite>
       {:else}
-        <FelderaModernLogomarkBlack class="h-8 fill-[#3d4030]"></FelderaModernLogomarkBlack>
+        <FelderaModernLogomarkBlack class="h-7 fill-[#3d4030]"></FelderaModernLogomarkBlack>
       {/if}
     </span>
   </a>

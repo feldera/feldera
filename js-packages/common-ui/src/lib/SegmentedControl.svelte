@@ -79,16 +79,21 @@
   class={className}
 >
   <SC.Control
-    class="w-fit flex-none border-none bg-surface-950-50/[0.06] p-0 {sized.control} {sized.radius}"
+    class="w-fit flex-none border-none bg-surface-950-50/[0.06] p-0.5 {sized.control} {sized.radius}"
   >
-    <SC.Indicator class="border border-surface-950-50/10 bg-white-dark {sized.radius}" />
+    <!-- Skeleton measures the selected item into --left/--top/--width/--height; the indicator
+         has to apply them itself to cover that item exactly. It sits 2px inside the track,
+         with a soft shadow so the selected item lifts off it. -->
+    <SC.Indicator
+      class="top-(--top) left-(--left) h-(--height) w-(--width) border border-surface-950-50/10 bg-white-dark shadow-[0_1px_2px_rgb(0_0_0/0.08)] dark:shadow-[0_1px_2px_rgb(0_0_0/0.4)] {sized.radius}"
+    />
     {#each items as item, index}
       <SC.Item
         value={item.value}
         disabled={item.disabled}
         title={item.title}
         data-testid={item.testid}
-        class="relative z-1 inline-flex h-full cursor-pointer items-center justify-center font-normal whitespace-nowrap data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[state=checked]:font-medium {sized.item} {sized.radius}"
+        class="relative z-1 inline-flex h-full cursor-pointer items-center justify-center font-normal whitespace-nowrap data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 {sized.item} {sized.radius}"
       >
         {#if hasDividerBefore(index)}
           <span class="absolute inset-y-[3px] left-0 w-px bg-surface-950-50/10"></span>

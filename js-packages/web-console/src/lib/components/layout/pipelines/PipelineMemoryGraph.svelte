@@ -14,7 +14,6 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import type { ECMouseEvent } from 'svelte-echarts'
   import { Chart } from 'svelte-echarts'
-  import { ServerDate } from '#lib/compositions/serverTime.ts'
   import {
     multihostMemoryLimitBytes,
     resourceSizeBytes,
@@ -139,10 +138,12 @@
       animationDuration: 0,
       animationDurationUpdate: refetchMs,
       type: 'time' as const,
+      // Start on the same window the updates below use, so the first update has nothing to
+      // animate and the line doesn't slide in when the tab opens.
       // svelte-ignore state_referenced_locally
-      min: ServerDate.now() - keepMs - refetchMs,
+      min: xAxisMax - keepMs,
       // svelte-ignore state_referenced_locally
-      max: ServerDate.now() - refetchMs,
+      max: xAxisMax,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
