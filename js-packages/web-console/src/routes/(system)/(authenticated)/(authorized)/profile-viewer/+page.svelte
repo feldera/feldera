@@ -418,7 +418,15 @@
       pipelineEvents,
       sourceFiles
     } = getProfileData()}
-    <div class="min-h-0 flex-1 px-4 pb-4">
+    <!-- As on the pipeline page, the areas sit flush against each other, with no gaps, card
+         corners or card borders: the 1px pane dividers are the only separators. `!` beats the
+         layout's own corners, borders and divider spacing, which the standalone profiler keeps.
+         The graph's toolbar takes the panels' background instead of a grey band, and is
+         12px tall above and below its fields. The SQL panel's layout icon is 16px, like the
+         other icons. -->
+    <div
+      class="min-h-0 flex-1 [&_.rounded-container]:rounded-none! [&_.rounded-container]:bg-white! dark:[&_.rounded-container]:bg-[#2a2a2a]! [&_.fd-layout-panel-left]:text-[16px]! [&_.fd-layout-panel-top]:text-[16px]! [&_.rounded-container>.flex-shrink-0]:py-3! [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-2 [&_.panel[data-scope=tabs]]:px-0! [&_.pane-divider-horizontal]:my-0! [&_.pane-divider-horizontal]:h-px! [&_.pane-divider-horizontal]:bg-line [&_.pane-divider-vertical]:mx-0! [&_.pane-divider-vertical]:w-px! [&_.pane-divider-vertical]:bg-line"
+    >
       <SupportBundleViewerLayout
         profileData={profile}
         dataflowData={dataflow}

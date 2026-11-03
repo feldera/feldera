@@ -1,5 +1,4 @@
 import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
-import { useUiPreview } from '#lib/compositions/dev/uiPreview.svelte.ts'
 import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 import { type PipelineManagerApi, usePipelineManager } from '../usePipelineManager.svelte'
 
@@ -50,14 +49,9 @@ export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
   if (preloaded && !pipelines) {
     pipelines = preloaded.pipelines
   }
-  const preview = useUiPreview()
   return {
     get pipelines() {
-      if (pipelines === undefined) {
-        return undefined
-      }
-      // The dev "No pipelines" preview shows the empty state.
-      return preview.noPipelines ? [] : [...pipelines]
+      return pipelines === undefined ? undefined : [...pipelines]
     }
   }
 }

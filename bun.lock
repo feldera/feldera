@@ -231,6 +231,7 @@
         "@biomejs/biome": "2.4.3",
         "@feldera/vite-plugin-monaco-editor": "workspace:*",
         "@fontsource-variable/dm-sans": "5.2.8",
+        "@fontsource-variable/geist-mono": "5.2.7",
         "@fontsource/dm-mono": "5.2.7",
         "@fortawesome/fontawesome-free": "7.2.0",
         "@hey-api/client-fetch": "0.13.1",
@@ -435,6 +436,8 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.10", "", {}, "sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ=="],
 
     "@fontsource-variable/dm-sans": ["@fontsource-variable/dm-sans@5.2.8", "", {}, "sha512-AxkvMTvNWgfrmlyjiV05vlHYJa+nRQCf1EfvIrQAPBpFJW0O9VTz7oAFr9S3lvbWdmnFoBk7yFqQL86u64nl2g=="],
+
+    "@fontsource-variable/geist-mono": ["@fontsource-variable/geist-mono@5.2.7", "", {}, "sha512-ZKlZ5sjtalb2TwXKs400mAGDlt/+2ENLNySPx0wTz3bP3mWARCsUW+rpxzZc7e05d2qGch70pItt3K4qttbIYA=="],
 
     "@fontsource/dm-mono": ["@fontsource/dm-mono@5.2.7", "", {}, "sha512-Ma1az2atTVgQWuOWwjuxx26p/6A6CU9HBNKq1CFV6YKpKhpswnf9ry9Ql4+T6bTZzkdtSfS6tjJvqZOljVzIFQ=="],
 

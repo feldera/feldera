@@ -7,6 +7,7 @@
     "@biomejs/biome": "2.4.3",
     "@feldera/vite-plugin-monaco-editor": "workspace:*",
     "@fontsource-variable/dm-sans": "5.2.8",
+    "@fontsource-variable/geist-mono": "5.2.7",
     "@fontsource/dm-mono": "5.2.7",
     "@fortawesome/fontawesome-free": "7.2.0",
     "@hey-api/client-fetch": "0.13.1",

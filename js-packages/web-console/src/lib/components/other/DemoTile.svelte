@@ -3,6 +3,7 @@
   import { useTryPipeline } from '#lib/compositions/pipelines/useTryPipeline.ts'
   import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
   import type { Demo } from '#lib/services/pipelineManager.ts'
+  import DemoIcon from './DemoIcon.svelte'
 
   let { demo, placement }: { demo: Demo | null; placement?: string } = $props()
   const tryPipeline = useTryPipeline()
@@ -16,11 +17,12 @@
 
 {#if demo}
   <button
-    class="flex flex-col card rounded-[8px] border border-line bg-page p-4 text-left transition-colors hover:bg-row-hover disabled:pointer-events-none disabled:opacity-50"
+    class="flex flex-col card rounded-[8px] border border-line bg-page p-4 text-left transition-colors hover:bg-[#f4f4ef] dark:hover:bg-row-hover disabled:pointer-events-none disabled:opacity-50"
     disabled={!enabled}
     onclick={() => tryPipeline(demo, placement)}
   >
-    <div class="text-sm text-surface-700-300">{demo.type}</div>
+    <DemoIcon name={demo.name}></DemoIcon>
+    <div class="pt-3 text-sm text-surface-700-300">{demo.type}</div>
     <span class="py-2 font-semibold">{demo.title}</span>
     <span class="text-surface-700-300">{demo.description}</span>
   </button>

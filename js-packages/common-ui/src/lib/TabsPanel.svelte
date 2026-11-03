@@ -26,10 +26,9 @@
    *  - `'tab'`     – default; underlined triggers with a sliding bottom indicator.
    *  - `'segment'` – pill-style strip driven by `SegmentedControl`. Use when the tabs
    *                  feel more like a view selector than a primary navigation.
-   *  - `'cell'`    – a grey tab bar of cells divided by 1px lines; the selected tab is
-   *                  white with a 2px line on top and covers the bar's bottom line, so it
-   *                  joins the content below. Matches the pipeline editor's file tabs. */
-  export type TabLabelVariant = 'tab' | 'segment' | 'cell'
+   *  - `'underline'` – grey labels with no hover fill; the selected tab is in the main
+   *                  text colour with a 2px primary (black) bar on the header's line. */
+  export type TabLabelVariant = 'tab' | 'segment' | 'underline'
 </script>
 
 <script lang="ts" generics="T extends Record<string, unknown>  ">
@@ -58,7 +57,7 @@
     visited.add(currentTab)
   })
   const activeTabBarEnd = $derived(tabs.find((t) => t.id === currentTab)?.tabBarEnd)
-  const isCell = $derived(tabLabelVariant === 'cell')
+  const isUnderline = $derived(tabLabelVariant === 'underline')
   // Segment items only need a `value`; the visual label is rendered via the `segmentLabel`
   // snippet, which dispatches back to each TabSpec's own `label` snippet so a tab definition
   // stays the single source of truth regardless of the chosen variant.
@@ -129,8 +128,8 @@
          as tall (`min-h-12`), so when it wraps onto a row of its own its controls centre
          there too; a bare 32px button takes 8px margins (`my-2`) to fill the same row. -->
     <Tabs.List
-      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {isCell
-        ? 'bg-toolbar pr-2'
+      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {isUnderline
+        ? 'px-2'
         : ''} {headerClass}"
     >
       {#each tabs as { id, label, title, disabled }}
@@ -138,8 +137,8 @@
           value={id}
           {disabled}
           {title}
-          class={isCell
-            ? 'flex h-12 items-center gap-2 self-start rounded-none border-r border-line px-4 text-base font-medium whitespace-nowrap text-surface-600-400 hover:bg-white/60 hover:text-surface-950-50 dark:hover:bg-white/5 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:-mb-px data-[selected]:h-[49px] data-[selected]:bg-white data-[selected]:text-surface-950-50 data-[selected]:shadow-[inset_0_2px_0_var(--color-surface-950)] dark:data-[selected]:bg-dark dark:data-[selected]:shadow-[inset_0_2px_0_var(--color-surface-50)]'
+          class={isUnderline
+            ? 'relative my-3 flex h-6 items-center gap-2 px-3 text-base whitespace-nowrap text-surface-600-400 hover:bg-transparent hover:text-surface-950-50 hover:filter-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:text-surface-950-50 data-[selected]:after:absolute data-[selected]:after:inset-x-0 data-[selected]:after:-bottom-3 data-[selected]:after:h-0.5 data-[selected]:after:bg-primary-500'
             : 'tab'}
         >
           {@render label()}

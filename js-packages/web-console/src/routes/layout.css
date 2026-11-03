@@ -1,5 +1,5 @@
 @import "../assets/fonts/dm-sans.css" layer(base); /* '@fontsource-variable/public-sans' */
-@import "@fontsource/dm-mono" layer(base);
+@import "@fontsource-variable/geist-mono" layer(base);
 @import url("@fortawesome/fontawesome-free/css/brands.min.css") layer(base);
 
 @import "tailwindcss";
@@ -28,7 +28,7 @@
   --breakpoint-2xl: 1536px;
 
   --font-brands: "Font Awesome 6 Brands";
-  --font-dm-mono: "DM Mono";
+  --font-dm-mono: "Geist Mono Variable";
 
   --color-dark: rgb(24 24 24);
 

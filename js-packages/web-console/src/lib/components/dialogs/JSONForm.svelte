@@ -68,6 +68,7 @@
 <MonacoEditor
   model={currentModel}
   jsonSchemas={felderaApiJsonSchemas}
+  extras={{ isDarkMode: darkMode.current === 'dark' }}
   onready={(ref) => {
     ref.onKeyDown((e) => {
       if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
