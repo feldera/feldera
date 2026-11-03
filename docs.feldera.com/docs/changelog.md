@@ -10,6 +10,18 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental (Enterprise, Kubernetes): `deployment_config` in
+  `PATCH /v0/pipelines/{name}` can also grow the storage of a running pipeline,
+  through `storage_min` and `storage_max`, and change its volume attributes
+  class, through `volume_attributes_class`.  `storage_min` and `storage_max` can
+  only increase, and only when they are already set.  A resize outside the
+  [storage limits](/pipelines/configuration#storage-limits) of the
+  installation is refused.  See
+  [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
+  A start that keeps storage now takes the volume attributes class from the
+  last deployment.  If you changed the class of a stopped pipeline before this
+  upgrade, change it again before its next start.
+
 - Behavior change (Python SDK): a request that is not idempotent, such as
   HTTP ingress, `patch_pipeline` or a checkpoint, no longer retries after a
   502, 503 or 504 response or a read timeout, because the server may already
