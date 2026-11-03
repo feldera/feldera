@@ -2,6 +2,10 @@
 
 use std::fmt::Write as _;
 use std::io::Write;
+use std::pin::pin;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use zip::write::{SimpleFileOptions, StreamWriter};
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::api::error::ApiError;
@@ -14,13 +18,18 @@ use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, c
 use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::{storage::Storage, types::tenant::TenantId};
 use crate::error::ManagerError;
+use actix_web::web::Bytes;
 use actix_web::{
     HttpResponse, get,
     web::{self, Data as WebData, ReqData},
 };
+use async_stream::try_stream;
 use chrono::{DateTime, Utc};
+use futures_util::{Stream, TryStreamExt};
 use serde::Serialize;
 use std::collections::HashSet;
+use tokio::time::{Instant, interval_at};
+use tracing::error;
 
 /// Top-level bundle metadata serialized into both `metadata.txt` (human form)
 /// and `metadata.json` (machine form) at the ZIP root.
@@ -81,24 +90,111 @@ fn unique_directory(candidate: &str, used: &mut HashSet<String>) -> String {
     }
 }
 
-/// A collection of support bundle data for a single pipeline gathered in a single ZIP file.
+/// Bytes that the ZIP writer wrote and the response did not send yet.
+#[derive(Clone, Default)]
+struct Pending(Arc<Mutex<Vec<u8>>>);
+
+impl Pending {
+    fn take(&self) -> Bytes {
+        Bytes::from(std::mem::take(&mut *self.0.lock().unwrap()))
+    }
+}
+
+impl Write for Pending {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn bundle_error(what: &str, error: impl std::fmt::Display) -> ManagerError {
+    ManagerError::from(ApiError::UnableToCreateSupportBundle {
+        reason: format!("{what}: {error}"),
+    })
+}
+
+/// Writes a support bundle ZIP file, one entry after another, so the bytes
+/// can be sent while the rest is not written yet.
 struct SupportBundleZip {
-    buffer: Vec<u8>,
+    zip: ZipWriter<StreamWriter<Pending>>,
+    pending: Pending,
+    used_dirs: HashSet<String>,
+    collections: Vec<CollectionMetadata>,
 }
 
 impl SupportBundleZip {
-    /// Create a ZIP archive from support bundle data.
-    async fn create(
-        pipeline: &ExtendedPipelineDescrMonitoring,
-        bundles: Vec<SupportBundleData>,
-        params: &SupportBundleParameters,
-    ) -> Result<SupportBundleZip, ManagerError> {
-        let mut zip_buffer = Vec::with_capacity(256 * 1024);
-        let mut zip = ZipWriter::new(std::io::Cursor::new(&mut zip_buffer));
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated);
-        let options_for = |method: CompressionMethod| options.compression_method(method);
+    fn new() -> Self {
+        let pending = Pending::default();
+        Self {
+            zip: ZipWriter::new_stream(pending.clone()),
+            pending,
+            used_dirs: HashSet::new(),
+            collections: Vec::new(),
+        }
+    }
 
+    fn options() -> SimpleFileOptions {
+        SimpleFileOptions::default().compression_method(CompressionMethod::Deflated)
+    }
+
+    /// Takes the bytes written since the last call.
+    fn take(&self) -> Bytes {
+        self.pending.take()
+    }
+
+    /// Starts `COLLECTION_LOG`, which records the progress of a collection.
+    fn start_log(&mut self) -> Result<(), ManagerError> {
+        self.zip
+            .start_file(COLLECTION_LOG, Self::options())
+            .map_err(|e| bundle_error("Failed to add the collection log to bundle", e))
+    }
+
+    /// Writes a line to `COLLECTION_LOG`, and flushes the compressor so that
+    /// the line is ready to send.
+    fn log(&mut self, line: &str) -> Result<(), ManagerError> {
+        writeln!(self.zip, "{} {line}", Utc::now().to_rfc3339())
+            .and_then(|()| self.zip.flush())
+            .map_err(|e| bundle_error("Failed to write the collection log", e))
+    }
+
+    /// Adds the entries of one collection, in its own directory.
+    async fn add_collection(
+        &mut self,
+        data: &SupportBundleData,
+        params: &SupportBundleParameters,
+    ) -> Result<(), ManagerError> {
+        let directory = unique_directory(&timestamp_dir(&data.time), &mut self.used_dirs);
+        let zip = &mut self.zip;
+        // Already-compressed items (gzip, zip) are stored verbatim
+        let mut add_to_zip = |filename: &str,
+                              content: &[u8],
+                              method: CompressionMethod|
+         -> Result<(), Box<dyn std::error::Error>> {
+            let path = format!("{directory}/{filename}");
+            zip.start_file(&path, Self::options().compression_method(method))?;
+            zip.write_all(content)?;
+            Ok(())
+        };
+        let summary = data
+            .push_to_zip(&mut add_to_zip, params)
+            .await
+            .map_err(|e| bundle_error("Failed to add data to zip", e))?;
+        self.collections.push(CollectionMetadata {
+            directory,
+            time: data.time,
+            data_version: data.version,
+            summary,
+        });
+        Ok(())
+    }
+
+    /// Writes the metadata entries and the ZIP central directory, and
+    /// returns the bytes not taken yet.
+    fn finish(mut self, pipeline: &ExtendedPipelineDescrMonitoring) -> Result<Bytes, ManagerError> {
         let combined_status = CombinedStatus::new(
             pipeline.deployment_resources_status,
             pipeline.deployment_runtime_status,
@@ -119,40 +215,6 @@ impl SupportBundleZip {
                 None
             };
 
-        let mut collection_meta = Vec::with_capacity(bundles.len());
-        let mut used_dirs: HashSet<String> = HashSet::with_capacity(bundles.len());
-
-        for data in bundles.iter() {
-            let directory = unique_directory(&timestamp_dir(&data.time), &mut used_dirs);
-            let dir_prefix = directory.clone();
-            // Already-compressed items (gzip, zip) are stored verbatim
-            let mut add_to_zip = |filename: &str,
-                                  content: &[u8],
-                                  method: CompressionMethod|
-             -> Result<(), Box<dyn std::error::Error>> {
-                let path = format!("{}/{}", dir_prefix, filename);
-                zip.start_file(&path, options_for(method))?;
-                zip.write_all(content)?;
-                Ok(())
-            };
-
-            let summary = data
-                .push_to_zip(&mut add_to_zip, params)
-                .await
-                .map_err(|e| {
-                    ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                        reason: format!("Failed to add data to zip: {}", e),
-                    })
-                })?;
-
-            collection_meta.push(CollectionMetadata {
-                directory,
-                time: data.time,
-                data_version: data.version,
-                summary,
-            });
-        }
-
         let metadata = BundleMetadata {
             metadata_version: METADATA_VERSION,
             requested_at: Utc::now(),
@@ -162,45 +224,106 @@ impl SupportBundleZip {
                 status_since,
                 desired_status,
             },
-            collections: collection_meta,
+            collections: std::mem::take(&mut self.collections),
         };
 
         let manifest_text = render_metadata_text(&metadata);
-        let manifest_json = serde_json::to_vec_pretty(&metadata).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to serialize metadata.json: {}", e),
-            })
-        })?;
+        let manifest_json = serde_json::to_vec_pretty(&metadata)
+            .map_err(|e| bundle_error("Failed to serialize metadata.json", e))?;
 
-        zip.start_file("metadata.txt", options).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to add metadata.txt to bundle: {}", e),
-            })
-        })?;
-        zip.write_all(manifest_text.as_bytes()).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to write metadata.txt to bundle: {}", e),
-            })
-        })?;
+        for (name, content) in [
+            ("metadata.txt", manifest_text.as_bytes()),
+            ("metadata.json", &manifest_json),
+        ] {
+            self.zip
+                .start_file(name, Self::options())
+                .map_err(|e| bundle_error(&format!("Failed to add {name} to bundle"), e))?;
+            self.zip
+                .write_all(content)
+                .map_err(|e| bundle_error(&format!("Failed to write {name} to bundle"), e))?;
+        }
 
-        zip.start_file("metadata.json", options).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to add metadata.json to bundle: {}", e),
-            })
-        })?;
-        zip.write_all(&manifest_json).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to write metadata.json to bundle: {}", e),
-            })
-        })?;
+        self.zip
+            .finish()
+            .map_err(|e| bundle_error("Failed to create support bundle", e))?;
+        Ok(self.pending.take())
+    }
 
-        let _r: std::io::Cursor<&mut Vec<u8>> = zip.finish().map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to create support bundle: {}", e),
-            })
-        })?;
+    /// Creates the whole ZIP archive from `bundles`.
+    #[cfg(test)]
+    async fn create(
+        pipeline: &ExtendedPipelineDescrMonitoring,
+        bundles: Vec<SupportBundleData>,
+        params: &SupportBundleParameters,
+    ) -> Result<Vec<u8>, ManagerError> {
+        let mut zip = Self::new();
+        for data in &bundles {
+            zip.add_collection(data, params).await?;
+        }
+        Ok(zip.finish(pipeline)?.to_vec())
+    }
+}
 
-        Ok(SupportBundleZip { buffer: zip_buffer })
+/// Name of the ZIP entry that records the progress of a new collection.
+const COLLECTION_LOG: &str = "collection_log.txt";
+
+/// Time between two lines in `COLLECTION_LOG` while a collection runs. Each
+/// line sends bytes, so a proxy does not close the response as idle.
+const COLLECTION_LOG_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Streams the support bundle ZIP file.
+///
+/// If `collection` is set, it is the new collection: the bundle starts with
+/// `COLLECTION_LOG`, which gets a line every `interval` until the collection
+/// is complete. Then come the new collection, the collections in `stored`
+/// (newest first), and the metadata, up to `params.limit` collections.
+fn support_bundle_stream<C>(
+    pipeline: ExtendedPipelineDescrMonitoring,
+    mut stored: Vec<SupportBundleData>,
+    collection: Option<C>,
+    params: SupportBundleParameters,
+    interval: Duration,
+) -> impl Stream<Item = Result<Bytes, ManagerError>>
+where
+    C: Future<Output = Result<SupportBundleData, ManagerError>>,
+{
+    try_stream! {
+        let mut zip = SupportBundleZip::new();
+        if let Some(collection) = collection {
+            let started = Instant::now();
+            zip.start_log()?;
+            zip.log("Collecting data from the pipeline.")?;
+            yield zip.take();
+            let mut collection = pin!(collection);
+            let mut ticks = interval_at(started + interval, interval);
+            let data = loop {
+                tokio::select! {
+                    data = &mut collection => break data,
+                    _ = ticks.tick() => {}
+                }
+                zip.log(&format!(
+                    "Still collecting after {} s.",
+                    started.elapsed().as_secs()
+                ))?;
+                yield zip.take();
+            }?;
+            zip.log(&format!(
+                "Collected in {} s.",
+                started.elapsed().as_secs()
+            ))?;
+            stored.insert(0, data);
+        }
+
+        // Keep only the most recent `limit` collections when set. Bundles are
+        // already ordered newest-first.
+        if let Some(limit) = params.limit {
+            stored.truncate(limit as usize);
+        }
+        for data in &stored {
+            zip.add_collection(data, &params).await?;
+            yield zip.take();
+        }
+        yield zip.finish(&pipeline)?;
     }
 }
 
@@ -302,7 +425,7 @@ pub(crate) async fn get_pipeline_support_bundle(
             reason: "limit must be at least 1 when provided; omit it to return all retained collections".to_string(),
         }));
     }
-    let (pipeline, mut bundles) = state
+    let (pipeline, bundles) = state
         .db
         .lock()
         .await
@@ -314,36 +437,38 @@ pub(crate) async fn get_pipeline_support_bundle(
         .await?;
 
     // Only collect all requested data from the running pipeline if collect=true
-    if support_bundle_params.collect {
-        bundles.insert(
-            0,
-            SupportBundleData::collect(
-                &state,
-                &client,
-                *tenant_id,
-                &pipeline_name,
-                &support_bundle_params,
-            )
-            .await?,
-        );
-    };
+    let tenant_id = *tenant_id;
+    let collection = support_bundle_params.collect.then_some(async move {
+        SupportBundleData::collect(
+            &state,
+            &client,
+            tenant_id,
+            &pipeline_name,
+            &support_bundle_params,
+        )
+        .await
+    });
+    let filename = format!("{}-support-bundle.zip", pipeline.name);
+    let body = support_bundle_stream(
+        pipeline,
+        bundles,
+        collection,
+        support_bundle_params,
+        COLLECTION_LOG_INTERVAL,
+    )
+    .inspect_err(|e| error!("Support bundle stopped after its response started: {e}"));
 
-    // Keep only the most recent `limit` collections when set. Bundles are
-    // already ordered newest-first.
-    if let Some(limit) = support_bundle_params.limit {
-        bundles.truncate(limit as usize);
-    }
-
-    let bundle = SupportBundleZip::create(&pipeline, bundles, &support_bundle_params).await?;
-
+    // The response starts before the collection, so the client and any proxy
+    // in between see bytes while it runs. A failure after this point cuts the
+    // response short instead of setting an error status.
     Ok(HttpResponse::Ok()
         .content_type("application/zip")
         .insert_header((
             "Content-Disposition",
-            format!("attachment; filename=\"{pipeline_name}-support-bundle.zip\""),
+            format!("attachment; filename=\"{filename}\""),
         ))
         .insert_header(actix_http::ContentEncoding::Identity)
-        .body(bundle.buffer))
+        .streaming(body))
 }
 
 #[cfg(test)]
@@ -411,7 +536,7 @@ mod tests {
         let bundle = SupportBundleZip::create(&descr, bundles, &params)
             .await
             .unwrap();
-        let mut archive = read_zip(&bundle.buffer);
+        let mut archive = read_zip(&bundle);
 
         let names: Vec<String> = (0..archive.len())
             .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
@@ -488,7 +613,7 @@ mod tests {
         let bundle = SupportBundleZip::create(&descr, vec![], &params)
             .await
             .unwrap();
-        let mut archive = read_zip(&bundle.buffer);
+        let mut archive = read_zip(&bundle);
         let names: Vec<String> = (0..archive.len())
             .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
@@ -510,7 +635,7 @@ mod tests {
         let bundle = SupportBundleZip::create(&descr, vec![a, b], &params)
             .await
             .unwrap();
-        let mut archive = read_zip(&bundle.buffer);
+        let mut archive = read_zip(&bundle);
         let names: Vec<String> = (0..archive.len())
             .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
@@ -523,6 +648,59 @@ mod tests {
         let base = timestamp_dir(&shared_time);
         assert!(dirs.contains(base.as_str()));
         assert!(dirs.contains(format!("{base}-1").as_str()));
+    }
+
+    /// The bundle sends bytes while a slow collection runs, not only at its
+    /// end, and the result is still one valid ZIP file.
+    #[tokio::test(start_paused = true)]
+    async fn bundle_streams_while_a_collection_runs() {
+        use futures_util::StreamExt;
+
+        let interval = Duration::from_secs(10);
+        let collection_time = Duration::from_secs(35);
+        let collection = async move {
+            tokio::time::sleep(collection_time).await;
+            Ok(SupportBundleData::test_data())
+        };
+        let started = Instant::now();
+        let mut stream = pin!(support_bundle_stream(
+            fake_pipeline("p"),
+            vec![SupportBundleData::test_data()],
+            Some(collection),
+            SupportBundleParameters::default(),
+            interval,
+        ));
+        let mut bundle = Vec::new();
+        let mut early_chunks = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            if started.elapsed() < collection_time {
+                assert!(!chunk.is_empty());
+                early_chunks += 1;
+            }
+            bundle.extend_from_slice(&chunk);
+        }
+        // One chunk at the start and one per interval.
+        assert_eq!(early_chunks, 4);
+
+        let mut archive = read_zip(&bundle);
+        let mut log = String::new();
+        archive
+            .by_name(COLLECTION_LOG)
+            .unwrap()
+            .read_to_string(&mut log)
+            .unwrap();
+        assert_eq!(log.lines().count(), 5, "{log}");
+        assert!(log.contains("Still collecting after 30 s."), "{log}");
+        assert!(log.contains("Collected in 35 s."), "{log}");
+        let mut metadata = String::new();
+        archive
+            .by_name("metadata.json")
+            .unwrap()
+            .read_to_string(&mut metadata)
+            .unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+        assert_eq!(metadata["collections"].as_array().unwrap().len(), 2);
     }
 
     #[test]
@@ -542,7 +720,7 @@ mod tests {
             SupportBundleZip::create(&descr, vec![SupportBundleData::test_data()], &params)
                 .await
                 .unwrap();
-        let mut archive = read_zip(&bundle.buffer);
+        let mut archive = read_zip(&bundle);
         let mut text = String::new();
         archive
             .by_name("metadata.txt")
