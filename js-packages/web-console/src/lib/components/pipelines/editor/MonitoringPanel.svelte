@@ -339,4 +339,11 @@
   </div>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab!} {tabProps} tabLabelVariant="underline" />
+<!-- The tab bar's controls end 20px from the panel edge, like the header and toolbars. -->
+<TabsPanel
+  {tabs}
+  bind:currentTab={currentTab!}
+  {tabProps}
+  tabLabelVariant="underline"
+  headerClass="pr-5"
+/>

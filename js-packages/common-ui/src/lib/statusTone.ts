@@ -60,9 +60,9 @@ export const statusToneColors: Record<StatusTone, StatusColors> = {
     chip: 'bg-status-blue-subtle text-status-blue',
     dot: 'bg-status-blue-pip',
     healthIcon: 'text-status-blue',
-    healthDot: 'bg-status-blue-dot',
+    healthDot: 'bg-status-blue-bar',
     healthText: 'text-status-blue-dot',
-    healthBar: 'fill-status-blue-dot',
+    healthBar: 'fill-status-blue-bar',
     healthBarHighlight: 'fill-status-blue',
     healthIndicator: 'bg-blue-500'
   },
@@ -70,9 +70,9 @@ export const statusToneColors: Record<StatusTone, StatusColors> = {
     chip: 'bg-status-jade-subtle text-status-jade',
     dot: 'bg-status-jade-pip',
     healthIcon: 'text-success-500',
-    healthDot: 'bg-status-jade-dot',
+    healthDot: 'bg-status-jade-bar',
     healthText: 'text-status-jade-dot',
-    healthBar: 'fill-status-jade-dot',
+    healthBar: 'fill-status-jade-bar',
     healthBarHighlight: 'fill-status-jade',
     healthIndicator: 'bg-success-500'
   },
@@ -80,9 +80,9 @@ export const statusToneColors: Record<StatusTone, StatusColors> = {
     chip: 'bg-status-warning-subtle text-status-warning',
     dot: 'bg-status-warning-pip',
     healthIcon: 'text-warning-500',
-    healthDot: 'bg-status-warning-dot',
+    healthDot: 'bg-status-warning-bar',
     healthText: 'text-status-warning-dot',
-    healthBar: 'fill-status-warning-dot',
+    healthBar: 'fill-status-warning-bar',
     healthBarHighlight: 'fill-status-warning',
     healthIndicator: 'bg-warning-500'
   },
@@ -90,9 +90,9 @@ export const statusToneColors: Record<StatusTone, StatusColors> = {
     chip: 'bg-status-error-subtle text-status-error',
     dot: 'bg-status-error-pip',
     healthIcon: 'text-status-error-dot',
-    healthDot: 'bg-status-error-dot',
+    healthDot: 'bg-status-error-bar',
     healthText: 'text-status-error-dot',
-    healthBar: 'fill-status-error-dot',
+    healthBar: 'fill-status-error-bar',
     healthBarHighlight: 'fill-status-error',
     healthIndicator: 'bg-error-500'
   }
