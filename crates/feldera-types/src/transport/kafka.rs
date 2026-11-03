@@ -700,6 +700,53 @@ impl<'de> Deserialize<'de> for KafkaHeaderValue {
     }
 }
 
+/// Credential options in bundled librdkafka 2.12.1, including its client-secret alias.
+/// Unlisted options remain opaque; safe Debug never prints their values.
+fn visit_credential_options(
+    options: &BTreeMap<String, String>,
+    prefix: &str,
+    visit: &mut dyn FnMut(&str, &str),
+) {
+    for (key, value) in options {
+        let canonical = match key.as_str() {
+            "sasl.password"
+            | "ssl.key.password"
+            | "ssl.key.pem"
+            | "ssl.keystore.password"
+            | "sasl.oauthbearer.client.secret"
+            | "sasl.oauthbearer.assertion.private.key.pem"
+            | "sasl.oauthbearer.assertion.private.key.passphrase" => key.as_str(),
+            "sasl.oauthbearer.client.credentials.client.secret" => "sasl.oauthbearer.client.secret",
+            _ => continue,
+        };
+        visit(&format!("{prefix}{canonical}"), value);
+    }
+}
+
+impl crate::sensitive::SensitiveValues for KafkaInputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        visit_credential_options(&self.kafka_options, "", visit);
+    }
+}
+
+impl crate::sensitive::SensitiveValues for KafkaOutputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        visit_credential_options(&self.kafka_options, "", visit);
+        if let Some(ft) = &self.fault_tolerance {
+            visit_credential_options(
+                &ft.consumer_options,
+                "fault_tolerance.consumer_options.",
+                visit,
+            );
+            visit_credential_options(
+                &ft.producer_options,
+                "fault_tolerance.producer_options.",
+                visit,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 #[test]
 fn test_kafka_header_value_deserialize() {

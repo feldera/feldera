@@ -1,4 +1,4 @@
-//! Redaction of resolved secret values in diagnostics.
+//! Redaction of referenced and declared credential values in diagnostics.
 //!
 //! The secret resolver registers each `${secret:...}` value it resolves.
 //! Error responses, connector error lists, the panic hook and the pipeline
@@ -8,7 +8,8 @@
 //! is built from reviewed fields at its source and must not depend on it.
 //!
 //! The registry is process-wide and never logged or serialized. A value
-//! registered twice keeps its first reference. Unit tests share it, so a
+//! registered twice keeps its first reference; references take precedence over
+//! supplemental credential markers. Unit tests share it, so a
 //! test registers a value that no other message can contain.
 
 use aho_corasick::{AhoCorasick, MatchKind};
@@ -23,11 +24,26 @@ use url::Url;
 /// skipped for the same reason.
 pub const MIN_REDACTED_LEN: usize = 8;
 
+#[derive(Clone)]
+enum Replacement {
+    Reference(String),
+    Credential,
+}
+
+impl Replacement {
+    fn text(&self) -> &str {
+        match self {
+            Self::Reference(text) => text,
+            Self::Credential => "[REDACTED]",
+        }
+    }
+}
+
 #[derive(Default)]
 struct Entries {
     values: Vec<String>,
-    replacements: Vec<String>,
-    /// Finds every value in one pass over a line, longest match first.
+    replacements: Vec<Replacement>,
+    /// Finds candidate values, preferring the longest match at each position.
     automaton: Option<AhoCorasick>,
 }
 
@@ -63,13 +79,29 @@ impl SecretRedactor {
     /// percent-decoded, debug-escaped and JSON-escaped forms, and the
     /// password of a value that is a URL.
     pub fn register(&self, reference: &str, value: &str) {
+        self.register_value(Some(reference), value);
+    }
+
+    /// Adds a schema-declared credential. A reference registered for the same
+    /// value, before or after this call, takes precedence over the marker.
+    /// The global length floor applies here too.
+    pub fn register_credential(&self, value: &str) {
+        self.register_value(None, value);
+    }
+
+    fn register_value(&self, reference: Option<&str>, value: &str) {
         if value.trim().len() < MIN_REDACTED_LEN {
             return;
         }
-        let derived = format!("[REDACTED {reference}]");
+        let original = reference.map_or(Replacement::Credential, |r| {
+            Replacement::Reference(r.to_owned())
+        });
+        let derived = reference.map_or(Replacement::Credential, |r| {
+            Replacement::Reference(format!("[REDACTED {r}]"))
+        });
         let mut forms = vec![
-            (value.to_string(), reference.to_string()),
-            (value.trim().to_string(), reference.to_string()),
+            (value.to_string(), original.clone()),
+            (value.trim().to_string(), original),
             (urlencoding::encode(value).into_owned(), derived.clone()),
             (debug_escaped(value), derived.clone()),
             (json_escaped(value), derived.clone()),
@@ -90,12 +122,27 @@ impl SecretRedactor {
         }
 
         let mut entries = self.entries.write().unwrap_or_else(PoisonError::into_inner);
+        let mut changed = false;
         for (value, replacement) in forms {
-            if value.len() < MIN_REDACTED_LEN || entries.values.contains(&value) {
+            if value.len() < MIN_REDACTED_LEN {
+                continue;
+            }
+            if let Some(index) = entries
+                .values
+                .iter()
+                .position(|existing| existing == &value)
+            {
+                if matches!(entries.replacements[index], Replacement::Credential) {
+                    entries.replacements[index] = replacement;
+                }
                 continue;
             }
             entries.values.push(value);
             entries.replacements.push(replacement);
+            changed = true;
+        }
+        if !changed {
+            return;
         }
         // Leftmost-longest: a URL is replaced before the password inside it.
         entries.automaton = Some(
@@ -137,19 +184,33 @@ impl SecretRedactor {
         let mut out = String::new();
         let mut last = 0;
         let mut search_from = 0;
-        // A match rejected at a token boundary must not hide a shorter
-        // registered form inside it, such as the password of a URL: resume
-        // one character further, not after the rejected match.
         while let Some(found) = automaton.find(&text[search_from..]) {
             let start = search_from + found.start();
-            let end = search_from + found.end();
+            let mut end = search_from + found.end();
+            let mut pattern = found.pattern().as_usize();
             if !at_token_boundary(text, start, end) {
-                // Patterns are nonempty UTF-8 strings.
-                search_from = start + text[start..].chars().next().unwrap().len_utf8();
-                continue;
+                // A rejected longer pattern must not hide an eligible shorter
+                // credential at the same position or inside it.
+                let shorter = entries
+                    .values
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, value)| {
+                        text[start..].starts_with(value.as_str())
+                            && at_token_boundary(text, start, start + value.len())
+                    })
+                    .max_by_key(|(_, value)| value.len());
+                if let Some((index, value)) = shorter {
+                    pattern = index;
+                    end = start + value.len();
+                } else {
+                    // Patterns are nonempty UTF-8 strings.
+                    search_from = start + text[start..].chars().next().unwrap().len_utf8();
+                    continue;
+                }
             }
             out.push_str(&text[last..start]);
-            out.push_str(&entries.replacements[found.pattern().as_usize()]);
+            out.push_str(entries.replacements[pattern].text());
             last = end;
             search_from = end;
         }
@@ -207,7 +268,13 @@ impl SecretRedactor {
                 }
                 for (key, redacted) in renamed {
                     if let Some(field) = fields.remove(&key) {
-                        fields.insert(redacted, field);
+                        let mut name = redacted.clone();
+                        let mut suffix = 1;
+                        while fields.contains_key(&name) {
+                            suffix += 1;
+                            name = format!("{redacted} ({suffix})");
+                        }
+                        fields.insert(name, field);
                     }
                 }
             }
@@ -353,6 +420,102 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_rejected_longer_match_does_not_hide_a_reference() {
+        let redactor = SecretRedactor::new();
+        redactor.register(REFERENCE, "nested-secret-2136");
+        redactor.register_credential("prefix/nested-secret-2136");
+        assert_eq!(
+            redactor.redact("xprefix/nested-secret-2136"),
+            format!("xprefix/{REFERENCE}")
+        );
+        redactor.register_credential("nested-secret-2136/suffix");
+        assert_eq!(
+            redactor.redact("nested-secret-2136/suffixx"),
+            format!("{REFERENCE}/suffixx")
+        );
+    }
+
+    #[test]
+    fn credential_key_collisions_preserve_all_details() {
+        let redactor = SecretRedactor::new();
+        redactor.register_credential("first-credential-2136");
+        redactor.register_credential("second-credential-2136");
+        let mut value =
+            json!({"first-credential-2136":1, "second-credential-2136":2, "[REDACTED]":3});
+        redactor.redact_json(&mut value);
+        let mut values: Vec<_> = value
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        values.sort();
+        assert_eq!(values, vec![1, 2, 3]);
+        assert!(!value.to_string().contains("credential-2136"));
+    }
+
+    #[test]
+    fn references_win_over_credentials_in_either_order() {
+        for credential_first in [true, false] {
+            let redactor = SecretRedactor::new();
+            let value = "quote\"and\\secret-2136";
+            if credential_first {
+                redactor.register_credential(value);
+                assert_eq!(redactor.redact(value), "[REDACTED]");
+            }
+            redactor.register(REFERENCE, value);
+            redactor.register_credential(value);
+            redactor.register("${secret:kubernetes:other/key}", value);
+            assert_eq!(redactor.redact(value), REFERENCE);
+            assert_eq!(
+                redactor.redact(&super::json_escaped(value)),
+                format!("[REDACTED {REFERENCE}]")
+            );
+            assert_eq!(
+                redactor.redact(&urlencoding::encode(value)),
+                format!("[REDACTED {REFERENCE}]")
+            );
+        }
+    }
+
+    /// A rejected match scans the registry for a shorter form. Many near
+    /// misses against a large registry still give the right result quickly.
+    #[test]
+    fn many_near_misses_against_a_large_registry() {
+        let redactor = SecretRedactor::new();
+        for index in 0..200 {
+            redactor.register_credential(&format!("near-miss-value-{index:03}-2136"));
+        }
+        let line = (0..100)
+            .map(|index| format!("xnear-miss-value-{:03}-2136x", index % 200))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(redactor.redact(&line), line);
+        assert_eq!(
+            redactor.redact(&format!("{line} near-miss-value-007-2136")),
+            format!("{line} [REDACTED]")
+        );
+    }
+
+    #[test]
+    fn inline_credentials_keep_the_length_floor_and_token_boundaries() {
+        let redactor = SecretRedactor::new();
+        for value in ["on", "1", "  short  "] {
+            redactor.register_credential(value);
+        }
+        assert_eq!(redactor.redact("on 1 short"), "on 1 short");
+        redactor.register_credential("inline-credential-2136");
+        assert_eq!(
+            redactor.redact("password inline-credential-2136 rejected"),
+            "password [REDACTED] rejected"
+        );
+        assert_eq!(
+            redactor.redact("prefixinline-credential-2136suffix"),
+            "prefixinline-credential-2136suffix"
+        );
     }
 
     #[test]
