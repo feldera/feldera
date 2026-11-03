@@ -2498,6 +2498,11 @@ pub(super) async fn test_follow(
             )
             .unwrap();
 
+        // A connector that resumed after its snapshot is following the log (issue 7747).
+        if suspend && !test_end_version {
+            wait_for_delta_connector_phase(&pipeline, 1, 20_000).await;
+        }
+
         // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
         if test_end_version && input_table.version().unwrap() as i64 > end_version {
             sleep(Duration::from_millis(1000)).await;

@@ -184,8 +184,8 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 | <a name='input_connector_bytes_total'>`input_connector_bytes_total`</a> |counter | Total number of bytes received by an input connector. |
 | <a name='input_connector_completion_latency_seconds'>`input_connector_completion_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors, over the last 600 seconds or 10,000 samples. |
 | <a name='input_connector_delta_phase'>`input_connector_delta_phase`</a> |gauge | Current phase: 0=loading_snapshot, 1=follow/streaming, 2=completed. |
-| <a name='input_connector_delta_snapshot_completed_seconds'>`input_connector_delta_snapshot_completed_seconds`</a> |gauge | Unix epoch seconds when the snapshot phase finished (0 if not yet complete). |
-| <a name='input_connector_delta_snapshot_records_total'>`input_connector_delta_snapshot_records_total`</a> |counter | Total records loaded during the snapshot phase. |
+| <a name='input_connector_delta_snapshot_completed_seconds'>`input_connector_delta_snapshot_completed_seconds`</a> |gauge | Unix epoch seconds when this run finished reading the snapshot (0 if it has not, including after a resume past the snapshot). |
+| <a name='input_connector_delta_snapshot_records_total'>`input_connector_delta_snapshot_records_total`</a> |counter | Total records this run loaded from the snapshot (0 after a resume past the snapshot). |
 | <a name='input_connector_end_of_input'>`input_connector_end_of_input`</a> |gauge | Whether the input connector has reached end of input (1 for true, 0 for false). |
 | <a name='input_connector_errors_parse_total'>`input_connector_errors_parse_total`</a> |counter | Total number of errors encountered parsing records received by the input connector. |
 | <a name='input_connector_errors_transport_total'>`input_connector_errors_transport_total`</a> |counter | Total number of errors encountered by the input connector at the transport layer. |
