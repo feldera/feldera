@@ -1673,16 +1673,16 @@ impl Controller {
         Ok(StartTransactionResponse::new(transaction_id))
     }
 
-    /// Starts to commit the transaction that the API started.  If
-    /// `transaction_id` is `Some`, commits only that transaction, and succeeds
-    /// without doing anything if this function already committed it.
+    /// Starts to commit the transaction that the API started.  With
+    /// [`TransactionToCommit::Id`], commits only that transaction, and
+    /// succeeds without doing anything if this function already committed it.
     pub fn start_commit_transaction(
         &self,
-        transaction_id: Option<TransactionId>,
+        transaction: TransactionToCommit,
     ) -> Result<(), ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
-        self.inner.start_commit_transaction_from_api(transaction_id)
+        self.inner.start_commit_transaction_from_api(transaction)
     }
 
     pub async fn async_stop(self) -> Result<(), ControllerError> {
@@ -7448,6 +7448,16 @@ impl TransactionInitiators {
     }
 }
 
+/// The transaction that [`Controller::start_commit_transaction`] commits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransactionToCommit {
+    /// The transaction that the API started, whatever its ID.
+    Open,
+
+    /// Only the transaction with this ID.
+    Id(TransactionId),
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct TransactionInfo {
     /// Is this a multihost pipeline?
@@ -7626,21 +7636,23 @@ impl TransactionInfo {
 
     /// Commit the current transaction from the API.
     ///
-    /// If `transaction_id` is `Some`, commits only that transaction.  Returns
-    /// false, without doing anything, if that is the last transaction that
-    /// this function committed, so that a retried request succeeds.
+    /// With [`TransactionToCommit::Id`], commits only that transaction.
+    /// Returns false, without doing anything, if that is the last transaction
+    /// that this function committed, so that a retried request succeeds.
     fn start_commit_transaction_from_api(
         &mut self,
-        transaction_id: Option<TransactionId>,
+        transaction: TransactionToCommit,
     ) -> Result<bool, ControllerError> {
         let open = if self.initiators.initiated_by_api == Some(TransactionPhase::Started) {
             self.initiators.transaction_id
         } else {
             None
         };
-        match transaction_id {
-            None if open.is_none() => return Err(ControllerError::NoTransactionInProgress),
-            Some(requested) if open != Some(requested) => {
+        match transaction {
+            TransactionToCommit::Open if open.is_none() => {
+                return Err(ControllerError::NoTransactionInProgress);
+            }
+            TransactionToCommit::Id(requested) if open != Some(requested) => {
                 return if self.last_api_commit == Some(requested) {
                     Ok(false)
                 } else {
@@ -9812,13 +9824,13 @@ impl ControllerInner {
     /// progress or commit has already been initiated for the current transaction.
     pub fn start_commit_transaction_from_api(
         &self,
-        transaction_id: Option<TransactionId>,
+        transaction: TransactionToCommit,
     ) -> Result<(), ControllerError> {
         // Lock the input statuses first, like `input_step`.
         let statuses = self.status.input_status();
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
-        if !transaction_info.start_commit_transaction_from_api(transaction_id)? {
+        if !transaction_info.start_commit_transaction_from_api(transaction)? {
             return Ok(());
         }
 
@@ -11409,7 +11421,10 @@ mod local_file_uri_tests {
 
 #[cfg(test)]
 mod commit_transaction_id_tests {
-    use super::{ControllerError, TransactionCoordination, TransactionInfo, TransactionState};
+    use super::{
+        ControllerError, TransactionCoordination, TransactionInfo, TransactionState,
+        TransactionToCommit::{Id, Open},
+    };
     use std::time::Instant;
 
     fn single_host() -> TransactionInfo {
@@ -11424,8 +11439,8 @@ mod commit_transaction_id_tests {
     fn retried_commit_succeeds() {
         let mut info = single_host();
         let first = info.start_transaction_from_api().unwrap();
-        assert!(info.start_commit_transaction_from_api(Some(first)).unwrap());
-        assert!(!info.start_commit_transaction_from_api(Some(first)).unwrap());
+        assert!(info.start_commit_transaction_from_api(Id(first)).unwrap());
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
 
         info.transaction_state = TransactionState::Committing {
             tid: first,
@@ -11433,21 +11448,18 @@ mod commit_transaction_id_tests {
             processed_records: 0,
         };
         info.clear_initiators();
-        assert!(!info.start_commit_transaction_from_api(Some(first)).unwrap());
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
 
         info.transaction_state = TransactionState::None;
-        assert!(!info.start_commit_transaction_from_api(Some(first)).unwrap());
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
 
         let second = info.start_transaction_from_api().unwrap();
-        assert!(!info.start_commit_transaction_from_api(Some(first)).unwrap());
-        assert!(
-            info.start_commit_transaction_from_api(Some(second))
-                .unwrap()
-        );
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
+        assert!(info.start_commit_transaction_from_api(Id(second)).unwrap());
 
         // Only the last commit can be retried.
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(first)),
+            info.start_commit_transaction_from_api(Id(first)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
         ));
     }
@@ -11457,7 +11469,7 @@ mod commit_transaction_id_tests {
     fn commit_of_another_transaction_fails() {
         let mut info = single_host();
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(1)),
+            info.start_commit_transaction_from_api(Id(1)),
             Err(ControllerError::TransactionIdMismatch {
                 requested: 1,
                 open: None
@@ -11469,18 +11481,18 @@ mod commit_transaction_id_tests {
             .unwrap();
         let connector = info.initiators.transaction_id.unwrap();
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(connector)),
+            info.start_commit_transaction_from_api(Id(connector)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
         ));
 
         let api = info.start_transaction_from_api().unwrap();
         assert_eq!(api, connector);
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(api + 1)),
+            info.start_commit_transaction_from_api(Id(api + 1)),
             Err(ControllerError::TransactionIdMismatch { open: Some(open), .. }) if open == api
         ));
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(0)),
+            info.start_commit_transaction_from_api(Id(0)),
             Err(ControllerError::TransactionIdMismatch { .. })
         ));
     }
@@ -11492,7 +11504,7 @@ mod commit_transaction_id_tests {
     fn connector_transaction_running_after_api_commit() {
         let mut info = single_host();
         let api = info.start_transaction_from_api().unwrap();
-        assert!(info.start_commit_transaction_from_api(Some(api)).unwrap());
+        assert!(info.start_commit_transaction_from_api(Id(api)).unwrap());
         info.clear_initiators();
 
         info.start_transaction_from_connector("c", None, false)
@@ -11503,16 +11515,16 @@ mod commit_transaction_id_tests {
             start: Instant::now(),
             processed_records: 0,
         };
-        assert!(!info.start_commit_transaction_from_api(Some(api)).unwrap());
+        assert!(!info.start_commit_transaction_from_api(Id(api)).unwrap());
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(connector)),
+            info.start_commit_transaction_from_api(Id(connector)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
         ));
 
         // The connector asked to commit, but the transaction still runs.
         info.clear_initiators();
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(connector)),
+            info.start_commit_transaction_from_api(Id(connector)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
         ));
     }
@@ -11533,12 +11545,12 @@ mod commit_transaction_id_tests {
         };
         info.clear_initiators();
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(connector)),
+            info.start_commit_transaction_from_api(Id(connector)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
         ));
         info.transaction_state = TransactionState::None;
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(connector)),
+            info.start_commit_transaction_from_api(Id(connector)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
         ));
 
@@ -11547,7 +11559,7 @@ mod commit_transaction_id_tests {
         let mut info = single_host();
         info.last_transaction_id = 7;
         assert!(matches!(
-            info.start_commit_transaction_from_api(Some(5)),
+            info.start_commit_transaction_from_api(Id(5)),
             Err(ControllerError::TransactionIdMismatch {
                 requested: 5,
                 open: None
@@ -11560,13 +11572,13 @@ mod commit_transaction_id_tests {
     fn commit_without_id() {
         let mut info = single_host();
         assert!(matches!(
-            info.start_commit_transaction_from_api(None),
+            info.start_commit_transaction_from_api(Open),
             Err(ControllerError::NoTransactionInProgress)
         ));
         info.start_transaction_from_api().unwrap();
-        assert!(info.start_commit_transaction_from_api(None).unwrap());
+        assert!(info.start_commit_transaction_from_api(Open).unwrap());
         assert!(matches!(
-            info.start_commit_transaction_from_api(None),
+            info.start_commit_transaction_from_api(Open),
             Err(ControllerError::NoTransactionInProgress)
         ));
     }

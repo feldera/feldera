@@ -2,7 +2,7 @@
 //! pipelines on an engine, and tests that reach no engine.
 
 use crate::{
-    Controller, PipelineState,
+    Controller, PipelineState, TransactionToCommit,
     adhoc::execute_sql,
     format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields},
     integrated::delta_table::output::delta_variant_types,
@@ -4997,7 +4997,9 @@ fn paused_reader_holds_permit(engine: &dyn PipelineTestEngine, transaction_mode:
 
         // 6. The transaction can commit only after `light` reads its other files, which
         //    needs the permit.
-        pipeline.start_commit_transaction(None).unwrap();
+        pipeline
+            .start_commit_transaction(TransactionToCommit::Open)
+            .unwrap();
         let committed = wait(
             || {
                 pipeline.api_status(false).global_metrics.transaction_id != transaction_id
