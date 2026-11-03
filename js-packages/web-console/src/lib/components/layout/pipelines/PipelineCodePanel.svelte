@@ -31,6 +31,13 @@
   import { isUpgradeRequired, isPipelineCodeEditable } from '#lib/functions/pipelines/status.ts'
   import FocusBanner from '#lib/components/pipelines/editor/FocusBanner.svelte'
   import StorageInUseBanner from '#lib/components/pipelines/editor/StorageInUseBanner.svelte'
+  import PastedLinkSaveDialog from '#lib/components/pipelines/editor/PastedLinkSaveDialog.svelte'
+  import {
+    pastedLinkFileNames,
+    usePastedLinks
+  } from '#lib/compositions/pipelines/usePastedLink.svelte.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { useCodeEditorSettings } from '#lib/compositions/pipelines/useCodeEditorSettings.svelte.ts'
 
   let {
     pipeline,
@@ -99,9 +106,13 @@
   const rustUdfsOffMessage = 'Rust UDFs are turned off by the operator of this Feldera instance'
   const rustUdfsAllowed = $derived(page.data.feldera?.config.allow_rust_udfs ?? true)
 
+  const pastedLinks = usePastedLinks()
+  let pastedLinkFiles = $derived(pastedLinks.get(pipeline.current.name))
+
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
+    const drafts = pastedLinkFiles
     const lockUdfRs = !rustUdfsAllowed && current.programUdfRs.trim() === ''
     const lockUdfToml = !rustUdfsAllowed && current.programUdfToml.trim() === ''
     return [
@@ -119,7 +130,8 @@
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['program.sql']
-        )
+        ),
+        initialDraft: drafts?.['program.sql']
       },
       {
         name: `stubs.rs`,
@@ -156,6 +168,7 @@
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['udf.rs']
         ),
+        initialDraft: lockUdfRs ? undefined : drafts?.['udf.rs'],
         placeholder: lockUdfRs
           ? `// ${rustUdfsOffMessage}.`
           : `// UDF implementation in Rust.
@@ -187,6 +200,7 @@ pub fn my_udf(input: String) -> Result<String, Box<dyn std::error::Error>> {
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['udf.toml']
         ),
+        initialDraft: lockUdfToml ? undefined : drafts?.['udf.toml'],
         placeholder: lockUdfToml
           ? `# ${rustUdfsOffMessage}.`
           : `# List Rust dependencies required by udf.rs.
@@ -203,7 +217,35 @@ example = "1.0"`,
   })
 
   let downstreamChanged = $state(false)
-  let saveFile = $state(() => {})
+  let saveFile = $state(async () => false)
+
+  // While the pipeline has code from a link, every save asks the user to confirm.
+  // Confirming clears the pipeline's entry in `usePastedLinks`, which restores the
+  // user's autosave setting.
+  const globalDialog = useGlobalDialog()
+  let pastedLinkSaveRequest = $state<{
+    fileNames: string[]
+    resolve: (isConfirmed: boolean) => void
+  }>()
+  const confirmPastedLinkSave = () => {
+    // `pipelineName` can change before the user answers.
+    const confirmedPipelineName = pipelineName
+    const fileNames = pastedLinkFiles ? pastedLinkFileNames(pastedLinkFiles) : []
+    return new Promise<boolean>((resolve) => {
+      pastedLinkSaveRequest = {
+        fileNames,
+        resolve: (isConfirmed) => {
+          if (isConfirmed) {
+            pastedLinks.clear(confirmedPipelineName)
+          }
+          resolve(isConfirmed)
+        }
+      }
+      globalDialog.dialog = pastedLinkSaveDialog
+    })
+  }
+  let confirmSave = $derived(pastedLinkFiles ? confirmPastedLinkSave : undefined)
+  const { autoSaveFiles } = useCodeEditorSettings()
 
   // Reference to CodeEditor component to access openFile/revealLine/setSelections
   let codeEditorRef: CodeEditor | undefined = $state(undefined)
@@ -219,6 +261,9 @@ example = "1.0"`,
       disposeCodeEditorFile(`${pipelineNameToDrop}/${fileName}`)
     }
     delete currentPipelineFile[pipelineNameToDrop]
+    // Disposing the models discards the link's code. Clear the entry, so that the
+    // code does not come back when the pipeline opens again.
+    pastedLinks.clear(pipelineNameToDrop)
   }
 
   // Enforce the "only the current pipeline has in-memory state" invariant:
@@ -373,6 +418,8 @@ example = "1.0"`,
   editDisabled={codeReadOnly}
   readOnlyMessage={!codeEdit.allowed ? 'You have read-only access' : undefined}
   bind:currentFileName={currentPipelineFile[pipelineName]}
+  autoSave={autoSaveFiles.value && !pastedLinkFiles}
+  {confirmSave}
   bind:downstreamChanged
   bind:saveFile
   {statusBarCenter}
@@ -435,7 +482,17 @@ example = "1.0"`,
 
 <!--
   Prevents leaving the pipeline with unsaved changes. The dialog offers
-  "Save and continue", "Discard changes", or "Cancel". On save-and-continue,
-  all dirty files are pushed upstream and then navigation proceeds.
+  "Save and continue", "Discard changes", or "Cancel". On "Save and continue",
+  the panel saves all unsaved files and then navigation proceeds. If the user
+  cancels the save, the page stays open.
 -->
 <UnsavedPipelineChanges unsavedChanges={downstreamChanged} save={() => saveFile()} />
+
+{#snippet pastedLinkSaveDialog()}
+  {#if pastedLinkSaveRequest}
+    <PastedLinkSaveDialog
+      fileNames={pastedLinkSaveRequest.fileNames}
+      onResolve={pastedLinkSaveRequest.resolve}
+    />
+  {/if}
+{/snippet}
