@@ -650,6 +650,104 @@ mod tests {
         assert!(dirs.contains(format!("{base}-1").as_str()));
     }
 
+    /// Every item that `support_bundle_stream` yields for `stored` and
+    /// `collection`.
+    async fn stream_results<C>(
+        stored: Vec<SupportBundleData>,
+        collection: Option<C>,
+        params: SupportBundleParameters,
+    ) -> Vec<Result<Bytes, ManagerError>>
+    where
+        C: Future<Output = Result<SupportBundleData, ManagerError>>,
+    {
+        use futures_util::StreamExt;
+        support_bundle_stream(
+            fake_pipeline("p"),
+            stored,
+            collection,
+            params,
+            Duration::from_secs(10),
+        )
+        .collect()
+        .await
+    }
+
+    /// The ZIP file made of `results`, which must all be `Ok`.
+    fn zip_of(results: Vec<Result<Bytes, ManagerError>>) -> Vec<u8> {
+        results
+            .into_iter()
+            .flat_map(|chunk| chunk.unwrap().to_vec())
+            .collect()
+    }
+
+    /// The directories of the collections listed in `bundle`'s metadata.
+    fn collection_dirs(bundle: &[u8]) -> Vec<String> {
+        let mut metadata = String::new();
+        read_zip(bundle)
+            .by_name("metadata.json")
+            .unwrap()
+            .read_to_string(&mut metadata)
+            .unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+        metadata["collections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["directory"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// `limit` counts the new collection, which comes first.
+    #[tokio::test]
+    async fn limit_counts_the_new_collection() {
+        let mut new = SupportBundleData::test_data();
+        new.time += chrono::Duration::days(1);
+        let new_dir = timestamp_dir(&new.time);
+        let params = SupportBundleParameters {
+            limit: Some(1),
+            ..Default::default()
+        };
+        let stored = vec![
+            SupportBundleData::test_data(),
+            SupportBundleData::test_data(),
+        ];
+        let results = stream_results(stored, Some(async { Ok(new) }), params).await;
+        assert_eq!(collection_dirs(&zip_of(results)), vec![new_dir]);
+    }
+
+    /// Without a new collection, the bundle has no collection log.
+    #[tokio::test]
+    async fn bundle_without_collection_has_no_collection_log() {
+        let results = stream_results(
+            vec![SupportBundleData::test_data()],
+            None::<std::future::Ready<Result<SupportBundleData, ManagerError>>>,
+            SupportBundleParameters::default(),
+        )
+        .await;
+        let bundle = zip_of(results);
+        assert!(read_zip(&bundle).by_name(COLLECTION_LOG).is_err());
+        assert_eq!(collection_dirs(&bundle).len(), 1);
+    }
+
+    /// A collection that fails after the response started ends the stream
+    /// with the error, which cuts the response short.
+    #[tokio::test]
+    async fn failed_collection_ends_the_stream_with_an_error() {
+        let results = stream_results(
+            vec![SupportBundleData::test_data()],
+            Some(async { Err(bundle_error("collection failed", "test")) }),
+            SupportBundleParameters::default(),
+        )
+        .await;
+        let (last, rest) = results.split_last().unwrap();
+        assert!(!rest.is_empty());
+        assert!(rest.iter().all(|chunk| chunk.is_ok()));
+        assert!(
+            last.as_ref()
+                .is_err_and(|e| e.to_string().contains("collection failed"))
+        );
+    }
+
     /// The bundle sends bytes while a slow collection runs, not only at its
     /// end, and the result is still one valid ZIP file.
     #[tokio::test(start_paused = true)]
