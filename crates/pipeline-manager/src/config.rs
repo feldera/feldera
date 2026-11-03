@@ -1314,6 +1314,16 @@ pub struct ApiServerConfig {
 
     /// Allowed origins for CORS configuration. Cannot be used together with
     /// --dev-mode=true.
+    ///
+    /// The API server allows credentialed CORS requests only from the listed
+    /// origins. Without this option, the API server allows CORS requests from
+    /// any origin, but not credentialed ones.
+    ///
+    /// The API server does not use cookies. The web console and API clients
+    /// authenticate with a token in the `Authorization` header, and work
+    /// without this option. Credentialed requests carry cookies or HTTP Basic
+    /// authentication, which only matter for an authenticating proxy in front
+    /// of the API server.
     #[serde(default)]
     #[arg(long)]
     pub allowed_origins: Option<Vec<String>>,
@@ -1703,22 +1713,25 @@ impl ApiServerConfig {
             }
             actix_cors::Cors::permissive()
         } else {
-            let mut cors = actix_cors::Cors::default().block_on_origin_mismatch(true); // Retain default behavior of actix-cors 0.6.x
-            if let Some(ref origins) = self.allowed_origins {
-                for origin in origins {
-                    cors = cors.allowed_origin(origin);
-                }
-            } else {
-                cors = cors.allow_any_origin();
-            }
-            cors.allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
+            let cors = actix_cors::Cors::default()
+                .block_on_origin_mismatch(true) // Retain default behavior of actix-cors 0.6.x
+                .allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
                 .allowed_headers(vec![
                     header::AUTHORIZATION,
                     header::ACCEPT,
                     header::CONTENT_TYPE,
                     header::HeaderName::from_static(crate::auth::TENANT_HEADER),
-                ])
-                .supports_credentials()
+                ]);
+            match self.allowed_origins {
+                // Only the listed origins may send credentials (cookies, HTTP auth).
+                Some(ref origins) => origins
+                    .iter()
+                    .fold(cors, |cors, origin| cors.allowed_origin(origin))
+                    .supports_credentials(),
+                // Any origin may call the API, but browsers send no cookies or HTTP auth.
+                // The API needs neither because clients set the `Authorization` header.
+                None => cors.allow_any_origin(),
+            }
         }
     }
 

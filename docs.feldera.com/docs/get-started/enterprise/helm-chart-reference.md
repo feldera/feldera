@@ -182,7 +182,7 @@ Tenant-based authorization for the API server. Requires `auth.enabled: true`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `allowedOrigins` | `null` | List of allowed CORS origins. `null` permits all origins. Example: `["https://app.example.com"]`. |
+| `allowedOrigins` | `null` | List of allowed CORS origins. The API server allows credentialed CORS requests only from listed origins. `null` allows CORS requests from all origins, but not credentialed ones. The web console and API clients authenticate with a token in the `Authorization` header, and work with `null`. Credentialed requests carry cookies or HTTP Basic authentication, which only matter for an authenticating proxy in front of the API server. Example: `["https://app.example.com"]`. |
 | `posthogTelemetryKey` | `null` | PostHog API key for usage telemetry. No data is collected when `null`. |
 | `FELDERA_HTTP_BASE_PATH` (set through `controlPlane.env`) | `""` | URL path prefix the API and web console are served under, for example `/feldera`, when an ingress mounts Feldera on a subpath. See [serving Feldera under a URL subpath](/get-started/docker#serving-feldera-under-a-url-subpath). |
 
