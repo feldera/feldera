@@ -257,7 +257,13 @@ fn an_outage_aborts_and_replays_the_transaction() {
         "{:?}",
         callbacks.errors()
     );
-    assert_eq!(endpoint.memory(), 0, "the spool must be released at commit");
+    // Not `endpoint.memory()`: that adds the producer queue size from the
+    // last `statistics.interval.ms` snapshot, which can be seconds stale.
+    assert_eq!(
+        endpoint.spool.memory_bytes(),
+        0,
+        "the spool must be released at commit"
+    );
     assert_eq!(callbacks.metric("kafka_output_replay_spool_bytes"), 0.0);
 
     let received = read_topic(&cluster);
