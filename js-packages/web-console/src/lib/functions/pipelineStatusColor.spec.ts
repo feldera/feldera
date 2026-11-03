@@ -19,8 +19,8 @@ const expectedTones: [PipelineStatus, StatusTone][] = [
   ['Suspended', 'neutral'],
   [{ Queued: { cause: 'compile' } }, 'warning'],
   [{ CompilingSql: { cause: 'compile' } }, 'warning'],
-  [{ SqlCompiled: { cause: 'upgrade' } }, 'warning'],
-  [{ CompilingRust: { cause: 'upgrade' } }, 'warning'],
+  [{ SqlCompiled: { cause: 'start' } }, 'warning'],
+  [{ CompilingRust: { cause: 'start' } }, 'warning'],
   ['Preparing', 'blue'],
   ['Provisioning', 'blue'],
   ['Initializing', 'blue'],
@@ -46,7 +46,7 @@ describe('pipelineStatusTone', () => {
   })
 
   it('ignores the compilation cause', () => {
-    expect(pipelineStatusTone({ Queued: { cause: 'upgrade' } })).toBe(
+    expect(pipelineStatusTone({ Queued: { cause: 'start' } })).toBe(
       pipelineStatusTone({ Queued: { cause: 'compile' } })
     )
   })

@@ -178,25 +178,14 @@ export const consolidatePipelineStatus = (
   desiredStatus: _CombinedDesiredStatus,
   pipelineError: ErrorResponse | null | undefined
 ) => {
+  // The `cause` tells why a stopped pipeline compiles. The `cause` is `'start'` when a
+  // start is scheduled after the compilation, and `'compile'` otherwise.
+  const cause = desiredStatus === 'Stopped' ? ('compile' as const) : ('start' as const)
   const status = match([deploymentStatus, desiredStatus, programStatus])
-    .with(['Stopped', P.any, 'Pending'], () => ({
-      Queued: { cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const) }
-    }))
-    .with(['Stopped', P.any, 'CompilingSql'], () => ({
-      CompilingSql: {
-        cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const)
-      }
-    }))
-    .with(['Stopped', P.any, 'SqlCompiled'], () => ({
-      SqlCompiled: {
-        cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const)
-      }
-    }))
-    .with(['Stopped', P.any, 'CompilingRust'], () => ({
-      CompilingRust: {
-        cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const)
-      }
-    }))
+    .with(['Stopped', P.any, 'Pending'], () => ({ Queued: { cause } }))
+    .with(['Stopped', P.any, 'CompilingSql'], () => ({ CompilingSql: { cause } }))
+    .with(['Stopped', P.any, 'SqlCompiled'], () => ({ SqlCompiled: { cause } }))
+    .with(['Stopped', P.any, 'CompilingRust'], () => ({ CompilingRust: { cause } }))
     .with(['Stopped', P.any, 'SqlError'], () => 'SqlError' as const)
     .with(['Stopped', P.any, 'RustError'], () => 'RustError' as const)
     .with(['Stopped', P.any, 'SystemError'], () => 'SystemError' as const)
