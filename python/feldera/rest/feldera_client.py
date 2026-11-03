@@ -1149,6 +1149,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         return self.http.post(
             path=f"/pipelines/{pipeline_name}/diff",
             body=body,
+            idempotent=True,
         )
 
     def validate_program(
@@ -1189,6 +1190,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         return self.http.post(
             path="/validate_program",
             body=body,
+            idempotent=True,
         )
 
     def commit_transaction(
@@ -1631,6 +1633,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{quote(pipeline_name, safe='')}/egress/{quote(table_name, safe='')}",
             params=params,
             stream=True,
+            idempotent=True,
         )
 
         end = time.monotonic() + timeout if timeout else None

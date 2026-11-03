@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import time
 from contextlib import contextmanager
 from typing import Iterable, List, Optional
@@ -272,6 +273,79 @@ class TestRetryBehavior:
             client.post("/foo", idempotent=True)
         assert m.call_count == 2
 
+    @pytest.mark.parametrize("status", [502, 503, 504])
+    def test_post_status_after_possible_apply_is_not_retried(self, status):
+        # The server may have applied the POST before this status arrived
+        # (feldera/feldera#7748), so a retry could apply it twice.
+        client = _make_client()
+        with patch_requests("post", [_make_response(status)]) as m:
+            with pytest.raises(FelderaAPIError) as exc_info:
+                client.post("/foo")
+        assert exc_info.value.status_code == status
+        assert m.call_count == 1
+
+    @pytest.mark.parametrize("status", [502, 503, 504])
+    def test_post_marked_idempotent_retries_status(self, status):
+        client = _make_client()
+        with patch_requests(
+            "post", [_make_response(status), _make_response(200, b"{}")]
+        ) as m:
+            client.post("/foo", idempotent=True)
+        assert m.call_count == 2
+
+    @pytest.mark.parametrize("status", [408, 429])
+    def test_post_status_before_apply_is_retried(self, status):
+        client = _make_client()
+        with patch_requests(
+            "post", [_make_response(status), _make_response(200, b"{}")]
+        ) as m:
+            client.post("/foo")
+        assert m.call_count == 2
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "DeadlockDetected",
+            "LockTookTooLong",
+            "PipelineInteractionNotDeployed",
+            "CompilerUnavailable",
+        ],
+    )
+    def test_post_503_not_applied_is_retried(self, code):
+        # The manager sends these codes when it did not apply the request.
+        client = _make_client()
+        body = json.dumps({"message": "x", "error_code": code, "details": {}})
+        with patch_requests(
+            "post", [_make_response(503, body.encode()), _make_response(200, b"{}")]
+        ) as m:
+            client.post("/foo")
+        assert m.call_count == 2
+
+    def test_post_503_other_code_is_not_retried(self):
+        client = _make_client()
+        body = json.dumps({"error_code": "RunnerInteractionUnreachable"})
+        with patch_requests("post", [_make_response(503, body.encode())]) as m:
+            with pytest.raises(FelderaAPIError):
+                client.post("/foo")
+        assert m.call_count == 1
+
+    def test_post_read_timeout_is_not_retried(self):
+        client = _make_client()
+        with patch_requests("post", [requests.exceptions.ReadTimeout("slow")]) as m:
+            with pytest.raises(FelderaTimeoutError):
+                client.post("/foo")
+        assert m.call_count == 1
+
+    def test_post_connect_timeout_is_retried(self):
+        # The request was never sent, so a retry cannot apply it twice.
+        client = _make_client()
+        with patch_requests(
+            "post",
+            [requests.exceptions.ConnectTimeout("conn"), _make_response(200, b"{}")],
+        ) as m:
+            client.post("/foo")
+        assert m.call_count == 2
+
     def test_get_marked_not_idempotent_skips_connection_error_retry(self):
         client = _make_client()
         with patch_requests("get", [requests.exceptions.ConnectionError("down")]) as m:
@@ -509,6 +583,19 @@ class TestClientMarksIdempotentEndpoints:
         client = self._client_with_mock_http()
         client.delete_pipeline("p")
         assert client.http.delete.call_args.kwargs["idempotent"] is True
+
+    def test_read_only_posts_are_idempotent(self):
+        client = self._client_with_mock_http()
+        client.pipeline_diff("p", program_code="")
+        assert client.http.post.call_args.kwargs["idempotent"] is True
+        client.validate_program("")
+        assert client.http.post.call_args.kwargs["idempotent"] is True
+
+    def test_patch_pipeline_is_not_idempotent(self):
+        # A replayed rename finds the old name gone; a 5xx must not retry it.
+        client = self._client_with_mock_http()
+        client.patch_pipeline("p", description="d")
+        assert "idempotent" not in client.http.patch.call_args.kwargs
 
 
 class TestFelderaClientAcceptsRetryConfig:

@@ -15,6 +15,12 @@ class RetryConfig:
     504 by default). 401 is not among them; it is handled separately, and only
     for a callable credential, by `expired_token_wait_seconds`.
 
+    A request that is not idempotent (POST/PUT/PATCH/DELETE not marked
+    `idempotent=True`) retries only connect timeouts, 408/429, and a 503
+    whose error code shows the request was not applied (such as
+    `DeadlockDetected`), because after other failures the server may already
+    have applied it.
+
     Wait strategies:
       - 408, 429, 503, 504 and connection/read timeouts use exponential
         backoff: `min(initial_backoff * (multiplier ** n), max_backoff)`,

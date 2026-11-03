@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Behavior change (Python SDK): a request that is not idempotent, such as
+  HTTP ingress, `patch_pipeline` or a checkpoint, no longer retries after a
+  502, 503 or 504 response or a read timeout, because the server may already
+  have applied it and a retry could apply it twice (for example, insert the
+  same rows twice). It still retries a connect timeout, a 408 or 429
+  response, and a 503 whose error code shows the request was not applied
+  (`DeadlockDetected`, `LockTookTooLong`, `PipelineInteractionNotDeployed`,
+  `CompilerUnavailable`). GET requests and idempotent requests keep the full
+  retry policy.
+
 ## v0.373.0
 
 - With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
