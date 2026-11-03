@@ -10,7 +10,7 @@ Feldera Enterprise brings all the power of our incremental compute platform into
 <img
   src="/img/enterprise-architecture.png"
   alt="Feldera Enterprise Architecture"
-  style={{ width: '70%', maxWidth: '800px' }}
+  style={{ width: '100%' }}
 />
 </div>
 
