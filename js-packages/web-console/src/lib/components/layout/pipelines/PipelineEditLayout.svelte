@@ -510,7 +510,8 @@
           </span>
           <div class="{icon} {value.value ? 'text-secondary-500' : ''}"></div>
         </button>
-        <div class="pointer-events-none w-0 -translate-x-0.5">|</div>
+        <!-- A faint 16px rule between the controls. -->
+        <div class="mx-1 h-4 w-px bg-surface-950-50/15" aria-hidden="true"></div>
       {/if}
     {/each}
   </div>

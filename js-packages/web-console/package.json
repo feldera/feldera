@@ -145,7 +145,11 @@
     "test-integration": "bun run deps && vitest --run --project integration && vitest --run --project integration-client",
     "test-list": "bun run deps && vitest list --project integration --project integration-client && DISPLAY= bun playwright test --list && DISPLAY= bun playwright test -c playwright-auth.config.ts --list"
   },
-  "trustedDependencies": ["@axa-fr/oidc-client", "sk-oidc-oauth", "svelte-preprocess"],
+  "trustedDependencies": [
+    "@axa-fr/oidc-client",
+    "sk-oidc-oauth",
+    "svelte-preprocess"
+  ],
   "type": "module",
   "imports": {
     "#lib/*": "./src/lib/*",

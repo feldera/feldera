@@ -450,7 +450,11 @@ example = "1.0"`,
            header row, as in the tabbed panels below (`TabsPanel`). -->
       <div class="panel flex h-full flex-col p-0">
         {@render textEditor()}
-        <div class="flex flex-wrap items-center gap-x-8 border-t border-line py-[5px] pr-5 pl-5">
+        <!-- In dark mode the status bar takes the editor's near-black, so it reads as part of
+             the editor above it. -->
+        <div
+          class="flex flex-wrap items-center gap-x-8 border-t border-line py-[5px] pr-5 pl-5 dark:border-white/[0.06] dark:bg-dark"
+        >
           {@render statusBar()}
         </div>
       </div>
