@@ -6,6 +6,8 @@ import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.Utilities;
 
@@ -38,6 +40,13 @@ public class JsonDecoder {
 
         public void cache(Long originalId, IDBSPNode result) {
             Utilities.putNew(this.decoded, originalId, result);
+        }
+
+        /** True if {@code json} is a reference, or a node already decoded. */
+        public boolean isDecoded(JsonNode json) {
+            if (json.has("node"))
+                return true;
+            return this.decoded.containsKey(Utilities.getLongProperty(json, "id"));
         }
     }
 
@@ -123,10 +132,16 @@ public class JsonDecoder {
             JsonNode position = object.get("position");
             if (position != null && result instanceof DBSPNode dbspNode && dbspNode.getNode().isEmpty())
                 dbspNode.setSourcePosition(SourcePositionRange.fromJson(position));
-            if (outer)
+            if (outer) {
                 this.outer.cache(originalId, result);
-            else
+            } else {
                 this.inner.cache(originalId, result);
+                // The fromJson of an expression whose type follows from its children does not read
+                // the "type" property; decode it, so that a later reference to the type resolves.
+                JsonNode type = object.get("type");
+                if (result instanceof DBSPExpression && type != null && !this.inner.isDecoded(type))
+                    this.decodeInner(type, DBSPType.class);
+            }
             return result;
         } catch (InvocationTargetException e) {
             throw new RuntimeException("Error decoding " + cls.asText() + " with id " + originalId, e.getCause());
