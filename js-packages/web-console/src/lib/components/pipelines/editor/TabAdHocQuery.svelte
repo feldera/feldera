@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { tick } from 'svelte'
   import { enclosure, reclosureKey } from 'common-lib/function'
   import { type ExtendedPipeline } from '#lib/services/pipelineManager.ts'
   import Query, { type QueryData } from '#lib/components/adhoc/Query.svelte'
@@ -20,7 +21,6 @@
   import { type AsyncRecordBatchStreamReader, RecordBatchReader } from 'apache-arrow'
   import invariant from 'tiny-invariant'
   import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
-  import { useReverseScrollContainer } from 'common-ui'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
   import { getSelectedTenant } from '#lib/services/auth.ts'
 
@@ -30,11 +30,8 @@
   }: { pipeline: { current: ExtendedPipeline }; deleted?: boolean } = $props()
   let pipelineName = $derived(pipeline.current.name)
   let tenantName = $derived(getSelectedTenant() || '')
+  let scrollEl: HTMLElement | undefined = $state()
   let isInteractive = $derived(!deleted && isPipelineInteractive(pipeline.current.status))
-
-  const reverseScroll = useReverseScrollContainer({
-    observeContentElement: (e) => e.firstElementChild!
-  })
 
   $effect.pre(() => {
     if (!adhocQueries[tenantName]) {
@@ -154,7 +151,16 @@
               adhocQueries[tenantName][pipelineName].queries[i].result?.rows().at(0)
             )
           ) {
+            // The new box appears above the query that just ran; scroll by the height it
+            // adds, so that query and its results stay where they were on screen.
+            const ranEl = scrollEl?.querySelector<HTMLElement>(`[data-query-index="${i}"]`)
+            const topBefore = ranEl?.getBoundingClientRect().top
             adhocQueries[tenantName][pipelineName].queries.push({ query: '' })
+            if (ranEl && scrollEl && topBefore !== undefined) {
+              tick().then(() => {
+                scrollEl!.scrollTop += ranEl.getBoundingClientRect().top - topBefore
+              })
+            }
           }
           adhocQueries[tenantName][pipelineName].queries[i].progress = false
         }
@@ -162,7 +168,12 @@
     }
 </script>
 
-<div class="scrollbar h-full min-h-full overflow-y-auto px-3 pt-4" use:reverseScroll.action>
+<!-- Newest query first: the box for the next query sits on top, earlier queries and their
+     results follow. A size container, so results can be capped at a share of its height. -->
+<div
+  bind:this={scrollEl}
+  class="[container-type:size] scrollbar h-full min-h-full overflow-y-auto px-3 pt-4"
+>
   <div class="flex flex-col gap-6">
     {#if deleted}
       <div data-testid="box-adhoc-banner">
@@ -177,27 +188,31 @@
         </WarningBanner>
       </div>
     {/if}
-    {#each adhocQueries[tenantName]?.[pipelineName]?.queries ?? [] as x, i}
+    {#each [...(adhocQueries[tenantName]?.[pipelineName]?.queries ?? []).keys()].reverse() as i (i)}
+      {@const x = adhocQueries[tenantName][pipelineName].queries[i]}
       {#if x}
         {invariant(adhocQueries[tenantName][pipelineName].queries[i])}
-        <Query
-          bind:query={adhocQueries[tenantName][pipelineName].queries[i].query}
-          progress={adhocQueries[tenantName][pipelineName].queries[i]!.progress}
-          result={adhocQueries[tenantName][pipelineName].queries[i]!.result}
-          onSubmitQuery={onSubmitQuery(tenantName, pipelineName, i)}
-          onDeleteQuery={() => {
-            if (!adhocQueries[tenantName][pipelineName].queries[i]) {
-              return
-            }
-            adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream()
-            adhocQueries[tenantName][pipelineName].queries[i] = undefined // Overwrite with undefined instead of splice to preserve indices of other elements
-          }}
-          onCancelQuery={adhocQueries[tenantName][pipelineName].queries[i]!.progress
-            ? adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream
-            : undefined}
-          disabled={!isInteractive}
-          isLastQuery={adhocQueries[tenantName][pipelineName].queries.length === i + 1}
-        ></Query>
+        <div data-query-index={i}>
+          <Query
+            bind:query={adhocQueries[tenantName][pipelineName].queries[i].query}
+            progress={adhocQueries[tenantName][pipelineName].queries[i]!.progress}
+            result={adhocQueries[tenantName][pipelineName].queries[i]!.result}
+            onSubmitQuery={onSubmitQuery(tenantName, pipelineName, i)}
+            onDeleteQuery={() => {
+              if (!adhocQueries[tenantName][pipelineName].queries[i]) {
+                return
+              }
+              adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream()
+              adhocQueries[tenantName][pipelineName].queries[i] = undefined // Overwrite with undefined instead of splice to preserve indices of other elements
+            }}
+            onCancelQuery={adhocQueries[tenantName][pipelineName].queries[i]!.progress
+              ? adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream
+              : undefined}
+            disabled={!isInteractive}
+            isLastQuery={adhocQueries[tenantName][pipelineName].queries.length === i + 1}
+            number={i + 1}
+          ></Query>
+        </div>
       {/if}
     {/each}
   </div>

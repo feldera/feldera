@@ -205,7 +205,8 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
     await expect.element(page.getByText('Stopped before any row arrived')).toBeInTheDocument()
 
     // The second run falls through to the default mock, which delivers the one-row fixture.
-    await page.getByRole('button', { name: 'Run query' }).first().click()
+    // Newest queries are listed first, so the original query's Run button is the last one.
+    await page.getByRole('button', { name: 'Run query' }).last().click()
     await expect.element(page.getByText('1 row', { exact: true })).toBeInTheDocument()
     expect(page.getByText('then stopped').elements()).toHaveLength(0)
     expect(page.getByText('Stopped before any row arrived').elements()).toHaveLength(0)

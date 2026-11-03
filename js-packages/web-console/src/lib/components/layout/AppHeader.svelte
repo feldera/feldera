@@ -19,20 +19,25 @@
     class?: string
   } = $props()
   const darkMode = useDarkMode()
+  // Next to breadcrumbs the bird alone is enough; the full logo would crowd them.
+  const birdOnly = $derived(!!afterStart)
 
   const healthStatus = useClusterHealth()
 </script>
 
 <div class="flex flex-row items-center justify-between gap-2 border-b border-line py-1 {class_}">
-  <a class="flex h-12 items-center lg:items-start lg:pr-2.5" href={resolve('/')}>
-    <span class="relative top-1.5 hidden lg:flex">
+  <a
+    class="flex h-12 items-center {birdOnly ? 'pr-1' : 'lg:items-start lg:pr-2.5'}"
+    href={resolve('/')}
+  >
+    <span class="relative top-1.5 hidden {birdOnly ? '' : 'lg:flex'}">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogoWhite class="h-[30px]"></FelderaModernLogoWhite>
       {:else}
         <FelderaModernLogoBlack class="h-[30px] fill-[#3d4030]"></FelderaModernLogoBlack>
       {/if}
     </span>
-    <span class="flex lg:hidden">
+    <span class="flex {birdOnly ? '' : 'lg:hidden'}">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogomarkWhite class="h-7"></FelderaModernLogomarkWhite>
       {:else}

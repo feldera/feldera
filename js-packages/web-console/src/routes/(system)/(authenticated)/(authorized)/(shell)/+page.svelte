@@ -83,7 +83,7 @@
 {/snippet}
 
 <!-- The home page uses 20px side gutters (as the pipeline page) rather than the default 32px. -->
-<AppHeader class="px-2 md:px-8">
+<AppHeader class="px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
   {#snippet beforeEnd()}
     {#if !isScreenMd.current}
       <button
