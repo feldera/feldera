@@ -15,3 +15,5 @@ pub mod redis;
 pub mod s2;
 pub mod s3;
 pub mod url;
+
+pub(crate) mod object_store;

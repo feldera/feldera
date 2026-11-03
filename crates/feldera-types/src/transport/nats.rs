@@ -402,6 +402,49 @@ impl NatsInputConfig {
     }
 }
 
+impl crate::sensitive::SensitiveValues for ConnectOptions {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        use crate::sensitive::{visit_optional, visit_url};
+        visit_url("connection_config.server_url", &self.server_url, visit);
+        if let Some(Credentials::FromString(value)) = &self.auth.credentials {
+            visit("connection_config.auth.credentials.FromString", value);
+        }
+        visit_optional(
+            "connection_config.auth.jwt",
+            self.auth.jwt.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "connection_config.auth.nkey",
+            self.auth.nkey.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "connection_config.auth.token",
+            self.auth.token.as_deref(),
+            visit,
+        );
+        if let Some(auth) = &self.auth.user_and_password {
+            visit(
+                "connection_config.auth.user_and_password.password",
+                &auth.password,
+            );
+        }
+    }
+}
+
+impl crate::sensitive::SensitiveValues for NatsInputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        self.connection_config.visit_sensitive_values(visit);
+    }
+}
+
+impl crate::sensitive::SensitiveValues for NatsOutputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        self.connection_config.visit_sensitive_values(visit);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

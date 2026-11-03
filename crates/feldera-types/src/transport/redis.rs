@@ -16,3 +16,9 @@ pub struct RedisOutputConfig {
 fn default_separator() -> String {
     ":".to_string()
 }
+
+impl crate::sensitive::SensitiveValues for RedisOutputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        crate::sensitive::visit_url("connection_string", &self.connection_string, visit);
+    }
+}
