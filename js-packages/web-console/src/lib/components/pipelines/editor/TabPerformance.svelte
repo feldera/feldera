@@ -373,7 +373,7 @@
             </div>
             <div class="flex w-full flex-col gap-2 xl:flex-row">
               <div
-                class="bg-white-dark relative h-52 w-full max-w-[700px] rounded-lg border border-line dark:border-[#3f3f3f]"
+                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-[#3f3f3f]"
               >
                 <PipelineThroughputGraph
                   {pipeline}
@@ -383,7 +383,7 @@
                 ></PipelineThroughputGraph>
               </div>
               <div
-                class="bg-white-dark relative h-52 w-full max-w-[700px] rounded-lg border border-line dark:border-[#3f3f3f]"
+                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-[#3f3f3f]"
               >
                 <PipelineMemoryGraph
                   {pipeline}
@@ -394,7 +394,7 @@
                 ></PipelineMemoryGraph>
               </div>
               <div
-                class="bg-white-dark relative h-52 w-full max-w-[700px] rounded-lg border border-line dark:border-[#3f3f3f]"
+                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-[#3f3f3f]"
               >
                 <PipelineStorageGraph
                   {pipeline}
@@ -411,9 +411,7 @@
               {checkpointStatus}
               onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
             />
-            <CommitProgressIndicator
-              {metrics}
-              class="bg-white-dark w-full max-w-[1540px] rounded p-2"
+            <CommitProgressIndicator {metrics} class="w-full max-w-[1540px] rounded bg-inset p-2"
             ></CommitProgressIndicator>
           </div>
           {#if metrics.current.views.size || metrics.current.tables.size}

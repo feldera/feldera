@@ -350,10 +350,10 @@
         >
       {/if}
     {/if}
-    {#if updatedText}
-      <span class="text-surface-600-400">{updatedText}</span>
-    {/if}
   </div>
+  {#if updatedText}
+    <span class="text-sm text-surface-600-400">{updatedText}</span>
+  {/if}
   <div class="relative {className}">
     <svg
       width="100%"

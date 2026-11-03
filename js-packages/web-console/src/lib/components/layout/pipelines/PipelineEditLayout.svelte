@@ -470,7 +470,7 @@
 {#snippet statusBarCenter()}
   {#if pipelineThumb}
     {@const programStatus = programStatusOf(pipelineThumb.status)}
-    <div class="contents text-[12px]">
+    <div class="contents text-base text-surface-700-300">
       <ProgramStatus {programStatus}></ProgramStatus>
       <div class="flex items-center gap-2 pl-1">
         <PipelineVersion
@@ -505,7 +505,7 @@
           class="btn btn-sm text-surface-700-300 hover:bg-row-hover hover:text-surface-950-50"
           onclick={() => (value.value = !value.value)}
         >
-          <span class="hidden sm:inline">
+          <span class="hidden text-base sm:inline">
             {text}
           </span>
           <div class="{icon} {value.value ? 'text-secondary-500' : ''}"></div>

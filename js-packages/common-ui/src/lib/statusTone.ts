@@ -40,9 +40,11 @@ export const statusChipClass =
 
 /**
  * The shape of a numeric badge next to a tab label or filter, such as an error
- * count. Combine it with a tone's `chip` colours.
+ * count: a 16px badge with 11px digits, small beside the label it follows. Combine
+ * it with a tone's `chip` colours.
  */
-export const statusCounterClass = 'inline-block min-w-6 rounded-[3px] px-1 text-center font-medium'
+export const statusCounterClass =
+  'inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] px-1 align-middle text-[11px] leading-none font-medium tabular-nums'
 
 // Class names are spelled out in full so that Tailwind can find them in the source.
 export const statusToneColors: Record<StatusTone, StatusColors> = {

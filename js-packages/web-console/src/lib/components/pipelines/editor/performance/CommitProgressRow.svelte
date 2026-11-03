@@ -91,8 +91,11 @@
     class="items-top flex max-w-150 basis-150 flex-wrap gap-x-4 gap-y-2 sm:h-16 {_class}"
     transition:slide
   >
-    <div class="flex w-full flex-col items-start justify-center sm:w-28 sm:items-center">
-      <div class="text-base text-nowrap">{label}</div>
+    <!-- With a header, the label shares its first line, so both start at the top. -->
+    <div
+      class="flex w-full flex-col items-start sm:w-28 {header ? 'justify-start' : 'justify-center'}"
+    >
+      <div class="text-sm text-nowrap">{label}</div>
       <div
         class="pointer-events-none {statusChipClass} {shown.status?.class ??
           statusToneColors.neutral.chip}"
@@ -101,14 +104,16 @@
       </div>
     </div>
 
-    <div class="flex h-full min-w-0 flex-1 flex-col justify-end gap-2">
+    <div
+      class="flex h-full min-w-0 flex-1 flex-col gap-2 {header ? 'justify-start' : 'justify-end'}"
+    >
       {@render header?.()}
       <!-- The bar and its counts share one grid cell with an invisible copy of
            their lines. The copy keeps the height of the row the same while the
            bar slides in or out. -->
       <div class="grid">
         <div class="invisible col-start-1 row-start-1 flex flex-col gap-2" aria-hidden="true">
-          <div class="text-base"><span class="font-dm-mono font-bold">&nbsp;</span></div>
+          <div class="text-sm"><span class="font-dm-mono font-bold">&nbsp;</span></div>
           <div class="h-2"></div>
         </div>
         {#if isBarShown}
@@ -117,7 +122,7 @@
             transition:slide
             data-testid="commit-progress-bar"
           >
-            <div class="text-base text-nowrap">
+            <div class="text-sm text-nowrap">
               {#if shown.progress}
                 <!-- The tooltips tell what the counts count. Thus, the labels are
                      short enough to fit on one line. -->

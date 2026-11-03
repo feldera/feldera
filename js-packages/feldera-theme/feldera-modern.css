@@ -345,6 +345,9 @@
   --color-toolbar: #f5f5f5;
   --color-row-hover: #f5f5f5;
   --color-line: #e2e5de;
+  /* Cards set into a panel, such as the Runtime tab's charts and tables: a step darker
+     than the white panel, as dark mode sets them a step darker than its grey panel. */
+  --color-inset: #f8f8f7;
   /* The olive line of the throughput, memory and storage charts. */
   --color-chart-line: #6a6e4f;
 }
@@ -376,6 +379,7 @@
   --color-toolbar: #222222;
   --color-row-hover: var(--color-surface-950);
   --color-line: rgb(255 255 255 / 0.1);
+  --color-inset: var(--color-dark);
   --color-chart-line: #a9bab2;
 }
 

@@ -400,7 +400,7 @@
            end in a wide gap after it. -->
       {item.value}{#if item.value === 'unhealthy'}<span
           data-testid="box-unhealthy-count"
-          class="-mr-1.5 ml-1 min-w-5! {statusCounterClass} {statusToneColors[
+          class="-mr-1.5 ml-1 {statusCounterClass} {statusToneColors[
             unhealthyCount > 0 ? 'error' : 'neutral'
           ].chip}">{unhealthyCount}</span
         >{/if}
@@ -739,7 +739,7 @@
   {@const chevronGutter = [...allData.values()].some((data) => data.connectors.length > 1)}
   <div class="latency-colors w-full {maxWidth}" data-testid={testId}>
     <div class="scrollbar w-full overflow-x-auto">
-      <div class="bg-white-dark w-max min-w-full overflow-hidden rounded">
+      <div class="w-max min-w-full overflow-hidden rounded bg-inset">
         <table class="metrics-table table h-min w-full text-[12px] leading-[18px]">
           <thead>
             {@render columnHeaders(chevronGutter, [...allData.keys()])}

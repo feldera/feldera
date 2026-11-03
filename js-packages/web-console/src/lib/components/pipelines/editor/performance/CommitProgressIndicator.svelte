@@ -93,10 +93,10 @@
     {#snippet header()}
       <!-- The line keeps its height while no transaction runs, so that the row
            does not change its height. -->
-      <div class="flex h-6 items-center font-dm-mono text-nowrap">
+      <div class="flex h-[18px] items-center text-sm text-nowrap tabular-nums">
         {#if transactionStatus !== null}
           <span
-            ><span class="select-none">ID: </span><span class="font-bold"
+            ><span class="select-none">ID:</span><span
               >{Math.round(shownTransactionId.current)}</span
             ></span
           >
