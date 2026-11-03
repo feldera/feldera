@@ -73,8 +73,10 @@
     toolBarEnd,
     fileTab,
     beforeTextArea,
+    autoSave,
+    confirmSave = async () => true,
     downstreamChanged: _downstreamChanged = $bindable(),
-    saveFile: _saveFile = $bindable(() => {}),
+    saveFile: _saveFile = $bindable(async () => false),
     isFocused: _isFocused = $bindable(false)
   }: {
     path: string
@@ -87,6 +89,8 @@
       placeholder?: string
       // Why a file without a setter is read-only; defaults to the compiler-generated hint.
       readOnlyMessage?: string
+      // Unsaved content to load over the saved content when the editor opens the file.
+      initialDraft?: string
     }[]
     currentFileName: string
     editDisabled?: boolean
@@ -99,8 +103,17 @@
     toolBarEnd?: Snippet<[{ saveFile: () => void }]>
     fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean, isSaved: boolean]>
     beforeTextArea?: Snippet
+    /** Whether edits save on their own. Defaults to the user's Autosave setting. */
+    autoSave?: boolean
+    /**
+     * Called before every save except the debounced autosave, which saves without it.
+     * Resolve to `false` to cancel the save. Turn `autoSave` off while saves need a
+     * confirmation.
+     */
+    confirmSave?: () => Promise<boolean>
     downstreamChanged?: boolean
-    saveFile?: () => void
+    /** Saves all unsaved files. Resolves to `false` if `confirmSave` cancels the save. */
+    saveFile?: () => Promise<boolean>
     isFocused?: boolean
   } = $props()
 
@@ -169,7 +182,8 @@
     _isFocused = isFocused
   })
 
-  let wait = $derived(autoSaveFiles.value ? 2000 : ('decoupled' as const))
+  let isAutoSaveOn = $derived(autoSave ?? autoSaveFiles.value)
+  let wait = $derived(isAutoSaveOn ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
 
   function isReadonlyProperty<T>(obj: T, prop: keyof T) {
@@ -182,7 +196,8 @@
   let filePath = $derived(getFilePath(file))
   let previousFilePath = $state<string | undefined>(undefined)
 
-  const initFileState = (filePath: string) => {
+  const initFileState = (file: (typeof files)[number]) => {
+    const filePath = getFilePath(file)
     if (openFiles[filePath]) {
       return
     }
@@ -213,11 +228,37 @@
       model,
       view: null
     }
+    if (file.initialDraft) {
+      // Fires onDidChangeContent, so the file shows as unsaved.
+      model.setValue(file.initialDraft)
+    }
   }
 
+  // Open every file with a draft right away, so that its tab shows as unsaved and
+  // `saveAll` includes it.
   $effect.pre(() => {
-    initFileState(filePath)
+    initFileState(file)
+    files.filter((file) => file.initialDraft).forEach(initFileState)
   })
+
+  /**
+   * Save every unsaved file if `confirmSave` allows it. Every save except the
+   * debounced autosave calls this function.
+   * @returns `false` if `confirmSave` cancels the save.
+   */
+  const saveAll = async () => {
+    const unsaved = files
+      .map((file) => openFiles[getFilePath(file)]?.sync)
+      .filter((sync) => sync && (sync.downstreamChanged || sync.upstreamChanged))
+    if (unsaved.length === 0) {
+      return true
+    }
+    if (!(await confirmSave())) {
+      return false
+    }
+    unsaved.forEach((sync) => sync.push())
+    return true
+  }
 
   $effect.pre(() => {
     file.access.current
@@ -248,7 +289,7 @@
       return
     }
     if (file.behaviorOnConflict === 'auto-push') {
-      openFiles[filePath].sync.push()
+      void saveAll()
       return
     }
   })
@@ -276,10 +317,10 @@
 
   $effect(() => {
     // Trigger save right away when autosave is turned on
-    if (!autoSaveFiles.value) {
+    if (!isAutoSaveOn) {
       return
     }
-    setTimeout(() => Object.values(openFiles).forEach((file) => file.sync.push()))
+    setTimeout(() => void saveAll())
   })
 
   let placeholderContent = $derived(file.placeholder)
@@ -293,14 +334,8 @@
     )
   })
 
-  // Save all dirty files for the currently-bound file set (matches the
-  // "any file dirty ⇒ dirty" semantic of _downstreamChanged above).
   $effect(() => {
-    _saveFile = () => {
-      for (const file of files) {
-        openFiles[getFilePath(file)]?.sync.push()
-      }
-    }
+    _saveFile = saveAll
   })
 
   let conflictWidgetRef: HTMLElement = $state(undefined!)
@@ -330,7 +365,7 @@
       </button>
       <button
         class=" !rounded-0 bg-surface-100-900 px-2 py-1 hover:preset-outlined-primary-500"
-        onclick={() => openFiles[filePath].sync.push()}
+        onclick={() => void saveAll()}
       >
         Accept Local
       </button>
@@ -370,7 +405,7 @@
           markerSource={felderaCompilerMarkerSource}
           onready={(editorRef) => {
             editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => {
-              openFiles[filePath].sync.push()
+              void saveAll()
             })
             editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyM, () => {
               const minimapOptions = editorRef.getOption(editor.EditorOption.minimap)

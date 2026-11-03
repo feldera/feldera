@@ -9,8 +9,8 @@
     save
   }: {
     unsavedChanges: boolean
-    /** Push all dirty files upstream. */
-    save?: () => void
+    /** Saves all unsaved files. Resolves to `false` if the user cancels the save. */
+    save?: () => Promise<boolean>
   } = $props()
 
   type Resolution = 'save' | 'discard' | 'cancel'
@@ -45,25 +45,29 @@
 
     globalDialog.dialog = unsavedChangesDialog
 
+    const stayOnPage = () =>
+      goto('').then(() => {
+        navigationResolve = null
+        suppressNavigationGuard = false
+      })
+
     new Promise<Resolution>((resolve) => {
       navigationResolve = resolve
-    }).then((resolution) => {
+    }).then(async (resolution) => {
       globalDialog.dialog = null
       if (resolution === 'cancel' || !navigation.to) {
-        goto('').then(() => {
-          navigationResolve = null
-          suppressNavigationGuard = false
-        })
+        stayOnPage()
         return
       }
-      if (resolution === 'save') {
-        save?.()
+      if (resolution === 'save' && save && !(await save())) {
+        stayOnPage()
+        return
       }
       // Disposal of the pipeline's in-memory editor state is handled by the
       // $effect cleanup in PipelineCodePanel when `pipelineName` changes or
       // the component unmounts as a result of the navigation below. Running
       // it synchronously here would race with Svelte's reactive flush: the
-      // push() above mutates pipelineCache, which re-derives `files` with a
+      // save() above mutates pipelineCache, which re-derives `files` with a
       // new identity, and the CodeEditor effects that re-run will crash
       // dereferencing the just-disposed `openFiles[filePath]`.
       const to = navigation.to.url
