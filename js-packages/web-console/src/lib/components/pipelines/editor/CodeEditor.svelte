@@ -417,7 +417,9 @@
       </div>
     </div>
     {@render beforeTextArea?.()}
-    <div class="relative flex-1">
+    <!-- Monaco rounds its height down to whole pixels; the editor's own background fills the
+         leftover sliver, so it doesn't read as a second line above the status bar. -->
+    <div class="relative flex-1 bg-white dark:bg-dark">
       <div
         class="absolute h-full w-full"
         onkeydown={(e) => {
