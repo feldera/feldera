@@ -21,7 +21,6 @@ Make sure that your identity provider allows token revocation for the Feldera ap
 If revocation is disabled, or the provider does not publish a revocation endpoint, sign-out still completes but the refresh token stays valid.
 The provider-specific setup guides below describe this step.
 
-Revocation does not invalidate access tokens that the provider already issued.
 Feldera validates the signature and expiration of an access token locally, so the access token stays usable until it expires.
 
 ## Authorization model

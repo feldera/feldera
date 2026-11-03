@@ -131,4 +131,41 @@ describe('ProfileButton', () => {
     state.data = session('owner', 't-acme')
     expect(await openMenu()).toContain('Feldera Health')
   })
+
+  it('shows a pending sign-out and ignores clicks until the provider page opens', async () => {
+    state.data = session('read', 't-acme')
+    auth.logout.mockReset().mockReturnValue(new Promise(() => {}))
+    await openMenu()
+    const signOut = document.querySelector<HTMLButtonElement>('[data-testid="btn-sign-out"]')!
+
+    signOut.click()
+    await expect.poll(() => signOut.textContent).toContain('Signing out…')
+    expect(signOut.disabled).toBe(true)
+    signOut.click()
+    expect(auth.logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores the sign-out button when sign-out fails', async () => {
+    state.data = session('read', 't-acme')
+    const failure = new Error('sign-out failed')
+    auth.logout.mockReset().mockRejectedValue(failure)
+    // The button rethrows the failure, so it reaches the global error handler.
+    const unhandled = new Promise<unknown>((resolve) =>
+      window.addEventListener(
+        'unhandledrejection',
+        (event) => {
+          event.preventDefault()
+          resolve(event.reason)
+        },
+        { once: true }
+      )
+    )
+    await openMenu()
+    const signOut = document.querySelector<HTMLButtonElement>('[data-testid="btn-sign-out"]')!
+
+    signOut.click()
+    expect(await unhandled).toBe(failure)
+    await expect.poll(() => signOut.textContent).toContain('Sign Out')
+    expect(signOut.disabled).toBe(false)
+  })
 })
