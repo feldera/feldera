@@ -147,7 +147,7 @@
 
 <SvelteKitTopLoader
   height={2}
-  color={'var(--color-secondary-500)'}
+  color={'#999b85'}
   showSpinner={false}
   ignoreBeforeNavigate={() => false}
   ignoreAfterNavigate={() => false}

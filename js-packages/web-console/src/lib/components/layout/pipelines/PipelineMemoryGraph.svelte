@@ -74,7 +74,7 @@
     )
   )
 
-  const primaryColor = getThemeColor('--color-secondary-500').format('hex')
+  const primaryColor = getThemeColor('--color-chart-line').format('hex')
 
   let ref: EChartsType | undefined = $state()
 

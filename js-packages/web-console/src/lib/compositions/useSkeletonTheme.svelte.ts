@@ -4,7 +4,7 @@ const config = $derived({
   monospaceFontFamily: (() => {
     switch (state) {
       case 'feldera-modern-theme':
-        return 'DM Mono'
+        return 'Geist Mono Variable'
       default:
         return ''
     }

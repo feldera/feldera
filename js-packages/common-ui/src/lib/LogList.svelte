@@ -217,11 +217,11 @@
 </div>
 
 <style>
-  /* Monospace font baked in. Both embedding apps load DM Mono via @fontsource/dm-mono, so it
+  /* Monospace font baked in. The web console loads Geist Mono via @fontsource-variable/geist-mono, so it
      resolves; consumers without that font fall back to the system monospace stack. */
   .log-list-scroll {
     font-family:
-      'DM Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+      'Geist Mono Variable', 'DM Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
       'Courier New', monospace;
     user-select: contain;
   }

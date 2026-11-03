@@ -1,7 +1,7 @@
 import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
 
 export const useCodeEditorSettings = () => {
-  const editorFontSize = useLocalStorage('layout/pipelines/editor/fontSize', 14)
+  const editorFontSize = useLocalStorage('layout/pipelines/editor/fontSize', 13)
   const autoSaveFiles = useLocalStorage('layout/pipelines/autosave', true)
   const showMinimap = useLocalStorage('layout/pipelines/editor/minimap', true)
   const showStickyScroll = useLocalStorage('layout/pipelines/editor/stickyScroll', true)

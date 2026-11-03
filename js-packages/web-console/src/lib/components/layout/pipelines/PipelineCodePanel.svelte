@@ -456,13 +456,13 @@ example = "1.0"`,
     {/if}
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
-    <!-- A cell of the grey tab bar. The open file's tab is white with a 2px line on top
-         and 1px taller, so it covers the bar's bottom line. An unsaved file gets a dot
-         after its name, centred by the tab's flex row. -->
+    <!-- A 40px cell of the grey tab bar. The open file's tab is white and 1px taller, so it
+         covers the bar's bottom line. An unsaved file gets a dot after its name, centred by
+         the tab's flex row. -->
     <button
-      class="flex h-12 items-center gap-2 border-r border-line px-4 text-base font-medium whitespace-nowrap {isCurrent
-        ? 'bg-white-dark -mb-px h-[49px] text-surface-950-50 shadow-[inset_0_2px_0_var(--color-surface-950)] dark:shadow-[inset_0_2px_0_var(--color-surface-50)]'
-        : 'text-surface-600-400 hover:bg-white/60 hover:text-surface-950-50 dark:hover:bg-white/5'}"
+      class="flex h-10 items-center gap-2 border-r border-line px-4 text-base whitespace-nowrap {isCurrent
+        ? 'bg-white-dark -mb-px h-[41px] text-surface-950-50'
+        : 'text-surface-600-400 hover:text-surface-950-50'}"
       onclick={onClick}
     >
       {text}
@@ -472,9 +472,9 @@ example = "1.0"`,
     </button>
   {/snippet}
   {#snippet toolBarEnd()}
-    <!-- As tall as the file-tab row, so the 24px buttons centre in it, also when they wrap
+    <!-- As tall as the 40px file-tab row, so the buttons centre in it, also when they wrap
          onto a row of their own. -->
-    <div class="flex min-h-12 items-center justify-end gap-4 pr-2">
+    <div class="flex min-h-10 items-center justify-end gap-4 pr-2">
       <PipelineActions
         class=""
         {pipeline}

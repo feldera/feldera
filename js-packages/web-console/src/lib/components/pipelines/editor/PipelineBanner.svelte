@@ -55,11 +55,11 @@
 
 <div
   transition:slide
-  class="flex flex-nowrap gap-2 rounded-container border {style === 'info'
+  class="flex flex-nowrap gap-2 rounded-md border {style === 'info'
     ? 'border-surface-500'
     : style === 'warning'
       ? 'border-warning-500'
-      : 'border-error-500'} p-4"
+      : 'border-error-500'} px-3 py-2.5"
 >
   <div
     class=" fd fd-circle-alert text-[20px] {style === 'info'
@@ -70,7 +70,7 @@
   ></div>
   <div class="flex flex-col {showMore ? 'gap-2' : 'sm:flex-row'} w-full overflow-hidden">
     <div class=" flex w-full flex-col">
-      <div class="flex justify-between pb-2 font-semibold">
+      <div class="flex justify-between pb-1 font-semibold">
         <span class={textClass}>{header}</span>
         <div class="flex flex-nowrap gap-2.5">
           {#if message}

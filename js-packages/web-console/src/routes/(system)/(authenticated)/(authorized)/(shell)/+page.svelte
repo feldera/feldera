@@ -248,7 +248,7 @@
                   {/each}
                   <div class="flex flex-col card p-4">
                     <div class="text-sm text-surface-500"></div>
-                    <a class="text-left text-secondary-600-400" href={resolve('/demos/')}>
+                    <a class="text-left text-[#6f7158] hover:text-[#5c5f43] dark:text-[#b4c2bb] dark:hover:text-[#ccd8d2]" href={resolve('/demos/')}>
                       <span class="py-2">Discover More Examples and Tutorials</span>
                     </a>
                   </div>

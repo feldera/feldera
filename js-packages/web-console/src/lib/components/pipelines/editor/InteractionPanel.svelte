@@ -88,5 +88,5 @@
   {tabs}
   bind:currentTab={currentTab.value}
   tabProps={{ pipeline, deleted }}
-  tabLabelVariant="cell"
+  tabLabelVariant="underline"
 />

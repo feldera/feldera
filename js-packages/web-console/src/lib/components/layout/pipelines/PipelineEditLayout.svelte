@@ -477,7 +477,7 @@
 {/snippet}
 <!-- Opens and collapses the pipelines list from its own cell at the start of the file tabs. -->
 {#snippet pipelinesPanelToggle()}
-  <div class="flex h-12 w-12 shrink-0 items-center justify-center border-r border-line">
+  <div class="flex h-10 w-10 shrink-0 items-center justify-center border-r border-line">
     <button
       class="fd fd-panel-left btn-icon btn-icon-sm text-[16px] hover:bg-row-hover {showPipelinesPanel.value
         ? 'text-secondary-500'

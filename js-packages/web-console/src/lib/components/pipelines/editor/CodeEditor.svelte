@@ -380,8 +380,8 @@
 {@render codeEditor(textEditor, statusBar, isReadOnly)}
 {#snippet textEditor()}
   <div class="flex h-full flex-col">
-    <!-- A grey tab bar: the file tabs are cells divided by 1px lines, and the open one is
-         white and covers the bar's bottom line, so it joins the editor below. -->
+    <!-- A grey 40px tab bar: the file tabs are cells divided by 1px lines, and the open one
+         is white and covers the bar's bottom line, so it joins the editor below. -->
     <div class="flex flex-row-reverse flex-wrap items-center border-b border-line bg-toolbar">
       {@render toolBarEnd?.({ saveFile: _saveFile })}
       <div class="mr-auto flex flex-nowrap items-start self-start">

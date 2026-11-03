@@ -326,10 +326,12 @@
      toolbars, a plain grey without the tint for hover on rows and cards, and the 1px line
      of borders and dividers. Tailwind turns them into utilities such as `bg-page`,
      `bg-toolbar`, `bg-row-hover` and `border-line`. */
-  --color-page: #f9f9f9;
+  --color-page: #fafbf9;
   --color-toolbar: #f5f5f5;
   --color-row-hover: #f5f5f5;
   --color-line: #e2e5de;
+  /* The olive line of the throughput, memory and storage charts. */
+  --color-chart-line: #6a6e4f;
 }
 
 /* Dark counterparts of the status tones (Radix dark steps 11 and 3). */
@@ -353,6 +355,7 @@
   --color-toolbar: #222222;
   --color-row-hover: var(--color-surface-950);
   --color-line: rgb(255 255 255 / 0.1);
+  --color-chart-line: #a9bab2;
 }
 
 /* ── Tabs ────────────────────────────────────────────────────────────────────
