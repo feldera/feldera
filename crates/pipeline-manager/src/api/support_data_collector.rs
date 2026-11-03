@@ -159,7 +159,8 @@ async fn fetch_pipeline_data(
 ///
 /// The runner's limit stops when the response headers arrive, so it does not
 /// stop a pipeline that sends its headers and then a slow body. For example,
-/// a multihost profile streams one host at a time.
+/// a multihost pipeline sends the headers of its profile with the first
+/// host's profile, before the other hosts' profiles arrive.
 async fn within(
     limit: Duration,
     pipeline_name: &str,
