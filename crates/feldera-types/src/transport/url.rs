@@ -49,6 +49,12 @@ impl UrlInputConfig {
     }
 }
 
+impl crate::sensitive::SensitiveValues for UrlInputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        crate::sensitive::visit_url("path", &self.path, visit);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

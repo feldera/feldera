@@ -781,6 +781,20 @@ impl DeltaTableReaderConfig {
     }
 }
 
+impl crate::sensitive::SensitiveValues for DeltaTableReaderConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        crate::sensitive::visit_url("uri", &self.uri, visit);
+        super::object_store::visit_credentials(&self.object_store_config, visit);
+    }
+}
+
+impl crate::sensitive::SensitiveValues for DeltaTableWriterConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        crate::sensitive::visit_url("uri", &self.uri, visit);
+        super::object_store::visit_credentials(&self.object_store_config, visit);
+    }
+}
+
 #[cfg(test)]
 mod change_feed_default_tests {
     use super::*;

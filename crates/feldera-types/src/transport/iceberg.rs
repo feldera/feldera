@@ -525,6 +525,73 @@ impl IcebergReaderConfig {
     }
 }
 
+impl crate::sensitive::SensitiveValues for IcebergReaderConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        use crate::sensitive::{credential_header, visit_optional, visit_url};
+        visit_optional(
+            "glue.secret-access-key",
+            self.glue_catalog_config.secret_access_key.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "glue.session-token",
+            self.glue_catalog_config.session_token.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "s3tables.secret-access-key",
+            self.s3tables_catalog_config.secret_access_key.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "s3tables.session-token",
+            self.s3tables_catalog_config.session_token.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "rest.credential",
+            self.rest_catalog_config.credential.as_deref(),
+            visit,
+        );
+        visit_optional(
+            "rest.token",
+            self.rest_catalog_config.token.as_deref(),
+            visit,
+        );
+        if let Some(uri) = &self.rest_catalog_config.uri {
+            visit_url("rest.uri", uri, visit);
+        }
+        if let Some(headers) = &self.rest_catalog_config.headers {
+            for (name, value) in headers {
+                if credential_header(name) {
+                    visit(
+                        &format!("rest.headers.{}", name.to_ascii_lowercase()),
+                        value,
+                    );
+                }
+            }
+        }
+        // Iceberg FileIO uses dotted keys, independently of object_store's keys.
+        for (key, value) in &self.fileio_config {
+            if matches!(
+                key.as_str(),
+                "s3.secret-access-key"
+                    | "s3.session-token"
+                    | "s3.sse.key"
+                    | "gcs.credentials-json"
+                    | "gcs.oauth2.token"
+                    | "oss.access-key-secret"
+                    | "adls.connection-string"
+                    | "adls.account-key"
+                    | "adls.sas-token"
+                    | "adls.client-secret"
+            ) {
+                visit(key, value);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

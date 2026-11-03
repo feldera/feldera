@@ -7990,6 +7990,53 @@ pub mod test_http {
         assert!(!body.contains(password), "{body}");
     }
 
+    /// Format credential registration happens while the format config is still
+    /// JSON, so an invalid enum cannot bypass the visitor. The source error
+    /// remains useful, and a later diagnostic also masks the inline credential.
+    #[engine_test]
+    pub fn format_credentials_registered_before_parse_failure(engine: &dyn PipelineTestEngine) {
+        ensure_default_crypto_provider();
+        let tempdir = TempDir::new().unwrap();
+        let input = tempdir.path().join("input.avro");
+        std::fs::write(&input, []).unwrap();
+        let password = "avro-inline-registration-2136";
+        let config_json = json!({
+            "name":"test", "workers":2, "clock_resolution_usecs":null,
+            "inputs":{"avro_in":{"stream":"test_input1",
+                "transport":{"name":"file_input","config":{"path":input}},
+                "format":{"name":"avro","config":{"registry_password":password,"update_format":"invalid-format"}}
+            }}, "outputs":{}
+        });
+        let file = json_config_file(&config_json);
+        let config = parse_config(file.path().display().to_string()).unwrap();
+        let error = engine
+            .controller(&identity(&[None]), &config, Box::new(|_, _| {}))
+            .err()
+            .expect("invalid Avro config must fail");
+        let response = super::error::ErrorResponse::from_error_nolog(&error);
+        assert!(response.message.contains("avro_in"), "{}", response.message);
+        assert!(
+            response.message.contains("expected"),
+            "{}",
+            response.message
+        );
+        assert!(!serde_json::to_string(&response).unwrap().contains(password));
+        let later_error = anyhow::anyhow!("registry rejected {password}");
+        assert_eq!(
+            super::error::ErrorResponse::from_anyerror(&later_error).message,
+            "registry rejected [REDACTED]"
+        );
+        let parsed = config
+            .inputs
+            .get("avro_in")
+            .unwrap()
+            .connector_config
+            .format
+            .as_ref()
+            .unwrap();
+        assert_eq!(parsed.config["registry_password"], password);
+    }
+
     /// Regression test for the fault-tolerant replay path, the analogue of
     /// [concurrent_bootstrap_adhoc_snapshot]: after a restart that replays
     /// the journal, an ad-hoc query must observe the replayed state.

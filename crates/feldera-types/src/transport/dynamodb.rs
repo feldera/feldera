@@ -292,6 +292,19 @@ impl DynamoDBWriteMode {
     }
 }
 
+impl crate::sensitive::SensitiveValues for DynamoDBWriterConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        crate::sensitive::visit_optional(
+            "aws_secret_access_key",
+            self.aws_secret_access_key.as_deref(),
+            visit,
+        );
+        if let Some(url) = &self.endpoint_url {
+            crate::sensitive::visit_url("endpoint_url", url, visit);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

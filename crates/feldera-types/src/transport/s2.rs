@@ -49,3 +49,15 @@ pub struct S2OutputConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
 }
+
+impl crate::sensitive::SensitiveValues for S2InputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        visit("auth_token", &self.auth_token);
+    }
+}
+
+impl crate::sensitive::SensitiveValues for S2OutputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        visit("auth_token", &self.auth_token);
+    }
+}

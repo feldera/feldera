@@ -65,6 +65,30 @@ Format configuration errors report a safe error category and a corrective
 action instead of quoting the rejected value, including for short secrets.
 JSON log fields are redacted before serialization adds JSON escaping.
 
+The pipeline also registers values from declared credential fields and replaces
+matching diagnostic text with `[REDACTED]`. The same length and token limits
+apply. A Secret reference remains protected regardless of its destination field,
+including usernames, topics, and broker addresses; its reference takes precedence
+over the generic marker when a value appears in both forms. A URL with
+credentials in it is itself a declared credential, so a diagnostic that
+copies the whole URL shows `[REDACTED]`, not the reference inside it.
+
+| Connector or format | Additional credential fields covered in diagnostics |
+|---|---|
+| Kafka | SASL password, TLS private key and key passwords, OAuth client secret and JWT assertion private key/passphrase; also fault-tolerance consumer/producer options |
+| Postgres and Redis | the credentials of a connection string: a URL with userinfo or a query as a whole, and the `password` and `sslpassword` values of a libpq keyword string; a connection string without credentials stays visible; Postgres inline TLS client key |
+| S3 and DynamoDB | AWS secret access key and credential-bearing endpoint URLs |
+| Delta Lake | Known object-store secret keys, session/bearer tokens, SAS tokens, client secrets, service-account keys, customer encryption keys, and Unity catalog access tokens and client secrets, including supported aliases |
+| Iceberg | Catalog credentials/tokens, authentication headers, and known FileIO credential keys |
+| NATS | Inline credentials, JWT, NKey seed, token, password, and credential-bearing server URL |
+| S2 and Pub/Sub | Authentication token and inline credentials, respectively |
+| URL input and Avro | Credential-bearing URLs, including token-only userinfo; Avro registry password, authorization token, credential-bearing proxy URL, and `Authorization`, `Proxy-Authorization`, or `X-API-Key` headers |
+
+Registration preserves the configuration supplied to connectors. It does not
+redact SQL or operational configuration in support bundles. Unknown option keys
+and custom headers are not covered merely because their names resemble a
+credential; source diagnostics continue to omit opaque option values.
+
 The following limits apply:
 
 - The pipeline log, `/status` and `/stats` show a resolved value of 8 bytes
@@ -76,9 +100,9 @@ The following limits apply:
   or expect them to read as references.
 - A value that a connector transforms before printing it, other than trimming,
   percent-encoding, or escaping, may not be recognized.
-- An environment variable reference is not protected. Its value is
-  non-sensitive configuration by contract, and a common word in it would be
-  replaced in every diagnostic that uses the word.
+- Environment references are not registered merely because they came from
+  the environment. A value in a declared credential field receives the same
+  supplemental treatment as an inline value. Use Secret references for secrets.
 - Pipelines started on a runtime from before this fix (see the
   [changelog](/changelog)) do not apply these rules. Restart such pipelines
   after an upgrade.
