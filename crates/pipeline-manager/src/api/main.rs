@@ -1579,10 +1579,10 @@ mod tests {
     /// `actix-cors` again, this test fails.
     #[actix_web::test]
     async fn static_immutable_has_no_credentialed_cors_headers() {
-        // test_config() leaves dev_mode=false, so .cors() returns the
-        // credentialed variant — exactly the variant that *would* poison
-        // Firefox caching if applied to /_app/immutable/.
-        let cfg = ApiServerConfig::test_config();
+        // With explicit allowed origins, `.cors()` adds the credentialed CORS
+        // headers that this test checks for.
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.allowed_origins = Some(vec!["http://example.com".to_string()]);
         let app = test::init_service(build_app(&cfg, &None)).await;
 
         let req = test::TestRequest::get()
@@ -1615,10 +1615,12 @@ mod tests {
 
     /// `/config/authentication` is the one unauthenticated endpoint
     /// that must be reachable cross-origin (before any OIDC token is issued).
-    /// Verifies CORS preflight succeeds with credentialed CORS.
+    /// Verifies that CORS preflight from an allowed origin succeeds with
+    /// credentialed CORS.
     #[actix_web::test]
     async fn config_authentication_preflight_returns_credentialed_cors() {
-        let cfg = ApiServerConfig::test_config();
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.allowed_origins = Some(vec!["http://example.com".to_string()]);
         let app = test::init_service(build_app(&cfg, &None)).await;
 
         let req = test::TestRequest::default()
@@ -1650,11 +1652,12 @@ mod tests {
     }
 
     /// `/v0/*` is the auth-bearing API surface consumed by external SDKs in
-    /// browsers. CORS preflight must succeed with credentialed CORS or those
-    /// clients break.
+    /// browsers. CORS preflight from an allowed origin must succeed with
+    /// credentialed CORS or those clients break.
     #[actix_web::test]
     async fn v0_preflight_returns_credentialed_cors() {
-        let cfg = ApiServerConfig::test_config();
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.allowed_origins = Some(vec!["http://example.com".to_string()]);
         let app = test::init_service(build_app(&cfg, &None)).await;
 
         let req = test::TestRequest::default()
@@ -1684,6 +1687,35 @@ mod tests {
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
                 .map(|h| h.to_str().unwrap_or("")),
             Some("http://example.com"),
+        );
+    }
+
+    /// Without explicit allowed origins, the API accepts any origin but does
+    /// not allow credentials, so a page on another site cannot send the
+    /// browser's cookies or HTTP auth.
+    #[actix_web::test]
+    async fn v0_preflight_from_any_origin_is_not_credentialed() {
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        let req = test::TestRequest::default()
+            .method(Method::OPTIONS)
+            .uri("/v0/pipelines")
+            .insert_header((header::ORIGIN, "http://example.com"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+
+        assert!(
+            res.status().is_success(),
+            "preflight returned {}",
+            res.status()
+        );
+        assert!(
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none(),
+            "any-origin CORS allows credentials",
         );
     }
 
