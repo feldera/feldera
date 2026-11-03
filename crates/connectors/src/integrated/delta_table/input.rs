@@ -1279,9 +1279,10 @@ enum DeltaPhase {
 struct DeltaTableMetrics {
     /// Current phase of the connector (see [DeltaPhase]).
     phase: AtomicU64,
-    /// Unix epoch seconds when snapshot phase finished; 0 if not yet complete.
+    /// Unix epoch seconds when this run finished reading the snapshot; 0 if
+    /// it has not, including after a resume past the snapshot.
     snapshot_completed_ts: AtomicU64,
-    /// Total records loaded during snapshot phase.
+    /// Total records this run loaded from the snapshot.
     snapshot_records_total: AtomicU64,
     /// Number of Feldera follow transactions started (`follow-*` labels allocated).
     follow_transaction_starts: AtomicU64,
@@ -1363,13 +1364,13 @@ impl ConnectorMetrics for DeltaTableMetrics {
             ),
             (
                 "input_connector_delta_snapshot_completed_seconds",
-                "Unix epoch seconds when the snapshot phase finished (0 if not yet complete).",
+                "Unix epoch seconds when this run finished reading the snapshot (0 if it has not, including after a resume past the snapshot).",
                 ValueType::Gauge,
                 self.snapshot_completed_ts.load(Ordering::Relaxed) as f64,
             ),
             (
                 "input_connector_delta_snapshot_records_total",
-                "Total records loaded during the snapshot phase.",
+                "Total records this run loaded from the snapshot (0 after a resume past the snapshot).",
                 ValueType::Counter,
                 self.snapshot_records_total.load(Ordering::Relaxed) as f64,
             ),
@@ -2829,9 +2830,12 @@ impl DeltaTableInputEndpointInner {
                     "delta_table {}: '{}' mode started (from version: {})",
                     &self.endpoint_name, self.config.mode, version
                 );
+            } else {
+                // Resumed from a checkpoint taken after the snapshot completed.
+                self.metrics
+                    .phase
+                    .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
             }
-            // Note: If self.config.snapshot() && !snapshot_incomplete, we're resuming from a checkpoint
-            // where the snapshot was already completed, so no special log needed
 
             // If we haven't previously read a snapshot of the table, report initial frontier.
             // This makes sure that even if the current version of the table is the final version,
