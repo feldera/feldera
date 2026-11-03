@@ -395,10 +395,11 @@
   >
     {#snippet label(item)}
       <!-- The count shows even at zero, in the neutral tone, so it is always clear how many
-           connectors are unhealthy. -->
+           connectors are unhealthy. It tucks into the item's right padding, so the item doesn't
+           end in a wide gap after it. -->
       {item.value}{#if item.value === 'unhealthy'}<span
           data-testid="box-unhealthy-count"
-          class="ml-1 {statusCounterClass} {statusToneColors[
+          class="-mr-1.5 ml-1 min-w-5! {statusCounterClass} {statusToneColors[
             unhealthyCount > 0 ? 'error' : 'neutral'
           ].chip}">{unhealthyCount}</span
         >{/if}

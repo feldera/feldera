@@ -757,11 +757,15 @@ groups related actions into multi-action dropdowns when multiple options are ava
               : ''}"
             onclick={button.onclick}
           >
-            <div class="flex justify-between gap-2">
+            <div class="flex items-center justify-between gap-2">
               <span class="">{button.label}</span>
 
               {#if button.disabled}
-                <span class="text-sm">{button.disabledText}</span>
+                <!-- Why the option is unavailable, as a small badge. -->
+                <span
+                  class="inline-flex h-5 shrink-0 items-center rounded bg-surface-950-50/[0.08] px-1.5 text-xs font-medium whitespace-nowrap text-surface-800-200"
+                  >{button.disabledText}</span
+                >
               {/if}
             </div>
             <div class="text-sm text-surface-700-300">

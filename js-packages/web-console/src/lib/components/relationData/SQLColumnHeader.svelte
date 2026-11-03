@@ -14,6 +14,19 @@
     isSticky?: boolean
     class?: string
   } = $props()
+
+  // Number columns are right-aligned like their values, so each heading sits over its column.
+  const numericTypes = [
+    'TINYINT',
+    'SMALLINT',
+    'INTEGER',
+    'BIGINT',
+    'DECIMAL',
+    'REAL',
+    'DOUBLE',
+    'FLOAT'
+  ]
+  const isNumeric = $derived(numericTypes.includes(String(column.columntype?.type ?? '')))
 </script>
 
 <!-- <th
@@ -25,9 +38,11 @@
   style:z-index={typeof style === 'string' ? undefined : style?.['z-index']}
   >{getCaseIndependentName(column)}</th> -->
 <th
-  class="whitespace-nowrap {isSticky ? 'sticky top-0 z-10' : ''} px-3 font-normal {_class}"
+  class="whitespace-nowrap {isSticky ? 'sticky top-0 z-10' : ''} px-3 font-medium {isNumeric
+    ? 'text-right'
+    : 'text-left'} {_class}"
   {style}
 >
   {getCaseIndependentName(column)}
-  <span class="text-sm text-surface-600-400">{displaySQLColumnType(column)}</span>
+  <span class="pl-1 text-xs font-normal text-surface-500">{displaySQLColumnType(column)}</span>
 </th>

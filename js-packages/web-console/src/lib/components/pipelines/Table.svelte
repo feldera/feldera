@@ -426,7 +426,8 @@
                 <span
                   class="absolute inset-x-3 top-1/2 flex -translate-y-1/2 items-center gap-2 text-sm whitespace-nowrap"
                 >
-                  <span class="fd fd-circle-alert shrink-0 text-[16px] text-status-error-dot"></span>
+                  <span class="fd fd-circle-alert shrink-0 text-[16px] text-status-error-dot"
+                  ></span>
                   <span class="truncate">
                     {message.slice(
                       0,
@@ -434,11 +435,13 @@
                     )}
                   </span>
                 </span>
-                <Popover class="z-20" strategy="fixed">
+                <!-- Only the trimmed message keeps its line breaks, so the template's own
+                     whitespace doesn't show as blank lines. -->
+                <Popover class="z-20 p-1! whitespace-normal" strategy="fixed">
                   <div
-                    class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto text-sm whitespace-pre-wrap"
+                    class="scrollbar max-h-[50vh] max-w-[min(420px,80vw)] overflow-auto text-sm leading-5"
                   >
-                    {message}
+                    <span class="whitespace-pre-wrap">{message.trim()}</span>
                   </div>
                 </Popover>
               {/if}

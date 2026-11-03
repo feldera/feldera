@@ -19,6 +19,7 @@
   import { healthSeverity } from './healthEvents'
   import { formatDateTime, formatDateTimeRange } from 'common-lib/format'
   import { healthStatusColors, healthStatusLabel } from './healthStatus'
+  import { statusChipClass, statusToneColors } from './statusTone'
 
   interface Props {
     /** The text label for the timeline */
@@ -332,23 +333,25 @@
 {/snippet}
 
 <div class="flex flex-col">
-  <div class="">
-    {label}
+  <!-- The current status is a chip, like the pipeline status chips elsewhere. -->
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <span>{label}</span>
     {#if healthStatus}
-      — <span class={healthStatusColors(healthStatus).healthText}
+      <span class="{statusChipClass} {healthStatusColors(healthStatus).chip}"
         >{healthStatusLabel(healthStatus)}</span
       >
     {:else if stale}
-      — <span class="text-surface-600-400">{noDataLabel}</span>
+      <span class="{statusChipClass} {statusToneColors.neutral.chip}">{noDataLabel}</span>
       {#if staleIssue}
-        <span class="text-surface-600-400">(last recorded:</span>
-        <span class={healthStatusColors(staleIssue).healthText}
-          >{healthStatusLabel(staleIssue)}</span
-        ><span class="text-surface-600-400">)</span>
+        <span class="text-surface-600-400"
+          >(last recorded: <span class={healthStatusColors(staleIssue).healthText}
+            >{healthStatusLabel(staleIssue)}</span
+          >)</span
+        >
       {/if}
     {/if}
     {#if updatedText}
-      <span class="text-surface-600-400"> — {updatedText}</span>
+      <span class="text-surface-600-400">{updatedText}</span>
     {/if}
   </div>
   <div class="relative {className}">

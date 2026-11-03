@@ -8,7 +8,7 @@
   import type { ConnectorErrorFilter } from 'common-ui/connectorMetrics'
   import { formatDateTime, formatQty } from 'common-lib/format'
   import { sleep } from 'common-lib/promise'
-  import { ConnectorMetricsTables, Drawer, SegmentedControl, useIsScreenXl } from 'common-ui'
+  import { ConnectorMetricsTables, Drawer } from 'common-ui'
   import Dayjs from 'dayjs'
   import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
   import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
@@ -67,8 +67,6 @@
   // stream can be 'interrupted' every time the 'live' conection drops
   let metricsStreamState = $state<'connecting' | 'live' | 'interrupted'>('connecting')
 
-  let statusTab: 'age' | 'updated' = $state('age')
-  const isXl = useIsScreenXl()
   const darkMode = useDarkMode()
 
   // The empty state's Start button starts the pipeline the way the toolbar's Start does,
@@ -290,7 +288,7 @@
     >
       {#snippet main()}
         <div
-          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2 pb-10 pl-3"
+          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-5 pb-10 pl-3"
         >
           <div class="flex w-full flex-col gap-4">
             {#if pipeline.current.status === 'Unavailable'}
@@ -307,13 +305,15 @@
                 Not receiving live metrics. Attempting to reconnect...
               </WarningBanner>
             {/if}
-            <div class="flex flex-wrap gap-4">
-              <div class="mt-4.5 flex flex-wrap items-center gap-4 xl:gap-x-10">
+            <!-- All five metrics always show side by side; a narrow panel scrolls them
+                 sideways instead of hiding some behind a switcher. -->
+            <div class="-mx-1 overflow-x-auto px-1 pb-1">
+              <div class="mt-4.5 flex w-max flex-nowrap items-start gap-6 xl:gap-x-10">
                 <div class="flex flex-col">
                   <div class="text-start text-sm text-nowrap text-surface-600-400">
                     Records Ingested
                   </div>
-                  <div class="pt-1 max-xl:text-[12px]">
+                  <div class="pt-1">
                     {formatQty(global.total_input_records)}
                   </div>
                 </div>
@@ -321,7 +321,7 @@
                   <div class="text-start text-sm text-nowrap text-surface-600-400">
                     Records Processed
                   </div>
-                  <div class="pt-1 max-xl:text-[12px]">
+                  <div class="pt-1">
                     {formatQty(global.total_processed_records)}
                   </div>
                 </div>
@@ -329,12 +329,12 @@
                   <div class="text-start text-sm text-nowrap text-surface-600-400">
                     Records Buffered
                   </div>
-                  <div class="pt-1 max-xl:text-[12px]">
+                  <div class="pt-1">
                     {formatQty(global.buffered_input_records)}
                   </div>
                 </div>
                 {#snippet age()}
-                  <div class="w-52 pt-1 max-xl:text-[12px]">
+                  <div class="w-52 pt-1">
                     {#if global.start_time > 0}
                       On {formatDateTime({ ms: global.start_time * 1000 })}
                     {:else}
@@ -343,50 +343,32 @@
                   </div>
                 {/snippet}
                 {#snippet updated()}
-                  <div class="w-64 pt-1 text-nowrap max-xl:text-[12px]">
+                  <div class="w-64 pt-1 text-nowrap">
                     {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
                       pipeline.current.deploymentStatusSince
                     ).format('MMM D, YYYY h:mm A')}
                   </div>
                 {/snippet}
-                {#if isXl.current}
-                  <div class="flex flex-col">
-                    <div class="text-start text-sm text-surface-600-400">
-                      Deployment age -
+                <div class="flex flex-col">
+                  <div class="text-start text-sm text-surface-600-400">
+                    Deployment age -
 
-                      {#if global.start_time > 0}
-                        {formatElapsedTime(new Date(global.start_time * 1000))}
-                      {:else}
-                        N/A
-                      {/if}
-                    </div>
-                    {@render age()}
+                    {#if global.start_time > 0}
+                      {formatElapsedTime(new Date(global.start_time * 1000))}
+                    {:else}
+                      N/A
+                    {/if}
                   </div>
-                  <div class="flex flex-col">
-                    <div class="text-start text-sm text-surface-600-400">
-                      Last status update - {formatElapsedTime(
-                        new Date(pipeline.current.deploymentStatusSince)
-                      )}
-                    </div>
-                    {@render updated()}
+                  {@render age()}
+                </div>
+                <div class="flex flex-col">
+                  <div class="text-start text-sm text-surface-600-400">
+                    Last status update - {formatElapsedTime(
+                      new Date(pipeline.current.deploymentStatusSince)
+                    )}
                   </div>
-                {:else}
-                  <div>
-                    <SegmentedControl
-                      value={statusTab}
-                      onValueChange={(v) => (statusTab = v)}
-                      items={[
-                        { value: 'age', label: 'Age' },
-                        { value: 'updated', label: 'Last status update' }
-                      ]}
-                      class="-mt-1"
-                    />
-                    {#if statusTab === 'age'}
-                      {@render age()}
-                    {:else if statusTab === 'updated'}
-                      {@render updated()}{/if}
-                  </div>
-                {/if}
+                  {@render updated()}
+                </div>
               </div>
             </div>
             <div class="flex w-full flex-col gap-2 xl:flex-row">

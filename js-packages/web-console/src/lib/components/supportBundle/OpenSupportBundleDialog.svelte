@@ -122,31 +122,54 @@
         </span>
       </button>
     {:else}
-      <span class="px-2 py-2 text-surface-700-300">No support bundles opened recently</span>
+      <!-- What a support bundle is and where to get one, from the operations guide. -->
+      <div class="flex flex-col items-center gap-2 px-6 py-6 text-center">
+        <span
+          class="fd fd-package-open flex h-10 w-10 items-center justify-center rounded-lg bg-surface-950-50/[0.06] text-[20px] text-surface-700-300"
+        ></span>
+        <span class="font-medium text-surface-950-50">No support bundles opened recently</span>
+        <span class="max-w-[420px] text-sm text-surface-600-400">
+          A support bundle is a zip of a pipeline's logs, configuration, metrics and circuit
+          profiles. Download one from a pipeline's <b class="font-medium">View profile</b> menu or
+          with <code class="font-dm-mono">fda support-bundle</code>, then upload it here to explore
+          it.
+        </span>
+        <a
+          class="text-sm text-surface-950-50 underline underline-offset-2 hover:text-surface-600-400"
+          href="https://docs.feldera.com/operations/guide/#diagnosing-performance-issues"
+          target="_blank"
+          rel="noreferrer">Learn more about support bundles</a
+        >
+      </div>
     {/each}
   </div>
-  <div class="flex justify-between">
+  <div class="flex {history.current.length ? 'justify-between' : 'justify-center'}">
     <!-- This button opens the file picker immediately. The popup then shows a
          confirm button, because the browser opens the viewer tab
          only after receiving a "user activation" from a new click. -->
     <SupportBundlePopup mode="pick" align="left" drop="up" onOpened={closeDialog}>
       {#snippet trigger(pick)}
         <button
-          class="btn preset-outlined-primary-500"
+          class="btn h-8 {history.current.length
+            ? 'preset-outlined-primary-500'
+            : 'preset-filled-primary-500'}"
           onclick={pick}
           data-testid="btn-pick-support-bundle"
         >
-          <span class="fd fd-file-search"></span>
+          <span class="fd fd-arrow-up text-[16px]"></span>
           Upload support bundle
         </button>
       {/snippet}
     </SupportBundlePopup>
-    <button
-      class="btn preset-tonal-surface"
-      onclick={clearHistory}
-      data-testid="btn-clear-bundle-history"
-    >
-      Clear history
-    </button>
+    <!-- Only offered when there is something to clear. -->
+    {#if history.current.length}
+      <button
+        class="btn h-8 preset-outlined-surface-200-800"
+        onclick={clearHistory}
+        data-testid="btn-clear-bundle-history"
+      >
+        Clear history
+      </button>
+    {/if}
   </div>
 </GenericDialog>
