@@ -47,7 +47,7 @@ resolver = "2"
 actix = "0.13.1"
 actix-codec = "0.5.0"
 actix-cors = "0.7.1"
-actix-files = "0.6.10"
+actix-files = "0.7.3"
 actix-http = "3.12.1"
 actix-tls = { version = "3.4.0", default-features = false, features = ["accept", "rustls-0_23"] }
 actix-test = "0.1.1"

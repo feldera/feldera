@@ -246,7 +246,7 @@ async fn get_binary(
         ));
 
     // Read and return file as response
-    Ok(NamedFile::open_async(binary_file_path).await)
+    Ok(NamedFile::open(binary_file_path))
 }
 
 /// Retrieves the program info file (that contains `PipelineConfigProgramInfo` data).
@@ -309,7 +309,7 @@ async fn get_program_info(
         ));
 
     // Read and return file as response
-    Ok(NamedFile::open_async(info_file_path).await)
+    Ok(NamedFile::open(info_file_path))
 }
 
 /// Uploads a compiled binary using streaming.
