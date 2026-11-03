@@ -322,6 +322,12 @@
   --color-status-error-dot: #b35449;
   /* Timeline bars with no events, and other "unknown" markers. */
   --color-status-nodata: #dedfd5;
+  /* Health timeline bars and legend: the lighter palette steps in both themes. The darker
+     `-dot` colours stay for icons and text, which need the contrast on a light page. */
+  --color-status-blue-bar: #8faec3;
+  --color-status-jade-bar: #a8bc83;
+  --color-status-warning-bar: #d1b16d;
+  --color-status-error-bar: #db857b;
   /* Brighter status dots for the pipelines list, close to the status chips, so the dots
      stay easy to tell apart at 8px. */
   --color-status-neutral-pip: #9a9ca4;

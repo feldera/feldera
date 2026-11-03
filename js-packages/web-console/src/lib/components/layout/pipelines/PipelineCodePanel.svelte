@@ -450,7 +450,7 @@ example = "1.0"`,
            header row, as in the tabbed panels below (`TabsPanel`). -->
       <div class="panel flex h-full flex-col p-0">
         {@render textEditor()}
-        <div class="flex flex-wrap items-center gap-x-8 border-t border-line py-[5px] pr-4 pl-6">
+        <div class="flex flex-wrap items-center gap-x-8 border-t border-line py-[5px] pr-5 pl-5">
           {@render statusBar()}
         </div>
       </div>
@@ -480,7 +480,7 @@ example = "1.0"`,
   {#snippet toolBarEnd()}
     <!-- As tall as the 40px file-tab row, so the buttons centre in it, also when they wrap
          onto a row of their own. -->
-    <div class="flex min-h-10 items-center justify-end gap-4 pr-2">
+    <div class="flex min-h-10 items-center justify-end gap-4 pr-5">
       <PipelineActions
         class=""
         {pipeline}
