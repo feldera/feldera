@@ -210,9 +210,10 @@ enum IcebergPhase {
 struct IcebergMetrics {
     /// Current phase of the connector (see [`IcebergPhase`]).
     phase: Atomic<IcebergPhase>,
-    /// Unix epoch seconds when the snapshot phase finished; 0 if not yet complete.
+    /// Unix epoch seconds when this run finished reading the snapshot; 0 if
+    /// it has not, including after a resume past the snapshot.
     snapshot_completed_ts: AtomicU64,
-    /// Total records loaded during the snapshot phase.
+    /// Total records this run loaded from the snapshot.
     snapshot_records_total: AtomicU64,
     /// Number of Feldera snapshot transactions started by this connector.
     snapshot_transaction_starts: AtomicU64,
@@ -301,13 +302,13 @@ impl ConnectorMetrics for IcebergMetrics {
             ),
             (
                 "input_connector_iceberg_snapshot_completed_seconds",
-                "Unix epoch seconds when the snapshot phase finished (0 if not yet complete).",
+                "Unix epoch seconds when this run finished reading the snapshot (0 if it has not, including after a resume past the snapshot).",
                 ValueType::Gauge,
                 self.snapshot_completed_ts.load(Ordering::Relaxed) as f64,
             ),
             (
                 "input_connector_iceberg_snapshot_records_total",
-                "Total records loaded during the snapshot phase.",
+                "Total records this run loaded from the snapshot (0 after a resume past the snapshot).",
                 ValueType::Counter,
                 self.snapshot_records_total.load(Ordering::Relaxed) as f64,
             ),
