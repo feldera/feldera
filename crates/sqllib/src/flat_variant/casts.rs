@@ -712,8 +712,10 @@ pub fn cast_to_s_FV(value: FlatVariant, size: i32, fixed: bool) -> SqlResult<Sql
 
 #[doc(hidden)]
 pub fn cast_to_s_FVN(value: Option<FlatVariant>, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    // This function should never be called.
-    cast_to_s_FV(value.unwrap(), size, fixed)
+    match value {
+        None => Err(cast_null("VARCHAR")),
+        Some(value) => cast_to_s_FV(value, size, fixed),
+    }
 }
 
 #[doc(hidden)]
