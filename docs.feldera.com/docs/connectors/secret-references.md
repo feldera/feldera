@@ -34,16 +34,17 @@ pipeline therefore keeps resolved values out of what it reports:
 
 | Output | What is shown instead of a resolved value |
 |---|---|
-| Pipeline log | `[REDACTED ${secret:...}]`, the reference |
-| `deployment_error`, pipeline events, `/status` | the reference, from a pipeline on a runtime with this fix |
-| Connector errors in `/stats` and in the support bundle | the reference, from a pipeline on a runtime with this fix |
+| Pipeline log | the reference, `${secret:...}`, for the value as resolved; `[REDACTED ${secret:...}]` for a derived form of it, such as a percent-encoded or escaped copy or the password of a URL value |
+| `deployment_error`, pipeline events, `/status` | the reference, `${secret:...}`, for the value as resolved; `[REDACTED ${secret:...}]` for a derived form of it, such as a percent-encoded or escaped copy or the password of a URL value. This applies to a pipeline on a runtime with this fix |
+| Connector errors in `/stats` and in the support bundle | the reference, `${secret:...}`, for the value as resolved; `[REDACTED ${secret:...}]` for a derived form of it, such as a percent-encoded or escaped copy or the password of a URL value. This applies to a pipeline on a runtime with this fix |
 | Connection errors and debug log lines of the Postgres input, Delta Lake and Kafka connectors, and of the Avro format | the endpoint name and option names only, never the URI, option value, or configuration |
 | Format and connector configuration errors, and the pipeline startup summary | the error category, the expected values and field names from the schema, the endpoint, transport and format names; never a rejected value or a configuration dump |
 
 The following limits apply:
 
-- The pipeline replaces values of 8 bytes or more, where they stand as a
-  whole word or token. A shorter value is not replaced.
+- The pipeline log, `/status` and `/stats` show a resolved value of 8 bytes
+  or more as its reference, where the value stands as a whole word or token.
+  A shorter value is shown as it is.
 - A secret whose value is a common word or a non-sensitive value, such as a
   user name or a broker address, is replaced by its reference in every
   diagnostic that uses the word on its own. Keep such values out of secrets,
