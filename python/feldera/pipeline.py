@@ -38,7 +38,11 @@ from feldera.enums import (
     TransactionStatus,
 )
 from feldera.output_handler import OutputHandler
-from feldera.rest.errors import FelderaAPIError
+from feldera.rest.errors import (
+    FelderaAPIError,
+    FelderaCommunicationError,
+    FelderaTimeoutError,
+)
 from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.logs import LogStream
 from feldera.rest.pipeline import Pipeline as InnerPipeline
@@ -481,8 +485,32 @@ class Pipeline:
         handler.start()
         event.wait()
 
+    # Statuses in which `wait_for_completion` waits for the pipeline.
+    _WAIT_FOR_COMPLETION_STATUSES = (
+        PipelineStatus.RUNNING,
+        PipelineStatus.INITIALIZING,
+        PipelineStatus.PROVISIONING,
+        PipelineStatus.BOOTSTRAPPING,
+        PipelineStatus.CONCURRENTBOOTSTRAPPING,
+        PipelineStatus.SYNCHRONIZING,
+    )
+
+    def _not_running_error(self, status: PipelineStatus) -> RuntimeError:
+        """The error for a pipeline that is not in a status to complete."""
+        msg = f"Pipeline must be running to wait for completion (status: {status.name}"
+        try:
+            details = self.deployment_runtime_status_details()
+        except FelderaAPIError:
+            details = None
+        if details:
+            msg += f", details: {details}"
+        return RuntimeError(msg + ")")
+
     def wait_for_completion(
-        self, force_stop: bool = False, timeout_s: float | None = None
+        self,
+        force_stop: bool = False,
+        timeout_s: float | None = None,
+        unavailable_timeout_s: float = 60.0,
     ):
         """
         Block until the pipeline has completed processing all input records.
@@ -502,21 +530,26 @@ class Pipeline:
         :param timeout_s: Optional. The maximum time (in seconds) to wait for
             the pipeline to complete. The default is None, which means wait
             indefinitely.
+        :param unavailable_timeout_s: The maximum time (in seconds) to wait
+            for a pipeline in the UNAVAILABLE status to become available
+            again. The manager reports UNAVAILABLE when one status probe
+            fails, for example when the node is overloaded, so this status
+            is usually transient. 60 seconds by default.
 
-        :raises RuntimeError: If the pipeline returns unknown metrics.
+        :raises RuntimeError: If the pipeline is not running, stays
+            UNAVAILABLE for longer than `unavailable_timeout_s`, or returns
+            unknown metrics.
         """
 
-        if self.status() not in [
-            PipelineStatus.RUNNING,
-            PipelineStatus.INITIALIZING,
-            PipelineStatus.PROVISIONING,
-            PipelineStatus.BOOTSTRAPPING,
-            PipelineStatus.CONCURRENTBOOTSTRAPPING,
-            PipelineStatus.SYNCHRONIZING,
-        ]:
-            raise RuntimeError("Pipeline must be running to wait for completion")
+        status = self.status()
+        if (
+            status not in self._WAIT_FOR_COMPLETION_STATUSES
+            and status != PipelineStatus.UNAVAILABLE
+        ):
+            raise self._not_running_error(status)
 
         start_time = time.monotonic()
+        unavailable_since: Optional[float] = None
         # Reused by the warning message below; is_complete() would fetch and
         # discard the same stats, hiding whether the wait is stalled or just
         # slow (e.g. mid-transaction-commit).
@@ -541,7 +574,27 @@ class Pipeline:
                         f" pipeline '{self.name}' to complete"
                     )
 
-            latest_stats = self.stats()
+            try:
+                latest_stats = self.stats()
+            except (
+                FelderaAPIError,
+                FelderaTimeoutError,
+                FelderaCommunicationError,
+            ) as err:
+                status = self.status()
+                if status in self._WAIT_FOR_COMPLETION_STATUSES:
+                    raise
+                if status != PipelineStatus.UNAVAILABLE:
+                    raise self._not_running_error(status) from err
+                now = time.monotonic()
+                if unavailable_since is None:
+                    unavailable_since = now
+                elif now - unavailable_since > unavailable_timeout_s:
+                    raise self._not_running_error(status) from err
+                time.sleep(1)
+                continue
+            unavailable_since = None
+
             pipeline_complete: Optional[bool] = (
                 latest_stats.global_metrics.pipeline_complete
             )
