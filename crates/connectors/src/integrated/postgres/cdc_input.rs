@@ -3957,21 +3957,34 @@ pub mod tests {
     /// into a hang: dropping a runtime during the unwind waits without bound
     /// for the work it hosts, and a blocking task that never returns stands
     /// in for an etl worker stuck past the stop grace.
+    ///
+    /// The blocking task stays stuck until the test releases it, so a
+    /// regression hangs without end and the generous timeout below cannot
+    /// mistake a slow CI host for a hang.
     #[test]
     fn a_panic_on_the_worker_task_still_shuts_the_runtime_down_in_time() {
         let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let thread = thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
                 .enable_all()
                 .build()
                 .unwrap();
-            let stuck = runtime.spawn_blocking(|| thread::sleep(Duration::from_secs(30)));
+            let stuck = runtime.spawn_blocking(move || {
+                let _ = started_tx.send(());
+                // Returns once the test drops `release_tx`.
+                let _ = release_rx.recv();
+            });
             let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 block_on_then_shut_down(runtime, async move {
-                    // Wait until the blocking task occupies its thread.
-                    tokio::task::yield_now().await;
-                    panic!("worker task failed");
+                    // Shut down only once the blocking task occupies its
+                    // thread; a queued task is dropped and tests nothing.
+                    started_rx.await.unwrap();
+                    // Unlike `panic!`, this skips the panic hook, whose
+                    // backtrace can take seconds to resolve on CI.
+                    std::panic::resume_unwind(Box::new("worker task failed"));
                 })
             }));
             drop(stuck);
@@ -3979,8 +3992,9 @@ pub mod tests {
         });
 
         let panicked = done_rx
-            .recv_timeout(RUNTIME_SHUTDOWN_TIMEOUT + Duration::from_secs(5))
+            .recv_timeout(Duration::from_secs(30))
             .expect("the wrapper thread hung on the runtime after a panic");
+        drop(release_tx);
         assert!(panicked, "the panic is resumed once the runtime is gone");
         thread.join().unwrap();
     }
