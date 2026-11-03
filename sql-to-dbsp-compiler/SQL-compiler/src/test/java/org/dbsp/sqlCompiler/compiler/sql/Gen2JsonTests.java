@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -10,12 +12,16 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTypedBox;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** The circuit compiled for the Gen-2 engine ({@code --gen2}) carries no Rust-codegen
  * artifacts: it has no {@code TYPEDBOX}, no {@code TypedBox<T, _>}, and no {@code clone()}, a
@@ -56,6 +62,22 @@ public class Gen2JsonTests extends SqlIoTest {
     static final String CONSTANT_PROGRAM = """
             CREATE TABLE sales(region VARCHAR NOT NULL, price DECIMAL(10, 2));
             CREATE VIEW labelled AS SELECT region || '-suffix', price * 1.25 FROM sales;""";
+
+    /** Views that compile to the expressions whose type follows from their children: IS NULL, a
+     * sort, a top-k with comparators, aggregates, a fallible cast, a common subexpression bound
+     * by a Let or a Lazy, an ASOF join with a custom order, and a string constant. */
+    static final String COVERAGE_PROGRAM = """
+            CREATE TABLE t(id INT NOT NULL, x INT, s VARCHAR, d DOUBLE, ts TIMESTAMP NOT NULL);
+            CREATE TABLE u(id INT NOT NULL, ts TIMESTAMP NOT NULL, y INT);
+            CREATE VIEW nulls AS SELECT id, x IS NULL AS xn FROM t;
+            CREATE VIEW sorted AS SELECT id, x FROM t ORDER BY x;
+            CREATE VIEW top AS SELECT id, x FROM t ORDER BY x DESC LIMIT 3;
+            CREATE VIEW agg AS SELECT id, SUM(x), MIN(s), ARRAY_AGG(d) FROM t GROUP BY id;
+            CREATE VIEW casts AS SELECT CAST(s AS INT) AS i FROM t;
+            CREATE VIEW cse AS SELECT CASE WHEN x > 0 THEN (x + 1) * (x + 1) ELSE 0 END AS c FROM t;
+            CREATE VIEW matched AS SELECT t.id, u.y FROM t
+                LEFT ASOF JOIN u MATCH_CONDITION (t.ts >= u.ts) ON t.id = u.id;
+            CREATE VIEW labelled AS SELECT s || '-suffix' FROM t;""";
 
     DBSPCompiler compile(String program, boolean gen2, boolean checkSerialization) {
         return this.compile(program, gen2, checkSerialization, false);
@@ -207,6 +229,69 @@ public class Gen2JsonTests extends SqlIoTest {
     public void gen2CircuitRoundTripsThroughJson() {
         for (String program : new String[] { WINDOW_PROGRAM, FOLD_PROGRAM, CONSTANT_PROGRAM })
             Assert.assertNotNull(this.compile(program, true, true).getFinalCircuit(false));
+    }
+
+    /** True if {@code simpleName} names a subclass of {@link DBSPExpression}. */
+    static boolean isExpression(String simpleName) {
+        for (String pkg : List.of("org.dbsp.sqlCompiler.ir.expression.",
+                "org.dbsp.sqlCompiler.ir.expression.literal.", "org.dbsp.sqlCompiler.ir.aggregate.")) {
+            try {
+                return DBSPExpression.class.isAssignableFrom(Class.forName(pkg + simpleName));
+            } catch (ClassNotFoundException ignored) {
+            }
+        }
+        return false;
+    }
+
+    /** Add to {@code seen} the class of each expression in {@code node}, and to {@code untyped}
+     * the class of each expression that has no type. */
+    static void collectExpressions(JsonNode node, Set<String> seen, List<String> untyped) {
+        JsonNode cls = node.get("class");
+        if (cls != null && isExpression(cls.asText())) {
+            seen.add(cls.asText());
+            if (!node.has("type"))
+                untyped.add(cls.asText());
+        }
+        for (JsonNode child : node)
+            collectExpressions(child, seen, untyped);
+    }
+
+    /** Every expression in the JSON has a type, also an expression whose type follows from its
+     * children, such as a field projection.  The Rust circuit keeps the clones and the statics
+     * that the Gen-2 circuit drops, and an incremental circuit keeps its aggregates. */
+    @Test
+    public void jsonGivesEveryExpressionAType() throws JsonProcessingException {
+        Set<String> seen = new HashSet<>();
+        for (String program : List.of(WINDOW_PROGRAM, FOLD_PROGRAM, INCREMENTAL_PROGRAM,
+                ROLLING_PROGRAM, WATERLINE_PROGRAM, CONSTANT_PROGRAM, COVERAGE_PROGRAM)) {
+            for (boolean gen2 : new boolean[] { false, true }) {
+                for (boolean incremental : new boolean[] { false, true }) {
+                    CompilerOptions options = this.testOptions();
+                    options.ioOptions.gen2 = gen2;
+                    options.languageOptions.incrementalize = incremental;
+                    // An ORDER BY that is kept compiles to a sort expression
+                    options.languageOptions.ignoreOrderBy = false;
+                    DBSPCompiler compiler = new DBSPCompiler(options);
+                    compiler.submitStatementsForCompilation(program);
+                    String text = this.circuitJson(compiler);
+                    JsonNode json = Utilities.deterministicObjectMapper().readTree(text);
+                    List<String> untyped = new ArrayList<>();
+                    collectExpressions(json, seen, untyped);
+                    Assert.assertEquals(List.of(), untyped);
+                }
+            }
+        }
+        // The expressions whose type follows from their children
+        List<String> derived = List.of("DBSPFieldExpression", "DBSPDerefExpression",
+                "DBSPBorrowExpression", "DBSPCloneExpression", "DBSPHandleErrorExpression",
+                "DBSPSomeExpression", "DBSPBlockExpression", "DBSPLetExpression", "DBSPLazyExpression",
+                "DBSPStaticExpression", "DBSPIsNullExpression", "DBSPSortExpression",
+                "DBSPUnwrapCustomOrdExpression", "DBSPFieldComparatorExpression",
+                "DBSPDirectComparatorExpression", "DBSPNoComparatorExpression", "DBSPZSetExpression",
+                "DBSPMinMax", "DBSPFold", "NonLinearAggregate");
+        List<String> missing = new ArrayList<>(derived);
+        missing.removeAll(seen);
+        Assert.assertEquals(List.of(), missing);
     }
 
     /** RemoveTypedBox refuses the waterline of an indexed input, whose boxed type it cannot rewrite. */
