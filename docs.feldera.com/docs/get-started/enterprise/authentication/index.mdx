@@ -18,7 +18,7 @@ When a user signs out of the Web Console, it sends the user's refresh token to t
 to finalize the user session.
 
 Make sure that your identity provider allows token revocation for the Feldera application.
-If revocation is disabled, or the provider does not publish a revocation endpoint, sign-out still completes but the refresh token stays valid.
+If revocation is disabled, or the provider does not publish a revocation endpoint, sign-out still completes, but the refresh token stays valid and the console logs no error.
 The provider-specific setup guides below describe this step.
 
 Feldera validates the signature and expiration of an access token locally, so the access token stays usable until it expires.

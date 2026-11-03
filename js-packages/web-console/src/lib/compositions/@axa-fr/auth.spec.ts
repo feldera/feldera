@@ -142,7 +142,6 @@ describe('sign-out', () => {
   })
 
   it('still signs out when the provider rejects the revocation', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { events, storage } = await signOut({
       respondToRevocation: async () =>
         new Response(JSON.stringify({ error: 'unsupported_token_type' }), { status: 400 })
