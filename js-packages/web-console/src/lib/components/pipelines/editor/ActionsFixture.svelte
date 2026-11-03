@@ -31,5 +31,5 @@
   {deleted}
   editConfigDisabled={deleted}
   unsavedChanges={false}
-  saveFile={() => {}}
+  saveFile={async () => true}
 ></Actions>

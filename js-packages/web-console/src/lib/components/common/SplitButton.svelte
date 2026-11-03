@@ -45,6 +45,7 @@
     size = 'md',
     variant = 'filled',
     toggleClass = '',
+    disabled = false,
     class: _class = ''
   }: {
     /** The main action. Its button's size class should match `size`. */
@@ -58,6 +59,8 @@
     variant?: SplitButtonVariant
     /** Classes for the chevron only, typically the colour preset of the main button. */
     toggleClass?: string
+    /** Disables the chevron. Disable the main button in `children` separately. */
+    disabled?: boolean
     class?: string
   } = $props()
 
@@ -74,6 +77,7 @@
     type="button"
     class="btn-split-toggle btn-icon {toggleButtonClass}"
     onclick={ontoggle}
+    {disabled}
     aria-label={toggleLabel}
   >
     <span class="fd fd-chevron-down {toggleClasses[size].icon}"></span>

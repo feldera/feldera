@@ -35,6 +35,9 @@ const savedCode = async (name: string) => {
 const desiredStatus = async (name: string) =>
   (await getExtendedPipeline(name)).deploymentDesiredStatus
 
+const startButton = (page: Page) =>
+  page.getByTestId('box-action-buttons').getByRole('button', { name: 'Start', exact: true })
+
 const emptyCode = { programCode: '', programUdfRs: '', programUdfToml: '' }
 
 const fileTab = (page: Page, fileName: string) =>
@@ -93,18 +96,28 @@ test.describe('Pasted /create/ link', () => {
     await pressCtrlS(page)
     await cancelLinkDialog()
 
+    await startButton(page).click()
+    await cancelLinkDialog()
+
     expect(await savedCode(name)).toEqual(emptyCode)
     expect(await desiredStatus(name)).toBe('Stopped')
     await expectUnsaved(page, 'program.sql')
 
-    // Confirming saves every file.
-    await pressCtrlS(page)
+    // Start saves every file, then schedules the start after the compilation.
+    await startButton(page).click()
     await page.getByTestId('btn-dialog-save-pasted-link').click()
     await expect
       .poll(() => savedCode(name))
       .toEqual({ programCode: SQL, programUdfRs: RUST, programUdfToml: TOML })
     await expect(fileTab(page, 'program.sql').getByTitle('Unsaved changes')).not.toBeVisible()
-    expect(await desiredStatus(name)).toBe('Stopped')
+    await expect.poll(() => desiredStatus(name)).not.toBe('Stopped')
+
+    // Cancelling the scheduled start asks for no confirmation.
+    await page.getByRole('button', { name: 'Cancel start' }).click()
+    await expect(page.getByTestId('box-generic-dialog')).not.toBeVisible()
+    await expect(startButton(page)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel start' })).not.toBeVisible()
+    await expect.poll(() => desiredStatus(name)).toBe('Stopped')
   })
 
   test('opens a -copy pipeline when the name is taken', async ({ page }) => {
