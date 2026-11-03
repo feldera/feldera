@@ -63,7 +63,7 @@ fn redacted_payload(payload: &(dyn Any + Send)) -> Option<String> {
         .downcast_ref::<&str>()
         .map(|text| text.to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())?;
-    match secret_redactor().redact(&text) {
+    match secret_redactor().redact_for_panic(&text) {
         Cow::Owned(redacted) => Some(redacted),
         Cow::Borrowed(_) => None,
     }
@@ -77,9 +77,32 @@ mod tests {
     use feldera_types::secret_redaction::secret_redactor;
     use std::any::Any;
 
+    /// Panic redaction can legitimately omit a whole payload when another
+    /// thread registers a secret. Isolate tests that require an idle registry;
+    /// this also keeps hook installation separate from proptest's hooks.
+    fn child_output(test_name: &str) -> Option<std::process::Output> {
+        const CHILD: &str = "FELDERA_TEST_PANIC_CHILD";
+        if std::env::var(CHILD).as_deref() == Ok(test_name) {
+            return None;
+        }
+        Some(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test_name, "--nocapture"])
+                .env(CHILD, test_name)
+                .env("RUST_BACKTRACE", "0")
+                .output()
+                .unwrap(),
+        )
+    }
+
     /// A panic payload that copied a resolved secret shows its reference.
     #[test]
     fn panic_payload_shows_the_secret_reference() {
+        if let Some(output) = child_output("panic::tests::panic_payload_shows_the_secret_reference")
+        {
+            assert!(output.status.success(), "{output:?}");
+            return;
+        }
         secret_redactor().register("${secret:kubernetes:pg/uri}", "panic-test-secret-value");
         let payload: Box<dyn Any + Send> = Box::new("bad panic-test-secret-value".to_string());
         assert_eq!(
@@ -101,23 +124,24 @@ mod tests {
         );
     }
 
-    /// Test that [enable_counting_panics] actually increments [N_PANICS].
-    ///
-    /// This is set to be ignored because it races with proptest initialization:
-    /// both [enable_counting_panics] and proptests set a panic hook, which is
-    /// unavoidably racy.  See https://github.com/rust-lang/rust/issues/92649
-    /// for an explanation of the race and a proposed way to avoid it (currently
-    /// available only in nightly).
     #[test]
-    #[ignore = "races with proptests"]
-    fn test_counting_panics() {
+    fn counting_hook_redacts_the_payload() {
+        if let Some(output) = child_output("panic::tests::counting_hook_redacts_the_payload") {
+            assert!(output.status.success(), "{output:?}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                stderr.contains("${secret:kubernetes:panic/key}"),
+                "{stderr}"
+            );
+            assert!(!stderr.contains("hook-secret-value-2136"), "{stderr}");
+            assert!(stderr.contains("RUST_BACKTRACE=1"), "{stderr}");
+            return;
+        }
         enable_counting_panics();
-        let panics_before = N_PANICS.load(Ordering::Relaxed);
-        std::thread::spawn(|| panic!()).join().unwrap_err();
-        let panics_after = N_PANICS.load(Ordering::Relaxed);
-        assert!(
-            panics_after > panics_before,
-            "{panics_after} should be greater than {panics_before}"
-        );
+        let before = N_PANICS.load(Ordering::Relaxed);
+        secret_redactor().register("${secret:kubernetes:panic/key}", "hook-secret-value-2136");
+        let result = std::panic::catch_unwind(|| panic!("failure hook-secret-value-2136"));
+        assert!(result.is_err());
+        assert_eq!(N_PANICS.load(Ordering::Relaxed), before + 1);
     }
 }
