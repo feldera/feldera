@@ -42,6 +42,28 @@
   // resume when it sticks again — the same threshold that toggles `ScrollDownFab`, so
   // pause/resume and FAB visibility stay in lockstep. Driven by the scroll container's own
   // notification rather than a reactive read, so the host callback always fires.
+  // The table sizes its columns to the rows on screen, which change with every batch, so
+  // columns would jump wider and narrower as the stream flows. Each column instead keeps the
+  // widest width it has had, per relation, so new rows only ever widen it.
+  const columnWidths = new Map<string, number[]>()
+  const growOnlyColumns = (row: HTMLElement, relationName: string) => {
+    const observer = new ResizeObserver(() => {
+      const widths = columnWidths.get(relationName) ?? []
+      ;[...row.children].forEach((cell, i) => {
+        const width = (cell as HTMLElement).getBoundingClientRect().width
+        if (width > (widths[i] ?? 0)) {
+          widths[i] = width
+        }
+        ;(cell as HTMLElement).style.minWidth = `${widths[i]}px`
+      })
+      columnWidths.set(relationName, widths)
+    })
+    ;[...row.children].forEach((cell) => observer.observe(cell))
+    return {
+      destroy: () => observer.disconnect()
+    }
+  }
+
   const reverseScroll = useReverseScrollContainer({
     observeContentSize: () => changeStream.rows.length,
     onStickToBottomChange: (stickToBottom) => onScrollPausedChange?.(!stickToBottom)
@@ -71,7 +93,13 @@
         {onscroll}
         bind:clientHeight={_.clientHeight}
       >
-        <table style:height class="">
+        <!-- Lines between rows instead of stripes: the list renders only the rows on screen,
+             so stripes would swap with every new row and make the table flicker. The lines are
+             inset shadows, so every row stays exactly 28px. -->
+        <table
+          style:height
+          class="border-separate border-spacing-0 text-[13px] [&_td]:shadow-[inset_0_-1px_0_var(--color-line)] dark:[&_td]:shadow-[inset_0_-1px_0_#3f3f3f] [&_th]:shadow-[inset_0_-1px_0_var(--color-line)] dark:[&_th]:shadow-[inset_0_-1px_0_#3f3f3f]"
+        >
           <tbody>
             {@render children()}
           </tbody>
@@ -87,10 +115,10 @@
           </td>
         </tr>
       {:else if 'columns' in row}
-        <tr class="h-7" style="{style} {padding}">
+        <tr class="h-7" style="{style} {padding}" use:growOnlyColumns={row.relationName}>
           <!-- The header sits on the panel colour and keeps it while pinned to the top. -->
           <th
-            class="bg-white px-3 text-left font-medium dark:bg-[#2a2a2a] {isSticky
+            class="bg-white px-3 text-left text-[12px] font-semibold dark:bg-[#2a2a2a] {isSticky
               ? 'sticky top-0 z-10'
               : ''}">{row.relationName}</th
           >
@@ -104,7 +132,7 @@
         <tr
           data-testid="box-changestream-row"
           style="{style} {padding}"
-          class="h-7 whitespace-nowrap select-none even:bg-surface-950-50/[0.03]"
+          class="h-7 whitespace-nowrap select-none hover:bg-row-hover"
           oncopy={(e) => {
             e.clipboardData!.setData('text/plain', JSONbig.stringify(row))
             e.preventDefault()

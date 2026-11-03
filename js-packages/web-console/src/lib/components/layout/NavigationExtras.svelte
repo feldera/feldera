@@ -47,10 +47,7 @@
 {#snippet dropdownHeader(full: string, short: string, toggle?: () => void, isOpen?: boolean)}
   <!-- A brightness filter (the shared `.btn` hover) shows nothing on a transparent button,
        so a dropdown header gets a neutral fill on hover instead. -->
-  <button
-    onclick={toggle}
-    class="btn px-2! {toggle ? 'hover:bg-row-hover' : 'cursor-default'}"
-  >
+  <button onclick={toggle} class="btn px-2! {toggle ? 'hover:bg-row-hover' : 'cursor-default'}">
     {#if inline}
       {full}
     {:else}

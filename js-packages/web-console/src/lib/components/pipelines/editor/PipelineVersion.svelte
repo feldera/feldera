@@ -42,12 +42,16 @@
     </div>
   {/if}
   {#if status === 'custom'}
-    <span class="relative chip h-5 rounded-md preset-outlined-surface-200-800 text-sm text-surface-700-300">
+    <span
+      class="relative chip h-5 rounded-md preset-outlined-surface-200-800 text-sm text-surface-700-300"
+    >
       Custom
       <div class="fd fd-info pl-2 text-[14px] text-warning-600-400"></div>
     </span>
   {:else if status === 'update_available'}
-    <span class="chip h-5 rounded-md preset-outlined-tertiary-800-200 text-sm text-tertiary-800-200">
+    <span
+      class="chip h-5 rounded-md preset-outlined-tertiary-800-200 text-sm text-tertiary-800-200"
+    >
       Update available
     </span>
   {:else}

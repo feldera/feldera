@@ -38,7 +38,9 @@
   style:z-index={typeof style === 'string' ? undefined : style?.['z-index']}
   >{getCaseIndependentName(column)}</th> -->
 <th
-  class="whitespace-nowrap {isSticky ? 'sticky top-0 z-10' : ''} px-3 font-medium {isNumeric
+  class="whitespace-nowrap {isSticky
+    ? 'sticky top-0 z-10'
+    : ''} px-3 text-[12px] font-medium text-surface-800-200 {isNumeric
     ? 'text-right'
     : 'text-left'} {_class}"
   {style}
