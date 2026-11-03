@@ -14,7 +14,7 @@
 use aho_corasick::{AhoCorasick, MatchKind};
 use serde_json::Value;
 use std::borrow::Cow;
-use std::sync::{PoisonError, RwLock};
+use std::sync::{PoisonError, RwLock, TryLockError};
 use url::Url;
 
 /// Shortest value the registry redacts, measured once the value is trimmed.
@@ -113,18 +113,45 @@ impl SecretRedactor {
     /// identifiers that contain it.
     pub fn redact<'a>(&self, text: &'a str) -> Cow<'a, str> {
         let entries = self.entries.read().unwrap_or_else(PoisonError::into_inner);
+        Self::redact_entries(&entries, text)
+    }
+
+    /// Redacts a panic payload without waiting for a registry writer. The panic
+    /// may have interrupted that writer on this thread. While a writer holds
+    /// the lock, omit the payload; the hook keeps its location and backtrace.
+    /// A lock poisoned by an earlier panic still holds a usable registry.
+    pub fn redact_for_panic<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        match self.entries.try_read() {
+            Ok(entries) => Self::redact_entries(&entries, text),
+            Err(TryLockError::Poisoned(poisoned)) => {
+                Self::redact_entries(&poisoned.into_inner(), text)
+            }
+            Err(TryLockError::WouldBlock) => Cow::Owned("[REDACTED]".to_string()),
+        }
+    }
+
+    fn redact_entries<'a>(entries: &Entries, text: &'a str) -> Cow<'a, str> {
         let Some(automaton) = &entries.automaton else {
             return Cow::Borrowed(text);
         };
         let mut out = String::new();
         let mut last = 0;
-        for found in automaton.find_iter(text) {
-            if !at_token_boundary(text, found.start(), found.end()) {
+        let mut search_from = 0;
+        // A match rejected at a token boundary must not hide a shorter
+        // registered form inside it, such as the password of a URL: resume
+        // one character further, not after the rejected match.
+        while let Some(found) = automaton.find(&text[search_from..]) {
+            let start = search_from + found.start();
+            let end = search_from + found.end();
+            if !at_token_boundary(text, start, end) {
+                // Patterns are nonempty UTF-8 strings.
+                search_from = start + text[start..].chars().next().unwrap().len_utf8();
                 continue;
             }
-            out.push_str(&text[last..found.start()]);
+            out.push_str(&text[last..start]);
             out.push_str(&entries.replacements[found.pattern().as_usize()]);
-            last = found.end();
+            last = end;
+            search_from = end;
         }
         if last == 0 {
             Cow::Borrowed(text)
@@ -199,14 +226,25 @@ fn is_token_char(c: char) -> bool {
 /// or a bracket, needs no boundary.
 fn at_token_boundary(text: &str, start: usize, end: usize) -> bool {
     let found = &text[start..end];
+    let before = &text[..start];
     let before_ok = !found.starts_with(is_token_char)
-        || text[..start]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !is_token_char(c));
+        || before.chars().next_back().is_none_or(|c| !is_token_char(c))
+        || ends_with_escape(before);
     let after_ok = !found.ends_with(is_token_char)
         || text[end..].chars().next().is_none_or(|c| !is_token_char(c));
     before_ok && after_ok
+}
+
+/// Whether `text` ends with an escape sequence that a formatter glued to
+/// the next token: `\n` from `{:?}`, or `%3D` from percent-encoding.
+fn ends_with_escape(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let n = bytes.len();
+    (n >= 2 && bytes[n - 2] == b'\\')
+        || (n >= 3
+            && bytes[n - 3] == b'%'
+            && bytes[n - 2].is_ascii_hexdigit()
+            && bytes[n - 1].is_ascii_hexdigit())
 }
 
 /// `value` as `{:?}` prints it, without the quotes.
@@ -228,6 +266,94 @@ mod tests {
     use serde_json::json;
 
     const REFERENCE: &str = "${secret:kubernetes:pg/uri}";
+
+    /// `{:?}` and percent-encoding glue an escape to the value: the escape
+    /// is a boundary, not part of the token.
+    #[test]
+    fn an_escape_before_the_value_is_a_boundary() {
+        let redactor = SecretRedactor::new();
+        redactor.register(REFERENCE, "hunter2hunter2");
+        assert_eq!(
+            redactor.redact(r"line\nhunter2hunter2"),
+            format!(r"line\n{REFERENCE}")
+        );
+        assert_eq!(
+            redactor.redact("x%3Dhunter2hunter2"),
+            format!("x%3D{REFERENCE}")
+        );
+        assert_eq!(redactor.redact("nhunter2hunter2"), "nhunter2hunter2");
+    }
+
+    #[test]
+    fn panic_redaction_does_not_wait_for_a_registry_writer() {
+        let redactor = SecretRedactor::new();
+        redactor.register(REFERENCE, "panic-lock-secret-2136");
+        let writer = redactor.entries.write().unwrap();
+        assert_eq!(
+            redactor.redact_for_panic("panic-lock-secret-2136"),
+            "[REDACTED]"
+        );
+        drop(writer);
+        assert_eq!(
+            redactor.redact_for_panic("panic-lock-secret-2136"),
+            REFERENCE
+        );
+        assert_eq!(
+            redactor.redact_for_panic("ordinary panic"),
+            "ordinary panic"
+        );
+    }
+
+    /// A panic while a writer held the lock poisons it. Later panics still
+    /// get their payload redacted instead of omitted.
+    #[test]
+    fn a_poisoned_registry_still_redacts_panic_payloads() {
+        let redactor = SecretRedactor::new();
+        redactor.register(REFERENCE, "poison-secret-2136");
+        let poison = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _writer = redactor.entries.write().unwrap();
+            panic!("registration failed");
+        }));
+        assert!(poison.is_err());
+        assert!(redactor.entries.is_poisoned());
+        assert_eq!(
+            redactor.redact_for_panic("bad poison-secret-2136"),
+            format!("bad {REFERENCE}")
+        );
+        assert_eq!(
+            redactor.redact_for_panic("ordinary panic"),
+            "ordinary panic"
+        );
+    }
+
+    #[test]
+    fn concurrent_registration_preserves_every_reference() {
+        let redactor = SecretRedactor::new();
+        let start = std::sync::Barrier::new(4);
+        std::thread::scope(|scope| {
+            for worker in 0..4 {
+                let redactor = &redactor;
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    for index in 0..25 {
+                        let reference = format!("${{secret:kubernetes:worker{worker}/key{index}}}");
+                        let value = format!("concurrent-secret-{worker}-{index}-2136");
+                        redactor.register(&reference, &value);
+                        assert_eq!(redactor.redact(&value), reference);
+                    }
+                });
+            }
+        });
+        for worker in 0..4 {
+            for index in 0..25 {
+                assert_eq!(
+                    redactor.redact(&format!("concurrent-secret-{worker}-{index}-2136")),
+                    format!("${{secret:kubernetes:worker{worker}/key{index}}}")
+                );
+            }
+        }
+    }
 
     #[test]
     fn value_becomes_its_reference() {
@@ -365,5 +491,18 @@ mod tests {
         let mut details = json!({"json-key-secret-2136": "details"});
         redactor.redact_json(&mut details);
         assert_eq!(details, json!({REFERENCE: "details"}));
+    }
+
+    /// A URL match rejected at a token boundary must not hide the password
+    /// inside it: the scan resumes one character further, not after the
+    /// rejected match.
+    #[test]
+    fn a_rejected_longer_match_does_not_hide_the_password_inside() {
+        let redactor = SecretRedactor::new();
+        redactor.register(REFERENCE, "postgres://u:Sup3rSecretPw@db/app");
+        assert_eq!(
+            redactor.redact("connect postgres://u:Sup3rSecretPw@db/app2 failed"),
+            format!("connect postgres://u:[REDACTED {REFERENCE}]@db/app2 failed")
+        );
     }
 }
