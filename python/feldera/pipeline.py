@@ -2234,8 +2234,10 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         if not pipeline_events:
             params["pipeline_events"] = "false"
 
+        # Without a new collection, the request only reads stored data, so a
+        # retry is cheap.
         support_bundle_bytes = self.client.get_pipeline_support_bundle(
-            self.name, params=params
+            self.name, params=params, retry=not collect
         )
 
         if output_path is not None:
