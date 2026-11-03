@@ -1,5 +1,7 @@
 use crate::adhoc::set_snapshot;
-use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
+use crate::controller::{
+    CompletionToken, ConsistentSnapshot, ControllerBuilder, TransactionToCommit,
+};
 use crate::engine::{
     CircuitFactory, Engine, JsonProfileChunks, OpenStorageFn, PipelineStorage, ProgramLoader,
 };
@@ -4350,9 +4352,11 @@ async fn commit_transaction(
     params: web::Query<CommitTransactionParams>,
 ) -> Result<impl Responder, PipelineError> {
     check_incarnation_uuid(&state, params.incarnation_uuid)?;
-    state
-        .controller()?
-        .start_commit_transaction(params.transaction_id)?;
+    state.controller()?.start_commit_transaction(
+        params
+            .transaction_id
+            .map_or(TransactionToCommit::Open, TransactionToCommit::Id),
+    )?;
     Ok(HttpResponse::Ok().json("Transaction commit initiated"))
 }
 

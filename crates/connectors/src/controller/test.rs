@@ -7,7 +7,7 @@ use super::{
 use crate::controller::{ControllerStatusContext, TransactionInfo};
 use crate::{
     ConfigError, Controller, ControllerError, InputConsumer, InputEndpoint, OutputEndpoint,
-    OutputEndpointCallbacks, TransportInputEndpoint,
+    OutputEndpointCallbacks, TransactionToCommit, TransportInputEndpoint,
     engine::PipelineStorage,
     format::{LineSplitter, SpongeSplitter},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
@@ -1734,7 +1734,9 @@ pub fn api_transaction_started_during_commit_does_not_stall_it(engine: &dyn Pipe
             )
             .unwrap();
     }));
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     receiver
         .recv_timeout(Duration::from_millis(TIMEOUT_MS))
         .expect("X's commit finished in one step, so the test cannot start Y during it")
@@ -1747,7 +1749,9 @@ pub fn api_transaction_started_during_commit_does_not_stall_it(engine: &dyn Pipe
     );
 
     // Commit Y, so that the pipeline stops cleanly whatever happened to X.
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait(
         || controller.inner.get_transaction_state() == TransactionState::None,
         TIMEOUT_MS,
@@ -1861,7 +1865,9 @@ pub fn api_transaction_committed_before_it_starts(engine: &dyn PipelineTestEngin
     // No step runs between the start and the commit.
     controller.start_transaction().unwrap();
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
     controller.stop().unwrap();
@@ -1884,7 +1890,9 @@ pub fn api_transaction_commit_includes_queued_records(engine: &dyn PipelineTestE
     // The step trigger ignores this input, so it is all still queued when the
     // commit request arrives.
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
     controller.stop().unwrap();
@@ -1917,7 +1925,9 @@ pub fn api_transaction_commit_does_not_wait_for_held_back_input(engine: &dyn Pip
     push_records(&feeder, 0..5);
     feeder.commit_transaction();
     push_records(&feeder, 5..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     wait_for_commit(&controller, before);
     controller.stop().unwrap();
@@ -1957,7 +1967,9 @@ pub fn api_transaction_commit_is_not_starved_by_later_input(engine: &dyn Pipelin
     )
     .unwrap();
 
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait_for_commit(&controller, before);
     stop.store(true, Ordering::Release);
     sender.join().unwrap();
@@ -1985,7 +1997,9 @@ pub fn api_transaction_commit_does_not_wait_for_removed_endpoint(engine: &dyn Pi
     *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |_| {
         inner.disconnect_input(&endpoint_id);
     }));
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     wait_for_commit(&controller, before);
     controller.stop().unwrap();
@@ -2013,7 +2027,9 @@ pub fn retried_api_commit_keeps_its_input(engine: &dyn PipelineTestEngine) {
         entered_sender.send(()).unwrap();
         let _ = release_receiver.recv();
     }));
-    controller.start_commit_transaction(Some(tid)).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Id(tid))
+        .unwrap();
     entered
         .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS))
         .expect("no step ran after the commit request");
@@ -2030,7 +2046,9 @@ pub fn retried_api_commit_keeps_its_input(engine: &dyn PipelineTestEngine) {
     };
     let target = commit_target();
     push_records(&feeder, 100..200);
-    controller.start_commit_transaction(Some(tid)).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Id(tid))
+        .unwrap();
     let retried = commit_target();
     assert_eq!(retried.records, target.records);
     assert_eq!(retried.polls_begun, target.polls_begun);
@@ -2078,7 +2096,9 @@ pub fn multihost_api_transaction_committed_before_it_starts(engine: &dyn Pipelin
     // The coordinator has not asked for a step, so none runs.
     controller.start_transaction().unwrap();
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     let step = controller.step_watcher().borrow().step;
     controller.set_coordination_request(StepRequest::new(step, StepAction::Step, StepInputs::None));
@@ -2120,11 +2140,13 @@ pub fn api_transaction_committed_during_another_commit(engine: &dyn PipelineTest
     *controller.inner.commit_step_hook.lock().unwrap() = Some(Box::new(move |inner| {
         let result = inner.start_transaction_from_api().and_then(|_| {
             push_records(&y_feeder, 100..200);
-            inner.start_commit_transaction_from_api(None)
+            inner.start_commit_transaction_from_api(TransactionToCommit::Open)
         });
         sender.send(result.is_ok()).unwrap();
     }));
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     assert!(
         receiver
             .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS))
@@ -2264,7 +2286,9 @@ pub fn api_transaction_commit_during_a_step_includes_queued_records(
 
     hold_next_step(&controller, &gate);
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     gate.release();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
@@ -2281,7 +2305,9 @@ pub fn api_transaction_committed_before_it_starts_during_a_step(engine: &dyn Pip
     controller.start_transaction().unwrap();
     hold_next_step(&controller, &gate);
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     gate.release();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
@@ -2319,7 +2345,9 @@ pub fn api_transaction_commit_during_a_step_includes_records_of_a_new_endpoint(
         .add_input_endpoint("late", config, Box::new(late.clone()), None)
         .unwrap();
     push_records(&late, 0..100);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     gate.release();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
@@ -2594,7 +2622,9 @@ pub fn replay_does_not_feed_http_input_during_commit(engine: &dyn PipelineTestEn
     wait(|| !controller.is_replaying(), default_timeout_ms()).unwrap();
     let first_tid = controller.start_transaction().unwrap().transaction_id;
     let token = ingress_rows(&controller, FIRST, 0..RECORDS);
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait_for_completion(&controller, &token);
     let token = ingress_rows(&controller, SECOND, RECORDS..RECORDS + 1);
     wait_for_completion(&controller, &token);
@@ -5913,7 +5943,9 @@ pub fn connector_attached_between_transactions_receives_no_earlier_output(
     )
     .unwrap();
 
-    controller.start_commit_transaction(None).unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait(
         || {
             output_endpoint_metrics(&controller, "test_output1").total_processed_input_records
@@ -10186,7 +10218,9 @@ fn transaction_rounds(
                 .expect("timed out waiting for a transaction to ingest its slice");
 
             // Every commit lands with the rest of the input still queued.
-            controller.start_commit_transaction(None).unwrap();
+            controller
+                .start_commit_transaction(TransactionToCommit::Open)
+                .unwrap();
             wait_fast(
                 || controller.inner.get_transaction_state() == TransactionState::None,
                 default_timeout_ms(),
@@ -10377,7 +10411,9 @@ fn transaction_view_consistency(
             controller.status().num_buffered_input_records()
         );
 
-        controller.start_commit_transaction(None).unwrap();
+        controller
+            .start_commit_transaction(TransactionToCommit::Open)
+            .unwrap();
         wait(|| controller.pipeline_complete(), default_timeout_ms())
             .expect("timed out waiting for the pipeline to complete");
 
