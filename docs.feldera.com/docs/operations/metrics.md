@@ -192,8 +192,8 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 | <a name='input_connector_extra_memory_bytes'>`input_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an input connector beyond that used for buffered records. |
 | <a name='input_connector_iceberg_last_ingested_sequence_number'>`input_connector_iceberg_last_ingested_sequence_number`</a> |gauge | Sequence number of the Iceberg snapshot ingested by this connector (-1 if none yet). |
 | <a name='input_connector_iceberg_phase'>`input_connector_iceberg_phase`</a> |gauge | Current phase: 0=loading_snapshot, 2=completed (1 reserved for follow mode). |
-| <a name='input_connector_iceberg_snapshot_completed_seconds'>`input_connector_iceberg_snapshot_completed_seconds`</a> |gauge | Unix epoch seconds when the snapshot phase finished (0 if not yet complete). |
-| <a name='input_connector_iceberg_snapshot_records_total'>`input_connector_iceberg_snapshot_records_total`</a> |counter | Total records loaded during the snapshot phase. |
+| <a name='input_connector_iceberg_snapshot_completed_seconds'>`input_connector_iceberg_snapshot_completed_seconds`</a> |gauge | Unix epoch seconds when this run finished reading the snapshot (0 if it has not, including after a resume past the snapshot). |
+| <a name='input_connector_iceberg_snapshot_records_total'>`input_connector_iceberg_snapshot_records_total`</a> |counter | Total records this run loaded from the snapshot (0 after a resume past the snapshot). |
 | <a name='input_connector_iceberg_snapshot_transaction_starts'>`input_connector_iceberg_snapshot_transaction_starts`</a> |counter | Number of Feldera snapshot transactions started by this connector. |
 | <a name='input_connector_processing_latency_seconds'>`input_connector_processing_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data and computes output updates, over the last 600 seconds or 10,000 samples. |
 | <a name='input_connector_records_total'>`input_connector_records_total`</a> |counter | Total number of records received by an input connector. |
