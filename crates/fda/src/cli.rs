@@ -1149,8 +1149,9 @@ pub enum PipelineAction {
         transaction_id: Option<u64>,
         /// The incarnation UUID that `start-transaction` printed.  If the
         /// pipeline restarted since then, the command fails, because the
-        /// transaction was lost.  Without this option, the command uses the
-        /// pipeline's incarnation when the command starts.
+        /// transaction status was lost: the transaction might have committed
+        /// before the restart, or not.  Without this option, the command uses
+        /// the pipeline's incarnation when the command starts.
         #[arg(long)]
         incarnation_uuid: Option<Uuid>,
         /// Don't wait for the transaction to commit before returning.
