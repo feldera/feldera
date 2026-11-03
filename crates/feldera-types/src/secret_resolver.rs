@@ -1,6 +1,7 @@
 use crate::config::ConnectorConfig;
 use crate::secret_redaction::secret_redactor;
 use crate::secret_ref::{MaybeSecretRef, MaybeSecretRefParseError, SecretRef};
+use crate::sensitive::SensitiveValues;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
@@ -122,11 +123,13 @@ pub fn resolve_secret_references_in_connector_config(
     connector_config: &ConnectorConfig,
 ) -> Result<ConnectorConfig, SecretRefResolutionError> {
     let connector_config = connector_config.clone();
-    Ok(ConnectorConfig {
+    let resolved = ConnectorConfig {
         transport: resolve_secret_references_via_json(secrets_dir, &connector_config.transport)?,
         format: resolve_secret_references_via_json(secrets_dir, &connector_config.format)?,
         ..connector_config
-    })
+    };
+    resolved.register_sensitive_values();
+    Ok(resolved)
 }
 
 /// Resolves secret references in `value`.

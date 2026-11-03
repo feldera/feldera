@@ -59,10 +59,32 @@ Format configuration errors report a safe error category and a corrective
 action instead of quoting the rejected value, including for short secrets.
 JSON log fields are redacted before serialization adds JSON escaping.
 
+The pipeline also registers values from declared credential fields and replaces
+matching diagnostic text with `[REDACTED]`. The same length and token limits
+apply. A Secret reference remains protected regardless of its destination field,
+including usernames, topics, and broker addresses; its reference takes precedence
+over the generic marker when a value appears in both forms. A URL with
+credentials in it is itself a declared credential, so a diagnostic message
+that quotes the whole URL shows `[REDACTED]`, not the reference inside it.
+
+| Connector or format | Credential fields replaced in diagnostics | Stays visible |
+|---|---|---|
+| Kafka | SASL password, TLS private key and key passwords, OAuth client secret and JWT assertion private key/passphrase; also fault-tolerance consumer/producer options | |
+| Postgres and Redis | the credentials of a connection string: a URL with userinfo or a query as a whole, and the `password` and `sslpassword` values of a libpq keyword string; Postgres inline TLS client key | a connection string without credentials |
+| S3 and DynamoDB | AWS secret access key and credential-bearing endpoint URLs | |
+| Delta Lake | Known object-store secret keys, session/bearer tokens, SAS tokens, client secrets, service-account keys, customer encryption keys, and Unity catalog access tokens and client secrets, including supported aliases | |
+| Iceberg | Catalog credentials/tokens, authentication headers, and known FileIO credential keys | |
+| NATS | Inline credentials, JWT, NKey seed, token, password, and credential-bearing server URL | |
+| S2 and Pub/Sub | Authentication token and inline credentials, respectively | |
+| URL input and Avro | Credential-bearing URLs, including token-only userinfo; Avro registry password, authorization token, credential-bearing proxy URL, and `Authorization`, `Proxy-Authorization`, or `X-API-Key` headers | a URL without credentials |
+
+An unknown option key or a custom header is not in this table, even if its
+name looks like a credential. Connector errors still leave its value out.
+
 :::warning
-These rules protect secret references only. A credential written inline in
-the `connectors` property is part of the SQL program, and a support bundle
-includes it as written. Use a secret reference for every credential.
+A credential written inline in the `connectors` property is part of the SQL
+program, and a support bundle includes it as written. Use a secret reference
+for every credential: see [Kubernetes](#kubernetes) for how to create one.
 :::
 
 The following limits apply:
@@ -78,7 +100,9 @@ The following limits apply:
   percent-encoding, or escaping, may not be recognized.
 - An environment variable reference is not protected. Its value is
   non-sensitive configuration by contract, and a common word in it would be
-  replaced in every diagnostic that uses the word.
+  replaced in every diagnostic that uses the word. The exception is a value
+  in one of the credential fields of the table above: it is replaced like an
+  inline value.
 - Pipelines started on a runtime from before this fix (see the
   [changelog](/changelog)) do not apply these rules. Restart such pipelines
   after an upgrade.
