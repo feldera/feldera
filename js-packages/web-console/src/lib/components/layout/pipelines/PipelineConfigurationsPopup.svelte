@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import { toast } from 'svelte-french-toast'
   import JSONbig from 'true-json-bigint'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
@@ -229,7 +230,7 @@
         noclose
       >
         <span
-          class="whitespace-pre-wrap text-status-error-dot"
+          class="whitespace-pre-wrap {errorTextClass}"
           data-testid="box-clear-storage-error-message">{clearStorageError}</span
         >
       </GenericDialog>

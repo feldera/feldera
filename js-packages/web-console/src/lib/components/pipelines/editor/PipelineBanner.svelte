@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorBorderClass, errorTextClass } from 'common-ui/statusTone'
   import { ClipboardCopyButton } from 'common-ui'
   import { slide } from 'svelte/transition'
 
@@ -55,14 +56,14 @@
     ? 'border-surface-500'
     : style === 'warning'
       ? 'border-warning-500'
-      : 'border-status-error-dot'} px-3 py-2.5"
+      : errorBorderClass} px-3 py-2.5"
 >
   <div
     class=" fd fd-circle-alert text-[20px] {style === 'info'
       ? 'text-surface-500'
       : style === 'warning'
         ? 'text-warning-500'
-        : 'text-status-error-dot'}"
+        : errorTextClass}"
   ></div>
   <div class="flex flex-col {showMore ? 'gap-2' : 'sm:flex-row'} w-full overflow-hidden">
     <div class=" flex w-full flex-col">

@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { statusToneColors } from 'common-ui/statusTone'
   import { humanSize } from 'common-lib/string'
   import JSONbig from 'true-json-bigint'
 
@@ -142,13 +143,13 @@
           <td class="w-20 px-3">
             {#if 'insert' in row}
               <span
-                class="inline-flex h-5 items-center rounded bg-status-jade-subtle px-1.5 text-xs font-medium text-status-jade"
-                >Insert</span
+                class="inline-flex h-5 items-center rounded px-1.5 text-xs font-medium {statusToneColors
+                  .jade.chip}">Insert</span
               >
             {:else}
               <span
-                class="inline-flex h-5 items-center rounded bg-status-error-subtle px-1.5 text-xs font-medium text-status-error"
-                >Delete</span
+                class="inline-flex h-5 items-center rounded px-1.5 text-xs font-medium {statusToneColors
+                  .error.chip}">Delete</span
               >
             {/if}
           </td>

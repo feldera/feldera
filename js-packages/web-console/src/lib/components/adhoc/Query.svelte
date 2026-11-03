@@ -36,6 +36,7 @@
 </script>
 
 <script lang="ts">
+  import { errorRowClass } from 'common-ui/statusTone'
   import SQLValue from '#lib/components/relationData/SQLValue.svelte'
   import SqlColumnHeader from '#lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '#lib/compositions/common/usePopoverTooltip.svelte.ts'
@@ -360,9 +361,7 @@
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
                   <td colspan="99999999">
                     <!-- At least one 28px row like the data rows; a long error wraps below. -->
-                    <div
-                      class="flex min-h-7 items-start gap-1.5 rounded bg-status-error-subtle px-2 py-1 text-status-error-dot"
-                    >
+                    <div class="flex min-h-7 items-start gap-1.5 rounded px-2 py-1 {errorRowClass}">
                       <span class="fd fd-circle-x mt-[3px] shrink-0 text-[14px]"></span>
                       <span class="inline-block whitespace-pre-wrap first-letter:uppercase"
                         >{row.error}</span

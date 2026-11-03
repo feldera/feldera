@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import { InlineDropdown } from 'common-ui'
   import { slide } from 'svelte/transition'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
@@ -117,7 +118,7 @@
                 {@render list(
                   'Deleted Tables',
                   changes.tables.removed,
-                  'fd fd-circle-slash text-status-error-dot',
+                  `fd fd-circle-slash ${errorTextClass}`,
                   'line-through'
                 )}
               {/if}
@@ -125,7 +126,7 @@
                 {@render list(
                   'Deleted Views',
                   changes.views.removed,
-                  'fd fd-circle-slash text-status-error-dot',
+                  `fd fd-circle-slash ${errorTextClass}`,
                   'line-through'
                 )}
               {/if}
@@ -224,7 +225,7 @@
                 {@render list(
                   'Deleted Input Connectors',
                   changes.inputConnectors.removed,
-                  'fd fd-circle-slash text-status-error-dot',
+                  `fd fd-circle-slash ${errorTextClass}`,
                   'line-through'
                 )}
               {/if}
@@ -232,7 +233,7 @@
                 {@render list(
                   'Deleted Output Connectors',
                   changes.outputConnectors.removed,
-                  'fd fd-circle-slash text-status-error-dot',
+                  `fd fd-circle-slash ${errorTextClass}`,
                   'line-through'
                 )}
               {/if}

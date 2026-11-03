@@ -97,3 +97,13 @@ export const statusToneColors: Record<StatusTone, StatusColors> = {
     healthIndicator: 'bg-error-500'
   }
 }
+
+/** The error red for text and icons outside a status chip: error icons, failed counts and form
+ *  messages. */
+export const errorTextClass = 'text-status-error-dot'
+/** `errorTextClass` on hover, such as for a delete button. */
+export const errorTextHoverClass = 'hover:text-status-error-dot'
+/** The border of an error banner. */
+export const errorBorderClass = 'border-status-error-dot'
+/** A row that shows an error message: the soft error fill with the error red text. */
+export const errorRowClass = 'bg-status-error-subtle text-status-error-dot'

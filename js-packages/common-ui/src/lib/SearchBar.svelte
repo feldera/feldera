@@ -15,6 +15,7 @@
   and Escape or the clear button empties it instead of closing.
 -->
 <script lang="ts">
+  import { errorTextClass } from './statusTone'
   import { tick } from 'svelte'
   import searchIcon from './icons/search.svg?raw'
   import type { SearchDirection, SearchProgress } from './logSearch'
@@ -186,7 +187,7 @@
       <span
         class="shrink-0 px-1 text-sm whitespace-nowrap {hasResults
           ? 'text-surface-600-400'
-          : 'text-status-error-dot'}"
+          : errorTextClass}"
         aria-live="polite">{counterText}</span
       >
     {:else if value}

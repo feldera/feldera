@@ -27,6 +27,7 @@
 </script>
 
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import { Select } from 'common-ui'
   import { Control, Field, FieldErrors, Label } from 'formsnap'
   import { superForm } from 'sveltekit-superforms'
@@ -98,7 +99,7 @@
   <FieldErrors>
     {#snippet children({ errors, errorProps })}
       {#each errors as error}
-        <span class="text-status-error-dot" {...errorProps}>{error}</span>
+        <span class={errorTextClass} {...errorProps}>{error}</span>
       {/each}
     {/snippet}
   </FieldErrors>

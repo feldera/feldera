@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import { TableHandler } from '@vincjo/datatables'
   import { dateMax } from 'common-lib/date'
   import { formatDateTime } from 'common-lib/format'
@@ -470,8 +471,7 @@
                 <span
                   class="absolute inset-x-3 top-1/2 flex -translate-y-1/2 items-center gap-2 text-sm whitespace-nowrap"
                 >
-                  <span class="fd fd-circle-alert shrink-0 text-[16px] text-status-error-dot"
-                  ></span>
+                  <span class="fd fd-circle-alert shrink-0 text-[16px] {errorTextClass}"></span>
                   <span class="truncate">
                     {message.slice(
                       0,

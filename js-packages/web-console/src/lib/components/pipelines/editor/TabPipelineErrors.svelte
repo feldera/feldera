@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorTextClass } from 'common-ui/statusTone'
   import { selectScope } from 'common-ui'
   import { extractProgramStderr, type SystemError } from '#lib/compositions/health/systemErrors.ts'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
@@ -63,7 +64,7 @@
             <span
               class="pr-2 text-[16px] {systemError.cause.warning
                 ? 'fd fd-triangle-alert text-warning-500'
-                : 'fd fd-circle-x text-status-error-dot'}"
+                : `fd fd-circle-x ${errorTextClass}`}"
             >
             </span></a
           >
