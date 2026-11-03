@@ -197,6 +197,27 @@ class RuntimeExecutionError(Exception):
     """Raised when the pipeline execution fails during runtime."""
 
 
+class PipelineRestartedError(Exception):
+    """Raised when the pipeline process came back as a new incarnation mid-test."""
+
+
+def raise_if_restarted(pipeline: Pipeline, incarnation, cause: Exception):
+    """Turn a wrong view result into a restart report when the pipeline is a new incarnation.
+
+    A pipeline pod that restarts after ingestion holds empty tables, reports
+    Running, and answers every ad-hoc query with an empty result. Completion
+    tokens only catch a restart during ingestion (feldera#6986), so the view
+    check compares the incarnation UUID recorded after start.
+    """
+    metrics = pipeline.stats().global_metrics
+    if incarnation is not None and metrics.incarnation_uuid != incarnation:
+        raise PipelineRestartedError(
+            f"pipeline {pipeline.name} restarted during the test: incarnation "
+            f"{incarnation} became {metrics.incarnation_uuid}, it now holds "
+            f"{metrics.total_input_records} input records\n{cause}"
+        ) from cause
+
+
 class TstAccumulator:
     """Base class which accumulates multiple DBSP tests to run and executes them"""
 
@@ -303,6 +324,7 @@ class TstAccumulator:
             ).create_or_replace()
 
             pipeline.start()
+            incarnation = pipeline.stats().global_metrics.incarnation_uuid
 
             for table in tables:
                 if table.get_data() != []:
@@ -313,7 +335,11 @@ class TstAccumulator:
                 pipeline.wait_for_completion(force_stop=False, timeout_s=320)
 
             for view in views:
-                view.validate(pipeline)
+                try:
+                    view.validate(pipeline)
+                except AssertionError as e:
+                    raise_if_restarted(pipeline, incarnation, e)
+                    raise
 
         except Exception as e:
             # Determine if this is a compile time or runtime error based on the pipeline state
