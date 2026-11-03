@@ -13,7 +13,7 @@ use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::ConsumerContext;
-use rdkafka::message::{Header, OwnedHeaders};
+use rdkafka::message::{Header, Headers, OwnedHeaders};
 use rdkafka::{
     ClientConfig, ClientContext, Message,
     config::FromClientConfigAndContext,
@@ -39,6 +39,15 @@ use super::spool::{ReplaySpool, SpooledRecord};
 use super::{CommonConfig, Ctp, count_partitions_in_topic};
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
+
+/// Header that carries the [`OutputPosition`] when the caller supplies the
+/// message key.  Keyless messages store the position as the message key
+/// instead, so the header is only written for keyed messages.
+///
+/// A keyed message carries this header first, ahead of any configured or
+/// per-message headers, and [`OutputPosition::from_message`] takes the first
+/// match, so a user header with the same name cannot shadow it.
+pub(crate) const POSITION_HEADER: &str = "__feldera_position";
 
 /// Max metadata overhead added by Kafka to each message.  Useful payload size
 /// plus this overhead must not exceed `message.max.bytes`.
@@ -226,6 +235,10 @@ fn send_record(
     }
 }
 
+/// Framing that Kafka adds to each header on top of its key and value: a
+/// length for each, at most 5 bytes apiece.
+const HEADER_OVERHEAD: usize = 10;
+
 /// State of the `KafkaOutputEndpoint`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum State {
@@ -245,7 +258,8 @@ enum State {
 
 /// A position in the output partition.
 ///
-/// This is stored as the Kafka message key.
+/// A keyless message stores this as the Kafka message key.  A keyed message
+/// keeps the caller's key and stores this in the [`POSITION_HEADER`] header.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct OutputPosition {
     /// The transaction number.
@@ -260,11 +274,16 @@ struct OutputPosition {
     /// An index within the transaction's output.  The first message has
     /// substep 0, the second has substep 1, and so on.
     ///
-    /// We don't have an a priori need to store the substep number in the Kafka
-    /// message key, but the substep number allows us to have a unique key for
-    /// every message.  That is valuable because Kafka can be configured to
-    /// deduplicate messages based on key and we do not want to lose data in
-    /// that case.
+    /// For a keyless message, the substep number gives every message a unique
+    /// key, so compaction never removes one.
+    ///
+    /// Keyed messages repeat keys, so compaction can remove an older message
+    /// for a key, but it always keeps the newest message for each key.  The
+    /// newest message in a partition is the newest for its own key, so the
+    /// message that recovery reads survives compaction.  The exception is a
+    /// keyed tombstone (a message without a value), which compaction
+    /// eventually removes too.  That is why [`KafkaOutputEndpoint::push_key`]
+    /// refuses keyed messages without a value.
     substep: u64,
 }
 
@@ -273,6 +292,15 @@ impl OutputPosition {
     where
         M: Message,
     {
+        // Keyed messages carry the position in a header; keyless messages
+        // (and messages written before keyed output was supported) carry it
+        // as the message key.
+        if let Some(header) = msg
+            .headers()
+            .and_then(|headers| headers.iter().find(|header| header.key == POSITION_HEADER))
+        {
+            return Ok(serde_json::from_slice(header.value.unwrap_or(&[]))?);
+        }
         Ok(serde_json::from_slice(msg.key().unwrap_or(&[]))?)
     }
 }
@@ -740,7 +768,7 @@ impl KafkaOutputEndpoint {
                 if let Some(msg) = ctp.read_last_message(&watermarks)? {
                     let key = OutputPosition::from_message(&msg).with_context(|| {
                         format!(
-                            "message at offset {} in {ctp} should have transaction and substep as key",
+                            "message at offset {} in {ctp} should have transaction and substep as its key or in its '{POSITION_HEADER}' header",
                             msg.offset()
                         )
                     })?;
@@ -793,12 +821,6 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         val: Option<&[u8]>,
         headers: &[(&str, Option<&[u8]>)],
     ) -> AnyResult<()> {
-        if provided_key.is_some() {
-            bail!(
-                "Kafka output transport does not support key-value pairs when configured in exactly once fault-tolerant mode."
-            );
-        }
-
         let _guard = span(&self.topic);
         let State::BatchOpen(OutputPosition {
             transaction,
@@ -810,32 +832,91 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                 self.state
             )
         };
+
+        // Refuse a keyed message before it takes a substep, the same way
+        // keyed messages were refused before they were supported, so that a
+        // refused message affects nothing else.
+        let position_json = serde_json::to_string(&OutputPosition {
+            transaction,
+            substep,
+        })
+        .unwrap();
+        if let Some(key) = provided_key {
+            let Some(val) = val else {
+                // A keyed tombstone can be the newest message in its
+                // partition, and compaction eventually removes it, so recovery
+                // would read an older position and write committed output
+                // again.  See the `substep` documentation.
+                bail!(
+                    "Kafka output transport in exactly once fault-tolerant mode does not support messages with a key but no value (tombstones), which the 'confluent_jdbc' and 'redis' formats produce for deletions. Use a format that represents a deletion with a value, such as 'debezium', or at-least-once fault tolerance."
+                );
+            };
+            // Headers count toward `message.max.bytes`, so include the
+            // position header and every configured and per-message header.
+            let header_size = |key: &str, value: Option<&[u8]>| {
+                key.len() + value.map_or(0, <[u8]>::len) + HEADER_OVERHEAD
+            };
+            let headers_size = header_size(POSITION_HEADER, Some(position_json.as_bytes()))
+                + self
+                    .configured_headers
+                    .iter()
+                    .map(|(key, value)| header_size(key, value.as_deref()))
+                    .sum::<usize>()
+                + headers
+                    .iter()
+                    .map(|(key, value)| header_size(key, *value))
+                    .sum::<usize>();
+            if key.len() + val.len() + headers_size > self.max_message_size {
+                bail!(
+                    "Kafka message with a {}-byte key, a {}-byte value and {headers_size} bytes of headers exceeds the maximum of {} bytes ('message.max.bytes' minus {MAX_MESSAGE_OVERHEAD} bytes of overhead)",
+                    key.len(),
+                    val.len(),
+                    self.max_message_size
+                );
+            }
+        }
+
         self.state = State::BatchOpen(OutputPosition {
             transaction,
             substep: substep + 1,
         });
 
         if transaction >= self.next_transaction {
-            let mut all_headers = self.configured_headers.clone();
+            let (partition, key, mut all_headers) = if let Some(key) = provided_key {
+                // With a caller-supplied key, the position rides in a header so
+                // that the caller's key stays the message key, and librdkafka
+                // partitions by key hash (partition -1, unassigned) instead of
+                // our round-robin, so that messages with the same key stay in
+                // order within one partition (issue #7355).  The position
+                // header goes first; see `POSITION_HEADER`.
+                (
+                    -1,
+                    key.to_vec(),
+                    vec![(
+                        POSITION_HEADER.to_owned(),
+                        Some(position_json.as_bytes().to_vec()),
+                    )],
+                )
+            } else {
+                let partition = self.next_partition as i32;
+                self.next_partition += 1;
+                if self.next_partition >= self.n_partitions {
+                    self.next_partition = 0;
+                }
+                (partition, position_json.into_bytes(), Vec::new())
+            };
+            all_headers.extend(self.configured_headers.iter().cloned());
             all_headers.extend(
                 headers
                     .iter()
                     .map(|(key, value)| ((*key).to_owned(), value.map(<[u8]>::to_vec))),
             );
-            let key = OutputPosition {
-                transaction,
-                substep,
-            };
             let record = SpooledRecord {
-                partition: self.next_partition as i32,
-                key: Some(serde_json::to_vec(&key).unwrap()),
+                partition,
+                key: Some(key),
                 payload: val.map(<[u8]>::to_vec),
                 headers: all_headers,
             };
-            self.next_partition += 1;
-            if self.next_partition >= self.n_partitions {
-                self.next_partition = 0;
-            }
 
             if !self.needs_abort {
                 // Once the transaction is lost, `batch_end` sends every
