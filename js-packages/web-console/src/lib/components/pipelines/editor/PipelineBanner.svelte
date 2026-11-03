@@ -44,13 +44,9 @@
     return () => observer.disconnect()
   })
 
-  const textClass = $derived(
-    style === 'info'
-      ? 'text-surface-950-50'
-      : style === 'warning'
-        ? 'text-warning-950-50'
-        : 'text-error-950-50'
-  )
+  // The text stays neutral; the border and icon carry the warning or error colour.
+  const textClass = 'text-surface-950-50'
+  const messageClass = 'text-surface-700-300'
 </script>
 
 <div
@@ -59,18 +55,18 @@
     ? 'border-surface-500'
     : style === 'warning'
       ? 'border-warning-500'
-      : 'border-error-500'} px-3 py-2.5"
+      : 'border-status-error-dot'} px-3 py-2.5"
 >
   <div
     class=" fd fd-circle-alert text-[20px] {style === 'info'
       ? 'text-surface-500'
       : style === 'warning'
         ? 'text-warning-500'
-        : 'text-error-500'}"
+        : 'text-status-error-dot'}"
   ></div>
   <div class="flex flex-col {showMore ? 'gap-2' : 'sm:flex-row'} w-full overflow-hidden">
     <div class=" flex w-full flex-col">
-      <div class="flex justify-between pb-1 font-semibold">
+      <div class="flex justify-between pb-1 font-medium">
         <span class={textClass}>{header}</span>
         <div class="flex flex-nowrap gap-2.5">
           {#if message}
@@ -88,7 +84,7 @@
       </div>
       <span
         bind:this={spanEl}
-        class="{textClass} break-all whitespace-pre-wrap {showMore
+        class="{messageClass} break-all whitespace-pre-wrap {showMore
           ? 'scrollbar max-h-[30vh] overflow-auto '
           : 'line-clamp-1'}"
       >
@@ -99,7 +95,7 @@
           onclick={() => {
             showMore = !showMore
           }}
-          class="text-start underline"
+          class="text-start text-surface-600-400 underline hover:text-surface-950-50"
         >
           {#if showMore}
             Show less

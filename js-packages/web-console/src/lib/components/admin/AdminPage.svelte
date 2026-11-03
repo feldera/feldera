@@ -101,7 +101,7 @@
                 {#each tenantCollection.items as t (t.id)}
                   <Listbox.Item
                     item={t}
-                    class="flex h-9 cursor-pointer items-center gap-2 rounded px-3 hover:preset-tonal-surface"
+                    class="flex h-9 cursor-pointer items-center gap-2 rounded px-3 hover:bg-row-hover"
                   >
                     <Listbox.ItemText>{t.name}</Listbox.ItemText>
                   </Listbox.Item>

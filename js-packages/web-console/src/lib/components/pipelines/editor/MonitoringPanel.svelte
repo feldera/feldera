@@ -295,7 +295,7 @@
     onnext={() => submitLogSearch('next')}
     onprevious={() => submitLogSearch('prev')}
     onclear={resetLogSearch}
-    class="h-8 w-full max-w-[480px]"
+    class="h-6 w-full max-w-[480px] text-sm"
   />
 {/snippet}
 

@@ -236,7 +236,7 @@
                   type="button"
                   role="option"
                   aria-selected={selected}
-                  class="flex h-9 items-center justify-between gap-2 rounded px-3 text-left hover:preset-tonal-surface"
+                  class="flex h-9 items-center justify-between gap-2 rounded px-3 text-left hover:bg-row-hover"
                   onclick={() => {
                     statusFilterLabel = filter[0]
                     statusFilter.value = filter[0]
@@ -426,7 +426,7 @@
                 <span
                   class="absolute inset-x-3 top-1/2 flex -translate-y-1/2 items-center gap-2 text-sm whitespace-nowrap"
                 >
-                  <span class="fd fd-circle-alert shrink-0 text-[16px] text-error-500"></span>
+                  <span class="fd fd-circle-alert shrink-0 text-[16px] text-status-error-dot"></span>
                   <span class="truncate">
                     {message.slice(
                       0,

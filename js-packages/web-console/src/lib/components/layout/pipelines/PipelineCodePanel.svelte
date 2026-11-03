@@ -450,7 +450,7 @@ example = "1.0"`,
            header row, as in the tabbed panels below (`TabsPanel`). -->
       <div class="panel flex h-full flex-col p-0">
         {@render textEditor()}
-        <div class="flex flex-wrap items-center gap-x-8 border-t border-line py-2 pr-4 pl-6">
+        <div class="flex flex-wrap items-center gap-x-8 border-t border-line py-[5px] pr-4 pl-6">
           {@render statusBar()}
         </div>
       </div>

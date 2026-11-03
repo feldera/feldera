@@ -104,7 +104,7 @@
   >
     {#each history.current as entry (entry.id)}
       <button
-        class="flex min-w-0 items-baseline justify-between gap-6 rounded px-2 py-2 text-left hover:preset-tonal-surface"
+        class="flex min-w-0 items-baseline justify-between gap-6 rounded px-2 py-2 text-left hover:bg-row-hover"
         title={entry.name}
         onclick={() => openBundle(entry)}
         data-testid="btn-open-bundle-from-list"

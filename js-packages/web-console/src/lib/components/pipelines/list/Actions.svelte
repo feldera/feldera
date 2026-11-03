@@ -752,7 +752,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       >
         {#each buttons as button}
           <button
-            class="flex flex-col gap-0.5 rounded px-3 py-2 text-left hover:preset-tonal-surface {button.disabled
+            class="flex flex-col gap-0.5 rounded px-3 py-2 text-left hover:bg-row-hover {button.disabled
               ? 'pointer-events-none opacity-50'
               : ''}"
             onclick={button.onclick}
@@ -823,7 +823,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         class="bg-white-dark absolute top-full right-0 z-30 mt-1 flex w-44 flex-col justify-stretch rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
       >
         <button
-          class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface disabled:opacity-50"
+          class="flex h-9 items-center gap-2 rounded px-3 text-left hover:bg-row-hover disabled:opacity-50"
           disabled={!pipelineList.pipelines || unsavedChanges}
           onclick={() => {
             close()
@@ -841,7 +841,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
           {/if}
         </Tooltip>
         <button
-          class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface disabled:opacity-50"
+          class="flex h-9 items-center gap-2 rounded px-3 text-left hover:bg-row-hover disabled:opacity-50"
           disabled={!!deleteDisabledReason}
           onclick={() => {
             close()

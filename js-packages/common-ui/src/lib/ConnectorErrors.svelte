@@ -176,7 +176,7 @@
                   {/if}
                 </span>
                 {#if status?.fatal_error != null && item.error.message === status.fatal_error}
-                  <span class="fd fd-circle-x text-error-500"></span>
+                  <span class="fd fd-circle-x text-status-error-dot"></span>
                 {/if}
                 <span class="ml-auto">{formatServerTime(item.error.timestamp)}</span>
                 <Tooltip placement="top">{formatDateTime(Dayjs(item.error.timestamp))}</Tooltip>

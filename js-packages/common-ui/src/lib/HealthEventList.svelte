@@ -117,14 +117,14 @@
           {formatDateTimeRange(eventParts.timestampFrom, eventParts.timestampTo)}
         </div>
         <button
-          class="fd fd-chevron-left btn-icon hover:not-disabled:preset-tonal-surface"
+          class="fd fd-chevron-left btn-icon hover:not-disabled:bg-row-hover"
           onclick={onNavigatePrevious}
           disabled={!onNavigatePrevious}
           aria-label="Previous event"
         >
         </button>
         <button
-          class="fd fd-chevron-right btn-icon hover:not-disabled:preset-tonal-surface"
+          class="fd fd-chevron-right btn-icon hover:not-disabled:bg-row-hover"
           onclick={onNavigateNext}
           disabled={!onNavigateNext}
           aria-label="Next event"
@@ -138,7 +138,7 @@
         <InlineDropdown bind:open={() => openStates[i], (isOpen) => setOpen(i, isOpen)}>
           {#snippet header(open, toggle)}
             <div
-              class="flex cursor-pointer items-center gap-3 rounded p-2 hover:bg-surface-100-900/50"
+              class="flex cursor-pointer items-center gap-3 rounded p-2 hover:bg-row-hover"
               onclick={toggle}
               role="button"
               tabindex="0"

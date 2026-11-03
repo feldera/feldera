@@ -25,7 +25,7 @@
         class="bg-white-dark flex flex-col justify-center rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
       >
         <label
-          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:bg-row-hover"
         >
           Autosave
           <CompactSwitch
@@ -36,7 +36,7 @@
           />
         </label>
         <label
-          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:bg-row-hover"
         >
           Show minimap
           <CompactSwitch
@@ -47,7 +47,7 @@
           />
         </label>
         <label
-          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:bg-row-hover"
         >
           Show sticky scroll
           <CompactSwitch

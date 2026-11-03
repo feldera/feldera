@@ -117,7 +117,7 @@
                 {@render list(
                   'Deleted Tables',
                   changes.tables.removed,
-                  'fd fd-circle-slash text-error-500',
+                  'fd fd-circle-slash text-status-error-dot',
                   'line-through'
                 )}
               {/if}
@@ -125,7 +125,7 @@
                 {@render list(
                   'Deleted Views',
                   changes.views.removed,
-                  'fd fd-circle-slash text-error-500',
+                  'fd fd-circle-slash text-status-error-dot',
                   'line-through'
                 )}
               {/if}
@@ -224,7 +224,7 @@
                 {@render list(
                   'Deleted Input Connectors',
                   changes.inputConnectors.removed,
-                  'fd fd-circle-slash text-error-500',
+                  'fd fd-circle-slash text-status-error-dot',
                   'line-through'
                 )}
               {/if}
@@ -232,7 +232,7 @@
                 {@render list(
                   'Deleted Output Connectors',
                   changes.outputConnectors.removed,
-                  'fd fd-circle-slash text-error-500',
+                  'fd fd-circle-slash text-status-error-dot',
                   'line-through'
                 )}
               {/if}

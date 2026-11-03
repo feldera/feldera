@@ -10,7 +10,7 @@
     {
       title: 'Discord',
       path: 'https://discord.com/invite/s6t5n9UzHE',
-      class: 'w-6 before:-ml-0.5',
+      class: 'h-4 w-4 shrink-0',
       icon: IconDiscord,
       openInNewTab: true,
       testid: 'button-vertical-nav-discord'
@@ -18,7 +18,7 @@
     {
       title: 'Slack',
       path: 'https://felderacommunity.slack.com/join/shared_invite/zt-222bq930h-dgsu5IEzAihHg8nQt~dHzA',
-      class: 'w-6 before:ml-0.5',
+      class: 'h-4 w-4 shrink-0',
       icon: IconSlack,
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
@@ -75,7 +75,7 @@
       href={doc.href}
       target="_blank"
       rel="noreferrer"
-      class="flex h-9 items-center gap-2 rounded px-3 hover:preset-tonal-surface">{doc.title}</a
+      class="flex h-9 items-center gap-2 rounded px-3 hover:bg-row-hover">{doc.title}</a
     >
   {/each}
 {/snippet}
@@ -86,7 +86,7 @@
       href={Array.isArray(item.path) ? item.path[0] : item.path}
       target="_blank"
       rel="noreferrer"
-      class="flex h-9 flex-nowrap items-center gap-2 rounded px-3 hover:preset-tonal-surface"
+      class="flex h-9 flex-nowrap items-center gap-2 rounded px-3 hover:bg-row-hover"
       {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
     >
       <item.icon class="{item.class} text-[16px]" />

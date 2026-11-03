@@ -121,6 +121,8 @@
   })
 
   const options: EChartsOption = {
+    // No animation: each new sample redraws the chart in place instead of sliding it.
+    animation: false,
     animationDuration: 0,
     animationDurationUpdate: 0,
     animationEasingUpdate: 'linear' as const,

@@ -43,7 +43,7 @@
 >
   <div class="sticky top-0 flex flex-col gap-2 bg-page pb-2">
     <!-- 40px tall, like the file tab row beside it, so the two line up. -->
-    <div class="flex h-10 items-center justify-between gap-2 pl-3">
+    <div class="flex h-10 items-center justify-between gap-2 pr-1 pl-3">
       <span class="text-[14px] font-medium text-surface-600-400">Pipelines</span>
       <button
         onclick={onclose}
@@ -71,7 +71,7 @@
   {#if visiblePipelines}
     {#each visiblePipelines as pipeline}
       <a
-        class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pr-3 pl-3 {pipelineName ===
+        class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pr-1 pl-3 {pipelineName ===
         pipeline.name
           ? 'bg-row-hover'
           : 'hover:bg-row-hover'}"

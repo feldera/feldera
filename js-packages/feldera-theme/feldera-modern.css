@@ -322,6 +322,13 @@
   --color-status-error-dot: #b35449;
   /* Timeline bars with no events, and other "unknown" markers. */
   --color-status-nodata: #dedfd5;
+  /* Brighter status dots for the pipelines list, close to the status chips, so the dots
+     stay easy to tell apart at 8px. */
+  --color-status-neutral-pip: #9a9ca4;
+  --color-status-blue-pip: #3f86d9;
+  --color-status-jade-pip: #2fa36b;
+  --color-status-warning-pip: #e2a72a;
+  --color-status-error-pip: #e0504a;
 
   /* Neutrals for the tinted page: an almost white, neutral grey page, white
      tables, editors, panels and form controls on it, a plain grey for tab bars and
@@ -354,6 +361,11 @@
   --color-status-error-subtle: #f4121227;
   --color-status-error-dot: #db857b;
   --color-status-nodata: #45463f;
+  --color-status-neutral-pip: #6f727b;
+  --color-status-blue-pip: #6aa8ff;
+  --color-status-jade-pip: #3ecf8e;
+  --color-status-warning-pip: #f5c04a;
+  --color-status-error-pip: #f0706a;
   --color-page: var(--color-dark);
   --color-toolbar: #222222;
   --color-row-hover: var(--color-surface-950);

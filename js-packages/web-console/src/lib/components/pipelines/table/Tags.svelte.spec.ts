@@ -135,7 +135,7 @@ describe('Tags.svelte', () => {
       await page.getByRole('button', { name: 'Tag' }).click()
 
       // Empty pool skips the search list and lands on create immediately.
-      await expect.element(page.getByPlaceholder('Tag name')).toBeVisible()
+      await expect.element(page.getByPlaceholder('e.g. production')).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'Create' })).toBeVisible()
       expect(page.getByPlaceholder('Search or add tags').elements()).toHaveLength(0)
     })
@@ -170,7 +170,7 @@ describe('Tags.svelte', () => {
       // Empty knownTags opens create directly — no "Create a new tag" list click.
       await page.getByRole('button', { name: 'Tag' }).click()
 
-      const nameInput = page.getByPlaceholder('Tag name')
+      const nameInput = page.getByPlaceholder('e.g. production')
       const createButton = page.getByRole('button', { name: 'Create' })
 
       // A character outside the allowed set is rejected up front.
@@ -194,7 +194,7 @@ describe('Tags.svelte', () => {
       const { patchPipeline } = renderTags({ tags: [], knownTags: [] })
       await page.getByRole('button', { name: 'Tag' }).click()
 
-      const nameInput = page.getByPlaceholder('Tag name')
+      const nameInput = page.getByPlaceholder('e.g. production')
       await nameInput.fill('qa')
       // `fill` leaves the input focused; Enter submits the surrounding <form>.
       await userEvent.keyboard('{Enter}')
@@ -208,7 +208,7 @@ describe('Tags.svelte', () => {
       const { patchPipeline } = renderTags({ tags: [], knownTags: [] })
       await page.getByRole('button', { name: 'Tag' }).click()
 
-      const nameInput = page.getByPlaceholder('Tag name')
+      const nameInput = page.getByPlaceholder('e.g. production')
       await expect.element(page.getByRole('button', { name: 'Create' })).toBeDisabled()
       // Focus the empty name field and press Enter — submit must stay a no-op.
       await nameInput.click()
@@ -221,7 +221,7 @@ describe('Tags.svelte', () => {
       const { patchPipeline } = renderTags({ tags: [], knownTags: [] })
       await page.getByRole('button', { name: 'Tag' }).click()
 
-      const nameInput = page.getByPlaceholder('Tag name')
+      const nameInput = page.getByPlaceholder('e.g. production')
       await nameInput.fill('qa')
       // Tab moves from the name field onto the first color swatch (Red), then
       // Purple; Space activates that focused swatch like a mouse click.

@@ -18,7 +18,6 @@
 </script>
 
 <script lang="ts">
-  import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { onDestroy, untrack } from 'svelte'
   import { isPipelineInteractive } from '#lib/functions/pipelines/status.ts'
   import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
@@ -89,10 +88,11 @@
     }
   })
 
-  const progressMax = $derived.by(() => {
-    // Max is always the same to maintain consistent scale
-    return Math.log10(maxDuration)
-  })
+  // The small countdown ring: the share of the collection time still to go.
+  const ringLength = 2 * Math.PI * 8
+  const remainingFraction = $derived(
+    duration > 1 ? Math.min(1, Math.max(0, progressValue / Math.log10(duration))) : 0
+  )
 
   const displayTime = $derived.by(() => {
     if (!isCollecting) {
@@ -283,21 +283,17 @@
 {/snippet}
 
 <div class="flex h-full flex-col">
-  {#if profilingNotEnabledMessage}
-    <WarningBanner>{profilingNotEnabledMessage}</WarningBanner>
-  {:else if pipelineNotRunning}
-    <WarningBanner>Start the pipeline to collect the profile</WarningBanner>
+  {#if profilingNotEnabledMessage || pipelineNotRunning}
+    <!-- Inset from the tabs and the panel edges, with all four corners rounded. -->
+    <div class="px-4 pt-4">
+      {#if profilingNotEnabledMessage}
+        <WarningBanner class="rounded!">{profilingNotEnabledMessage}</WarningBanner>
+      {:else}
+        <WarningBanner class="rounded!">Start the pipeline to collect the profile</WarningBanner>
+      {/if}
+    </div>
   {/if}
   <div class="flex flex-wrap items-center gap-6 px-4 pt-6 pb-4">
-    <Progress value={progressValue} class="relative h-fit w-fit items-center" max={progressMax}>
-      <div class="absolute inset-0 flex items-center justify-center">
-        <span class="text-lg font-medium">{displayTime}</span>
-      </div>
-      <Progress.Circle>
-        <Progress.CircleTrack />
-        <Progress.CircleRange />
-      </Progress.Circle>
-    </Progress>
     <div class="flex flex-col gap-3">
       <span class="text-surface-600-400">Select Samply profile duration</span>
       <div class="flex flex-wrap items-center gap-2">
@@ -314,7 +310,7 @@
             {formatTime(time)}
           </button>
         {/each}
-        <label class="ml-2 flex items-center gap-2">
+        <label class="flex items-center gap-2">
           <Input
             type="number"
             class="input h-8 w-24 text-base"
@@ -334,6 +330,34 @@
         >
           {isCollecting ? `Collecting (${displayTime})` : 'Collect profile'}
         </button>
+        {#if isCollecting}
+          <!-- A small countdown ring beside the button; it empties as the collection runs. -->
+          <svg
+            class="h-5 w-5 shrink-0 -rotate-90 self-center"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+          >
+            <circle
+              cx="10"
+              cy="10"
+              r="8"
+              fill="none"
+              stroke-width="2.5"
+              class="stroke-surface-200-800"
+            />
+            <circle
+              cx="10"
+              cy="10"
+              r="8"
+              fill="none"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              class="stroke-surface-950-50 transition-[stroke-dashoffset] duration-1000 ease-linear"
+              stroke-dasharray={ringLength}
+              stroke-dashoffset={ringLength * (1 - remainingFraction)}
+            />
+          </svg>
+        {/if}
         {#if hasAvailableProfile}
           <button
             class="btn h-8 preset-tonal-surface px-4"

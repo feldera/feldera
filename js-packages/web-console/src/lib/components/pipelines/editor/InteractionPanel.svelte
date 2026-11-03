@@ -75,7 +75,7 @@
 
 {#snippet TabBarEndClose()}
   <button
-    class="fd fd-x ml-auto btn-icon text-[20px]"
+    class="fd fd-x ml-auto btn-icon btn-icon-sm text-[16px] text-surface-700-300 hover:bg-row-hover"
     onclick={() => {
       _currentTab = null
       showInteractionPanel.value = false
@@ -84,9 +84,11 @@
   ></button>
 {/snippet}
 
+<!-- A 40px tab row, like the file tabs and the pipelines list beside it, so all three line up. -->
 <TabsPanel
   {tabs}
   bind:currentTab={currentTab.value}
   tabProps={{ pipeline, deleted }}
   tabLabelVariant="underline"
+  headerClass="[&>[role=tab]]:mt-2! [&>button:not([role=tab])]:my-2!"
 />

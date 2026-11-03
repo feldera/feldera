@@ -61,9 +61,9 @@
             aria-label={systemError.cause.warning ? 'Warning location' : 'Error location'}
           >
             <span
-              class="pr-2 text-[20px] {systemError.cause.warning
+              class="pr-2 text-[16px] {systemError.cause.warning
                 ? 'fd fd-triangle-alert text-warning-500'
-                : 'fd fd-circle-x text-error-500'}"
+                : 'fd fd-circle-x text-status-error-dot'}"
             >
             </span></a
           >

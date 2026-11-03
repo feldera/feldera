@@ -66,8 +66,6 @@
     onclear
   }: Props = $props()
 
-  const findShortcutLabel =
-    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘F' : 'Ctrl F'
   const hasResults = $derived(!!results && results.total > 0)
   const counterText = $derived(
     !results ? '' : results.total > 0 ? `${results.current} of ${results.total}` : 'No results'
@@ -188,24 +186,19 @@
       <span
         class="shrink-0 px-1 text-sm whitespace-nowrap {hasResults
           ? 'text-surface-600-400'
-          : 'text-error-500'}"
+          : 'text-status-error-dot'}"
         aria-live="polite">{counterText}</span
       >
     {:else if value}
       <span class="shrink-0 px-1 text-sm whitespace-nowrap text-surface-600-400">
         Press <kbd class="rounded border border-surface-200-800 px-1 text-xs">Enter</kbd>
       </span>
-    {:else}
-      <kbd
-        class="mr-1 shrink-0 rounded border border-surface-200-800 px-1 text-xs whitespace-nowrap text-surface-600-400"
-        >{findShortcutLabel}</kbd
-      >
     {/if}
     <!-- Match navigation shows once a search has run. -->
     <div class="flex shrink-0 items-center gap-1 {results ? '' : 'hidden'}">
       <button
         type="button"
-        class="fd fd-arrow-down btn-icon rotate-180 p-0 hover:not-disabled:preset-tonal-surface disabled:opacity-30"
+        class="fd fd-arrow-down btn-icon size-5! min-h-0 rotate-180 p-0 text-[14px] hover:not-disabled:bg-row-hover disabled:opacity-30"
         onclick={() => submit('prev')}
         disabled={!hasResults}
         aria-label="Previous match"
@@ -214,7 +207,7 @@
       </button>
       <button
         type="button"
-        class="fd fd-arrow-down btn-icon p-0 hover:not-disabled:preset-tonal-surface disabled:opacity-30"
+        class="fd fd-arrow-down btn-icon size-5! min-h-0 p-0 text-[14px] hover:not-disabled:bg-row-hover disabled:opacity-30"
         onclick={() => submit('next')}
         disabled={!hasResults}
         aria-label="Next match"
@@ -226,7 +219,7 @@
       <span class="mx-1 h-4 w-px shrink-0 bg-surface-200-800" aria-hidden="true"></span>
       <button
         type="button"
-        class="fd fd-x btn-icon p-0 hover:preset-tonal-surface"
+        class="fd fd-x btn-icon size-5! min-h-0 p-0 text-[14px] hover:bg-row-hover"
         onclick={close}
         aria-label="Clear search"
         title="Clear search (Esc)"
@@ -238,7 +231,7 @@
 <div class="relative flex items-center {className}">
   <button
     type="button"
-    class="btn-icon p-0.5 text-[16px] hover:preset-tonal-surface {buttonClass}"
+    class="btn-icon p-0.5 text-[16px] hover:bg-row-hover {buttonClass}"
     class:preset-tonal-surface={open}
     onclick={toggle}
     onmousedown={(e) => e.preventDefault()}
@@ -270,7 +263,7 @@
       <span class="w-14 px-1 shrink-0 text-sm whitespace-nowrap text-surface-600-400 text-right">{counterText}</span>
       <button
         type="button"
-        class="fd fd-arrow-down btn-icon rotate-180 p-0 hover:not-disabled:preset-tonal-surface disabled:opacity-30"
+        class="fd fd-arrow-down btn-icon rotate-180 p-0 hover:not-disabled:bg-row-hover disabled:opacity-30"
         onclick={() => submit('prev')}
         disabled={!hasResults}
         aria-label="Previous match"
@@ -279,7 +272,7 @@
       </button>
       <button
         type="button"
-        class="fd fd-arrow-down btn-icon p-0 hover:not-disabled:preset-tonal-surface disabled:opacity-30"
+        class="fd fd-arrow-down btn-icon p-0 hover:not-disabled:bg-row-hover disabled:opacity-30"
         onclick={() => submit('next')}
         disabled={!hasResults}
         aria-label="Next match"
@@ -288,7 +281,7 @@
       </button>
       <button
         type="button"
-        class="fd fd-x btn-icon p-0 ml-2 hover:preset-tonal-surface"
+        class="fd fd-x btn-icon p-0 ml-2 hover:bg-row-hover"
         onclick={close}
         aria-label="Close search"
         title="Close search (Esc to clear)"

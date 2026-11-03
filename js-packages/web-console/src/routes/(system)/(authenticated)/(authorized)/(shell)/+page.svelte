@@ -136,7 +136,7 @@
                 <div class="text-xl font-medium">Explore our communities and documentation</div>
                 <!-- The negative margins keep the title row's height and the ×'s position. -->
                 <button
-                  class="fd fd-x -my-0.5 -mr-2 btn-icon text-[16px] hover:preset-tonal-surface"
+                  class="fd fd-x -my-0.5 -mr-2 btn-icon text-[16px] hover:bg-row-hover"
                   aria-label="Close"
                   onclick={() => (welcomed.value = !welcomed.value)}
                 ></button>
@@ -246,7 +246,7 @@
               {#snippet content()}
                 <div
                   transition:slide={{ duration: 150 }}
-                  class="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+                  class="grid grid-cols-1 gap-4 pt-0.5 pb-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
                 >
                   {#each demos.current.slice(0, maxShownDemos) as demo}
                     <DemoTile {demo} placement="home"></DemoTile>

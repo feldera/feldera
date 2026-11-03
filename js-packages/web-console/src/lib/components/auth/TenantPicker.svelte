@@ -33,7 +33,7 @@
       <div class="flex flex-col gap-2">
         {#each memberships as membership (membership.tenantId)}
           <button
-            class="btn flex justify-between preset-outlined-surface-200-800 hover:preset-tonal-surface"
+            class="btn flex justify-between preset-outlined-surface-200-800 hover:bg-row-hover"
             disabled={selecting}
             onclick={() => select(membership)}
           >

@@ -177,11 +177,11 @@
 
 {#snippet eventGroup(events: Bucket, iconClass: string = '')}
   <div
-    class="-mx-2 flex flex-nowrap items-center gap-7 rounded px-2 py-2 {selectedEventBuckets.has(events)
-      ? 'bg-secondary-50-950/50'
+    class="-mx-2 flex flex-nowrap items-center gap-6 rounded px-2 py-2 {selectedEventBuckets.has(events)
+      ? 'bg-row-hover'
       : ''}"
   >
-    <span class="w-[180px] text-surface-600-400 sm:w-[320px]">
+    <span class="w-[180px] shrink-0 text-surface-600-400 sm:w-[240px]">
       {formatDateTimeRange(events.timestampFrom, events.timestampTo)}
     </span>
     <div class="flex flex-col gap-4">
@@ -197,20 +197,20 @@
     role="presentation"
   >
     <div
-      class={'fd fd-chevron-down text-[20px] transition-transform ' + (open ? 'rotate-180' : '')}
+      class={'fd fd-chevron-down text-[16px] transition-transform ' + (open ? 'rotate-180' : '')}
     ></div>
     {@render title()}
   </div>
 {/snippet}
 
 <div class="relative -mx-2 scrollbar h-full overflow-y-auto px-2">
-  <div bind:this={containerElement} class="absolute flex w-[calc(100%-12px)] flex-col gap-3 pb-2">
+  <div bind:this={containerElement} class="absolute flex w-[calc(100%-12px)] flex-col gap-6 pb-2">
     {#if unresolvedEvents.length > 0}
       <div class="flex flex-col gap-2">
         <InlineDropdown bind:open={showUnresolved}>
           {#snippet header(open, toggle)}
             {#snippet title()}
-              <div class="w-full text-xl font-semibold">
+              <div class="w-full text-[16px] font-medium">
                 {#if unresolvedEvents.length > 1}
                   {unresolvedEvents.length} ongoing incidents
                 {:else}
@@ -238,7 +238,7 @@
 
     <div class="flex flex-col gap-2">
       {#if previousEvents.length}
-        <span class="bg-white-dark sticky top-0 -mx-1 px-1 py-1 text-xl font-semibold">
+        <span class="bg-white-dark sticky top-0 -mx-1 px-1 py-1 text-[16px] font-medium">
           Previous incidents
         </span>
 
