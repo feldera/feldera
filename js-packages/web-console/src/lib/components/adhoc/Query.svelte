@@ -179,6 +179,22 @@
           </Progress>
         {/if}
       </div>
+      {#if result && result.columns.length && !collapsed}
+        <!-- Copies the results, as comma-separated JSON values. -->
+        <ClipboardCopyButton
+          class="btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+          value={() => tableToCSJV(result)}
+        ></ClipboardCopyButton>
+        <Tooltip placement="top">Copy results</Tooltip>
+      {/if}
+      {#if !isLastQuery}
+        <button
+          class="fd fd-trash-2 btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+          onclick={onDeleteQuery}
+          aria-label="Delete query"
+        ></button>
+      {/if}
+      <!-- Run (or Stop) always sits at the right edge; the other actions sit to its left. -->
       {#if progress}
         <button
           class="btn h-6 preset-outlined-surface-200-800 btn-sm px-2.5"
@@ -198,21 +214,6 @@
           <span class="fd fd-play text-[12px]"></span>
           Run
         </button>
-      {/if}
-      {#if result && result.columns.length && !collapsed}
-        <!-- Copies the results, as comma-separated JSON values. -->
-        <ClipboardCopyButton
-          class="btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
-          value={() => tableToCSJV(result)}
-        ></ClipboardCopyButton>
-        <Tooltip placement="top">Copy results</Tooltip>
-      {/if}
-      {#if !isLastQuery}
-        <button
-          class="fd fd-trash-2 btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
-          onclick={onDeleteQuery}
-          aria-label="Delete query"
-        ></button>
       {/if}
     </div>
     {#if !collapsed}
