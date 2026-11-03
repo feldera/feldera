@@ -730,8 +730,9 @@ export const getPipeline = <ThrowOnError extends boolean = true>(
  *
  * Partially update a pipeline.
  *
- * A `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,
- * enabled by `--enable-pipeline-resize`). It cannot be combined with other fields.
+ * A `deployment_config` changes the CPU, memory, storage, and volume attributes class of a
+ * running pipeline in place (experimental, enabled by `--enable-pipeline-resize`). It cannot be
+ * combined with other fields.
  */
 export const patchPipeline = <ThrowOnError extends boolean = true>(
   options: Options<PatchPipelineData, ThrowOnError>
