@@ -379,6 +379,14 @@ fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
 /// This endpoint collects various diagnostic data from the pipeline including
 /// circuit profile, heap profile, metrics, logs, stats, and connector statistics,
 /// and packages them into a single ZIP file for support purposes.
+///
+/// The response starts before the data is collected, and has no
+/// `Content-Length`. When the bundle collects new data, its first entry,
+/// `collection_log.txt`, gets a line every 10 seconds until the collection is
+/// complete, so that the response is never idle for long. Data that the
+/// pipeline cannot supply is reported inside the bundle. A failure after the
+/// response started cuts the response short, so a client must check that the
+/// ZIP file is complete.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -399,13 +407,8 @@ fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline_name())),
         (status = SERVICE_UNAVAILABLE
-            , body = ErrorResponse
-            , examples(
-                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
-                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
-                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
-            )
-        ),
+            , description = "The database was busy before the response started (`LockTookTooLong` or `DeadlockDetected`)"
+            , body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Metrics & Debugging"

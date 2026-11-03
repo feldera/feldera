@@ -90,6 +90,22 @@ Source edition can be found on github.
   row. Messages are larger, because the schema of the row is in each message
   twice.
 
+- Behavior change (support bundle): the download starts before the data is
+  collected, and has no `Content-Length`. A bundle that collects new data
+  starts with a `collection_log.txt` entry that gets a line every 10 seconds
+  until the collection is complete, so a proxy does not close a slow
+  download. Each step that gets data from the pipeline now stops after 120
+  seconds also while it reads the response body; the step is then reported
+  as failed in the bundle. A failure after the download started cuts the
+  download short instead of returning an error status.
+
+- Behavior change (Python SDK): `Pipeline.support_bundle()` no longer retries
+  a bundle that collects new data after a 502, 503 or 504 response, a read
+  timeout or a dropped connection, because each retry starts a new slow
+  collection. With `collect=False` it still retries.
+  `FelderaClient.get_pipeline_support_bundle()` takes a `retry` argument,
+  `False` by default.
+
 ## v0.376.0
 
 - Behavior change (Python SDK): a request that is not idempotent, such as
