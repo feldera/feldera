@@ -441,7 +441,7 @@
       <!-- A quiet ghost button, so a column of untagged pipelines doesn't read as a column
         of boxes; it firms up while its row is hovered. -->
       <button
-        class="-ml-1.5 flex h-6 items-center gap-1 rounded px-1.5 text-sm whitespace-nowrap text-surface-500 transition-colors group-hover:text-surface-800-200 hover:bg-row-hover hover:text-surface-950-50"
+        class="-ml-2 flex h-6 items-center gap-1 rounded px-2 text-sm whitespace-nowrap text-surface-500 transition-colors group-hover:text-surface-800-200 hover:bg-surface-950-50/[0.08] hover:text-surface-950-50"
         onclick={open}
       >
         <span class="fd fd-plus text-[14px]"></span>

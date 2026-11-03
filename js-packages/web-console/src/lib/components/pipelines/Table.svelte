@@ -307,12 +307,16 @@
         <tr>
           <th class="px-3 text-left"
             ><div class="flex h-full items-center">
-              <input
-                class="checkbox"
-                type="checkbox"
-                checked={table.isAllSelected}
-                onclick={() => table.selectAll()}
-              />
+              <!-- A 24px click area around the 16px box. -->
+              <label class="-m-1 flex h-6 w-6 cursor-pointer items-center justify-center">
+                <input
+                  class="checkbox"
+                  type="checkbox"
+                  aria-label="Select all pipelines"
+                  checked={table.isAllSelected}
+                  onclick={() => table.selectAll()}
+                />
+              </label>
             </div></th
           >
           <ThSort class={resizableTh} {table} field="name" {...sortColumn('name')}
@@ -405,15 +409,32 @@
       </thead>
       <tbody>
         {#each table.rows as pipeline}
-          <tr class="group" data-testid="box-row-{pipeline.name}"
+          <!-- A click anywhere on the row that isn't on a link or control toggles its
+               selection, like clicking its checkbox. -->
+          <tr
+            class="group cursor-pointer"
+            data-testid="box-row-{pipeline.name}"
+            onclick={(e) => {
+              if (
+                (e.target as HTMLElement).closest(
+                  'a, button, input, label, select, textarea, [role="button"], [role="dialog"], [role="tooltip"]'
+                )
+              ) {
+                return
+              }
+              table.select(pipeline.name)
+            }}
             ><td class="{rowTd} px-3 group-hover:bg-row-hover">
               <div class="flex h-full items-center">
-                <input
-                  class="checkbox"
-                  type="checkbox"
-                  checked={table.selected.includes(pipeline.name)}
-                  onclick={() => table.select(pipeline.name)}
-                />
+                <label class="-m-1 flex h-6 w-6 cursor-pointer items-center justify-center">
+                  <input
+                    class="checkbox"
+                    type="checkbox"
+                    aria-label="Select {pipeline.name}"
+                    checked={table.selected.includes(pipeline.name)}
+                    onclick={() => table.select(pipeline.name)}
+                  />
+                </label>
               </div>
             </td>
             <td class="{rowTd} relative group-hover:bg-row-hover"
