@@ -10,10 +10,13 @@
  * restoring a menu of dead links.
  */
 import { statusToneColors } from 'common-ui/statusTone'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { ClusterHealthStatus } from '#lib/compositions/health/useClusterHealth.svelte.ts'
 import { permissionsOf, roleOf } from '#lib/services/rbac.ts'
+// The app loads the icon font in `+layout.svelte`; the screenshots need it too.
+import '#assets/fonts/feldera-material-icons.css'
 
 // Hoisted so the `$app/state` factory below can close over it: each test sets
 // `state.data` to the session shape it is about.
@@ -45,13 +48,13 @@ const auth = {
 // Takes the session payload's `role` as the server spells it, and derives the
 // rest the way `buildFelderaData` does. The server sends `role` and the acting
 // tenant fields together or not at all.
-const session = (sessionRole: string | null, tenantId: string) => {
+const session = (sessionRole: string | null, tenantId: string, tenantName = 'acme') => {
   const role = roleOf(sessionRole)
   return {
     auth,
     feldera: {
       tenantId,
-      tenantName: tenantId ? 'acme' : '',
+      tenantName: tenantId ? tenantName : '',
       role,
       permissions: permissionsOf(role),
       memberships: [],
@@ -130,5 +133,43 @@ describe('ProfileButton', () => {
   it('still offers cluster health to an owner, so the gate is not rank-based', async () => {
     state.data = session('owner', 't-acme')
     expect(await openMenu()).toContain('Feldera Health')
+  })
+
+  describe('screenshots', () => {
+    // The browser is slow while the other test files run. Thus, the screenshot can take longer.
+    const screenshotOptions = { timeout: 15_000 }
+    // Makes each screenshot stable:
+    // - A desktop viewport is wide enough for the `xl:` breakpoint of the app header.
+    // - The theme is the one of `src/app.html`.
+    beforeAll(async () => {
+      await page.viewport(1280, 720)
+      document.documentElement.dataset.theme = 'feldera-modern-theme'
+      return () => {
+        delete document.documentElement.dataset.theme
+      }
+    })
+
+    /** Renders the logged-in button as the app header does, and returns its locator. */
+    const renderButton = async (tenantName: string) => {
+      state.data = session('read', 't-acme', tenantName)
+      await render(ProfileButton, { compactBreakpoint: 'xl:', healthStatus })
+      return page.elementLocator(document.querySelector('button:has(.fd-circle-user)')!)
+    }
+
+    it('shows a short tenant name in full', async () => {
+      const button = await renderButton('acme')
+      await expect.element(button).toMatchScreenshot('tenant-name-short', screenshotOptions)
+    })
+
+    it('truncates a long tenant name', async () => {
+      const button = await renderButton('feldera-engineering-analytics-production-europe-west')
+      await expect.element(button).toMatchScreenshot('tenant-name-long', screenshotOptions)
+    })
+
+    // A per-user personal tenant is named after the OIDC `sub`, a UUID on AWS Cognito.
+    it('truncates a UUID tenant name', async () => {
+      const button = await renderButton('3f2c9a6e-8b1d-4c57-9e0a-2d7f1b6c4e93')
+      await expect.element(button).toMatchScreenshot('tenant-name-uuid', screenshotOptions)
+    })
   })
 })
