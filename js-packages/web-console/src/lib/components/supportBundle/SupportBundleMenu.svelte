@@ -35,7 +35,7 @@
 
 {#if onDownload}
   <button
-    class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface"
+    class="flex h-9 items-center gap-2 rounded px-3 text-left hover:bg-row-hover"
     onclick={onDownload}
     {disabled}
     data-testid="btn-download-support-bundle"
@@ -44,7 +44,7 @@
   </button>
 
   <label
-    class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+    class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:bg-row-hover"
   >
     <span>Collect new data</span>
     <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
@@ -54,7 +54,7 @@
 {/if}
 
 <button
-  class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface"
+  class="flex h-9 items-center gap-2 rounded px-3 text-left hover:bg-row-hover"
   onclick={onPickBundle}
   {disabled}
   data-testid="btn-upload-support-bundle"

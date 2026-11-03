@@ -308,21 +308,27 @@
               </WarningBanner>
             {/if}
             <div class="flex flex-wrap gap-4">
-              <div class="mt-4.5 flex flex-wrap items-center gap-4">
+              <div class="mt-4.5 flex flex-wrap items-center gap-4 xl:gap-x-10">
                 <div class="flex flex-col">
-                  <div class="text-start text-sm text-nowrap">Records Ingested</div>
+                  <div class="text-start text-sm text-nowrap text-surface-600-400">
+                    Records Ingested
+                  </div>
                   <div class="pt-1 max-xl:text-[12px]">
                     {formatQty(global.total_input_records)}
                   </div>
                 </div>
                 <div class="flex flex-col">
-                  <div class="text-start text-sm text-nowrap">Records Processed</div>
+                  <div class="text-start text-sm text-nowrap text-surface-600-400">
+                    Records Processed
+                  </div>
                   <div class="pt-1 max-xl:text-[12px]">
                     {formatQty(global.total_processed_records)}
                   </div>
                 </div>
                 <div class="flex flex-col">
-                  <div class="text-start text-sm text-nowrap">Records Buffered</div>
+                  <div class="text-start text-sm text-nowrap text-surface-600-400">
+                    Records Buffered
+                  </div>
                   <div class="pt-1 max-xl:text-[12px]">
                     {formatQty(global.buffered_input_records)}
                   </div>
@@ -345,7 +351,7 @@
                 {/snippet}
                 {#if isXl.current}
                   <div class="flex flex-col">
-                    <div class="text-start text-sm">
+                    <div class="text-start text-sm text-surface-600-400">
                       Deployment age -
 
                       {#if global.start_time > 0}
@@ -357,7 +363,7 @@
                     {@render age()}
                   </div>
                   <div class="flex flex-col">
-                    <div class="text-start text-sm">
+                    <div class="text-start text-sm text-surface-600-400">
                       Last status update - {formatElapsedTime(
                         new Date(pipeline.current.deploymentStatusSince)
                       )}

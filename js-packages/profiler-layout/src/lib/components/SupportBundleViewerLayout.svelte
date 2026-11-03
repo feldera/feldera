@@ -494,7 +494,7 @@
 <!-- ── Code panel tab-bar-end ──────────────────────────────────────────────── -->
 {#snippet sourceTabBarEnd()}
   <button
-    class="btn-icon ml-auto text-[20px] hover:preset-tonal-surface fd {sqlPanelFullHeight
+    class="btn-icon ml-auto text-[20px] hover:bg-row-hover fd {sqlPanelFullHeight
       ? 'fd-layout-panel-top'
       : 'fd-layout-panel-left'}"
     title={sqlPanelFullHeight ? 'Collapse code panel' : 'Expand code panel to full height'}

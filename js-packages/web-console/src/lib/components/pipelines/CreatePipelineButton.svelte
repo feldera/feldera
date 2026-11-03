@@ -40,7 +40,7 @@
       <div class="absolute top-10 z-20">
         {#if error}
           <div
-            class="bg-white-dark bg-white-dark rounded-container px-2 py-2 text-error-500 shadow"
+            class="bg-white-dark bg-white-dark rounded-container px-2 py-2 text-status-error-dot shadow"
           >
             {error}
           </div>

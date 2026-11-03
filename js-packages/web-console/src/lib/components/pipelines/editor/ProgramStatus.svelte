@@ -23,14 +23,14 @@
       .with(
         'SqlError',
         'SystemError',
-        () => 'fd fd-circle-x inline-block text-[16px] text-error-500'
+        () => 'fd fd-circle-x inline-block text-[16px] text-status-error-dot'
       )
       .exhaustive()
   )
   const rustClass = $derived(
     match(programStatus)
       .with('CompilingRust', () => spinnerClass)
-      .with('RustError', () => 'fd fd-circle-x text-[16px] text-error-500')
+      .with('RustError', () => 'fd fd-circle-x text-[16px] text-status-error-dot')
       .with(
         'Success',
         'Pending',

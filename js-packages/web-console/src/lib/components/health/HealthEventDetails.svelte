@@ -88,14 +88,14 @@
 
   <div class="flex flex-nowrap items-center gap-2">
     <button
-      class="fd fd-chevron-left btn-icon hover:preset-tonal-surface"
+      class="fd fd-chevron-left btn-icon hover:bg-row-hover"
       onclick={() => (currentPage = (currentPage - 1 + pageNum) % pageNum)}
       aria-label="Previous event"
     >
     </button>
     {currentPage + 1}/{pageNum}
     <button
-      class="fd fd-chevron-right btn-icon hover:preset-tonal-surface"
+      class="fd fd-chevron-right btn-icon hover:bg-row-hover"
       onclick={() => (currentPage = (currentPage + 1) % pageNum)}
       aria-label="Next event"
     >

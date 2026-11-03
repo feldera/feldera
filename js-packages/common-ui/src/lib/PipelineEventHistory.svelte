@@ -188,7 +188,7 @@
   {localStorageKey}
 >
   {#snippet main()}
-    <div class="flex h-full flex-1 flex-col gap-4 overflow-hidden {boxClass}">
+    <div class="flex h-full flex-1 flex-col gap-6 overflow-hidden {boxClass}">
       <StatusTimeline
         bind:this={timelineRef}
         label="Pipeline status"

@@ -562,11 +562,14 @@
       The selected tables and views have not emitted any new changes
     </span>
   {:else}
+    <!-- The viewBox crops the drawing's empty margins, so it and the hint centre as one block. -->
     <div class="flex h-full flex-1 flex-col items-center justify-center gap-4 p-2 text-center">
       {#if darkMode.current === 'dark'}
-        <ChangeStreamDark class="h-[180px] w-[280px] max-w-full"></ChangeStreamDark>
+        <ChangeStreamDark viewBox="30 40 216 104" class="h-[104px] w-[216px] max-w-full"
+        ></ChangeStreamDark>
       {:else}
-        <ChangeStreamLight class="h-[180px] w-[280px] max-w-full"></ChangeStreamLight>
+        <ChangeStreamLight viewBox="30 40 216 104" class="h-[104px] w-[216px] max-w-full"
+        ></ChangeStreamLight>
       {/if}
       <span class="text-surface-600-400">
         Select tables and views to see the record updates as they are emitted

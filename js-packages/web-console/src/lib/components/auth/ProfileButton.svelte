@@ -47,7 +47,7 @@
 )}
   <svelte:element
     this={'onclick' in action ? 'button' : 'a'}
-    class="-mx-2 flex flex-nowrap items-center justify-start gap-1.5 rounded px-2 font-medium hover:preset-tonal-surface"
+    class="-mx-2 flex flex-nowrap items-center justify-start gap-1.5 rounded px-2 font-medium hover:bg-row-hover"
     {...action}
   >
     <div class="flex w-7 shrink-0 justify-center">{@render icon()}</div>
@@ -140,7 +140,7 @@
         <div class="-mt-1 flex flex-col gap-1">
           {#if typeof auth === 'object' && 'logout' in auth}
             <button
-              class="-mx-2 flex h-9 items-center gap-1.5 rounded px-2 font-medium hover:preset-tonal-surface disabled:cursor-wait disabled:opacity-70"
+              class="-mx-2 flex h-9 items-center gap-1.5 rounded px-2 font-medium hover:bg-row-hover disabled:cursor-wait disabled:opacity-70"
               data-testid="btn-sign-out"
               disabled={isSigningOut}
               onclick={async () => {

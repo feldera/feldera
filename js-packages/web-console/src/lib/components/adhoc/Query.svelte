@@ -252,9 +252,17 @@
                 </tr>
               {:else if isErrorRow(row)}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
-                  <td colspan="99999999"
-                    ><div class="rounded bg-error-50-950/50 px-2">{row.error}</div></td
-                  >
+                  <td colspan="99999999">
+                    <!-- At least one 28px row like the data rows; a long error wraps below. -->
+                    <div
+                      class="flex min-h-7 items-start gap-1.5 rounded bg-status-error-subtle px-2 py-1 text-status-error-dot"
+                    >
+                      <span class="fd fd-circle-x mt-[3px] shrink-0 text-[14px]"></span>
+                      <span class="inline-block whitespace-pre-wrap first-letter:uppercase"
+                        >{row.error}</span
+                      >
+                    </div>
+                  </td>
                 </tr>
               {:else}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
@@ -289,7 +297,7 @@
               </List>
             {/if}
             <ScrollDownFab class="mr-7" {reverseScroll}></ScrollDownFab>
-            <ClipboardCopyButton class="-mr-4 mb-4" value={() => tableToCSJV(result)}
+            <ClipboardCopyButton class="-mr-4 mb-2.5" value={() => tableToCSJV(result)}
             ></ClipboardCopyButton>
           </div>
         </div>

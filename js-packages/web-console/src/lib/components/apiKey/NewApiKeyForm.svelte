@@ -81,7 +81,7 @@
       <FieldErrors>
         {#snippet children({ errors, errorProps })}
           {#each errors as error}
-            <span class="text-error-500" {...errorProps}>{error}</span>
+            <span class="text-status-error-dot" {...errorProps}>{error}</span>
           {/each}
         {/snippet}
       </FieldErrors>

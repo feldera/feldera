@@ -343,7 +343,7 @@
         </div>
         <div class="mt-1 border-t border-surface-100-900 pt-1">
           <button
-            class="flex h-9 w-full min-w-0 items-center gap-2 rounded px-3 text-left text-sm hover:preset-tonal-surface"
+            class="flex h-9 w-full min-w-0 items-center gap-2 rounded px-3 text-left text-sm hover:bg-row-hover"
             onclick={() => openCreate(search)}
           >
             <span class="fd fd-plus text-[16px]"></span>
@@ -441,7 +441,7 @@
       <!-- A quiet ghost button, so a column of untagged pipelines doesn't read as a column
         of boxes; it firms up while its row is hovered. -->
       <button
-        class="-ml-1.5 flex h-6 items-center gap-1 rounded px-1.5 text-sm whitespace-nowrap text-surface-500 transition-colors group-hover:text-surface-800-200 hover:bg-surface-100-900 hover:text-surface-950-50"
+        class="-ml-1.5 flex h-6 items-center gap-1 rounded px-1.5 text-sm whitespace-nowrap text-surface-500 transition-colors group-hover:text-surface-800-200 hover:bg-row-hover hover:text-surface-950-50"
         onclick={open}
       >
         <span class="fd fd-plus text-[14px]"></span>
@@ -473,7 +473,7 @@
 {/snippet}
 
 {#snippet tagRow(tag: string, selected: boolean)}
-  <div class="group/row flex h-9 items-center rounded hover:preset-tonal-surface">
+  <div class="group/row flex h-9 items-center rounded hover:bg-row-hover">
     <button
       class="flex h-full flex-1 items-center gap-2 pl-3 text-left text-sm"
       onclick={() => toggleTag(tag)}
@@ -522,7 +522,7 @@
     <span class="text-sm font-medium">{opts.title}</span>
     {#if opts.onDelete}
       <button
-        class="ml-auto btn-icon h-7 w-7 text-surface-600-400 hover:text-error-500"
+        class="ml-auto btn-icon h-7 w-7 text-surface-600-400 hover:text-status-error-dot"
         onclick={opts.onDelete}
         aria-label="Delete tag"
         title="Delete tag"
@@ -540,38 +540,42 @@
       }
     }}
   >
-    <label class="flex flex-col gap-1 text-sm font-medium">
+    <label class="flex flex-col gap-1.5 text-sm text-surface-600-400">
       Tag name
       <input
-        class="input h-9 w-full"
+        class="input h-8 w-full text-surface-950-50 placeholder:text-surface-400-600"
         class:border-error-500={!!opts.validationError}
         type="text"
         bind:value={newTagName}
-        placeholder="Tag name"
+        placeholder="e.g. production"
       />
       {#if opts.validationError}
-        <span class="text-xs font-normal text-error-500">{opts.validationError}</span>
+        <span class="text-xs font-normal text-status-error-dot">{opts.validationError}</span>
       {/if}
     </label>
-    <div class="flex flex-col gap-1 text-sm font-medium">
-      <span class="flex items-center gap-2">
+    <div class="flex flex-col gap-1.5 text-sm text-surface-600-400">
+      <span class="flex items-center gap-1">
         Label color
-        <span class="font-normal text-surface-500">{colorName}</span>
+        <span class="text-surface-950-50">· {colorName}</span>
       </span>
-      <div class="flex flex-wrap gap-2 py-1">
+      <!-- Solid swatches; the chosen one gets a ring around it and a check mark. -->
+      <div class="flex flex-wrap gap-2.5 py-1 pl-0.5">
         {#each tagColorPalette as paletteColor (paletteColor.name)}
           <button
             type="button"
             disabled={opts.lockedColor !== undefined}
-            class="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-40"
+            class="flex h-5 w-5 items-center justify-center rounded-full ring-offset-2 ring-offset-white transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-40 dark:ring-offset-dark {paletteColor.color ===
+            selectedColor
+              ? 'ring-2 ring-surface-950-50'
+              : ''}"
             style="background-color: {paletteColor.color}"
             title={paletteColor.name}
             aria-label={paletteColor.name}
             aria-pressed={paletteColor.color === selectedColor}
             onclick={() => (newTagColor = paletteColor.color)}
           >
-            {#if paletteColor.color !== selectedColor}
-              <span class="bg-white-dark block h-4 w-4 rounded-full opacity-80"></span>
+            {#if paletteColor.color === selectedColor}
+              <span class="fd fd-check text-[12px] text-white"></span>
             {/if}
           </button>
         {/each}
@@ -579,13 +583,13 @@
     </div>
     <button
       type="submit"
-      class="btn w-full preset-filled-primary-500"
+      class="mt-1 btn h-8 w-full preset-filled-primary-500"
       disabled={opts.submitDisabled}
     >
       {opts.submitLabel}
     </button>
     {#if opts.lockedColor !== undefined}
-      <p class="">
+      <p class="text-sm text-surface-600-400">
         The tag “{newTagName.trim()}” already exists.
       </p>
     {/if}

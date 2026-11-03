@@ -29,7 +29,18 @@
     colors: {
       // White, like the panel it sits in, rather than the tinted page behind the panel.
       'editor.background': '#ffffff',
-      'editor.inactiveSelectionBackground': '#add6ff90' // More visible selection when editor is not focused
+      'editor.inactiveSelectionBackground': '#add6ff90', // More visible selection when editor is not focused
+      // Mark the cursor's line with a faint fill instead of Monaco's border above and below it
+      'editor.lineHighlightBackground': '#f5f5f5',
+      'editor.lineHighlightBorder': '#00000000',
+      // Faint scrollbar and minimap sliders that darken on hover, instead of solid grey blocks
+      'scrollbarSlider.background': '#00000014',
+      'scrollbarSlider.hoverBackground': '#00000029',
+      'scrollbarSlider.activeBackground': '#00000038',
+      'minimapSlider.background': '#0000000d',
+      'minimapSlider.hoverBackground': '#0000001a',
+      'minimapSlider.activeBackground': '#00000024',
+      'scrollbar.shadow': '#00000000'
     }
   })
 
@@ -39,7 +50,16 @@
     rules: [{ token: 'string.sql', foreground: '#d9731a' }],
     colors: {
       'editor.background': getThemeColor('--body-background-color-dark').format('hex'),
-      'editor.inactiveSelectionBackground': '#264f7890' // More visible selection when editor is not focused
+      'editor.inactiveSelectionBackground': '#264f7890', // More visible selection when editor is not focused
+      'editor.lineHighlightBackground': '#ffffff0a',
+      'editor.lineHighlightBorder': '#00000000',
+      'scrollbarSlider.background': '#ffffff1a',
+      'scrollbarSlider.hoverBackground': '#ffffff2e',
+      'scrollbarSlider.activeBackground': '#ffffff3d',
+      'minimapSlider.background': '#ffffff0f',
+      'minimapSlider.hoverBackground': '#ffffff1c',
+      'minimapSlider.activeBackground': '#ffffff26',
+      'scrollbar.shadow': '#00000000'
     }
   })
 </script>
@@ -438,13 +458,18 @@
             theme: ['feldera-dark', 'feldera-light'][+(darkMode.current === 'light')],
             automaticLayout: true,
             lineNumbersMinChars: 3,
+            // A little room under the file tabs, so the first line doesn't touch them.
+            padding: { top: 4 },
             ...isMonacoEditorDisabled(isReadOnly),
             renderValidationDecorations: 'on', // Show red error squiggles even in read-only mode
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,
             overviewRulerBorder: false,
             scrollbar: {
-              vertical: 'visible'
+              vertical: 'visible',
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10,
+              useShadows: false
             },
             minimap: {
               enabled: showMinimap.value

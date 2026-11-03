@@ -229,7 +229,7 @@
         noclose
       >
         <span
-          class="whitespace-pre-wrap text-error-500"
+          class="whitespace-pre-wrap text-status-error-dot"
           data-testid="box-clear-storage-error-message">{clearStorageError}</span
         >
       </GenericDialog>

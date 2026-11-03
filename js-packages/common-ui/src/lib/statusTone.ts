@@ -48,7 +48,7 @@ export const statusCounterClass = 'inline-block min-w-6 rounded-[3px] px-1 text-
 export const statusToneColors: Record<StatusTone, StatusColors> = {
   neutral: {
     chip: 'bg-status-neutral-subtle text-status-neutral',
-    dot: 'bg-status-neutral-dot',
+    dot: 'bg-status-neutral-pip',
     healthIcon: 'text-surface-400-600',
     healthDot: 'bg-secondary-200-800',
     healthText: 'text-secondary-500',
@@ -58,41 +58,40 @@ export const statusToneColors: Record<StatusTone, StatusColors> = {
   },
   blue: {
     chip: 'bg-status-blue-subtle text-status-blue',
-    dot: 'bg-status-blue-dot',
+    dot: 'bg-status-blue-pip',
     healthIcon: 'text-status-blue',
     healthDot: 'bg-status-blue-dot',
-    healthText: 'text-status-blue',
+    healthText: 'text-status-blue-dot',
     healthBar: 'fill-status-blue-dot',
     healthBarHighlight: 'fill-status-blue',
     healthIndicator: 'bg-blue-500'
   },
   jade: {
     chip: 'bg-status-jade-subtle text-status-jade',
-    dot: 'bg-status-jade-dot',
+    dot: 'bg-status-jade-pip',
     healthIcon: 'text-success-500',
     healthDot: 'bg-status-jade-dot',
-    healthText: 'text-status-jade',
+    healthText: 'text-status-jade-dot',
     healthBar: 'fill-status-jade-dot',
     healthBarHighlight: 'fill-status-jade',
     healthIndicator: 'bg-success-500'
   },
   warning: {
     chip: 'bg-status-warning-subtle text-status-warning',
-    dot: 'bg-status-warning-dot',
+    dot: 'bg-status-warning-pip',
     healthIcon: 'text-warning-500',
     healthDot: 'bg-status-warning-dot',
-    healthText: 'text-status-warning',
+    healthText: 'text-status-warning-dot',
     healthBar: 'fill-status-warning-dot',
     healthBarHighlight: 'fill-status-warning',
     healthIndicator: 'bg-warning-500'
   },
-  // The theme has no separate dot color for errors.
   error: {
     chip: 'bg-status-error-subtle text-status-error',
-    dot: 'bg-status-error',
-    healthIcon: 'text-error-500',
+    dot: 'bg-status-error-pip',
+    healthIcon: 'text-status-error-dot',
     healthDot: 'bg-status-error-dot',
-    healthText: 'text-status-error',
+    healthText: 'text-status-error-dot',
     healthBar: 'fill-status-error-dot',
     healthBarHighlight: 'fill-status-error',
     healthIndicator: 'bg-error-500'
