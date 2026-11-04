@@ -368,6 +368,40 @@ fn a_late_commit_response_is_retried_without_replay() {
     assert_eq!(read_topic(&cluster).len(), 1);
 }
 
+/// While the proxy holds commits, it passes an EndTxn error reply to the
+/// client, which retries, and holds only the reply that succeeds.
+#[test]
+fn proxy_passes_end_txn_errors_and_holds_the_success() {
+    let cluster = cluster();
+    let proxy = proxy::BrokerProxy::new(cluster.bootstrap_servers());
+    let config: KafkaOutputConfig = serde_json::from_value(json!({
+        "topic": TOPIC,
+        "bootstrap.servers": proxy.address,
+        "fault_tolerance": {
+            "producer_options": { "transaction.timeout.ms": "60000" }
+        }
+    }))
+    .unwrap();
+    let mut endpoint = KafkaOutputEndpoint::new(config, CancellationToken::new(), None).unwrap();
+    let callbacks = Arc::new(RecordingCallbacks::default());
+    endpoint.connect(callbacks.clone()).unwrap();
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint.push_buffer(b"retried commit").unwrap();
+    cluster.request_errors(
+        RDKafkaApiKey::EndTxn,
+        &[RDKafkaRespErr::RD_KAFKA_RESP_ERR_CONCURRENT_TRANSACTIONS],
+    );
+    proxy.hold_commit(true);
+    let worker = BatchWorker::new(endpoint);
+    wait(|| proxy.held_commits() > 0, 30_000).expect("the successful EndTxn must be held");
+    assert_eq!(proxy.passed_end_txn_errors(), 1);
+    assert_eq!(proxy.held_commits(), 1);
+    proxy.hold_commit(false);
+    let (result, _endpoint) = worker.finish();
+    result.unwrap();
+    assert_eq!(read_topic(&cluster).len(), 1);
+}
+
 /// A fenced producer is unusable. The sink reports a fatal error, turns
 /// unhealthy, and holds the output thread until the pipeline shuts down
 /// instead of dropping later output.

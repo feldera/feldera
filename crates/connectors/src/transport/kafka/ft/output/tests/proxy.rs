@@ -21,6 +21,7 @@ struct State {
     hold_commit: AtomicBool,
     held_commits: AtomicUsize,
     fetches: AtomicUsize,
+    passed_end_txn_errors: AtomicUsize,
     sockets: Mutex<Vec<TcpStream>>,
 }
 
@@ -123,6 +124,11 @@ impl BrokerProxy {
     pub fn fetches(&self) -> usize {
         self.state.fetches.load(Ordering::Acquire)
     }
+
+    /// Number of EndTxn error replies passed to the client while holding.
+    pub fn passed_end_txn_errors(&self) -> usize {
+        self.state.passed_end_txn_errors.load(Ordering::Acquire)
+    }
 }
 
 impl Drop for BrokerProxy {
@@ -196,6 +202,15 @@ fn forward(
                 }
             }
             END_TXN if state.hold_commit.load(Ordering::Acquire) => {
+                let error = end_txn_error(&response, version);
+                if error != 0 {
+                    // The broker did not end the transaction. Let the client
+                    // see the error and retry; hold the reply that succeeds.
+                    eprintln!("proxy: passing EndTxn v{version} error {error} to the client");
+                    state.passed_end_txn_errors.fetch_add(1, Ordering::Release);
+                    write_frame(client, &response)?;
+                    continue;
+                }
                 // The broker has answered, so the outcome is decided. It may
                 // still be writing the commit markers to the data partitions.
                 // Hold only the reply so the client cannot know the outcome.
@@ -210,6 +225,26 @@ fn forward(
             _ => {}
         }
         write_frame(client, &response)?;
+    }
+}
+
+/// Returns the error code of an EndTxn response. Version 3 and later use the
+/// flexible response header, which has tagged fields after the correlation id.
+fn end_txn_error(response: &[u8], version: i16) -> i16 {
+    let mut offset = 4; // correlation id
+    if version >= 3 {
+        skip_tagged_fields(response, &mut offset);
+    }
+    offset += 4; // throttle time
+    i16::from_be_bytes(response[offset..offset + 2].try_into().unwrap())
+}
+
+fn skip_tagged_fields(bytes: &[u8], offset: &mut usize) {
+    let tags = unsigned_varint(bytes, offset);
+    for _ in 0..tags {
+        let _tag = unsigned_varint(bytes, offset);
+        let size = unsigned_varint(bytes, offset);
+        *offset += size;
     }
 }
 
@@ -264,12 +299,21 @@ fn cap_address_api_versions(response: &mut [u8], version: i16) {
         max_version.copy_from_slice(&maximum.min(cap).to_be_bytes());
         offset += 6;
         if version >= 3 {
-            let tags = unsigned_varint(response, &mut offset);
-            for _ in 0..tags {
-                let _tag = unsigned_varint(response, &mut offset);
-                let size = unsigned_varint(response, &mut offset);
-                offset += size;
-            }
+            skip_tagged_fields(response, &mut offset);
         }
     }
+}
+
+#[test]
+fn end_txn_error_reads_every_header_version() {
+    // Correlation id, throttle time, error code 51.
+    let v0 = [0, 0, 0, 7, 0, 0, 0, 0, 0, 51];
+    assert_eq!(end_txn_error(&v0, 0), 51);
+    assert_eq!(end_txn_error(&v0, 2), 51);
+    // Correlation id, no header tags, throttle time, error code 0, body tags.
+    let v3 = [0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0];
+    assert_eq!(end_txn_error(&v3, 3), 0);
+    // Correlation id, one 2-byte header tag, throttle time, error code 47.
+    let tagged = [0, 0, 0, 7, 1, 0, 2, 9, 9, 0, 0, 0, 0, 0, 47, 0];
+    assert_eq!(end_txn_error(&tagged, 4), 47);
 }
