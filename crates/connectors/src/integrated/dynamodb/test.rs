@@ -3153,18 +3153,23 @@ mod retry_tests {
         mount_rest(&server, BATCH_TARGET, ok());
         let harness = Harness::new();
         let (delay, gate) = Gate::new();
+        let threshold = Duration::from_secs(3);
+        // The chunk's timer starts at its first retry, after this instant.
+        let start = std::time::Instant::now();
         let chunk = harness.write_batch(
             single_attempt_client(&server),
             puts(&[1]),
-            // A wide margin: `gate.entered()` only proves the chunk reached
-            // its retry wait, not that this thread resumes promptly enough
-            // to see `reports()` still empty against a tight threshold on a
-            // busy CI runner (see #7828).
-            RetryPolicy::with_delay(None, delay).unhealthy_after(Duration::from_secs(3)),
+            RetryPolicy::with_delay(None, delay).unhealthy_after(threshold),
         );
         assert_eq!(gate.entered(), 1);
         assert_eq!(harness.metric("dynamodb_output_retrying_chunks"), 1.0);
-        assert!(harness.publisher.reports().is_empty());
+        // No report before the threshold. `gate.entered()` only proves the
+        // chunk reached its wait, not that this thread resumed in time to
+        // look, so a stalled runner skips the check instead of failing it
+        // (see #7828).
+        if start.elapsed() < threshold {
+            assert!(harness.publisher.reports().is_empty());
+        }
         // The report comes during the wait, not at the next retry.
         let since = std::time::Instant::now();
         while harness.publisher.reports().is_empty() {
