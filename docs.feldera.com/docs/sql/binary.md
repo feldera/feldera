@@ -116,8 +116,9 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
   </tr>
   <tr>
     <td><code>SUBSTRING</code>(binary FROM integer1 FOR integer2)</td>
-    <td>Generate a substring of binary starting at the given offset in bytes with the given length. The first offset is 1. If the start position integer is less than 1, it is treated as 1. Negative lengths or offsets larger than length return an empty result.</td>
-    <td><code>SUBSTRING(x'1234567890' FROM 3 FOR 2)</code> => <code>x'5678'</code></td>
+    <td>Generate a substring of binary starting at the given offset in bytes with the given length. The first offset is 1. If the start position integer1 is less than 1, only <code>max(integer2 + integer1 - 1, 0)</code> bytes are returned, starting with the first byte. Negative lengths or offsets larger than length return an empty result.</td>
+    <td><code>SUBSTRING(x'1234567890' FROM 3 FOR 2)</code> => <code>x'5678'</code><br></br>
+        <code>SUBSTRING(x'1234567890' FROM 0 FOR 2)</code> => <code>x'12'</code></td>
   </tr>
   <tr>
     <td><a id="to_hex"></a><code>TO_HEX</code>(binary)</td>
