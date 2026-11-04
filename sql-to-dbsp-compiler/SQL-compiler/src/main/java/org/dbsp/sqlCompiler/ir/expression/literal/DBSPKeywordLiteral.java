@@ -121,6 +121,11 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
     }
 
     @Override
+    public boolean hasNullableForm() {
+        return false;
+    }
+
+    @Override
     public String toSqlString() {
         throw new InternalCompilerError("unreachable");
     }

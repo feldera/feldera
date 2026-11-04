@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -86,6 +87,10 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
         if (this.expression.is(DBSPFailExpression.class)) {
             return new DBSPFailExpression(this.getNode(), this.type, this.message);
         }
+        DBSPLiteral literal = this.expression.as(DBSPLiteral.class);
+        if (literal != null)
+            // null case handled by isNone above
+            return literal.getWithNullable(false);
         DBSPBaseTupleExpression tuple = this.expression.as(DBSPBaseTupleExpression.class);
         if (tuple != null) {
             // null case handled by isNone above

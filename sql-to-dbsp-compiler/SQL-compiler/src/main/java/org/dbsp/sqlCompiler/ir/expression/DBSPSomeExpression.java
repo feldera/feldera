@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -16,9 +17,16 @@ import org.dbsp.util.Utilities;
 public final class DBSPSomeExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
-    public DBSPSomeExpression(CalciteObject node, DBSPExpression expression) {
+    DBSPSomeExpression(CalciteObject node, DBSPExpression expression) {
         super(node, expression.getType().withMayBeNull(true));
         Utilities.enforce(!expression.getType().mayBeNull, () -> "some() applied to a nullable expression");
+        // Nullable tuple constructors and nullable literals are the only representations
+        // of Some(Tup(...)) and Some(literal)
+        Utilities.enforce(!expression.is(DBSPTupleExpression.class),
+                () -> "some() applied to a tuple constructor: " + expression);
+        DBSPLiteral literal = expression.as(DBSPLiteral.class);
+        Utilities.enforce(literal == null || !literal.hasNullableForm(),
+                () -> "some() applied to a literal: " + expression);
         this.expression = expression;
     }
 
