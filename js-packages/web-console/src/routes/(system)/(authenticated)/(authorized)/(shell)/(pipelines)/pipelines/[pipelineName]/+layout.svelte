@@ -25,6 +25,7 @@
     <PipelineList
       pipelineName={params.pipelineName}
       pipelines={pipelineList.pipelines}
+      tagsLayout="below"
       onclose={() => {
         leftDrawer.value = false
       }}

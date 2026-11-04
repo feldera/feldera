@@ -22,6 +22,7 @@
     validateTag
   } from '#lib/functions/pipelines/tags.ts'
   import { patchPipeline } from '#lib/services/pipelineManager.ts'
+  import TagChip from './TagChip.svelte'
 
   let {
     pipelineName,
@@ -422,7 +423,7 @@
        that back) to keep the add button's hover background, which starts there, whole. -->
   <div class="-ml-2 flex flex-nowrap items-center gap-1 overflow-hidden pl-2">
     {#each inlineTags as tag (tag)}
-      {@render chip(tag, open)}
+      <TagChip {tag} onclick={open}></TagChip>
     {/each}
     {#if overflowCount > 0}
       {@const allTags = tags.map(tagDisplayName).join(', ')}
@@ -452,27 +453,6 @@
       </button>
     {/if}
   </div>
-{/snippet}
-
-<!-- A chip is a button that opens the popup when editable and a static label when
-  read-only; both share the same body and base class. -->
-{#snippet chip(tag: string, open?: () => void)}
-  {@const base =
-    'flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap'}
-  {#if open}
-    <button class="{base} hover:bg-row-hover" onclick={open}>
-      {@render chipContent(tag)}
-    </button>
-  {:else}
-    <span class={base}>
-      {@render chipContent(tag)}
-    </span>
-  {/if}
-{/snippet}
-
-{#snippet chipContent(tag: string)}
-  <span class="h-2 w-2 rounded-full" style="background-color: {tagColorOf(tag)}"></span>
-  {tagDisplayName(tag)}
 {/snippet}
 
 {#snippet tagRow(tag: string, selected: boolean)}

@@ -3,8 +3,9 @@
 </script>
 
 <script lang="ts">
-  import { matchesSubstring } from 'common-lib/string'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatusDot.svelte'
+  import PipelineSearch from '#lib/components/pipelines/PipelineSearch.svelte'
+  import { matchesPipelineSearch, nameMatchesFirst } from '#lib/functions/pipelines/search.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import { type PipelineThumb } from '#lib/services/pipelineManager.ts'
 
@@ -12,16 +13,26 @@
     pipelineName,
     pipelines = $bindable(),
     onclose,
-    onaction
+    onaction,
+    tagsLayout = 'right'
   }: {
     pipelineName: string
     pipelines: PipelineThumb[] | undefined
     onclose?: () => void
     onaction?: () => void
+    /** Where the tags that match the search show; see `PipelineSearch`. */
+    tagsLayout?: 'right' | 'below'
   } = $props()
 
-  let nameSearch = $state('')
-  const visiblePipelines = $derived(pipelines?.filter((p) => matchesSubstring(p.name, nameSearch)))
+  let searchQuery = $state('')
+  let tagFilters = $state<string[]>([])
+  const visiblePipelines = $derived(
+    pipelines &&
+      nameMatchesFirst(
+        pipelines.filter((p) => matchesPipelineSearch(p, searchQuery, tagFilters)),
+        searchQuery
+      )
+  )
   const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
     $effect(() => {
       node.scrollTop = scrollY
@@ -51,22 +62,13 @@
         aria-label="Close pipelines list"
       ></button>
     </div>
-    <!-- The browser's own clear button is hidden for one that matches the app's icons. -->
-    <div class="relative">
-      <input
-        class="input w-full pr-8 [&::-webkit-search-cancel-button]:appearance-none"
-        type="search"
-        placeholder="Search pipelines..."
-        bind:value={nameSearch}
-      />
-      {#if nameSearch}
-        <button
-          onclick={() => (nameSearch = '')}
-          class="fd fd-x absolute top-1/2 right-2 btn-icon btn-icon-sm h-5 w-5 -translate-y-1/2 text-[14px] text-surface-600-400 hover:text-surface-950-50"
-          aria-label="Clear search"
-        ></button>
-      {/if}
-    </div>
+    <PipelineSearch
+      pipelines={pipelines ?? []}
+      bind:query={searchQuery}
+      bind:tagFilters
+      {tagsLayout}
+      inputClass="w-full"
+    ></PipelineSearch>
   </div>
   {#if visiblePipelines}
     {#each visiblePipelines as pipeline}
