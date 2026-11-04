@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+const FETCH: i16 = 1;
 const METADATA: i16 = 3;
 const FIND_COORDINATOR: i16 = 10;
 const API_VERSIONS: i16 = 18;
@@ -19,6 +20,7 @@ struct State {
     stopped: AtomicBool,
     hold_commit: AtomicBool,
     held_commits: AtomicUsize,
+    fetches: AtomicUsize,
     sockets: Mutex<Vec<TcpStream>>,
 }
 
@@ -116,6 +118,11 @@ impl BrokerProxy {
     pub fn held_commits(&self) -> usize {
         self.state.held_commits.load(Ordering::Acquire)
     }
+
+    /// Fetch requests forwarded so far, from consumers bootstrapped here.
+    pub fn fetches(&self) -> usize {
+        self.state.fetches.load(Ordering::Acquire)
+    }
 }
 
 impl Drop for BrokerProxy {
@@ -161,6 +168,9 @@ fn forward(
         let mut response = read_frame(broker)?;
         assert_eq!(&response[..4], &request[4..8], "Kafka correlation id");
         match api {
+            FETCH => {
+                state.fetches.fetch_add(1, Ordering::Release);
+            }
             API_VERSIONS => cap_address_api_versions(&mut response, version),
             METADATA => {
                 assert!(version <= 8);
