@@ -44,7 +44,7 @@
   <div class="sticky top-0 flex flex-col gap-2 bg-page pb-2">
     <!-- 40px tall, like the file tab row beside it, so the two line up. -->
     <div class="flex h-10 items-center justify-between gap-2 pr-1 pl-3">
-      <span class="text-[14px] font-medium text-surface-600-400">Pipelines</span>
+      <span class="text-base font-medium text-surface-600-400">Pipelines</span>
       <button
         onclick={onclose}
         class="fd fd-x btn-icon btn-icon-sm text-[16px] text-surface-700-300 hover:bg-row-hover"

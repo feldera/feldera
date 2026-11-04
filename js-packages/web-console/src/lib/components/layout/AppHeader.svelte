@@ -34,14 +34,14 @@
       {#if darkMode.current === 'dark'}
         <FelderaModernLogoWhite class="h-[30px]"></FelderaModernLogoWhite>
       {:else}
-        <FelderaModernLogoBlack class="h-[30px] fill-[#3d4030]"></FelderaModernLogoBlack>
+        <FelderaModernLogoBlack class="h-[30px] fill-logo"></FelderaModernLogoBlack>
       {/if}
     </span>
     <span class="flex {birdOnly ? '' : 'lg:hidden'}">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogomarkWhite class="h-7"></FelderaModernLogomarkWhite>
       {:else}
-        <FelderaModernLogomarkBlack class="h-7 fill-[#3d4030]"></FelderaModernLogomarkBlack>
+        <FelderaModernLogomarkBlack class="h-7 fill-logo"></FelderaModernLogomarkBlack>
       {/if}
     </span>
   </a>

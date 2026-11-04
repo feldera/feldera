@@ -311,7 +311,7 @@
     aria-label="Unhealthy"
     class="fd fd-triangle-alert absolute top-1/2 right-full mr-1 -translate-y-1/2 cursor-pointer text-[16px] leading-none text-(--latency-slow)"
   ></span>
-  <Popover class="z-20 max-w-lg text-[12px] leading-[18px]">
+  <Popover class="z-20 max-w-lg text-sm">
     <div class="flex flex-nowrap items-start gap-4">
       {#if description}
         <span class="min-w-0 flex-1 wrap-break-word whitespace-pre-wrap">
@@ -496,20 +496,20 @@
   relation?: string,
   connectorEndpointName?: string
 )}
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.records}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.records}"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{formatQty(m.total_records)}</span></td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.bytes}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.bytes}"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{@render bytes(m.total_bytes)}</span></td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.bufferedRecords} {bufferedGap}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.bufferedRecords} {bufferedGap}"
     >{formatQty(m.buffered_records)}</td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.bufferedBytes}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.bufferedBytes}"
     >{@render bytes(m.buffered_bytes)}</td
   >
   <td
-    class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.groupLatency} {groupGap}"
+    class="text-end font-dm-mono text-sm text-nowrap {numberWidth.groupLatency} {groupGap}"
     data-testid="box-input-latency-p99"
   >
     {#if typeof m.processing_latency_p99_micros === 'number'}
@@ -525,7 +525,7 @@
     {/if}
   </td>
   <td
-    class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.groupCount} {groupGap} {m.num_parse_errors >
+    class="text-end font-dm-mono text-sm text-nowrap {numberWidth.groupCount} {groupGap} {m.num_parse_errors >
     0
       ? errorTextClass
       : ''}"
@@ -544,7 +544,7 @@
     {/if}
   </td>
   <td
-    class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.count} {m.num_transport_errors >
+    class="text-end font-dm-mono text-sm text-nowrap {numberWidth.count} {m.num_transport_errors >
     0
       ? errorTextClass
       : ''}"
@@ -590,32 +590,32 @@
   relation?: string,
   connectorEndpointName?: string
 )}
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.records}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.records}"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{formatQty(m.transmitted_records)}</span
     ></td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.records}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.records}"
     ><span class={ioActive ? 'text-success-600-400' : ''}
       >{m.batch_records_written != null ? formatQty(m.batch_records_written) : '—'}</span
     ></td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.bytes}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.bytes}"
     ><span class={ioActive ? 'text-success-600-400' : ''}>{@render bytes(m.transmitted_bytes)}</span
     ></td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.bufferedRecords} {bufferedGap}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.bufferedRecords} {bufferedGap}"
     >{formatQty(m.buffered_records)}</td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.count}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.count}"
     >{formatQty(m.buffered_batches)}</td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.records}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.records}"
     >{formatQty(m.queued_records)}</td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.count}"
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.count}"
     >{formatQty(m.queued_batches)}</td
   >
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.groupCount} {groupGap}">
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.groupCount} {groupGap}">
     {#if m.num_encode_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-encode-errors"
@@ -629,7 +629,7 @@
       {formatQty(m.num_encode_errors)}
     {/if}
   </td>
-  <td class="text-end font-dm-mono text-[12px] text-nowrap {numberWidth.count}">
+  <td class="text-end font-dm-mono text-sm text-nowrap {numberWidth.count}">
     {#if m.num_transport_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-output-transport-errors"
@@ -740,7 +740,7 @@
   <div class="latency-colors w-full {maxWidth}" data-testid={testId}>
     <div class="scrollbar w-full overflow-x-auto">
       <div class="w-max min-w-full overflow-hidden rounded bg-inset">
-        <table class="metrics-table table h-min w-full text-[12px] leading-[18px]">
+        <table class="metrics-table table h-min w-full text-sm">
           <thead>
             {@render columnHeaders(chevronGutter, [...allData.keys()])}
           </thead>

@@ -216,7 +216,7 @@
 
 <div class="absolute flex h-full w-full flex-col pt-2">
   <div class="flex flex-nowrap items-center justify-between px-2 pb-2">
-    <span class="text-[12px] leading-[18px]">
+    <span class="text-sm">
       <span class="hidden sm:inline">Used storage:</span>
       <span class="inline sm:hidden">Storage:</span>
       {humanSize(metrics.at(-1)?.s ?? 0)}

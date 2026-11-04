@@ -328,8 +328,8 @@
   <!-- The areas sit flush against each other, with no gaps, card corners or card borders:
        the header's bottom line and the 1px pane dividers are the only separators. `!` beats
        the `.panel` corners and border, which other pages keep. The tabbed panels drop their
-       side padding so the tab bar runs edge to edge, and pad the tab content instead. In dark mode the dividers between the #2a2a2a panels
-       take the line colour over #2a2a2a, since the translucent line vanishes between them. -->
+       side padding so the tab bar runs edge to edge, and pad the tab content instead. In dark mode the dividers between the panels
+       take the panels' own line colour, since the translucent line vanishes between them. -->
   <PaneGroup
     direction="horizontal"
     class="!overflow-visible [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-2 [&_.panel[data-scope=tabs]]:px-0!"
@@ -427,8 +427,7 @@
               {/if}
             </Pane>
             {#if showInteractionPanel.value}
-              <PaneResizer class="pane-divider-vertical w-px! bg-line dark:bg-[#3f3f3f]"
-              ></PaneResizer>
+              <PaneResizer class="pane-divider-vertical w-px! bg-panel-line"></PaneResizer>
               <Pane defaultSize={40} minSize={20} class="flex flex-col !overflow-visible">
                 {#if pipeline.current && metrics.current}
                   <InteractionPanel
@@ -446,7 +445,7 @@
         </Pane>
 
         {#if showMonitoringPanel.value}
-          <PaneResizer class="pane-divider-horizontal h-px! bg-line dark:bg-[#3f3f3f]" />
+          <PaneResizer class="pane-divider-horizontal h-px! bg-panel-line" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
               <MonitoringPanel
@@ -470,7 +469,7 @@
 {#snippet statusBarCenter()}
   {#if pipelineThumb}
     {@const programStatus = programStatusOf(pipelineThumb.status)}
-    <div class="contents text-[13px] text-surface-700-300">
+    <div class="contents text-md text-surface-700-300">
       <ProgramStatus {programStatus}></ProgramStatus>
       <div class="flex items-center gap-2 pl-1">
         <PipelineVersion
@@ -505,7 +504,7 @@
           class="btn btn-sm text-surface-700-300 hover:bg-row-hover hover:text-surface-950-50"
           onclick={() => (value.value = !value.value)}
         >
-          <span class="hidden text-[13px] sm:inline">
+          <span class="hidden text-md sm:inline">
             {text}
           </span>
           <div class="{icon} {value.value ? 'text-secondary-500' : ''}"></div>

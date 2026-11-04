@@ -31,7 +31,7 @@
 </script>
 
 <div
-  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#858a62]/15 text-[#6f7158] dark:bg-[#7d8f87]/20 dark:text-[#b4c2bb]"
+  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent"
 >
   <svg
     xmlns="http://www.w3.org/2000/svg"

@@ -61,7 +61,7 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="relative w-full transform rounded-lg border border-line bg-white text-left shadow-xl transition-all sm:max-w-2xl dark:border-[#3f3f3f] dark:bg-[#2a2a2a]"
+          class="relative w-full transform rounded-lg border border-panel-line bg-panel text-left shadow-xl transition-all sm:max-w-2xl"
           role="presentation"
           onclick={(e) => {
             e.stopPropagation()
