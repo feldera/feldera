@@ -29,9 +29,14 @@ support in the CNI. Check the documentation of your CNI.
 | Pipeline | Systems that connectors use | depends on the connector | Kafka, object storage, databases and other connector endpoints |
 | API server, compiler server, Kubernetes runner | Postgres | 5432 | Control plane database |
 
+NetworkPolicies match the port of the pod, not of the Service. The
+`<release>-db` Service listens on port 5431 and forwards to port 5432 of
+the database pod, so the policies use 5432.
+
 With `compilerAutoscaling.enabled`, pipelines download their binary from
-`<release>-compiler-artifact-server` instead of the compiler server.
-Allow that pod in the compiler rule below.
+`<release>-compiler-artifact-server` instead of the compiler server, and
+that pod also connects to the database. Allow it in the compiler rule of
+the `pipeline` policy and in the `db` policy below.
 
 ## Example
 
@@ -166,7 +171,20 @@ Change the example to fit your deployment:
 
 - **Connectors in the cluster or the private network.** The example
   blocks private addresses. If connectors use systems in your cluster or
-  VPC, such as Kafka, add an egress rule for each of them.
+  VPC, such as Kafka, add an egress rule for each of them. This also
+  applies to cloud endpoints with private addresses, such as AWS interface
+  VPC endpoints.
+- **Cloud credentials from link-local addresses.** The example blocks
+  `169.254.0.0/16`, which includes the instance metadata service
+  (`169.254.169.254`) and the EKS Pod Identity agent (`169.254.170.23`).
+  If pipelines get their cloud credentials from one of these, allow that
+  address. GKE Workload Identity uses the metadata service. IAM roles for
+  service accounts (IRSA) on EKS do not need either.
+- **One namespace per pipeline.** With
+  `kubernetesRunner.enablePerPipelineNamespace`, pipelines run outside the
+  `feldera` namespace. Apply the `pipeline` policy in each pipeline
+  namespace, and add a `namespaceSelector` for the `feldera` namespace to
+  the rules that select control plane pods.
 - **External database.** If the control plane uses an external Postgres
   database, leave out the `db` policy.
 - **Default deny.** Some clusters deny all traffic to a pod that no policy
