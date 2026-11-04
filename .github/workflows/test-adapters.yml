@@ -66,6 +66,10 @@ jobs:
           # Keep this on a file. In-memory sqlite gives each connection its own
           # empty database, and the catalog loses its tables.
           CATALOG_URI: jdbc:sqlite:file:/tmp/iceberg_rest.db
+          # Use one sqlite connection. With the default two, one connection
+          # sometimes finds the database locked (SQLITE_BUSY) and the catalog
+          # returns HTTP 500.
+          CATALOG_CLIENTS: "1"
           CATALOG_IO__IMPL: org.apache.iceberg.gcp.gcs.GCSFileIO
           # Java takes a quarter of `--memory` as heap, and 128m killed this
           # catalog. `JAVA_OPTS` does nothing: the entrypoint is `java -jar`.
