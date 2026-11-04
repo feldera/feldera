@@ -5,10 +5,10 @@ import { render } from 'vitest-browser-svelte'
 import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 import List from './List.svelte'
 
-// List only reads `name` (for the label/filter) and `status` (for the status
+// List only reads `name` and `tags` (for the search) and `status` (for the status
 // dot) off each thumb, so a minimal stub is enough to exercise the search.
 const thumb = (name: string): PipelineThumb =>
-  ({ name, status: 'Stopped' }) as unknown as PipelineThumb
+  ({ name, tags: [], status: 'Stopped' }) as unknown as PipelineThumb
 
 const pipelines = [thumb('orders'), thumb('payments'), thumb('fraud-detection')]
 
@@ -21,11 +21,10 @@ const visibleNames = () =>
     .map((el) => el.textContent?.trim())
 
 const setSearch = async (value: string) => {
-  const search = page.getByPlaceholder('Search pipelines...')
+  const search = page.getByPlaceholder('Search pipelines and tags...')
   await expect.element(search).toBeInTheDocument()
-  const input = search.element() as HTMLInputElement
-  input.value = value
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+  // `fill` focuses the input first, as a user does; the search ignores typing without focus.
+  await search.fill(value)
   await tick()
 }
 
