@@ -8,8 +8,10 @@
    *
    * `variant` adjusts appearance based on the parent container:
    * `popup` is shown in a dropdown under whatever was clicked,
-   * `page` - in the middle of an empty page.
-   * The two take different props, e.g. `onDismiss`, since only the dropdown has a menu to navigate back to.
+   * `page` - in the middle of an empty page,
+   * `inline` - in a row of its own, e.g. a dialog's footer, with a button that cancels.
+   * They take different props, e.g. `onDismiss`, since only the dropdown and the row have
+   * something to go back to.
    */
   type Props = {
     name: string
@@ -17,7 +19,11 @@
     /** Runs inside the click on the button, so it may call `window.open`. */
     onConfirm: () => void
     'data-testid'?: string
-  } & ({ variant?: 'popup'; onDismiss?: () => void } | { variant: 'page'; onDismiss?: never })
+  } & (
+    | { variant?: 'popup'; onDismiss?: () => void }
+    | { variant: 'inline'; onDismiss: () => void }
+    | { variant: 'page'; onDismiss?: never }
+  )
 
   let {
     name,
@@ -33,6 +39,25 @@
   <div class="flex flex-col items-center gap-3" data-testid="box-support-bundle-confirm">
     <span class="max-w-full truncate font-semibold" title={name}>{name}</span>
     <button class="btn preset-filled-primary-500" onclick={onConfirm} data-testid={testid}>
+      <span class="fd fd-file-search"></span>
+      <span>{confirmLabel}</span>
+    </button>
+  </div>
+{:else if variant === 'inline'}
+  <div
+    class="flex w-full min-w-0 items-center gap-2 rounded border border-surface-200-800 py-1 pr-1 pl-3"
+    data-testid="box-support-bundle-confirm"
+  >
+    <span class="fd fd-package-open shrink-0 text-[16px] text-surface-700-300"></span>
+    <span class="min-w-0 flex-1 truncate text-sm" title={name}>{name}</span>
+    <button class="btn h-8 shrink-0 preset-outlined-surface-200-800" onclick={onDismiss}>
+      Cancel
+    </button>
+    <button
+      class="btn h-8 shrink-0 preset-filled-primary-500"
+      onclick={onConfirm}
+      data-testid={testid}
+    >
       <span class="fd fd-file-search"></span>
       <span>{confirmLabel}</span>
     </button>
