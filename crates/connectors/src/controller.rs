@@ -271,6 +271,9 @@ pub struct ControllerBuilder {
 
     /// TLS for exchange with the other hosts of a multihost pipeline, if any.
     exchange_tls: Option<PipelinePeerTls>,
+
+    /// Identifies this run of a multihost pipeline to its hosts.
+    exchange_uuid: Uuid,
 }
 
 /// Controller creation is a three-step process:
@@ -322,6 +325,7 @@ impl ControllerBuilder {
             output_assignment: BTreeMap::new(),
             storage,
             exchange_tls: None,
+            exchange_uuid: Uuid::nil(),
         })
     }
 
@@ -446,6 +450,15 @@ impl ControllerBuilder {
         }
     }
 
+    /// Sets the UUID that identifies this run of a multihost pipeline to its
+    /// hosts.  Every host must use the same one.
+    pub(crate) fn with_exchange_uuid(self, exchange_uuid: Uuid) -> Self {
+        Self {
+            exchange_uuid,
+            ..self
+        }
+    }
+
     /// Creates a [ControllerInit] that will open the specific
     /// `checkpoint_uuid`.
     pub(crate) fn open_checkpoint(
@@ -492,6 +505,7 @@ impl ControllerBuilder {
         init.with_input_distribution(self.input_distribution, self.input_choices)
             .with_output_assignment(self.output_assignment)
             .with_exchange_tls(self.exchange_tls)
+            .with_exchange_uuid(self.exchange_uuid)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -6573,6 +6587,7 @@ impl ControllerInit {
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             dev_tweaks,
             exchange_tls: None,
+            exchange_uuid: Uuid::nil(),
         })
     }
 
@@ -6585,6 +6600,13 @@ impl ControllerInit {
     /// Sets TLS for exchange with the other hosts of a multihost pipeline.
     fn with_exchange_tls(mut self, exchange_tls: Option<PipelinePeerTls>) -> Self {
         self.circuit_params.exchange_tls = exchange_tls;
+        self
+    }
+
+    /// Sets the UUID that identifies this run of a multihost pipeline to its
+    /// hosts.
+    fn with_exchange_uuid(mut self, exchange_uuid: Uuid) -> Self {
+        self.circuit_params.exchange_uuid = exchange_uuid;
         self
     }
 

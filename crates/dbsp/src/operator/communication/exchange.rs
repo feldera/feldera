@@ -64,6 +64,7 @@ use tokio_rustls::{
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::{error, info, warn};
 use typedmap::TypedMapKey;
+use uuid::Uuid;
 
 /// Current time in microseconds.
 fn current_time_usecs() -> u64 {
@@ -209,7 +210,9 @@ impl ExchangeHeader {
 const PING_SEQUENCE: u64 = u64::MAX;
 
 /// Bytes that a client sends first on each exchange connection, and that the
-/// server sends back.
+/// server sends back.  Between them, the client sends its exchange UUID (see
+/// [CircuitConfig::exchange_uuid]), and the server sends the bytes back only if
+/// the UUID is its own.
 ///
 /// The exchange port accepts connections from anything on the network, such
 /// as a port scanner.  The server closes a connection that does not start with
@@ -223,7 +226,9 @@ const PING_SEQUENCE: u64 = u64::MAX;
 ///
 /// Change the version at the end if the wire format changes, so that hosts
 /// that run different versions do not talk to each other.
-const EXCHANGE_MAGIC: [u8; 16] = *b"feldera-xchg-v2\n";
+///
+/// [CircuitConfig::exchange_uuid]: crate::circuit::CircuitConfig::exchange_uuid
+const EXCHANGE_MAGIC: [u8; 16] = *b"feldera-xchg-v3\n";
 
 /// TLS configurations for exchange between hosts.
 ///
@@ -250,13 +255,15 @@ async fn with_handshake_timeout<T>(
         })
 }
 
-/// Sends [EXCHANGE_MAGIC] on `stream` and waits for the server to send it
-/// back, which shows that the server accepted the connection.
-async fn exchange_magic_as_client<S>(stream: &mut S) -> std::io::Result<()>
+/// Sends [EXCHANGE_MAGIC] and `exchange_uuid` on `stream` and waits for the
+/// server to send the magic back, which shows that the server accepted the
+/// connection.
+async fn exchange_magic_as_client<S>(stream: &mut S, exchange_uuid: Uuid) -> std::io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     stream.write_all(&EXCHANGE_MAGIC).await?;
+    stream.write_u128_le(exchange_uuid.as_u128()).await?;
     stream.flush().await?;
     if read_exchange_magic(stream).await? {
         Ok(())
@@ -580,11 +587,17 @@ impl ExchangeClient {
     /// messages before a sender has to wait.  A single message larger than
     /// `capacity` still goes out on its own; the sender just waits for the
     /// receiver to acknowledge it before queuing another one.
+    ///
+    /// The client identifies itself to the server with `exchange_uuid` (see
+    /// [CircuitConfig::exchange_uuid]).
+    ///
+    /// [CircuitConfig::exchange_uuid]: crate::circuit::CircuitConfig::exchange_uuid
     async fn new(
         message_type: MessageType,
         remote_address: SocketAddr,
         remote_workers: &Range<usize>,
         capacity: usize,
+        exchange_uuid: Uuid,
         tls: Option<TlsConnector>,
     ) -> Self {
         let channel = ExchangeChannel::new(capacity);
@@ -594,6 +607,7 @@ impl ExchangeClient {
             remote_address,
             remote_workers.clone(),
             channel.clone(),
+            exchange_uuid,
             tls,
             stop.clone(),
         ));
@@ -717,9 +731,11 @@ impl ExchangeClient {
     }
 
     /// Connects to `remote_address`, with a TLS handshake if `tls` is set, and
-    /// waits until the server accepts the connection.
+    /// waits until the server accepts the connection, which it does only if
+    /// `exchange_uuid` is its own.
     async fn connect(
         remote_address: SocketAddr,
+        exchange_uuid: Uuid,
         tls: Option<&TlsConnector>,
     ) -> std::io::Result<ClientStream> {
         let mut stream = TcpStream::connect(remote_address).await?;
@@ -728,7 +744,7 @@ impl ExchangeClient {
         with_handshake_timeout(async {
             match tls {
                 None => {
-                    exchange_magic_as_client(&mut stream).await?;
+                    exchange_magic_as_client(&mut stream, exchange_uuid).await?;
                     Ok(ClientStream::Tcp(stream))
                 }
                 Some(connector) => {
@@ -736,7 +752,7 @@ impl ExchangeClient {
                     // its certificate, not this name.
                     let server_name = ServerName::IpAddress(remote_address.ip().into());
                     let mut stream = connector.connect(server_name, stream).await?;
-                    exchange_magic_as_client(&mut stream).await?;
+                    exchange_magic_as_client(&mut stream, exchange_uuid).await?;
                     Ok(ClientStream::Tls(Box::new(stream)))
                 }
             }
@@ -801,6 +817,7 @@ impl ExchangeClient {
         remote_address: SocketAddr,
         remote_workers: Range<usize>,
         channel: ExchangeChannel,
+        exchange_uuid: Uuid,
         tls: Option<TlsConnector>,
         stop: CancellationToken,
     ) {
@@ -811,7 +828,7 @@ impl ExchangeClient {
                 if stop.is_cancelled() && !channel.has_unacknowledged() {
                     return;
                 }
-                let error = match Self::connect(remote_address, tls.as_ref()).await {
+                let error = match Self::connect(remote_address, exchange_uuid, tls.as_ref()).await {
                     Ok(stream) => break stream,
                     Err(_) if stop.is_cancelled() => return,
                     Err(error) => error,
@@ -1158,6 +1175,12 @@ impl ExchangeDelivery for Discard {
 
 struct ExchangeServer {
     layout: Layout,
+
+    /// The UUID that a client must send to connect (see
+    /// [CircuitConfig::exchange_uuid]).
+    ///
+    /// [CircuitConfig::exchange_uuid]: crate::circuit::CircuitConfig::exchange_uuid
+    exchange_uuid: Uuid,
     directory: WeakExchangeDirectory,
     stream: Box<dyn ExchangeStream>,
 
@@ -1237,6 +1260,24 @@ impl ExchangeServer {
         };
         if !has_magic {
             return Ok(());
+        }
+        let exchange_uuid = tokio::select! {
+            result = with_handshake_timeout(self.stream.read_u128_le()) => Uuid::from_u128(result?),
+            () = self.cancel.cancelled() => return Ok(()),
+        };
+        if exchange_uuid != self.exchange_uuid {
+            // A client of another runtime, such as one that ran on the same
+            // address before.  Close the connection before it takes over the
+            // slot of a real peer or delivers to an exchange.  Without the
+            // magic back, the client's `connect` fails, so it waits before it
+            // tries again.
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "connection has exchange UUID {exchange_uuid}, not {}",
+                    self.exchange_uuid
+                ),
+            ));
         }
         self.stream.write_all(&EXCHANGE_MAGIC).await?;
         self.stream.flush().await?;
@@ -1375,6 +1416,9 @@ pub struct ExchangeClients {
 
     /// TLS for connections to and from other hosts, if any.
     tls: Option<ExchangeTls>,
+
+    /// Cached `runtime.exchange_uuid()`.
+    exchange_uuid: Uuid,
 }
 
 impl ExchangeClients {
@@ -1401,6 +1445,7 @@ impl ExchangeClients {
                 .collect(),
             channel_capacity_bytes: runtime.dev_tweaks().exchange_channel_capacity_bytes(),
             tls: runtime.exchange_tls(),
+            exchange_uuid: runtime.exchange_uuid(),
         }
     }
 
@@ -1418,6 +1463,7 @@ impl ExchangeClients {
                         runtime.take_exchange_listener(),
                         directory.downgrade(),
                         self.layout.clone(),
+                        self.exchange_uuid,
                         runtime.downgrade(),
                         self.tls
                             .as_ref()
@@ -1441,6 +1487,7 @@ impl ExchangeClients {
                     host.address,
                     &host.workers,
                     self.channel_capacity_bytes,
+                    self.exchange_uuid,
                     self.tls
                         .as_ref()
                         .map(|tls| TlsConnector::from(tls.client.clone())),
@@ -1696,12 +1743,14 @@ impl ExchangeListener {
     /// * `exchange_listener` - a socket already bound to the address.
     /// * `directory` - the exchanges that receive the messages.
     /// * `layout` - the layout of the runtime's hosts.
+    /// * `exchange_uuid` - the UUID that a client must send to connect.
     /// * `runtime` - the runtime, to report a panic in a task to.
     fn new(
         local_address: SocketAddr,
         exchange_listener: Option<std::net::TcpListener>,
         directory: WeakExchangeDirectory,
         layout: Layout,
+        exchange_uuid: Uuid,
         runtime: WeakRuntime,
         tls: Option<TlsAcceptor>,
     ) -> Self {
@@ -1753,6 +1802,7 @@ impl ExchangeListener {
                                 };
                                 ExchangeServer {
                                     layout,
+                                    exchange_uuid,
                                     directory,
                                     stream,
                                     cancel,
@@ -2880,6 +2930,7 @@ mod tests {
         },
     };
     use std::sync::{Arc, atomic::Ordering};
+    use uuid::Uuid;
 
     /// Number of rounds for exchange.
     ///
@@ -3134,6 +3185,7 @@ mod tests {
                 addr,
                 &(0..1),
                 DevTweaks::default().exchange_channel_capacity_bytes(),
+                Uuid::nil(),
                 Some(TlsConnector::from(test_exchange_tls().tls.client)),
             )
             .await;
@@ -3161,6 +3213,7 @@ mod tests {
                 Some(listener),
                 ExchangeDirectory::for_runtime(&runtime).downgrade(),
                 runtime.layout().clone(),
+                runtime.exchange_uuid(),
                 runtime.downgrade(),
                 tls.clone().map(|tls| TlsAcceptor::from(tls.server)),
             );
@@ -3241,10 +3294,14 @@ mod tests {
         with_listener(Some(tls.clone()), move |addr| {
             TOKIO.block_on(async {
                 let client = TlsConnector::from(tls.client.clone());
-                assert!(ExchangeClient::connect(addr, Some(&client)).await.is_ok());
+                assert!(
+                    ExchangeClient::connect(addr, Uuid::nil(), Some(&client))
+                        .await
+                        .is_ok()
+                );
 
                 let anonymous = TlsConnector::from(anonymous_client.clone());
-                let error = ExchangeClient::connect(addr, Some(&anonymous))
+                let error = ExchangeClient::connect(addr, Uuid::nil(), Some(&anonymous))
                     .await
                     .err()
                     .expect("the server should refuse a client without a certificate");
@@ -3263,20 +3320,53 @@ mod tests {
         let _guard = FaultInjectionDisabled::new();
         with_listener(None, |addr| {
             TOKIO.block_on(async {
-                assert!(ExchangeClient::connect(addr, None).await.is_ok());
+                assert!(
+                    ExchangeClient::connect(addr, Uuid::nil(), None)
+                        .await
+                        .is_ok()
+                );
+            });
+        });
+    }
+
+    // A client of another runtime fails to connect, so that it cannot deliver
+    // to this one and waits before it tries again.  Such a client can connect
+    // when a new runtime listens on an address that an earlier runtime used
+    // (see issue #7800).
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn client_connect_fails_with_another_exchange_uuid() {
+        use super::ExchangeClient;
+
+        init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
+        with_listener(None, |addr| {
+            TOKIO.block_on(async {
+                let error = ExchangeClient::connect(addr, Uuid::now_v7(), None)
+                    .await
+                    .err()
+                    .expect("the server should refuse another exchange UUID");
+                assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof, "{error}");
+                assert!(
+                    ExchangeClient::connect(addr, Uuid::nil(), None)
+                        .await
+                        .is_ok()
+                );
             });
         });
     }
 
     /// Accepts a connection from an [ExchangeClient] on `listener` and answers
-    /// its magic, as a server does.
+    /// its magic, as a server does.  The client must send the nil exchange
+    /// UUID.
     ///
     /// [ExchangeClient]: super::ExchangeClient
     async fn accept_client(listener: &tokio::net::TcpListener) -> tokio::net::TcpStream {
-        use tokio::io::AsyncWriteExt;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let (mut stream, _) = listener.accept().await.unwrap();
         assert!(super::read_exchange_magic(&mut stream).await.unwrap());
+        assert_eq!(stream.read_u128_le().await.unwrap(), 0);
         stream.write_all(&super::EXCHANGE_MAGIC).await.unwrap();
         stream
     }
@@ -3464,6 +3554,71 @@ mod tests {
         hosts.kill();
     }
 
+    /// Starts two hosts that run a sharded accumulator, with one transaction
+    /// done, so that the hosts listen for exchange connections.
+    fn two_hosts_after_a_transaction() -> TestHosts<impl Sized + Send + 'static> {
+        let mut hosts = TestHosts::start(4, 2, |circuit| {
+            let (input, input_handle) = circuit.add_input_zset::<u64>();
+            let (accumulated, enable_count) = input.map(|x| *x).shard_accumulate().into_parts();
+            enable_count.enable();
+            Ok((input_handle, accumulated.latest_output(), enable_count))
+        });
+        for key in 0..16 {
+            hosts.result(0).0.push(key, 1);
+        }
+        hosts.transaction();
+        hosts
+    }
+
+    /// A host closes a connection from a client of another runtime, before
+    /// that client can deliver to an exchange.  Such a client can connect when
+    /// a new runtime listens on an address that an earlier runtime used.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn rejects_a_client_of_another_runtime() {
+        use super::{EXCHANGE_MAGIC, ExchangeHeader, MessageType};
+        use std::{
+            io::{ErrorKind, Read, Write},
+            net::TcpStream,
+            time::Duration,
+        };
+
+        init_test_logger();
+        let mut hosts = two_hosts_after_a_transaction();
+
+        // Send a message from worker 2, on host 1, to an exchange that host 0
+        // does not have.  If host 0 took it, its delivery would panic.
+        let mut stream = TcpStream::connect(hosts.layout(0).local_address().unwrap()).unwrap();
+        let mut bytes = EXCHANGE_MAGIC.to_vec();
+        bytes.extend(Uuid::now_v7().as_u128().to_le_bytes());
+        bytes.extend(
+            ExchangeHeader {
+                exchange_id: 12345,
+                sequence: 0,
+                round: 0,
+                message_type: MessageType::Streaming,
+                sender: 2,
+                payload_lens: vec![0; hosts.workers(0).len()],
+            }
+            .to_bytes(),
+        );
+        stream.write_all(&bytes).unwrap();
+
+        // Wait until host 0 closes the connection.
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        match stream.read_to_end(&mut Vec::new()) {
+            Ok(_) => (),
+            Err(error) if error.kind() == ErrorKind::ConnectionReset => (),
+            Err(error) => panic!("host 0 should close the connection: {error}"),
+        }
+
+        // The hosts still run.
+        hosts.transaction();
+        hosts.kill();
+    }
+
     /// A client stops connecting after it drops.  Before, it connected
     /// forever, so that after its peer stopped, it could connect to a new
     /// runtime that reused the peer's address (see issue #7800).
@@ -3483,6 +3638,7 @@ mod tests {
                 listener.local_addr().unwrap(),
                 &(0..1),
                 DevTweaks::default().exchange_channel_capacity_bytes(),
+                Uuid::nil(),
                 None,
             )
             .await;
@@ -3522,6 +3678,7 @@ mod tests {
                 listener.local_addr().unwrap(),
                 &(0..1),
                 DevTweaks::default().exchange_channel_capacity_bytes(),
+                Uuid::nil(),
                 None,
             )
             .await;
@@ -3683,6 +3840,7 @@ mod tests {
                 addr,
                 &remote_workers,
                 DevTweaks::default().exchange_channel_capacity_bytes(),
+                Uuid::nil(),
                 None,
             )
             .await;
@@ -3733,6 +3891,7 @@ mod tests {
                 addr,
                 &remote_workers,
                 DevTweaks::default().exchange_channel_capacity_bytes(),
+                Uuid::nil(),
                 None,
             )
             .await;
@@ -4033,6 +4192,7 @@ mod tests {
                 addr,
                 &remote_workers,
                 capacity,
+                Uuid::nil(),
                 None,
             )
             .await;

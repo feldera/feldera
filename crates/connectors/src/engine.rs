@@ -73,6 +73,10 @@ pub struct CircuitParams {
     /// TLS for exchange with the other hosts of a multihost pipeline, or `None` for
     /// plaintext.
     pub exchange_tls: Option<PipelinePeerTls>,
+
+    /// Identifies this run of a multihost pipeline to its hosts (see
+    /// `dbsp::circuit::CircuitConfig::exchange_uuid`).
+    pub exchange_uuid: Uuid,
 }
 
 /// What the circuit factory returns.

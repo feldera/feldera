@@ -70,6 +70,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
@@ -424,6 +425,9 @@ struct RuntimeInner {
 
     /// TLS for exchange, if any.
     exchange_tls: Option<ExchangeTls>,
+
+    /// See [CircuitConfig::exchange_uuid].
+    exchange_uuid: Uuid,
 }
 
 impl Drop for RuntimeInner {
@@ -740,6 +744,7 @@ impl RuntimeInner {
             tokio_merger_runtime: Mutex::new(None),
             exchange_listener: Mutex::new(config.exchange_listener),
             exchange_tls,
+            exchange_uuid: config.exchange_uuid,
         })
     }
 
@@ -1791,6 +1796,12 @@ impl Runtime {
     /// [CircuitConfig]: crate::circuit::dbsp_handle::CircuitConfig
     pub(crate) fn exchange_tls(&self) -> Option<ExchangeTls> {
         self.inner().exchange_tls.clone()
+    }
+
+    /// Returns the UUID that identifies this run of a multihost circuit to its
+    /// hosts (see [CircuitConfig::exchange_uuid]).
+    pub fn exchange_uuid(&self) -> Uuid {
+        self.inner().exchange_uuid
     }
 
     /// Returns [DevTweaks] for this `Runtime`.
