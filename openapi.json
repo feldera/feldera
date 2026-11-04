@@ -5489,7 +5489,7 @@
           {
             "name": "duration_secs",
             "in": "query",
-            "description": "The number of seconds to sample for the profile.",
+            "description": "The number of seconds to sample for the profile, from 1 to 300.",
             "required": false,
             "schema": {
               "type": "integer",

@@ -2256,7 +2256,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         """
         Starts profiling this pipeline using samply.
 
-        :param duration: The duration of the profile in seconds (default: 30)
+        :param duration: The duration of the profile in seconds, from 1 to 300 (default: 30)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 
