@@ -9043,7 +9043,7 @@ export type StartSamplyProfileData = {
      */
     ordinal?: number
     /**
-     * The number of seconds to sample for the profile.
+     * The number of seconds to sample for the profile, from 1 to 300.
      */
     duration_secs?: number
   }

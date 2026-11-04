@@ -2373,7 +2373,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         Start the profiling this pipeline with samply.
 
         :param pipeline_name: The name of the pipeline
-        :param duration: The duration of the profile in seconds (default: 30)
+        :param duration: The duration of the profile in seconds, from 1 to 300 (default: 30)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 

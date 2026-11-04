@@ -3829,6 +3829,14 @@ async fn samply_profile(
     query_params: web::Query<SamplyProfileParams>,
 ) -> Result<HttpResponse, PipelineError> {
     let duration = query_params.duration_secs;
+    if !(1..=SamplyProfileParams::MAX_DURATION_SECS).contains(&duration) {
+        return Err(PipelineError::InvalidParam {
+            error: format!(
+                "`duration_secs` must be from 1 to {}, not {duration}",
+                SamplyProfileParams::MAX_DURATION_SECS
+            ),
+        });
+    }
     let controller = state.controller()?;
 
     let state_samply_state = state.samply_state.clone();
@@ -6243,6 +6251,35 @@ pub mod test_http {
             }
 
             pause_pipeline(&server).await;
+        })
+    }
+
+    /// `POST /samply_profile` refuses a duration outside 1 to
+    /// `SamplyProfileParams::MAX_DURATION_SECS` seconds, before it starts Samply.
+    #[engine_test]
+    pub fn samply_profile_rejects_out_of_range_duration(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            crate::ensure_default_crypto_provider();
+
+            let server = start_test_server(
+                engine,
+                &json!({"name": "test", "inputs": {}, "outputs": {}}),
+                Uuid::new_v4(),
+            )
+            .await;
+
+            let max = feldera_types::query_params::SamplyProfileParams::MAX_DURATION_SECS;
+            for duration in [0, max + 1, 2_592_000, u64::MAX] {
+                let mut response = server
+                    .post(format!("/samply_profile?duration_secs={duration}"))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{duration}");
+                let body = response.body().await.unwrap();
+                let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(error["error_code"], "InvalidParam", "{duration}: {error}");
+            }
         })
     }
 

@@ -47,8 +47,13 @@ impl Default for ActivateParams {
 pub struct SamplyProfileParams {
     /// In a multihost pipeline, the ordinal of the pipeline to sample.
     pub ordinal: usize,
-    /// The number of seconds to sample for the profile.
+    /// The number of seconds to sample for the profile, from 1 to 300.
     pub duration_secs: u64,
+}
+
+impl SamplyProfileParams {
+    /// The longest profile a caller can request, in seconds.
+    pub const MAX_DURATION_SECS: u64 = 300;
 }
 
 /// Default query parameters for POST of a pipeline samply profile.
