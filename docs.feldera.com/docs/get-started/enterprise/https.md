@@ -31,6 +31,10 @@ from the other Feldera components.
 
 :::
 
+We recommend [cert-manager](https://cert-manager.io) to issue and renew
+these certificates, see [Using cert-manager](#using-cert-manager).  The
+sections after it describe how to create them by hand with OpenSSL.
+
 This document does not apply to the connection to the Postgres database used by the control plane,
 which can be [configured separately](helm-guide.md).
 
@@ -42,6 +46,179 @@ to serve their HTTP endpoint -- which the runner will no longer be able to commu
 as it expects HTTPS. Restart the pipelines after configuring HTTPS.
 
 :::
+
+## Using cert-manager
+
+[cert-manager](https://cert-manager.io/docs/installation/) issues the
+certificates as Kubernetes secrets and renews them before they
+expire.  The example below creates one self-signed root CA in the
+`feldera` namespace with two branches:
+
+```
+feldera-root-ca (self-signed)
+├── feldera-https-ca ── feldera-https-config   wildcard server certificate (httpsSecretRef)
+└── feldera-ca-config                          private CA for multihost pipelines and
+                                               client certificates (caSecretRef)
+```
+
+An existing `ClusterIssuer` of your organization can take the place of
+the self-signed root.
+
+1. Install cert-manager in the cluster, if it is not there yet.
+
+2. Apply the issuers and certificates.  Replace `feldera` with your
+   namespace in `namespace`, `commonName` and `dnsNames`:
+
+   ```yaml
+   apiVersion: cert-manager.io/v1
+   kind: Issuer
+   metadata:
+     name: feldera-selfsigned
+     namespace: feldera
+   spec:
+     selfSigned: {}
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-root-ca
+     namespace: feldera
+   spec:
+     isCA: true
+     commonName: feldera-root-ca
+     secretName: feldera-root-ca
+     duration: 87600h # 10 years
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+     issuerRef:
+       name: feldera-selfsigned
+       kind: Issuer
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Issuer
+   metadata:
+     name: feldera-root-ca
+     namespace: feldera
+   spec:
+     ca:
+       secretName: feldera-root-ca
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-https-ca
+     namespace: feldera
+   spec:
+     isCA: true
+     commonName: feldera-https-ca
+     secretName: feldera-https-ca
+     duration: 43800h # 5 years
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+     issuerRef:
+       name: feldera-root-ca
+       kind: Issuer
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Issuer
+   metadata:
+     name: feldera-https-ca
+     namespace: feldera
+   spec:
+     ca:
+       secretName: feldera-https-ca
+   ---
+   # Wildcard server certificate of the API server, compiler, runner and pipelines.
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-https-config
+     namespace: feldera
+   spec:
+     secretName: feldera-https-config
+     commonName: feldera.svc.cluster.local
+     dnsNames:
+       - "*.feldera.svc.cluster.local"
+       - localhost # for kubectl port forwarding
+     ipAddresses:
+       - 127.0.0.1
+     usages:
+       - digital signature
+       - server auth
+     duration: 8760h # 1 year
+     renewBefore: 720h # 30 days
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+       rotationPolicy: Always
+     issuerRef:
+       name: feldera-https-ca
+       kind: Issuer
+   ---
+   # Private CA: the runner signs a certificate for each pipeline with it.
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-ca-config
+     namespace: feldera
+   spec:
+     isCA: true
+     commonName: feldera-private-ca
+     secretName: feldera-ca-config
+     duration: 43800h # 5 years
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+     issuerRef:
+       name: feldera-root-ca
+       kind: Issuer
+   ```
+
+   The runner reads the private CA key only as PKCS#8, so keep
+   `encoding: PKCS8` on `feldera-ca-config`.
+
+3. Wait until all certificates are ready:
+
+   ```
+   kubectl get certificates -n feldera
+   ```
+
+4. Set the secrets in the Helm values, as in step 3 of [Configure
+   Kubernetes](#configure-kubernetes).  To also enable
+   [client certificates](#client-certificates), add `mtls.enabled: true`:
+
+   ```yaml
+   httpsSecretRef: "feldera-https-config"
+   caSecretRef: "feldera-ca-config"
+   ```
+
+:::info
+
+The Feldera components read the server certificate
+(`feldera-https-config`) when they start.  A renewed certificate takes
+effect after the next restart of the components, which must happen
+before the old certificate expires: within `renewBefore`, 30 days in the
+example above.  A Feldera upgrade restarts them.
+
+:::
+
+To trust the server certificate from outside the cluster, for example
+with `curl` over port forwarding, use the root CA:
+
+```
+kubectl get secret -n feldera feldera-root-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > feldera-root-ca.crt
+curl --cacert feldera-root-ca.crt 'https://localhost:8080/v0/pipelines'
+```
+
+If an ingress or a Gateway API gateway forwards traffic to the API
+server, configure it to connect over HTTPS and to verify the API
+server against the `feldera-root-ca` secret.
 
 ## Wildcard Certificate Generation
 
@@ -55,6 +232,9 @@ When using `kubectl` port forwarding, it is also useful to add
 hostname `localhost` and/or `127.0.0.1` to the certificate.
 
 :::
+
+This section and the next one create the certificates by hand.  Skip
+them if you [use cert-manager](#using-cert-manager).
 
 Any method for generating a signed certificate is acceptable.  We
 assume later that the certificate file is named `tls.crt` and the
