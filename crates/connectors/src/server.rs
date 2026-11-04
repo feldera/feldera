@@ -953,10 +953,14 @@ pub fn run_server(
 
         // Initiate creating the controller so that we can get access to storage,
         // which is needed to determine the initial state.
-        let builder = ControllerBuilder::new(config, &open_storage)?.with_exchange_tls(
-            args.require_client_certificates
-                .then(|| pipeline_peer_tls(args)),
-        );
+        // Every host of a deployment has the same deployment ID, so it
+        // identifies the hosts of this run to each other.
+        let builder = ControllerBuilder::new(config, &open_storage)?
+            .with_exchange_tls(
+                args.require_client_certificates
+                    .then(|| pipeline_peer_tls(args)),
+            )
+            .with_exchange_uuid(args.deployment_id);
         info!(
             "Pipeline deployment identifier from arguments: {}",
             args.deployment_id

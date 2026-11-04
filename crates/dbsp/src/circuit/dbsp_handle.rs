@@ -153,6 +153,13 @@ pub struct CircuitConfig {
     /// Optionally, TLS for exchange.  This is relevant only if `layout` is
     /// multihost.  If it is provided, then every host must use TLS.
     pub exchange_tls: Option<ExchangeTls>,
+
+    /// Identifies this run of a multihost circuit.  Every host of the circuit
+    /// must have the same value.  A host accepts exchange connections only from
+    /// hosts with the same value, so that a client left over from another run,
+    /// which connects to a reused address, cannot deliver to this one.  The nil
+    /// UUID by default.
+    pub exchange_uuid: Uuid,
 }
 
 /// Returns the chunk size for splitter operators, in records.
@@ -400,6 +407,7 @@ impl CircuitConfig {
             dev_tweaks: DevTweaks::default(),
             exchange_listener: None,
             exchange_tls: None,
+            exchange_uuid: Uuid::nil(),
         }
     }
 
@@ -532,6 +540,11 @@ impl CircuitConfig {
 
     pub fn with_exchange_tls(mut self, exchange_tls: Option<ExchangeTls>) -> Self {
         self.exchange_tls = exchange_tls;
+        self
+    }
+
+    pub fn with_exchange_uuid(mut self, exchange_uuid: Uuid) -> Self {
+        self.exchange_uuid = exchange_uuid;
         self
     }
 }

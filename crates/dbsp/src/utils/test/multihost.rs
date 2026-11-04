@@ -135,7 +135,9 @@ pub(crate) fn test_exchange_tls() -> TestExchangeTls {
 /// more than the other hosts.  Each host listens on a port that the kernel
 /// selects.  All of the ports are bound before a runtime starts, so a host that
 /// connects to a host that does not run yet waits in the accept queue.  Thus,
-/// the runtimes can start one after another.
+/// the runtimes can start one after another.  The hosts share a new exchange
+/// UUID, so that they reject a client of another test that reuses one of the
+/// ports.
 ///
 /// # Arguments
 ///
@@ -168,10 +170,12 @@ pub(crate) fn host_configs(workers: usize, hosts: usize) -> Vec<CircuitConfig> {
             )
         })
         .collect();
+    let exchange_uuid = Uuid::now_v7();
     zip(&params, listeners)
         .map(|(&(address, _), listener)| {
             CircuitConfig::from(Layout::new_multihost(&params, address).unwrap())
                 .with_exchange_listener(listener)
+                .with_exchange_uuid(exchange_uuid)
         })
         .collect()
 }
@@ -419,6 +423,11 @@ where
     /// Returns the number of hosts.
     pub(crate) fn n_hosts(&self) -> usize {
         self.handles.len()
+    }
+
+    /// Returns the layout of `host`.
+    pub(crate) fn layout(&self, host: usize) -> Layout {
+        self.handles[host].runtime().layout().clone()
     }
 
     /// Returns the workers that `host` runs.

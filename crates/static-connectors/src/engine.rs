@@ -128,6 +128,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
             pin_cpus,
             dev_tweaks,
             exchange_tls,
+            exchange_uuid,
         } = params;
         let storage = storage.as_deref().map(|storage| {
             storage
@@ -146,6 +147,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
             .with_mode(Mode::Persistent)
             .with_dev_tweaks(dev_tweaks)
             .with_allow_input_during_commit(false)
+            .with_exchange_uuid(exchange_uuid)
             .with_exchange_tls(exchange_tls.map(|tls| ExchangeTls {
                 client: tls.client,
                 server: tls.server,
