@@ -1,4 +1,5 @@
 use crate::adhoc::set_snapshot;
+use crate::controller::snapshot_parts::{self, SnapshotLeases};
 use crate::controller::{
     CompletionToken, ConsistentSnapshot, ControllerBuilder, TransactionToCommit,
 };
@@ -55,6 +56,7 @@ use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_mtls::{Caller, PipelineClientAuth, PipelinePeerTls};
 use feldera_observability as observability;
 use feldera_observability::json_logging::init_pipeline_logging_with_id;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
     PipelineStatsErrorsResponse,
@@ -72,8 +74,9 @@ use feldera_types::config::{
     DynamicConfig, PipelineIdentity, SyncConfig, ignored::ignored_settings,
 };
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
-    Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, AdHocScanFormat, CoordinationActivate, CoordinationCapabilities, CoordinationStatus,
+    InputChoices, Labels, OutputPartReport, RestartArgs, SnapshotLease, SnapshotLeaseId, Step,
+    StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -112,7 +115,7 @@ use std::mem::take;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{MutexGuard, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -124,6 +127,7 @@ use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
 use tokio::time::{sleep, timeout};
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::wrappers::WatchStream;
 use tracing::{Instrument, Level, debug, error, info, info_span, warn};
 use tracing_subscriber::EnvFilter;
@@ -325,6 +329,10 @@ pub(crate) struct ServerState {
     /// Current collection of leases.
     leases: Mutex<HashMap<Step, Lease>>,
 
+    /// The snapshot leases that other hosts hold on this host, for
+    /// `/coordination/snapshot/lease`.
+    snapshot_leases: SnapshotLeases,
+
     /// What `POST /testing/load` needs to replace the program; set from
     /// `--enable-program-load`.
     program_load: OnceLock<ProgramLoad>,
@@ -430,6 +438,7 @@ impl ServerState {
             coordination_activate: Default::default(),
             input_choices: Default::default(),
             leases: Default::default(),
+            snapshot_leases: Default::default(),
             incarnation_uuid: Uuid::now_v7(),
             program_load: OnceLock::new(),
             program_generation: AtomicU64::new(0),
@@ -953,10 +962,12 @@ pub fn run_server(
 
         // Initiate creating the controller so that we can get access to storage,
         // which is needed to determine the initial state.
-        let builder = ControllerBuilder::new(config, &open_storage)?.with_exchange_tls(
-            args.require_client_certificates
-                .then(|| pipeline_peer_tls(args)),
-        );
+        let builder = ControllerBuilder::new(config, &open_storage)?
+            .with_exchange_tls(
+                args.require_client_certificates
+                    .then(|| pipeline_peer_tls(args)),
+            )
+            .with_peer_root_certificate(pipeline_root_certificate(args));
         info!(
             "Pipeline deployment identifier from arguments: {}",
             args.deployment_id
@@ -1072,6 +1083,7 @@ pub fn run_server(
             builder.sync_config(),
             host_info,
         ));
+        spawn_snapshot_lease_checker(&state);
 
         // Initialize the pipeline in a separate thread.  On success, this thread
         // will create a `Controller` instance and store it in `state.controller`.
@@ -1579,6 +1591,7 @@ fn do_bootstrap(
             RuntimeDesiredStatus::Coordination => {
                 if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
                     builder = builder.with_output_assignment(take(&mut ca.output_assignment));
+                    builder = builder.with_host_urls(take(&mut ca.host_urls));
 
                     builder = builder.with_layout(
                         Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
@@ -1708,6 +1721,22 @@ fn pipeline_client_auth(args: &ServerArgs) -> PipelineClientAuth {
         .unwrap_or_else(|e| panic!("client certificates with '{path}': {e}"))
 }
 
+/// Loads the root CA of the pipeline certificate chain, which the other hosts' HTTPS
+/// certificates also chain to, or `None` without HTTPS.  The coordinator trusts the
+/// hosts the same way.
+fn pipeline_root_certificate(args: &ServerArgs) -> Option<reqwest::Certificate> {
+    if !args.enable_https {
+        return None;
+    }
+    let path = args.https_tls_cert_path.as_ref()?;
+    let pem = std::fs::read(path).expect("HTTPS TLS certificate should be read");
+    let root = reqwest::Certificate::from_pem_bundle(&pem)
+        .unwrap_or_else(|e| panic!("HTTPS TLS certificate '{path}': {e}"))
+        .pop()
+        .unwrap_or_else(|| panic!("HTTPS TLS certificate '{path}' holds no certificate"));
+    Some(root)
+}
+
 /// Loads the TLS configurations for exchange with the other hosts from the pipeline
 /// certificate and key.
 fn pipeline_peer_tls(args: &ServerArgs) -> PipelinePeerTls {
@@ -1833,6 +1862,9 @@ where
         .service(coordination_adhoc_catalog)
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
+        .service(coordination_snapshot_lease)
+        .service(coordination_snapshot_release)
+        .service(coordination_output_commit)
         .service(coordination_labels_incomplete)
         .service(coordination_input_choices)
         .service(coordination_restart)
@@ -2866,6 +2898,342 @@ pub mod test_http_helpers {
             .json::<CompletionStatusResponse>()
             .await
             .unwrap()
+    }
+
+    /// A multihost pipeline of hosts in this process, each a pipeline server
+    /// that runs the test circuit.  The test acts as the coordinator: it
+    /// activates the hosts and requests each step, as the coordinator does.
+    pub(crate) struct MultihostTestPipeline {
+        pub(crate) servers: Vec<TestServer>,
+        pub(crate) states: Vec<WebData<ServerState>>,
+
+        /// The step that the hosts run next.
+        step: feldera_types::coordination::Step,
+    }
+
+    impl MultihostTestPipeline {
+        /// Starts `n_hosts` hosts of `workers_per_host` workers each, with
+        /// pipeline configuration `config`, which needs no `workers` or
+        /// `multihost`.  Each output connector in `config` goes to the host
+        /// that `output_assignment` gives its stream, or host 0, except that a
+        /// distributed output connector goes to every host.
+        pub(crate) async fn start(
+            engine: &dyn PipelineTestEngine,
+            n_hosts: usize,
+            workers_per_host: usize,
+            config: &serde_json::Value,
+            output_assignment: &[(&str, usize)],
+        ) -> Self {
+            Self::start_with_storage(
+                engine,
+                n_hosts,
+                workers_per_host,
+                config,
+                output_assignment,
+                &[],
+                None,
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{error}"))
+        }
+
+        /// Like [Self::start], but each host keeps its storage in its entry of
+        /// `storage_dirs`, if there is one, and starts from its entry of
+        /// `checkpoints`, if that is given.  Returns an error if a host fails
+        /// to start.
+        ///
+        /// The view's persistent id is the one that `config`'s `program_ir`
+        /// gives it, as [test_program_ir] builds it, or `v0`.
+        pub(crate) async fn start_with_storage(
+            engine: &dyn PipelineTestEngine,
+            n_hosts: usize,
+            workers_per_host: usize,
+            config: &serde_json::Value,
+            output_assignment: &[(&str, usize)],
+            storage_dirs: &[std::path::PathBuf],
+            checkpoints: Option<&[Uuid]>,
+        ) -> Result<Self, String> {
+            use feldera_types::coordination::CoordinationActivate;
+
+            let mut config = config.clone();
+            let view_persistent_id = config
+                .pointer("/program_ir/mir/1/persistent_id")
+                .and_then(|id| id.as_str())
+                .unwrap_or("v0")
+                .to_string();
+            config["workers"] = json!(n_hosts * workers_per_host);
+            config["multihost"] = json!({"hosts": n_hosts});
+            let pipeline_config: feldera_types::config::PipelineConfig =
+                serde_json::from_value(config.clone()).unwrap();
+            let output_assignment: BTreeMap<String, usize> = output_assignment
+                .iter()
+                .map(|(stream, host)| (stream.to_string(), *host))
+                .collect();
+
+            // Pick a free port for each host's exchange.
+            // Bind each host's exchange socket now, and keep it for the host,
+            // so that no other test can take the address in the meantime.
+            let listeners: Vec<_> = (0..n_hosts)
+                .map(|_| Arc::new(std::net::TcpListener::bind("127.0.0.1:0").unwrap()))
+                .collect();
+            let exchanges: Vec<_> = listeners
+                .iter()
+                .map(|listener| (listener.local_addr().unwrap(), workers_per_host))
+                .collect();
+
+            let mut servers = Vec::new();
+            let mut states = Vec::new();
+            for (host, listener) in listeners.into_iter().enumerate() {
+                let mut config = config.clone();
+                if let Some(dir) = storage_dirs.get(host) {
+                    config["storage"] = json!(true);
+                    config["storage_config"] = json!({"path": dir});
+                }
+                let config_file = json_config_file(&config);
+                let config = parse_config(config_file.path().display().to_string()).unwrap();
+                let builder = ControllerBuilder::new(&config, &engine.open_storage()).unwrap();
+                let deployment_id = Uuid::new_v4();
+                let state = WebData::new(ServerState::new(
+                    PipelinePhase::Initializing(InitializationState::Starting),
+                    String::default(),
+                    RuntimeDesiredStatus::Coordination,
+                    BootstrapConfig::from(BootstrapPolicy::Allow),
+                    deployment_id,
+                    None,
+                    builder.storage(),
+                    None,
+                    None,
+                ));
+                let circuit = TestCircuit::Identity {
+                    relation: relation(),
+                    persistent_output_ids: vec![Some(view_persistent_id.clone())],
+                    input_properties: Vec::new(),
+                    materialized: true,
+                    persistent_ids: true,
+                    table_version: 0,
+                    attribute_defaults: BTreeMap::new(),
+                };
+                let factory = engine.circuit_factory(&circuit, None).unwrap();
+                let factory: crate::engine::CircuitFactory = Box::new(move |mut params| {
+                    params.exchange_listener = Some(listener);
+                    factory(params)
+                });
+                thread::spawn({
+                    let state = state.clone();
+                    move || bootstrap(builder, factory, state)
+                });
+                servers.push(actix_test::start_with(test_server_config(), {
+                    let state = state.clone();
+                    move || build_app(App::new().wrap(Logger::default()), state.clone())
+                }));
+                states.push(state);
+            }
+
+            let host_urls: Vec<String> = servers.iter().map(|server| server.url("/")).collect();
+            for (host, server) in servers.iter().enumerate() {
+                let outputs = pipeline_config
+                    .outputs
+                    .iter()
+                    .filter(|(_, output)| {
+                        output.connector_config.distributed
+                            || output_assignment.get(&*output.stream).copied().unwrap_or(0) == host
+                    })
+                    .map(|(name, output)| (name.clone(), output.clone()))
+                    .collect();
+                let activate = CoordinationActivate {
+                    exchanges: exchanges.clone(),
+                    local_address: exchanges[host].0,
+                    desired_status: RuntimeDesiredStatus::Running,
+                    checkpoint: checkpoints.map(|checkpoints| checkpoints[host]),
+                    inputs: BTreeMap::new(),
+                    outputs,
+                    output_assignment: output_assignment.clone(),
+                    input_distribution: BTreeMap::new(),
+                    input_choices: BTreeMap::new(),
+                    host_urls: host_urls.clone(),
+                };
+                let response = server
+                    .post("/coordination/activate")
+                    .send_json(&activate)
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success(), "activating host {host}");
+            }
+
+            // Wait for every host's controller.
+            for state in &states {
+                let started = tokio::time::timeout(Duration::from_secs(30), async {
+                    loop {
+                        if state.controller().is_ok() {
+                            return Ok(());
+                        }
+                        if let PipelinePhase::InitializationError(error)
+                        | PipelinePhase::Failed(error) = state.phase()
+                        {
+                            return Err(format!("a host did not start (failed: {error})"));
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| {
+                    let phase = match state.phase() {
+                        PipelinePhase::Initializing(state) => format!("initializing: {state:?}"),
+                        _ => "other".into(),
+                    };
+                    Err(format!("a host did not start ({phase})"))
+                });
+                started?;
+            }
+
+            let mut pipeline = Self {
+                servers,
+                states,
+                step: 0,
+            };
+            pipeline.step = pipeline.step_status(0).await.step;
+            Ok(pipeline)
+        }
+
+        /// Returns the first line of `host`'s stream at `path`, as JSON.
+        async fn first_line<T: serde::de::DeserializeOwned>(&self, host: usize, path: &str) -> T {
+            let mut response = self.servers[host].get(path).send().await.unwrap();
+            let mut line = Vec::new();
+            while !line.ends_with(b"\n") {
+                line.extend_from_slice(&response.next().await.unwrap().unwrap());
+            }
+            let end = line.iter().position(|&b| b == b'\n').unwrap();
+            serde_json::from_slice(&line[..end]).unwrap()
+        }
+
+        /// Waits until every host reports checkpoint status `wanted`.
+        async fn wait_checkpoint_status(
+            &self,
+            wanted: feldera_types::coordination::CheckpointCoordination,
+        ) {
+            use feldera_types::coordination::CheckpointCoordination;
+            for host in 0..self.servers.len() {
+                tokio::time::timeout(Duration::from_secs(30), async {
+                    loop {
+                        let status: CheckpointCoordination = self
+                            .first_line(host, "/coordination/checkpoint/status")
+                            .await;
+                        match status {
+                            status if status == wanted => return,
+                            CheckpointCoordination::Error(error) => {
+                                panic!("host {host} failed to checkpoint: {error}")
+                            }
+                            _ => tokio::time::sleep(Duration::from_millis(10)).await,
+                        }
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("host {host} never reported {wanted:?}"));
+            }
+        }
+
+        /// Takes a checkpoint on every host, as the coordinator does, and
+        /// returns each host's checkpoint id.
+        pub(crate) async fn checkpoint(&self) -> Vec<Uuid> {
+            use feldera_types::coordination::CheckpointCoordination;
+            for server in &self.servers {
+                let response = server
+                    .post("/coordination/checkpoint/prepare")
+                    .send()
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+            }
+            self.wait_checkpoint_status(CheckpointCoordination::Ready)
+                .await;
+            for server in &self.servers {
+                let response = server
+                    .post("/coordination/checkpoint/release")
+                    .send()
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+            }
+            self.wait_checkpoint_status(CheckpointCoordination::Done)
+                .await;
+            let mut ids = Vec::new();
+            for server in &self.servers {
+                let checkpoints: Vec<feldera_types::checkpoint::CheckpointMetadata> = server
+                    .get("/checkpoints")
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
+                ids.push(checkpoints.last().expect("the host has a checkpoint").uuid);
+            }
+            ids
+        }
+
+        /// Stops every host and waits until each releases its entry of
+        /// `storage_dirs`.
+        pub(crate) async fn stop(
+            self,
+            engine: &dyn PipelineTestEngine,
+            storage_dirs: &[std::path::PathBuf],
+        ) {
+            let stops: Vec<_> = self
+                .states
+                .iter()
+                .map(|state| {
+                    let controller = state.abandon_controller().expect("controller present");
+                    tokio::task::spawn_blocking(move || controller.stop())
+                })
+                .collect();
+            for stop in stops {
+                stop.await.unwrap().expect("controller stops cleanly");
+            }
+            for dir in storage_dirs {
+                wait_for_storage_unlock(engine, dir).await;
+            }
+        }
+
+        /// Returns `host`'s first step status.
+        async fn step_status(&self, host: usize) -> feldera_types::coordination::StepStatus {
+            let mut response = self.servers[host]
+                .get("/coordination/step/status")
+                .send()
+                .await
+                .unwrap();
+            let mut line = Vec::new();
+            while !line.ends_with(b"\n") {
+                line.extend_from_slice(&response.next().await.unwrap().unwrap());
+            }
+            let end = line.iter().position(|&b| b == b'\n').unwrap();
+            serde_json::from_slice(&line[..end]).unwrap()
+        }
+
+        /// Runs one step on every host, as the coordinator does, and waits
+        /// until every host has finished it.
+        pub(crate) async fn step(&mut self) {
+            use feldera_types::coordination::{StepAction, StepInputs, StepRequest};
+
+            let request = StepRequest::new(self.step, StepAction::Step, StepInputs::All);
+            for server in &self.servers {
+                let response = server
+                    .post("/coordination/step/request")
+                    .send_json(&request)
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+            }
+            for host in 0..self.servers.len() {
+                tokio::time::timeout(Duration::from_secs(30), async {
+                    while self.step_status(host).await.step <= self.step {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("host {host} did not finish step {}", self.step));
+            }
+            self.step += 1;
+        }
     }
 
     pub(crate) async fn print_stats(server: &TestServer) {
@@ -4871,7 +5239,7 @@ async fn output_endpoint(
     let endpoint_id = controller.add_output_endpoint(
         &endpoint_name,
         &config,
-        Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
+        Box::new(endpoint.for_controller()) as Box<dyn OutputEndpoint>,
         None,
     )?;
 
@@ -5352,11 +5720,186 @@ async fn coordination_adhoc_lease(
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(stream))
 }
 
+/// Replies to a scan for [AdHocScanFormat::Batches] with the scan's worker's
+/// part of the relation in the snapshot of the scan's lease, as framed chunks
+/// of serialized batches, leaving out the first `skip_chunks` chunks.
+///
+/// The worker's part is serialized in a blocking task, because it may be on
+/// storage, while the reply streams.  The lease is in use until that task
+/// ends.  A part that is missing because the worker had no output in the step
+/// replies with no chunks.
+fn scan_batches(
+    state: WebData<ServerState>,
+    scan: AdHocScan,
+) -> Result<HttpResponse, PipelineError> {
+    let error = |error: String| PipelineError::AdHocQueryError { error, df: None };
+    if scan.projection.is_some() {
+        return Err(error("a scan for batches cannot have a projection".into()));
+    }
+    let controller = state.controller()?;
+    let local_workers = controller.layout().local_workers();
+    if !local_workers.contains(&scan.worker) {
+        return Err(error(format!(
+            "worker {} is not on this host, which has workers {local_workers:?}",
+            scan.worker
+        )));
+    }
+    let lease = scan
+        .lease
+        .ok_or_else(|| error("a scan for batches needs a snapshot lease".into()))?;
+    let (step, leased_table, readers) = state
+        .snapshot_leases
+        .start_scan(lease)
+        .ok_or_else(|| error(format!("no snapshot lease {lease}")))?;
+
+    // From here on, every path ends the scan exactly once.
+    let end_scan = {
+        let state = state.clone();
+        move || state.snapshot_leases.end_scan(lease, Instant::now())
+    };
+    if step != scan.step {
+        end_scan();
+        return Err(error(format!(
+            "snapshot lease {lease} is for step {step}, not step {}",
+            scan.step
+        )));
+    }
+    if leased_table != scan.table {
+        end_scan();
+        return Err(error(format!(
+            "snapshot lease {lease} is for relation {leased_table}, not relation {}",
+            scan.table
+        )));
+    }
+    let part = readers
+        .partitions
+        .get(scan.worker - local_workers.start)
+        .cloned();
+
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, PipelineError>>(4);
+    let AdHocScan {
+        table,
+        worker,
+        skip_chunks,
+        ..
+    } = scan;
+    spawn_blocking(move || {
+        if let Some(part) = part {
+            let mut skip = skip_chunks;
+            let result = part.serialize_chunks(snapshot_parts::CHUNK_BYTES, &mut |chunk| {
+                if skip > 0 {
+                    skip -= 1;
+                    return Ok(());
+                }
+                sender
+                    .blocking_send(Ok(snapshot_parts::frame_chunk(chunk)))
+                    .map_err(|_| anyhow::anyhow!("the client closed the connection"))
+            });
+            if let Err(e) = result {
+                // The reply has started, so it can only stop short; the client
+                // then sees a chunk cut off.  Log the cause here.
+                error!("scan of {table} for batches (step {step}, worker {worker}): {e}");
+                let _ = sender.blocking_send(Err(error(e.to_string())));
+            }
+        }
+        end_scan();
+    });
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(ReceiverStream::new(receiver)))
+}
+
+/// Checks the snapshot leases that other hosts hold on this host every minute,
+/// for as long as `state` exists (see [SnapshotLeases::check]).
+fn spawn_snapshot_lease_checker(state: &WebData<ServerState>) {
+    let state = Arc::downgrade(&state.clone().into_inner());
+    TOKIO.spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let Some(state) = state.upgrade() else { break };
+            state.snapshot_leases.check(Instant::now());
+        }
+    });
+}
+
+/// Takes a snapshot lease on a step for another host of the pipeline; see
+/// [SnapshotLease].
+#[post("/coordination/snapshot/lease")]
+async fn coordination_snapshot_lease(
+    state: WebData<ServerState>,
+    request: web::Json<SnapshotLease>,
+) -> Result<HttpResponse, PipelineError> {
+    let SnapshotLease { step, table } = request.into_inner();
+    let controller = state.controller()?;
+    let Some(snapshot) = controller.consistent_snapshot(step).await else {
+        let retained = controller.available_snapshot_steps().await;
+        return Err(PipelineError::AdHocQueryError {
+            error: format!(
+                "snapshot for step {step} is not available (retained steps: {retained:?})"
+            ),
+            df: None,
+        });
+    };
+    let Some(readers) = snapshot.get(&table).cloned() else {
+        return Err(PipelineError::AdHocQueryError {
+            error: format!("no materialized relation {table}"),
+            df: None,
+        });
+    };
+    let id = state
+        .snapshot_leases
+        .take(step, table, readers, Instant::now())
+        .ok_or_else(|| PipelineError::AdHocQueryError {
+            error: "this host refuses snapshot leases".into(),
+            df: None,
+        })?;
+    Ok(HttpResponse::Ok().json(SnapshotLeaseId { id }))
+}
+
+/// Reports a part of a distributed output connector to its leader on this host, and answers once
+/// the leader has committed the report's step.  See [OutputPartReport].
+#[post("/coordination/output/commit")]
+async fn coordination_output_commit(
+    state: WebData<ServerState>,
+    report: web::Json<OutputPartReport>,
+) -> Result<HttpResponse, PipelineError> {
+    let report = report.into_inner();
+    let Some(leader) = state.controller()?.output_leader(&report.endpoint) else {
+        return Ok(HttpResponse::ServiceUnavailable().body(format!(
+            "output connector {:?} has no leader on this host yet",
+            report.endpoint
+        )));
+    };
+    Ok(
+        match leader
+            .report(report.host, report.step, report.payload)
+            .await
+        {
+            Ok(()) => HttpResponse::Ok().finish(),
+            Err(error) => HttpResponse::Conflict().body(error),
+        },
+    )
+}
+
+/// Releases a snapshot lease.  Releasing a lease that does not exist, for
+/// example because it was already released, succeeds.
+#[post("/coordination/snapshot/release")]
+async fn coordination_snapshot_release(
+    state: WebData<ServerState>,
+    request: web::Json<SnapshotLeaseId>,
+) -> Result<HttpResponse, PipelineError> {
+    state.snapshot_leases.release(request.id);
+    Ok(HttpResponse::Ok().finish())
+}
+
 #[post("/coordination/adhoc/scan")]
 async fn coordination_adhoc_scan(
     state: WebData<ServerState>,
     scan: web::Json<AdHocScan>,
 ) -> Result<HttpResponse, PipelineError> {
+    if scan.format == AdHocScanFormat::Batches {
+        return scan_batches(state, scan.into_inner());
+    }
+
     // Get the snapshot for the specified step.
     let snapshot = state
         .leases
@@ -6051,14 +6594,14 @@ pub mod test_http {
         engine::{CircuitFactory, ProgramLoader},
         ensure_default_crypto_provider,
         server::test_http_helpers::{
-            REQUEST_TIMEOUT, adhoc_query_count, adhoc_query_rows, assert_no_file_output,
-            batch_num_records, collect_output_chunks, collect_output_chunks_through_step,
-            crash_pipeline, get_completion_status, get_stats, json_config_file, output_progress,
-            pause_pipeline, print_stats, send_input, send_input_no_wait, start_pipeline,
-            start_test_server, start_test_server_for, start_test_server_with_loader,
-            start_test_server_with_options, start_test_server_with_state, suspend_pipeline,
-            test_batches, test_program_ir, wait_for_completion, wait_for_file_output,
-            wait_for_status,
+            MultihostTestPipeline, REQUEST_TIMEOUT, adhoc_query_count, adhoc_query_rows,
+            assert_no_file_output, batch_num_records, collect_output_chunks,
+            collect_output_chunks_through_step, crash_pipeline, get_completion_status, get_stats,
+            json_config_file, output_progress, pause_pipeline, print_stats, send_input,
+            send_input_no_wait, start_pipeline, start_test_server, start_test_server_for,
+            start_test_server_with_loader, start_test_server_with_options,
+            start_test_server_with_state, suspend_pipeline, test_batches, test_program_ir,
+            wait_for_completion, wait_for_file_output, wait_for_status,
         },
         test::{
             engine_test,
@@ -6803,6 +7346,1029 @@ pub mod test_http {
             .unwrap();
             assert_eq!(records, batches_zset(&data));
         })
+    }
+
+    /// A multihost snapshot on a pipeline of 3 hosts, which spread the view's
+    /// integral over all of them: the host with the egress gets every row,
+    /// from its own part and the other hosts' parts, as one snapshot.
+    #[engine_test]
+    pub fn multihost_snapshot(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            crate::test::init_test_logger();
+
+            let mut pipeline = MultihostTestPipeline::start(
+                engine,
+                3,
+                2,
+                &multihost_snapshot_config(),
+                &[("test_output1", 1)],
+            )
+            .await;
+
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            pipeline.step().await;
+            pipeline.step().await;
+
+            // The view's host takes the egress, as the coordinator routes it.
+            let mut response = pipeline.servers[1]
+                .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            // An endpoint gets output from the transaction after the one that
+            // created it, which is the next step here.
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+
+            let (chunks, records) = timeout(
+                Duration::from_secs(30),
+                collect_output_chunks(&mut response, 300),
+            )
+            .await
+            .expect("timed out waiting for the snapshot");
+            assert_eq!(records, batches_zset(&data));
+            assert!(chunks.iter().all(|chunk| chunk.snapshot));
+        });
+    }
+
+    /// A distributed null output on 3 hosts runs on every host, and each host
+    /// writes its own share of the view: every host gets some rows, and the
+    /// shares add up to the view.
+    #[engine_test]
+    pub fn multihost_distributed_null_output(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let config = json!({
+                "name": "test",
+                "inputs": {},
+                "outputs": {
+                    "spread": {
+                        "stream": "test_output1",
+                        "distributed": true,
+                        "transport": {"name": "null_output"},
+                        "format": {"name": "csv"},
+                    },
+                },
+            });
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 0)]).await;
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+
+            let shares = output_shares(&pipeline, "spread", 300).await;
+            assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
+            assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+        });
+    }
+
+    /// Waits until the parts of output connector `endpoint` on all of the
+    /// hosts have sent `total` records in all, and returns how many each sent.
+    async fn output_shares(
+        pipeline: &MultihostTestPipeline,
+        endpoint: &str,
+        total: u64,
+    ) -> Vec<u64> {
+        timeout(Duration::from_secs(30), async {
+            loop {
+                let mut shares = Vec::new();
+                for server in &pipeline.servers {
+                    let stats = get_stats(server).await;
+                    let output = stats
+                        .outputs
+                        .iter()
+                        .find(|output| output.endpoint_name == endpoint)
+                        .expect("every host runs the distributed connector");
+                    shares.push(output.metrics.transmitted_records);
+                }
+                if shares.iter().sum::<u64>() >= total {
+                    return shares;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the connector did not send all of its output")
+    }
+
+    /// A distributed Delta Lake output on 3 hosts writes from every host but
+    /// commits through its leader: the table is created once, each transaction
+    /// is one commit, and the table holds every row of the view, once.  The
+    /// leader is on host 1, so that it is not the host that ingests.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_output(engine: &dyn PipelineTestEngine) {
+        distributed_delta_output(engine, false, false);
+    }
+
+    /// Like `multihost_distributed_delta_output`, with `send_snapshot`.  The
+    /// connector starts paused and starts only after the rows are in the view,
+    /// so they reach it in its snapshot, and each part sends only its own
+    /// host's part of the view.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_snapshot(engine: &dyn PipelineTestEngine) {
+        distributed_delta_output(engine, true, false);
+    }
+
+    /// Like `multihost_distributed_delta_snapshot`, but the connector starts
+    /// on one host a step before the others, as it can when the coordinator
+    /// passes the start along to each host.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_snapshot_staggered(engine: &dyn PipelineTestEngine) {
+        distributed_delta_output(engine, true, true);
+    }
+
+    /// The body of the distributed Delta Lake output tests.
+    #[cfg(feature = "with-deltalake")]
+    fn distributed_delta_output(
+        engine: &dyn PipelineTestEngine,
+        send_snapshot: bool,
+        staggered: bool,
+    ) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config = distributed_delta_config(
+                &table_uri,
+                json!({"send_snapshot": send_snapshot, "paused": send_snapshot}),
+                json!({}),
+            );
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 1)]).await;
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+            if send_snapshot {
+                for host in 0..pipeline.servers.len() {
+                    let response = pipeline.servers[host]
+                        .get("/output_endpoints/spread/start")
+                        .send()
+                        .await
+                        .unwrap();
+                    assert!(response.status().is_success());
+                    if staggered && host == 0 {
+                        pipeline.step().await;
+                    }
+                }
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+            }
+            let shares = output_shares(&pipeline, "spread", 300).await;
+            assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
+            assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+
+            // Version 0 creates the table, and version 1 commits the one
+            // transaction with output.  With staggered starts, the first host's
+            // part of the snapshot and the other hosts' parts reach the table in
+            // the commits of two transactions.
+            let (version, ids) = read_delta_table(&table_uri).await;
+            assert_eq!(version, Some(if staggered { 2 } else { 1 }));
+            assert_eq!(ids, (0..300).collect::<Vec<i64>>());
+        });
+    }
+
+    /// The configuration of a pipeline with distributed Delta Lake output
+    /// `spread` on `test_output1`, writing to `table_uri`, with `connector`
+    /// added to the connector's configuration and `transport` to its
+    /// transport's.
+    #[cfg(feature = "with-deltalake")]
+    fn distributed_delta_config(
+        table_uri: &std::path::Path,
+        connector: serde_json::Value,
+        transport: serde_json::Value,
+    ) -> serde_json::Value {
+        let mut transport_config = json!({
+            "uri": table_uri.display().to_string(),
+            "mode": "append",
+        });
+        transport_config
+            .as_object_mut()
+            .unwrap()
+            .extend(transport.as_object().unwrap().clone());
+        let mut spread = json!({
+            "stream": "test_output1",
+            "distributed": true,
+            "transport": {"name": "delta_table_output", "config": transport_config},
+        });
+        spread
+            .as_object_mut()
+            .unwrap()
+            .extend(connector.as_object().unwrap().clone());
+        json!({"name": "test", "inputs": {}, "outputs": {"spread": spread}})
+    }
+
+    /// Returns the version of the Delta Lake table at `table_uri` and the
+    /// sorted `id`s of its rows.
+    #[cfg(feature = "with-deltalake")]
+    async fn read_delta_table(table_uri: &std::path::Path) -> (Option<u64>, Vec<i64>) {
+        use arrow::array::{Array, Int64Array};
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+        let table = deltalake::open_table(url::Url::from_file_path(table_uri).unwrap())
+            .await
+            .unwrap();
+        let mut ids = Vec::new();
+        for file in table.get_file_uris().unwrap() {
+            let file = std::fs::File::open(table_uri.join(&*file)).unwrap();
+            for batch in ParquetRecordBatchReaderBuilder::try_new(file)
+                .unwrap()
+                .build()
+                .unwrap()
+            {
+                let batch = batch.unwrap();
+                let column = arrow::compute::cast(
+                    batch.column_by_name("id").unwrap(),
+                    &arrow::datatypes::DataType::Int64,
+                )
+                .unwrap();
+                let column = column.as_any().downcast_ref::<Int64Array>().unwrap();
+                ids.extend((0..column.len()).map(|i| column.value(i)));
+            }
+        }
+        ids.sort();
+        (table.version(), ids)
+    }
+
+    /// A distributed Delta Lake output on 3 hosts over many transactions,
+    /// with empty steps between them: each commit after the one that creates
+    /// the table holds the files of all 3 parts and the next transaction
+    /// version of the leader, in order, and the table holds every row once.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_many_transactions(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config = distributed_delta_config(&table_uri, json!({}), json!({}));
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 2)]).await;
+            for batch in 0..5 {
+                let data = vec![for_ids(batch * 60..(batch + 1) * 60)];
+                TestHttpSender::send_stream(
+                    pipeline.servers[0].post("/ingress/test_input1"),
+                    &data,
+                )
+                .await;
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+                output_shares(&pipeline, "spread", (batch as u64 + 1) * 60).await;
+            }
+
+            let (version, ids) = read_delta_table(&table_uri).await;
+            assert_eq!(ids, (0..300).collect::<Vec<i64>>());
+            let version = version.unwrap();
+            assert!(version >= 5, "{version}");
+            for v in 1..=version {
+                let log =
+                    std::fs::read_to_string(table_uri.join(format!("_delta_log/{v:020}.json")))
+                        .unwrap();
+                let actions: Vec<serde_json::Value> = log
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                let adds = actions.iter().filter(|a| a.get("add").is_some()).count();
+                let txns: Vec<_> = actions
+                    .iter()
+                    .filter_map(|a| a.get("txn"))
+                    .map(|txn| txn["version"].as_u64().unwrap())
+                    .collect();
+                assert_eq!(adds, 3, "commit {v} should hold one file from each part");
+                assert_eq!(txns, [v - 1], "commit {v}");
+            }
+        });
+    }
+
+    /// When the leader of a distributed Delta Lake output cannot commit, every
+    /// part reports the error, and no part counts its rows as written.
+    #[cfg(all(feature = "with-deltalake", unix))]
+    #[engine_test]
+    pub fn multihost_distributed_delta_commit_failure(engine: &dyn PipelineTestEngine) {
+        use std::os::unix::fs::PermissionsExt;
+
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config = distributed_delta_config(&table_uri, json!({}), json!({"max_retries": 0}));
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 1)]).await;
+
+            // The table exists now.  Nobody can add to its log.
+            let log = table_uri.join("_delta_log");
+            let set_mode = |mode| {
+                std::fs::set_permissions(&log, std::fs::Permissions::from_mode(mode)).unwrap()
+            };
+            set_mode(0o555);
+
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+            let errors = timeout(Duration::from_secs(30), async {
+                loop {
+                    let mut errors = Vec::new();
+                    let mut transmitted = 0;
+                    for server in &pipeline.servers {
+                        let stats = get_stats(server).await;
+                        let output = stats
+                            .outputs
+                            .iter()
+                            .find(|output| output.endpoint_name == "spread")
+                            .unwrap();
+                        errors.push(output.metrics.num_transport_errors);
+                        transmitted += output.metrics.transmitted_records;
+                    }
+                    assert_eq!(transmitted, 0);
+                    if errors.iter().all(|&e| e > 0) {
+                        return errors;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await;
+            set_mode(0o755);
+            errors.expect("every part should report the failed commit");
+        });
+    }
+
+    /// A 2-host pipeline restarts from its checkpoint with its state: the
+    /// view's snapshot after the restart has every row from before it.
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_restart_from_checkpoint(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            let assignment = [("test_output1", 0)];
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &multihost_snapshot_config(),
+                &assignment,
+                &dirs,
+                None,
+            )
+            .await
+            .unwrap();
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+            // A new checkpoint records that the view's integral is spread.
+            for (dir, checkpoint) in dirs.iter().zip(&checkpoints) {
+                let state = dir.join(checkpoint.to_string()).join("state.json");
+                let record: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(state).unwrap()).unwrap();
+                assert_eq!(record["view_integrals"], "all_hosts");
+            }
+
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &multihost_snapshot_config(),
+                &assignment,
+                &dirs,
+                Some(&checkpoints),
+            )
+            .await
+            .unwrap();
+            let mut response = pipeline.servers[0]
+                .post(SNAPSHOT_EGRESS)
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let (_chunks, records) = timeout(
+                Duration::from_secs(30),
+                collect_output_chunks(&mut response, 300),
+            )
+            .await
+            .expect("timed out waiting for the snapshot");
+            assert_eq!(records, batches_zset(&data));
+        });
+    }
+
+    /// Makes the checkpoint `checkpoints[i]` in `dirs[i]`, for each host `i`,
+    /// look like a checkpoint from before multihost pipelines spread each
+    /// view's integral over all workers.  The integral's state goes under the
+    /// name that the integral had then, `{pid}.shard_accintegral-{range}` with
+    /// `old_range` the workers of the view's host, and the controller's record
+    /// loses its note of the layout.
+    #[cfg(feature = "with-deltalake")]
+    fn make_checkpoint_predate_spread_integrals(
+        dirs: &[std::path::PathBuf],
+        checkpoints: &[Uuid],
+        n_workers: usize,
+        old_range: std::ops::Range<usize>,
+    ) {
+        let new = format!("shard_accintegral-0-{n_workers}");
+        let old = format!("shard_accintegral-{}-{}", old_range.start, old_range.end);
+        for (dir, checkpoint) in dirs.iter().zip(checkpoints) {
+            let dir = dir.join(checkpoint.to_string());
+            let mut renamed = 0;
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let name = entry.unwrap().file_name().into_string().unwrap();
+                if name.contains(&new) {
+                    std::fs::rename(dir.join(&name), dir.join(name.replace(&new, &old))).unwrap();
+                    renamed += 1;
+                }
+            }
+            assert!(renamed > 0, "no integral state in {}", dir.display());
+            let dependencies = dir.join("dependencies.json");
+            let text = std::fs::read_to_string(&dependencies).unwrap();
+            std::fs::write(&dependencies, text.replace(&new, &old)).unwrap();
+            let state = dir.join("state.json");
+            let mut record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+            record.as_object_mut().unwrap().remove("view_integrals");
+            std::fs::write(&state, serde_json::to_vec(&record).unwrap()).unwrap();
+        }
+    }
+
+    /// A 2-host pipeline restarts from a checkpoint from before multihost
+    /// pipelines spread each view's integral over all workers.  The view's
+    /// integral has no state under its new name, so the pipeline rebuilds it
+    /// from the table: the view's snapshot afterward has every row, and the
+    /// view's output connector gets no row a second time.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_restart_from_checkpoint_before_spread_integrals(
+        engine: &dyn PipelineTestEngine,
+    ) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            let table_uri = tempdir.path().join("table");
+            // The same program information before and after the restart, as a
+            // compiled program has, so that the restart changes nothing but
+            // the layout.
+            let config = json!({
+                "name": "test",
+                "program_ir": test_program_ir("v0"),
+                "inputs": {},
+                "outputs": {
+                    "sink": {
+                        "stream": "test_output1",
+                        "transport": {"name": "delta_table_output", "config": {
+                            "uri": table_uri.display().to_string(),
+                            "mode": "append",
+                        }},
+                    },
+                },
+            });
+            let assignment = [("test_output1", 0)];
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config,
+                &assignment,
+                &dirs,
+                None,
+            )
+            .await
+            .unwrap();
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+            assert_eq!(read_delta_table(&table_uri).await.1.len(), 300);
+
+            make_checkpoint_predate_spread_integrals(&dirs, &checkpoints, 4, 0..2);
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config,
+                &assignment,
+                &dirs,
+                Some(&checkpoints),
+            )
+            .await
+            .unwrap();
+            let mut response = pipeline.servers[0]
+                .post(SNAPSHOT_EGRESS)
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            for _ in 0..5 {
+                pipeline.step().await;
+            }
+            let (_chunks, records) = timeout(
+                Duration::from_secs(30),
+                collect_output_chunks(&mut response, 300),
+            )
+            .await
+            .expect("timed out waiting for the snapshot");
+            assert_eq!(records, batches_zset(&data));
+            let (_version, ids) = read_delta_table(&table_uri).await;
+            assert_eq!(ids, (0..300).collect::<Vec<i64>>());
+        });
+    }
+
+    /// A Delta Lake output that wrote a view restarts from its checkpoint as a
+    /// distributed connector.  The table must still hold every row of the
+    /// view once, and later rows must reach it.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_output_becomes_distributed(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            let table_uri = tempdir.path().join("table");
+            let config = |distributed: bool| {
+                json!({
+                    "name": "test",
+                    "program_ir": test_program_ir("v0"),
+                    "inputs": {},
+                    "outputs": {
+                        "sink": {
+                            "stream": "test_output1",
+                            "distributed": distributed,
+                            "transport": {"name": "delta_table_output", "config": {
+                                "uri": table_uri.display().to_string(),
+                                "mode": "append",
+                            }},
+                        },
+                    },
+                })
+            };
+            let assignment = [("test_output1", 0)];
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config(false),
+                &assignment,
+                &dirs,
+                None,
+            )
+            .await
+            .unwrap();
+            TestHttpSender::send_stream(
+                pipeline.servers[0].post("/ingress/test_input1"),
+                &[for_ids(0..300)],
+            )
+            .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+            assert_eq!(read_delta_table(&table_uri).await.1.len(), 300);
+
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config(true),
+                &assignment,
+                &dirs,
+                Some(&checkpoints),
+            )
+            .await
+            .unwrap();
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            TestHttpSender::send_stream(
+                pipeline.servers[0].post("/ingress/test_input1"),
+                &[for_ids(300..400)],
+            )
+            .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let ids = timeout(Duration::from_secs(30), async {
+                loop {
+                    let (_version, ids) = read_delta_table(&table_uri).await;
+                    if ids.len() >= 400 {
+                        return ids;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("the table never got the new rows"));
+            assert_eq!(ids, (0..400).collect::<Vec<i64>>());
+        });
+    }
+
+    /// A changed view sends all of its rows again to a distributed Delta
+    /// Lake output after the restart, exactly as to one that is not
+    /// distributed: in both cases the table ends with every row twice.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_changed_view_resends_to_distributed_output(engine: &dyn PipelineTestEngine) {
+        let mut tables = Vec::new();
+        for distributed in [false, true] {
+            tables.push(actix_web::rt::System::new().block_on(async {
+                ensure_default_crypto_provider();
+                let tempdir = TempDir::new().unwrap();
+                let dirs: Vec<_> = (0..2)
+                    .map(|host| {
+                        let dir = tempdir.path().join(format!("host{host}"));
+                        std::fs::create_dir(&dir).unwrap();
+                        dir
+                    })
+                    .collect();
+                let table_uri = tempdir.path().join("table");
+                let config = |view: &str| {
+                    json!({
+                        "name": "test",
+                        "program_ir": test_program_ir(view),
+                        "inputs": {},
+                        "outputs": {
+                            "sink": {
+                                "stream": "test_output1",
+                                "distributed": distributed,
+                                "transport": {"name": "delta_table_output", "config": {
+                                    "uri": table_uri.display().to_string(),
+                                    "mode": "append",
+                                }},
+                            },
+                        },
+                    })
+                };
+                let assignment = [("test_output1", 0)];
+                let mut pipeline = MultihostTestPipeline::start_with_storage(
+                    engine,
+                    2,
+                    2,
+                    &config("v0"),
+                    &assignment,
+                    &dirs,
+                    None,
+                )
+                .await
+                .unwrap();
+                TestHttpSender::send_stream(
+                    pipeline.servers[0].post("/ingress/test_input1"),
+                    &[for_ids(0..300)],
+                )
+                .await;
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+                let checkpoints = pipeline.checkpoint().await;
+                pipeline.stop(engine, &dirs).await;
+
+                // A new persistent id for the view, as for a changed view.
+                let mut pipeline = MultihostTestPipeline::start_with_storage(
+                    engine,
+                    2,
+                    2,
+                    &config("v1"),
+                    &assignment,
+                    &dirs,
+                    Some(&checkpoints),
+                )
+                .await
+                .unwrap();
+                timeout(Duration::from_secs(30), async {
+                    loop {
+                        pipeline.step().await;
+                        if read_delta_table(&table_uri).await.1.len() >= 600 {
+                            break;
+                        }
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("the view never reached the table again"));
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+                read_delta_table(&table_uri).await.1
+            }));
+        }
+        let twice: Vec<i64> = (0..300).flat_map(|id| [id, id]).collect();
+        assert_eq!(tables[0], twice, "not distributed");
+        assert_eq!(tables[1], twice, "distributed");
+    }
+
+    /// The configuration for the multihost snapshot tests.
+    fn multihost_snapshot_config() -> serde_json::Value {
+        json!({"name": "test", "inputs": {}, "outputs": {}})
+    }
+
+    /// Starts 2 hosts with `test_output1` on host 0, and
+    /// ingests 300 rows.  Returns the pipeline and the rows.
+    async fn start_multihost_with_rows(
+        engine: &dyn PipelineTestEngine,
+    ) -> (MultihostTestPipeline, Vec<Updates>) {
+        let mut pipeline = MultihostTestPipeline::start(
+            engine,
+            2,
+            2,
+            &multihost_snapshot_config(),
+            &[("test_output1", 0)],
+        )
+        .await;
+        let data = vec![for_ids(0..300)];
+        TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data).await;
+        pipeline.step().await;
+        pipeline.step().await;
+        (pipeline, data)
+    }
+
+    /// The egress that the multihost snapshot tests open on the view's host.
+    const SNAPSHOT_EGRESS: &str =
+        "/egress/test_output1?format=csv&backpressure=true&send_snapshot=true";
+
+    /// Reads `response` to its end and returns the number of rows it carried.
+    async fn count_rows_to_end<S>(response: &mut S) -> usize
+    where
+        S: Stream<Item = Result<Bytes, PayloadError>> + Unpin,
+    {
+        use futures::StreamExt;
+        let mut body = Vec::new();
+        while let Some(Ok(bytes)) = response.next().await {
+            body.extend_from_slice(&bytes);
+        }
+        serde_json::Deserializer::from_slice(&body)
+            .into_iter::<crate::transport::http::Chunk>()
+            .map(|chunk| {
+                chunk
+                    .unwrap()
+                    .text_data
+                    .map_or(0, |csv| csv.lines().count())
+            })
+            .sum()
+    }
+
+    /// A snapshot whose scans keep failing on another host stops its output
+    /// connector, and the pipeline keeps running.  This holds for a connector
+    /// from the pipeline configuration, which the controller must stop itself,
+    /// and for HTTP egress, whose response must end without the whole snapshot.
+    #[engine_test]
+    pub fn multihost_snapshot_failure_stops_the_connector(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let mut config = multihost_snapshot_config();
+            config["outputs"]["snap"] = json!({
+                "stream": "test_output1",
+                "send_snapshot": true,
+                "transport": {"name": "null_output"},
+                "format": {"name": "csv"},
+            });
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 2, 2, &config, &[("test_output1", 0)]).await;
+            pipeline.states[1].snapshot_leases.set_refusing(false, true);
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            pipeline.step().await;
+            pipeline.step().await;
+            let mut response = pipeline.servers[0]
+                .post(SNAPSHOT_EGRESS)
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+
+            // The scans retry for a few seconds before they give up.
+            let rows = timeout(Duration::from_secs(30), count_rows_to_end(&mut response))
+                .await
+                .expect("the egress did not end");
+            assert!(rows < 300, "{rows} rows");
+
+            // Both endpoints are gone, and the pipeline still runs.
+            let names: Vec<_> = get_stats(&pipeline.servers[0])
+                .await
+                .outputs
+                .into_iter()
+                .map(|output| output.endpoint_name)
+                .collect();
+            assert!(!names.iter().any(|name| name == "snap"), "{names:?}");
+            assert!(
+                !names
+                    .iter()
+                    .any(|name| name.starts_with("test_output1.api-")),
+                "{names:?}"
+            );
+            pipeline.step().await;
+        });
+    }
+
+    /// A snapshot whose leases fail waits, and once the other host leases
+    /// again, arrives whole.
+    #[engine_test]
+    pub fn multihost_snapshot_waits_for_leases(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let (mut pipeline, data) = start_multihost_with_rows(engine).await;
+            let mut response = pipeline.servers[0]
+                .post(SNAPSHOT_EGRESS)
+                .send()
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            pipeline.states[1].snapshot_leases.set_refusing(true, false);
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            pipeline.states[1]
+                .snapshot_leases
+                .set_refusing(false, false);
+            pipeline.step().await;
+            let (chunks, records) = timeout(
+                Duration::from_secs(30),
+                collect_output_chunks(&mut response, 300),
+            )
+            .await
+            .expect("timed out waiting for the snapshot");
+            assert_eq!(records, batches_zset(&data));
+            assert!(chunks.iter().all(|chunk| chunk.snapshot));
+        });
+    }
+
+    /// A snapshot lease outlives the request that took it: a scan for batches
+    /// with the lease, made after that request's connection closed, returns
+    /// every row of the view's integral, and skipping chunks leaves out exactly
+    /// those.  The lease holds only the relation that it names.  A release
+    /// ends the lease, and a second release does no harm.
+    #[engine_test]
+    pub fn snapshot_lease_outlives_its_request(engine: &dyn PipelineTestEngine) {
+        use crate::controller::snapshot_parts::ChunkDecoder;
+        use feldera_types::coordination::{
+            AdHocScan, AdHocScanFormat, SnapshotLease, SnapshotLeaseId,
+        };
+
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+
+            let data = vec![for_ids(0..100)];
+            let (server, state) = start_test_server_with_state(
+                engine,
+                &json!({"name": "test", "inputs": {}, "outputs": {}}),
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &[None],
+                None,
+            )
+            .await;
+            start_pipeline(&server).await;
+            let CompletionTokenResponse { token } = TestHttpSender::send_stream_deserialize_resp::<
+                CompletionTokenResponse,
+            >(
+                server.post("/ingress/test_input1"), &data
+            )
+            .await;
+            wait_for_completion(&server, &token).await;
+
+            let controller = state.controller().unwrap();
+            let step = *controller.available_snapshot_steps().await.last().unwrap();
+
+            // Take the lease.  Its request ends here, and its connection with it.
+            let mut response = server
+                .post("/coordination/snapshot/lease")
+                .send_json(&SnapshotLease {
+                    step,
+                    table: "test_output1".into(),
+                })
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            let SnapshotLeaseId { id } = response.json().await.unwrap();
+
+            let scan = |worker, skip_chunks| AdHocScan {
+                step,
+                worker,
+                table: "test_output1".into(),
+                projection: None,
+                format: AdHocScanFormat::Batches,
+                lease: Some(id),
+                skip_chunks,
+            };
+            let handle = controller
+                .catalog()
+                .output_handles(&"test_output1".into())
+                .unwrap()
+                .integrate_handle
+                .clone()
+                .unwrap();
+            let mut rows = 0;
+            for worker in controller.layout().local_workers() {
+                let mut response = server
+                    .post("/coordination/adhoc/scan")
+                    .send_json(&scan(worker, 0))
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+                let mut decoder = ChunkDecoder::default();
+                decoder.push(&response.body().await.unwrap());
+                let mut chunks = 0;
+                while let Some(chunk) = decoder.next_chunk() {
+                    rows += unsafe { handle.deserialize_chunk(&chunk) }.len();
+                    chunks += 1;
+                }
+                decoder.finish().unwrap();
+
+                // Skipping every chunk returns nothing.
+                let mut response = server
+                    .post("/coordination/adhoc/scan")
+                    .send_json(&scan(worker, chunks))
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+                assert!(response.body().await.unwrap().is_empty());
+            }
+            assert_eq!(rows, 100);
+
+            // The lease is for `test_output1` only, so a scan of another
+            // relation is refused.
+            let response = server
+                .post("/coordination/adhoc/scan")
+                .send_json(&AdHocScan {
+                    table: "test_input1".into(),
+                    ..scan(0, 0)
+                })
+                .await
+                .unwrap();
+            assert!(!response.status().is_success());
+
+            // A relation that is not materialized cannot be leased.
+            let response = server
+                .post("/coordination/snapshot/lease")
+                .send_json(&SnapshotLease {
+                    step,
+                    table: "no_such_relation".into(),
+                })
+                .await
+                .unwrap();
+            assert!(!response.status().is_success());
+
+            for _ in 0..2 {
+                let response = server
+                    .post("/coordination/snapshot/release")
+                    .send_json(&SnapshotLeaseId { id })
+                    .await
+                    .unwrap();
+                assert!(response.status().is_success());
+            }
+            let response = server
+                .post("/coordination/adhoc/scan")
+                .send_json(&scan(0, 0))
+                .await
+                .unwrap();
+            assert!(!response.status().is_success());
+        });
     }
 
     /// Verifies the `send_snapshot` HTTP egress mode:

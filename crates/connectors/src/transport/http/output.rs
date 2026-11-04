@@ -241,9 +241,33 @@ impl Drop for RequestGuard {
 ///
 /// This implementation provides no support for reliable delivery
 /// and is mostly intended for browser-based testing.
-#[derive(Clone)]
 pub(crate) struct HttpOutputEndpoint {
     inner: Arc<HttpOutputEndpointInner>,
+
+    /// Whether this is the controller's copy (see [Self::for_controller]),
+    /// whose drop ends the response.
+    for_controller: bool,
+}
+
+impl Clone for HttpOutputEndpoint {
+    /// A clone is never the controller's copy.
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            for_controller: false,
+        }
+    }
+}
+
+impl Drop for HttpOutputEndpoint {
+    /// When the controller drops its copy, because the endpoint stopped, drops
+    /// the sender, so that the response ends after the chunks already queued
+    /// instead of waiting for output that will never come.
+    fn drop(&mut self) {
+        if self.for_controller {
+            self.inner.sender.write().unwrap().take();
+        }
+    }
 }
 
 impl HttpOutputEndpoint {
@@ -260,6 +284,17 @@ impl HttpOutputEndpoint {
                 backpressure,
                 shutdown,
             )),
+            for_controller: false,
+        }
+    }
+
+    /// Returns the copy of this endpoint to give to the controller.  When the
+    /// controller drops it, for example because the endpoint failed, the
+    /// response ends.
+    pub(crate) fn for_controller(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            for_controller: true,
         }
     }
 

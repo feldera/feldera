@@ -25,7 +25,10 @@ use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::{
     Batch, BatchReader, OutputHandle, Trace,
     dynamic::ClonableTrait,
-    trace::{BatchReaderFactories, Cursor, TraceRole},
+    storage::{buffer_cache::FBuf, file::SerializerInner},
+    trace::{
+        BatchReaderFactories, Cursor, IndexedWSetSerializer, TraceRole, deserialize_indexed_wset,
+    },
     typed_batch::{DynSpineSnapshot, SpineSnapshot},
 };
 use dbsp::{
@@ -336,6 +339,23 @@ where
         let partitions = snapshots.into_iter().map(reader).collect();
         SnapshotReaders { whole, partitions }
     }
+
+    unsafe fn deserialize_chunk(&self, chunk: &[u8]) -> Arc<dyn SerBatchReader> {
+        // `deserialize_indexed_wset` reads the chunk's rkyv archives in place, without validating
+        // them, which needs the chunk to be aligned.
+        let mut aligned = FBuf::with_capacity(chunk.len());
+        aligned.extend_from_slice(chunk);
+        let batch = deserialize_indexed_wset(
+            &<TypedBatch<K, V, R, B> as BatchReader>::into_batch_factories(),
+            &aligned,
+        );
+        Arc::new(SerBatchImpl::<_, KD, VD>::new(TypedBatch::<
+            K,
+            V,
+            R,
+            <TypedBatch<K, V, R, B> as BatchReader>::IntoBatch,
+        >::new(batch)))
+    }
 }
 
 /// Appends `value` to `dst` as a datum of the Avro `schema`.
@@ -512,6 +532,38 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
         Ok(self.keyed_cursor(record_format)?)
+    }
+
+    fn serialize_chunks(
+        &self,
+        chunk_bytes: usize,
+        emit: &mut dyn FnMut(&[u8]) -> AnyResult<()>,
+    ) -> AnyResult<()> {
+        // `IndexedWSetSerializer` is what `serialize_indexed_wset` uses, so each chunk is a batch
+        // that `deserialize_indexed_wset` reads, in `deserialize_chunk`.
+        let mut inner = SerializerInner::new();
+        // No capacity from the batch's bounds, as in `serialize_indexed_wset`: they describe the
+        // whole part, not one chunk.
+        let mut serializer = IndexedWSetSerializer::with_capacity(0, 0);
+        let mut cursor = self.batch.inner().cursor();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                serializer.push_diff(cursor.weight(), &mut inner);
+                serializer.push_val(cursor.val(), &mut inner);
+                cursor.step_val();
+            }
+            serializer.push_key(cursor.key(), &mut inner);
+            cursor.step_key();
+            if serializer.data_len() >= chunk_bytes {
+                let full =
+                    std::mem::replace(&mut serializer, IndexedWSetSerializer::with_capacity(0, 0));
+                emit(&full.done(&mut inner))?;
+            }
+        }
+        if !serializer.is_empty() {
+            emit(&serializer.done(&mut inner))?;
+        }
+        Ok(())
     }
 
     fn batches(&self) -> Vec<Arc<dyn SerBatch>> {

@@ -7,9 +7,9 @@ use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::dynamic::DynData;
 use dbsp::operator::dynamic::accumulator::EnableCount;
 use dbsp::trace::spine_async::WithSnapshot;
-use dbsp::typed_batch::{Spine, TypedBatch};
+use dbsp::typed_batch::{Spine, SpineSnapshot, TypedBatch};
 use dbsp::utils::Tup1;
-use dbsp::{Batch, Circuit as _, OrdZSet, Runtime};
+use dbsp::{Batch, Circuit as _, OrdZSet, OutputHandle, Runtime};
 use dbsp::{
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
     operator::{LazyMapHandle, MapHandle, ZSetHandle},
@@ -25,7 +25,7 @@ use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use std::any::TypeId;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::mem::transmute;
 use std::sync::{Arc, Mutex};
@@ -33,6 +33,45 @@ use std::sync::{Arc, Mutex};
 pub use feldera_adapterlib::catalog::*;
 
 /// Circuit catalog implementation.
+///
+/// # Where output data lives
+///
+/// Every table, view, and index is also an output stream.  The catalog gives each one a delta
+/// stream, which output connectors read, and, if it is materialized, an integral, which ad hoc
+/// queries and `send_snapshot` read.
+///
+/// On a single host, every delta stream and every integral is on all workers.  On multihost,
+/// every delta stream is gathered to host H, the host that the coordinator assigned to the
+/// stream in `OUTPUT_MAPPING`, because an output connector runs on one host and reads the whole
+/// stream there.  A stream that no output connector reads is gathered only while an HTTP client
+/// reads it.  A stream in `DISTRIBUTED_OUTPUT_STREAMS` also has a second delta stream, sharded
+/// over all workers by the same key as its integral, for distributed output connectors, which
+/// run a part on every host that reads that host's workers.  On multihost, the integral of each
+/// kind of materialized relation is on these workers, where "all workers" means every worker on
+/// every host:
+///
+/// | Materialized relation | Registered by | Integral on multihost | Integral shard key |
+/// |---|---|---|---|
+/// | Table | [register_materialized_input_zset] | Each worker's own input, not sharded | |
+/// | Table with primary key | [register_materialized_input_map] | All workers, shared with the upsert operator | Primary key |
+/// | Lazy table with primary key | [register_lazy_materialized_input_map] | All workers | Primary key |
+/// | View | [register_materialized_output_zset] | All workers | Whole row |
+/// | View as an indexed Z-set | [register_materialized_output_map] | All workers | Key |
+/// | Index | [register_materialized_index] | All workers | Index key |
+///
+/// No integral is gathered to one host, so that a large view's state spreads over all hosts.
+/// Ad hoc queries read each worker's part of an integral on that worker's host, and the host of
+/// a `send_snapshot` connector collects a snapshot from the parts on all hosts.  A view's
+/// integral is sharded, not only accumulated, so that a record with weight +1 on one worker and
+/// -1 on another cancels: ad hoc queries treat each worker's integral as a partition and cannot
+/// handle negative weights, and a snapshot's parts must not cancel each other.
+///
+/// [register_materialized_input_zset]: Catalog::register_materialized_input_zset
+/// [register_materialized_input_map]: Catalog::register_materialized_input_map
+/// [register_lazy_materialized_input_map]: Catalog::register_lazy_materialized_input_map
+/// [register_materialized_output_zset]: Catalog::register_materialized_output_zset
+/// [register_materialized_output_map]: Catalog::register_materialized_output_map
+/// [register_materialized_index]: Catalog::register_materialized_index
 pub struct Catalog {
     input_collection_handles: BTreeMap<SqlIdentifier, InputCollectionHandle>,
     output_batch_handles: BTreeMap<SqlIdentifier, OutputCollectionHandles>,
@@ -169,6 +208,56 @@ pub type OutputMapping = BTreeMap<String, usize>;
 /// a global.
 pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
 
+/// Global set of the streams and indexes, in canonical form, that distributed output connectors
+/// read.  On multihost, the catalog gives each of them [OutputCollectionHandles::distributed].
+pub static DISTRIBUTED_OUTPUT_STREAMS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Adds an output operator for `stream`, the delta stream of distributed output connectors, and
+/// returns its handle.
+///
+/// The operator follows the checkpoints of the gathered stream's output operator, whose persistent
+/// id is `persistent_id`.  So a restart that adds distributed connectors to a relation, or turns
+/// `distributed` on for one, does not rebuild the relation and send all of it again; only a
+/// restart that rebuilds the gathered output, as for a new view, does.
+fn distributed_delta_handle<B>(
+    stream: &Stream<RootCircuit, Option<Spine<B>>>,
+    enable_count: EnableCount,
+    persistent_id: Option<&str>,
+) -> OutputHandle<SpineSnapshot<B>>
+where
+    B: Batch + Send,
+{
+    let circuit = stream.circuit();
+    let (handle, gid) = match persistent_id {
+        Some(id) => circuit.output_accumulated_stream_following_with_gid::<B>(
+            stream,
+            enable_count,
+            Some(&format!("{id}.distributed")),
+            id,
+        ),
+        None => {
+            circuit.output_accumulated_stream_persistent_with_gid::<B>(stream, enable_count, None)
+        }
+    };
+    circuit.set_mir_node_id(&gid, persistent_id);
+    handle
+}
+
+/// Returns `handles` with `delta_handle` and `enable_count` in place of its own, for distributed
+/// output connectors.
+fn distributed_handles(
+    handles: &OutputCollectionHandles,
+    delta_handle: Box<dyn SerBatchReaderHandle>,
+    enable_count: EnableCount,
+) -> Box<OutputCollectionHandles> {
+    Box::new(OutputCollectionHandles {
+        delta_handle,
+        enable_count: Arc::new(StaticEnableCount(enable_count)),
+        distributed: None,
+        ..handles.clone()
+    })
+}
+
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
         serde_json_path_to_error::from_str(schema).map_err(|e| {
@@ -187,7 +276,8 @@ impl Catalog {
     }
 
     /// Gather output stream (table or view) to the host that it is assigned to.
-    /// Returns the accumulated stream and, optionally, its integral.
+    /// Returns the accumulated stream and, optionally, its integral, which on
+    /// multihost is sharded over all workers of all hosts instead.
     ///
     /// # Arguments
     ///
@@ -202,6 +292,8 @@ impl Catalog {
     /// * The number of active consumers of the stream, which can be used with OutputCollectionHandles to
     ///   enable the accumulator at runtime
     /// * If `integrate` is `true`, the integral of the accumulated stream.
+    /// * On multihost, if a distributed output connector reads the stream, the stream sharded over
+    ///   all workers, and the enable count of its accumulator.
     #[allow(clippy::type_complexity)]
     fn gather_output_to_host<Z>(
         &self,
@@ -213,6 +305,7 @@ impl Catalog {
         Stream<RootCircuit, Option<Spine<Z>>>,
         EnableCount,
         Option<Stream<RootCircuit, Spine<Z>>>,
+        Option<(Stream<RootCircuit, Option<Spine<Z>>>, EnableCount)>,
     )
     where
         Z: Batch<Time = ()>,
@@ -233,15 +326,26 @@ impl Catalog {
                 .shard_workers_accumulate(hosts[ordinal].workers.clone())
                 .into_parts();
 
+            // The integral spreads over all workers, not only host H's.
             let integral = if integrate {
-                Some(
-                    stream.shard_workers_accumulate_integrate_trace(hosts[ordinal].workers.clone()),
-                )
+                Some(stream.shard_workers_accumulate_integrate_trace(0..Runtime::num_workers()))
             } else {
                 None
             };
 
-            (accumulated_stream, enabled_count, integral)
+            // The same shards as the integral, so a materialized view's integral and its
+            // distributed connectors share one exchange.
+            let distributed = DISTRIBUTED_OUTPUT_STREAMS
+                .lock()
+                .unwrap()
+                .contains(&name.name())
+                .then(|| {
+                    stream
+                        .shard_workers_accumulate(0..Runtime::num_workers())
+                        .into_parts()
+                });
+
+            (accumulated_stream, enabled_count, integral, distributed)
         } else if shard {
             let (accumulated_stream, enabled_count) = stream.shard_accumulate().into_parts();
 
@@ -252,7 +356,7 @@ impl Catalog {
                 None
             };
 
-            (accumulated_stream, enabled_count, integral)
+            (accumulated_stream, enabled_count, integral, None)
         } else {
             let (accumulated_stream, enabled_count) = stream.accumulate().into_parts();
             let integral = if integrate {
@@ -261,7 +365,7 @@ impl Catalog {
                 None
             };
 
-            (accumulated_stream, enabled_count, integral)
+            (accumulated_stream, enabled_count, integral, None)
         }
     }
 
@@ -707,7 +811,8 @@ impl Catalog {
             }
         }
 
-        let (stream, enable_count, _) = self.gather_output_to_host(&name, &stream, false, false);
+        let (stream, enable_count, _, distributed) =
+            self.gather_output_to_host(&name, &stream, false, false);
 
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = circuit.output_accumulated_stream_persistent_with_gid::<Z>(
@@ -726,6 +831,19 @@ impl Catalog {
                 as Box<dyn SerBatchReaderHandle>,
             enable_count: Arc::new(StaticEnableCount(enable_count)),
             integrate_handle: None,
+            distributed: None,
+        };
+        let handles = OutputCollectionHandles {
+            distributed: distributed.map(|(stream, enable_count)| {
+                let delta_handle =
+                    distributed_delta_handle::<Z>(&stream, enable_count.clone(), persistent_id);
+                distributed_handles(
+                    &handles,
+                    Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle)),
+                    enable_count,
+                )
+            }),
+            ..handles
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -821,7 +939,7 @@ impl Catalog {
         // same record with +1 and -1 weights in different workers.
         // To avoid this, we shard the stream, so that such records
         // get canceled out.
-        let (gathered_stream, enable_count, gathered_integral_stream) =
+        let (gathered_stream, enable_count, gathered_integral_stream, distributed) =
             self.gather_output_to_host(&name, &stream, true, gather_integral);
 
         // Create handle for the stream itself.
@@ -857,6 +975,19 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
             enable_count: Arc::new(StaticEnableCount(enable_count)),
+            distributed: None,
+        };
+        let handles = OutputCollectionHandles {
+            distributed: distributed.map(|(stream, enable_count)| {
+                let delta_handle =
+                    distributed_delta_handle::<Z>(&stream, enable_count.clone(), persistent_id);
+                distributed_handles(
+                    &handles,
+                    Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle)),
+                    enable_count,
+                )
+            }),
+            ..handles
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -1004,12 +1135,13 @@ impl Catalog {
         let stream = stream.try_sharded_version();
 
         // Shard the stream if it needs to be materialized.
-        let (gathered_stream, enable_count, gathered_integral_stream) = self.gather_output_to_host(
-            &name,
-            &stream,
-            materialized && accumulate,
-            materialized && !is_input,
-        );
+        let (gathered_stream, enable_count, gathered_integral_stream, distributed) = self
+            .gather_output_to_host(
+                &name,
+                &stream,
+                materialized && accumulate,
+                materialized && !is_input,
+            );
 
         let (delta_handle, delta_gid) = circuit
             .output_accumulated_stream_persistent_with_gid::<OrdIndexedZSet<K, V>>(
@@ -1047,7 +1179,7 @@ impl Catalog {
             None
         };
 
-        Some(OutputCollectionHandles {
+        let handles = OutputCollectionHandles {
             key_schema: Some(index_schema(key_schema_name, schema, key_fields)),
             value_schema: schema.clone(),
             index_of,
@@ -1056,6 +1188,22 @@ impl Catalog {
                 as Box<dyn SerBatchReaderHandle>,
             enable_count: Arc::new(StaticEnableCount(enable_count)),
             integrate_handle,
+            distributed: None,
+        };
+        Some(OutputCollectionHandles {
+            distributed: distributed.map(|(stream, enable_count)| {
+                let delta_handle = distributed_delta_handle::<OrdIndexedZSet<K, V>>(
+                    &stream,
+                    enable_count.clone(),
+                    persistent_id,
+                );
+                distributed_handles(
+                    &handles,
+                    Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(delta_handle)),
+                    enable_count,
+                )
+            }),
+            ..handles
         })
     }
 
@@ -1516,6 +1664,181 @@ mod test {
         let readers = output_stream_handles.delta_handle.take_readers();
         assert_eq!(batch_to_json(readers.whole.deref()), "");
         assert!(readers.partitions.is_empty());
+    }
+
+    /// Counts the rows of materialized view `v` that each of two hosts holds in its integral,
+    /// after host 0 ingests 16 rows into table `t`.
+    fn view_integral_rows_per_host() -> Vec<usize> {
+        use dbsp::circuit::{CircuitConfig, Layout};
+        use std::net::TcpListener;
+
+        const SCHEMA: &str = r#"{
+            "name": "NAME",
+            "case_sensitive": false,
+            "fields": [
+                {"name":"id","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"},"unused":false},
+                {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
+                {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
+                {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}]}"#;
+
+        // Two hosts with two workers each, which exchange data over localhost.
+        let listeners: Vec<TcpListener> = (0..2)
+            .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
+            .collect();
+        let params: Vec<_> = listeners
+            .iter()
+            .map(|listener| (listener.local_addr().unwrap(), 2))
+            .collect();
+        let mut hosts: Vec<_> = listeners
+            .into_iter()
+            .map(|listener| {
+                let address = listener.local_addr().unwrap();
+                let config = CircuitConfig::from(Layout::new_multihost(&params, address).unwrap())
+                    .with_exchange_listener(listener);
+                Runtime::init_circuit(config, |circuit| {
+                    let mut catalog = Catalog::new();
+                    let (table, handle) = circuit.add_input_zset::<TestStruct>();
+                    catalog.register_input_zset::<_, TestStruct>(
+                        table.clone(),
+                        handle,
+                        &SCHEMA.replace("NAME", "t"),
+                    );
+                    catalog.register_materialized_output_zset::<_, TestStruct>(
+                        table.map(|row| row.clone()),
+                        &SCHEMA.replace("NAME", "v"),
+                    );
+                    Ok(catalog)
+                })
+                .unwrap()
+            })
+            .collect();
+
+        let mut input = hosts[0]
+            .1
+            .input_collection_handle(&("t".into()))
+            .unwrap()
+            .handle
+            .configure_deserializer(RECORD_FORMAT.clone())
+            .unwrap();
+        for id in 0..16 {
+            input
+                .insert(
+                    format!(r#"{{"id": {id}, "b": true, "s": "{id}"}}"#).as_bytes(),
+                    &None,
+                )
+                .unwrap();
+        }
+        input.flush().unwrap();
+
+        // A step on one host waits for the same step on the other.
+        std::thread::scope(|scope| {
+            for (circuit, _) in hosts.iter_mut() {
+                scope.spawn(|| circuit.transaction().unwrap());
+            }
+        });
+
+        let rows = hosts
+            .iter()
+            .map(|(_, catalog)| {
+                let integral = catalog
+                    .output_handles(&("v".into()))
+                    .unwrap()
+                    .integrate_handle
+                    .as_ref()
+                    .unwrap()
+                    .take_readers();
+                batch_to_json(integral.whole.deref()).lines().count()
+            })
+            .collect();
+        for (circuit, _) in hosts {
+            circuit.kill().unwrap();
+        }
+        rows
+    }
+
+    /// A multihost pipeline keeps part of a materialized view's integral on every host, not
+    /// the whole of it on the host that writes the view.
+    #[test]
+    fn multihost_spreads_view_integrals() {
+        let spread = view_integral_rows_per_host();
+        assert_eq!(spread.iter().sum::<usize>(), 16);
+        assert!(spread.iter().all(|&rows| rows > 0), "{spread:?}");
+    }
+
+    /// A materialized view's integral survives serialization in chunks: every part reads back
+    /// with the same rows, split at key boundaries into several chunks.
+    #[test]
+    fn integral_round_trips_through_chunks() {
+        const SCHEMA: &str = r#"{
+            "name": "NAME",
+            "case_sensitive": false,
+            "fields": [
+                {"name":"id","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"},"unused":false},
+                {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
+                {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
+                {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}]}"#;
+
+        let (mut circuit, catalog) = Runtime::init_circuit(4, |circuit| {
+            let mut catalog = Catalog::new();
+            let (table, handle) = circuit.add_input_zset::<TestStruct>();
+            catalog.register_input_zset::<_, TestStruct>(
+                table.clone(),
+                handle,
+                &SCHEMA.replace("NAME", "t"),
+            );
+            catalog.register_materialized_output_zset::<_, TestStruct>(
+                table.map(|row| row.clone()),
+                &SCHEMA.replace("NAME", "v"),
+            );
+            Ok(catalog)
+        })
+        .unwrap();
+
+        let mut input = catalog
+            .input_collection_handle(&("t".into()))
+            .unwrap()
+            .handle
+            .configure_deserializer(RECORD_FORMAT.clone())
+            .unwrap();
+        for id in 0..100 {
+            input
+                .insert(
+                    format!(r#"{{"id": {id}, "b": true, "s": "row {id}"}}"#).as_bytes(),
+                    &None,
+                )
+                .unwrap();
+        }
+        input.flush().unwrap();
+        circuit.transaction().unwrap();
+
+        let handle = catalog
+            .output_handles(&("v".into()))
+            .unwrap()
+            .integrate_handle
+            .clone()
+            .unwrap();
+        let readers = handle.take_readers();
+        let mut expected: Vec<String> = batch_to_json(readers.whole.deref())
+            .lines()
+            .map(String::from)
+            .collect();
+        expected.sort();
+        assert_eq!(expected.len(), 100);
+
+        let mut rows = Vec::new();
+        let mut n_chunks = 0;
+        for part in &readers.partitions {
+            part.serialize_chunks(256, &mut |chunk| {
+                n_chunks += 1;
+                let batch = unsafe { handle.deserialize_chunk(chunk) };
+                rows.extend(batch_to_json(batch.deref()).lines().map(String::from));
+                Ok(())
+            })
+            .unwrap();
+        }
+        rows.sort();
+        assert_eq!(rows, expected);
+        assert!(n_chunks > readers.partitions.len(), "{n_chunks} chunks");
     }
 
     /// The connectors' enable count of an output is dbsp's enable count of its accumulator.

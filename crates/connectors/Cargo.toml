@@ -62,7 +62,7 @@ testing = [
     "dep:actix-test",
     "dep:flate2",
     "dep:postgres-types",
-    "dep:reqwest",
+    "reqwest/blocking",
     "dep:google-cloud-googleapis",
     "dep:feldera-macros",
     "dep:libtest-mimic",
@@ -165,7 +165,7 @@ mockall = { workspace = true, optional = true }
 actix-test = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 postgres-types = { version = "0.2.9", features = ["derive"], optional = true }
-reqwest = { workspace = true, features = ["blocking"], optional = true }
+reqwest = { workspace = true }
 google-cloud-googleapis = { workspace = true, optional = true }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time", "signal"] }
@@ -204,6 +204,7 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1",
     "tokio-pg",
 ] }
 url = { workspace = true }
+urlencoding = { workspace = true }
 atomic = { workspace = true }
 once_cell = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }

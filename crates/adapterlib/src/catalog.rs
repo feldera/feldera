@@ -309,6 +309,23 @@ pub trait SerBatchReader: 'static + Send + Sync {
     /// all batches from the reader.
     fn batches(&self) -> Vec<Arc<dyn SerBatch>>;
 
+    /// Serializes the records of this reader in chunks of about `chunk_bytes`
+    /// bytes each, which end at key boundaries, and passes each chunk to
+    /// `emit`, in key order.  [SerBatchReaderHandle::deserialize_chunk] for the
+    /// same relation reads a chunk back, on any host of the pipeline.
+    ///
+    /// Each chunk is a batch in the format of dbsp's `serialize_indexed_wset`,
+    /// which dbsp's exchange also sends between hosts: the keys, values, and
+    /// weights as rkyv archives, followed by an archived table of their
+    /// offsets.
+    ///
+    /// An empty reader emits no chunks.
+    fn serialize_chunks(
+        &self,
+        chunk_bytes: usize,
+        emit: &mut dyn FnMut(&[u8]) -> AnyResult<()>,
+    ) -> AnyResult<()>;
+
     fn snapshot(&self) -> Arc<dyn SerBatchReader>;
 
     /// Cuts the batch into at most `num_ranges` contiguous key ranges of about the same
@@ -699,6 +716,20 @@ pub trait SerBatchReaderHandle: Send + Sync + DynClone {
     ///
     /// Without output in the last step, the whole reader is empty and there are no parts.
     fn take_readers(&self) -> SnapshotReaders;
+
+    /// Reads a chunk that [SerBatchReader::serialize_chunks] wrote for this
+    /// relation, possibly on another host of the pipeline, as a batch.
+    ///
+    /// This uses dbsp's `deserialize_indexed_wset`, which reads the chunk's
+    /// rkyv archives in place, without validating them, as dbsp's exchange
+    /// does with the batches that it receives from other hosts.
+    ///
+    /// # Safety
+    ///
+    /// `chunk` must be a chunk that `serialize_chunks` wrote for this relation
+    /// in the same program, so that its archives have this relation's types.
+    /// Any other bytes are undefined behavior.
+    unsafe fn deserialize_chunk(&self, chunk: &[u8]) -> Arc<dyn SerBatchReader>;
 }
 
 /// One step's output of a collection, read two ways from one take.
@@ -995,6 +1026,12 @@ pub struct OutputCollectionHandles {
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
     pub enable_count: Arc<dyn EnableCount>,
+
+    /// The handles for distributed output connectors, set on multihost for a stream that one of
+    /// them reads.  They have the same schema and integral, but their delta stream is sharded over
+    /// all workers of all hosts, with the same key as the integral, and each host reads the part
+    /// on its own workers.
+    pub distributed: Option<Box<OutputCollectionHandles>>,
 }
 
 impl OutputCollectionHandles {
