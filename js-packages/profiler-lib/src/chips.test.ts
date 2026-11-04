@@ -15,6 +15,7 @@ import {
     formatLeafCount,
     nodeChips
 } from './chips.js'
+import { MAX_ZOOM } from './viewport.js'
 
 const decode = (uri: string): string => decodeURIComponent(uri.replace('data:image/svg+xml;utf8,', ''))
 
@@ -88,10 +89,11 @@ describe('nodeChips', () => {
         expect(attr(svg, 'rect', 'width')).toBeLessThanOrEqual(viewBox(svg).width)
     })
 
-    it('rasterizes above the size it is drawn at, so Safari does not upscale a 1x bitmap', () => {
-        // WebKit rasterizes an SVG image at its intrinsic size. Cytoscape then scales that bitmap by
-        // zoom (up to 1.5) and devicePixelRatio (2 on Retina).
-        const MIN_SCALE = 1.5 * 2
+    it('rasterizes at the largest node cache scale, so Safari does not upscale the bitmap', () => {
+        // Safari rasterizes an SVG image at its intrinsic size. Cytoscape draws the image into a node
+        // cache at the power-of-two scale at or above zoom * devicePixelRatio (2 on Retina).
+        const RETINA_PIXEL_RATIO = 2
+        const MIN_SCALE = 2 ** Math.ceil(Math.log2(MAX_ZOOM * RETINA_PIXEL_RATIO))
         for (const svg of nodeChips(true, 12, 'light').map((uri) => decode(uri))) {
             const box = viewBox(svg)
             expect(attr(svg, 'svg', 'width')).toBeGreaterThanOrEqual(MIN_SCALE * box.width)
