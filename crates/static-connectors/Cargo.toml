@@ -62,6 +62,7 @@ bench-mode = ["dbsp_connectors/bench-mode"]
 # target, which runs the connector suites of `dbsp_connectors`. This crate's dev-dependency on
 # itself turns it on, so a plain `cargo test` builds the target.
 testing = [
+    "dbsp/testing",
     "dbsp_connectors/testing",
     "feldera-adapterlib/testing",
     "dep:feldera-macros",

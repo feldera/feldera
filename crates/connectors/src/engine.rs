@@ -213,6 +213,13 @@ pub trait CircuitDriver {
     /// Starts compacting the circuit's stored state.
     fn start_compaction(&mut self) -> Result<(), ControllerError>;
 
+    /// Test-only: fails a circuit command with an error that kills the
+    /// circuit from the calling thread.
+    #[cfg(any(test, feature = "testing"))]
+    fn inject_fatal_error(&mut self) -> Result<(), ControllerError> {
+        unimplemented!("this engine cannot inject a fatal error")
+    }
+
     /// Stops the circuit and waits for its threads.
     fn kill(self: Box<Self>) -> Result<(), ControllerError>;
 }
