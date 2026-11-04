@@ -28,6 +28,19 @@ Source edition can be found on github.
   `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
   [Client certificates](/get-started/enterprise/https#client-certificates).
 
+- Behavior change (multihost): a new multihost pipeline keeps the state of
+  each materialized view on all of its hosts, instead of on the one host that
+  runs the view's output connectors, so that a large view's work spreads over
+  all hosts.  A `send_snapshot` connector, including HTTP egress, gets its
+  snapshot from all of the hosts.  A pipeline that restarts from a checkpoint
+  keeps the layout of its checkpoint, so the upgrade does not move the state of
+  existing pipelines.  The runtime setting `dev_tweaks.view_integrals` chooses
+  the layout: `all_hosts` spreads the state of an existing pipeline, and
+  `one_host` keeps it on one host.  A change of layout rebuilds the state of the
+  views, as a bootstrap, which by default waits for approval (see
+  [Modifying a pipeline](/pipelines/modifying)) and needs the tables that the
+  views read to be materialized.
+
 ## v0.376.0
 
 - Behavior change (Python SDK): a request that is not idempotent, such as

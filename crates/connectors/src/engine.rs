@@ -47,10 +47,10 @@ pub struct CircuitParams {
     /// The host that writes each output relation of a multihost pipeline.
     pub output_assignment: BTreeMap<String, usize>,
 
-    /// Whether the pipeline has a distributed output connector (see
-    /// `PipelineConfig::has_distributed_outputs`), so that a multihost
-    /// pipeline keeps the integrals of its materialized views on all hosts.
-    pub distributed_outputs: bool,
+    /// Whether a multihost pipeline shards the integrals of its materialized
+    /// views and indexes over all workers of all hosts, instead of keeping
+    /// each on the host that writes its output.
+    pub spread_view_integrals: bool,
 
     /// The pipeline's storage, if it has any.
     pub storage: Option<Arc<dyn PipelineStorage>>,
@@ -78,6 +78,11 @@ pub struct CircuitParams {
     /// TLS for exchange with the other hosts of a multihost pipeline, or `None` for
     /// plaintext.
     pub exchange_tls: Option<PipelinePeerTls>,
+
+    /// A socket already bound to this host's exchange address, for the circuit to listen on
+    /// instead of binding the address itself.  Tests that run several hosts in one process use
+    /// it, so that no other test can take the address between choosing and binding it.
+    pub exchange_listener: Option<Arc<std::net::TcpListener>>,
 }
 
 /// What the circuit factory returns.

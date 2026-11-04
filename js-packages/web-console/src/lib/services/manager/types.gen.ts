@@ -852,14 +852,8 @@ export type ConnectorConfig = OutputBufferConfig & {
    * Only the Kafka, Delta Lake, and Iceberg input transports support this
    * setting.
    *
-   * For an output connector: when `true` on any output connector, the
-   * pipeline keeps the integral of each materialized view on all of its
-   * hosts, instead of on the one host that writes the view's output
-   * connectors.  The connector itself still runs on one host.  Only the
-   * null output transport, and the Delta Lake output transport with
-   * `mode: append` and `update_mode: cdc`, support this setting.  On other
-   * output transports, it has no effect.  In a multihost pipeline with such
-   * a connector, no output connector may set `send_snapshot`.
+   * For an output connector: this setting has no effect yet.  The
+   * connector runs on one host.
    *
    * In a single-host pipeline, this setting has no effect.
    *
@@ -2126,6 +2120,7 @@ export type DevTweaks = {
    * merges for this reason.
    */
   top_level_negative_weight_fraction?: number | null
+  view_integrals?: ViewIntegralsLayout | null
   [key: string]: unknown
 }
 
@@ -4528,6 +4523,11 @@ export type PipelineDiff = {
   program_diff_error?: string | null
   removed_input_connectors: Array<string>
   removed_output_connectors: Array<string>
+  /**
+   * The checkpoint keeps the state of the materialized views in another
+   * layout, so the pipeline rebuilds it, although the views did not change.
+   */
+  view_integrals_moved?: boolean
 }
 
 /**
@@ -7247,6 +7247,12 @@ export type ValidateProgramResponse =
  * Version number.
  */
 export type Version = number
+
+/**
+ * Where a multihost pipeline keeps the state of its materialized views and
+ * indexes.
+ */
+export type ViewIntegralsLayout = 'auto' | 'one_host' | 'all_hosts'
 
 export type GetConfigAuthenticationData = {
   body?: never

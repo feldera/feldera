@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::ControllerError;
 use crate::bootstrap::{self, InputOperators};
-use crate::catalog::{DISTRIBUTED_OUTPUTS, OUTPUT_MAPPING};
+use crate::catalog::{OUTPUT_MAPPING, SPREAD_VIEW_INTEGRALS};
 use crate::storage::{StaticStorage, publish_with_state};
 use dbsp::Error as DbspError;
 use dbsp_connectors::engine::{
@@ -102,6 +102,9 @@ impl Engine for StaticEngine {
     }
 }
 
+/// Serializes the circuit builds of [static_circuit_factory]; see there.
+static CIRCUIT_BUILD: Mutex<()> = Mutex::new(());
+
 /// Returns the circuit factory that builds the circuit of `circuit` with dbsp.
 ///
 /// The factory configures dbsp from the controller's parameters, as a persistent circuit that
@@ -120,7 +123,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
         let CircuitParams {
             layout,
             output_assignment,
-            distributed_outputs,
+            spread_view_integrals,
             storage,
             init_checkpoint,
             defer_restore,
@@ -129,6 +132,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
             pin_cpus,
             dev_tweaks,
             exchange_tls,
+            exchange_listener,
         } = params;
         let storage = storage.as_deref().map(|storage| {
             storage
@@ -136,8 +140,14 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
                 .downcast_ref::<StaticStorage>()
                 .expect("the static engine runs only on the storage that it opens")
         });
+        // The catalog reads this global while `circuit` builds the circuit, so hold
+        // `CIRCUIT_BUILD` until then: a process that builds several circuits at once, as
+        // tests do, must not build one with another's settings.
+        let _build = CIRCUIT_BUILD
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         *OUTPUT_MAPPING.lock().unwrap() = output_assignment;
-        DISTRIBUTED_OUTPUTS.store(distributed_outputs, Ordering::Relaxed);
+        SPREAD_VIEW_INTEGRALS.store(spread_view_integrals, Ordering::Relaxed);
         let config = CircuitConfig::from(layout)
             .with_max_rss_bytes(max_rss_bytes)
             .with_reserved_memory_bytes(reserved_memory_bytes)
@@ -152,6 +162,14 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
                 client: tls.client,
                 server: tls.server,
             }));
+        let config = match exchange_listener {
+            Some(listener) => {
+                config.with_exchange_listener(listener.try_clone().map_err(|error| {
+                    ControllerError::io_error("cloning the exchange socket", error)
+                })?)
+            }
+            None => config,
+        };
         let (handle, catalog) = circuit(config)?;
         let inputs = InputOperators::new(catalog.as_ref());
         let runtime = Arc::new(StaticRuntime::new(handle.runtime()));

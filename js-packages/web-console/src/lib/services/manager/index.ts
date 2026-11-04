@@ -706,5 +706,6 @@ export type {
   UserMembership,
   ValidateProgramRequest,
   ValidateProgramResponse,
-  Version
+  Version,
+  ViewIntegralsLayout
 } from './types.gen'

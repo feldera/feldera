@@ -256,6 +256,16 @@ pub struct CoordinationActivate {
     /// activates the other hosts with this map.  Host 0's own map is empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub input_choices: BTreeMap<String, JsonValue>,
+
+    /// The base URL of each host's HTTP server, in host order, such as
+    /// `https://pipeline-0.example:8080/`.
+    ///
+    /// A host uses these to fetch the other hosts' parts of a snapshot.  Under
+    /// mutual TLS, the server checks the caller's pipeline identity, not its
+    /// address.  A coordinator that predates this field sends none, and then a
+    /// multihost pipeline cannot send snapshots.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_urls: Vec<String>,
 }
 
 /// `/coordination/input/choices` reply.
@@ -638,9 +648,25 @@ pub enum AdHocTableType {
     Table,
 }
 
+/// What `/coordination/adhoc/scan` replies with.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdHocScanFormat {
+    /// A stream of undelimited Arrow IPC record batches, for ad hoc queries.
+    #[default]
+    Arrow,
+
+    /// The worker's part of the relation, as chunks of serialized batches, for
+    /// another host of the pipeline that builds a snapshot of the relation.
+    /// Each chunk is an 8-byte little-endian length followed by that many
+    /// bytes, a batch in the rkyv format of dbsp's `serialize_indexed_wset`,
+    /// which `SerBatchReaderHandle::deserialize_chunk` reads.  The scan must
+    /// have no projection.
+    Batches,
+}
+
 /// `/coordination/adhoc/scan` request.
 ///
-/// The reply is a stream of undelimited Arrow IPC record batches.
+/// The reply depends on `format`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdHocScan {
     /// The step whose data is to be scanned.  The client must hold a lease on
@@ -655,6 +681,48 @@ pub struct AdHocScan {
 
     /// Columnar projection.
     pub projection: Option<Vec<usize>>,
+
+    /// What to reply with.
+    #[serde(default)]
+    pub format: AdHocScanFormat,
+
+    /// For [AdHocScanFormat::Batches], the snapshot lease to read, from
+    /// `/coordination/snapshot/lease`.  The lease's step must equal `step`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease: Option<Uuid>,
+
+    /// For [AdHocScanFormat::Batches], the number of chunks to leave out at
+    /// the start, because the client already received them from a scan that a
+    /// network error cut short.  The same snapshot always divides into the
+    /// same chunks.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skip_chunks: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+/// `/coordination/snapshot/lease` request.
+///
+/// Leases step `step`'s snapshot of materialized relation `table` on the host,
+/// for another host of the pipeline to scan with [AdHocScanFormat::Batches].
+/// The lease holds only that relation, so that the host can free the other
+/// relations' data from that step.  The reply is a [SnapshotLeaseId].  Unlike
+/// `/coordination/adhoc/lease`, the lease lasts until
+/// `/coordination/snapshot/release`, not until the connection closes, or until
+/// it goes unused for a long time.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotLease {
+    pub step: Step,
+    pub table: SqlIdentifier,
+}
+
+/// `/coordination/snapshot/lease` reply, and `/coordination/snapshot/release`
+/// request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotLeaseId {
+    pub id: Uuid,
 }
 
 /// `/coordination/labels/incomplete` reply, streamed from pipeline to coordinator.

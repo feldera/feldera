@@ -9617,7 +9617,7 @@
             "properties": {
               "distributed": {
                 "type": "boolean",
-                "description": "Divide the work of this connector among the hosts of a multihost\npipeline.\n\nFor an input connector: when `false` (the default), the connector runs\non one host, which reads all of its input. When `true`, the connector\nruns on every host, and each host reads a different part of the input.\nOnly the Kafka, Delta Lake, and Iceberg input transports support this\nsetting.\n\nFor an output connector: when `true` on any output connector, the\npipeline keeps the integral of each materialized view on all of its\nhosts, instead of on the one host that writes the view's output\nconnectors.  The connector itself still runs on one host.  Only the\nnull output transport, and the Delta Lake output transport with\n`mode: append` and `update_mode: cdc`, support this setting.  On other\noutput transports, it has no effect.  In a multihost pipeline with such\na connector, no output connector may set `send_snapshot`.\n\nIn a single-host pipeline, this setting has no effect.\n\nVersions of Feldera that predate this option ignore it."
+                "description": "Divide the work of this connector among the hosts of a multihost\npipeline.\n\nFor an input connector: when `false` (the default), the connector runs\non one host, which reads all of its input. When `true`, the connector\nruns on every host, and each host reads a different part of the input.\nOnly the Kafka, Delta Lake, and Iceberg input transports support this\nsetting.\n\nFor an output connector: this setting has no effect yet.  The\nconnector runs on one host.\n\nIn a single-host pipeline, this setting has no effect.\n\nVersions of Feldera that predate this option ignore it."
               },
               "format": {
                 "allOf": [
@@ -10666,6 +10666,15 @@
             "type": "number",
             "format": "double",
             "description": "The share of the records at a spine's highest level with negative\nweights above which the level merges its batches.\n\nA spine keeps most of its records at its highest level.  When many of\nthem are retractions, merging the level's batches cancels them against\nthe records they retract, which shrinks the spine's storage.\n\nA fraction from 0 through 1; the default is 0.2.  At 1 the level never\nmerges for this reason.",
+            "default": null,
+            "nullable": true
+          },
+          "view_integrals": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ViewIntegralsLayout"
+              }
+            ],
             "default": null,
             "nullable": true
           }
@@ -13451,6 +13460,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "view_integrals_moved": {
+            "type": "boolean",
+            "description": "The checkpoint keeps the state of the materialized views in another\nlayout, so the pipeline rebuilds it, although the views did not change."
           }
         }
       },
@@ -17381,6 +17394,15 @@
         "type": "integer",
         "format": "int64",
         "description": "Version number."
+      },
+      "ViewIntegralsLayout": {
+        "type": "string",
+        "description": "Where a multihost pipeline keeps the state of its materialized views and\nindexes.",
+        "enum": [
+          "auto",
+          "one_host",
+          "all_hosts"
+        ]
       }
     },
     "securitySchemes": {

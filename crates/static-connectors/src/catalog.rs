@@ -28,8 +28,10 @@ use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem::transmute;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 pub use feldera_adapterlib::catalog::*;
 
@@ -53,19 +55,20 @@ pub use feldera_adapterlib::catalog::*;
 /// | Table | [register_materialized_input_zset] | Each worker's own input, not sharded | |
 /// | Table with primary key | [register_materialized_input_map] | All workers, shared with the upsert operator | Primary key |
 /// | Lazy table with primary key | [register_lazy_materialized_input_map] | All workers | Primary key |
-/// | View | [register_materialized_output_zset] | Host H, or all workers | Whole row |
-/// | View as an indexed Z-set | [register_materialized_output_map] | Host H, or all workers | Key |
-/// | Index | [register_materialized_index] | Host H, or all workers | Index key |
+/// | View | [register_materialized_output_zset] | All workers, or host H | Whole row |
+/// | View as an indexed Z-set | [register_materialized_output_map] | All workers, or host H | Key |
+/// | Index | [register_materialized_index] | All workers, or host H | Index key |
 ///
-/// "Or all workers" applies when `DISTRIBUTED_OUTPUTS` is set, because the pipeline has an
-/// output connector with `distributed: true`.  The controller then refuses `send_snapshot`.
-///
-/// An integral is gathered to host H only so that a `send_snapshot` connector on host H can read
-/// the whole relation locally.  Ad hoc queries do not need it: the coordinator reads every
-/// worker's part of the integral on that worker's host.  Tables never gather their integrals,
-/// because a connector cannot take a snapshot of a table.  A view's integral is sharded, not only
-/// accumulated, so that a record with weight +1 on one worker and -1 on another cancels: ad hoc
-/// queries treat each worker's integral as a partition and cannot handle negative weights.
+/// The integrals of views and indexes spread over all workers, so that a large view's state
+/// spreads over all hosts, unless `SPREAD_VIEW_INTEGRALS` is off, which keeps each on host H as
+/// before.  The controller chooses from `dev_tweaks.view_integrals` and the layout of the
+/// checkpoint that the pipeline restarts from.  Either way, ad hoc queries read each worker's part
+/// of an integral on that worker's host, and the host of a `send_snapshot` connector collects a
+/// snapshot from the parts on all hosts, which are empty except on host H if the integral is
+/// there.  A view's
+/// integral is sharded, not only accumulated, so that a record with weight +1 on one worker and
+/// -1 on another cancels: ad hoc queries treat each worker's integral as a partition and cannot
+/// handle negative weights, and a snapshot's parts must not cancel each other.
 ///
 /// [register_materialized_input_zset]: Catalog::register_materialized_input_zset
 /// [register_materialized_input_map]: Catalog::register_materialized_input_map
@@ -209,38 +212,10 @@ pub type OutputMapping = BTreeMap<String, usize>;
 /// a global.
 pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
 
-/// Where a multihost pipeline keeps the integral of each materialized view and materialized
-/// index:
-///
-/// - `false` (the default): on the workers of the host that [OUTPUT_MAPPING] assigns to the
-///   view, which also runs the view's output connectors.  A `send_snapshot` connector there can
-///   then read the whole view locally.  A large view puts much of the pipeline's state on that
-///   one host, which makes the other hosts wait for it.
-///
-/// - `true`: sharded over all workers of all hosts, so that a large view's state is spread
-///   evenly.  No host has the whole view, so the controller refuses `send_snapshot`.
-///
-/// Ad hoc queries work either way, because the coordinator reads each worker's part of an
-/// integral on that worker's host.
-///
-/// This is `true` if some output connector in the pipeline sets `distributed: true` on a
-/// transport that supports it (see `PipelineConfig::has_distributed_outputs`), and `false`
-/// otherwise.  The controller decides this from the full pipeline config, before activation
-/// replaces the host's connectors with only its own, so every host has the same value.  It
-/// passes the value in [CircuitParams::distributed_outputs], [static_circuit_factory] stores it
-/// here before it builds the circuit, and [Catalog::gather_output_to_host] reads it while the
-/// circuit is built.  On a single host it has no effect, because integrals are always on all
-/// workers there.
-///
-/// The persistent id of an integral includes its range of workers, so a restart that changes
-/// this setting rebuilds the integrals instead of restoring them from the checkpoint.
-///
-/// Like [OUTPUT_MAPPING], it would be better to pass this in to the circuit.
-///
-/// [CircuitParams::distributed_outputs]: dbsp_connectors::engine::CircuitParams::distributed_outputs
-/// [static_circuit_factory]: crate::engine::static_circuit_factory
-pub static DISTRIBUTED_OUTPUTS: AtomicBool = AtomicBool::new(false);
-
+/// Whether a multihost pipeline shards the integrals of its materialized views and indexes over
+/// all workers of all hosts (`true`) or keeps each on host H, the host that writes its output
+/// (`false`).  See `CircuitParams::spread_view_integrals`.
+pub static SPREAD_VIEW_INTEGRALS: AtomicBool = AtomicBool::new(true);
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
         serde_json_path_to_error::from_str(schema).map_err(|e| {
@@ -259,7 +234,8 @@ impl Catalog {
     }
 
     /// Gather output stream (table or view) to the host that it is assigned to.
-    /// Returns the accumulated stream and, optionally, its integral.
+    /// Returns the accumulated stream and, optionally, its integral, which on
+    /// multihost is sharded over all workers of all hosts instead.
     ///
     /// # Arguments
     ///
@@ -305,8 +281,9 @@ impl Catalog {
                 .shard_workers_accumulate(hosts[ordinal].workers.clone())
                 .into_parts();
 
+            // The integral spreads over all workers, or stays on host H's.
             let integral = if integrate {
-                let workers = if DISTRIBUTED_OUTPUTS.load(Ordering::Relaxed) {
+                let workers = if SPREAD_VIEW_INTEGRALS.load(Ordering::Relaxed) {
                     0..Runtime::num_workers()
                 } else {
                     hosts[ordinal].workers.clone()
@@ -1595,15 +1572,9 @@ mod test {
 
     /// Counts the rows of materialized view `v` that each of two hosts holds in its integral,
     /// after host 0 ingests 16 rows into table `t`.
-    ///
-    /// # Arguments
-    ///
-    /// * `distributed_outputs` - the value of [super::DISTRIBUTED_OUTPUTS] while the hosts build
-    ///   their circuits.
-    fn view_integral_rows_per_host(distributed_outputs: bool) -> Vec<usize> {
+    fn view_integral_rows_per_host() -> Vec<usize> {
         use dbsp::circuit::{CircuitConfig, Layout};
         use std::net::TcpListener;
-        use std::sync::atomic::Ordering;
 
         const SCHEMA: &str = r#"{
             "name": "NAME",
@@ -1613,8 +1584,6 @@ mod test {
                 {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
                 {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
                 {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}]}"#;
-
-        super::DISTRIBUTED_OUTPUTS.store(distributed_outputs, Ordering::Relaxed);
 
         // Two hosts with two workers each, which exchange data over localhost.
         let listeners: Vec<TcpListener> = (0..2)
@@ -1691,16 +1660,164 @@ mod test {
         rows
     }
 
-    /// A multihost pipeline keeps a materialized view's integral on the host that writes the
-    /// view, or, with a distributed output connector, on every host.  One test covers both
-    /// cases, because they set the same global.
+    /// A multihost pipeline keeps part of a materialized view's integral on every host, not
+    /// the whole of it on the host that writes the view.
     #[test]
-    fn distributed_outputs_spread_view_integrals() {
-        assert_eq!(view_integral_rows_per_host(false), [16, 0]);
-
-        let spread = view_integral_rows_per_host(true);
+    fn multihost_spreads_view_integrals() {
+        let spread = view_integral_rows_per_host();
         assert_eq!(spread.iter().sum::<usize>(), 16);
         assert!(spread.iter().all(|&rows| rows > 0), "{spread:?}");
+    }
+
+    /// A materialized view's integral survives serialization in chunks: every part reads back
+    /// with the same rows, split at key boundaries into several chunks.
+    #[test]
+    fn integral_round_trips_through_chunks() {
+        const SCHEMA: &str = r#"{
+            "name": "NAME",
+            "case_sensitive": false,
+            "fields": [
+                {"name":"id","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"},"unused":false},
+                {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
+                {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
+                {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}]}"#;
+
+        let (mut circuit, catalog) = Runtime::init_circuit(4, |circuit| {
+            let mut catalog = Catalog::new();
+            let (table, handle) = circuit.add_input_zset::<TestStruct>();
+            catalog.register_input_zset::<_, TestStruct>(
+                table.clone(),
+                handle,
+                &SCHEMA.replace("NAME", "t"),
+            );
+            catalog.register_materialized_output_zset::<_, TestStruct>(
+                table.map(|row| row.clone()),
+                &SCHEMA.replace("NAME", "v"),
+            );
+            Ok(catalog)
+        })
+        .unwrap();
+
+        let mut input = catalog
+            .input_collection_handle(&("t".into()))
+            .unwrap()
+            .handle
+            .configure_deserializer(RECORD_FORMAT.clone())
+            .unwrap();
+        for id in 0..100 {
+            input
+                .insert(
+                    format!(r#"{{"id": {id}, "b": true, "s": "row {id}"}}"#).as_bytes(),
+                    &None,
+                )
+                .unwrap();
+        }
+        input.flush().unwrap();
+        circuit.transaction().unwrap();
+
+        let handle = catalog
+            .output_handles(&("v".into()))
+            .unwrap()
+            .integrate_handle
+            .clone()
+            .unwrap();
+        check_chunk_round_trip(handle.as_ref(), 100);
+    }
+
+    /// Like `integral_round_trips_through_chunks`, with a column of every SQL type: decimals,
+    /// dates, timestamps, binary, arrays, maps, structs, variants, and nullable columns.
+    #[test]
+    fn all_types_round_trip_through_chunks() {
+        use crate::test::DeltaTestStruct;
+        use proptest::{
+            arbitrary::Arbitrary,
+            strategy::{Strategy, ValueTree},
+            test_runner::TestRunner,
+        };
+
+        let schema = |name: &str| {
+            let mut relation = DeltaTestStruct::relation_schema();
+            relation.name = name.into();
+            serde_json::to_string(&relation).unwrap()
+        };
+        let (mut circuit, (catalog, input)) = Runtime::init_circuit(4, move |circuit| {
+            let mut catalog = Catalog::new();
+            let (table, handle) = circuit.add_input_zset::<DeltaTestStruct>();
+            let input = handle.clone();
+            catalog.register_input_zset::<_, DeltaTestStruct>(table.clone(), handle, &schema("t"));
+            catalog.register_materialized_output_zset::<_, DeltaTestStruct>(
+                table.map(|row| row.clone()),
+                &schema("v"),
+            );
+            Ok((catalog, input))
+        })
+        .unwrap();
+
+        let mut runner = TestRunner::default();
+        for bigint in 0..200 {
+            let mut row = DeltaTestStruct::arbitrary()
+                .new_tree(&mut runner)
+                .unwrap()
+                .current();
+            row.bigint = bigint;
+            input.push(row, 1);
+        }
+        circuit.transaction().unwrap();
+
+        let handle = catalog
+            .output_handles(&("v".into()))
+            .unwrap()
+            .integrate_handle
+            .clone()
+            .unwrap();
+        check_chunk_round_trip(handle.as_ref(), 200);
+    }
+
+    /// Serializes each part of the integral that `handle` reads in small chunks, reads each chunk
+    /// back, and checks that the chunks hold the same `n_rows` rows as the whole integral, in more
+    /// chunks than parts.
+    fn check_chunk_round_trip(
+        handle: &dyn feldera_adapterlib::catalog::SerBatchReaderHandle,
+        n_rows: usize,
+    ) {
+        /// Each record of `batch` as `weight: key value`, in JSON.
+        fn records(batch: &dyn SerBatchReader) -> Vec<String> {
+            let mut cursor = batch.cursor(RECORD_FORMAT.clone()).unwrap();
+            let mut records = Vec::new();
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    let mut record = format!("{}: ", cursor.weight()).into_bytes();
+                    cursor.serialize_key(&mut record).unwrap();
+                    record.push(b' ');
+                    cursor.serialize_val(&mut record).unwrap();
+                    records.push(String::from_utf8(record).unwrap());
+                    cursor.step_val();
+                }
+                cursor.step_key().unwrap();
+            }
+            records
+        }
+
+        let readers = handle.take_readers();
+        let mut expected = records(readers.whole.deref());
+        expected.sort();
+        assert_eq!(expected.len(), n_rows);
+
+        let mut rows = Vec::new();
+        let mut n_chunks = 0;
+        for part in &readers.partitions {
+            part.serialize_chunks(256, &mut |chunk| {
+                n_chunks += 1;
+                // SAFETY: `serialize_chunks` of this same relation's integral just wrote `chunk`.
+                let batch = unsafe { handle.deserialize_chunk(chunk) };
+                rows.extend(records(batch.deref()));
+                Ok(())
+            })
+            .unwrap();
+        }
+        rows.sort();
+        assert_eq!(rows, expected);
+        assert!(n_chunks > readers.partitions.len(), "{n_chunks} chunks");
     }
 
     /// The connectors' enable count of an output is dbsp's enable count of its accumulator.
