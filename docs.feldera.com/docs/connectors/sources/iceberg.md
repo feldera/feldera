@@ -323,6 +323,10 @@ Limits:
 - The pipeline and its multihost coordinator must both support
   distributed Iceberg connectors.  Otherwise, the pipeline fails to
   start.
+- A distributed connector reads the starting snapshot's schema, so a column
+  renamed or added since that snapshot is missing from the read.  A
+  single-host connector reading the current snapshot reads the current
+  schema.
 
 [tables with LATENESS]: /sql/streaming/#lateness-expressions
 

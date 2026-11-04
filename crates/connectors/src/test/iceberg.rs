@@ -1060,6 +1060,28 @@ fn follow_expected_zset(data: &[Value]) -> ZSet {
     expected_zset(&lateness_relation(), data)
 }
 
+/// Snapshot mode pinned to the table's current snapshot reads the table's
+/// current schema. The fixture writes `s` under another name and renames it,
+/// committing no snapshot after the change, so the current snapshot still
+/// names the older schema. A reader that takes its schema from the snapshot
+/// never sees `s`.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_snapshot_pin_reads_current_schema(engine: &dyn PipelineTestEngine) {
+    let all = data(10);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.renamed_column");
+    let snapshot_id = follow_table_op("create-renamed", table, &all);
+
+    let config = rest_follow_config_with(table, "snapshot", "snapshot_id", json!(snapshot_id));
+    with_follow_pipeline_cfg(engine, config, |pipeline, out_path| {
+        wait(|| pipeline.status().pipeline_complete(), 120_000)
+            .expect("timed out reading the pinned snapshot");
+        wait(|| output_record_count(out_path) >= all.len(), 60_000)
+            .expect("timed out writing output");
+        assert_eq!(follow_output_zset(out_path), follow_expected_zset(&all));
+    });
+}
+
 /// `snapshot_and_follow`: the initial snapshot is read, then a second snapshot
 /// committed before startup is caught up via follow. Every row lands once.
 #[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]

@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Bug fix (Iceberg input connector): a single-host connector reading the
+  table's current snapshot now reads the table's current schema.  It read the
+  snapshot's schema, so a column renamed or added since that snapshot was
+  missing from the read.  Reading an older snapshot, and a distributed
+  connector, still read the snapshot's schema.
+
 ## v0.377.0
 
 - Experimental (Enterprise, Kubernetes): `deployment_config` in
