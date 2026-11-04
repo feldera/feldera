@@ -3154,7 +3154,11 @@ mod retry_tests {
         let chunk = harness.write_batch(
             single_attempt_client(&server),
             puts(&[1]),
-            RetryPolicy::with_delay(None, delay).unhealthy_after(Duration::from_millis(500)),
+            // A wide margin: `gate.entered()` only proves the chunk reached
+            // its retry wait, not that this thread resumes promptly enough
+            // to see `reports()` still empty against a tight threshold on a
+            // busy CI runner (see #7828).
+            RetryPolicy::with_delay(None, delay).unhealthy_after(Duration::from_secs(3)),
         );
         assert_eq!(gate.entered(), 1);
         assert_eq!(harness.metric("dynamodb_output_retrying_chunks"), 1.0);
