@@ -1,8 +1,8 @@
 /**
  * Tests for the pipelines `Table`: the left-to-right column order, mouse
  * interaction with column sorting, the sort affordances each header paints, the
- * borders that close off the last row, the sticky header, column resizing, and a clean
- * teardown.
+ * borders that close off the last row, the sticky header, the search, column resizing,
+ * and a clean teardown.
  *
  * The real pipelines `Table` is mounted with a handful of pipeline thumbs whose name order
  * and "status changed" order deliberately disagree, so every assertion about row
@@ -361,6 +361,37 @@ describe('Table — sticky header', () => {
     expect(box.bottom).toBeLessThanOrEqual(viewport.bottom)
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
     expect(nameHeader.contains(hit)).toBe(true)
+  })
+})
+
+describe('Table — search', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('matches a pipeline by its name or by any of its tags', async () => {
+    render(Table, {
+      props: {
+        pipelines: [
+          { ...thumb('alpha'), tags: ['Finance'] },
+          { ...thumb('bravo'), tags: ['ops', 'finance-eu'] },
+          thumb('charlie')
+        ],
+        selectedPipelines: []
+      }
+    } as any)
+    const search = page.getByTestId('input-pipeline-search')
+
+    await search.fill('finance')
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo'])
+
+    await search.fill('char')
+    await expect.poll(rowOrder).toEqual(['charlie'])
   })
 })
 

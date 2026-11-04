@@ -101,8 +101,13 @@
   let statusMenuOpen = $state(false)
 
   let nameSearch = $state('')
+  // The search matches a pipeline's name or any of its tags.
   const pipelinesFiltered = $derived(
-    pipelinesWithLastChange.filter((p) => matchesSubstring(p.name, nameSearch))
+    pipelinesWithLastChange.filter(
+      (p) =>
+        matchesSubstring(p.name, nameSearch) ||
+        p.tags.some((tag) => matchesSubstring(tag, nameSearch))
+    )
   )
 
   // `knownTags` is the union of tags over every pipeline — the pool the per-row
@@ -212,7 +217,7 @@
           data-testid="input-pipeline-search"
           class="input sm:w-60"
           type="search"
-          placeholder="Search pipelines..."
+          placeholder="Search by name or tag..."
           oninput={(e) => {
             nameSearch = e.currentTarget.value
           }}
