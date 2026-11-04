@@ -818,6 +818,13 @@ impl Runtime {
                             return;
                         }
                     }
+                    #[cfg(any(test, feature = "testing"))]
+                    Ok(Command::InjectFatalError) => {
+                        let error = DbspError::IO(std::io::Error::other("injected fatal error"));
+                        if status_sender.send(Err(error)).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::Rebalance) => {
                         circuit.rebalance();
                         if status_sender.send(Ok(Response::Unit)).is_err() {
@@ -1151,6 +1158,58 @@ enum Command {
     /// Install the bootstrap circuit's state into the main circuit,
     /// reactivate the full main circuit, and delete the bootstrap circuit.
     CutoverBootstrapCircuit,
+    /// Test-only: every worker replies with an error that is fatal.
+    #[cfg(any(test, feature = "testing"))]
+    InjectFatalError,
+}
+
+impl Command {
+    /// Returns true if a worker's error reply to this command can leave the
+    /// workers out of step, so that the runtime must be killed.
+    ///
+    /// Returns false only for commands that do not change circuit state, so
+    /// that the circuit stays usable after an error.
+    fn error_is_fatal(&self) -> bool {
+        match self {
+            // Takes in-memory snapshots of operator state.  It writes no files
+            // and does no exchange between workers.
+            Command::PrepareCheckpoint => false,
+
+            Command::StartTransaction
+            | Command::Step
+            | Command::CommitTransaction
+            | Command::CommitProgress
+            | Command::Transaction
+            | Command::IsBootstrapComplete
+            | Command::CompleteBootstrap
+            | Command::EnableProfiler
+            | Command::DumpProfile { .. }
+            | Command::RetrieveGraph
+            | Command::RetrieveProfile { .. }
+            | Command::GetLir
+            | Command::Restore(_)
+            | Command::SetBalancerHintsByGlobalId(_)
+            | Command::SetBalancerHints(_)
+            | Command::GetCurrentBalancerPolicies
+            | Command::GetCurrentBalancerPolicy(_)
+            | Command::Rebalance
+            | Command::SetAutoRebalance(_)
+            | Command::StartCompaction
+            | Command::IsCompactionComplete
+            | Command::CreateBootstrapCircuit(_)
+            | Command::StartBootstrapTransaction
+            | Command::CommitBootstrapTransaction
+            | Command::StepBootstrapCircuit
+            | Command::BootstrapCommitProgress
+            | Command::DestroyBootstrapCircuit
+            | Command::RestoreConcurrent(_)
+            | Command::SyncBootstrapCircuit
+            | Command::CutoverBootstrapCircuit => true,
+
+            #[cfg(any(test, feature = "testing"))]
+            Command::InjectFatalError => true,
+        }
+    }
 }
 
 impl Debug for Command {
@@ -1208,6 +1267,8 @@ impl Debug for Command {
             }
             Command::SyncBootstrapCircuit => write!(f, "SyncBootstrapCircuit"),
             Command::CutoverBootstrapCircuit => write!(f, "CutoverBootstrapCircuit"),
+            #[cfg(any(test, feature = "testing"))]
+            Command::InjectFatalError => write!(f, "InjectFatalError"),
         }
     }
 }
@@ -1433,7 +1494,9 @@ impl DBSPHandle {
             Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }))
         }
 
-        // Receive responses.
+        // Receive responses.  After a non-fatal error, keep receiving, so that
+        // no stale reply is left for the next command.
+        let mut error = None;
         for _ in 0..self.status_receivers.len() {
             let ready = select.select();
             let worker = ready.index();
@@ -1445,9 +1508,12 @@ impl DBSPHandle {
 
             match ready.recv(&self.status_receivers[worker]) {
                 Err(_) => return handle_panic(self),
-                Ok(Err(e)) => {
+                Ok(Err(e)) if command.error_is_fatal() => {
                     let _ = self.kill_inner();
                     return Err(e);
+                }
+                Ok(Err(e)) => {
+                    error.get_or_insert(e);
                 }
                 Ok(Ok(resp)) => handler(worker, resp),
             }
@@ -1456,7 +1522,7 @@ impl DBSPHandle {
             return handle_panic(self);
         }
 
-        Ok(())
+        error.map_or(Ok(()), Err)
     }
 
     fn unicast_command(&mut self, worker: usize, command: Command) -> Result<Response, DbspError> {
@@ -1465,6 +1531,7 @@ impl DBSPHandle {
         }
 
         // Send command.
+        let error_is_fatal = command.error_is_fatal();
         if self.command_senders[worker].send(command).is_err() {
             let panic_info = self.collect_panic_info().unwrap_or_default();
 
@@ -1488,10 +1555,11 @@ impl DBSPHandle {
         }
         let reply = match ready.recv(&self.status_receivers[worker]) {
             Err(_) => return handle_panic(self),
-            Ok(Err(e)) => {
+            Ok(Err(e)) if error_is_fatal => {
                 let _ = self.kill_inner();
                 return Err(e);
             }
+            Ok(Err(e)) => return Err(e),
             Ok(Ok(resp)) => resp,
         };
 
@@ -2414,6 +2482,14 @@ impl DBSPHandle {
         Ok(())
     }
 
+    /// Test-only: makes every worker fail a command with an error that is
+    /// fatal, so that the runtime is killed from the calling thread, as it is
+    /// for a real fatal error.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn inject_fatal_error(&mut self) -> Result<(), DbspError> {
+        self.broadcast_command(Command::InjectFatalError, |_, _| {})
+    }
+
     pub fn start_compaction(&mut self) -> Result<(), DbspError> {
         self.broadcast_command(Command::StartCompaction, |_, _| {})?;
         Ok(())
@@ -3235,6 +3311,67 @@ pub(crate) mod tests {
             Err(DbspError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
             _ => panic!(),
         }
+    }
+
+    /// A failed checkpoint must return the error and leave the circuit
+    /// running.  Only worker 0 fails, so the other workers' replies must be
+    /// drained, not left for the next command.
+    #[test]
+    fn test_failed_checkpoint_keeps_circuit() {
+        use crate::circuit::Mode;
+        use crate::typed_batch::IndexedZSetReader;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let temp = tempdir().unwrap();
+        let total = Arc::new(AtomicI64::new(0));
+        let total_clone = total.clone();
+        let cconf = mkconfig_with(temp.path(), 4, 0).with_mode(Mode::Persistent);
+        let (mut dbsp, input) = Runtime::init_circuit(cconf, move |circuit| {
+            let (stream, handle) = circuit.add_input_zset::<i32>();
+            stream.set_persistent_id(Some("input"));
+            let total = total_clone.clone();
+            stream.inspect(move |batch: &OrdZSet<i32>| {
+                total.fetch_add(batch.iter().map(|(_, _, w)| w).sum(), Ordering::SeqCst);
+            });
+            if Runtime::worker_index() == 0 {
+                // No persistent id, so this operator cannot be checkpointed.
+                stream.integrate();
+            }
+            Ok(handle)
+        })
+        .unwrap();
+
+        for round in 1..=2 {
+            let err = dbsp.checkpoint().run().unwrap_err();
+            assert!(
+                matches!(err, DbspError::Storage(StorageError::NoPersistentId(_))),
+                "unexpected error {err:?}"
+            );
+
+            // Panics on a stale `CheckpointPrepared` reply.
+            dbsp.commit_progress().unwrap();
+
+            input.append(&mut vec![Tup2(round, 1), Tup2(round + 10, 1)]);
+            dbsp.transaction().unwrap();
+            assert_eq!(total.load(Ordering::SeqCst), 2 * round as i64);
+        }
+        dbsp.kill().unwrap();
+    }
+
+    /// A fatal error kills the runtime, so later commands fail.
+    #[test]
+    fn test_fatal_error_kills_circuit() {
+        let temp = tempdir().unwrap();
+        let (mut dbsp, ()) =
+            Runtime::init_circuit(mkconfig_with(temp.path(), 4, 0), |_circuit| Ok(())).unwrap();
+
+        let err = dbsp.inject_fatal_error().unwrap_err();
+        assert!(matches!(err, DbspError::IO(_)), "unexpected error {err:?}");
+        let err = dbsp.transaction().unwrap_err();
+        assert!(
+            matches!(err, DbspError::Runtime(RuntimeError::Terminated)),
+            "unexpected error {err:?}"
+        );
     }
 
     type CircuitHandle = (

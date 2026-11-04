@@ -335,6 +335,13 @@ impl CircuitDriver for StaticCircuitDriver {
             .map_err(ControllerError::dbsp_error)
     }
 
+    #[cfg(feature = "testing")]
+    fn inject_fatal_error(&mut self) -> Result<(), ControllerError> {
+        self.handle
+            .inject_fatal_error()
+            .map_err(ControllerError::dbsp_error)
+    }
+
     fn kill(self: Box<Self>) -> Result<(), ControllerError> {
         self.handle
             .kill()

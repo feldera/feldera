@@ -650,6 +650,8 @@ enum Command {
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
     Rebalance(RebalanceCallbackFn),
     StartCompaction(StartCompactionCallbackFn),
+    #[cfg(any(test, feature = "testing"))]
+    InjectFatalError(RebalanceCallbackFn),
 }
 
 /// Tracks whether the initial snapshot has been delivered for an output
@@ -826,6 +828,8 @@ impl Command {
             }
             Command::Rebalance(callback) => callback(Err(ControllerError::ControllerExit)),
             Command::StartCompaction(callback) => callback(Err(ControllerError::ControllerExit)),
+            #[cfg(any(test, feature = "testing"))]
+            Command::InjectFatalError(callback) => callback(Err(ControllerError::ControllerExit)),
         }
     }
 }
@@ -2434,6 +2438,18 @@ impl Controller {
         token: &CompletionToken,
     ) -> Result<Option<Step>, ControllerError> {
         self.status().completion_status(token)
+    }
+
+    /// Test-only: makes the circuit thread fail a circuit command with an
+    /// error that kills the circuit from that thread.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn inject_fatal_error(&self) -> Result<(), ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .send_command(Command::InjectFatalError(Box::new(move |result| {
+                let _ = sender.send(result);
+            })));
+        reply_or_controller_exit(receiver.blocking_recv())
     }
 
     pub async fn rebalance(&self) -> Result<(), ControllerError> {
@@ -4512,6 +4528,10 @@ impl CircuitThread {
                         });
                 }
                 Command::Rebalance(reply_callback) => reply_callback(self.circuit.rebalance()),
+                #[cfg(any(test, feature = "testing"))]
+                Command::InjectFatalError(reply_callback) => {
+                    reply_callback(self.circuit.inject_fatal_error())
+                }
                 Command::StartCompaction(reply_callback) => {
                     reply_callback(self.circuit.start_compaction())
                 }
