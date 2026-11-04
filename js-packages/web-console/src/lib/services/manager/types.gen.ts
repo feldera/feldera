@@ -2097,6 +2097,14 @@ export type DevTweaks = {
    */
   streaming_exchange?: boolean | null
   /**
+   * Exchange data between the hosts of a multihost pipeline over TLS.
+   *
+   * This applies only when the pipeline has client certificates for TLS
+   * (with `mtls.enabled` in the Helm chart).  Set it to `false` to exchange
+   * data in plaintext even then.  The default is `true`.
+   */
+  tls_exchange?: boolean | null
+  /**
    * The share of the records at a spine's highest level with negative
    * weights above which the level merges its batches.
    *
@@ -2132,7 +2140,8 @@ export type DynamicConfig = {
 }
 
 /**
- * CPU and memory, the only fields that can change while the pipeline runs.
+ * CPU, memory, storage, and the volume attributes class, the only fields that can change while
+ * the pipeline runs.
  */
 export type DynamicResources = {
   cpu_cores_max?: number | null
@@ -2147,6 +2156,23 @@ export type DynamicResources = {
    * megabytes, is a deprecated alias.
    */
   memory_min?: string | null
+  /**
+   * The maximum storage, such as `"400Gi"`. `storage_mb_max`, a number of megabytes, is a
+   * deprecated alias.
+   */
+  storage_max?: string | null
+  /**
+   * Storage grows to `storage_min`, else `storage_max`. With both set, storage autoscaling
+   * expands it up to `storage_max`. A change can only increase a field that is already set.
+   * `storage_mb_min`, a number of megabytes, is a deprecated alias.
+   * Not serialized when unset, so that a pipeline on an older runtime accepts a memory update.
+   */
+  storage_min?: string | null
+  /**
+   * The Kubernetes volume attributes class of the storage, which sets its IOPS and
+   * throughput. A change cannot remove it.
+   */
+  volume_attributes_class?: string | null
 }
 
 /**
@@ -5570,7 +5596,8 @@ export type ResourceConfig = {
    * instance of this pipeline. The class sets mutable storage parameters
    * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
    * the `VolumeAttributesClass` feature gate) and CSI driver support.
-   * A change takes effect on the next start, also for existing storage.
+   * A change takes effect on the next start, also for existing storage, or
+   * while the pipeline runs through a `PATCH` of its `deployment_config`.
    */
   volume_attributes_class?: string | null
 }
@@ -6435,6 +6462,12 @@ export type StartFromCheckpoint = 'latest' | string | null
  * Response to a `/start_transaction` request.
  */
 export type StartTransactionResponse = {
+  /**
+   * Pass back to `/commit_transaction` to detect pipeline restarts.
+   *
+   * Only `None` if sent by an older pipeline.
+   */
+  incarnation_uuid?: string | null
   transaction_id: number
 }
 
@@ -8324,13 +8357,41 @@ export type CommitTransactionData = {
      */
     pipeline_name: string
   }
-  query?: never
+  query?: {
+    /**
+     * The ID of the transaction to commit, which `/start_transaction`
+     * returned:
+     *
+     * - If this is the transaction that the API started and that is still
+     * open, the request commits it.
+     * - If this is the last transaction that `/commit_transaction`
+     * committed, the request succeeds and does nothing, so it is safe to
+     * retry.
+     * - Otherwise, the request fails with 409 Conflict, for example if no
+     * transaction with this ID has started yet.
+     *
+     * Without this parameter, the request commits the transaction that the
+     * API started.
+     */
+    transaction_id?: number | null
+    /**
+     * The `incarnation_uuid` that `/start_transaction` returned.  If the
+     * pipeline restarted since then, the request fails with 400 Bad Request
+     * and error code `IncarnationUuidMismatch`, because transaction IDs start
+     * again after a restart.
+     */
+    incarnation_uuid?: string | null
+  }
   url: '/v0/pipelines/{pipeline_name}/commit_transaction'
 }
 
 export type CommitTransactionErrors = {
   /**
-   * Another transaction is already in progress.
+   * The given `incarnation_uuid` does not match the pipeline's current incarnation (error code `IncarnationUuidMismatch`): the pipeline process has restarted since the transaction started
+   */
+  400: ErrorResponse
+  /**
+   * Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.
    */
   409: ErrorResponse
   500: ErrorResponse

@@ -10,6 +10,26 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental (Enterprise, Kubernetes): `deployment_config` in
+  `PATCH /v0/pipelines/{name}` can also grow the storage of a running pipeline,
+  through `storage_min` and `storage_max`, and change its volume attributes
+  class, through `volume_attributes_class`.  `storage_min` and `storage_max` can
+  only increase, and only when they are already set.  A resize outside the
+  [storage limits](/pipelines/configuration#storage-limits) of the
+  installation is refused.  See
+  [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
+  A start that keeps storage now takes the volume attributes class from the
+  last deployment.  If you changed the class of a stopped pipeline before this
+  upgrade, change it again before its next start.
+
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the hosts of a
+  multihost pipeline exchange data over TLS.  Each host presents its pipeline
+  certificate and admits only hosts of the same pipeline.  Set
+  `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
+  [Client certificates](/get-started/enterprise/https#client-certificates).
+
+## v0.376.0
+
 - Behavior change (Python SDK): a request that is not idempotent, such as
   HTTP ingress, `patch_pipeline` or a checkpoint, no longer retries after a
   502, 503 or 504 response or a read timeout, because the server may already
@@ -37,6 +57,24 @@ Source edition can be found on github.
   Diagnostics retain cancellation causes without dumping raw HTTP responses
   or returned item data.
   See [Retries and health](/connectors/sinks/dynamodb#retries-and-health).
+
+- Bug fix (Python SDK, fda): `commit_transaction(transaction_id=N)` and
+  `fda commit-transaction` failed with "doesn't match current active
+  transaction" if an earlier transaction, for example one that a connector
+  started, was still committing. Without a transaction ID, they returned
+  before the API's transaction committed. Now both wait for the transaction
+  that `start_transaction` started.
+
+- `POST /v0/pipelines/{pipeline_name}/commit_transaction` accepts optional
+  `transaction_id` and `incarnation_uuid` query parameters, and
+  `start_transaction` returns `incarnation_uuid`. With them, the pipeline
+  commits only the named transaction. A retry of the last commit succeeds
+  and does nothing. A commit of a transaction that a pipeline restart lost
+  fails, with `IncarnationUuidMismatch` if the request has
+  `incarnation_uuid`. The Python SDK and `fda` send both. In Python,
+  `Pipeline.start_transaction_response()` returns both values, and
+  `commit_transaction()` takes `incarnation_uuid`. See
+  [Transactions](/pipelines/transactions).
 
 ## v0.373.0
 

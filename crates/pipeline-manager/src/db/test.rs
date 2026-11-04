@@ -667,17 +667,40 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
 /// Generates different deployment patches, valid and invalid.
 fn limited_patch_pipeline_deployment() -> impl Strategy<Value = DynamicConfig> {
     let cpu = proptest::option::of(prop_oneof![Just(-1.0), Just(0.5), Just(1.0), Just(2.0)]);
-    let memory = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
-    (cpu.clone(), cpu, memory.clone(), memory).prop_map(
-        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max)| DynamicConfig {
-            resources: DynamicResources {
+    let megabytes = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
+    let class = proptest::option::of(prop_oneof![Just(""), Just("fast"), Just("slow")]);
+    (
+        cpu.clone(),
+        cpu,
+        megabytes.clone(),
+        megabytes.clone(),
+        megabytes.clone(),
+        megabytes,
+        class,
+    )
+        .prop_map(
+            |(
                 cpu_cores_min,
                 cpu_cores_max,
-                memory_min: memory_mb_min.map(ConfigSize::from_mb),
-                memory_max: memory_mb_max.map(ConfigSize::from_mb),
+                memory_mb_min,
+                memory_mb_max,
+                storage_mb_min,
+                storage_mb_max,
+                class,
+            )| {
+                DynamicConfig {
+                    resources: DynamicResources {
+                        cpu_cores_min,
+                        cpu_cores_max,
+                        memory_min: memory_mb_min.map(ConfigSize::from_mb),
+                        memory_max: memory_mb_max.map(ConfigSize::from_mb),
+                        storage_min: storage_mb_min.map(ConfigSize::from_mb),
+                        storage_max: storage_mb_max.map(ConfigSize::from_mb),
+                        volume_attributes_class: class.map(str::to_string),
+                    },
+                }
             },
-        },
-    )
+        )
 }
 
 /// Generates different SQL compilation information.

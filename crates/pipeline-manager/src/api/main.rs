@@ -1,7 +1,7 @@
 use crate::api::demo::{Demo, demos_without_rust_udfs, read_demos_from_directories};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
-use crate::auth::{IssuerJwkCache, JwkCache};
+use crate::auth::IssuerJwkCache;
 use crate::config::{ApiServerConfig, BasePath, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -1103,7 +1103,6 @@ pub(crate) struct ServerState {
     pub runner: RunnerInteraction,
     pub common_config: CommonConfig,
     pub config: ApiServerConfig,
-    pub jwk_cache: Arc<Mutex<JwkCache>>,
     pub issuer_jwk_cache: Arc<Mutex<IssuerJwkCache>>,
     /// Which logins have had their profile read from the identity provider
     /// recently, and where each issuer's UserInfo endpoint lives.
@@ -1141,7 +1140,6 @@ impl ServerState {
             runner,
             common_config,
             config,
-            jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             issuer_jwk_cache: Arc::new(Mutex::new(IssuerJwkCache::new())),
             user_profiles: Arc::new(Mutex::new(UserProfileCache::new())),
             oidc_clients: OidcClients::new(&oidc_root_certs)?,

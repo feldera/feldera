@@ -73,6 +73,35 @@ pub struct SamplyProfileGetParams {
     pub latest: bool,
 }
 
+/// Query parameters to the `/commit_transaction` endpoint.
+#[derive(Debug, Default, Deserialize, Serialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(default)]
+pub struct CommitTransactionParams {
+    /// The ID of the transaction to commit, which `/start_transaction`
+    /// returned:
+    ///
+    /// - If this is the transaction that the API started and that is still
+    ///   open, the request commits it.
+    /// - If this is the last transaction that `/commit_transaction`
+    ///   committed, the request succeeds and does nothing, so it is safe to
+    ///   retry.
+    /// - Otherwise, the request fails with 409 Conflict, for example if no
+    ///   transaction with this ID has started yet.
+    ///
+    /// Without this parameter, the request commits the transaction that the
+    /// API started.
+    #[param(value_type = Option<i64>)]
+    #[schema(value_type = Option<i64>)]
+    pub transaction_id: Option<crate::transaction::TransactionId>,
+
+    /// The `incarnation_uuid` that `/start_transaction` returned.  If the
+    /// pipeline restarted since then, the request fails with 400 Bad Request
+    /// and error code `IncarnationUuidMismatch`, because transaction IDs start
+    /// again after a restart.
+    pub incarnation_uuid: Option<uuid::Uuid>,
+}
+
 /// Query parameters to the `/approve` endpoint.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct ApproveParameters {

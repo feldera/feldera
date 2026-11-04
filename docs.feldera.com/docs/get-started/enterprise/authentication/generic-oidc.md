@@ -26,6 +26,8 @@ Enable the following OAuth 2.0 grant types:
 - **Refresh Token** (recommended for long-lived sessions)
 - **PKCE** (Proof Key for Code Exchange) - highly recommended for security
 
+Enable token revocation for the application if your provider has this setting. The provider must publish `revocation_endpoint` in its discovery document. The Web Console uses this endpoint to revoke the refresh token when a user signs out (see [Sign out and token revocation](index.mdx#sign-out-and-token-revocation)).
+
 ### 3. Configure Redirect URLs
 
 Add the following URLs to your OIDC application configuration:

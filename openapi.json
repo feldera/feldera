@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.376.0"
+    "version": "0.377.0"
   },
   "paths": {
     "/config/authentication": {
@@ -1860,7 +1860,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Patch Pipeline",
-        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.\n\nA `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,\nenabled by `--enable-pipeline-resize`). It cannot be combined with other fields.",
+        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.\n\nA `deployment_config` changes the CPU, memory, storage, and volume attributes class of a\nrunning pipeline in place (experimental, enabled by `--enable-pipeline-resize`). It cannot be\ncombined with other fields.",
         "operationId": "patch_pipeline",
         "parameters": [
           {
@@ -3562,14 +3562,46 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "transaction_id",
+            "in": "query",
+            "description": "The ID of the transaction to commit, which `/start_transaction`\nreturned:\n\n- If this is the transaction that the API started and that is still\nopen, the request commits it.\n- If this is the last transaction that `/commit_transaction`\ncommitted, the request succeeds and does nothing, so it is safe to\nretry.\n- Otherwise, the request fails with 409 Conflict, for example if no\ntransaction with this ID has started yet.\n\nWithout this parameter, the request commits the transaction that the\nAPI started.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "incarnation_uuid",
+            "in": "query",
+            "description": "The `incarnation_uuid` that `/start_transaction` returned.  If the\npipeline restarted since then, the request fails with 400 Bad Request\nand error code `IncarnationUuidMismatch`, because transaction IDs start\nagain after a restart.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "Commit operation initiated."
           },
+          "400": {
+            "description": "The given `incarnation_uuid` does not match the pipeline's current incarnation (error code `IncarnationUuidMismatch`): the pipeline process has restarted since the transaction started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "409": {
-            "description": "Another transaction is already in progress.",
+            "description": "Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10624,6 +10656,12 @@
             "default": null,
             "nullable": true
           },
+          "tls_exchange": {
+            "type": "boolean",
+            "description": "Exchange data between the hosts of a multihost pipeline over TLS.\n\nThis applies only when the pipeline has client certificates for TLS\n(with `mtls.enabled` in the Helm chart).  Set it to `false` to exchange\ndata in plaintext even then.  The default is `true`.",
+            "default": null,
+            "nullable": true
+          },
           "top_level_negative_weight_fraction": {
             "type": "number",
             "format": "double",
@@ -10696,7 +10734,7 @@
       },
       "DynamicResources": {
         "type": "object",
-        "description": "CPU and memory, the only fields that can change while the pipeline runs.",
+        "description": "CPU, memory, storage, and the volume attributes class, the only fields that can change while\nthe pipeline runs.",
         "properties": {
           "cpu_cores_max": {
             "type": "number",
@@ -10716,6 +10754,21 @@
           "memory_min": {
             "type": "string",
             "description": "The minimum memory, such as `\"4Gi\"`. `memory_mb_min`, a number of\nmegabytes, is a deprecated alias.",
+            "nullable": true
+          },
+          "storage_max": {
+            "type": "string",
+            "description": "The maximum storage, such as `\"400Gi\"`. `storage_mb_max`, a number of megabytes, is a\ndeprecated alias.",
+            "nullable": true
+          },
+          "storage_min": {
+            "type": "string",
+            "description": "Storage grows to `storage_min`, else `storage_max`. With both set, storage autoscaling\nexpands it up to `storage_max`. A change can only increase a field that is already set.\n`storage_mb_min`, a number of megabytes, is a deprecated alias.\nNot serialized when unset, so that a pipeline on an older runtime accepts a memory update.",
+            "nullable": true
+          },
+          "volume_attributes_class": {
+            "type": "string",
+            "description": "The Kubernetes volume attributes class of the storage, which sets its IOPS and\nthroughput. A change cannot remove it.",
             "nullable": true
           }
         },
@@ -15026,7 +15079,7 @@
           },
           "volume_attributes_class": {
             "type": "string",
-            "description": "Kubernetes volume attributes class to use for the storage of an\ninstance of this pipeline. The class sets mutable storage parameters\nsuch as IOPS and throughput. Requires Kubernetes 1.34 or later (or\nthe `VolumeAttributesClass` feature gate) and CSI driver support.\nA change takes effect on the next start, also for existing storage.",
+            "description": "Kubernetes volume attributes class to use for the storage of an\ninstance of this pipeline. The class sets mutable storage parameters\nsuch as IOPS and throughput. Requires Kubernetes 1.34 or later (or\nthe `VolumeAttributesClass` feature gate) and CSI driver support.\nA change takes effect on the next start, also for existing storage, or\nwhile the pipeline runs through a `PATCH` of its `deployment_config`.",
             "default": null,
             "nullable": true
           }
@@ -16055,6 +16108,12 @@
           "transaction_id"
         ],
         "properties": {
+          "incarnation_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Pass back to `/commit_transaction` to detect pipeline restarts.\n\nOnly `None` if sent by an older pipeline.",
+            "nullable": true
+          },
           "transaction_id": {
             "type": "integer",
             "format": "int64"

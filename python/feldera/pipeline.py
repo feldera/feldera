@@ -38,7 +38,11 @@ from feldera.enums import (
     TransactionStatus,
 )
 from feldera.output_handler import OutputHandler
-from feldera.rest.errors import FelderaAPIError
+from feldera.rest.errors import (
+    FelderaAPIError,
+    FelderaCommunicationError,
+    FelderaTimeoutError,
+)
 from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.logs import LogStream
 from feldera.rest.pipeline import Pipeline as InnerPipeline
@@ -481,8 +485,38 @@ class Pipeline:
         handler.start()
         event.wait()
 
+    # Statuses in which `wait_for_completion` waits for the pipeline.
+    _WAIT_FOR_COMPLETION_STATUSES = (
+        PipelineStatus.RUNNING,
+        PipelineStatus.INITIALIZING,
+        PipelineStatus.PROVISIONING,
+        PipelineStatus.BOOTSTRAPPING,
+        PipelineStatus.CONCURRENTBOOTSTRAPPING,
+        PipelineStatus.SYNCHRONIZING,
+    )
+
+    def _is_exactly_once(self) -> bool:
+        """True if the pipeline uses exactly-once fault tolerance, which
+        recovers all of its input after a restart."""
+        ft = self.runtime_config().__dict__.get("fault_tolerance") or {}
+        return ft.get("model") == "exactly_once"
+
+    def _not_running_error(self, status: PipelineStatus) -> RuntimeError:
+        """The error for a pipeline that is not in a status to complete."""
+        msg = f"Pipeline must be running to wait for completion (status: {status.name}"
+        try:
+            details = self.deployment_runtime_status_details()
+        except FelderaAPIError:
+            details = None
+        if details:
+            msg += f", details: {details}"
+        return RuntimeError(msg + ")")
+
     def wait_for_completion(
-        self, force_stop: bool = False, timeout_s: float | None = None
+        self,
+        force_stop: bool = False,
+        timeout_s: float | None = None,
+        unavailable_timeout_s: float = 60.0,
     ):
         """
         Block until the pipeline has completed processing all input records.
@@ -502,21 +536,28 @@ class Pipeline:
         :param timeout_s: Optional. The maximum time (in seconds) to wait for
             the pipeline to complete. The default is None, which means wait
             indefinitely.
+        :param unavailable_timeout_s: The maximum time (in seconds) to wait
+            for a pipeline in the UNAVAILABLE status to become available
+            again. The manager reports UNAVAILABLE when one status probe
+            fails, for example when the node is overloaded, so this status
+            is usually transient. 60 seconds by default.
 
-        :raises RuntimeError: If the pipeline returns unknown metrics.
+        :raises RuntimeError: If the pipeline is not running, stays
+            UNAVAILABLE for longer than `unavailable_timeout_s`, restarts
+            during the wait without exactly-once fault tolerance, or returns
+            unknown metrics.
         """
 
-        if self.status() not in [
-            PipelineStatus.RUNNING,
-            PipelineStatus.INITIALIZING,
-            PipelineStatus.PROVISIONING,
-            PipelineStatus.BOOTSTRAPPING,
-            PipelineStatus.CONCURRENTBOOTSTRAPPING,
-            PipelineStatus.SYNCHRONIZING,
-        ]:
-            raise RuntimeError("Pipeline must be running to wait for completion")
+        status = self.status()
+        if (
+            status not in self._WAIT_FOR_COMPLETION_STATUSES
+            and status != PipelineStatus.UNAVAILABLE
+        ):
+            raise self._not_running_error(status)
 
         start_time = time.monotonic()
+        unavailable_since: Optional[float] = None
+        first_incarnation: Optional[UUID] = None
         # Reused by the warning message below; is_complete() would fetch and
         # discard the same stats, hiding whether the wait is stalled or just
         # slow (e.g. mid-transaction-commit).
@@ -541,7 +582,51 @@ class Pipeline:
                         f" pipeline '{self.name}' to complete"
                     )
 
-            latest_stats = self.stats()
+            try:
+                latest_stats = self.stats()
+            except (
+                FelderaAPIError,
+                FelderaTimeoutError,
+                FelderaCommunicationError,
+            ) as err:
+                status = self.status()
+                if status in self._WAIT_FOR_COMPLETION_STATUSES:
+                    raise
+                if status != PipelineStatus.UNAVAILABLE:
+                    raise self._not_running_error(status) from err
+                now = time.monotonic()
+                if unavailable_since is None:
+                    unavailable_since = now
+                elif now - unavailable_since > unavailable_timeout_s:
+                    raise self._not_running_error(status) from err
+                time.sleep(1)
+                continue
+            unavailable_since = None
+
+            # Without exactly-once fault tolerance, a restarted pipeline can
+            # lose input, so its completion does not cover what we wait for.
+            incarnation = latest_stats.global_metrics.incarnation_uuid
+            if first_incarnation is None:
+                first_incarnation = incarnation
+            elif incarnation != first_incarnation:
+                if not self._is_exactly_once():
+                    raise RuntimeError(
+                        f"pipeline '{self.name}' restarted while waiting for"
+                        f" completion (incarnation {first_incarnation} became"
+                        f" {incarnation}) without exactly-once fault"
+                        " tolerance; input received since the last"
+                        " checkpoint may be lost"
+                    )
+                logger.info(
+                    "pipeline %s restarted while waiting for completion"
+                    " (incarnation %s became %s); exactly-once fault tolerance"
+                    " replays its input",
+                    self.name,
+                    first_incarnation,
+                    incarnation,
+                )
+                first_incarnation = incarnation
+
             pipeline_complete: Optional[bool] = (
                 latest_stats.global_metrics.pipeline_complete
             )
@@ -1046,12 +1131,28 @@ metrics"""
 
         return self.client.start_transaction(self.name)
 
+    def start_transaction_response(self) -> dict:
+        """
+        Start a new transaction, returning the full response.
+
+        :return: dict with `transaction_id` and `incarnation_uuid`; pass both
+            to `commit_transaction`.  Transaction IDs start again when the
+            pipeline restarts, so `incarnation_uuid` prevents a commit of
+            another transaction with the same ID.
+
+        :raises FelderaAPIError: If the pipeline fails to start a transaction, e.g., if the pipeline is not running or
+            there is already an active transaction.
+        """
+
+        return self.client.start_transaction_response(self.name)
+
     def commit_transaction(
         self,
         transaction_id: Optional[int] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         poll_interval_s: float = 0.5,
+        incarnation_uuid: Optional[str] = None,
     ):
         """
         Commit the currently active transaction.
@@ -1068,8 +1169,15 @@ metrics"""
         :param poll_interval_s: Polling interval at which to check while waiting for the
             transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
 
-        :raises RuntimeError: If there is currently no transaction in progress.
+        :param incarnation_uuid: The `incarnation_uuid` that `start_transaction_response` returned.
+            If the pipeline restarted since then, the commit fails with `IncarnationUuidMismatch`.
+            If not provided, the function uses the pipeline's incarnation when the call starts.
+
+        :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress,
+            or if the pipeline restarts while the function waits for the commit.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
+            If there is no current transaction, the pipeline checks `transaction_id`: if the last commit
+            request already committed it, the commit succeeds, so it is safe to call this again after a `TimeoutError`.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
         :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
@@ -1080,6 +1188,7 @@ metrics"""
             wait,
             timeout_s,
             poll_interval_s=poll_interval_s,
+            incarnation_uuid=incarnation_uuid,
         )
 
     def transaction_status(self) -> TransactionStatus:
@@ -1095,7 +1204,14 @@ metrics"""
 
     def transaction_id(self) -> Optional[int]:
         """
-        Gets the ID of the currently active transaction or None if there is no active transaction.
+        Gets the ID of the transaction that the pipeline runs or commits now,
+        or None if there is no such transaction.  This is the transaction
+        that `transaction_status` describes.
+
+        This can be a different transaction than the one that
+        `start_transaction` started: an earlier transaction, for example one
+        that a connector started, can still be committing.  To commit a
+        transaction, use the ID that `start_transaction` returned.
 
         :return: The ID of the transaction.
         """

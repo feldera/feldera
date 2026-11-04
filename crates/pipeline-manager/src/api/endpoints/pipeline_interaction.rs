@@ -18,8 +18,8 @@ use actix_web::{
 #[allow(unused_imports)]
 use feldera_types::checkpoint::RemoteCheckpoint;
 use feldera_types::query_params::{
-    ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
-    SamplyProfileParams, StatsParams,
+    ApproveParameters, CommitTransactionParams, MetricsFormat, MetricsParameters,
+    SamplyProfileGetParams, SamplyProfileParams, StatsParams,
 };
 use feldera_types::runtime_status::BootstrapConfig;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
@@ -2376,13 +2376,19 @@ pub(crate) async fn start_transaction(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        CommitTransactionParams,
     ),
     responses(
         (status = OK
             , description = "Commit operation initiated."
             , content_type = "application/json"),
+        (status = BAD_REQUEST
+            , description = "The given `incarnation_uuid` does not match the pipeline's \
+                              current incarnation (error code `IncarnationUuidMismatch`): \
+                              the pipeline process has restarted since the transaction started"
+            , body = ErrorResponse),
         (status = CONFLICT
-            , description = "Another transaction is already in progress."
+            , description = "Another transaction is already in progress, or `transaction_id` is not the transaction that the API started."
             , body = ErrorResponse),
         (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse

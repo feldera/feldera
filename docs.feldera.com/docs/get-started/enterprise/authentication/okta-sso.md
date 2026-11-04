@@ -27,6 +27,8 @@ In the **General Settings** tab:
 - Ensure **Refresh Token** is enabled for long-lived sessions
 - **PKCE** is automatically enabled for SPA applications (recommended for security)
 
+Token revocation is needed and enabled in Okta by default (see [Sign out and token revocation](index.mdx#sign-out-and-token-revocation)).
+
 ### 3. Configure Redirect URLs
 
 Add the following URLs to your Okta application:
