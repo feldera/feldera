@@ -556,7 +556,13 @@ impl ExchangeChannel {
     /// True if the channel holds messages that the receiver has not
     /// acknowledged yet.
     fn has_unacknowledged(&self) -> bool {
-        !self.inner().messages.is_empty()
+        self.n_unacknowledged() > 0
+    }
+
+    /// Returns the number of messages that the receiver has not acknowledged
+    /// yet.
+    fn n_unacknowledged(&self) -> usize {
+        self.inner().messages.len()
     }
 
     /// Waits until the receiver has acknowledged every message in the channel.
@@ -602,7 +608,7 @@ impl ExchangeClient {
     ) -> Self {
         let channel = ExchangeChannel::new(capacity);
         let stop = CancellationToken::new();
-        TOKIO.spawn(Self::run(
+        let run = Self::run(
             message_type,
             remote_address,
             remote_workers.clone(),
@@ -610,7 +616,28 @@ impl ExchangeClient {
             exchange_uuid,
             tls,
             stop.clone(),
-        ));
+        );
+        let time_limit = {
+            let stop = stop.clone();
+            async move {
+                stop.cancelled().await;
+                sleep(stopped_client_time_limit()).await;
+            }
+        };
+        let description = format!("{remote_address} for exchange with workers {remote_workers:?}");
+        let unacknowledged = channel.clone();
+        TOKIO.spawn(async move {
+            tokio::select! {
+                () = run => (),
+                () = time_limit => {
+                    // The peer can wait for these messages, so log them.
+                    let n = unacknowledged.n_unacknowledged();
+                    warn!(
+                        "giving up on {n} unacknowledged messages to {description} after the runtime stopped"
+                    );
+                }
+            }
+        });
         Self {
             channel,
             _stop: stop.drop_guard(),
@@ -807,11 +834,15 @@ impl ExchangeClient {
     ///
     /// After `stop`, which happens when the runtime is gone, this sends only
     /// the messages that the peer has not acknowledged, because the peer can
-    /// still wait for the last messages of this host.  It returns when the peer
-    /// acknowledges all of them, or at the first failure to connect or send.
-    /// Without the stop, this task would connect forever, and after the peer
-    /// stops, it could connect to another runtime that reuses the peer's
-    /// address.
+    /// still wait for the last messages of this host.  It still connects again
+    /// if a connection fails, and returns when the peer acknowledges all of
+    /// them.  The caller gives up after [stopped_client_time_limit].  Without
+    /// the stop, this task would connect forever.
+    ///
+    /// The runtime can drop the client while a peer still runs:
+    /// [RuntimeHandle::join] drops it when the workers of this host finish.
+    ///
+    /// [RuntimeHandle::join]: crate::circuit::RuntimeHandle::join
     async fn run(
         message_type: MessageType,
         remote_address: SocketAddr,
@@ -830,7 +861,6 @@ impl ExchangeClient {
                 }
                 let error = match Self::connect(remote_address, exchange_uuid, tls.as_ref()).await {
                     Ok(stream) => break stream,
-                    Err(_) if stop.is_cancelled() => return,
                     Err(error) => error,
                 };
                 if error.kind() == std::io::ErrorKind::InvalidData {
@@ -848,7 +878,6 @@ impl ExchangeClient {
             match Self::run_connection(stream, message_type, &remote_workers, &channel, &stop).await
             {
                 Ok(()) => return,
-                Err(_) if stop.is_cancelled() => return,
                 Err(error) => {
                     warn!("connection to {description} dropped ({error}), waiting to retry")
                 }
@@ -2862,6 +2891,12 @@ fn inject_fault(_kind: impl Display) -> bool {
 
 /// How long each step of starting an exchange connection may take: the TLS
 /// handshake, if any, and the exchange of [EXCHANGE_MAGIC].
+/// How long an [ExchangeClient] keeps sending after its runtime is gone (see
+/// [ExchangeClient::run]).
+fn stopped_client_time_limit() -> Duration {
+    Duration::from_secs(if cfg!(test) { 10 } else { 60 })
+}
+
 #[cfg(test)]
 fn handshake_timeout() -> Duration {
     Duration::from_secs(2)
@@ -3356,6 +3391,64 @@ mod tests {
         });
     }
 
+    /// A client that drops connects again if its connection fails, to send the
+    /// messages that its peer has not acknowledged.  The peer can still wait
+    /// for them, because the runtime drops the client when the workers of its
+    /// host finish, even while the workers of other hosts run.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn dropped_client_reconnects_to_finish_sending() {
+        use super::{ExchangeClient, ExchangeHeader, MessageType};
+        use feldera_storage::fbuf::FBuf;
+        use std::time::Duration;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener as AsyncTcpListener,
+            time::timeout,
+        };
+
+        init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
+        TOKIO.block_on(async {
+            let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let client = ExchangeClient::new(
+                MessageType::Streaming,
+                listener.local_addr().unwrap(),
+                &(0..1),
+                DevTweaks::default().exchange_channel_capacity_bytes(),
+                Uuid::nil(),
+                None,
+            )
+            .await;
+            client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
+            drop(client);
+
+            // Read the message, then close the connection without an
+            // acknowledgement.
+            let mut stream = timeout(Duration::from_secs(5), accept_client(&listener))
+                .await
+                .expect("the client should connect to send its message");
+            let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+            assert_eq!(header.sequence, 0);
+            drop(stream);
+
+            // The client connects again and sends the message again.
+            let mut stream = timeout(Duration::from_secs(5), accept_client(&listener))
+                .await
+                .expect("the client should connect again to send its message");
+            let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+            assert_eq!(header.sequence, 0);
+            stream.write_u64_le(1).await.unwrap();
+
+            // After the acknowledgement, the client has nothing more to send,
+            // so it closes the connection.  Before that, it can send a ping.
+            timeout(Duration::from_secs(5), stream.read_to_end(&mut Vec::new()))
+                .await
+                .expect("the client should close the connection")
+                .unwrap();
+        });
+    }
+
     /// Accepts a connection from an [ExchangeClient] on `listener` and answers
     /// its magic, as a server does.  The client must send the nil exchange
     /// UUID.
@@ -3693,13 +3786,11 @@ mod tests {
             stream.write_u64_le(1).await.unwrap();
 
             // After the acknowledgement, the client has nothing more to send,
-            // so it closes the connection.
-            let mut rest = Vec::new();
-            timeout(Duration::from_secs(5), stream.read_to_end(&mut rest))
+            // so it closes the connection.  Before that, it can send a ping.
+            timeout(Duration::from_secs(5), stream.read_to_end(&mut Vec::new()))
                 .await
                 .expect("the client should close the connection")
                 .unwrap();
-            assert!(rest.is_empty(), "unexpected bytes: {rest:?}");
         });
     }
 
