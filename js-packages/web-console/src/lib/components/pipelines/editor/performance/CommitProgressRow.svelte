@@ -86,15 +86,16 @@
 {#if shown.status !== null || idle === 'disable'}
   <!-- The row states its own width as both a cap and a flex basis, so a wrapping
        parent lays two rows side by side while both fit and wraps them when they do
-       not, without either row stretching to fill a line it has to itself. -->
+       not, without either row stretching to fill a line it has to itself. Its height
+       is its content's, kept steady by the bar's invisible copy below, so the card's
+       padding is the same on every side. -->
   <div
-    class="items-top flex max-w-150 basis-150 flex-wrap gap-x-4 gap-y-2 sm:h-16 {_class}"
+    class="items-top flex max-w-150 basis-150 flex-wrap gap-x-4 gap-y-2 {_class}"
     transition:slide
   >
-    <!-- With a header, the label shares its first line, so both start at the top. -->
-    <div
-      class="flex w-full flex-col items-start sm:w-28 {header ? 'justify-start' : 'justify-center'}"
-    >
+    <!-- Both columns start at the top, so the label shares its first line with the header,
+         or with the counts in a row that has no header. -->
+    <div class="flex w-full flex-col items-start sm:w-28">
       <div class="text-sm text-nowrap">{label}</div>
       <div
         class="pointer-events-none {statusChipClass} {shown.status?.class ??
@@ -104,9 +105,7 @@
       </div>
     </div>
 
-    <div
-      class="flex h-full min-w-0 flex-1 flex-col gap-2 {header ? 'justify-start' : 'justify-end'}"
-    >
+    <div class="flex h-full min-w-0 flex-1 flex-col gap-1.5">
       {@render header?.()}
       <!-- The bar and its counts share one grid cell with an invisible copy of
            their lines. The copy keeps the height of the row the same while the
@@ -150,7 +149,7 @@
             </div>
             <div class="relative" style:--bar-duration="{frame.durationMs}ms">
               <Progress class="h-2" value={frame.combinedPercent} max={100}>
-                <Progress.Track class="bg-surface-600-400">
+                <Progress.Track class="bg-surface-200 dark:bg-surface-400">
                   <Progress.Range class="bg-yellow-500 duration-(--bar-duration) ease-linear" />
                 </Progress.Track>
               </Progress>

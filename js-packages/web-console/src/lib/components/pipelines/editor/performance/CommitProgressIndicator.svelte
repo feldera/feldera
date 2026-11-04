@@ -78,7 +78,7 @@
 <!-- The rows sit side by side while both fit at their natural width and wrap to
      their own lines when they do not. Each row carries its own basis and cap, so
      neither stretches to fill a line it has to itself. -->
-<div class="flex w-full flex-wrap items-center gap-x-8 gap-y-4 {_class}" transition:slide>
+<div class="flex w-full flex-wrap items-start gap-x-8 gap-y-4 {_class}" transition:slide>
   <!-- The transaction row is always present, reporting "None" when no transaction
        is running. -->
   <CommitProgressRow

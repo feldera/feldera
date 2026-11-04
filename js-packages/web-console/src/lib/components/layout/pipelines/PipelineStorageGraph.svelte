@@ -22,7 +22,6 @@
   const {
     pipeline,
     metrics,
-    refetchMs,
     keepMs,
     headerAction
   }: {
@@ -122,7 +121,7 @@
     },
     xAxis: {
       animationDuration: 0,
-      animationDurationUpdate: refetchMs,
+      animationDurationUpdate: 0,
       type: 'time' as const,
       // Start on the same window the updates below use, so the first update has nothing to
       // animate and the line doesn't slide in when the tab opens.
@@ -168,7 +167,7 @@
     series: [
       {
         animationDuration: 0,
-        animationDurationUpdate: refetchMs,
+        animationDurationUpdate: 0,
         type: 'line' as const,
         // symbol: 'none',
         itemStyle: {

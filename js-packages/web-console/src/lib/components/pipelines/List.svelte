@@ -73,8 +73,9 @@
       <a
         class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pr-1 pl-3 {pipelineName ===
         pipeline.name
-          ? 'bg-row-hover'
+          ? 'bg-surface-950-50/[0.08] font-medium text-surface-950-50'
           : 'hover:bg-row-hover'}"
+        aria-current={pipelineName === pipeline.name ? 'page' : undefined}
         onclick={onaction}
         href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
       >

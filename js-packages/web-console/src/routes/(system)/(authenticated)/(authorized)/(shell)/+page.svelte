@@ -76,6 +76,30 @@
 
   const demos = useDemos()
   const globalDialog = useGlobalDialog()
+
+  // The page's gutters make up for the scroll area's reserved scrollbar gutter through
+  // `--scrollbar-width`, which `<body>` fixes at 10px. Overlay scrollbars (macOS by
+  // default) reserve no gutter, so measure the real one; otherwise the right gutter ends
+  // up 10px narrower than the left.
+  let scrollArea: HTMLElement | undefined = $state()
+  $effect(() => {
+    const node = scrollArea
+    if (!node) {
+      return
+    }
+    const measure = () =>
+      document.body.style.setProperty(
+        '--scrollbar-width',
+        `${node.offsetWidth - node.clientWidth}px`
+      )
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      document.body.style.removeProperty('--scrollbar-width')
+    }
+  })
 </script>
 
 {#snippet supportBundleDialog()}
@@ -109,6 +133,7 @@
      not the page scrolls (expanding the use cases no longer narrows the table), and the
      pipelines toolbar can make up that fixed width to line up with the header. -->
 <div
+  bind:this={scrollArea}
   class="scrollbar flex h-full flex-col justify-between overflow-y-auto [scrollbar-gutter:stable]"
   data-testid="box-home-scroll-area"
 >
@@ -244,9 +269,11 @@
                 </div>
               {/snippet}
               {#snippet content()}
+                <!-- A column is added as soon as one more 280px card fits, so a card stays under
+                     twice that width however wide the screen is; on a phone it is the full width. -->
                 <div
                   transition:slide={{ duration: 150 }}
-                  class="grid grid-cols-1 gap-4 pt-0.5 pb-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+                  class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4 pt-0.5 pb-2"
                 >
                   {#each demos.current.slice(0, maxShownDemos) as demo}
                     <DemoTile {demo} placement="home"></DemoTile>

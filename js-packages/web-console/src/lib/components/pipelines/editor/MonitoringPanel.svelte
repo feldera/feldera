@@ -243,7 +243,7 @@
 {#snippet TabControlPerformance()}
   {@render TabPerformance.Label()}
   {#if runtimeErrorsCount > 0}
-    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
+    <span class="-ml-0.5 {statusCounterClass} {statusToneColors.error.chip}">
       {runtimeErrorsCount}
     </span>
   {/if}
@@ -254,12 +254,12 @@
   {@const errorCount = errors.length - warningCount}
   <span class="">Compiler</span>
   {#if warningCount !== 0}
-    <span class="ml-1 {statusCounterClass} {statusToneColors.warning.chip}">
+    <span class="-ml-0.5 {statusCounterClass} {statusToneColors.warning.chip}">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
+    <span class="-ml-0.5 {statusCounterClass} {statusToneColors.error.chip}">
       {errorCount}
     </span>
   {/if}

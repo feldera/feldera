@@ -335,7 +335,7 @@
 <div class="flex flex-col">
   <!-- The current status is a chip, like the pipeline status chips elsewhere. -->
   <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-    <span>{label}</span>
+    <span class="text-base font-medium">{label}</span>
     {#if healthStatus}
       <span class="{statusChipClass} {healthStatusColors(healthStatus).chip}"
         >{healthStatusLabel(healthStatus)}</span

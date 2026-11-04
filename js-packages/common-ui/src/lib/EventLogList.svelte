@@ -210,7 +210,7 @@
         <InlineDropdown bind:open={showUnresolved}>
           {#snippet header(open, toggle)}
             {#snippet title()}
-              <div class="w-full text-[16px] font-medium">
+              <div class="w-full text-base font-medium">
                 {#if unresolvedEvents.length > 1}
                   {unresolvedEvents.length} ongoing incidents
                 {:else}
@@ -238,7 +238,7 @@
 
     <div class="flex flex-col gap-2">
       {#if previousEvents.length}
-        <span class="bg-white-dark sticky top-0 -mx-1 px-1 py-1 text-[16px] font-medium">
+        <span class="bg-white-dark sticky top-0 -mx-1 px-1 py-1 text-base font-medium">
           Previous incidents
         </span>
 

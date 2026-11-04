@@ -135,10 +135,10 @@
   })
 
   // Column widths: the user can drag every column but the checkbox one, which holds a single
-  // control. Until it is resized, Message has no set width and takes whatever room the others
-  // leave, down to `MESSAGE_MIN_WIDTH`; past that the table outgrows the page and scrolls
-  // sideways. Once Message has a width too, the table is exactly as wide as its columns and any
-  // room left over stays empty, rather than being spread across columns the user has sized.
+  // control. Message never has a set width in the layout: it takes whatever room the others
+  // leave, so the table always spans the page, as wide as the controls above it. Its width,
+  // `MESSAGE_MIN_WIDTH` until the user resizes it, is the least it takes; past that the table
+  // outgrows the page and scrolls sideways.
   const { pipelinesTableColumnWidths } = useLayoutSettings()
   const defaultColumnWidths = {
     name: 240,
@@ -159,7 +159,7 @@
   let messageFilledWidth = $state(0)
   const columnWidth = (column: ResizableColumn) =>
     column === 'message'
-      ? (messageWidth ?? messageFilledWidth)
+      ? messageFilledWidth
       : (pipelinesTableColumnWidths.value[column] ?? defaultColumnWidths[column])
   const setColumnWidth = (column: ResizableColumn, width: number) =>
     (pipelinesTableColumnWidths.value = { ...pipelinesTableColumnWidths.value, [column]: width })
@@ -284,12 +284,9 @@
   <div class="flex px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
     <!-- The page wraps the table to fit its content, so a percentage width would have nothing
          to resolve against. As a flex item the table starts at the columns' total, which also
-         sets how wide the page scrolls, and grows into any room left over while Message is
-         there to take it. -->
+         sets how wide the page scrolls, and grows into any room left over, which Message takes. -->
     <table
-      class="{messageWidth === undefined
-        ? 'flex-1'
-        : ''} bg-white-dark border-separate border-spacing-0 rounded-lg border border-line [&_th:first-child]:rounded-tl-lg [&_th:last-child]:rounded-tr-lg [&_tr:last-child>td:first-child]:rounded-bl-lg [&_tr:last-child>td:last-child]:rounded-br-lg"
+      class="bg-white-dark flex-1 border-separate border-spacing-0 rounded-lg border border-line [&_th:first-child]:rounded-tl-lg [&_th:last-child]:rounded-tr-lg [&_tr:last-child>td:first-child]:rounded-bl-lg [&_tr:last-child>td:last-child]:rounded-br-lg"
       style="table-layout: fixed; flex-basis: {tableMinWidth}px; min-width: {tableMinWidth}px"
     >
       <colgroup>
@@ -297,7 +294,7 @@
         <col style="width: {columnWidth('name')}px" />
         <col style="width: {columnWidth('storage')}px" />
         <col style="width: {columnWidth('status')}px" />
-        <col style={messageWidth === undefined ? undefined : `width: ${messageWidth}px`} />
+        <col />
         <col style="width: {columnWidth('tags')}px" />
         <col style="width: {columnWidth('runtime')}px" />
         <col style="width: {columnWidth('errors')}px" />
