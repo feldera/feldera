@@ -63,6 +63,11 @@ fn cluster() -> MockCluster<'static, DefaultProducerContext> {
 /// Reads through the broker's current high watermark, including any records
 /// beyond the expected count. With read_committed, aborted records and control
 /// records are filtered by Kafka; the consumer still advances past them.
+///
+/// A broker answers EndTxn before it writes the commit markers, so a
+/// read_committed watermark can lag a decided commit. The end of a partition
+/// is therefore judged against the high watermark as it is at each EOF, not a
+/// snapshot taken before reading.
 fn read_records(
     bootstrap: &str,
     topic: &str,
@@ -70,16 +75,20 @@ fn read_records(
     isolation: &str,
 ) -> Vec<SpooledRecord> {
     use rdkafka::message::Headers;
-    let consumer: BaseConsumer = ClientConfig::new()
-        .set("bootstrap.servers", bootstrap)
-        .set("group.id", "verify-output")
-        .set("enable.partition.eof", "true")
-        .set("isolation.level", isolation)
-        .create()
-        .unwrap();
+    let consumer = |isolation: &str| -> BaseConsumer {
+        ClientConfig::new()
+            .set("bootstrap.servers", bootstrap)
+            .set("group.id", "verify-output")
+            .set("enable.partition.eof", "true")
+            .set("isolation.level", isolation)
+            .create()
+            .unwrap()
+    };
+    let watermarks = consumer("read_uncommitted");
+    let consumer = consumer(isolation);
     let mut received = Vec::new();
     for partition in 0..partition_count {
-        let (low, high) = consumer
+        let (low, _) = watermarks
             .fetch_watermarks(topic, partition, Duration::from_secs(10))
             .unwrap();
         let mut assignment = TopicPartitionList::new();
@@ -105,6 +114,9 @@ fn read_records(
                             .unwrap_or_default(),
                     }),
                     Some(Err(KafkaError::PartitionEOF(_))) => {
+                        let (_, high) = watermarks
+                            .fetch_watermarks(topic, partition, Duration::from_secs(10))
+                            .unwrap();
                         return consumer
                             .position()
                             .unwrap()

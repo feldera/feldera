@@ -186,7 +186,8 @@ fn forward(
                 }
             }
             END_TXN if state.hold_commit.load(Ordering::Acquire) => {
-                // The broker has answered; its transaction is already committed.
+                // The broker has answered, so the outcome is decided. It may
+                // still be writing the commit markers to the data partitions.
                 // Hold only the reply so the client cannot know the outcome.
                 state.held_commits.fetch_add(1, Ordering::Release);
                 while state.hold_commit.load(Ordering::Acquire)
