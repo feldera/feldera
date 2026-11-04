@@ -437,6 +437,10 @@ struct ExchangeChannelInner {
     /// Signaled when a message is added to `messages`.
     nonempty: Arc<Notify>,
 
+    /// Signaled when the receiver has acknowledged every message, leaving
+    /// `messages` empty.
+    acknowledged: Arc<Notify>,
+
     /// Queued messages.
     messages: VecDeque<Arc<ExchangeMessage>>,
 
@@ -452,6 +456,7 @@ impl ExchangeChannelInner {
             remaining: capacity.try_into().unwrap(),
             nonfull: Arc::new(Notify::new()),
             nonempty: Arc::new(Notify::new()),
+            acknowledged: Arc::new(Notify::new()),
             messages: VecDeque::new(),
             sequence: 0,
         }
@@ -475,6 +480,9 @@ impl ExchangeChannelInner {
         }
         if before < 0 && self.remaining >= 0 {
             self.nonfull.notify_waiters();
+        }
+        if self.messages.is_empty() {
+            self.acknowledged.notify_waiters();
         }
     }
 
@@ -546,10 +554,39 @@ impl ExchangeChannel {
     fn has_unacknowledged(&self) -> bool {
         !self.inner().messages.is_empty()
     }
+
+    /// Waits until the receiver has acknowledged every message in the
+    /// channel.
+    async fn wait_until_acknowledged(&self) {
+        loop {
+            let acknowledged = {
+                let inner = self.inner();
+                if inner.messages.is_empty() {
+                    return;
+                }
+                inner.acknowledged.clone().notified_owned()
+            };
+            acknowledged.await;
+        }
+    }
 }
 
+/// Sends messages to the workers on one remote host, reconnecting whenever
+/// the connection fails.
+///
+/// Dropping the client lets its task finish delivering the messages already
+/// queued, because the remote host may still need them: a host can finish
+/// and drop its clients while its peers still wait for its last messages.
+/// The task stops once the receiver has acknowledged all of the messages, or
+/// once the receiver refuses a connection, which means that its listener is
+/// gone.  It must not keep retrying a listener that is gone, because a later
+/// listener on the same port would receive messages meant for a host that no
+/// longer exists.
 pub struct ExchangeClient {
     channel: ExchangeChannel,
+
+    /// Tells the task that the client was dropped.
+    _dropped: DropGuard,
 }
 
 impl ExchangeClient {
@@ -564,15 +601,62 @@ impl ExchangeClient {
         capacity: usize,
         tls: Option<TlsConnector>,
     ) -> Self {
+        Self::new_with_task(message_type, remote_address, remote_workers, capacity, tls).0
+    }
+
+    /// Creates a client like [ExchangeClient::new] and also returns its task.
+    ///
+    /// The task connects to the remote host and sends the queued messages.  It
+    /// ends some time after the client is dropped (see [ExchangeClient]).
+    ///
+    /// # Arguments
+    ///
+    /// * `message_type` - the type of the messages that the client sends.
+    /// * `remote_address` - the address of the remote host's listener.
+    /// * `remote_workers` - the workers on the remote host.
+    /// * `capacity` - how many bytes of unacknowledged messages the client
+    ///   queues before a sender has to wait.
+    /// * `tls` - connects over TLS, if set.
+    ///
+    /// # Returns
+    ///
+    /// The client and its task.
+    fn new_with_task(
+        message_type: MessageType,
+        remote_address: SocketAddr,
+        remote_workers: &Range<usize>,
+        capacity: usize,
+        tls: Option<TlsConnector>,
+    ) -> (Self, JoinHandle<()>) {
         let channel = ExchangeChannel::new(capacity);
-        TOKIO.spawn(Self::run(
+        let dropped = CancellationToken::new();
+        let run = Self::run(
             message_type,
             remote_address,
             remote_workers.clone(),
             channel.clone(),
             tls,
-        ));
-        Self { channel }
+            dropped.clone(),
+        );
+        let delivered = {
+            let channel = channel.clone();
+            let dropped = dropped.clone();
+            async move {
+                dropped.cancelled().await;
+                channel.wait_until_acknowledged().await;
+            }
+        };
+        let task = TOKIO.spawn(async move {
+            tokio::select! {
+                () = run => (),
+                () = delivered => (),
+            }
+        });
+        let client = Self {
+            channel,
+            _dropped: dropped.drop_guard(),
+        };
+        (client, task)
     }
 
     async fn run_connection_rx(
@@ -751,12 +835,28 @@ impl ExchangeClient {
         select(rx, tx).await.factor_first().0
     }
 
+    /// Connects to the remote host and sends it the messages in `channel`,
+    /// reconnecting whenever the connection fails.
+    ///
+    /// After the client is dropped, a refused connection means that the
+    /// receiver's listener is gone, so this gives up instead of retrying (see
+    /// [ExchangeClient]).
+    ///
+    /// # Arguments
+    ///
+    /// * `message_type` - the type of the messages in `channel`.
+    /// * `remote_address` - the address of the remote host's listener.
+    /// * `remote_workers` - the workers on the remote host.
+    /// * `channel` - the queued messages.
+    /// * `tls` - connects over TLS, if set.
+    /// * `dropped` - cancelled when the client is dropped.
     async fn run(
         message_type: MessageType,
         remote_address: SocketAddr,
         remote_workers: Range<usize>,
         channel: ExchangeChannel,
         tls: Option<TlsConnector>,
+        dropped: CancellationToken,
     ) {
         let description = format!("{remote_address} for exchange with workers {remote_workers:?}");
         loop {
@@ -766,6 +866,12 @@ impl ExchangeClient {
                     Ok(stream) => break stream,
                     Err(error) => error,
                 };
+                if dropped.is_cancelled() && error.kind() == std::io::ErrorKind::ConnectionRefused {
+                    info!(
+                        "connection to {description} refused after its client was dropped, giving up"
+                    );
+                    return;
+                }
                 if error.kind() == std::io::ErrorKind::InvalidData {
                     // Probably a TLS certificate that one side refused.
                     warn!("connection to {description} failed ({error}), waiting to retry");
@@ -3929,6 +4035,86 @@ mod tests {
                 .await
                 .expect("acknowledgement should release the sender");
             assert!(send(&client).is_none(), "the budget should be free again");
+        });
+    }
+
+    // Dropping a client lets its task finish delivering: the task reconnects
+    // after the connection breaks, sends the message again, and stops once the
+    // receiver acknowledges it.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn dropped_client_delivers_queued_messages() {
+        use super::{ExchangeClient, ExchangeHeader, MessageType};
+        use feldera_storage::fbuf::FBuf;
+        use std::time::Duration;
+        use tokio::{io::AsyncWriteExt, net::TcpListener as AsyncTcpListener, time::timeout};
+
+        init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
+        TOKIO.block_on(async {
+            let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let (client, task) = ExchangeClient::new_with_task(
+                MessageType::Streaming,
+                listener.local_addr().unwrap(),
+                &(0..1),
+                DevTweaks::default().exchange_channel_capacity_bytes(),
+                None,
+            );
+            let stream = accept_client(&listener).await;
+            client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
+            drop(client);
+
+            // Break the connection without acknowledging the message.
+            drop(stream);
+
+            let mut stream = timeout(Duration::from_secs(5), accept_client(&listener))
+                .await
+                .expect("the task should reconnect to deliver the message");
+            let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+            assert_eq!(header.sequence, 0);
+            stream.write_u64_le(1).await.unwrap();
+
+            timeout(Duration::from_secs(5), task)
+                .await
+                .expect("the task should stop once the receiver acknowledges the message")
+                .unwrap();
+        });
+    }
+
+    // A dropped client gives up once the receiver's listener is gone, instead
+    // of retrying until a later listener on the same port accepts messages
+    // meant for a host that no longer exists.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn dropped_client_stops_when_receiver_is_gone() {
+        use super::{ExchangeClient, MessageType};
+        use feldera_storage::fbuf::FBuf;
+        use std::time::Duration;
+        use tokio::{net::TcpListener as AsyncTcpListener, time::timeout};
+
+        init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
+        TOKIO.block_on(async {
+            let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let (client, task) = ExchangeClient::new_with_task(
+                MessageType::Streaming,
+                listener.local_addr().unwrap(),
+                &(0..1),
+                DevTweaks::default().exchange_channel_capacity_bytes(),
+                None,
+            );
+            let stream = accept_client(&listener).await;
+            client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
+            drop(client);
+
+            // The receiver goes away without acknowledging the message.
+            drop(stream);
+            drop(listener);
+
+            timeout(Duration::from_secs(5), task)
+                .await
+                .expect("the task should stop once the receiver refuses connections")
+                .unwrap();
         });
     }
 
