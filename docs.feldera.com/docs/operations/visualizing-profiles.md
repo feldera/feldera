@@ -527,7 +527,10 @@ curl 'http://localhost:8080/v0/pipelines/my-pipeline/samply_profile' -o prof.jso
 ```
 
 ##### Failures
-- `400 Bad Request`: If no profiles have been triggered or completed yet
+- `400 Bad Request`: When you start a profile, if `duration_secs` is not
+  from 1 to 300
+- `400 Bad Request`: When you retrieve a profile, if no profiles have been
+  triggered or completed yet
 - `500 Internal Server Error`: If there was an error during profiling
 
 #### Inspect the profile
