@@ -2139,7 +2139,9 @@ mod mock_dynamodb {
     const RESOURCE: &str = "arn:aws:dynamodb:us-east-1:1:table/t";
 
     pub(super) fn server() -> MockServer {
-        TOKIO.block_on(MockServer::start())
+        // Not pooled: a chunk a failed test left behind on the shared runtime
+        // could send its next request to a recycled server of another test.
+        TOKIO.block_on(MockServer::builder().start())
     }
 
     /// A mock for one operation. Mount it in order: the first mounted mock
