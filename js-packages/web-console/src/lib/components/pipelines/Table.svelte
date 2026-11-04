@@ -2,7 +2,6 @@
   import { TableHandler } from '@vincjo/datatables'
   import { dateMax } from 'common-lib/date'
   import { formatDateTime } from 'common-lib/format'
-  import { matchesSubstring } from 'common-lib/string'
   import { type NamesInUnion, unionName } from 'common-lib/union'
   import { Popover, Tooltip } from 'common-ui'
   import type { StatusTone } from 'common-ui/statusTone'
@@ -11,12 +10,14 @@
   import { match } from 'ts-pattern'
   import Popup from '#lib/components/common/Popup.svelte'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatus.svelte'
+  import PipelineSearch from '#lib/components/pipelines/PipelineSearch.svelte'
   import ColumnResizer from '#lib/components/pipelines/table/ColumnResizer.svelte'
   import ThSort from '#lib/components/pipelines/table/ThSort.svelte'
   import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
   import { statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
+  import { matchesPipelineSearch, nameMatchesFirst } from '#lib/functions/pipelines/search.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import type {
     PipelineStatus as PipelineStatusType,
@@ -100,15 +101,13 @@
   let statusFilterLabel = $state(filterStatuses[0][0])
   let statusMenuOpen = $state(false)
 
-  let nameSearch = $state('')
-  // The search matches a pipeline's name or any of its tags.
+  let searchQuery = $state('')
+  let tagFilters = $state<string[]>([])
   const pipelinesFiltered = $derived(
-    pipelinesWithLastChange.filter(
-      (p) =>
-        matchesSubstring(p.name, nameSearch) ||
-        p.tags.some((tag) => matchesSubstring(tag, nameSearch))
-    )
+    pipelinesWithLastChange.filter((p) => matchesPipelineSearch(p, searchQuery, tagFilters))
   )
+  // The column sort orders the rows inside each group.
+  const rowsInDisplayOrder = $derived(nameMatchesFirst(table.rows, searchQuery))
 
   // `knownTags` is the union of tags over every pipeline — the pool the per-row
   // tag picker chooses from.
@@ -215,15 +214,13 @@
       <div
         class="relative -mr-[var(--scroll-gutter-width)] ml-auto flex flex-row items-center gap-2"
       >
-        <input
-          data-testid="input-pipeline-search"
-          class="input sm:w-60"
-          type="search"
-          placeholder="Search by name or tag..."
-          oninput={(e) => {
-            nameSearch = e.currentTarget.value
-          }}
-        />
+        <PipelineSearch
+          {pipelines}
+          bind:query={searchQuery}
+          bind:tagFilters
+          tagsLayout="above"
+          inputClass="w-full sm:w-60"
+        ></PipelineSearch>
         <Popup wrapperClass="sm:w-40" bind:isOpen={statusMenuOpen}>
           {#snippet trigger(toggle, isOpen)}
             <button
@@ -413,7 +410,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each table.rows as pipeline}
+        {#each rowsInDisplayOrder as pipeline}
           <!-- A click anywhere on the row that isn't on a link or control toggles its
                selection, like clicking its checkbox. -->
           <tr
