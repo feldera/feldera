@@ -1554,6 +1554,18 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long, env = "FELDERA_UPPER_LIMIT_STORAGE_MEGABYTE")]
     pub upper_limit_storage_megabyte: Option<f64>,
+
+    /// Maximum `resources.memory_min` and `resources.memory_max`, in megabytes (M). Unset is no
+    /// maximum. Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, env = "FELDERA_UPPER_LIMIT_MEMORY_MEGABYTE")]
+    pub upper_limit_memory_megabyte: Option<f64>,
+
+    /// Whether a pipeline can set both `resources.storage_min` and `resources.storage_max`, which
+    /// turns on storage autoscaling. Unset is not checked. Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, env = "FELDERA_ENABLE_STORAGE_AUTOSCALING")]
+    pub enable_storage_autoscaling: Option<bool>,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1697,6 +1709,48 @@ impl ApiServerConfig {
         Ok(())
     }
 
+    /// Refuses the memory in `resources` that the runner refuses at start. The runner raises a
+    /// value below its minimum, so that is not refused.
+    pub(crate) fn check_memory(&self, resources: &ResourceConfig) -> Result<(), String> {
+        if let (Some(min), Some(max)) = (resources.memory_min, resources.memory_max)
+            && min > max
+        {
+            return Err(format!(
+                "resources.memory_min ({min}) is more than resources.memory_max ({max}). Lower memory_min or raise memory_max."
+            ));
+        }
+        if let Some(upper_limit) = self.upper_limit_memory_megabyte {
+            for (field, amount) in [
+                ("memory_min", resources.memory_min),
+                ("memory_max", resources.memory_max),
+            ] {
+                if let Some(amount) = amount
+                    && amount > ConfigSize::from_mb(upper_limit as u64)
+                {
+                    return Err(format!(
+                        "resources.{field} ({amount}) is more than the maximum of {upper_limit}M on this installation. Lower it, or ask an administrator to raise kubernetesRunner.upperLimitMemoryMegabyte."
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuses storage autoscaling, both `storage_min` and `storage_max`, when the runner does not
+    /// enable it.
+    pub(crate) fn check_storage_autoscaling(
+        &self,
+        resources: &ResourceConfig,
+    ) -> Result<(), String> {
+        if self.enable_storage_autoscaling == Some(false)
+            && resources.storage_min.is_some()
+            && resources.storage_max.is_some()
+        {
+            return Err("resources.storage_min and resources.storage_max are both set, which turns on storage autoscaling, and it is not enabled on this installation. Set only one of them for a fixed size, or ask an administrator to set kubernetesRunner.enableStorageAutoscaling.".to_string());
+        }
+        Ok(())
+    }
+
     /// Where a trust registered through the API may point.
     pub(crate) fn tenant_issuer_policy(&self) -> TenantIssuerPolicy {
         if self.allow_internal_tenant_trust_issuers {
@@ -1784,6 +1838,8 @@ impl ApiServerConfig {
             enable_volume_attributes_classes_allowlist: false,
             volume_attributes_classes: vec![],
             upper_limit_storage_megabyte: None,
+            upper_limit_memory_megabyte: None,
+            enable_storage_autoscaling: None,
         }
     }
 }
@@ -2647,6 +2703,89 @@ mod tests {
             let error = config.check_storage(&resources(refused)).unwrap_err();
             assert!(error.contains(expected), "{error}");
         }
+    }
+
+    /// `check_memory` and `check_storage_autoscaling` refuse what the Kubernetes runner refuses at
+    /// start, and only when the installation says so.
+    #[test]
+    fn memory_and_storage_autoscaling_are_refused_as_the_runner_refuses_them() {
+        let resources =
+            |value: serde_json::Value| -> ResourceConfig { serde_json::from_value(value).unwrap() };
+        let check = |config: &ApiServerConfig, value: serde_json::Value| {
+            let resources = resources(value);
+            config
+                .check_memory(&resources)
+                .and_then(|()| config.check_storage_autoscaling(&resources))
+        };
+        let both = serde_json::json!({
+            "memory_min": "64G", "memory_max": "64G", "storage_min": "1G", "storage_max": "8G",
+        });
+        let mut config = ApiServerConfig::test_config();
+
+        // Unset, nothing but `memory_min` > `memory_max` is refused.
+        assert_eq!(check(&config, both.clone()), Ok(()));
+        let error = check(
+            &config,
+            serde_json::json!({"memory_min": "2G", "memory_max": "1G"}),
+        )
+        .unwrap_err();
+        assert!(error.contains("resources.memory_min (2G)"), "{error}");
+
+        // Allowed, as set by Helm.
+        config.upper_limit_memory_megabyte = Some(64_000.0);
+        config.enable_storage_autoscaling = Some(true);
+        assert_eq!(check(&config, both.clone()), Ok(()));
+
+        config.upper_limit_memory_megabyte = Some(1000.0);
+        for (value, expected) in [
+            (
+                serde_json::json!({"memory_min": "2G"}),
+                "resources.memory_min (2G) is more than the maximum of 1000M",
+            ),
+            (
+                serde_json::json!({"memory_max": "1001M"}),
+                "resources.memory_max (1001M) is more than the maximum of 1000M",
+            ),
+        ] {
+            let error = check(&config, value).unwrap_err();
+            assert!(error.contains(expected), "{error}");
+        }
+        assert_eq!(
+            check(&config, serde_json::json!({"memory_max": "1G"})),
+            Ok(())
+        );
+
+        config.enable_storage_autoscaling = Some(false);
+        let error = check(
+            &config,
+            serde_json::json!({"storage_min": "1G", "storage_max": "8G"}),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("kubernetesRunner.enableStorageAutoscaling"),
+            "{error}"
+        );
+        // A fixed size is not autoscaling.
+        assert_eq!(
+            check(&config, serde_json::json!({"storage_max": "8G"})),
+            Ok(())
+        );
+    }
+
+    /// The limits parse as the Helm chart passes them, and are unset without them.
+    #[test]
+    fn runner_limits_parse_from_helm_arguments() {
+        let unset = ApiServerConfig::try_parse_from(["api-server"]).unwrap();
+        assert_eq!(unset.upper_limit_memory_megabyte, None);
+        assert_eq!(unset.enable_storage_autoscaling, None);
+        let config = ApiServerConfig::try_parse_from([
+            "api-server",
+            "--upper-limit-memory-megabyte=32000",
+            "--enable-storage-autoscaling=false",
+        ])
+        .unwrap();
+        assert_eq!(config.upper_limit_memory_megabyte, Some(32000.0));
+        assert_eq!(config.enable_storage_autoscaling, Some(false));
     }
 
     /// The platform version suffix matches the edition of the build.

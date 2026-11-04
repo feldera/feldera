@@ -76,9 +76,10 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kubernetesRunner.lowerLimitMemoryMegabyte` | `100` | Minimum allowed memory (MB) for a pipeline pod. Also the default minimum if none is specified in pipeline resources. |
-| `kubernetesRunner.upperLimitMemoryMegabyte` | `32000` | Maximum allowed memory (MB) for a pipeline pod. Also the default maximum if none is specified. |
+| `kubernetesRunner.upperLimitMemoryMegabyte` | `32000` | Maximum allowed memory (MB) for a pipeline pod. Also the default maximum if none is specified. The API refuses a larger `memory_min` or `memory_max`. See [resource limits](/pipelines/configuration#resource-limits). |
 | `kubernetesRunner.defaultStorageMegabyte` | `30000` | Default persistent storage volume size (MB) per pipeline if not specified in pipeline resources. |
-| `kubernetesRunner.upperLimitStorageMegabyte` | `128000` | Maximum allowed persistent storage volume size (MB) per pipeline. The API refuses a larger `storage_min` or `storage_max`. See [storage limits](/pipelines/configuration#storage-limits). |
+| `kubernetesRunner.upperLimitStorageMegabyte` | `128000` | Maximum allowed persistent storage volume size (MB) per pipeline. The API refuses a larger `storage_min` or `storage_max`. See [resource limits](/pipelines/configuration#resource-limits). |
+| `kubernetesRunner.enableStorageAutoscaling` | `false` | Allow pipelines to set both `storage_min` and `storage_max`, which turns on storage autoscaling. When `false`, the API refuses such a runtime configuration. |
 | `kubernetesRunner.lowerLimitEphemeralStorageMegabyte` | `500` | Minimum ephemeral storage (MB) for a pipeline pod. Must be large enough to hold the pipeline executable. Also the default. |
 | `kubernetesRunner.upperLimitEphemeralStorageMegabyte` | `2000` | Maximum ephemeral storage (MB) for a pipeline pod. |
 

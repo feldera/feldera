@@ -10,6 +10,20 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` also
+  refuse a `runtime_config` with `resources.memory_min` or
+  `resources.memory_max` above `kubernetesRunner.upperLimitMemoryMegabyte`, or
+  with both `storage_min` and `storage_max` when
+  `kubernetesRunner.enableStorageAutoscaling` is off, with a 400
+  `InvalidRuntimeConfig` error.  A `PATCH` of `deployment_config` refuses
+  memory above the limit.  Before, the next start failed.  See
+  [Resource limits](/pipelines/configuration#resource-limits).
+
+- Behavior change: on all installations, `POST`, `PUT`, and
+  `PATCH /v0/pipelines` refuse a `runtime_config` with `resources.memory_min`
+  more than `resources.memory_max`, with a 400 `InvalidRuntimeConfig` error.
+  A pipeline stored with such values still loads.
+
 ## v0.377.0
 
 - Experimental (Enterprise, Kubernetes): `deployment_config` in
@@ -17,7 +31,7 @@ Source edition can be found on github.
   through `storage_min` and `storage_max`, and change its volume attributes
   class, through `volume_attributes_class`.  `storage_min` and `storage_max` can
   only increase, and only when they are already set.  A resize outside the
-  [storage limits](/pipelines/configuration#storage-limits) of the
+  [resource limits](/pipelines/configuration#resource-limits) of the
   installation is refused.  See
   [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
   A start that keeps storage now takes the volume attributes class from the
@@ -128,7 +142,7 @@ Source edition can be found on github.
   `InvalidRuntimeConfig` error.  Before, the API accepted these values and the
   next start failed.  On all installations, `storage_min` cannot be more than
   `storage_max`.  A pipeline stored with such values still loads.  See
-  [Storage limits](/pipelines/configuration#storage-limits).
+  [Resource limits](/pipelines/configuration#resource-limits).
 
 - Incompatible change (SQL): date arithmetic now matches the SQL
   standard.  An interval holds whole numbers in every field except
