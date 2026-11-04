@@ -6318,6 +6318,16 @@ pub mod test_http {
                 let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
                 assert_eq!(error["error_code"], "InvalidParam", "{duration}: {error}");
             }
+
+            // The boundaries pass the range check, whether or not Samply then starts.
+            for duration in [1, max] {
+                let response = server
+                    .post(format!("/samply_profile?duration_secs={duration}"))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_ne!(response.status(), StatusCode::BAD_REQUEST, "{duration}");
+            }
         })
     }
 
