@@ -31,6 +31,19 @@ fn endpoint(
     (endpoint, callbacks)
 }
 
+fn high_watermark(topic: &str, isolation: &str) -> i64 {
+    let consumer: BaseConsumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("group.id", "watermark")
+        .set("isolation.level", isolation)
+        .create()
+        .unwrap();
+    consumer
+        .fetch_watermarks(topic, 0, Duration::from_secs(10))
+        .unwrap()
+        .1
+}
+
 fn committed(topic: &str, partitions: i32) -> Vec<SpooledRecord> {
     read_records(
         &default_redpanda_server(),
@@ -171,15 +184,27 @@ fn a_read_that_starts_before_the_commit_lands_sees_it() {
     let topic = "ft_recovery_early_read";
     let _topics = KafkaResources::create_topics(&[(topic, 1)]);
     let proxy = BrokerProxy::new(default_redpanda_server());
-    let (mut endpoint, _) = endpoint(topic, &proxy, 60_000, 60_000);
+    let (mut endpoint, callbacks) = endpoint(topic, &proxy, 60_000, 60_000);
     endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
     endpoint.push_buffer(b"read before its markers").unwrap();
+    wait(
+        || callbacks.metric("kafka_output_delivered_messages_total") == 1.0,
+        30_000,
+    )
+    .unwrap();
+    // The record is on the broker and nothing has committed it yet: the
+    // read_committed watermark is below the read_uncommitted one.
+    assert!(high_watermark(topic, "read_committed") < high_watermark(topic, "read_uncommitted"));
     proxy.hold_commit(true);
-    // The worker does not exist yet, so the transaction is still open.
+    // The reader goes through the proxy so the test can see its first Fetch,
+    // which follows its watermark query. The worker does not exist yet, so
+    // the transaction is still open at that point.
     let reader = std::thread::spawn({
+        let bootstrap = proxy.address.clone();
         let topic = topic.to_owned();
-        move || committed(&topic, 1)
+        move || read_records(&bootstrap, &topic, 1, "read_committed")
     });
+    wait(|| proxy.fetches() > 0, 30_000).unwrap();
     let worker = BatchWorker::new(endpoint);
     wait(|| proxy.held_commits() > 0, 30_000).unwrap();
     assert_eq!(reader.join().unwrap().len(), 1);
