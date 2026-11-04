@@ -147,7 +147,34 @@ export interface Rgba {
 export const colorDistance = (a: Rgba, b: Rgba): number =>
   Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b)
 
-export const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
+/** The cytoscape instance that `mountDiagram` mounted last. `settle` waits for its frames. */
+// biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance, typed as in `mountDiagram`
+let mountedCy: any
+
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+
+/** Wait 150 ms for the diagram to react to the test, then wait until cytoscape draws the result.
+ *  Cytoscape draws on animation frames. A busy machine can delay a frame past any fixed timeout,
+ *  and a pixel probe then reads the previous frame. */
+export const settle = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  if (!mountedCy) {
+    return
+  }
+  // Cytoscape requests its frame callback during the previous frame, so its callback runs before
+  // this one. Cytoscape emits `render` after each draw, so a frame without `render` had no draw
+  // pending.
+  let hasDrawn = false
+  const onRender = () => {
+    hasDrawn = true
+  }
+  mountedCy.on('render', onRender)
+  do {
+    hasDrawn = false
+    await nextFrame()
+  } while (hasDrawn)
+  mountedCy.off('render', onRender)
+}
 
 /** Mount the diagram over `profile`, wait for its layout, and hand back the cytoscape instance with
  *  a pixel probe over its canvases. Zoomed in afterwards, since both the glow and a 12px label are a
@@ -213,13 +240,14 @@ export async function mountDiagram(
     showGlobalMetrics(isSticky?: boolean): void
   }
   await layout
-  await settle()
 
   const container = wrapper.querySelector('.visualizer-graph') as HTMLElement & {
     // biome-ignore lint/suspicious/noExplicitAny: the registry cytoscape leaves on its container
     _cyreg: { cy: any }
   }
   const cy = container._cyreg.cy
+  mountedCy = cy
+  await settle()
   if (!keepOpeningView) {
     cy.maxZoom(8)
     cy.zoom(2)
