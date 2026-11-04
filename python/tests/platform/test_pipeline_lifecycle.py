@@ -860,7 +860,7 @@ def test_deployment_resources(pipeline_name):
             "cpu_cores_max": 1,
             "memory_min": "1G",
             "memory_max": "1G",
-            "storage_max": "1G",
+            "storage_max": "4Gi",
         }
     )
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
@@ -948,10 +948,10 @@ def test_deployment_resources(pipeline_name):
     assert current_cpu_cores_min() == 0.25
 
     # A storage field can only increase, and one that is not set cannot be set.
-    assert patch({"storage_max": "2G"}).status_code == HTTPStatus.OK
-    assert_error(patch({"storage_max": "1500M"}), "InvalidDeploymentPatch")
-    assert_error(patch({"storage_min": "2G"}), "InvalidDeploymentPatch")
-    assert current_storage_max() == "2G"
+    assert patch({"storage_max": "5Gi"}).status_code == HTTPStatus.OK
+    assert_error(patch({"storage_max": "5000M"}), "InvalidDeploymentPatch")
+    assert_error(patch({"storage_min": "5Gi"}), "InvalidDeploymentPatch")
+    assert current_storage_max() == "5Gi"
     # A class that exists depends on the cluster, so only an empty one is tried.
     assert_error(patch({"volume_attributes_class": ""}), "InvalidDeploymentPatch")
 
@@ -959,14 +959,14 @@ def test_deployment_resources(pipeline_name):
     pipeline.stop(force=True)
     pipeline.start()
     assert current_cpu_cores_min() == 0.25
-    assert current_storage_max() == "2G"
+    assert current_storage_max() == "5Gi"
 
     # Clearing storage resets it.
     pipeline.stop(force=True)
     pipeline.clear_storage()
     pipeline.start()
     assert current_cpu_cores_min() == 0.5
-    assert current_storage_max() == "1G"
+    assert current_storage_max() == "4Gi"
 
     # A CPU edit while stopped replaces it.
     assert patch({"cpu_cores_min": 0.25}).status_code == HTTPStatus.OK
@@ -976,12 +976,12 @@ def test_deployment_resources(pipeline_name):
     pipeline.start()
     assert current_cpu_cores_min() == 0.75
     # ... and keeps a storage resize.
-    assert patch({"storage_max": "3G"}).status_code == HTTPStatus.OK
+    assert patch({"storage_max": "6Gi"}).status_code == HTTPStatus.OK
     pipeline.stop(force=True)
     runtime_config["resources"]["cpu_cores_min"] = 0.5
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
     pipeline.start()
-    assert current_storage_max() == "3G"
+    assert current_storage_max() == "6Gi"
     pipeline.stop(force=True)
 
 
