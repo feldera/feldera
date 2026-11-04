@@ -83,7 +83,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPStringLiteral(CalciteObject.EMPTY, this.type.withMayBeNull(true), this.checkIfNull(this.value, mayBeNull));
+        return new DBSPStringLiteral(CalciteObject.EMPTY, this.type.withMayBeNull(mayBeNull), this.checkIfNull(this.value, mayBeNull));
     }
 
     @Override
