@@ -68,6 +68,11 @@ fn cluster() -> MockCluster<'static, DefaultProducerContext> {
 /// read_committed watermark can lag a decided commit. The end of a partition
 /// is therefore judged against the high watermark as it is at each EOF, not a
 /// snapshot taken before reading.
+///
+/// Precondition: every transaction on the topic has been decided. A
+/// read_committed consumer stops at the last stable offset, so an open
+/// transaction keeps it short of the high watermark until the broker's
+/// `transaction.timeout.ms` expires.
 fn read_records(
     bootstrap: &str,
     topic: &str,
@@ -96,6 +101,7 @@ fn read_records(
             .add_partition_offset(topic, partition, Offset::Offset(low))
             .unwrap();
         consumer.assign(&assignment).unwrap();
+        let mut last_eof = None;
         wait(
             || {
                 match consumer.poll(Duration::from_millis(100)) {
@@ -117,13 +123,14 @@ fn read_records(
                         let (_, high) = watermarks
                             .fetch_watermarks(topic, partition, Duration::from_secs(10))
                             .unwrap();
-                        return consumer
+                        let position = consumer
                             .position()
                             .unwrap()
                             .find_partition(topic, partition)
                             .unwrap()
-                            .offset()
-                            == Offset::Offset(high);
+                            .offset();
+                        last_eof = Some((position, high));
+                        return position == Offset::Offset(high);
                     }
                     Some(Err(error)) => panic!("reading {topic}: {error}"),
                     None => {}
@@ -132,7 +139,11 @@ fn read_records(
             },
             60_000,
         )
-        .expect("the consumer must reach the high watermark");
+        .unwrap_or_else(|_| {
+            panic!(
+                "the consumer must reach the high watermark of {topic}[{partition}]; last EOF (position, high watermark): {last_eof:?}; an undecided transaction holds a read_committed consumer below the high watermark"
+            )
+        });
     }
     received
 }

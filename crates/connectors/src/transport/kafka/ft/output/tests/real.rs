@@ -163,6 +163,31 @@ fn a_committed_transaction_with_a_delayed_reply_is_not_replayed() {
     assert_eq!(committed(topic, 1), before);
 }
 
+/// The broker answers EndTxn before it writes the commit markers, so a read
+/// that starts while the transaction is open must not judge the end of the
+/// partition by a watermark it took before the markers landed.
+#[test]
+fn a_read_that_starts_before_the_commit_lands_sees_it() {
+    let topic = "ft_recovery_early_read";
+    let _topics = KafkaResources::create_topics(&[(topic, 1)]);
+    let proxy = BrokerProxy::new(default_redpanda_server());
+    let (mut endpoint, _) = endpoint(topic, &proxy, 60_000, 60_000);
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint.push_buffer(b"read before its markers").unwrap();
+    proxy.hold_commit(true);
+    // The worker does not exist yet, so the transaction is still open.
+    let reader = std::thread::spawn({
+        let topic = topic.to_owned();
+        move || committed(&topic, 1)
+    });
+    let worker = BatchWorker::new(endpoint);
+    wait(|| proxy.held_commits() > 0, 30_000).unwrap();
+    assert_eq!(reader.join().unwrap().len(), 1);
+    proxy.hold_commit(false);
+    let (result, _) = worker.finish();
+    result.unwrap();
+}
+
 #[test]
 fn restart_skips_a_commit_whose_reply_was_lost() {
     let topic = "ft_recovery_lost_commit";
