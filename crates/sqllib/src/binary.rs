@@ -530,31 +530,40 @@ some_function2!(binary_ends_with, ByteArray, ByteArray, bool);
 #[doc(hidden)]
 pub fn binary_substring2__(source: ByteArray, left: i32) -> ByteArray {
     // SQL indexing starts at 1
-    let start = if left < 1 { 0 } else { left - 1 };
-    let data = source.data.into_iter().skip(start as usize).collect();
-
-    ByteArray { data }
+    let start = if left < 1 { 0 } else { (left - 1) as usize };
+    let slice = source.as_slice();
+    if start >= slice.len() {
+        ByteArray::default()
+    } else {
+        ByteArray::new(&slice[start..])
+    }
 }
 
 some_function2!(binary_substring2, ByteArray, i32, ByteArray);
 
 #[doc(hidden)]
 pub fn binary_substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
-    // SQL indexing starts at 1
-    let start = if left < 1 { 0 } else { left - 1 };
-    if count < 0 {
+    if count <= 0 {
         return ByteArray::default();
     }
-    let count = count as usize;
+    // SQL indexing starts at 1
+    let (start, byte_count) = if left < 1 {
+        // count applies from the start, even if start is negative
+        (
+            0_usize,
+            (count.saturating_add(left).saturating_sub(1)).max(0) as usize,
+        )
+    } else {
+        ((left - 1) as usize, count as usize)
+    };
 
-    let data = source
-        .data
-        .into_iter()
-        .skip(start as usize)
-        .take(count)
-        .collect();
-
-    ByteArray { data }
+    let slice = source.as_slice();
+    if start >= slice.len() || byte_count == 0 {
+        ByteArray::default()
+    } else {
+        let end = (start + byte_count).min(slice.len());
+        ByteArray::new(&slice[start..end])
+    }
 }
 
 some_function3!(binary_substring3, ByteArray, i32, i32, ByteArray);
@@ -607,7 +616,7 @@ pub fn binary_overlay4____(
     } else if position > source.length() as i32 {
         source.concat(&replacement)
     } else {
-        let mut result = binary_substring3___(source.clone(), 0, position - 1);
+        let mut result = binary_substring3___(source.clone(), 1, position - 1);
         result.data.append(&mut replacement.data);
         let mut substr = binary_substring2__(source, position + remove);
         result.data.append(&mut substr.data);
@@ -780,4 +789,81 @@ pub fn test_binary_to_range_key() {
         let inv = u128_to_bytes_N_(u, 2).unwrap();
         assert_eq!(inv, bin);
     }
+}
+
+#[test]
+pub fn test_binary_substring() {
+    let b = ByteArray::new(&[10, 20, 30, 40, 50, 60]);
+
+    // Standard 1-based indexing
+    assert_eq!(binary_substring2__(b.clone(), 1), b);
+    assert_eq!(
+        binary_substring2__(b.clone(), 3),
+        ByteArray::new(&[30, 40, 50, 60])
+    );
+    assert_eq!(binary_substring2__(b.clone(), 6), ByteArray::new(&[60]));
+    assert_eq!(binary_substring2__(b.clone(), 7), ByteArray::default());
+    assert_eq!(binary_substring2__(b.clone(), 100), ByteArray::default());
+
+    // Non-positive starting position starts from beginning
+    assert_eq!(binary_substring2__(b.clone(), 0), b);
+    assert_eq!(binary_substring2__(b.clone(), -5), b);
+
+    // 3-argument substring: normal ranges
+    assert_eq!(
+        binary_substring3___(b.clone(), 1, 3),
+        ByteArray::new(&[10, 20, 30])
+    );
+    assert_eq!(
+        binary_substring3___(b.clone(), 2, 2),
+        ByteArray::new(&[20, 30])
+    );
+    assert_eq!(
+        binary_substring3___(b.clone(), 5, 10),
+        ByteArray::new(&[50, 60])
+    );
+    assert_eq!(binary_substring3___(b.clone(), 7, 2), ByteArray::default());
+
+    // Zero or negative count
+    assert_eq!(binary_substring3___(b.clone(), 1, 0), ByteArray::default());
+    assert_eq!(binary_substring3___(b.clone(), 1, -1), ByteArray::default());
+    assert_eq!(
+        binary_substring3___(b.clone(), 3, -10),
+        ByteArray::default()
+    );
+
+    // Non-positive starting positions with count (SQL standard behavior matching string substring)
+    // left = 0, count = 2 -> window spans [0, 1], so only position 1 (first byte) is extracted
+    assert_eq!(binary_substring3___(b.clone(), 0, 2), ByteArray::new(&[10]));
+    // left = 0, count = 1 -> window spans [0], 0 bytes in range
+    assert_eq!(binary_substring3___(b.clone(), 0, 1), ByteArray::default());
+    // left = -2, count = 5 -> window spans [-2, -1, 0, 1, 2], positions 1 and 2 extracted
+    assert_eq!(
+        binary_substring3___(b.clone(), -2, 5),
+        ByteArray::new(&[10, 20])
+    );
+    // left = -5, count = 3 -> window spans [-5, -4, -3], 0 bytes in range
+    assert_eq!(binary_substring3___(b.clone(), -5, 3), ByteArray::default());
+
+    // Large/overflow edge cases
+    assert_eq!(
+        binary_substring3___(b.clone(), i32::MIN, 5),
+        ByteArray::default()
+    );
+    assert_eq!(binary_substring3___(b.clone(), 1, i32::MAX), b);
+
+    // Overlay tests
+    let repl = ByteArray::new(&[99, 99]);
+    assert_eq!(
+        binary_overlay4____(b.clone(), repl.clone(), 2, 2),
+        ByteArray::new(&[10, 99, 99, 40, 50, 60])
+    );
+    assert_eq!(
+        binary_overlay4____(b.clone(), repl.clone(), 1, 2),
+        ByteArray::new(&[99, 99, 30, 40, 50, 60])
+    );
+    assert_eq!(
+        binary_overlay3___(b.clone(), repl.clone(), 3),
+        ByteArray::new(&[10, 20, 99, 99, 50, 60])
+    );
 }

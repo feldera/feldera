@@ -261,9 +261,10 @@ example.
   </tr>
   <tr>
     <td><a id="substring"></a><code>SUBSTRING (</code> string <code>FROM</code> start <code> [ FOR</code> count<code> ] )</code></td>
-    <td>Extracts the substring of <code>string</code> starting at the <code>start</code>'th character, and stopping after <code>count</code> characters if the value is specified. If <code>start</code> is negative, only <code>max(count + start - 1, 0)</code> characters are returned.  If <code>count</code> is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td>Extracts the substring of <code>string</code> starting at the <code>start</code>'th character, and stopping after <code>count</code> characters if the value is specified. If <code>start</code> is less than 1, only <code>max(count + start - 1, 0)</code> characters are returned.  If <code>count</code> is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
-        <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br></td>
+        <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br>
+        <code>SUBSTRING('Thomas' from 0 for 3)</code> => <code>Th</code><br></br></td>
   </tr>
   <tr>
     <td><a id="trim"></a><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> [<i>characters</i> <code>FROM</code> ] string <code>)</code></td>
