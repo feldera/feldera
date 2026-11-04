@@ -143,11 +143,12 @@
   <!-- Each query and its results form one block on a darker background that hugs its
        content: the 1000px SQL box, or wider results. -->
   <div
-    class="flex w-fit max-w-full min-w-0 flex-col gap-2 rounded-xl border border-line bg-surface-950-50/[0.03] p-2 dark:border-[#3f3f3f] dark:bg-black/20"
+    class="flex w-fit max-w-full min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface-950-50/[0.03] p-2 dark:border-[#3f3f3f] dark:bg-black/20"
   >
     <!-- A header on the block's darker background with the title, the result status and the
          actions; then the framed SQL, which can collapse once the query has run; then results. -->
-    <div class="flex h-8 w-full flex-nowrap items-center gap-2">
+    <!-- As tall as its 24px buttons, so Run sits 8px from the top as from the right. -->
+    <div class="flex h-6 w-full flex-nowrap items-center gap-2">
       {#if result}
         <button
           class="fd fd-chevron-down btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[16px] text-surface-600-400 transition-transform hover:bg-row-hover hover:text-surface-950-50 {collapsed
@@ -219,7 +220,7 @@
     </div>
     {#if !collapsed}
       <div
-        class="relative flex w-[1000px] max-w-full flex-col overflow-hidden rounded-lg border border-surface-200-800 bg-white transition-colors focus-within:border-surface-400-600 dark:bg-[#2a2a2a]"
+        class="relative flex w-[1000px] max-w-full flex-col overflow-hidden rounded border border-surface-200-800 bg-white transition-colors focus-within:border-surface-400-600 dark:bg-[#2a2a2a]"
       >
         <textarea
           bind:value={query}
@@ -307,7 +308,7 @@
                 }
               }}
               <div
-                class="relative scrollbar h-full max-h-[80cqh] w-fit max-w-full overflow-auto rounded-lg border border-line dark:border-[#3f3f3f]"
+                class="relative scrollbar h-full max-h-[80cqh] w-fit max-w-full overflow-auto rounded border border-line dark:border-[#3f3f3f]"
                 use:reverseScroll.action
                 {onscroll}
                 bind:clientHeight={_.clientHeight}

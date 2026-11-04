@@ -585,7 +585,9 @@
     </WarningBanner>
   </div>
 {/if}
-<div class="flex h-full flex-row">
+<!-- On wider screens the list of relations reaches the panel's left and bottom edges, past
+     the 8px the tab content keeps from them, and a line divides it from the records. -->
+<div class="flex flex-row {isMobile.current ? 'h-full' : '-mb-2 -ml-2 h-[calc(100%+0.5rem)]'}">
   {#if isMobile.current}
     <div
       class="bg-white-dark scrollbar flex flex-1 flex-col gap-1 overflow-y-auto rounded pt-2 pl-2 sm:gap-2 sm:p-2"
@@ -607,13 +609,13 @@
     <PaneGroup direction={isMobile.current ? 'vertical' : 'horizontal'} onpaste={ingestPasted}>
       <Pane defaultSize={20} minSize={10} class="flex h-full">
         <div
-          class="bg-white-dark scrollbar flex w-full flex-col overflow-y-auto rounded p-4 text-nowrap"
+          class="scrollbar flex w-full flex-col overflow-y-auto border-r border-line p-4 text-nowrap"
         >
           {@render relationView()}
         </div>
       </Pane>
       <PaneResizer
-        class="my-2 sm:mx-2 sm:my-0 {isMobile.current
+        class="my-2 sm:my-0 sm:mr-2 {isMobile.current
           ? 'pane-divider-horizontal'
           : 'pane-divider-vertical'}"
       ></PaneResizer>

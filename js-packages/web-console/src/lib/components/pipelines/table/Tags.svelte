@@ -418,7 +418,9 @@
   the editing affordances (chips, the "+N" overflow, and the empty-state add
   button all open the popup); without it the row is static display only. -->
 {#snippet inlineTagRow(open?: () => void)}
-  <div class="flex flex-nowrap items-center gap-1 overflow-hidden">
+  <!-- The row clips its overflow, so it reaches 8px left of the cell's content (and pads
+       that back) to keep the add button's hover background, which starts there, whole. -->
+  <div class="-ml-2 flex flex-nowrap items-center gap-1 overflow-hidden pl-2">
     {#each inlineTags as tag (tag)}
       {@render chip(tag, open)}
     {/each}
