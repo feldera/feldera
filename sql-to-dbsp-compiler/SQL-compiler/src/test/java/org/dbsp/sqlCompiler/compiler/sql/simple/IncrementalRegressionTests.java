@@ -714,6 +714,25 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 CREATE VIEW v2 AS SELECT k, ARRAY_AGG(r) AS a FROM t GROUP BY k;""");
     }
 
+    /** The LEFT JOINs of the subqueries in two views read one aggregate.  CSE must merge
+     * the indexes that compute the same value from it, which otherwise have the same
+     * persistent id. */
+    @Test
+    public void issue7832() {
+        this.getCC("""
+                CREATE TABLE e (a VARCHAR NOT NULL, b VARCHAR NOT NULL, c VARCHAR NOT NULL);
+                CREATE TABLE r (a VARCHAR NOT NULL, b VARCHAR NOT NULL, c VARCHAR NOT NULL);
+                CREATE TABLE s (k VARCHAR NOT NULL PRIMARY KEY);
+                CREATE TABLE t (k VARCHAR NOT NULL PRIMARY KEY);
+                CREATE TABLE u (k VARCHAR NOT NULL PRIMARY KEY);
+                CREATE TABLE p (k VARCHAR NOT NULL PRIMARY KEY);
+                CREATE VIEW v1 AS SELECT r.a FROM e, r WHERE r.b = e.b
+                    AND (SELECT MIN(1) FROM s s1, UNNEST(ARRAY[0]) AS x WHERE s1.k = e.a) IS NULL
+                    AND (SELECT MIN(1) FROM s s2, UNNEST(ARRAY[0]) AS x WHERE s2.k = r.a) IS NULL;
+                CREATE VIEW v2 AS SELECT t.k FROM t, u, p WHERE p.k = t.k
+                    AND (SELECT MIN(1) FROM s s3, UNNEST(ARRAY[0]) AS x WHERE s3.k = t.k) IS NULL;""");
+    }
+
     /** Two views differ only in the strictness of a NOW() bound.  CSE must not
      * merge their window operators. */
     @Test

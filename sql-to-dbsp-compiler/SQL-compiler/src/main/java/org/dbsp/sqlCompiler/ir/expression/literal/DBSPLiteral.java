@@ -143,6 +143,11 @@ public abstract class DBSPLiteral extends DBSPExpression
     /** The same literal but with the specified nullability. */
     public abstract DBSPLiteral getWithNullable(boolean mayBeNull);
 
+    /** True if the literal has a form with a nullable type. */
+    public boolean hasNullableForm() {
+        return true;
+    }
+
     @Nullable
     public <T> T checkIfNull(@Nullable T value, boolean mayBeNull) {
         if (!mayBeNull)

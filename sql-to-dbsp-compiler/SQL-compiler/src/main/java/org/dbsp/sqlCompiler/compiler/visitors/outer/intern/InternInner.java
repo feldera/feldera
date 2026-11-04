@@ -337,7 +337,7 @@ public class InternInner extends ExpressionTranslator {
             // The interned type is always nullable; we cannot apply Some to a nullable value.
             this.map(expression, source);
         else
-            this.map(expression, new DBSPSomeExpression(expression.getNode(), source));
+            this.map(expression, source.some(expression.getNode()));
     }
 
     @Override

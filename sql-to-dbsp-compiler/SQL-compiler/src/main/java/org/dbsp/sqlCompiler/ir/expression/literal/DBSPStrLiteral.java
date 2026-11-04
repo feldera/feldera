@@ -83,6 +83,11 @@ public final class DBSPStrLiteral extends DBSPLiteral {
     }
 
     @Override
+    public boolean hasNullableForm() {
+        return false;
+    }
+
+    @Override
     public String toSqlString() {
         throw new InternalCompilerError("unreachable");
     }
