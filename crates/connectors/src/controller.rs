@@ -7474,8 +7474,10 @@ pub struct TransactionInfo {
 
     /// The last transaction that `/commit_transaction` asked to commit.  A
     /// retry of that request succeeds without doing anything.  A request that
-    /// names another transaction up to `last_transaction_id` fails, because
-    /// that transaction can be an automatic or connector transaction, or one
+    /// names any other transaction, except the one that the API has open,
+    /// fails, including an older API commit, because only the last one is
+    /// kept.  We can't accept every ID up to `last_transaction_id`, because
+    /// that ID can belong to an automatic or connector transaction, or to one
     /// that a restart lost.
     last_api_commit: Option<TransactionId>,
 
