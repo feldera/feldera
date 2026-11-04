@@ -1585,6 +1585,9 @@ pub(crate) async fn get_remote_checkpoints(
     ),
     responses(
         (status = ACCEPTED, description = "Started profiling the pipeline with the Samply tool"),
+        (status = BAD_REQUEST
+            , description = "`duration_secs` is not from 1 to 300 (error code `InvalidParam`)"
+            , body = ErrorResponse),
         (status = CONFLICT
             , description = "Samply profile collection is already in progress"
             , body = ErrorResponse),

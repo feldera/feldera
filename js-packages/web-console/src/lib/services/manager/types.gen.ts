@@ -9089,6 +9089,10 @@ export type StartSamplyProfileData = {
 
 export type StartSamplyProfileErrors = {
   /**
+   * `duration_secs` is not from 1 to 300 (error code `InvalidParam`)
+   */
+  400: ErrorResponse
+  /**
    * Pipeline with that name does not exist
    */
   404: ErrorResponse

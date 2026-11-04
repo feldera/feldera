@@ -5502,6 +5502,16 @@
           "202": {
             "description": "Started profiling the pipeline with the Samply tool"
           },
+          "400": {
+            "description": "`duration_secs` is not from 1 to 300 (error code `InvalidParam`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Pipeline with that name does not exist",
             "content": {
