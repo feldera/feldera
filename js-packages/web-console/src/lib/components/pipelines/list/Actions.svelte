@@ -1106,7 +1106,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
   {#if storageStatus === 'Clearing'}
     <div
-      class="flex h-6 items-center gap-1 rounded-sm px-2 text-[12px] leading-4 text-nowrap {basicBtnColor}"
+      class="flex h-6 items-center gap-1 rounded-sm px-2 text-sm leading-4 text-nowrap {basicBtnColor}"
     >
       <IconLoader class="h-4 w-4 flex-none animate-spin fill-current"></IconLoader>
       Clearing storage…
@@ -1114,7 +1114,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     <Tooltip placement="top">Clearing pipeline storage, including any checkpoints.</Tooltip>
   {:else if storageStatus === 'InUse' && canExec.allowed}
     <div
-      class="flex h-6 items-center gap-1 rounded-sm pl-2 text-[12px] leading-4 text-nowrap text-surface-700-300 {basicBtnColor}"
+      class="flex h-6 items-center gap-1 rounded-sm pl-2 text-sm leading-4 text-nowrap text-surface-700-300 {basicBtnColor}"
     >
       <span class="fd fd-database text-[16px]"></span>
       <span class={compactLabel.storage}>Storage in use</span>
@@ -1136,7 +1136,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     </Tooltip>
   {:else}
     <div
-      class="flex h-6 items-center gap-1 px-2 text-[12px] leading-4 text-nowrap text-surface-700-300"
+      class="flex h-6 items-center gap-1 px-2 text-sm leading-4 text-nowrap text-surface-700-300"
     >
       <span class="fd {storageStatus === 'InUse' ? 'fd-database' : 'fd-database-off'} text-[16px]"
       ></span>

@@ -424,11 +424,11 @@
          The graph's toolbar takes the panels' background instead of a grey band, and is
          12px tall above and below its fields, with the same bottom line as the SQL panel's tabs. The SQL panel's layout icon is 16px, like the
          other icons. The SQL editor fills its panel, so no strip of the panel's grey frames it.
-         In dark mode the dividers sit between two #2a2a2a panels, where the translucent line
-         colour vanishes, so they take its colour over #2a2a2a, as the toolbar's bottom line does. The Metrics panel's second row of controls starts at
+         In dark mode the dividers sit between two panels, where the translucent line
+         colour vanishes, so they take the panels' own line colour, as the toolbar's bottom line does. The Metrics panel's second row of controls starts at
          the panel's edge, in line with the tabs and the stat cards above and below it. -->
     <div
-      class="min-h-0 flex-1 [&_.fd-layout-panel-left]:text-[16px]! [&_.fd-layout-panel-top]:text-[16px]! [&_.pane-divider-horizontal]:my-0! [&_.pane-divider-horizontal]:h-px! [&_.pane-divider-horizontal]:bg-line dark:[&_.pane-divider-horizontal]:bg-[#3f3f3f] [&_.pane-divider-vertical]:mx-0! [&_.pane-divider-vertical]:w-px! [&_.pane-divider-vertical]:bg-line dark:[&_.pane-divider-vertical]:bg-[#3f3f3f] [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>.flex-wrap>.px-2]:px-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-0 [&_.panel[data-scope=tabs]]:px-0! [&_.panel[data-scope=tabs]]:pb-0! [&_.rounded-container]:rounded-none! [&_.rounded-container]:bg-white! dark:[&_.rounded-container]:bg-[#2a2a2a]! [&_.rounded-container>.flex-shrink-0]:border-b [&_.rounded-container>.flex-shrink-0]:border-line [&_.rounded-container>.flex-shrink-0]:py-3!"
+      class="min-h-0 flex-1 [&_.fd-layout-panel-left]:text-[16px]! [&_.fd-layout-panel-top]:text-[16px]! [&_.pane-divider-horizontal]:my-0! [&_.pane-divider-horizontal]:h-px! [&_.pane-divider-horizontal]:bg-panel-line [&_.pane-divider-vertical]:mx-0! [&_.pane-divider-vertical]:w-px! [&_.pane-divider-vertical]:bg-panel-line [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>.flex-wrap>.px-2]:px-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-0 [&_.panel[data-scope=tabs]]:px-0! [&_.panel[data-scope=tabs]]:pb-0! [&_.rounded-container]:rounded-none! [&_.rounded-container]:bg-panel! [&_.rounded-container>.flex-shrink-0]:border-b [&_.rounded-container>.flex-shrink-0]:border-line [&_.rounded-container>.flex-shrink-0]:py-3!"
     >
       <SupportBundleViewerLayout
         profileData={profile}

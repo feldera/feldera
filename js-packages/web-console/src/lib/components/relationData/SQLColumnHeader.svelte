@@ -40,7 +40,7 @@
 <th
   class="whitespace-nowrap {isSticky
     ? 'sticky top-0 z-10'
-    : ''} px-3 text-[12px] font-medium text-surface-800-200 {isNumeric
+    : ''} px-3 text-sm font-medium text-surface-800-200 {isNumeric
     ? 'text-right'
     : 'text-left'} {_class}"
   {style}

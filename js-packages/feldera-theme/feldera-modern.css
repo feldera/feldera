@@ -350,6 +350,24 @@
   --color-inset: #f8f8f7;
   /* The olive line of the throughput, memory and storage charts. */
   --color-chart-line: #6a6e4f;
+  /* Raised surfaces in a panel, such as dialogs, ad-hoc query editors and sticky table
+     headers: white here, a lighter grey than the page in dark mode, and the line that
+     edges and divides them. Utilities such as `bg-panel` and `border-panel-line`. */
+  --color-panel: #ffffff;
+  --color-panel-line: var(--color-line);
+  /* The olive accent of links and icons on the home page, its hover, and the tint
+     behind an accent icon. */
+  --color-accent: #6f7158;
+  --color-accent-hover: #5c5f43;
+  --color-accent-subtle: #858a6226;
+  /* The Feldera logo on a light page. */
+  --color-logo: #3d4030;
+  /* Hover on cards that sit on the page, such as the use-case tiles. */
+  --color-card-hover: #f4f4ef;
+  /* Inputs, selects and outlined buttons: white, so they stand out on grey bars. */
+  --color-control: #ffffff;
+  /* The bar that runs along the top of the page while a page loads. */
+  --color-progress: #999b85;
 }
 
 /* Dark counterparts of the status tones (Radix dark steps 11 and 3). */
@@ -381,6 +399,13 @@
   --color-line: rgb(255 255 255 / 0.1);
   --color-inset: var(--color-dark);
   --color-chart-line: #a9bab2;
+  --color-panel: #2a2a2a;
+  --color-panel-line: #3f3f3f;
+  --color-accent: #b4c2bb;
+  --color-accent-hover: #ccd8d2;
+  --color-accent-subtle: #7d8f8733;
+  --color-card-hover: var(--color-surface-950);
+  --color-control: var(--color-dark);
 }
 
 /* ── Tabs ────────────────────────────────────────────────────────────────────

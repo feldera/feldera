@@ -17,7 +17,7 @@
 
 {#if demo}
   <button
-    class="flex flex-col card rounded-[8px] border border-line bg-page p-4 text-left transition-colors hover:bg-[#f4f4ef] disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-row-hover"
+    class="flex flex-col card rounded-[8px] border border-line bg-page p-4 text-left transition-colors hover:bg-card-hover disabled:pointer-events-none disabled:opacity-50"
     disabled={!enabled}
     onclick={() => tryPipeline(demo, placement)}
   >

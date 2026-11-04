@@ -146,7 +146,7 @@
 </script>
 
 <div class="absolute flex h-full w-full flex-col pt-2">
-  <div class="px-2 pb-2 text-[12px] leading-[18px] whitespace-nowrap">
+  <div class="px-2 pb-2 text-sm whitespace-nowrap">
     Throughput: {formatQty(throughput.current, 'rounded')} records/s
   </div>
   <!-- The chart takes only the height left under the title, so its axis labels stay inside the card. -->

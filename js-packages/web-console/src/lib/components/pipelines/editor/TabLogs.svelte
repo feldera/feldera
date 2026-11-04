@@ -372,7 +372,7 @@
 
 <div class="relative flex h-full flex-1 flex-col rounded">
   {#if logSearchBar}
-    <div class="shrink-0 border-b border-line px-3 py-2 dark:border-[#3f3f3f]">
+    <div class="shrink-0 border-b border-panel-line px-3 py-2">
       {@render logSearchBar()}
     </div>
   {/if}

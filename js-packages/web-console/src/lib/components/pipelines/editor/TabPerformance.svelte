@@ -373,7 +373,7 @@
             </div>
             <div class="flex w-full flex-col gap-2 xl:flex-row">
               <div
-                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-[#3f3f3f]"
+                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-panel-line"
               >
                 <PipelineThroughputGraph
                   {pipeline}
@@ -383,7 +383,7 @@
                 ></PipelineThroughputGraph>
               </div>
               <div
-                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-[#3f3f3f]"
+                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-panel-line"
               >
                 <PipelineMemoryGraph
                   {pipeline}
@@ -394,7 +394,7 @@
                 ></PipelineMemoryGraph>
               </div>
               <div
-                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-[#3f3f3f]"
+                class="relative h-52 w-full max-w-[700px] rounded-lg bg-inset dark:border dark:border-panel-line"
               >
                 <PipelineStorageGraph
                   {pipeline}

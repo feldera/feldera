@@ -231,7 +231,7 @@
 
 <div class="absolute flex h-full w-full flex-col pt-2">
   <div class="flex items-center justify-between gap-2 px-2 pb-2">
-    <span class="text-[12px] leading-[18px]">Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}</span>
+    <span class="text-sm">Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}</span>
     {#if pressureChip}
       <div class="pointer-events-none flex h-5 rounded px-2 text-sm {pressureChip.class}">
         {pressureChip.label}

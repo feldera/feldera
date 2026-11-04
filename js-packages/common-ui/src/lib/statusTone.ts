@@ -36,7 +36,7 @@ export interface StatusColors {
  * status and the commit progress chips. Combine it with a tone's `chip` colours.
  */
 export const statusChipClass =
-  'inline-flex items-center rounded-[3px] px-1.5 py-0.5 text-[12px] leading-4 font-medium tracking-[0.04px] whitespace-nowrap'
+  'inline-flex items-center rounded-[3px] px-1.5 py-0.5 text-sm leading-4 font-medium tracking-[0.04px] whitespace-nowrap'
 
 /**
  * The shape of a numeric badge next to a tab label or filter, such as an error
@@ -44,7 +44,7 @@ export const statusChipClass =
  * it with a tone's `chip` colours.
  */
 export const statusCounterClass =
-  'inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] px-1 align-middle text-[11px] leading-none font-medium tabular-nums'
+  'inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] px-1 align-middle text-counter font-medium tabular-nums'
 
 // Class names are spelled out in full so that Tailwind can find them in the source.
 export const statusToneColors: Record<StatusTone, StatusColors> = {

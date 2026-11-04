@@ -143,7 +143,7 @@
   <!-- Each query and its results form one block on a darker background that hugs its
        content: the 1000px SQL box, or wider results. -->
   <div
-    class="flex w-fit max-w-full min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface-950-50/[0.03] p-2 dark:border-[#3f3f3f] dark:bg-black/20"
+    class="flex w-fit max-w-full min-w-0 flex-col gap-2 rounded-lg border border-panel-line bg-surface-950-50/[0.03] p-2 dark:bg-black/20"
   >
     <!-- A header on the block's darker background with the title, the result status and the
          actions; then the framed SQL, which can collapse once the query has run; then results. -->
@@ -220,13 +220,13 @@
     </div>
     {#if !collapsed}
       <div
-        class="relative flex w-[1000px] max-w-full flex-col overflow-hidden rounded border border-surface-200-800 bg-white transition-colors focus-within:border-surface-400-600 dark:bg-[#2a2a2a]"
+        class="relative flex w-[1000px] max-w-full flex-col overflow-hidden rounded border border-surface-200-800 bg-panel transition-colors focus-within:border-surface-400-600"
       >
         <textarea
           bind:value={query}
           style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
           wrap={wrapSql ? 'soft' : 'off'}
-          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 text-[13px] leading-5 text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {sqlMinimized
+          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 text-md text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {sqlMinimized
             ? 'max-h-[80px] resize-none'
             : 'resize-y'} {wrapSql ? '' : 'whitespace-pre'}"
           placeholder="SELECT * FROM ..."
@@ -308,7 +308,7 @@
                 }
               }}
               <div
-                class="relative scrollbar h-full max-h-[80cqh] w-fit max-w-full overflow-auto rounded border border-line dark:border-[#3f3f3f]"
+                class="relative scrollbar h-full max-h-[80cqh] w-fit max-w-full overflow-auto rounded border border-panel-line"
                 use:reverseScroll.action
                 {onscroll}
                 bind:clientHeight={_.clientHeight}
@@ -317,20 +317,18 @@
                      every row stays exactly 28px for the virtual list. -->
                 <table
                   style:height
-                  class="w-fit border-separate border-spacing-0 [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--color-line)] dark:[&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_#3f3f3f] [&_th]:shadow-[inset_0_-1px_0_var(--color-line)] dark:[&_th]:shadow-[inset_0_-1px_0_#3f3f3f]"
+                  class="w-fit border-separate border-spacing-0 [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--color-panel-line)] [&_th]:shadow-[inset_0_-1px_0_var(--color-panel-line)]"
                   use:keepMaxWidth
                 >
                   {#if result.columns.length}
                     <thead>
                       <tr>
                         <th
-                          class="sticky top-0 z-10 bg-white px-3 text-right font-normal text-surface-500 dark:bg-[#2a2a2a] {itemHeight}"
+                          class="sticky top-0 z-10 bg-panel px-3 text-right font-normal text-surface-500 {itemHeight}"
                           >#</th
                         >
                         {#each result.columns as column}
-                          <SqlColumnHeader
-                            {column}
-                            class="sticky top-0 z-10 bg-white dark:bg-[#2a2a2a] {itemHeight}"
+                          <SqlColumnHeader {column} class="sticky top-0 z-10 bg-panel {itemHeight}"
                           ></SqlColumnHeader>
                         {/each}
                       </tr>

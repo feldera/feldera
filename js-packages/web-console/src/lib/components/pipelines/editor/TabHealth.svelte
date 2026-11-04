@@ -52,7 +52,7 @@
      "Previous incidents" heading takes the panel colour so it covers rows scrolling under it. -->
 <div
   data-testid="box-pipeline-health"
-  class="flex h-full flex-nowrap overflow-hidden [&_.sticky]:bg-white! dark:[&_.sticky]:bg-[#2a2a2a]!"
+  class="flex h-full flex-nowrap overflow-hidden [&_.sticky]:bg-panel!"
 >
   <PipelineEventHistory
     {events}

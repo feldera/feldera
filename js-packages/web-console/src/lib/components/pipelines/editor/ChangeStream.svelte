@@ -99,7 +99,7 @@
              inset shadows, so every row stays exactly 28px. -->
         <table
           style:height
-          class="border-separate border-spacing-0 text-[13px] [&_td]:shadow-[inset_0_-1px_0_var(--color-line)] dark:[&_td]:shadow-[inset_0_-1px_0_#3f3f3f] [&_th]:shadow-[inset_0_-1px_0_var(--color-line)] dark:[&_th]:shadow-[inset_0_-1px_0_#3f3f3f]"
+          class="border-separate border-spacing-0 text-md [&_td]:shadow-[inset_0_-1px_0_var(--color-panel-line)] [&_th]:shadow-[inset_0_-1px_0_var(--color-panel-line)]"
         >
           <tbody>
             {@render children()}
@@ -119,13 +119,12 @@
         <tr class="h-7" style="{style} {padding}" use:growOnlyColumns={row.relationName}>
           <!-- The header sits on the panel colour and keeps it while pinned to the top. -->
           <th
-            class="bg-white px-3 text-left text-[12px] font-semibold dark:bg-[#2a2a2a] {isSticky
+            class="bg-panel px-3 text-left text-sm font-semibold {isSticky
               ? 'sticky top-0 z-10'
               : ''}">{row.relationName}</th
           >
           {#each row.columns as column}
-            <SqlColumnHeader {column} {isSticky} class="bg-white dark:bg-[#2a2a2a]"
-            ></SqlColumnHeader>
+            <SqlColumnHeader {column} {isSticky} class="bg-panel"></SqlColumnHeader>
           {/each}
         </tr>
       {:else}

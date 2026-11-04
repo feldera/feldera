@@ -324,7 +324,7 @@
           >
           <ThSort class={resizableTh} {table} field="name" {...sortColumn('name')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Pipeline name</span
             >{@render resizer('name', 'Pipeline name')}</ThSort
           >
@@ -340,19 +340,19 @@
                 .exhaustive()}
             {...sortColumn('storage')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Storage</span
             >{@render resizer('storage', 'Storage')}</ThSort
           >
           <ThSort {table} class={resizableTh} field="status" {...sortColumn('status')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Status</span
             >{@render resizer('status', 'Status')}</ThSort
           >
           <th class="{resizableTh} text-left" bind:offsetWidth={messageFilledWidth}
             ><span
-              class="block w-0 min-w-full truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="block w-0 min-w-full truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Message</span
             >{@render resizer('message', 'Message')}</th
           >
@@ -364,7 +364,7 @@
             field={(p) => [...p.tags].sort().join(', ')}
             {...sortColumn('tags')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Tags</span
             >{@render resizer('tags', 'Tags')}</ThSort
           >
@@ -374,7 +374,7 @@
             field="platformVersion"
             {...sortColumn('platformVersion')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Runtime</span
             >{@render resizer('runtime', 'Runtime')}</ThSort
           >
@@ -384,7 +384,7 @@
             field={(p) => p.connectors?.numErrors}
             {...sortColumn('numErrors')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Errors</span
             >{@render resizer('errors', 'Errors')}</ThSort
           >
@@ -394,7 +394,7 @@
             field="lastStatusSince"
             {...sortColumn('lastStatusSince')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Status changed</span
             >{@render resizer('statusChanged', 'Status changed')}</ThSort
           >
@@ -404,7 +404,7 @@
             field="deploymentResourcesStatusSince"
             {...sortColumn('deploymentResourcesStatusSince')}
             ><span
-              class="truncate font-dm-mono text-[12px] font-normal tracking-[0.1em] text-surface-600-400 uppercase"
+              class="truncate font-dm-mono text-sm font-normal tracking-[0.1em] text-surface-600-400 uppercase"
               >Deployed on</span
             >{@render resizer('deployedOn', 'Deployed on')}</ThSort
           >
