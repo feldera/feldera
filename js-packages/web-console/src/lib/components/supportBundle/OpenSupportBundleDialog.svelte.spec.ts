@@ -438,7 +438,7 @@ describe('OpenSupportBundleDialog.svelte', () => {
   })
 
   describe('picking a bundle from disk', () => {
-    it('picks straight from the button and confirms in the popup', async () => {
+    it('picks straight from the button and lists the bundle to open from there', async () => {
       const { dialog } = await openDialog()
       vi.stubGlobal(
         'showOpenFilePicker',
@@ -447,82 +447,57 @@ describe('OpenSupportBundleDialog.svelte', () => {
 
       click(dialog.querySelector('[data-testid=btn-pick-support-bundle]'))
 
-      // No menu stands between the button and the file picker here, because in this
-      // mode the popup holds nothing but the confirmation.
-      await expect
-        .poll(() => dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
-        .toBeTruthy()
-      expect(dialog.querySelector('[data-testid=btn-upload-support-bundle]')).toBe(null)
-      expect(dialog.querySelector('[data-testid=btn-download-support-bundle]')).toBe(null)
-      expect(dialog.textContent).toContain('picked.zip')
-      // The confirmation opens upwards, because the button it hangs from sits at the
-      // bottom edge of the dialog and a downward popup would be off screen.
-      const pick = dialog.querySelector<HTMLElement>('[data-testid=btn-pick-support-bundle]')!
-      const confirm = dialog.querySelector<HTMLElement>('[data-testid=box-support-bundle-menu]')!
-      expect(confirm.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-        pick.getBoundingClientRect().top + 1
-      )
-      expect(confirm.getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
-      // Opening the viewer needs a click of its own, or the browser blocks the new
-      // tab as a popup.
-      expect(openStoredBundleTab).not.toHaveBeenCalled()
-
-      // Picking remembers the bundle, so the list shows it and the viewer points at
-      // the history entry.
-      await expect.poll(async () => (await listBundleHistory())[0].name).toBe('picked.zip')
-      const { id } = (await listBundleHistory())[0]
+      // Picking remembers the bundle, so the list shows it on top, and the viewer points
+      // at the history entry.
       await expect.poll(() => listedNames(dialog)[0]).toBe('picked.zip')
+      const { id } = (await listBundleHistory())[0]
+      // No menu and no confirmation stand between the pick and the list: the row is
+      // the click the browser needs before it opens a tab.
+      expect(dialog.querySelector('[data-testid=box-support-bundle-confirm]')).toBe(null)
+      expect(dialog.querySelector('[data-testid=box-support-bundle-menu]')).toBe(null)
+      expect(openStoredBundleTab).not.toHaveBeenCalled()
+      expect(useGlobalDialog().dialog).not.toBe(null)
 
-      click(dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
+      click(listedRows(dialog)[0])
 
       // The viewer re-reads the file itself, so no bytes are handed over.
-      expect(openStoredBundleTab).toHaveBeenCalledWith(id)
+      await expect.poll(() => openStoredBundleTab.mock.calls).toContainEqual([id])
       expect(openUploadBundleTab).not.toHaveBeenCalled()
-      expect(useGlobalDialog().dialog).toBe(null)
     })
 
-    it('confirms the file chosen last, and nothing when the picker is dismissed', async () => {
+    it('lists the file chosen last, and nothing when the picker is dismissed', async () => {
       const { dialog } = await openDialog()
       const pick = () => click(dialog.querySelector('[data-testid=btn-pick-support-bundle]'))
-      const confirmation = () =>
-        dialog.querySelector<HTMLElement>('[data-testid=btn-confirm-view-profile]')
-      const confirmedName = () =>
-        dialog.querySelector<HTMLElement>('[data-testid=box-support-bundle-menu]')?.textContent
       vi.stubGlobal(
         'showOpenFilePicker',
         vi.fn(async () => [fakeHandle('picked.zip')])
       )
 
       pick()
-      await expect.poll(confirmation).toBeTruthy()
-      expect(confirmedName()).toContain('picked.zip')
+      await expect.poll(() => listedNames(dialog)[0]).toBe('picked.zip')
+      const listed = listedNames(dialog)
 
       // Choosing again and then dismissing the picker: the API reports a dismissal by
-      // throwing, so the second click leaves nothing to confirm.
-      vi.stubGlobal(
-        'showOpenFilePicker',
-        vi.fn(async () => {
-          throw new DOMException('The user aborted a request.', 'AbortError')
-        })
-      )
+      // throwing, which is not a failure to report, and the list stays as it was.
+      const dismissed = vi.fn(async () => {
+        throw new DOMException('The user aborted a request.', 'AbortError')
+      })
+      vi.stubGlobal('showOpenFilePicker', dismissed)
       pick()
-
-      // The confirmation named a file the user has moved on from, so it goes, and a
-      // dismissed picker is not a failure to report.
-      await expect.poll(confirmation).toBe(null)
-      expect(openStoredBundleTab).not.toHaveBeenCalled()
+      await expect.poll(() => dismissed.mock.calls.length).toBe(1)
+      await new Promise((resolve) => setTimeout(resolve, 20))
       expect(toastError).not.toHaveBeenCalled()
+      expect(listedNames(dialog)).toEqual(listed)
 
-      // The next file takes its place, rather than reviving the one before it.
+      // The next file heads the list.
       vi.stubGlobal(
         'showOpenFilePicker',
         vi.fn(async () => [fakeHandle('second.zip')])
       )
       pick()
 
-      await expect.poll(confirmation).toBeTruthy()
-      expect(confirmedName()).toContain('second.zip')
-      expect(confirmedName()).not.toContain('picked.zip')
+      await expect.poll(() => listedNames(dialog)[0]).toBe('second.zip')
+      expect(openStoredBundleTab).not.toHaveBeenCalled()
     })
 
     /**
@@ -539,11 +514,6 @@ describe('OpenSupportBundleDialog.svelte', () => {
       transfer.items.add(file)
       input.files = transfer.files
       input.dispatchEvent(new Event('change', { bubbles: true }))
-
-      await expect
-        .poll(() => dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
-        .toBeTruthy()
-      click(dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
     }
 
     it('remembers a bundle the file input handed over', async () => {
@@ -552,12 +522,14 @@ describe('OpenSupportBundleDialog.svelte', () => {
       const { dialog } = await openDialog()
 
       await pickThroughInput(dialog, new File(['bundle contents'], 'from-input.zip'))
+      await expect.poll(() => listedNames(dialog)[0]).toBe('from-input.zip')
+      click(listedRows(dialog)[0])
 
       const stored = (await listBundleHistory()).find((b) => b.name === 'from-input.zip')!
       expect(stored).toBeTruthy()
       // The viewer reads the copy, so nothing is handed over and the bundle stays in
       // the history.
-      expect(openStoredBundleTab).toHaveBeenCalledWith(stored.id)
+      await expect.poll(() => openStoredBundleTab.mock.calls).toContainEqual([stored.id])
       expect(openUploadBundleTab).not.toHaveBeenCalled()
       expect((await listBundleHistory())[0].name).toBe('from-input.zip')
     })
@@ -569,6 +541,12 @@ describe('OpenSupportBundleDialog.svelte', () => {
       const { dialog } = await openDialog()
 
       await pickThroughInput(dialog, new File(['bundle contents'], 'huge.zip'))
+      // With nothing in the list to click, the footer asks for the click instead.
+      await expect
+        .poll(() => dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
+        .toBeTruthy()
+      expect(dialog.textContent).toContain('huge.zip')
+      click(dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
 
       // With nothing in the history to point the viewer at, the bytes go to the new
       // tab.

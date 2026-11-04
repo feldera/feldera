@@ -2,9 +2,9 @@
   /**
    * The "Open support bundle" dialog. Put it in `useGlobalDialog().dialog` to show it.
    *
-   * It lists the bundles the user opened before, and the button at the bottom
-   * left of it picks a new one from disk. Both open a profile viewer tab, and that tab
-   * reads the archive out of the bundle history itself.
+   * It lists the bundles the user opened or uploaded before, and the button at the bottom
+   * left of it uploads a new one from disk into that list. A click on a bundle opens a
+   * profile viewer tab, and that tab reads the archive out of the bundle history itself.
    */
   import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
   import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
@@ -90,6 +90,9 @@
    * archives instead. The title says so, because those copies occupy the browser storage
    * until the user clears the history.
    */
+  /** Whether a picked bundle waits for confirmation in the footer. */
+  let confirming = $state(false)
+
   const historyTitle = isBundleCacheRequired()
     ? 'Recent support bundles (cached in the browser)'
     : 'Recent support bundles'
@@ -103,8 +106,10 @@
     data-testid="box-all-bundles"
   >
     {#each history.current as entry (entry.id)}
+      <!-- The page's row hover is darker than the dialog in dark mode, so the row tints
+           with a translucent grey that shows on either. -->
       <button
-        class="flex min-w-0 items-baseline justify-between gap-6 rounded px-2 py-2 text-left hover:bg-row-hover"
+        class="group flex min-w-0 items-baseline justify-between gap-6 rounded px-2 py-2 text-left hover:bg-surface-950-50/[0.06] focus-visible:bg-surface-950-50/[0.06]"
         title={entry.name}
         onclick={() => openBundle(entry)}
         data-testid="btn-open-bundle-from-list"
@@ -113,12 +118,21 @@
              carries the whole name, for the tooltip. -->
         <span class="min-w-0 truncate" data-testid="box-bundle-name">{entry.name}</span>
         <!-- Keeps its width and its place at the row's right edge. The name gives up
-         the space instead. -->
-        <span
-          class="shrink-0 whitespace-nowrap text-surface-700-300"
-          data-testid="box-bundle-opened-ago"
-        >
-          {formatElapsedTime(new Date(entry.openedAt), 'dhm').trim()} ago
+             the space instead. On hover the time gives way to what a click does; both
+             share one grid cell, so the row keeps its width either way. -->
+        <span class="grid shrink-0 justify-items-end whitespace-nowrap">
+          <span
+            class="col-start-1 row-start-1 text-surface-700-300 group-hover:invisible group-focus-visible:invisible"
+            data-testid="box-bundle-opened-ago"
+          >
+            {formatElapsedTime(new Date(entry.openedAt), 'dhm').trim()} ago
+          </span>
+          <span
+            class="invisible col-start-1 row-start-1 font-medium group-hover:visible group-focus-visible:visible"
+            aria-hidden="true"
+          >
+            Open profile
+          </span>
         </span>
       </button>
     {:else}
@@ -144,10 +158,11 @@
     {/each}
   </div>
   <div class="flex {history.current.length ? 'justify-between' : 'justify-center'}">
-    <!-- This button opens the file picker immediately. The popup then shows a
-         confirm button, because the browser opens the viewer tab
-         only after receiving a "user activation" from a new click. -->
-    <SupportBundlePopup mode="pick" align="left" drop="up" onOpened={closeDialog}>
+    <!-- This button opens the file picker immediately. The picked bundle then heads the
+         list above, and a click on it opens the viewer tab: the browser opens a tab only
+         from a click of its own, a "user activation", and the pick used this one up.
+         A bundle the history could not keep is confirmed in the button's place. -->
+    <SupportBundlePopup mode="pick" bind:confirming onOpened={closeDialog}>
       {#snippet trigger(pick)}
         <button
           class="btn h-8 {history.current.length
@@ -161,8 +176,9 @@
         </button>
       {/snippet}
     </SupportBundlePopup>
-    <!-- Only offered when there is something to clear. -->
-    {#if history.current.length}
+    <!-- Only offered when there is something to clear, and not while the confirmation
+         needs the footer's width. -->
+    {#if history.current.length && !confirming}
       <button
         class="btn h-8 preset-outlined-surface-200-800"
         onclick={clearHistory}

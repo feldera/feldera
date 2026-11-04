@@ -4,7 +4,9 @@
    *   - `mode="menu"` - the pipeline editor's split button: the dropdown holds the download entry,
    *     the "collect new data" toggle, and the button to upload a bundle from disk.
    *   - `mode="pick"` - the "Open support bundle" dialog's button: the trigger opens the system
-   *     file picker right away, and the dropdown holds only the confirmation.
+   *     file picker right away. The picked bundle goes into the history, which the caller
+   *     lists, so it needs no confirmation. Only a bundle the history could not keep is
+   *     confirmed, in the trigger's place rather than in a dropdown, so it covers nothing.
    *
    * A profile from the  bundle is opened in a new window. When the bundle is chosen from disk
    * the "user activation" - a browser term - from a click is lost because the click is used
@@ -40,6 +42,11 @@
      * its container, where a downward dropdown would hide below the viewport.
      */
     drop?: 'down' | 'up'
+    /**
+     * Pick mode only: whether a picked bundle waits for confirmation, so the caller can
+     * make room for the confirmation that replaces the trigger.
+     */
+    confirming?: boolean
     /** Runs once the viewer tab is open, so a caller such as a dialog can close itself. */
     onOpened?: () => void
     /** Menu mode only; when omitted the menu offers no download. */
@@ -57,6 +64,7 @@
     mode = 'menu',
     align = 'right',
     drop = 'down',
+    confirming = $bindable(false),
     onOpened,
     onDownload,
     collectNewData = $bindable(false),
@@ -74,11 +82,21 @@
   let picked: PickedBundle | null = $state(null)
   let showDropdown = $state(false)
 
+  $effect(() => {
+    confirming = picked !== null
+  })
+
   const reportError = (scope: string) => (e: unknown) =>
     toast.toastError(scope)(e instanceof Error ? e : new Error(String(e)), 8000)
 
-  /** Shows the confirmation for a bundle the user chose. */
+  /**
+   * Shows the confirmation for a bundle the user chose. In pick mode a bundle that went
+   * into the history needs none: the caller's list shows it, and a click on it opens it.
+   */
   function confirmPicked(bundle: PickedBundle) {
+    if (mode === 'pick' && bundle.bundleId !== undefined) {
+      return
+    }
     picked = bundle
     showDropdown = true
   }
@@ -181,18 +199,23 @@
   data-testid="input-upload-support-bundle"
 />
 
-<Popup
-  {wrapperClass}
-  bind:isOpen={showDropdown}
-  trigger={mode === 'pick' ? pickTrigger : trigger}
-  content={dropdown}
-/>
-
-<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens once
-     there is something to confirm. -->
-{#snippet pickTrigger(_toggle: () => void, isOpen: boolean)}
-  {@render trigger(pickBundle, isOpen)}
-{/snippet}
+{#if mode === 'pick'}
+  <!-- The trigger picks instead of toggling, and the confirmation takes its place once
+       there is something to confirm. -->
+  {#if picked}
+    <SupportBundleConfirm
+      variant="inline"
+      name={picked.name}
+      {confirmLabel}
+      onConfirm={openViewerTab}
+      onDismiss={dismissPicked}
+    />
+  {:else}
+    {@render trigger(pickBundle, false)}
+  {/if}
+{:else}
+  <Popup {wrapperClass} bind:isOpen={showDropdown} {trigger} content={dropdown} />
+{/if}
 
 {#snippet dropdown(close: () => void)}
   <div
@@ -203,17 +226,13 @@
       : 'left-0'} {drop === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}"
     data-testid="box-support-bundle-menu"
   >
-    {#if mode === 'pick'}
-      {@render confirmPage()}
-    {:else}
-      <SlidingPanels
-        current={picked ? 'confirm' : 'menu'}
-        pages={[
-          { key: 'menu', content: menuPage },
-          { key: 'confirm', content: confirmPage }
-        ]}
-      />
-    {/if}
+    <SlidingPanels
+      current={picked ? 'confirm' : 'menu'}
+      pages={[
+        { key: 'menu', content: menuPage },
+        { key: 'confirm', content: confirmPage }
+      ]}
+    />
   </div>
 
   {#snippet menuPage()}
