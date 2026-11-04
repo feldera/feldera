@@ -1486,11 +1486,14 @@ impl Controller {
         //
         // In experiments, a busy worker thread can emit over 1,000 markers per
         // second.  Round that up to 2,000 to allow for expansion, then
-        // quadruple it to allow for other threads.
+        // quadruple it to allow for other threads.  Markers past the limit are
+        // dropped, so a fixed ceiling keeps many workers from using too much.
+        const MAX_MARKER_MEMORY: usize = 1 << 30;
         let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 4);
         let memory_limit = markers_per_second
             .saturating_mul(Span::BYTES)
-            .saturating_mul(duration as usize);
+            .saturating_mul(duration as usize)
+            .min(MAX_MARKER_MEMORY);
 
         let capture = CaptureOptions::new()
             .with_memory_limit(Some(memory_limit))
