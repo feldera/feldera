@@ -111,9 +111,9 @@ runtime configuration fields cannot be edited:
 - `resources.storage_class`
 - `clock_timezone_offset`
 
-#### Storage limits
+#### Resource limits
 
-On Kubernetes, an administrator can limit pipeline storage in the
+On Kubernetes, an administrator can limit pipeline memory and storage in the
 [Helm chart](/get-started/enterprise/helm-chart-reference#kubernetes-runner):
 
 | Runtime configuration field | Helm values |
@@ -121,11 +121,14 @@ On Kubernetes, an administrator can limit pipeline storage in the
 | `resources.storage_class` | `kubernetesRunner.enableStorageClassNamesSupported`, `kubernetesRunner.storageClassNamesSupported` |
 | `resources.volume_attributes_class` | `kubernetesRunner.enableVolumeAttributesClassNamesSupported`, `kubernetesRunner.volumeAttributesClassNamesSupported` |
 | `resources.storage_min`, `resources.storage_max` | `kubernetesRunner.upperLimitStorageMegabyte` |
+| Both `resources.storage_min` and `resources.storage_max` (storage autoscaling) | `kubernetesRunner.enableStorageAutoscaling` |
+| `resources.memory_min`, `resources.memory_max` | `kubernetesRunner.upperLimitMemoryMegabyte` |
 
 `POST`, `PUT`, and `PATCH` refuse a `runtime_config` with a value outside these limits, with a 400
 `InvalidRuntimeConfig` error. A `PATCH` of `deployment_config` that resizes a running pipeline
-outside these limits is refused with a 400 `InvalidDeploymentPatch` error. On all installations, `resources.storage_min` cannot be more than
-`resources.storage_max`. A runtime configuration stored before a limit was set still loads, but the
+outside these limits is refused with a 400 `InvalidDeploymentPatch` error. On all installations,
+`resources.storage_min` cannot be more than `resources.storage_max`, and `resources.memory_min`
+cannot be more than `resources.memory_max`. A runtime configuration stored before a limit was set still loads, but the
 pipeline does not start until the value is changed.
 
 #### Resizing a running pipeline

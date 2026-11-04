@@ -1954,6 +1954,8 @@ mod test {
             enable_volume_attributes_classes_allowlist: false,
             volume_attributes_classes: vec![],
             upper_limit_storage_megabyte: None,
+            upper_limit_memory_megabyte: None,
+            enable_storage_autoscaling: None,
         }
     }
 

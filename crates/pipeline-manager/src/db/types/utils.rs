@@ -189,6 +189,8 @@ pub enum ValidationError {
     InvalidDevTweaks(String),
     #[error("unsupported storage: {0}")]
     UnsupportedStorage(String),
+    #[error("unsupported memory: {0}")]
+    UnsupportedMemory(String),
 }
 
 /// Deserializes generic JSON value into [`RuntimeConfig`] and performs any additional validation.
