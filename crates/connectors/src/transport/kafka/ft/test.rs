@@ -7,7 +7,7 @@
 #![allow(clippy::single_range_in_vec_init)]
 
 use crate::{
-    InputBuffer, InputConsumer, ParseError, Parser,
+    ControllerError, InputBuffer, InputConsumer, ParseError, Parser,
     format::{Splitter, SpongeSplitter},
     test::{
         engine_test, input_pipeline,
@@ -2175,7 +2175,13 @@ fn check_fault_tolerance(
             .controller(
                 &circuit,
                 &config,
-                Box::new(move |error, _| panic!("error: {error}")),
+                Box::new(move |error, _| {
+                    if is_transient(&error) {
+                        info!("ignored error: {error}")
+                    } else {
+                        panic!("error: {error}")
+                    }
+                }),
             )
             .unwrap();
         controller.start();
@@ -2946,7 +2952,7 @@ pub fn buffer(engine: &dyn PipelineTestEngine) {
     .unwrap();
 
     // Once the topics are gone, endpoint threads may still report errors, which must not
-    // fail the case.
+    // fail the case.  Transient errors must not fail it either.
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
     let controller = engine
@@ -2954,10 +2960,10 @@ pub fn buffer(engine: &dyn PipelineTestEngine) {
             &TestCircuit::identity(relation()),
             &config,
             Box::new(move |error, _| {
-                if running_clone.load(Ordering::Acquire) {
+                if running_clone.load(Ordering::Acquire) && !is_transient(&error) {
                     panic!("buffer: error: {error}")
                 } else {
-                    info!("buffer: error after the topics are gone: {error}")
+                    info!("buffer: ignored error: {error}")
                 }
             }),
         )
@@ -3010,6 +3016,16 @@ pub fn buffer(engine: &dyn PipelineTestEngine) {
     drop(consumer);
     controller.stop().unwrap();
     running.store(false, Ordering::Release);
+}
+
+/// Returns true if `error` is a non-fatal transport error, such as `UnknownPartition` while
+/// a new topic's metadata spreads across the brokers.  The endpoint retries these itself.
+fn is_transient(error: &ControllerError) -> bool {
+    matches!(
+        error,
+        ControllerError::InputTransportError { fatal: false, .. }
+            | ControllerError::OutputTransportError { fatal: false, .. }
+    )
 }
 
 /// Checks a pipeline that reads CSV `data` from an input topic and writes it in `format`
@@ -3071,10 +3087,10 @@ fn check_end_to_end(
             &TestCircuit::identity(relation()),
             &config,
             Box::new(move |error, _| {
-                if running_clone.load(Ordering::Acquire) {
+                if running_clone.load(Ordering::Acquire) && !is_transient(&error) {
                     panic!("{name}: error: {error}")
                 } else {
-                    info!("{name}: error after the topics are gone: {error}")
+                    info!("{name}: ignored error: {error}")
                 }
             }),
         )
