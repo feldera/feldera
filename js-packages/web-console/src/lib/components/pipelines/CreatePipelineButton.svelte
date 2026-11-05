@@ -41,13 +41,13 @@
       <div class="absolute top-10 z-20">
         {#if error}
           <div
-            class="bg-white-dark bg-white-dark rounded-container px-2 py-2 {errorTextClass} shadow"
+            class="bg-white-dark bg-white-dark rounded px-2 py-2 {errorTextClass} shadow"
           >
             {error}
           </div>
         {:else}
           <div
-            class="bg-white-dark rounded-container px-2 py-2 whitespace-pre text-surface-600-400 shadow"
+            class="bg-white-dark rounded px-4 py-2 whitespace-pre text-surface-600-400 shadow"
           >
             Press Enter to create
           </div>

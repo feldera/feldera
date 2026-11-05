@@ -44,10 +44,10 @@
      from 500 up, and its light steps are greys for tints. Dark mode flips 500 to near
      white; see "Call to action" below. */
   --color-primary-50: #f7f7f7;
-  --color-primary-100: #ededed;
-  --color-primary-200: #d9d9d9;
-  --color-primary-300: #a6a6a6;
-  --color-primary-400: #4d4d4d;
+  --color-primary-100: #f7f7f7;
+  --color-primary-200: #f7f7f7;
+  --color-primary-300: #f7f7f7;
+  --color-primary-400: #f7f7f7;
   --color-primary-500: #050505;
   --color-primary-600: #050505;
   --color-primary-700: #050505;
@@ -55,12 +55,12 @@
   --color-primary-900: #050505;
   --color-primary-950: #050505;
   --color-primary-contrast-dark: #050505;
-  --color-primary-contrast-light: #ffffff;
+  --color-primary-contrast-light: #f7f7f7;
   --color-primary-contrast-50: var(--color-primary-contrast-dark);
   --color-primary-contrast-100: var(--color-primary-contrast-dark);
   --color-primary-contrast-200: var(--color-primary-contrast-dark);
   --color-primary-contrast-300: var(--color-primary-contrast-dark);
-  --color-primary-contrast-400: var(--color-primary-contrast-light);
+  --color-primary-contrast-400: var(--color-primary-contrast-dark);
   --color-primary-contrast-500: var(--color-primary-contrast-light);
   --color-primary-contrast-600: var(--color-primary-contrast-light);
   --color-primary-contrast-700: var(--color-primary-contrast-light);
