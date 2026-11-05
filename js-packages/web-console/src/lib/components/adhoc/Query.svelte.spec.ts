@@ -296,7 +296,7 @@ describe('adhoc-query Query.svelte table — arrowIpcValueToJS serialization', (
     //   - bigint → JSONbig.stringify writes the digits unquoted
     //   - BigNumber → toFixed(3, ROUND_DOWN) with trailing zeros stripped
     //   - Dayjs → JSON.stringify of its toJSON() output (ISO string in quotes)
-    const tdTexts = Array.from(document.querySelectorAll('tbody tr td')).map(
+    const tdTexts = Array.from(document.querySelectorAll('[data-testid="box-result-row"] td')).map(
       (td) => td.textContent ?? ''
     )
     expect(tdTexts).toEqual([
@@ -325,7 +325,9 @@ describe('adhoc-query Query.svelte table — arrowIpcValueToJS serialization', (
 
     // The null cell is rendered in italics; non-null cells are not. The
     // SQLValue.svelte template toggles the `italic` class on `value === null`.
-    const tds = Array.from(document.querySelectorAll('tbody tr td')) as HTMLTableCellElement[]
+    const tds = Array.from(
+      document.querySelectorAll('[data-testid="box-result-row"] td')
+    ) as HTMLTableCellElement[]
     const nullCellIdx = tdTexts.indexOf('NULL')
     expect(tds[nullCellIdx].classList.contains('italic')).toBe(true)
     expect(tds[tdTexts.indexOf('hello')].classList.contains('italic')).toBe(false)

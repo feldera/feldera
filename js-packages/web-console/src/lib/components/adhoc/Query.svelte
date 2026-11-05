@@ -311,7 +311,11 @@
           {#snippet item({ index, style }: { index: number; style?: string })}
             {@const row = rows[index]}
             {#if !row}{:else if isDataRow(row)}
-              <tr style="{rowHeight}; {style}" class="whitespace-nowrap hover:bg-row-hover">
+              <tr
+                style="{rowHeight}; {style}"
+                class="whitespace-nowrap hover:bg-row-hover"
+                data-testid="box-result-row"
+              >
                 <td class="px-3 text-right text-surface-500 tabular-nums select-none">{index}</td>
                 {#each row.cells as value}
                   <SQLValue
