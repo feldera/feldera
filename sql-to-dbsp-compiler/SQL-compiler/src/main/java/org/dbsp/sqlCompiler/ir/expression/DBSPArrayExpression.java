@@ -201,6 +201,8 @@ public final class DBSPArrayExpression extends DBSPExpression
         DBSPArrayExpression otherExpression = other.as(DBSPArrayExpression.class);
         if (otherExpression == null)
             return false;
+        if (!this.getType().sameType(other.getType()))
+            return false;
         return context.equivalent(this.data, otherExpression.data);
     }
 

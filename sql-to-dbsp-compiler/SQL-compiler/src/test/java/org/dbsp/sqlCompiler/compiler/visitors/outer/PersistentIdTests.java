@@ -86,4 +86,28 @@ public class PersistentIdTests extends BaseSQLTests {
         // The test passes if MerkleHashes does not crash with duplicate persistent ids
         new MerkleHashes(compiler).apply(circuit);
     }
+
+    /** Pairs of views that use one interval value written in two units. */
+    @Test
+    public void intervalUnits() {
+        // The test passes if the compiler does not crash with duplicate persistent ids
+        this.getCC("""
+                CREATE TABLE t (ts TIMESTAMP NOT NULL, ts2 TIMESTAMP NOT NULL, x INT, c BOOLEAN);
+                CREATE VIEW v1 AS SELECT ts FROM t WHERE ts >= NOW() - INTERVAL 60 MINUTES;
+                CREATE VIEW v2 AS SELECT x FROM t WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW v3 AS SELECT ts FROM t WHERE (ts - ts2) MINUTE > INTERVAL 60 MINUTE;
+                CREATE VIEW v4 AS SELECT ts FROM t WHERE (ts - ts2) MINUTE > INTERVAL 1 HOUR;
+                CREATE VIEW v5 AS SELECT ts FROM t WHERE ts > ts2 - (-INTERVAL 60 MINUTES);
+                CREATE VIEW v6 AS SELECT ts FROM t WHERE ts > ts2 - (-INTERVAL 1 HOUR);
+                CREATE VIEW v7 AS SELECT ts FROM t
+                WHERE ts > ts2 + CASE WHEN c THEN INTERVAL 60 MINUTES ELSE INTERVAL 120 MINUTES END;
+                CREATE VIEW v8 AS SELECT ts FROM t
+                WHERE ts > ts2 + CASE WHEN c THEN INTERVAL 1 HOUR ELSE INTERVAL 2 HOURS END;
+                CREATE VIEW v9 AS SELECT ts FROM t
+                WHERE ts > ts2 + COALESCE(CASE WHEN c THEN INTERVAL 60 MINUTES END, INTERVAL 60 MINUTES);
+                CREATE VIEW v10 AS SELECT ts FROM t
+                WHERE ts > ts2 + COALESCE(CASE WHEN c THEN INTERVAL 1 HOUR END, INTERVAL 1 HOUR);
+                CREATE VIEW v11 AS SELECT ts FROM t WHERE ts > ts2 + INTERVAL 12 MONTHS;
+                CREATE VIEW v12 AS SELECT ts FROM t WHERE ts > ts2 + INTERVAL 1 YEAR;""");
+    }
 }

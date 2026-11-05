@@ -120,6 +120,8 @@ public abstract class DBSPLiteral extends DBSPExpression
         DBSPLiteral otherLiteral = other.as(DBSPLiteral.class);
         if (otherLiteral == null)
             return false;
+        if (!this.getType().sameType(otherLiteral.getType()))
+            return false;
         return this.sameValue(otherLiteral);
     }
 

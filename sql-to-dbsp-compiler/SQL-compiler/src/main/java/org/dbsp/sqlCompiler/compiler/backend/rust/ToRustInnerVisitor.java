@@ -567,16 +567,54 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
+    /** Appends the SQL type of an interval literal as a comment, e.g., HOURS_TO_MINUTES is INTERVAL HOUR TO MINUTE.
+     * The persistent ids are hashes of the code, so literals that are not equivalent need different code. */
+    void intervalTypeComment(Enum<?> units) {
+        String sqlUnits = units.toString()
+                .replace("S_TO_", " TO ")
+                .replaceAll("S$", "");
+        this.builder.append("/*INTERVAL ")
+                .append(sqlUnits)
+                .append("*/");
+    }
+
+    /** The largest unit that divides a long interval of {@code months}. */
+    static DBSPTypeLongInterval.Units largestUnit(int months) {
+        if (months % 12 == 0)
+            return DBSPTypeLongInterval.Units.YEARS;
+        return DBSPTypeLongInterval.Units.MONTHS;
+    }
+
+    /** The largest unit that divides a short interval of {@code microseconds}. */
+    static DBSPTypeShortInterval.Units largestUnit(long microseconds) {
+        final long second = 1_000_000L;
+        if (microseconds % (86_400 * second) == 0)
+            return DBSPTypeShortInterval.Units.DAYS;
+        if (microseconds % (3_600 * second) == 0)
+            return DBSPTypeShortInterval.Units.HOURS;
+        if (microseconds % (60 * second) == 0)
+            return DBSPTypeShortInterval.Units.MINUTES;
+        return DBSPTypeShortInterval.Units.SECONDS;
+    }
+
     @Override
     public VisitDecision preorder(DBSPLongIntervalLiteral literal) {
-        if (literal.isNull())
-            return this.doNull(literal);
+        DBSPTypeLongInterval.Units units = literal.getType().to(DBSPTypeLongInterval.class).units;
+        if (literal.isNull()) {
+            this.doNull(literal);
+            this.intervalTypeComment(units);
+            return VisitDecision.STOP;
+        }
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
+        int value = Objects.requireNonNull(literal.value);
         this.builder.append("LongInterval::from_months(")
-                .append(Integer.toString(Objects.requireNonNull(literal.value)))
+                .append(Integer.toString(value))
                 .append(")");
+        // The largest unit is implied, which keeps the persistent ids of most programs stable across versions
+        if (units != largestUnit(value))
+            this.intervalTypeComment(units);
         if (literal.mayBeNull())
             this.builder.append(")");
         this.pop(literal);
@@ -585,14 +623,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPShortIntervalLiteral literal) {
-        if (literal.isNull())
-            return this.doNull(literal);
+        DBSPTypeShortInterval.Units units = literal.getType().to(DBSPTypeShortInterval.class).units;
+        if (literal.isNull()) {
+            this.doNull(literal);
+            this.intervalTypeComment(units);
+            return VisitDecision.STOP;
+        }
         this.push(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
+        long value = Objects.requireNonNull(literal.value);
         this.builder.append("ShortInterval::from_microseconds(")
-                .append(Long.toString(Objects.requireNonNull(literal.value)))
+                .append(Long.toString(value))
                 .append(")");
+        // The largest unit is implied, which keeps the persistent ids of most programs stable across versions
+        if (units != largestUnit(value))
+            this.intervalTypeComment(units);
         if (literal.mayBeNull())
             this.builder.append(")");
         this.pop(literal);
@@ -669,20 +715,29 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        this.builder.append("Arc::new(BTreeMap::from([");
         Utilities.enforce(expression.values != null);
-        if (expression.values.size() > 1)
-            this.builder.increase();
-        for (int i = 0; i < Objects.requireNonNull(expression.keys).size(); i++) {
-            this.builder.append("(");
-            expression.keys.get(i).accept(this);
+        if (expression.values.isEmpty()) {
+            // Only the type distinguishes empty maps
+            this.builder.append("Arc::new(BTreeMap::<");
+            expression.getKeyType().accept(this);
             this.builder.append(", ");
-            expression.values.get(i).accept(this);
-            this.builder.append("), ");
+            expression.getValueType().accept(this);
+            this.builder.append(">::new())");
+        } else {
+            this.builder.append("Arc::new(BTreeMap::from([");
+            if (expression.values.size() > 1)
+                this.builder.increase();
+            for (int i = 0; i < Objects.requireNonNull(expression.keys).size(); i++) {
+                this.builder.append("(");
+                expression.keys.get(i).accept(this);
+                this.builder.append(", ");
+                expression.values.get(i).accept(this);
+                this.builder.append("), ");
+            }
+            if (expression.values.size() > 1)
+                this.builder.decrease();
+            this.builder.append("]))");
         }
-        if (expression.values.size() > 1)
-            this.builder.decrease();
-        this.builder.append("]))");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
         this.pop(expression);

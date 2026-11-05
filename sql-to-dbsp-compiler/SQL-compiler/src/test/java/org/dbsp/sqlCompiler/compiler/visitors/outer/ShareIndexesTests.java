@@ -28,16 +28,24 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.Linq;
@@ -518,6 +526,61 @@ public class ShareIndexesTests extends StreamingTestBase {
         List<T> found = operators(circuit, clazz);
         Assert.assertEquals(clazz.getSimpleName(), 1, found.size());
         return found.get(0);
+    }
+
+    /** Two joins read indexes of T whose values are {@code first} and {@code second}.
+     * The shared index keeps both values, each with its own type. */
+    private void sharedIndexKeepsBothValues(DBSPExpression first, DBSPExpression second) {
+        DBSPCompiler compiler = this.testCompiler();
+        DBSPCircuit circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        DBSPSourceMultisetOperator t = table(circuit, "T", "k");
+        DBSPSourceMultisetOperator s = table(circuit, "S", "k", "b");
+        List<DBSPExpression> values = List.of(first, second);
+        for (int i = 0; i < values.size(); i++) {
+            DBSPVariablePath row = t.getOutputZSetElementType().ref().var();
+            DBSPMapIndexOperator index = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
+                    new DBSPRawTupleExpression(
+                            new DBSPTupleExpression(row.deref().field(0)),
+                            new DBSPTupleExpression(values.get(i))).closure(row), t.outputPort());
+            circuit.addOperator(index);
+            List<OutputPort> joinInputs = Linq.list(index.outputPort(), index(circuit, s, 1));
+            DBSPClosureExpression joinFunction = firstFields(joinInputs);
+            DBSPJoinOperator join = new DBSPJoinOperator(CalciteEmptyRel.INSTANCE,
+                    new DBSPTypeZSet(joinFunction.getResultType()), joinFunction,
+                    joinInputs.get(0), joinInputs.get(1), false);
+            circuit.addOperator(join);
+            view(circuit, "J" + i, join);
+        }
+        DBSPCircuit shared = new ShareIndexes(compiler).apply(circuit);
+        List<DBSPJoinBaseOperator> joins = operators(shared, DBSPJoinBaseOperator.class);
+        Assert.assertEquals(2, joins.size());
+        Assert.assertSame(joins.get(0).left().node(), joins.get(1).left().node());
+        Assert.assertEquals(2, joins.get(0).left().getOutputIndexedZSetType().elementType
+                .to(DBSPTypeTuple.class).size());
+    }
+
+    /** Index values that differ only in nullability. */
+    @Test
+    public void issue7832() {
+        // The circuits are built by hand: no SQL program is known that gives two indexes
+        // of one input whose values differ only in nullability
+        this.sharedIndexKeepsBothValues(new DBSPI32Literal(1), new DBSPI32Literal(1, true));
+        this.sharedIndexKeepsBothValues(
+                new DBSPArrayExpression(false, new DBSPI32Literal(1)),
+                new DBSPArrayExpression(true, new DBSPI32Literal(1)));
+        this.sharedIndexKeepsBothValues(
+                new DBSPMapExpression(new DBSPTypeMap(INT, INT, false),
+                        Linq.list(new DBSPI32Literal(1)), Linq.list(new DBSPI32Literal(2))),
+                new DBSPMapExpression(new DBSPTypeMap(INT, INT, true),
+                        Linq.list(new DBSPI32Literal(1)), Linq.list(new DBSPI32Literal(2))));
+        this.sharedIndexKeepsBothValues(
+                new DBSPVariantExpression(new DBSPI32Literal(1), false),
+                new DBSPVariantExpression(new DBSPI32Literal(1), true));
+        this.sharedIndexKeepsBothValues(
+                new DBSPGeoPointConstructor(CalciteObject.EMPTY, new DBSPDoubleLiteral(1.0),
+                        new DBSPDoubleLiteral(2.0), DBSPTypeGeoPoint.create(CalciteObject.EMPTY, false)),
+                new DBSPGeoPointConstructor(CalciteObject.EMPTY, new DBSPDoubleLiteral(1.0),
+                        new DBSPDoubleLiteral(2.0), DBSPTypeGeoPoint.create(CalciteObject.EMPTY, true)));
     }
 
     @Test

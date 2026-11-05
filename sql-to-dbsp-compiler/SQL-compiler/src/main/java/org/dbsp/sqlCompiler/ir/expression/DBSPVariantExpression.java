@@ -110,6 +110,8 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue,
         DBSPVariantExpression otherVariant = other.as(DBSPVariantExpression.class);
         if (otherVariant == null)
             return false;
+        if (!this.getType().sameType(other.getType()))
+            return false;
         if (this.isSqlNull)
             return otherVariant.isSqlNull;
         return context.equivalent(this.value, otherVariant.value);
