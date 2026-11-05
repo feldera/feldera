@@ -69,7 +69,13 @@
   $effect(() => {
     document.body.setAttribute(
       'class',
-      'text-base scrollbar-h-[10px] scrollbar-thumb-primary-200 scrollbar-thumb-rounded-full scrollbar-w-[10px] dark:scrollbar-thumb-surface-600 scrollbar-hover:scrollbar-thumb-surface-400 dark:scrollbar-hover:scrollbar-thumb-surface-600'
+      [
+        'text-base scrollbar-h-[8px] scrollbar-w-[8px] scrollbar-thumb-rounded-full',
+        'scrollbar-thumb-[rgb(0_0_0/0.18)] dark:scrollbar-thumb-[rgb(255_255_255/0.18)]',
+        // On `<body>` itself, `scrollbar-hover:` would darken only the body's own scrollbar.
+        '[&_.scrollbar]:scrollbar-hover:scrollbar-thumb-[rgb(0_0_0/0.32)]',
+        'dark:[&_.scrollbar]:scrollbar-hover:scrollbar-thumb-[rgb(255_255_255/0.32)]'
+      ].join(' ')
     )
   })
 </script>
