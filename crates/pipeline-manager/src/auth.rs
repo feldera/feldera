@@ -62,14 +62,13 @@ use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use cached::{Cached, TimedCache};
 use jsonwebtoken::{Algorithm, DecodingKey, TokenData, Validation, decode, decode_header};
 use rand::rngs::ThreadRng;
 use rand::{Rng, distributions::Alphanumeric};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use static_assertions::assert_impl_any;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -1239,6 +1238,10 @@ pub(crate) struct ProviderGenericOidc {
 /// refresh, success or failure, starts a `cooldown` that rejects further misses
 /// without a fetch. A key rollover resolves on its first miss after the cooldown.
 ///
+/// Keys older than [`JWK_FRESH_FOR`] are refreshed on use, but while a refresh
+/// fails or cools down they stay in use for up to [`JWK_STALE_LIMIT`]. Else one
+/// failed fetch would reject every token of the issuer for the whole cooldown.
+///
 /// The refresh runs in its own task, without the cache lock. A slow issuer then
 /// delays only the misses for that issuer, and a request dropped mid-fetch
 /// cannot leave the refresh half done.
@@ -1253,23 +1256,25 @@ where
     F: Future<Output = Result<HashMap<String, DecodingKey>, AuthError>> + Send + 'static,
 {
     let not_found = || AuthError::JwkShape(format!("kid '{kid}' not in the JWKS of '{issuer}'"));
-    if let Some(key) = jwk_cache.lock().await.cached(issuer, kid) {
+    if let Some(key) = jwk_cache.lock().await.fresh(issuer, kid) {
         return Ok(key);
     }
 
     let gate = jwk_cache.lock().await.refresh_gate(issuer);
     let refreshing = gate.lock_owned().await;
     {
-        let mut cache = jwk_cache.lock().await;
+        let cache = jwk_cache.lock().await;
         // A refresh may have completed while this request waited on the gate.
-        if let Some(key) = cache.cached(issuer, kid) {
+        if let Some(key) = cache.fresh(issuer, kid) {
             return Ok(key);
         }
         if cache.cooling_down(issuer) {
-            return Err(AuthError::JwkShape(format!(
-                "kid '{kid}' not in the cached JWKS of '{issuer}', which was refreshed \
-                 or failed to refresh less than {cooldown:?} ago"
-            )));
+            return cache.usable(issuer, kid).ok_or_else(|| {
+                AuthError::JwkShape(format!(
+                    "kid '{kid}' not in the cached JWKS of '{issuer}', which was refreshed \
+                     or failed to refresh less than {cooldown:?} ago"
+                ))
+            });
         }
     }
 
@@ -1285,14 +1290,19 @@ where
         cache.insert(&task_issuer, keys?);
         Ok::<(), AuthError>(())
     });
-    refresh
+    let refreshed = refresh
         .await
-        .map_err(|e| AuthError::JwkShape(format!("JWKS refresh task failed: {e}")))??;
-    jwk_cache
-        .lock()
-        .await
-        .cached(issuer, kid)
-        .ok_or_else(not_found)
+        .map_err(|e| AuthError::JwkShape(format!("JWKS refresh task failed: {e}")))?;
+    // After a successful refresh, only the keys it fetched are usable.
+    match (jwk_cache.lock().await.usable(issuer, kid), refreshed) {
+        (Some(key), Ok(())) => Ok(key),
+        (Some(key), Err(e)) => {
+            warn!("JWKS refresh for issuer '{issuer}' failed, keeping its cached keys: {e:?}");
+            Ok(key)
+        }
+        (None, Err(e)) => Err(e),
+        (None, Ok(())) => Err(not_found()),
+    }
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -1633,7 +1643,8 @@ async fn decode_token_with_validation(
 /// why that function reads the gate out of a temporary rather than holding the
 /// cache across the two.
 pub struct IssuerJwkCache {
-    cache: TimedCache<(String, String), DecodingKey>,
+    /// Each issuer's keys from its last successful refresh.
+    issuers: HashMap<String, IssuerKeys>,
     /// When each issuer's refresh cooldown ends.
     cooldown_until: HashMap<String, tokio::time::Instant>,
     /// One gate per issuer, so concurrent misses cost a single fetch. Never
@@ -1641,8 +1652,18 @@ pub struct IssuerJwkCache {
     refresh_gates: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
-const DEFAULT_JWK_CACHE_LIFETIME_SECONDS: u64 = 120;
-const ISSUER_JWK_CACHE_CAPACITY: usize = 64;
+/// An issuer's keys, keyed by `kid`, and when they were fetched.
+struct IssuerKeys {
+    fetched_at: tokio::time::Instant,
+    keys: HashMap<String, DecodingKey>,
+}
+
+/// How long fetched keys are fresh. A request after that refreshes them.
+const JWK_FRESH_FOR: Duration = Duration::from_secs(120);
+
+/// How long keys stay in use while their refreshes fail. Bounds how long a key
+/// that the issuer removed stays valid while the issuer is unreachable.
+const JWK_STALE_LIMIT: Duration = Duration::from_secs(60 * 60);
 
 /// Minimum gap between JWKS refreshes for a federated issuer. A tenant runs
 /// that issuer, so it is long: each refresh costs a discovery and a JWKS fetch.
@@ -1655,31 +1676,42 @@ const LOGIN_REFRESH_COOLDOWN: Duration = Duration::from_secs(1);
 impl IssuerJwkCache {
     pub(crate) fn new() -> Self {
         Self {
-            cache: TimedCache::with_lifespan_and_capacity(
-                DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
-                ISSUER_JWK_CACHE_CAPACITY,
-            ),
+            issuers: HashMap::new(),
             cooldown_until: HashMap::new(),
             refresh_gates: HashMap::new(),
         }
     }
 
-    /// Return the cached decoding key for `(issuer, kid)`, if present. No I/O,
-    /// so the caller holds the lock only briefly (see [`resolve_issuer_jwk`]).
-    fn cached(&mut self, issuer: &str, kid: &str) -> Option<DecodingKey> {
-        self.cache
-            .cache_get(&(issuer.to_string(), kid.to_string()))
-            .cloned()
+    /// The cached key for `(issuer, kid)` if its keys are younger than
+    /// `max_age`. No I/O, so the caller holds the lock only briefly (see
+    /// [`resolve_issuer_jwk`]).
+    fn cached(&self, issuer: &str, kid: &str, max_age: Duration) -> Option<DecodingKey> {
+        let entry = self.issuers.get(issuer)?;
+        if entry.fetched_at.elapsed() >= max_age {
+            return None;
+        }
+        entry.keys.get(kid).cloned()
     }
 
-    /// Insert freshly fetched keys for `issuer`, keyed by `kid`. Drops expired
-    /// keys of every issuer, else keys never asked for again would stay forever.
+    /// The key for `(issuer, kid)` if it needs no refresh.
+    fn fresh(&self, issuer: &str, kid: &str) -> Option<DecodingKey> {
+        self.cached(issuer, kid, JWK_FRESH_FOR)
+    }
+
+    /// The key for `(issuer, kid)` if it may still be used, fresh or not.
+    fn usable(&self, issuer: &str, kid: &str) -> Option<DecodingKey> {
+        self.cached(issuer, kid, JWK_STALE_LIMIT)
+    }
+
+    /// Replace the keys of `issuer` with freshly fetched ones, keyed by `kid`.
+    /// Drops every issuer's keys past [`JWK_STALE_LIMIT`], else keys never
+    /// asked for again would stay forever.
     fn insert(&mut self, issuer: &str, keys: HashMap<String, DecodingKey>) {
-        self.cache.flush();
-        for (kid, decoding_key) in keys {
-            self.cache
-                .cache_set((issuer.to_string(), kid), decoding_key);
-        }
+        self.issuers
+            .retain(|_, entry| entry.fetched_at.elapsed() < JWK_STALE_LIMIT);
+        let fetched_at = tokio::time::Instant::now();
+        self.issuers
+            .insert(issuer.to_string(), IssuerKeys { fetched_at, keys });
     }
 
     /// Whether `issuer` is within a refresh cooldown.
@@ -2780,22 +2812,135 @@ mod test {
         let gate = cache.lock().await.refresh_gate("iss");
         let _done = gate.lock().await;
 
-        let mut cache = cache.lock().await;
-        assert!(cache.cached("iss", "real").is_some());
+        let cache = cache.lock().await;
+        assert!(cache.fresh("iss", "real").is_some());
         assert!(cache.cooling_down("iss"));
     }
 
-    /// Expired keys go on the next refresh of any issuer, so keys nobody asks
-    /// for again do not stay forever.
-    #[tokio::test]
+    /// Keys past the stale limit go on the next refresh of any issuer, so keys
+    /// nobody asks for again do not stay forever.
+    #[tokio::test(start_paused = true)]
     async fn a_refresh_drops_expired_keys() {
-        use cached::Cached;
         let mut cache = super::IssuerJwkCache::new();
-        // Lifespan 0: every key is expired as soon as it is set.
-        cache.cache.cache_set_lifespan(0);
         cache.insert("a", one_key());
+        tokio::time::advance(super::JWK_STALE_LIMIT).await;
         cache.insert("b", one_key());
-        assert_eq!(1, cache.cache.cache_size());
+        assert_eq!(vec!["b"], cache.issuers.keys().collect::<Vec<_>>());
+    }
+
+    /// A failed refresh keeps the cached keys in use, through the cooldown it
+    /// starts, until they pass the stale limit.  Regression test for #7048,
+    /// where one failed fetch rejected every CI token for the cooldown.
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_refresh_keeps_the_cached_keys() {
+        let cache = Arc::new(Mutex::new(super::IssuerJwkCache::new()));
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let count = || fetches.load(Ordering::SeqCst);
+        assert!(
+            resolve_counting(&cache, &fetches, "real", true)
+                .await
+                .is_ok()
+        );
+
+        // Past freshness, the failed refresh and the cooldown keep the key.
+        tokio::time::advance(super::JWK_FRESH_FOR).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "real", false)
+                .await
+                .is_ok()
+        );
+        assert_eq!(2, count());
+        assert!(
+            resolve_counting(&cache, &fetches, "real", false)
+                .await
+                .is_ok()
+        );
+        assert_eq!(2, count());
+
+        // Only the fetched keys are kept, not the kids a token asks for.
+        assert!(
+            resolve_counting(&cache, &fetches, "unknown", false)
+                .await
+                .is_err()
+        );
+
+        // Past the stale limit, the key is gone.
+        tokio::time::advance(super::JWK_STALE_LIMIT).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "real", false)
+                .await
+                .is_err()
+        );
+        assert_eq!(3, count());
+    }
+
+    /// A successful refresh replaces the issuer's keys, so a key that the
+    /// issuer removed is not used again.
+    #[tokio::test(start_paused = true)]
+    async fn a_refresh_drops_keys_the_issuer_removed() {
+        let cache = Arc::new(Mutex::new(super::IssuerJwkCache::new()));
+        let fetches = Arc::new(AtomicUsize::new(0));
+        assert!(
+            resolve_counting(&cache, &fetches, "real", true)
+                .await
+                .is_ok()
+        );
+
+        tokio::time::advance(super::JWK_FRESH_FOR).await;
+        let rotated = || async {
+            Ok(HashMap::from([(
+                "new".to_string(),
+                DecodingKey::from_secret(b"n"),
+            )]))
+        };
+        let result = super::resolve_issuer_jwk(&cache, "iss", "real", rotated, COOLDOWN).await;
+        assert!(result.is_err());
+        let cache = cache.lock().await;
+        assert!(cache.usable("iss", "real").is_none());
+        assert!(cache.fresh("iss", "new").is_some());
+    }
+
+    /// Concurrent requests with a stale key share one failed fetch, and the
+    /// request that waited on the gate still gets the cached key. This is the
+    /// case of #7048: many CI workers at once while the issuer is unreachable.
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_stale_hits_survive_a_failed_refresh() {
+        let cache = Arc::new(Mutex::new(super::IssuerJwkCache::new()));
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let count = || fetches.load(Ordering::SeqCst);
+        assert!(
+            resolve_counting(&cache, &fetches, "real", true)
+                .await
+                .is_ok()
+        );
+
+        tokio::time::advance(super::JWK_FRESH_FOR).await;
+        let (first, second) = tokio::join!(
+            resolve_counting(&cache, &fetches, "real", false),
+            resolve_counting(&cache, &fetches, "real", false),
+        );
+        assert!(first.is_ok() && second.is_ok());
+        assert_eq!(2, count());
+
+        // Just inside the stale limit, after the cooldown: a failed fetch,
+        // and the key is still usable.
+        let tick = Duration::from_millis(1);
+        tokio::time::advance(super::JWK_STALE_LIMIT - super::JWK_FRESH_FOR - tick).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "real", false)
+                .await
+                .is_ok()
+        );
+        assert_eq!(3, count());
+
+        // At the stale limit, within that fetch's cooldown: no fetch, no key.
+        tokio::time::advance(tick).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "real", false)
+                .await
+                .is_err()
+        );
+        assert_eq!(3, count());
     }
 
     /// Concurrent misses for one issuer share a gate, so they cost one fetch.
