@@ -409,7 +409,8 @@ html,
   scrollbar-color: var(--color-stone) transparent;
 }
 
-/* Chrome, Safari and Edge: an 8px bar, the thumb inset by a 2px Paper border so it reads slim. */
+/* Chrome, Safari and Edge: an 8px bar, the square thumb (as the brand's buttons and cards) inset by
+   a 2px Paper border so it reads slim. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -422,7 +423,7 @@ html,
 ::-webkit-scrollbar-thumb {
   background: var(--color-stone);
   border: 2px solid var(--color-paper);
-  border-radius: 9999px;
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
