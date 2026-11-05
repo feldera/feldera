@@ -599,7 +599,10 @@ main > .container {
 
 /* ---------- Sidebar ---------- */
 
+/* A subtle Sink ground (the brand's warm step between Paper and Shell), so the menu reads as its
+   own column beside the Paper page. */
 .theme-doc-sidebar-container {
+  background: var(--color-sink);
   border-right: 1px solid var(--hair-07) !important;
 }
 
