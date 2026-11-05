@@ -27,11 +27,13 @@ import java.util.Set;
 
 /** Find common subexpressions, write them into the 'canonical' map. */
 public class ValueNumbering extends InnerVisitor {
-    record ExpressionUser(DBSPExpression expression, int operand) {
+    /** 'closure' is the innermost closure that contains 'expression' */
+    record ExpressionUser(DBSPExpression expression, int operand, @Nullable DBSPClosureExpression closure) {
         @Override
         public String toString() {
             return "ExpressionUser(" + this.expression.getId() + " " +
-                    this.expression + ", operand=" + this.operand + ")";
+                    this.expression + ", operand=" + this.operand +
+                    ", closure=" + (this.closure == null ? "none" : this.closure.getId()) + ")";
         }
     }
 
@@ -50,8 +52,8 @@ public class ValueNumbering extends InnerVisitor {
             this.dependsOn = dependsOn;
         }
 
-        void use(DBSPExpression user, int operand) {
-            this.users.add(new ExpressionUser(user, operand));
+        void use(DBSPExpression user, int operand, @Nullable DBSPClosureExpression closure) {
+            this.users.add(new ExpressionUser(user, operand, closure));
         }
 
         @Override
@@ -62,18 +64,21 @@ public class ValueNumbering extends InnerVisitor {
                     (this.expensive ? "*" : "");
         }
 
-        /** Check if an expression has multiple users.
+        /** Check if an expression has multiple users in one closure.
          *
          * @param translation A map from expression to canonical expression.
+         * @param closure     Only the users that are in this closure, and not in a closure nested in it, count.
          * @return True if there are at least 2 users. */
-        boolean manyUsers(Map<DBSPExpression, CanonicalExpression> translation) {
+        boolean manyUsers(Map<DBSPExpression, CanonicalExpression> translation, DBSPClosureExpression closure) {
             if (this.users.size() < 2)
                 return false;
             Set<ExpressionUser> canon = new HashSet<>();
             for (var l: this.users) {
+                if (l.closure != closure)
+                    continue;
                 if (translation.containsKey(l.expression)) {
                     DBSPExpression canonical = translation.get(l.expression).expression;
-                    canon.add(new ExpressionUser(canonical, l.operand));
+                    canon.add(new ExpressionUser(canonical, l.operand, l.closure));
                 } else {
                     canon.add(l);
                 }
@@ -91,7 +96,8 @@ public class ValueNumbering extends InnerVisitor {
     /** True if the expression contains an assignment, or a mutable borrow of an expression whose
      * base is not a variable; CSE is then unsafe */
     public boolean foundAssignment;
-    public final List<Boolean> inClosure;
+    /** The closures that contain the visited node, innermost last */
+    final List<DBSPClosureExpression> closures;
     /** Declarations of the variables whose value can change while the expression is evaluated:
      * variables with a mutable reference type, and the base variables of expressions borrowed
      * with {@code &mut}.
@@ -104,7 +110,7 @@ public class ValueNumbering extends InnerVisitor {
         this.representation = new HashMap<>();
         this.resolver = new ResolveReferences(compiler, false);
         this.foundAssignment = false;
-        this.inClosure = new ArrayList<>();
+        this.closures = new ArrayList<>();
         this.mutable = new HashSet<>();
     }
 
@@ -127,14 +133,19 @@ public class ValueNumbering extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
-        this.inClosure.add(true);
+        this.closures.add(expression);
         return super.preorder(expression);
     }
 
     @Override
     public void postorder(DBSPClosureExpression expression) {
-        Utilities.removeLast(this.inClosure);
+        Utilities.removeLast(this.closures);
         super.postorder(expression);
+    }
+
+    @Nullable
+    DBSPClosureExpression innermostClosure() {
+        return this.closures.isEmpty() ? null : Utilities.last(this.closures);
     }
 
     @Override
@@ -154,7 +165,7 @@ public class ValueNumbering extends InnerVisitor {
             // Invalid representation
             return new Representation("", new HashSet<>(), false, true);
         CanonicalExpression canon = Utilities.getExists(this.canonical, expression);
-        canon.use(user, operand);
+        canon.use(user, operand, this.innermostClosure());
         // Delimited with # symbols
         String id = "#" + canon.expression.getId() + "#";
         return new Representation(id, canon.dependsOn, canon.expensive, false);
@@ -376,7 +387,7 @@ public class ValueNumbering extends InnerVisitor {
     }
 
     void checkRepresentation(DBSPExpression expression, Representation repr, boolean expensive) {
-        if (repr.invalid || this.inClosure.isEmpty())
+        if (repr.invalid || this.closures.isEmpty())
             return;
         if (this.representation.containsKey(repr.repr())) {
             CanonicalExpression expr = Utilities.getExists(this.representation, repr.repr());

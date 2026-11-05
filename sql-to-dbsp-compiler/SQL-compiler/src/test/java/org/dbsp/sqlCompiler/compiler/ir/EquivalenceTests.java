@@ -172,6 +172,19 @@ public class EquivalenceTests {
     }
 
     @Test
+    public void testCSECountsUsersPerClosure() {
+        // |t| Tup(f("x"), g(t.0, |u| f("x") + (u + f("x"))))
+        // Only the inner closure uses f("x") twice, so only the inner closure gets a variable.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPClosureExpression inner = b.lambda(b.i32(),
+                u -> b.add(b.call("f", b.lit("x")), b.add(u, b.call("f", b.lit("x")))));
+        DBSPClosureExpression closure = b.tuple(
+                b.call("f", b.lit("x")), b.call("g", b.field(t, 0), inner)).closure(t);
+        assertCseVariables(compiler, cse(compiler, closure), 1);
+    }
+
+    @Test
     public void testCSEDistinguishesTypes() {
         // Each pair of fields differs only in a type, so CSE may not merge them
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());

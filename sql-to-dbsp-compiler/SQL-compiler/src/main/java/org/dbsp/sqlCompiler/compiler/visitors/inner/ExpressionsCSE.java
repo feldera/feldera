@@ -122,8 +122,8 @@ public class ExpressionsCSE extends ExpressionTranslator {
                 var = Utilities.getExists(variables, canonical.expression);
             } else if (canonical.expression != result &&
                     canonical.expensive &&
-                    canonical.manyUsers(this.numbering)) {
-                // Variable is worth creating and expression is used at least twice
+                    canonical.manyUsers(this.numbering, owner)) {
+                // Variable is worth creating and expression is used at least twice in 'owner'
                 var = new DBSPTypeLazy(expression.getType()).var();
                 Utilities.putNew(variables, canonical.expression, var);
                 this.assignments.add(new Assignment(owner, var, result, canonical.dependsOn));
