@@ -639,13 +639,13 @@ main > .container {
   color: var(--color-secondary-950);
 }
 
-/* The current page: Ink, medium weight, with a 2px Ink rule on the left (as the "On this page"
-   list marks its current heading). No fill, so it stays apart from the phone menu's Shell back bar. */
+/* The current page: a square Stone fill with Ink text, medium weight, so it reads clearly on the
+   Sink nav. */
 .menu__link--active:not(.menu__link--sublist),
 .menu__link--active:not(.menu__link--sublist):hover {
   color: var(--color-secondary-950);
-  background: none;
-  box-shadow: inset 2px 0 0 0 var(--color-secondary-950);
+  background: var(--color-stone);
+  box-shadow: none;
   font-weight: 500;
 }
 
@@ -693,12 +693,12 @@ main > .container {
   color: var(--color-secondary-950);
 }
 
-/* A category with its own page gets the same Ink rule when that page is current (aria-current),
+/* A category with its own page gets the same Stone fill when that page is current (aria-current),
    not when one of its children is */
 .theme-doc-sidebar-menu .menu__list-item-collapsible:has(> .menu__link[aria-current='page']),
 .theme-doc-sidebar-menu .menu__list-item-collapsible:has(> .menu__link[aria-current='page']):hover {
-  background: none;
-  box-shadow: inset 2px 0 0 0 var(--color-secondary-950);
+  background: var(--color-stone);
+  box-shadow: none;
 }
 
 .theme-doc-sidebar-menu .menu__list-item-collapsible > .menu__link[aria-current='page'],
