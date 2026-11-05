@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE;
@@ -29,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
@@ -71,6 +73,24 @@ public class EquivalenceTests {
     /** Fails if 'node' references a variable that is not in scope */
     static void assertResolves(DBSPCompiler compiler, IDBSPInnerNode node) {
         new ResolveReferences(compiler, false).apply(node);
+    }
+
+    /** Apply ImplementStatics to 'withCells' and to 'withoutCells', with and without declarations.
+     * The result for 'withCells' has no lazy cell, resolves, and is equivalent to the result for
+     * 'withoutCells' when statics are declared. */
+    static void assertCellsBecomeStatics(
+            DBSPCompiler compiler, IDBSPInnerNode withCells, IDBSPInnerNode withoutCells) {
+        for (boolean declare : new boolean[] { true, false }) {
+            DBSPExpression result = new ImplementStatics(compiler, declare).apply(withCells).to(DBSPExpression.class);
+            assertCseVariables(compiler, result, 0);
+            assertResolves(compiler, result);
+            if (declare) {
+                // A static expression is equivalent only to itself
+                DBSPExpression expected = new ImplementStatics(compiler, true)
+                        .apply(withoutCells).to(DBSPExpression.class);
+                Assert.assertTrue(EquivalenceContext.equiv(result, expected));
+            }
+        }
     }
 
     @Test
@@ -269,6 +289,73 @@ public class EquivalenceTests {
         DBSPExpression literal1 = b.lit(new BigDecimal("1.50"), decimal);
         DBSPClosureExpression closure = b.tuple(b.call("f", literal0), b.call("g", literal1)).closure(t);
         assertCseVariables(compiler, cse(compiler, closure), 0);
+    }
+
+    @Test
+    public void testConstantCellBecomesStatic() {
+        // |t| Tup(f("x"), f("x"), t.0)
+        // CSE binds f("x") to a lazy cell; the static that holds f("x") replaces the cell.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPClosureExpression closure = b.tuple(
+                b.call("f", b.lit("x")), b.call("f", b.lit("x")), b.field(t, 0)).closure(t);
+        IDBSPInnerNode withCell = cse(compiler, closure);
+        assertCseVariables(compiler, withCell, 1);
+        assertCellsBecomeStatics(compiler, withCell, closure);
+    }
+
+    @Test
+    public void testConstantCellInLetStatement() {
+        // |t| { let p = LazyCell::new(|| f("x")); Tup(*p, *p, t.0) }
+        // The static that holds f("x") replaces the cell, and the block loses its let statement.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPVariablePath p = new DBSPTypeLazy(b.i32()).var();
+        DBSPLetStatement let = new DBSPLetStatement(p.variable, new DBSPLazyExpression(b.call("f", b.lit("x"))));
+        DBSPClosureExpression withCell = new DBSPBlockExpression(Linq.list(let),
+                b.tuple(p.deref(), p.deref(), b.field(t, 0))).closure(t);
+        // |t| { Tup(f("x"), f("x"), t.0) }
+        DBSPClosureExpression withoutCell = new DBSPBlockExpression(Linq.list(),
+                b.tuple(b.call("f", b.lit("x")), b.call("f", b.lit("x")), b.field(t, 0))).closure(t);
+        assertCellsBecomeStatics(compiler, withCell, withoutCell);
+    }
+
+    @Test
+    public void testConstantCellInNestedClosure() {
+        // |t| { let p = LazyCell::new(|| f("x")); Tup(*p, g(t.0, |u| u + *p)) }
+        // The inner closure reads the cell of the outer closure.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPVariablePath p = new DBSPTypeLazy(b.i32()).var();
+        DBSPClosureExpression inner = b.lambda(b.i32(), u -> b.add(u, p.deref()));
+        DBSPExpression body = b.tuple(p.deref(), b.call("g", b.field(t, 0), inner));
+        DBSPClosureExpression withCell = new DBSPLetExpression(
+                p, new DBSPLazyExpression(b.call("f", b.lit("x"))), body).closure(t);
+        // |t| Tup(f("x"), g(t.0, |u| u + f("x")))
+        DBSPClosureExpression inlineInner = b.lambda(b.i32(), u -> b.add(u, b.call("f", b.lit("x"))));
+        DBSPClosureExpression withoutCell = b.tuple(
+                b.call("f", b.lit("x")), b.call("g", b.field(t, 0), inlineInner)).closure(t);
+        assertCellsBecomeStatics(compiler, withCell, withoutCell);
+    }
+
+    @Test
+    public void testCellWithClosureStays() {
+        // |t| { let p = LazyCell::new(|| |u| u); let q = LazyCell::new(|| Tup(1, |u| u)); Tup(t.0, *p, *q) }
+        // A static never holds a closure or a tuple with a closure field, so both cells stay.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPExpression closureValue = b.lambda(b.i32(), u -> u);
+        DBSPExpression tupleValue = b.tuple(b.lit(1), b.lambda(b.i32(), u -> u));
+        DBSPVariablePath p = new DBSPTypeLazy(closureValue.getType()).var();
+        DBSPVariablePath q = new DBSPTypeLazy(tupleValue.getType()).var();
+        DBSPExpression body = b.tuple(b.field(t, 0), p.deref(), q.deref());
+        DBSPExpression lets = new DBSPLetExpression(p, new DBSPLazyExpression(closureValue),
+                new DBSPLetExpression(q, new DBSPLazyExpression(tupleValue), body));
+        DBSPClosureExpression closure = lets.closure(t);
+        for (boolean declare : new boolean[] { true, false }) {
+            IDBSPInnerNode result = new ImplementStatics(compiler, declare).apply(closure);
+            assertCseVariables(compiler, result, 2);
+        }
     }
 
     @Test
