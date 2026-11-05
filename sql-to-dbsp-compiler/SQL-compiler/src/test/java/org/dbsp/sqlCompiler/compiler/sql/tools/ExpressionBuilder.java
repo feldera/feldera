@@ -11,17 +11,22 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.function.Function;
 
@@ -67,6 +72,16 @@ public class ExpressionBuilder {
         return new DBSPTypeBool(CalciteObject.EMPTY, true);
     }
 
+    /** Integer type with the given code, e.g., INT64 */
+    public DBSPType integer(DBSPTypeCode code, boolean mayBeNull) {
+        return DBSPTypeInteger.getType(CalciteObject.EMPTY, code, mayBeNull);
+    }
+
+    /** DECIMAL(precision, scale) */
+    public DBSPType decimal(int precision, int scale) {
+        return new DBSPTypeDecimal(CalciteObject.EMPTY, precision, scale, false);
+    }
+
     public DBSPTypeTuple tup(DBSPType... fields) {
         return new DBSPTypeTuple(fields);
     }
@@ -82,6 +97,11 @@ public class ExpressionBuilder {
 
     public DBSPExpression lit(String value) {
         return new DBSPStringLiteral(value);
+    }
+
+    /** A DECIMAL literal; 'type' is a DECIMAL type */
+    public DBSPExpression lit(BigDecimal value, DBSPType type) {
+        return new DBSPDecimalLiteral(type, value);
     }
 
     /** A variable of the reference type; becomes a parameter when a closure is built over it */
@@ -123,11 +143,21 @@ public class ExpressionBuilder {
     }
 
     public DBSPExpression unary(DBSPOpcode opcode, DBSPExpression source) {
-        return new DBSPUnaryExpression(CalciteObject.EMPTY, source.getType(), opcode, source);
+        return this.unary(source.getType(), opcode, source);
+    }
+
+    /** A unary expression with an explicit result type */
+    public DBSPExpression unary(DBSPType type, DBSPOpcode opcode, DBSPExpression source) {
+        return new DBSPUnaryExpression(CalciteObject.EMPTY, type, opcode, source);
     }
 
     public DBSPExpression neg(DBSPExpression source) {
         return this.unary(DBSPOpcode.NEG, source);
+    }
+
+    /** Unwrap a value with a nullable type */
+    public DBSPExpression unwrap(DBSPExpression source) {
+        return new DBSPUnwrapExpression(CalciteObject.EMPTY, "null", source);
     }
 
     public DBSPExpression ifThenElse(DBSPExpression condition,
