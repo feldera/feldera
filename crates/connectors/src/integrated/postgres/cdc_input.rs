@@ -28,6 +28,7 @@ use feldera_adapterlib::transport::{Resume, Step, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::Completion;
 use feldera_types::format::json::JsonFlavor;
+use feldera_types::library_error::LibraryError;
 use feldera_types::transport::postgres::{
     PostgresCdcBatchConfig, PostgresCdcMemoryBackpressureConfig, PostgresCdcReaderConfig,
     PostgresTlsConfig,
@@ -156,7 +157,8 @@ async fn verify_ddl_event_trigger(client: &tokio_postgres::Client) -> AnyResult<
             "select evtenabled::text from pg_event_trigger where evtname = $1",
             &[&DDL_EVENT_TRIGGER],
         )
-        .await?;
+        .await
+        .map_err(LibraryError::wrap)?;
     let problem = match row {
         None => "does not exist in the source database",
         Some(row) if row.get::<_, String>(0) == "D" => "is disabled in the source database",
@@ -2107,15 +2109,18 @@ async fn connect_pg(
     tls: &PostgresTlsConfig,
     endpoint_name: &str,
 ) -> AnyResult<tokio_postgres::Client> {
-    let config: tokio_postgres::Config = uri.parse()?;
+    let config: tokio_postgres::Config = uri.parse().map_err(LibraryError::wrap)?;
     Ok(match make_tls_connector(tls, endpoint_name)? {
         Some(connector) => {
-            let (client, connection) = config.connect(connector).await?;
+            let (client, connection) = config
+                .connect(connector)
+                .await
+                .map_err(LibraryError::wrap)?;
             tokio::spawn(connection);
             client
         }
         None => {
-            let (client, connection) = config.connect(NoTls).await?;
+            let (client, connection) = config.connect(NoTls).await.map_err(LibraryError::wrap)?;
             tokio::spawn(connection);
             client
         }
@@ -2131,7 +2136,8 @@ async fn publication_tables(
             "select schemaname, tablename from pg_publication_tables where pubname = $1",
             &[&publication],
         )
-        .await?;
+        .await
+        .map_err(LibraryError::wrap)?;
     Ok(rows
         .iter()
         .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
@@ -3104,6 +3110,31 @@ pub mod tests {
         atomic::{AtomicBool, Ordering},
     };
     use tokio::sync::watch::channel;
+
+    /// The driver echoes an unknown option name, so a password pasted in
+    /// place of an option name shows in its message. The catalog connection
+    /// shows the registered value as its reference.
+    #[test]
+    fn a_password_the_driver_echoes_is_redacted() {
+        let value = "cdc-typo-pw-2136";
+        let reference = "${secret:kubernetes:pg/cdc-typo}";
+        feldera_types::secret_redaction::secret_redactor().register(reference, value);
+        let uri = format!("postgresql://alice@/orders?host=/nonexistent-feldera-2136/pg&{value}=1");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let error = runtime
+            .block_on(connect_pg(&uri, &PostgresTlsConfig::default(), "pg_cdc"))
+            .expect_err("the option is unknown");
+
+        let text = format!("{error:#}");
+        assert!(!text.contains(value), "password in error: {text}");
+        assert!(
+            text.contains("unknown option"),
+            "driver text missing: {text}"
+        );
+    }
 
     #[test]
     fn setup_hint_only_for_permission_or_missing_etl_helper_errors() {

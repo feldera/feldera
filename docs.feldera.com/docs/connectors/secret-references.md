@@ -65,6 +65,16 @@ Format configuration errors report a safe error category and a corrective
 action instead of quoting the rejected value, including for short secrets.
 JSON log fields are redacted before serialization adds JSON escaping.
 
+An error from a driver or client library can echo the connection string or
+the option value it was given. The Postgres connectors show errors from the
+Postgres driver through a wrapper whose text has connection passwords,
+`password=` values and rejected Kafka option values removed and registered
+secret values replaced, so a log line or a message that includes the error
+is safe. The raw error is kept for classification only. Errors from the
+replication library of the Postgres CDC connector, and library errors in
+other connectors, still show as the library writes them, within the
+registry's limits.
+
 The pipeline also registers values from declared credential fields and replaces
 matching diagnostic text with `[REDACTED]`. The same length and token limits
 apply. A Secret reference remains protected regardless of its destination field,
