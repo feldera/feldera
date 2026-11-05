@@ -641,11 +641,6 @@ fn test_input_queue_before_drained_messages() {
         producer.send_message(format!("m{i}").as_bytes(), topic, None);
     }
 
-    DELAY_SPLIT.lock().unwrap().insert(topic.into());
-    let (_endpoint, receiver, reader) = create_reader(topic, None, false);
-
-    // Queue a step before `extend`, as a stop during start-up does.
-    reader.queue(false);
     let metadata = |offsets| {
         serde_json::to_value(Metadata {
             offsets: vec![offsets],
@@ -654,15 +649,31 @@ fn test_input_queue_before_drained_messages() {
         })
         .unwrap()
     };
-    receiver.expect(vec![ConsumerCall::Extended {
-        num_records: 0,
-        metadata: metadata(0..0),
-    }]);
+
+    // librdkafka fetches into the main queue only if it is fast enough, so
+    // try again until a reader drains at least one message.
+    DELAY_SPLIT.lock().unwrap().insert(topic.into());
+    let mut attempts = 0;
+    let (_endpoint, receiver, reader) = loop {
+        attempts += 1;
+        DRAINED.lock().unwrap().remove(topic);
+        let (endpoint, receiver, reader) = create_reader(topic, None, false);
+
+        // Queue a step before `extend`, as a stop during start-up does.
+        reader.queue(false);
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: 0,
+            metadata: metadata(0..0),
+        }]);
+        if DRAINED.lock().unwrap().get(topic).copied().unwrap_or(0) > 0 {
+            break (endpoint, receiver, reader);
+        }
+        assert!(
+            attempts < 10,
+            "no message reached the main queue in {attempts} attempts, so this test checks nothing"
+        );
+    };
     DELAY_SPLIT.lock().unwrap().remove(topic);
-    assert!(
-        DRAINED.lock().unwrap().get(topic).copied().unwrap_or(0) > 0,
-        "no message reached the main queue, so this test checked nothing"
-    );
 
     reader.extend();
     receiver.expect_buffering(5);

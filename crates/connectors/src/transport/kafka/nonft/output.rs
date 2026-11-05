@@ -474,6 +474,15 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     /// checkpoint may then cover it.  Records still in librdkafka's queue
     /// would be lost if the pipeline crashed after that checkpoint, which
     /// breaks at-least-once output.
+    ///
+    /// While the broker is unreachable, this blocks the output thread, so
+    /// output backs up as it does for any slow sink.
+    ///
+    /// A record that fails, because Kafka refuses it or because a finite
+    /// `message.timeout.ms` expires, is reported as an error but does not
+    /// make this fail: it is lost even though a checkpoint may cover it.
+    /// The default timeout is unlimited, so only explicit configuration
+    /// loses records this way.
     fn batch_end(&mut self) -> AnyResult<()> {
         let context = self.kafka_producer.context();
         let mut state = context.delivery_state.lock().unwrap();
@@ -681,6 +690,33 @@ mod tests {
         assert_eq!(
             callbacks.metric("kafka_output_delivered_messages_total"),
             1.0
+        );
+    }
+
+    /// `batch_end` returns at once if no record is pending.
+    #[test]
+    fn batch_end_without_pending_records() {
+        let cluster = MockCluster::new(1).unwrap();
+        cluster.create_topic("test_topic", 1, 1).unwrap();
+        let (mut endpoint, _callbacks) = endpoint(&cluster, json!({}));
+        cluster.broker_down(1).unwrap();
+        endpoint.batch_end().unwrap();
+    }
+
+    /// A delivery that fails while `batch_end` waits ends the wait, and the
+    /// failure is counted as an error.
+    #[test]
+    fn delivery_failure_ends_batch_end() {
+        let cluster = MockCluster::new(1).unwrap();
+        cluster.create_topic("test_topic", 1, 1).unwrap();
+        let (mut endpoint, callbacks) = endpoint(&cluster, json!({"message.timeout.ms": "1000"}));
+        cluster.broker_down(1).unwrap();
+        endpoint.push_buffer(b"will expire").unwrap();
+        endpoint.batch_end().unwrap();
+        assert_eq!(callbacks.metric("kafka_output_delivery_errors_total"), 1.0);
+        assert_eq!(
+            callbacks.metric("kafka_output_delivered_messages_total"),
+            0.0
         );
     }
 
