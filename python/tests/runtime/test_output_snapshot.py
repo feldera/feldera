@@ -81,7 +81,9 @@ def test_egress_send_snapshot(pipeline_name):
             array=True,
             update_format="raw",
             wait=True,
-            wait_timeout_s=30.0,
+            # The token also waits for the Delta sink to commit to the CI
+            # object store, like the 60 s sink polls below (#7654).
+            wait_timeout_s=60.0,
         )
 
     def wait_for_sink(ids: list[int]):
@@ -353,7 +355,9 @@ def test_delta_output_send_snapshot_after_flag_flip(pipeline_name):
     ).create_or_replace()
     pipeline.start()
 
-    pipeline.input_json("t1", _ROWS, wait=True, wait_timeout_s=30.0)
+    # The token also waits for four Delta sinks to commit to the CI object
+    # store, like the 60 s sink polls below (#7654).
+    pipeline.input_json("t1", _ROWS, wait=True, wait_timeout_s=60.0)
 
     for (label, *_), loc in zip(_VIEWS, locations):
         wait_for_condition(
