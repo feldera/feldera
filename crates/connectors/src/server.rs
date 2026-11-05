@@ -1984,6 +1984,7 @@ async fn status_handler(
 /// from a checkpoint that does not exist.
 fn terminated_status(
     suspended: bool,
+    fatal_error: Option<Arc<ControllerError>>,
     runtime_desired_status: RuntimeDesiredStatus,
     storage_status_details: Option<StorageStatusDetails>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
@@ -1994,6 +1995,8 @@ fn terminated_status(
             runtime_desired_status,
             storage_status_details,
         })
+    } else if let Some(error) = fatal_error {
+        Err(controller_error_status(error))
     } else {
         Err(ExtendedRuntimeStatusError {
             status_code: StatusCode::INTERNAL_SERVER_ERROR,
@@ -2003,6 +2006,28 @@ fn terminated_status(
                 details: json!({}),
             },
         })
+    }
+}
+
+/// The `/status` error for a pipeline that `error` stopped.
+fn controller_error_status(error: Arc<ControllerError>) -> ExtendedRuntimeStatusError {
+    let mut status_code = error.status_code();
+    if status_code == StatusCode::SERVICE_UNAVAILABLE {
+        error!(
+            "Endpoint /status: unexpected status code {status_code} has been converted into {} for error {error}",
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        status_code = StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    let e = PipelineError::ControllerError { error };
+    let e = ErrorResponse::from_error(&e);
+    ExtendedRuntimeStatusError {
+        status_code,
+        error: feldera_types::error::ErrorResponse {
+            message: e.message,
+            error_code: e.error_code,
+            details: e.details,
+        },
     }
 }
 
@@ -2101,6 +2126,7 @@ fn get_status(
                 )),
                 PipelineState::Terminated => terminated_status(
                     controller.status().global_metrics.suspended(),
+                    controller.status().global_metrics.fatal_error(),
                     runtime_desired_status,
                     storage_status_details,
                 ),
@@ -2177,24 +2203,7 @@ fn get_status(
                     storage_status_details,
                 })
             } else {
-                let mut status_code = e.status_code();
-                if status_code == StatusCode::SERVICE_UNAVAILABLE {
-                    error!(
-                        "Endpoint /status: unexpected status code {status_code} has been converted into {} for error {e}",
-                        StatusCode::SERVICE_UNAVAILABLE
-                    );
-                    status_code = StatusCode::INTERNAL_SERVER_ERROR;
-                }
-                let e = PipelineError::ControllerError { error: e };
-                let e = ErrorResponse::from_error(&e);
-                Err(ExtendedRuntimeStatusError {
-                    status_code,
-                    error: feldera_types::error::ErrorResponse {
-                        message: e.message,
-                        error_code: e.error_code,
-                        details: e.details,
-                    },
-                })
+                Err(controller_error_status(e))
             }
         }
         PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
@@ -5728,14 +5737,27 @@ mod test_status {
     /// `PipelineTerminated` error that flaked `suspend_and_resume_demos`.
     #[test]
     fn terminated_status_reports_suspended_while_suspending() {
-        let status = terminated_status(true, RuntimeDesiredStatus::Suspended, None)
+        let status = terminated_status(true, None, RuntimeDesiredStatus::Suspended, None)
             .expect("a suspending pipeline must not surface PipelineTerminated");
         assert!(matches!(status.runtime_status, RuntimeStatus::Suspended));
 
         // An unexpected termination stays a fatal error.
-        let error = terminated_status(false, RuntimeDesiredStatus::Running, None)
+        let error = terminated_status(false, None, RuntimeDesiredStatus::Running, None)
             .expect_err("an unexpected termination must remain PipelineTerminated");
         assert_eq!(error.error.error_code.as_ref(), "PipelineTerminated");
+    }
+
+    /// A pipeline that an error stopped must report that error, not only that
+    /// it terminated.
+    #[test]
+    fn terminated_status_reports_the_fatal_error() {
+        let error = Arc::new(ControllerError::ReplayFailure {
+            error: "replayed transaction 1 ingested different input".to_string(),
+        });
+        let status = terminated_status(false, Some(error), RuntimeDesiredStatus::Running, None)
+            .expect_err("a pipeline that an error stopped must report an error");
+        assert_eq!(status.error.error_code.as_ref(), "ReplayFailure");
+        assert!(status.error.message.contains("ingested different input"));
     }
 
     /// A circuit that dies while a suspend is pending must not be reported as a
@@ -5750,7 +5772,7 @@ mod test_status {
     /// handler may produce it.
     #[test]
     fn terminated_status_reports_a_death_during_suspend_as_an_error() {
-        let error = terminated_status(false, RuntimeDesiredStatus::Suspended, None)
+        let error = terminated_status(false, None, RuntimeDesiredStatus::Suspended, None)
             .expect_err("a pipeline that died while suspending must not report a clean suspend");
         assert_eq!(error.error.error_code.as_ref(), "PipelineTerminated");
     }

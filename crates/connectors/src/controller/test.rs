@@ -2797,6 +2797,79 @@ pub fn replay_does_not_wait_for_endpoint_without_journaled_input(engine: &dyn Pi
     controller.stop().unwrap();
 }
 
+/// A replay that reads different input than the journal recorded must stop the
+/// pipeline and record the replay failure as the cause, so that `/status`
+/// reports it instead of a bare `PipelineTerminated`.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn replay_failure_is_recorded_as_fatal_error(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path, "follow": true }
+                },
+                "format": { "name": "csv" }
+            }
+        }
+    }))
+    .unwrap();
+    let circuit = identity(&[Some("output")]);
+
+    // Journal three records, without a checkpoint.
+    std::fs::write(&input_path, "1,true,,foo\n2,true,,foo\n3,true,,foo\n").unwrap();
+    let controller = engine
+        .controller(&circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+        .unwrap();
+    controller.start();
+    wait(
+        || controller.status().num_total_processed_records() == 3,
+        default_timeout_ms(),
+    )
+    .expect("the input was never processed");
+    controller.stop().unwrap();
+
+    // Change the input, with the same length, so that the replay reads
+    // different records at the journaled offsets.
+    std::fs::write(&input_path, "4,true,,bar\n5,true,,bar\n6,true,,bar\n").unwrap();
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(&circuit, &config, {
+            let errors = errors.clone();
+            Box::new(move |e, _| errors.lock().unwrap().push(e.error_code()))
+        })
+        .unwrap();
+    controller.start();
+    wait(
+        || controller.status().global_metrics.get_state() == crate::PipelineState::Terminated,
+        default_timeout_ms(),
+    )
+    .expect("the replay failure did not stop the pipeline");
+
+    let fatal_error = controller
+        .status()
+        .global_metrics
+        .fatal_error()
+        .expect("the pipeline stopped without recording the cause");
+    assert_eq!(fatal_error.error_code(), "ReplayFailure");
+    assert_eq!(errors.lock().unwrap().as_slice(), ["ReplayFailure"]);
+    let _ = controller.stop();
+}
+
 /// Returns the names of the ad hoc INSERT input endpoints of `controller`.
 fn adhoc_input_endpoints(controller: &Controller) -> Vec<String> {
     controller

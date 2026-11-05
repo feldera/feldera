@@ -948,7 +948,18 @@ impl Controller {
                             let panicked = run_result.is_err();
                             match run_result {
                                 Ok(Ok(())) => (),
-                                Ok(Err(error)) => circuit_thread.controller.error(error, None),
+                                Ok(Err(error)) => {
+                                    // The circuit cannot continue.  Record the
+                                    // cause before `finish` terminates the
+                                    // pipeline, so that `/status` reports it.
+                                    let error = Arc::new(error);
+                                    circuit_thread
+                                        .controller
+                                        .status
+                                        .global_metrics
+                                        .set_fatal_error(error.clone());
+                                    circuit_thread.controller.error(error, None);
+                                }
                                 Err(_) => {
                                     // The panic hook already logged the message
                                     // and backtrace.  Without this report, the
