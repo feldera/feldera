@@ -63,9 +63,27 @@ _NOT_APPLIED_ERROR_CODES = frozenset(
         "DeadlockDetected",
         "LockTookTooLong",
         "PipelineInteractionNotDeployed",
+        "PipelineInteractionConnectFailed",
         "CompilerUnavailable",
     }
 )
+
+
+def _is_not_applied_503(exc: FelderaAPIError) -> bool:
+    """True if a 503 shows that the manager did not apply the request.
+
+    Managers that predate `PipelineInteractionConnectFailed` send
+    `PipelineInteractionUnreachable` when they cannot connect to the pipeline.
+    The awc prefix "Failed to connect to host" identifies that case.
+    """
+    if exc.status_code != 503:
+        return False
+    if exc.error_code in _NOT_APPLIED_ERROR_CODES:
+        return True
+    return (
+        exc.error_code == "PipelineInteractionUnreachable"
+        and "Failed to connect to host" in (exc.message or "")
+    )
 
 
 _SENSITIVE_HEADERS = {"authorization", "cookie", "proxy-authorization", "x-api-key"}
@@ -171,8 +189,8 @@ class HttpRequests:
 
         `idempotent` gates every failure after which the server may already
         have applied the request: a read timeout, a dropped connection, and
-        any retryable status not in `_NOT_APPLIED_STATUS_CODES`, unless it is
-        a 503 with an error code in `_NOT_APPLIED_ERROR_CODES`. A connect
+        any retryable status not in `_NOT_APPLIED_STATUS_CODES`, unless
+        `_is_not_applied_503` shows the manager did not apply it. A connect
         timeout always retries, because the request was never sent.
         """
         if isinstance(exc, requests.exceptions.ConnectTimeout):
@@ -187,10 +205,7 @@ class HttpRequests:
                 and (
                     idempotent
                     or exc.status_code in _NOT_APPLIED_STATUS_CODES
-                    or (
-                        exc.status_code == 503
-                        and exc.error_code in _NOT_APPLIED_ERROR_CODES
-                    )
+                    or _is_not_applied_503(exc)
                 )
             )
         return False

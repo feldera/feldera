@@ -113,6 +113,14 @@ pub enum RunnerError {
         request: String,
         error: String,
     },
+    /// The connection to the pipeline could not be opened, so the request
+    /// was not sent and a retry cannot apply it twice.
+    PipelineInteractionConnectFailed {
+        /// Pipeline name or UUID if name is not available.
+        pipeline_name: String,
+        request: String,
+        error: String,
+    },
     PipelineInteractionInvalidResponse {
         /// Pipeline name or UUID if name is not available.
         pipeline_name: String,
@@ -208,6 +216,9 @@ impl DetailedError for RunnerError {
             }
             RunnerError::PipelineInteractionUnreachable { .. } => {
                 Cow::from("PipelineInteractionUnreachable")
+            }
+            RunnerError::PipelineInteractionConnectFailed { .. } => {
+                Cow::from("PipelineInteractionConnectFailed")
             }
             RunnerError::PipelineInteractionInvalidResponse { .. } => {
                 Cow::from("PipelineInteractionInvalidResponse")
@@ -440,6 +451,11 @@ impl Display for RunnerError {
                 pipeline_name,
                 request,
                 error,
+            }
+            | Self::PipelineInteractionConnectFailed {
+                pipeline_name,
+                request,
+                error,
             } => {
                 write!(
                     f,
@@ -529,6 +545,7 @@ impl ResponseError for RunnerError {
             Self::PipelineUnavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PipelineInteractionConnectFailed { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineInteractionInvalidResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::OpenSSL { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }

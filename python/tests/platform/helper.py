@@ -300,7 +300,8 @@ def wait_for_pipeline_reachable(pipeline_name: str, timeout_s: float = 30.0) -> 
             return
         if (
             response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
-            and response.json().get("error_code") == "PipelineInteractionUnreachable"
+            and response.json().get("error_code")
+            in ("PipelineInteractionUnreachable", "PipelineInteractionConnectFailed")
         ):
             if time.monotonic() >= deadline:
                 raise TimeoutError(
