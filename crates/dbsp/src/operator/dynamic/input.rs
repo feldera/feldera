@@ -1773,6 +1773,55 @@ mod test {
         dbsp.kill().unwrap();
     }
 
+    /// Like `map_reinsert_within_step_accumulate_output`, for InputUpsertWithWaterline.
+    #[test]
+    fn map_with_waterline_reinsert_within_step() {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(1, |circuit| {
+            let (stream, _errors, _waterline, handle) = circuit
+                .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _>(
+                    |v, u| *v = ((*v as i64) + u) as u64,
+                    || 0u64,
+                    |_k, v| *v,
+                    |wl1, wl2| max(*wl1, *wl2),
+                    |_wl, _k, _v| true,
+                    |_wl, k, v, _w| format!("key: {k}, value: {v}"),
+                );
+            Ok((handle, stream.accumulate_output()))
+        })
+        .unwrap();
+
+        let initial_batch = vec![Tup2(1, Update::Insert(10)), Tup2(2, Update::Insert(20))];
+        input_handle
+            .stage(vec![VecDeque::from(initial_batch)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! { 1 => {10 => 1}, 2 => {20 => 1} }
+        );
+
+        // The first vector deletes the keys, the second one reinserts them.
+        let delete_batch = vec![Tup2(1, Update::Delete), Tup2(2, Update::Delete)];
+        input_handle
+            .stage(vec![VecDeque::from(delete_batch)])
+            .flush();
+        let reinsert_batch = vec![
+            Tup2(1, Update::Insert(10)),
+            Tup2(2, Update::Insert(20)),
+            Tup2(3, Update::Insert(30)),
+        ];
+        input_handle
+            .stage(vec![VecDeque::from(reinsert_batch)])
+            .flush();
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.concat().consolidate(),
+            indexed_zset! { 3 => {30 => 1} }
+        );
+
+        dbsp.kill().unwrap();
+    }
+
     /// Split `items` into `k` contiguous non-empty segments (`k` in 1..=min(3, n)).
     fn partition_into_k_contiguous_batches<T: Clone>(
         items: Vec<T>,
