@@ -40,11 +40,11 @@
 <th
   class="whitespace-nowrap {isSticky
     ? 'sticky top-0 z-10'
-    : ''} px-3 text-sm font-medium text-surface-800-200 {isNumeric
+    : ''} px-3 text-sm font-medium text-surface-900-100 {isNumeric
     ? 'text-right'
     : 'text-left'} {_class}"
   {style}
 >
   {getCaseIndependentName(column)}
-  <span class="pl-1 text-xs font-normal text-surface-500">{displaySQLColumnType(column)}</span>
+  <span class="pl-1 text-sm font-normal text-surface-700-300">{displaySQLColumnType(column)}</span>
 </th>
