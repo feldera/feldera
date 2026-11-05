@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use feldera_types::library_error::LibraryError;
 use postgres::error::SqlState;
 
 pub(super) enum BackoffError {
@@ -19,6 +20,10 @@ impl BackoffError {
     /// Only a configuration the connector cannot outlast is permanent. Retrying
     /// a wrong password or a database that does not exist would spin until
     /// someone changes the connector's configuration, which restarts it anyway.
+    ///
+    /// This is the boundary where the raw driver error is classified and
+    /// wrapped; it is one of the two places allowed to name the raw type.
+    #[allow(clippy::disallowed_types)]
     pub fn connecting(value: postgres::Error) -> Self {
         let permanent = value.code().is_some_and(|code| {
             [
@@ -31,7 +36,9 @@ impl BackoffError {
         });
 
         // Chain rather than interpolate, so that the server's message survives:
-        // see the note in `From<postgres::Error>`.
+        // see the note in `From<postgres::Error>`. The wrapper keeps the
+        // message and its DETAIL in its text, without credentials.
+        let value = LibraryError::wrap(value);
         if permanent {
             Self::Permanent(anyhow::Error::new(value).context("cannot connect to postgres"))
         } else {
@@ -83,6 +90,9 @@ impl BackoffError {
 ///
 /// Use [`BackoffError::connecting`] for a failure to open the connection in the
 /// first place, where far more of the failures are transient.
+///
+/// This is the other boundary that classifies and wraps the raw driver error.
+#[allow(clippy::disallowed_types)]
 impl From<postgres::Error> for BackoffError {
     fn from(value: postgres::Error) -> Self {
         let code = value.code().cloned();
@@ -103,7 +113,9 @@ impl From<postgres::Error> for BackoffError {
         // Keep the postgres error as the source instead of interpolating it:
         // `Display for postgres::Error` reports only the kind ("db error"), and
         // the server's message and DETAIL reach the report solely through the
-        // error chain, which `BackoffError::inner` formats in full.
+        // error chain, which `BackoffError::inner` formats in full. The
+        // wrapper joins that chain into one sanitized text.
+        let value = LibraryError::wrap(value);
         if temporary {
             Self::Temporary(
                 anyhow::Error::new(value)
@@ -115,5 +127,25 @@ impl From<postgres::Error> for BackoffError {
                     .context(format!("postgres error: permanent: SqlState: {code:?}")),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BackoffError;
+
+    /// The driver's own message survives the wrapper, so the report still
+    /// says what went wrong.
+    #[test]
+    fn the_driver_message_survives_classification() {
+        let error = "host=h port=notaport"
+            .parse::<tokio_postgres::Config>()
+            .unwrap_err();
+        let text = BackoffError::connecting(error).inner().to_string();
+        assert!(
+            text.starts_with("cannot connect to postgres yet: "),
+            "{text}"
+        );
+        assert!(text.contains("port"), "{text}");
     }
 }
