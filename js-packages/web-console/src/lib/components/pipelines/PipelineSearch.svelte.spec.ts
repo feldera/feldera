@@ -104,6 +104,16 @@ describe('PipelineSearch', () => {
     await expect.element(tagList()).not.toBeInTheDocument()
   })
 
+  it('picks a suggested tag on Enter when the typed name differs in case', async () => {
+    const bound = await renderSearch('right')
+
+    await input().fill('PROD')
+    await expect.poll(suggestedNames).toEqual(['prod'])
+    await userEvent.keyboard('{Enter}')
+    await expect.poll(() => bound.tagFilters).toEqual(['prod|22c55e'])
+    expect(bound.query).toBe('')
+  })
+
   it('keeps text that is not the name of a tag as the query on Enter', async () => {
     const bound = await renderSearch('right')
 
@@ -151,6 +161,15 @@ describe('PipelineSearch', () => {
     await userEvent.keyboard('{Shift>}{Tab}{/Shift}{Shift>}{Tab}{/Shift}{Enter}')
     expect(bound.tagFilters).toEqual(['team-b|3b82f6'])
     expect(bound.query).toBe('')
+  })
+
+  it('suggests no tags for a query of only spaces', async () => {
+    await renderSearch('below')
+
+    await input().fill('   ')
+
+    await expect.element(input()).toHaveValue('   ')
+    await expect.element(tagList()).not.toBeInTheDocument()
   })
 
   it('suggests no tags for a query that matches only a pipeline name', async () => {
