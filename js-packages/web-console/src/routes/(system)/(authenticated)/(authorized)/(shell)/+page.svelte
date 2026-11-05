@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import { InlineDropdown, useIsScreenMd, useIsTablet } from 'common-ui'
+  import { InlineDropdown, useIsScreen2xl, useIsScreenMd, useIsTablet } from 'common-ui'
   import { slide } from 'svelte/transition'
   import IconBookOpen from 'lucide-static/icons/book-open.svg?component'
   import IconDiscord from '#assets/icons/vendors/discord-logomark-color.svg?component'
@@ -52,7 +52,10 @@
     }
   ]
 
-  const maxShownDemos = $derived(isTablet.current ? 5 : 9)
+  // Show enough demos to fill whole rows of the demo grid together with the "Discover more"
+  // tile. The grid has up to 3 columns below xl, 4 at xl and 5 at 2xl.
+  const isScreen2xl = useIsScreen2xl()
+  const maxShownDemos = $derived(isTablet.current ? 5 : isScreen2xl.current ? 9 : 7)
 
   const pipelines = usePipelineList()
   const welcomed = useLocalStorage('home/welcomed', false)
@@ -270,11 +273,11 @@
                 </div>
               {/snippet}
               {#snippet content()}
-                <!-- A column is added as soon as one more 280px card fits, so a card stays under
-                     twice that width however wide the screen is; on a phone it is the full width. -->
+                <!-- The breakpoints set the column count, so it matches `maxShownDemos`. Each step
+                     keeps a card at least 280px wide. -->
                 <div
                   transition:slide={{ duration: 150 }}
-                  class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4 pt-0.5 pb-2"
+                  class="grid grid-cols-1 gap-4 pt-0.5 pb-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
                 >
                   {#each demos.current.slice(0, maxShownDemos) as demo}
                     <DemoTile {demo} placement="home"></DemoTile>

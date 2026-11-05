@@ -77,6 +77,7 @@ export {
   useIsScreenMd,
   useIsScreenSm,
   useIsScreenXl,
+  useIsScreen2xl,
   useIsTablet
 } from './useIsMobile.svelte'
 export { useReverseScrollContainer } from './useReverseScrollContainer.svelte'
