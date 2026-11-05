@@ -265,6 +265,13 @@ tombstones to remove deleted keys from a topic. If the consumer cannot read a
 message with a null value, set `"tombstones_on_delete": false` in the format
 configuration. This option is valid only with an `index`.
 
+A Kafka output connector in a pipeline with exactly-once fault tolerance does
+not write tombstones. If `tombstones_on_delete` is not `false`, the connector
+writes each `d` event, and then reports an error for its tombstone. In such a
+pipeline, set `"tombstones_on_delete": false`. A compacted topic then keeps the
+last `d` event of each deleted key. See [Message keys with exactly-once fault
+tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance).
+
 The default [JSON flavor](#configuring-json-flavors) of this format is
 `kafka_connect_json_converter`, which also puts a `schema` field in the key and
 the value of each message.
