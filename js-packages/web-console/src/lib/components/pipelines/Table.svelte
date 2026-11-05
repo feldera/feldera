@@ -212,7 +212,9 @@
       <!-- The page reserves a scrollbar gutter that the header above it doesn't have; the
            negative margin carries the controls into it so they end where the header's
            buttons do. -->
-      <div class="relative -mr-[var(--scrollbar-width)] ml-auto flex flex-row items-center gap-2">
+      <div
+        class="relative -mr-[var(--scroll-gutter-width)] ml-auto flex flex-row items-center gap-2"
+      >
         <input
           data-testid="input-pipeline-search"
           class="input sm:w-60"
@@ -286,7 +288,7 @@
       </div>
     </div>
   </div>
-  <div class="flex px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
+  <div class="flex px-2 md:pr-[calc(--spacing(8)-var(--scroll-gutter-width))] md:pl-8">
     <!-- The page wraps the table to fit its content, so a percentage width would have nothing
          to resolve against. As a flex item the table starts at the columns' total, which also
          sets how wide the page scrolls, and grows into any room left over, which Message takes. -->

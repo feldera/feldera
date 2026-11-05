@@ -78,9 +78,9 @@
   const globalDialog = useGlobalDialog()
 
   // The page's gutters make up for the scroll area's reserved scrollbar gutter through
-  // `--scrollbar-width`, which `<body>` fixes at 10px. Overlay scrollbars (macOS by
-  // default) reserve no gutter, so measure the real one; otherwise the right gutter ends
-  // up 10px narrower than the left.
+  // `--scroll-gutter-width`. Overlay scrollbars (macOS by default) reserve no gutter, so
+  // measure the real one. It is not `--scrollbar-width`, which sets the scrollbar's width:
+  // a measurement taken before that applies would then hold it at the old width.
   let scrollArea: HTMLElement | undefined = $state()
   $effect(() => {
     const node = scrollArea
@@ -89,7 +89,7 @@
     }
     const measure = () =>
       document.body.style.setProperty(
-        '--scrollbar-width',
+        '--scroll-gutter-width',
         `${node.offsetWidth - node.clientWidth}px`
       )
     measure()
@@ -97,7 +97,7 @@
     observer.observe(node)
     return () => {
       observer.disconnect()
-      document.body.style.removeProperty('--scrollbar-width')
+      document.body.style.removeProperty('--scroll-gutter-width')
     }
   })
 </script>
@@ -107,7 +107,7 @@
 {/snippet}
 
 <!-- The home page uses 20px side gutters (as the pipeline page) rather than the default 32px. -->
-<AppHeader class="px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
+<AppHeader class="px-2 md:pr-[calc(--spacing(8)-var(--scroll-gutter-width))] md:pl-8">
   {#snippet beforeEnd()}
     {#if !isScreenMd.current}
       <button
@@ -143,7 +143,7 @@
         <!-- The right padding gives back the reserved scrollbar gutter, so the banner ends
              where the header's buttons do (as the pipelines toolbar does). -->
         <div
-          class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8"
+          class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:pr-[calc(--spacing(8)-var(--scroll-gutter-width))] md:pl-8"
         >
           <div class="relative flex w-full items-center gap-4 p-6 sm:gap-12">
             <div class="welcome-banner-bg absolute top-0 left-0 -z-10 h-full w-full card"></div>
@@ -241,7 +241,7 @@
       {#if demos.current.length}
         <!-- Held at the bottom of the screen while the pipelines table scrolls. -->
         <PinnedSections class="max-w-[100cqi] gap-8">
-          <div class="px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
+          <div class="px-2 md:pr-[calc(--spacing(8)-var(--scroll-gutter-width))] md:pl-8">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
               {#snippet header(open, toggle)}
                 <div

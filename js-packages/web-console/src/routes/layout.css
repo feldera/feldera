@@ -385,18 +385,6 @@ input:focus {
 
 /* The end of Skeleton UI overrides */
 
-/* Thin, faint scrollbars that darken on hover, instead of the wide grey system ones. The code
-   editor draws its own and gets the same look from its theme. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(0 0 0 / 0.18) transparent;
-  &:where(.dark, .dark *) {
-    scrollbar-color: rgb(255 255 255 / 0.18) transparent;
-  }
-}
-.scrollbar {
-  scrollbar-width: thin;
-}
 /* The editor's sliders are drawn by Monaco; round them so they match. */
 .monaco-scrollable-element > .scrollbar > .slider {
   border-radius: 9999px;
