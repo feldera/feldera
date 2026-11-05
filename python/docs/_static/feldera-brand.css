@@ -444,3 +444,136 @@ html.writer-html5 .rst-content dl[class]:not(.option-list):not(.field-list):not(
 .rst-content table.docutils:not(.field-list) tr:nth-child(2n-1) td {
   background: var(--fd-card);
 }
+
+/* ---------- The docs top bar ---------- */
+
+.fd-top {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  height: 64px;
+  padding: 0 1.5rem;
+  background: var(--fd-paper);
+  border-bottom: 1px solid rgb(32 31 30 / 0.06);
+  font-family: var(--fd-sans);
+}
+
+.fd-top-logo img {
+  display: block;
+  height: 2rem;
+  width: auto;
+}
+
+.fd-top-links,
+.fd-top-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.fd-top-right {
+  margin-left: auto;
+}
+
+.fd-top a:not(.fd-top-logo) {
+  color: var(--fd-grey);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.fd-top a:not(.fd-top-logo):hover,
+.fd-top a.is-current {
+  color: var(--fd-ink);
+}
+
+.fd-top a.is-current {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.5em;
+  text-decoration-color: rgb(32 31 30 / 0.14);
+}
+
+/* Everything below the bar starts under it. */
+.wy-nav-side {
+  top: 64px;
+  padding-bottom: 64px;
+}
+
+.wy-nav-content-wrap {
+  padding-top: 64px;
+}
+
+/* The nav: 260px wide, as the main docs nav, with its own small label over the search. */
+.wy-nav-side,
+.wy-side-scroll,
+.wy-menu-vertical {
+  width: 260px;
+}
+
+.wy-nav-content-wrap {
+  margin-left: 260px;
+}
+
+.wy-side-nav-search {
+  padding: 1rem 0.75rem 0.75rem;
+  text-align: left;
+}
+
+.fd-side-label {
+  margin: 0 0 0.6rem;
+  font-family: var(--fd-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fd-muted);
+}
+
+/* Section captions: a hairline above each, as the main docs nav closes one section before the next. */
+.wy-menu-vertical p.caption {
+  margin: 0.75rem 0.75rem 0.25rem;
+  padding: 0.75rem 0.5rem 0;
+  border-top: 1px solid rgb(32 31 30 / 0.07);
+}
+
+.wy-menu-vertical p.caption:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.wy-menu-vertical li.toctree-l1 > a {
+  padding: 0.35rem 1.25rem;
+}
+
+/* The main docs hide breadcrumbs and source links. */
+.wy-breadcrumbs,
+.wy-breadcrumbs + hr,
+.rst-content > div[role='navigation'] > hr {
+  display: none;
+}
+
+.rst-content {
+  padding-top: 0.5rem;
+}
+
+/* Phones: the bar keeps only the logo; the theme's own menu button sits below it. */
+@media (max-width: 768px) {
+  .fd-top-links,
+  .fd-top-right {
+    display: none;
+  }
+
+  .wy-nav-side {
+    top: 64px;
+  }
+
+  .wy-nav-content-wrap {
+    margin-left: 0;
+  }
+
+  .wy-nav-top {
+    margin-top: 0;
+  }
+}

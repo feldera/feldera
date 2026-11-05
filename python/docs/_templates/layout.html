@@ -1,0 +1,28 @@
+{#- The docs.feldera.com top bar above the Read the Docs layout, so the SDK reference sits inside the
+    docs: the logo, Get Started, SQL Reference, Connectors, Python SDK (current) and Community. -#}
+{% extends "!layout.html" %}
+
+{% block extrabody %}
+<header class="fd-top">
+  <a class="fd-top-logo" href="https://www.feldera.com" aria-label="Feldera">
+    <img src="/img/logo-black.svg" alt="Feldera" width="70" height="31" />
+  </a>
+  <nav class="fd-top-links" aria-label="Docs">
+    <a href="/get-started">Get Started</a>
+    <a href="/sql">SQL Reference</a>
+    <a href="/connectors">Connectors</a>
+    <a href="{{ pathto(root_doc) }}" class="is-current" aria-current="page">Python SDK</a>
+  </nav>
+  <nav class="fd-top-right" aria-label="Community">
+    <a href="https://join.slack.com/t/felderacommunity/shared_invite/zt-3vf3n5dj5-HJuC1DFFY2wE1_AZUyNxqw">Slack</a>
+    <a href="https://discord.com/invite/s6t5n9UzHE">Discord</a>
+    <a href="https://github.com/feldera/feldera">GitHub</a>
+  </nav>
+</header>
+{% endblock %}
+
+{#- The nav title: a small mono label over the search, as a docs section label, not a big blue band. -#}
+{% block sidebartitle %}
+  <p class="fd-side-label">Python SDK{% if release %} · {{ release }}{% endif %}</p>
+  {% include "searchbox.html" %}
+{% endblock %}
