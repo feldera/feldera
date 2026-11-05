@@ -1,0 +1,9 @@
+# A raw driver error can echo the connection string or option value it was
+# given. Wrap it in `feldera_types::library_error::LibraryError` where it
+# enters our code. This rule only catches the places that write the type
+# out, such as a signature or a closure parameter: it keeps the raw type out
+# of signatures, not out of messages. A `?` into `anyhow` or a `{e}` on an
+# inferred type passes it, so wrap at each call that returns the raw error.
+disallowed-types = [
+    { path = "tokio_postgres::error::Error", reason = "wrap it in feldera_types::library_error::LibraryError at the boundary" },
+]
