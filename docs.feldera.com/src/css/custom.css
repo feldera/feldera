@@ -397,6 +397,52 @@ kbd {
   stroke: currentColor;
 }
 
+/* ---------- Scrollbars: a thin Stone bar on Paper, Clay on hover; light on the dark code blocks ---------- */
+
+/* Firefox, and every browser that supports the standard properties. */
+html,
+.theme-doc-sidebar-menu,
+.table-of-contents,
+.markdown table,
+.markdown .table-scroll-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-stone) transparent;
+}
+
+/* Chrome, Safari and Edge: an 8px bar, the thumb inset by a 2px Paper border so it reads slim. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-stone);
+  border: 2px solid var(--color-paper);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-clay);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Dark code blocks: a faint Paper thumb on the dark window. */
+.theme-code-block pre::-webkit-scrollbar-thumb {
+  background: rgb(250 249 246 / 0.2);
+  border-color: transparent;
+}
+
+.theme-code-block pre::-webkit-scrollbar-thumb:hover {
+  background: rgb(250 249 246 / 0.35);
+}
+
 /* ---------- Navbar ---------- */
 
 .navbar {
