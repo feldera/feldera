@@ -773,6 +773,60 @@ mod tests {
         crate::ensure_default_crypto_provider();
     }
 
+    /// A refused connection reaches the client as the retryable code.
+    #[actix_web::test]
+    async fn test_streaming_proxy_connection_refused_is_connect_failed() {
+        setup();
+        // Bind and drop a listener to get a port with nothing listening on it.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let url = format!("http://127.0.0.1:{port}/ingress/t0");
+        let (req, payload) = test_get_request(&[]);
+        let err = streaming_proxy(
+            &awc::Client::default(),
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.error_code(), "PipelineInteractionConnectFailed");
+    }
+
+    /// A pipeline that accepts the request and then closes the connection may
+    /// have applied it, so the client must not get the retryable code.
+    #[actix_web::test]
+    async fn test_streaming_proxy_close_after_accept_is_unreachable() {
+        setup();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            use std::io::Read;
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.read(&mut [0u8; 1024]);
+            // Dropping the stream closes the connection without a response.
+        });
+        let url = format!("http://127.0.0.1:{port}/ingress/t0");
+        let (req, payload) = test_get_request(&[]);
+        let err = streaming_proxy(
+            &awc::Client::default(),
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap_err();
+        server.join().unwrap();
+        assert_eq!(err.error_code(), "PipelineInteractionUnreachable");
+    }
+
     /// Build `(HttpRequest, web::Payload)` for a GET with optional headers.
     fn test_get_request(headers: &[(&str, &str)]) -> (HttpRequest, Payload) {
         use actix_web::FromRequest as _;
