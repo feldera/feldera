@@ -66,12 +66,20 @@ const pipelineProp = (name: string): { current: ExtendedPipeline } => ({
   current: { name, status: 'Running' } as ExtendedPipeline
 })
 
+// The results scroll box is at most 80% of the tab's height, and the virtual list renders only
+// the rows that fit. The tab fills its parent, so the parent needs a height.
+const renderTab = (name: string) => {
+  const result = render(TabAdHocQuery, { pipeline: pipelineProp(name) })
+  result.container.style.height = '600px'
+  return result
+}
+
 // Collapse template whitespace so header cells read "name TYPE".
 const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
 
 describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
   it('decodes a hard-coded arrow_ipc response and renders the full header and values', async () => {
-    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-arrow') })
+    renderTab('p-adhoc-arrow')
 
     // Type a query and run it; the mock ignores the SQL and returns the fixture.
     await page.getByRole('textbox').first().fill('SELECT * FROM test_types')
@@ -110,9 +118,9 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
     ])
 
     // --- Cell values, in column order (the leading "0" is the row-index column) ---
-    const cellTexts = Array.from(document.querySelectorAll('tbody tr td')).map(
-      (td) => td.textContent ?? ''
-    )
+    const cellTexts = Array.from(
+      document.querySelectorAll('[data-testid="box-result-row"] td')
+    ).map((td) => td.textContent ?? '')
     expect(cellTexts).toEqual([
       '0',
       'true',
@@ -157,7 +165,7 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
       error: () => new Error(message)
     })
 
-    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-arrow-error') })
+    renderTab('p-adhoc-arrow-error')
     await page.getByRole('textbox').first().fill('SELECT * FROM not_materialized')
     await page.getByRole('button', { name: 'Run query' }).first().click()
 
@@ -177,7 +185,7 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
       error: (): Error | undefined => undefined
     })
 
-    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-stop') })
+    renderTab('p-adhoc-stop')
     await page.getByRole('textbox').first().fill('SELECT * FROM slow_view')
     await page.getByRole('button', { name: 'Run query' }).first().click()
     await page.getByRole('button', { name: 'Stop query' }).first().click()
@@ -198,7 +206,7 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
       error: (): Error | undefined => undefined
     })
 
-    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-rerun') })
+    renderTab('p-adhoc-rerun')
     await page.getByRole('textbox').first().fill('SELECT * FROM slow_view')
     await page.getByRole('button', { name: 'Run query' }).first().click()
     await page.getByRole('button', { name: 'Stop query' }).first().click()
