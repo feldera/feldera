@@ -6,7 +6,7 @@ import org.junit.Test;
 
 import java.util.Map;
 
-/** Issue 7530: late updates of a table whose primary key has a LATENESS column. */
+/** Issue 7530: late updates of a table with a primary key and LATENESS columns. */
 public class UpsertLatenessIncrementalTests extends StreamingTestBase {
     /** The same table twice; only 't' garbage-collects its rows. */
     static final String TABLES = """
@@ -86,5 +86,77 @@ public class UpsertLatenessIncrementalTests extends StreamingTestBase {
     @Test
     public void issue7530a() {
         lateUpdates(this.getCCS(TABLES).withStringTrim().compactAfterEachStep());
+    }
+
+    /** LATENESS outside the key: the key filter accepts every key, and the
+     * stored row decides whether a deletion is late. */
+    @Test
+    public void latenessOutsideKey() {
+        var ccs = this.getCCS("""
+                CREATE TABLE n (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                  v  VARCHAR
+                );
+                CREATE VIEW contents AS SELECT * FROM n;
+                CREATE VIEW errors AS SELECT * FROM ERROR_VIEW;""").withStringTrim();
+        ccs.stepMultiView("""
+                INSERT INTO n VALUES (1, '2024-01-01 00:00:00', 'a');
+                INSERT INTO n VALUES (2, '2024-01-01 03:00:00', 'b');""", Map.of(
+                "contents", """
+                         id | ts                  | v | weight
+                        --------------------------------------
+                         1  | 2024-01-01 00:00:00 | a | 1
+                         2  | 2024-01-01 03:00:00 | b | 1""",
+                "errors", NO_ERRORS));
+        // The waterline is 02:00, so the stored row of key 1 is late
+        ccs.stepMultiView("REMOVE FROM n VALUES (1, '2024-01-01 00:00:00', 'a');", Map.of(
+                "contents", """
+                         id | ts | v | weight
+                        ----------------------""",
+                "errors", """
+                         table_or_view_name | message  | metadata                                       | weight
+                        --------------------------------------------------------------------------------------------
+                         n                  | Late row | (1, 2024-01-01 00:00:00, Some(SqlString("a"))) | 1"""));
+    }
+
+    /** A key with two LATENESS columns is late when either column is late. */
+    @Test
+    public void twoLatenessKeyColumns() {
+        var ccs = this.getCCS("""
+                CREATE TABLE k (
+                  id INT NOT NULL,
+                  t1 TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                  t2 TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                  v  VARCHAR,
+                  PRIMARY KEY (id, t1, t2)
+                );
+                CREATE VIEW contents AS SELECT * FROM k;
+                CREATE VIEW errors AS SELECT * FROM ERROR_VIEW;""").withStringTrim();
+        ccs.stepMultiView("""
+                INSERT INTO k VALUES (1, '2024-01-01 00:00:00', '2024-01-01 03:00:00', 'a');
+                INSERT INTO k VALUES (2, '2024-01-01 03:00:00', '2024-01-01 00:00:00', 'b');
+                INSERT INTO k VALUES (3, '2024-01-01 03:00:00', '2024-01-01 03:00:00', 'c');""", Map.of(
+                "contents", """
+                         id | t1                  | t2                  | v | weight
+                        ------------------------------------------------------------
+                         1  | 2024-01-01 00:00:00 | 2024-01-01 03:00:00 | a | 1
+                         2  | 2024-01-01 03:00:00 | 2024-01-01 00:00:00 | b | 1
+                         3  | 2024-01-01 03:00:00 | 2024-01-01 03:00:00 | c | 1""",
+                "errors", NO_ERRORS));
+        // The waterline of both columns is 02:00: key 1 is late in t1, key 2 in t2
+        ccs.stepMultiView("""
+                REMOVE FROM k VALUES (1, '2024-01-01 00:00:00', '2024-01-01 03:00:00', 'a');
+                REMOVE FROM k VALUES (2, '2024-01-01 03:00:00', '2024-01-01 00:00:00', 'b');
+                REMOVE FROM k VALUES (3, '2024-01-01 03:00:00', '2024-01-01 03:00:00', 'c');""", Map.of(
+                "contents", """
+                         id | t1                  | t2                  | v | weight
+                        ------------------------------------------------------------
+                         3  | 2024-01-01 03:00:00 | 2024-01-01 03:00:00 | c | -1""",
+                "errors", """
+                         table_or_view_name | message  | metadata                                     | weight
+                        ------------------------------------------------------------------------------------------
+                         k                  | Late row | (1, 2024-01-01 00:00:00, 2024-01-01 03:00:00) | 1
+                         k                  | Late row | (2, 2024-01-01 03:00:00, 2024-01-01 00:00:00) | 1"""));
     }
 }
