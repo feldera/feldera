@@ -79,7 +79,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::Display,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -182,6 +182,12 @@ pub struct GlobalControllerMetrics {
     /// need opposite reports: a completed suspend is the outcome the user asked
     /// for, while any other termination is a failure.
     suspended: AtomicBool,
+
+    /// The error that stopped the circuit thread, if one did.
+    ///
+    /// Lets `/status` report the cause of a [PipelineState::Terminated]
+    /// pipeline, instead of only the fact that it terminated.
+    fatal_error: OnceLock<Arc<ControllerError>>,
 
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
     /// new and modified views.
@@ -341,6 +347,7 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             suspended: AtomicBool::new(false),
+            fatal_error: OnceLock::new(),
             bootstrap_in_progress: AtomicBool::new(false),
             concurrent_bootstrap_phase: Atomic::new(ConcurrentBootstrapPhase::Inactive),
             commit_progress: Mutex::new(None),
@@ -378,6 +385,20 @@ impl GlobalControllerMetrics {
     /// suspend completed successfully.
     pub fn suspended(&self) -> bool {
         self.suspended.load(Ordering::Acquire)
+    }
+
+    /// The error that stopped the circuit thread, if one did.
+    pub fn fatal_error(&self) -> Option<Arc<ControllerError>> {
+        self.fatal_error.get().cloned()
+    }
+
+    /// Records `error` as the cause of the circuit thread stopping.  Only the
+    /// first error is kept.
+    ///
+    /// Call this before the pipeline reaches [PipelineState::Terminated], so
+    /// that an observer that sees `Terminated` also sees why.
+    pub(crate) fn set_fatal_error(&self, error: Arc<ControllerError>) {
+        let _ = self.fatal_error.set(error);
     }
 
     /// Terminates the pipeline because a suspend completed successfully.
