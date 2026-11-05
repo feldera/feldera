@@ -599,6 +599,11 @@ main > .container {
 
 /* ---------- Sidebar ---------- */
 
+/* A slightly narrower menu (Docusaurus's default is 300px). */
+:root {
+  --doc-sidebar-width: 260px !important;
+}
+
 /* A subtle Sink ground (the brand's warm step between Paper and Shell), so the menu reads as its
    own column beside the Paper page. */
 .theme-doc-sidebar-container {
