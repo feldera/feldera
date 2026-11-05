@@ -2244,6 +2244,62 @@ mod test {
         );
     }
 
+    /// Waterlines over both the key and the value.  The updates of a late key are
+    /// rejected without reading its stored value; a late stored value of a live key
+    /// blocks the updates of this key.
+    #[test]
+    fn map_with_waterline_key_and_value_test() {
+        let (mut dbsp, (mut input_handle, output_handle, errors_handle)) =
+            Runtime::init_circuit(4, |circuit| {
+                let (stream, errors, _waterline, handle) = circuit
+                    .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _, _, _>(
+                        |v, u| *v = ((*v as i64) + u) as u64,
+                        || 0u64,
+                        |k, _v| *k,
+                        |wl1, wl2| max(*wl1, *wl2),
+                        |wl, k, v| *k >= *wl && *v >= *wl,
+                        |wl, k| *k >= *wl,
+                        |wl, k, v, w| format!("waterline: {wl}, key: {k}, value: {v}, weight: {w}"),
+                        |wl, k, w| format!("waterline: {wl}, key: {k}, weight: {w}"),
+                    );
+                Ok((handle, stream.output(), errors.output()))
+            })
+            .unwrap();
+
+        input_handle.append(&mut vec![
+            Tup2(10, Update::Insert(10)),
+            Tup2(20, Update::Insert(5)),
+        ]);
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! { 10 => {10 => 1}, 20 => {5 => 1} }
+        );
+        assert!(errors_handle.consolidate().is_empty());
+
+        // The waterline is 20.
+        input_handle.append(&mut vec![
+            Tup2(10, Update::Insert(11)), // rejected: late key
+            Tup2(20, Update::Insert(25)), // rejected: late stored value
+            Tup2(20, Update::Delete),     // rejected: late stored value
+            Tup2(30, Update::Insert(30)), // ok
+        ]);
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! { 30 => {30 => 1} }
+        );
+        assert_eq!(
+            errors_handle.consolidate(),
+            zset! {
+                "waterline: 20, key: 10, value: 11, weight: 1".to_string() => 1,
+                "waterline: 20, key: 20, value: 5, weight: -1".to_string() => 1,
+            }
+        );
+
+        dbsp.kill().unwrap();
+    }
+
     // Streams built from an `UpsertHandle` are marked sharded, so this join
     // trusts the handle's record placement instead of re-sharding its map
     // side.  The test verifies that the placement matches the shard

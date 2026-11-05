@@ -729,6 +729,10 @@ impl RootCircuit {
         RK: Fn(&W, &K, ZWeight) -> E + 'static,
     {
         let factories = AddInputMapWithWaterlineFactories::new::<K, V, U, E>();
+        // SAFETY: the operator calls the closures below only with keys, values,
+        // updates, and errors that `factories` creates, which have the types `K`,
+        // `V`, `U`, and `E`, and with waterlines that `init` and
+        // `least_upper_bound` create, which have the type `W`.
         let (stream, errors, waterline, handle) = self.dyn_add_input_map_with_waterline_mono(
             persistent_id,
             &factories,
