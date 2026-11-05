@@ -796,27 +796,32 @@ main > .container {
   background: var(--color-stone);
 }
 
-/* Narrow screens: "On this page" sits on Moss, so its label, caret and links are Paper (about 9:1). */
-.theme-doc-toc-mobile,
-.theme-doc-toc-mobile [class*="tocCollapsibleButton"] {
-  color: var(--color-paper);
+/* Narrow screens: "On this page" is a Shell bar with Ink text and a Stone edge, square, as the
+   phone menu's back bar; the open list uses the sidebar's grey links, the current one in Ink. */
+.theme-doc-toc-mobile {
+  background: var(--color-shell);
+  border: 1px solid var(--color-stone);
+  border-radius: 0;
+  color: var(--color-secondary-950);
 }
 
-.theme-doc-toc-mobile [class*="tocCollapsibleButton"]::after {
-  filter: invert(1);
+.theme-doc-toc-mobile [class*="tocCollapsibleButton"] {
+  color: var(--color-secondary-950);
+  font-weight: 500;
 }
 
 .theme-doc-toc-mobile .table-of-contents {
   border-left: 0;
+  border-top: 1px solid var(--color-stone);
 }
 
 .theme-doc-toc-mobile .table-of-contents__link {
-  color: rgb(250 249 246 / 0.8);
+  color: var(--color-surface-600);
 }
 
 .theme-doc-toc-mobile .table-of-contents__link:hover,
 .theme-doc-toc-mobile .table-of-contents__link--active {
-  color: var(--color-paper);
+  color: var(--color-secondary-950);
 }
 
 /* ---------- Buttons: square, 40px, DM Sans 500 ---------- */
