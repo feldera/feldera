@@ -483,6 +483,23 @@ fn shutdown_ends_a_stalled_commit() {
     );
 }
 
+/// The controller keeps encoding after a `batch_start` that a shutdown
+/// ended.  The records and the batch end then fail with errors instead of
+/// panicking.
+#[test]
+fn output_after_a_failed_batch_start_is_an_error() {
+    let cluster = cluster();
+    let (mut endpoint, _callbacks, shutdown) = endpoint(&cluster);
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint.push_buffer(b"committed").unwrap();
+    endpoint.batch_end().unwrap();
+
+    shutdown.cancel();
+    assert!(endpoint.batch_start(1, OutputBatchType::Delta).is_err());
+    assert!(endpoint.push_buffer(b"dropped").is_err());
+    assert!(endpoint.batch_end().is_err());
+}
+
 #[test]
 fn an_unclassified_error_retains_the_batch_until_shutdown() {
     let cluster = cluster();

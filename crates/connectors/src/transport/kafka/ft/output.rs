@@ -822,13 +822,17 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         headers: &[(&str, Option<&[u8]>)],
     ) -> AnyResult<()> {
         let _guard = span(&self.topic);
+        // A `batch_start` that failed, which only happens at shutdown, leaves
+        // no batch open.  The transaction never commits, so a restart sends
+        // the record again.
         let State::BatchOpen(OutputPosition {
             transaction,
             substep,
         }) = self.state
         else {
-            unreachable!(
-                "state should be BatchOpen (not {:?}) in `push_buffer()`",
+            bail!(
+                "no transaction is open for Kafka topic '{}' (state {:?}), so the record was not sent",
+                self.topic,
                 self.state
             )
         };
@@ -961,9 +965,11 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 
     fn batch_end(&mut self) -> AnyResult<()> {
         let _guard = span(&self.topic);
+        // See `push_key` for why no batch can be open.
         let State::BatchOpen(position) = self.state else {
-            unreachable!(
-                "state should be BatchOpen (not {:?}) in `batch_end()`",
+            bail!(
+                "no transaction is open for Kafka topic '{}' (state {:?}), so there is nothing to commit",
+                self.topic,
                 self.state
             )
         };
