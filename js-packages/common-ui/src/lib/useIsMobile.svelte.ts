@@ -23,3 +23,7 @@ export const useIsScreenLg = () => {
 export const useIsScreenXl = () => {
   return new MediaQuery('min-width: 1280px')
 }
+
+export const useIsScreen2xl = () => {
+  return new MediaQuery('min-width: 1536px')
+}
