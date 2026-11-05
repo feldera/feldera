@@ -103,6 +103,24 @@ describe('pipeline list search by tag', () => {
     // zero size and a pointer click fails. Click the element directly.
     (page.getByTestId(`btn-remove-tag-filter-${name}`).element() as HTMLElement).click()
 
+  /** The suggested tag names in screen order. */
+  const suggestedNames = () =>
+    Array.from(document.querySelectorAll('[data-testid^="btn-tag-suggestion-"]')).map((el) =>
+      el.getAttribute('data-testid')!.slice('btn-tag-suggestion-'.length)
+    )
+
+  it('suggests a tag name with two colors once, and its pick keeps both pipelines', async () => {
+    const { container } = await render(List, { pipelineName: '', pipelines: taggedPipelines })
+    container.style.width = '300px'
+
+    // `alpha` has `prod|ef4444` and `beta` has `prod|22c55e`.
+    await input().fill('prod')
+    await expect.poll(suggestedNames).toEqual(['prod'])
+
+    await suggestion('prod').click()
+    await expect.poll(visibleNames).toEqual(['alpha', 'beta'])
+  })
+
   it('narrows the list by each picked tag and by the typed text', async () => {
     const { container } = await render(List, { pipelineName: '', pipelines: taggedPipelines })
     // Leave room on screen for the tag list to the right of the input.

@@ -1,6 +1,6 @@
 <script lang="ts" module>
-  /** The classes of a tag chip, for components that render their own chips. */
-  export const tagChipClass =
+  /** The CSS classes of a tag chip, for components that render their own chips. */
+  export const tagChipClasses =
     'flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap'
 </script>
 
@@ -19,7 +19,10 @@
     onclick?: (e: MouseEvent) => void
     /** Shows a highlight on the chip, for selection with the keyboard. */
     isHighlighted?: boolean
-    /** Add `min-w-0 max-w-full` to let the chip shrink and cut its text with an ellipsis. */
+    /**
+     * CSS classes added to the chip's own classes.
+     * Add `min-w-0 max-w-full` to let the chip shrink and cut its text with an ellipsis.
+     */
     class?: string
     'data-testid'?: string
   } = $props()
@@ -27,7 +30,7 @@
 
 {#if onclick}
   <button
-    class="{tagChipClass} hover:bg-row-hover {isHighlighted
+    class="{tagChipClasses} hover:bg-row-hover {isHighlighted
       ? 'border-primary-500 bg-row-hover'
       : ''} {_class}"
     data-highlighted={isHighlighted || undefined}
@@ -37,7 +40,7 @@
     {@render content()}
   </button>
 {:else}
-  <span class="{tagChipClass} {_class}" {...rest}>
+  <span class="{tagChipClasses} {_class}" {...rest}>
     {@render content()}
   </span>
 {/if}

@@ -364,37 +364,6 @@ describe('Table — sticky header', () => {
   })
 })
 
-describe('Table — search', () => {
-  beforeEach(() => {
-    localStorage.clear()
-    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
-  })
-
-  afterEach(() => {
-    localStorage.clear()
-  })
-
-  it('matches a pipeline by its name or by any of its tags', async () => {
-    render(Table, {
-      props: {
-        pipelines: [
-          { ...thumb('alpha'), tags: ['Finance'] },
-          { ...thumb('bravo'), tags: ['ops', 'finance-eu'] },
-          thumb('charlie')
-        ],
-        selectedPipelines: []
-      }
-    } as any)
-    const search = page.getByTestId('input-pipeline-search')
-
-    await search.fill('finance')
-    await expect.poll(rowOrder).toEqual(['alpha', 'bravo'])
-
-    await search.fill('char')
-    await expect.poll(rowOrder).toEqual(['charlie'])
-  })
-})
-
 describe('Table — status filter', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -583,7 +552,7 @@ describe('Table — column resizing', () => {
   })
 })
 
-describe('Table — search by tag', () => {
+describe('Table — search', () => {
   beforeEach(() => {
     localStorage.clear()
     useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
@@ -610,6 +579,16 @@ describe('Table — search by tag', () => {
     // The remove button shows only an icon. Tests load no icon font, so the button has
     // zero size and a pointer click fails. Click the element directly.
     (page.getByTestId(`btn-remove-tag-filter-${name}`).element() as HTMLElement).click()
+
+  it('matches names and tags by a part of the text, in any case', async () => {
+    render(Table, { props: { pipelines: taggedPipelines, selectedPipelines: [] } } as any)
+
+    await input().fill('TEAM')
+    await expect.poll(rowOrder).toEqual(['alpha', 'beta', 'gamma', 'prod-export'])
+
+    await input().fill('gam')
+    await expect.poll(rowOrder).toEqual(['gamma'])
+  })
 
   it('narrows the rows by each picked tag and by the typed text', async () => {
     const { container } = render(Table, {
@@ -641,5 +620,14 @@ describe('Table — search by tag', () => {
 
     await userEvent.keyboard('pro')
     await expect.element(suggestion('prod')).toBeInTheDocument()
+  })
+
+  it('keeps the column sort inside the name matches and inside the tag matches', async () => {
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'desc' }
+    render(Table, { props: { pipelines: taggedPipelines, selectedPipelines: [] } } as any)
+    await expect.poll(rowOrder).toEqual(['prod-ingest', 'prod-export', 'gamma', 'beta', 'alpha'])
+
+    await input().fill('prod')
+    await expect.poll(rowOrder).toEqual(['prod-ingest', 'prod-export', 'beta', 'alpha'])
   })
 })

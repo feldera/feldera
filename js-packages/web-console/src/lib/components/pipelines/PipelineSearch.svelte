@@ -2,7 +2,7 @@
   import { TagsInput } from '@skeletonlabs/skeleton-svelte'
   import { tick } from 'svelte'
   import type { Attachment } from 'svelte/attachments'
-  import TagChip, { tagChipClass } from '#lib/components/pipelines/table/TagChip.svelte'
+  import TagChip, { tagChipClasses } from '#lib/components/pipelines/table/TagChip.svelte'
   import { findMatchingTags } from '#lib/functions/pipelines/search.ts'
   import { tagColorOf, tagDisplayName } from '#lib/functions/pipelines/tags.ts'
 
@@ -50,12 +50,15 @@
 
   // Tab and Shift+Tab move the highlight through the suggested tags.
   // Enter picks the highlighted tag, or else the suggested tag whose name is the typed text.
-  // This handler prevents the default of every Enter, because TagsInput clears the input on Enter.
   const handleKeyDown = async (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
+      // Prevent the default of every Enter, because TagsInput clears the input on Enter.
       e.preventDefault()
-      const typedName = query.trim()
-      const tag = highlightedTag ?? suggestedTags.find((tag) => tagDisplayName(tag) === typedName)
+      // Ignore case, like the suggestions do.
+      const typedName = query.trim().toLowerCase()
+      const tag =
+        highlightedTag ??
+        suggestedTags.find((tag) => tagDisplayName(tag).toLowerCase() === typedName)
       if (tag) {
         pickTag(tag)
       }
@@ -173,7 +176,7 @@
             <!-- Skeleton styles these parts as a filled chip with extra padding.
                  These classes give them the look of the tag chips in the table. -->
             <TagsInput.ItemPreview
-              class="{tagChipClass} max-w-full min-w-0 bg-transparent text-inherit"
+              class="{tagChipClasses} max-w-full min-w-0 bg-transparent text-inherit"
             >
               <span
                 class="h-2 w-2 shrink-0 rounded-full"
