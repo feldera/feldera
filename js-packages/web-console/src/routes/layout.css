@@ -410,15 +410,29 @@ input:focus {
   top: 2px !important;
 }
 
-/* Log colours (ANSI escape codes in pipeline logs) follow the status palette instead of the
-   terminal defaults, so ERROR, WARN and INFO match the rest of the console in both themes. */
+/* Log colours (ANSI escape codes in pipeline logs, drawn by `fancy-ansi`). Red, yellow and
+   green use their own values, because the status palette's `-dot` colours are too faint
+   for text. Each has a light and a dark value, so ERROR, WARN and INFO stay readable in both
+   themes.
+   To follow the theme instead, set a variable to a theme colour, for example
+   `--ansi-red: var(--color-status-error-dot);`. The theme defines the `--color-status-*`
+   colours for both modes in `feldera-theme/feldera-modern.css`, so such a value needs no
+   `.dark` override. */
 :root {
-  --ansi-red: var(--color-status-error-dot);
-  --ansi-bright-red: var(--color-status-error-dot);
-  --ansi-yellow: var(--color-status-warning-dot);
-  --ansi-bright-yellow: var(--color-status-warning-dot);
-  --ansi-green: var(--color-status-jade-dot);
-  --ansi-bright-green: var(--color-status-jade-dot);
+  --ansi-red: #c4302b;
+  --ansi-bright-red: #c4302b;
+  --ansi-yellow: #a36a00;
+  --ansi-bright-yellow: #a36a00;
+  --ansi-green: #2f8a3e;
+  --ansi-bright-green: #2f8a3e;
   --ansi-blue: var(--color-status-blue-dot);
   --ansi-bright-blue: var(--color-status-blue-dot);
+}
+.dark {
+  --ansi-red: #ff6b5f;
+  --ansi-bright-red: #ff6b5f;
+  --ansi-yellow: #f2c037;
+  --ansi-bright-yellow: #f2c037;
+  --ansi-green: #5fcf6f;
+  --ansi-bright-green: #5fcf6f;
 }
