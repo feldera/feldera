@@ -212,6 +212,8 @@ public final class DBSPMapExpression extends DBSPExpression implements ISameValu
         DBSPMapExpression otherExpression = other.as(DBSPMapExpression.class);
         if (otherExpression == null)
             return false;
+        if (!this.getType().sameType(other.getType()))
+            return false;
         return context.equivalent(this.keys, otherExpression.keys) &&
                 context.equivalent(this.values, otherExpression.values);
     }
