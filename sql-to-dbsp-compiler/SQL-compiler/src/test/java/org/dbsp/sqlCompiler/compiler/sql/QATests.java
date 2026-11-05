@@ -64,7 +64,7 @@ public class QATests {
     static List<File> getQATests() {
         List<File> result = new ArrayList<>();
         String dir = "../../../feldera-qa";
-        String[] subdirs = new String[] { "new/workloads", "." };
+        String[] subdirs = new String[] { "workloads" };
         for (var subdir : subdirs) {
             File file = new File(dir + "/" + subdir);
             if (file.exists()) {
