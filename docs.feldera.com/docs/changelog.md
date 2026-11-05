@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.377.0
+
 - Experimental (Enterprise, Kubernetes): `deployment_config` in
   `PATCH /v0/pipelines/{name}` can also grow the storage of a running pipeline,
   through `storage_min` and `storage_max`, and change its volume attributes

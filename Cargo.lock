@@ -4290,7 +4290,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4383,7 +4383,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_connectors"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "actix",
  "actix-codec",
@@ -4526,7 +4526,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_nexmark"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "ascii_table",
@@ -5542,7 +5542,7 @@ dependencies = [
 
 [[package]]
 name = "fda"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -5589,7 +5589,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-adapterlib"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -5623,7 +5623,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-buffer-cache"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "enum-map",
  "feldera-types",
@@ -5651,7 +5651,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-datagen"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
@@ -5676,7 +5676,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-fxp"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "dbsp",
  "feldera-size-of",
@@ -5695,7 +5695,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-iceberg"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5726,7 +5726,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-ir"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "proptest",
  "proptest-derive",
@@ -5738,7 +5738,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-macros"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "prettyplease 0.2.32",
  "proc-macro2",
@@ -5748,7 +5748,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-modular-bloom"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "criterion",
  "fastbloom",
@@ -5758,7 +5758,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-mtls"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "actix-tls",
  "actix-web",
@@ -5773,7 +5773,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-observability"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "chrono",
  "colored",
@@ -5786,7 +5786,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-rest-api"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -5808,7 +5808,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-samply"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "crossbeam",
  "feldera-size-of",
@@ -5842,7 +5842,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-sqllib"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "arcstr",
  "base58",
@@ -5887,7 +5887,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-storage"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "crossbeam",
@@ -5910,7 +5910,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-types"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -9328,7 +9328,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipeline-manager"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -10586,7 +10586,7 @@ dependencies = [
 
 [[package]]
 name = "readers"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "async-std",
  "csv",
@@ -12261,7 +12261,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "sltsqlvalue"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
@@ -12690,7 +12690,7 @@ dependencies = [
 
 [[package]]
 name = "static-connectors"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "anyhow",
  "apache-avro 0.18.0",
@@ -12766,7 +12766,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage-test-compat"
-version = "0.377.0"
+version = "0.378.0"
 dependencies = [
  "dbsp",
  "derive_more 1.0.0",
