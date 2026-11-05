@@ -88,7 +88,8 @@
   const pipelinesFiltered = $derived(
     pipelinesWithLastChange.filter((p) => matchesPipelineSearch(p, searchQuery, tagFilters))
   )
-  // The column sort orders the rows inside each group.
+  // Name matches come first. The rows keep the column sort order inside the name
+  // matches and inside the other rows.
   const rowsInDisplayOrder = $derived(nameMatchesFirst(table.rows, searchQuery))
 
   // `knownTags` is the union of tags over every pipeline — the pool the per-row
