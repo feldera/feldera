@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { fileTabClass } from 'common-ui'
   import { nonNull } from 'common-lib/function'
   import PipelineActions from '#lib/components/pipelines/list/Actions.svelte'
   import {
@@ -466,15 +467,8 @@ example = "1.0"`,
     {/if}
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
-    <!-- A 40px cell of the grey tab bar. The open file's tab is white and 1px taller, so it
-         covers the bar's bottom line. An unsaved file gets a dot after its name, centred by
-         the tab's flex row. -->
-    <button
-      class="flex h-10 items-center gap-2 border-r border-line px-4 text-base whitespace-nowrap {isCurrent
-        ? 'bg-white-dark -mb-px h-[41px] text-surface-950-50'
-        : 'text-surface-600-400 hover:text-surface-950-50'}"
-      onclick={onClick}
-    >
+    <!-- An unsaved file gets a dot after its name. -->
+    <button class={fileTabClass(isCurrent)} onclick={onClick}>
       {text}
       {#if !isSaved}
         <span class="size-1.5 shrink-0 rounded-full bg-current" title="Unsaved changes"></span>

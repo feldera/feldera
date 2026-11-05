@@ -68,7 +68,12 @@ export {
   statusCounterClass,
   statusToneColors
 } from './statusTone'
-export { default as TabsPanel, type TabLabelVariant, type TabSpec } from './TabsPanel.svelte'
+export {
+  default as TabsPanel,
+  fileTabClass,
+  type TabLabelVariant,
+  type TabSpec
+} from './TabsPanel.svelte'
 export { default as Tooltip } from './Tooltip.svelte'
 export { getThemeColor } from './themeColor'
 export {
