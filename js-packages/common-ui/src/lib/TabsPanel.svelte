@@ -27,8 +27,19 @@
    *  - `'segment'` – pill-style strip driven by `SegmentedControl`. Use when the tabs
    *                  feel more like a view selector than a primary navigation.
    *  - `'underline'` – grey labels with no hover fill; the selected tab is in the main
-   *                  text colour with a 2px primary (black) bar on the header's line. */
-  export type TabLabelVariant = 'tab' | 'segment' | 'underline'
+   *                  text colour with a 2px primary (black) bar on the header's line.
+   *  - `'file'`    – the file tabs of a code editor, see `fileTabClass`. */
+  export type TabLabelVariant = 'tab' | 'segment' | 'underline' | 'file'
+
+  /** Classes of a file tab: a 40px cell of a grey `bg-toolbar` tab bar with a 1px bottom line.
+   *  The current tab is white and 1px taller, so it covers the line and joins the content below.
+   *  Used by the `'file'` variant. The pipeline code editor can use it for its own file tabs. */
+  export const fileTabClass = (isCurrent: boolean) =>
+    `flex h-10 items-center gap-2 rounded-none border-r border-line px-4 text-base font-normal whitespace-nowrap hover:filter-none ${
+      isCurrent
+        ? 'bg-white-dark -mb-px h-[41px] text-surface-950-50'
+        : 'text-surface-600-400 hover:bg-transparent hover:text-surface-950-50'
+    }`
 </script>
 
 <script lang="ts" generics="T extends Record<string, unknown>  ">
@@ -42,7 +53,8 @@
     currentTab = $bindable(),
     tabContainer = defaultTabContainer,
     tabLabelVariant = 'tab',
-    headerClass = ''
+    headerClass = '',
+    framed = true
   }: {
     tabs: TabSpec<T>[]
     tabContainer?: typeof defaultTabContainer
@@ -50,6 +62,9 @@
     currentTab: string
     tabLabelVariant?: TabLabelVariant
     headerClass?: string
+    /** Whether the root has the `panel` frame and its padding. Set it to `false` when the tabs
+     *  fill a whole page. */
+    framed?: boolean
   } = $props()
 
   let visited = $state(new SvelteSet<string>())
@@ -58,6 +73,7 @@
   })
   const activeTabBarEnd = $derived(tabs.find((t) => t.id === currentTab)?.tabBarEnd)
   const isUnderline = $derived(tabLabelVariant === 'underline')
+  const isFile = $derived(tabLabelVariant === 'file')
   // Segment items only need a `value`; the visual label is rendered via the `segmentLabel`
   // snippet, which dispatches back to each TabSpec's own `label` snippet so a tab definition
   // stays the single source of truth regardless of the chosen variant.
@@ -100,7 +116,7 @@
        skeleton `<Tabs>` machine is bypassed entirely — it only contributed ARIA roles and
        keyboard nav that the SegmentedControl already provides for its own machine. The
        content area below is rendered manually (it never relied on Tabs.Content). -->
-  <div class="panel flex h-full flex-col space-y-0! px-2 pt-4 pb-2">
+  <div class="flex h-full flex-col space-y-0! {framed ? 'panel' : ''}">
     <div class="flex w-full min-w-0 flex-wrap items-center gap-2 mb-0 {headerClass}">
       <SegmentedControl
         value={currentTab}
@@ -116,7 +132,9 @@
   <Tabs
     value={currentTab}
     onValueChange={(e) => (currentTab = e.value)}
-    class="panel flex h-full flex-col space-y-0! px-2 pt-0 pb-2"
+    class="flex h-full flex-col space-y-0! {framed
+      ? `panel ${isFile ? 'p-0' : 'px-2 pt-0 pb-2'}`
+      : 'p-0'}"
   >
     <!-- Header. `flex-wrap` lets the active tabBarEnd contents (selectors, controls, inputs)
          drop to subsequent rows when the panel is narrowed, instead of forcing a horizontal
@@ -126,9 +144,12 @@
          any 32px controls in the tabBarEnd centre in a 48px row whose bottom edge is the
          header's line. A tabBarEnd wrapper is at least
          as tall (`min-h-12`), so when it wraps onto a row of its own its controls centre
-         there too; a bare 32px button takes 8px margins (`my-2`) to fill the same row. -->
+         there too; a bare 32px button takes 8px margins (`my-2`) to fill the same row.
+         The `'file'` variant has a 40px row instead, with the same rules. -->
     <Tabs.List
-      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {isUnderline
+      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 {isFile
+        ? `${framed ? 'rounded-t-[7px]' : ''} border-line bg-toolbar pr-5 [&>:not([role=tab],button)]:min-h-10 [&>button:not([role=tab])]:my-1`
+        : '[&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2'} {isUnderline
         ? 'px-2'
         : ''} {headerClass}"
     >
@@ -137,9 +158,11 @@
           value={id}
           {disabled}
           {title}
-          class={isUnderline
-            ? 'relative mt-3 mb-2 flex h-6 items-center gap-2 self-end px-3 text-base whitespace-nowrap text-surface-600-400 hover:bg-transparent hover:text-surface-950-50 hover:filter-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:text-surface-950-50 data-[selected]:after:absolute data-[selected]:after:inset-x-0 data-[selected]:after:-bottom-2 data-[selected]:after:h-0.5 data-[selected]:after:bg-chart-line'
-            : 'tab'}
+          class={isFile
+            ? `${fileTabClass(currentTab === id)} ${framed ? 'first:rounded-tl-[7px]' : ''} data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40`
+            : isUnderline
+              ? 'relative mt-3 mb-2 flex h-6 items-center gap-2 self-end px-3 text-base whitespace-nowrap text-surface-600-400 hover:bg-transparent hover:text-surface-950-50 hover:filter-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:text-surface-950-50 data-[selected]:after:absolute data-[selected]:after:inset-x-0 data-[selected]:after:-bottom-2 data-[selected]:after:h-0.5 data-[selected]:after:bg-chart-line'
+              : 'tab'}
         >
           {@render label()}
         </Tabs.Trigger>

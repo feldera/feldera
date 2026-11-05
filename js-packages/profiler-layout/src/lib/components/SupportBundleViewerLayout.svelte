@@ -633,7 +633,12 @@
 <!-- ── Code panel (source files via TabsPanel) ───────────────────────────── -->
 {#snippet sourcePanel()}
   {#if sourceTabProps}
-    <TabsPanel tabs={sourceTabs} bind:currentTab={sourceCurrentTab} tabProps={sourceTabProps} />
+    <TabsPanel
+      tabs={sourceTabs}
+      bind:currentTab={sourceCurrentTab}
+      tabProps={sourceTabProps}
+      tabLabelVariant="file"
+    />
   {:else}
     <div
       class="flex h-full items-center justify-center rounded-container bg-surface-50-950 text-surface-600-400"
@@ -650,7 +655,7 @@
     bind:currentTab
     tabProps={analysisTabProps}
     tabLabelVariant="segment"
-    headerClass="pt-1 pb-2.5"
+    headerClass="p-2 bg-toolbar"
   />
 {/snippet}
 
