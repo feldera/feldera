@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { errorTextClass } from 'common-ui/statusTone'
   import { selectScope } from 'common-ui'
+  import { errorTextClass } from 'common-ui/statusTone'
+  import AllClearDark from '#assets/illustrations/all-clear-dark.svg?component'
+  import AllClearLight from '#assets/illustrations/all-clear-light.svg?component'
   import { extractProgramStderr, type SystemError } from '#lib/compositions/health/systemErrors.ts'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
   import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
   import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
-  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
-  import AllClearLight from '#assets/illustrations/all-clear-light.svg?component'
-  import AllClearDark from '#assets/illustrations/all-clear-dark.svg?component'
 
   const { hideWarnings, verbatimErrors } = useLayoutSettings()
 

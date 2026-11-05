@@ -1,19 +1,22 @@
 <script lang="ts">
-  import { errorTextClass } from 'common-ui/statusTone'
   import { TableHandler } from '@vincjo/datatables'
   import { dateMax } from 'common-lib/date'
   import { formatDateTime } from 'common-lib/format'
   import { matchesSubstring } from 'common-lib/string'
   import { type NamesInUnion, unionName } from 'common-lib/union'
   import { Popover, Tooltip } from 'common-ui'
+  import type { StatusTone } from 'common-ui/statusTone'
+  import { errorTextClass } from 'common-ui/statusTone'
   import { fade } from 'svelte/transition'
   import { match } from 'ts-pattern'
+  import Popup from '#lib/components/common/Popup.svelte'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatus.svelte'
   import ColumnResizer from '#lib/components/pipelines/table/ColumnResizer.svelte'
   import ThSort from '#lib/components/pipelines/table/ThSort.svelte'
   import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import type {
     PipelineStatus as PipelineStatusType,
@@ -23,9 +26,6 @@
   import { page } from '$app/state'
   import PipelineVersion from './table/PipelineVersion.svelte'
   import Tags from './table/Tags.svelte'
-  import Popup from '#lib/components/common/Popup.svelte'
-  import { statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
-  import type { StatusTone } from 'common-ui/statusTone'
 
   let {
     pipelines,

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { errorBorderClass, errorTextClass } from 'common-ui/statusTone'
   import { ClipboardCopyButton } from 'common-ui'
+  import { errorBorderClass, errorTextClass } from 'common-ui/statusTone'
   import { slide } from 'svelte/transition'
 
   const {

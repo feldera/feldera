@@ -40,8 +40,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
 <script lang="ts">
   import { Popover, Tooltip, useIsMobile } from 'common-ui'
-  import { fade } from 'svelte/transition'
   import { tick } from 'svelte'
+  import { fade } from 'svelte/transition'
   import { match, P } from 'ts-pattern'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import Popup from '#lib/components/common/Popup.svelte'
