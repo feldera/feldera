@@ -2513,12 +2513,22 @@ impl IcebergInputEndpointInner {
             self.endpoint_name,
         );
 
+        // Asking for a snapshot id reads that snapshot's schema, which hides a
+        // column added since it. When the pin is the table's current snapshot,
+        // there is nothing to travel back to, so read the table as it is.
+        //
+        // Not for a distributed read: `IcebergShareScan` pins the snapshot so
+        // every host reads the same one, and a pinned scan resolves column
+        // names in that snapshot's schema.
+        let pin_is_current = self.distributed.is_none()
+            && snapshot_id.is_some()
+            && snapshot_id == table.metadata().current_snapshot_id();
         let provider = match snapshot_id {
-            Some(snapshot_id) => {
+            Some(snapshot_id) if !pin_is_current => {
                 IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
                     .await
             }
-            None => IcebergStaticTableProvider::try_new_from_table(table.clone()).await,
+            _ => IcebergStaticTableProvider::try_new_from_table(table.clone()).await,
         }
         .map_err(|e| {
             ControllerError::invalid_transport_configuration(

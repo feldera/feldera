@@ -25,6 +25,11 @@ from pyiceberg.transforms import DayTransform
 from test_table_schema import ARROW_FIELDS, SCHEMA_FIELDS, ndjson_to_pandas
 
 SCHEMA = Schema(*SCHEMA_FIELDS)
+
+# `create-renamed` writes this column under the first name and renames it to
+# the second, so the current schema and the current snapshot's disagree.
+RENAMED_FROM = "s_old"
+RENAMED_TO = "s"
 ARROW_SCHEMA = pa.schema(ARROW_FIELDS)
 
 PARTITION_SPEC = PartitionSpec(
@@ -59,7 +64,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--op",
-        choices=["create", "create-empty", "append", "overwrite"],
+        choices=["create", "create-empty", "create-renamed", "append", "overwrite"],
         required=True,
     )
     parser.add_argument("--table", required=True, help="table as 'namespace.name'")
@@ -69,7 +74,7 @@ def main():
     cat = catalog()
     namespace = args.table.split(".")[0]
 
-    if args.op in ("create", "create-empty"):
+    if args.op in ("create", "create-empty", "create-renamed"):
         try:
             cat.create_namespace(namespace)
         except Exception:
@@ -78,7 +83,19 @@ def main():
             cat.drop_table(args.table)
         except Exception:
             pass
-        table = cat.create_table(args.table, SCHEMA, partition_spec=PARTITION_SPEC)
+        schema = SCHEMA
+        if args.op == "create-renamed":
+            # Write `s` under a temporary name, so the rename below leaves the
+            # table's last schema change with no snapshot after it.
+            schema = Schema(
+                *[
+                    field.model_copy(update={"name": RENAMED_FROM})
+                    if field.name == RENAMED_TO
+                    else field
+                    for field in SCHEMA_FIELDS
+                ]
+            )
+        table = cat.create_table(args.table, schema, partition_spec=PARTITION_SPEC)
         if args.op == "create-empty":
             # A table that has no snapshot yet.
             return
@@ -86,6 +103,20 @@ def main():
         table = cat.load_table(args.table)
 
     chunk = arrow_chunk(args.json_file)
+    if args.op == "create-renamed":
+        chunk = chunk.rename_columns(
+            [
+                RENAMED_FROM if name == RENAMED_TO else name
+                for name in chunk.column_names
+            ]
+        )
+        table.append(chunk)
+        # The schema change commits no snapshot, so the current snapshot keeps
+        # naming the older schema.
+        with table.update_schema() as update:
+            update.rename_column(RENAMED_FROM, RENAMED_TO)
+        print(table.metadata.current_snapshot_id)
+        return
     if args.op == "overwrite":
         # Copy-on-write rewrite: removes the old data files, adds `chunk`.
         table.overwrite(chunk)
