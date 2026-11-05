@@ -4615,11 +4615,15 @@ impl CircuitThread {
         // (inputs flow normally during a concurrent backfill). The finalize
         // step -- which refreshes the ad-hoc snapshot after cutover -- keeps the
         // phase at `Synchronizing` so it runs empty here.
+        let at_replay_boundary = self.replay_at_boundary();
+        if at_replay_boundary && let Some(ft) = self.ft.as_ref() {
+            ft.check_unfed_at_boundary()?;
+        }
         if self.controller.status.bootstrap_in_progress()
             || self.controller.status.concurrent_bootstrap_phase()
                 == ConcurrentBootstrapPhase::Synchronizing
             || self.controller.transaction_commit_in_progress()
-            || self.replay_at_boundary()
+            || at_replay_boundary
         {
             return Ok(Some(BufferSize::empty()));
         }
@@ -5571,6 +5575,29 @@ impl FtState {
         Ok(())
     }
 
+    /// Fails if the next journaled step, which belongs to a later transaction
+    /// than the open one, was already handed to the input endpoints.
+    ///
+    /// Its input could then reach the circuit before the open transaction
+    /// commits, and the open transaction would commit with it.  The checksums
+    /// that [Self::verify_replay_transaction] compares would still match,
+    /// because they cover what the endpoints read, not the transaction their
+    /// input entered.  An exactly-once output would then skip the shifted
+    /// transaction as already written, and lose its changes.
+    fn check_unfed_at_boundary(&self) -> Result<(), ControllerError> {
+        if let Some(record) = &self.replay_step
+            && self.replay_fed
+        {
+            let error = format!(
+                "replay handed journaled step {} of transaction {} to the input endpoints before the previous transaction committed",
+                record.step, record.transaction_id
+            );
+            error!("{error}");
+            return Err(ControllerError::ReplayFailure { error });
+        }
+        Ok(())
+    }
+
     /// Writes `step_metadata` to the step writer.
     fn write_step(
         &mut self,
@@ -5830,6 +5857,12 @@ impl FtState {
                 Some(step) => {
                     self.replay_step = self.journal.read(step)?;
                     self.replay_fed = false;
+                    // Reproduces a past bug, for testing
+                    // `check_unfed_at_boundary`.
+                    #[cfg(any(test, feature = "testing"))]
+                    if self.controller.feed_replay_early.load(Ordering::Acquire) {
+                        self.feed_replay_step()?;
+                    }
                 }
                 None => {
                     // No more steps to replay. The boundary check in
@@ -8015,6 +8048,11 @@ pub struct ControllerInner {
     /// names of the endpoints it waits for.  Removed once it returns true.
     #[cfg(any(test, feature = "testing"))]
     collect_input_hook: Mutex<Option<JournalStepHook>>,
+
+    /// Makes replay hand each journaled step to the input endpoints as soon as
+    /// the previous step is done, as it did before a bug fix.
+    #[cfg(any(test, feature = "testing"))]
+    feed_replay_early: AtomicBool,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -8131,6 +8169,8 @@ impl ControllerInner {
                 journal_step_hook: Mutex::new(None),
                 #[cfg(any(test, feature = "testing"))]
                 collect_input_hook: Mutex::new(None),
+                #[cfg(any(test, feature = "testing"))]
+                feed_replay_early: AtomicBool::new(false),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
                 input_completions: Mutex::new(Vec::new()),
