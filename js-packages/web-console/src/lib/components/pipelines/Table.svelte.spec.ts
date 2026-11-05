@@ -582,3 +582,64 @@ describe('Table — column resizing', () => {
     expect(separator.getAttribute('aria-valuenow')).toBe(String(initial))
   })
 })
+
+describe('Table — search by tag', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  const tagged = (name: string, tags: string[]): PipelineThumb =>
+    ({ ...thumb(name), tags }) as PipelineThumb
+
+  const taggedPipelines = [
+    tagged('alpha', ['prod|ef4444', 'team-a|22c55e']),
+    tagged('prod-ingest', []),
+    tagged('beta', ['prod|22c55e', 'team-b|3b82f6']),
+    tagged('gamma', ['team-a|22c55e']),
+    tagged('prod-export', ['team-b|3b82f6'])
+  ]
+
+  const input = () => page.getByTestId('input-pipeline-search')
+  const suggestion = (name: string) => page.getByTestId(`btn-tag-suggestion-${name}`)
+  const removeTag = (name: string) =>
+    // The remove button shows only an icon. Tests load no icon font, so the button has
+    // zero size and a pointer click fails. Click the element directly.
+    (page.getByTestId(`btn-remove-tag-filter-${name}`).element() as HTMLElement).click()
+
+  it('narrows the rows by each picked tag and by the typed text', async () => {
+    const { container } = render(Table, {
+      props: { pipelines: taggedPipelines, selectedPipelines: [] }
+    } as any)
+    // Leave room on screen for the tag list above the input.
+    container.style.paddingTop = '200px'
+    await expect.poll(rowOrder).toEqual(['alpha', 'beta', 'gamma', 'prod-export', 'prod-ingest'])
+
+    await input().fill('prod')
+    // Name matches come first, in the column sort order.
+    await expect.poll(rowOrder).toEqual(['prod-export', 'prod-ingest', 'alpha', 'beta'])
+
+    await suggestion('prod').click()
+    await expect.poll(rowOrder).toEqual(['alpha', 'beta'])
+
+    await userEvent.keyboard('team')
+    await suggestion('team-a').click()
+    await expect.poll(rowOrder).toEqual(['alpha'])
+
+    await userEvent.keyboard('gam')
+    await expect.poll(rowOrder).toEqual([])
+
+    removeTag('prod')
+    await expect.poll(rowOrder).toEqual(['gamma'])
+
+    await input().fill('')
+    await expect.poll(rowOrder).toEqual(['alpha', 'gamma'])
+
+    await userEvent.keyboard('pro')
+    await expect.element(suggestion('prod')).toBeInTheDocument()
+  })
+})
