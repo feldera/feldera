@@ -63,6 +63,18 @@ public class ExpressionsCSE extends ExpressionTranslator {
             Utilities.enforce(var.getType().deref().sameType(expression.getType()));
         }
 
+        /** The last let statement of 'block' that declares a value used by 'expression', or null if none. */
+        @Nullable
+        DBSPLetStatement lastDependency(DBSPBlockExpression block) {
+            DBSPLetStatement last = null;
+            for (DBSPStatement stat : block.contents) {
+                DBSPLetStatement let = stat.as(DBSPLetStatement.class);
+                if (let != null && this.dependsOn.contains(let))
+                    last = let;
+            }
+            return last;
+        }
+
         @Override
         public String toString() {
             return "Assignment{" +
@@ -211,29 +223,29 @@ public class ExpressionsCSE extends ExpressionTranslator {
             return;
         }
 
+        // Maps a let statement of this block to the assignments inserted after it, in creation order
+        Map<DBSPLetStatement, List<Assignment>> insertAfter = new HashMap<>();
+        List<Assignment> outsideBlock = new ArrayList<>();
+        for (Assignment assign : this.assignments) {
+            DBSPLetStatement lastDependency = assign.lastDependency(expression);
+            if (lastDependency == null)
+                outsideBlock.add(assign);
+            else
+                insertAfter.computeIfAbsent(lastDependency, l -> new ArrayList<>()).add(assign);
+        }
+        this.assignments.clear();
+        this.assignments.addAll(outsideBlock);
+
         List<DBSPStatement> result = new ArrayList<>();
-        // Iterate over original statements
         for (DBSPStatement stat: expression.contents) {
-            DBSPStatement repl = this.get(stat).to(DBSPStatement.class);
-            // But insert the transformed statements
-            result.add(repl);
-            if (stat.is(DBSPLetStatement.class)) {
-                // Add all statements that depend on stat
-                DBSPLetStatement let = stat.to(DBSPLetStatement.class);
-                List<Assignment> assignments = new ArrayList<>(this.assignments);
-                this.assignments.clear();
-                for (Assignment assign : assignments) {
-                    if (assign.dependsOn.contains(let)) {
-                        var add = new DBSPLetStatement(
-                                assign.var.variable, new DBSPLazyExpression(assign.expression));
-                        result.add(add);
-                    } else {
-                        this.assignments.add(assign);
-                    }
-                }
+            result.add(this.get(stat).to(DBSPStatement.class));
+            List<Assignment> inserted = insertAfter.getOrDefault(stat, List.of());
+            for (Assignment assign : inserted) {
+                var add = new DBSPLetStatement(
+                        assign.var.variable, new DBSPLazyExpression(assign.expression));
+                result.add(add);
             }
         }
-        // Put back in the list of available assignments
         this.map(expression, new DBSPBlockExpression(result, last));
     }
 

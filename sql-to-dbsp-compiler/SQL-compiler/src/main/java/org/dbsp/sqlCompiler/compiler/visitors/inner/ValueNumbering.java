@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IIndentStream;
@@ -15,9 +16,12 @@ import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.CheckReturnValue;
+import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,7 +76,7 @@ public class ValueNumbering extends InnerVisitor {
                     DBSPExpression canonical = translation.get(l.expression).expression;
                     canon.add(new ExpressionUser(canonical, l.operand));
                 } else {
-                    canon.add(new ExpressionUser(this.expression, l.operand));
+                    canon.add(l);
                 }
                 if (canon.size() > 1)
                     return true;
@@ -85,9 +89,15 @@ public class ValueNumbering extends InnerVisitor {
     public final Map<DBSPExpression, CanonicalExpression> canonical;
     final Map<String, CanonicalExpression> representation;
     final ResolveReferences resolver;
-    /** If true we cannot CSE safely */
+    /** True if the expression contains an assignment, or a mutable borrow of an expression whose
+     * base is not a variable; CSE is then unsafe */
     public boolean foundAssignment;
     public final List<Boolean> inClosure;
+    /** Declarations of the variables whose value can change while the expression is evaluated:
+     * variables with a mutable reference type, and the base variables of expressions borrowed
+     * with {@code &mut}.
+     * Expressions that read these variables get no value number. */
+    final Set<IDBSPDeclaration> mutable;
 
     public ValueNumbering(DBSPCompiler compiler) {
         super(compiler);
@@ -96,6 +106,7 @@ public class ValueNumbering extends InnerVisitor {
         this.resolver = new ResolveReferences(compiler, false);
         this.foundAssignment = false;
         this.inClosure = new ArrayList<>();
+        this.mutable = new HashSet<>();
     }
 
     @SuppressWarnings("unused")
@@ -145,7 +156,9 @@ public class ValueNumbering extends InnerVisitor {
             return new Representation("", new HashSet<>(), false, true);
         CanonicalExpression canon = Utilities.getExists(this.canonical, expression);
         canon.use(user, operand);
-        return new Representation(Long.toString(canon.expression.getId()), canon.dependsOn, canon.expensive, false);
+        // Delimited with # symbols
+        String id = "#" + canon.expression.getId() + "#";
+        return new Representation(id, canon.dependsOn, canon.expensive, false);
     }
 
     record Representation(String repr, Set<IDBSPDeclaration> dependsOn, boolean expensive, boolean invalid) {
@@ -217,7 +230,35 @@ public class ValueNumbering extends InnerVisitor {
         this.foundAssignment = true;
     }
 
+    /** Find the declaration of the variable at the base of 'expression', e.g., p in (*p).1.
+     * The base is what remains after removing field accesses and dereferences.
+     * Returns null if the base is not a variable. */
+    @Nullable
+    IDBSPDeclaration baseDeclaration(DBSPExpression expression) {
+        while (true) {
+            if (expression.is(DBSPFieldExpression.class))
+                expression = expression.to(DBSPFieldExpression.class).expression;
+            else if (expression.is(DBSPDerefExpression.class))
+                expression = expression.to(DBSPDerefExpression.class).expression;
+            else
+                break;
+        }
+        DBSPVariablePath var = expression.as(DBSPVariablePath.class);
+        if (var == null)
+            return null;
+        return this.resolver.reference.get(var);
+    }
+
     @Override public void postorder(DBSPBorrowExpression expression) {
+        if (expression.mut) {
+            // A mutable borrow gets no value number: each one can change the borrowed value
+            IDBSPDeclaration base = this.baseDeclaration(expression.expression);
+            if (base == null)
+                this.foundAssignment = true;
+            else
+                this.mutable.add(base);
+            return;
+        }
         Representation repr = new Representation("&", false)
                 .add(this.getId(expression.expression, expression, 0));
         this.checkRepresentation(expression, repr, false);
@@ -275,8 +316,9 @@ public class ValueNumbering extends InnerVisitor {
     }
 
     @Override public void postorder(DBSPPathExpression expression) {
+        // toString includes the generic arguments
         this.checkRepresentation(expression,
-                new Representation(expression.path.asString(), false), false);
+                new Representation(expression.path.toString(), false), false);
     }
 
     @Override public void postorder(DBSPRawTupleExpression expression) {
@@ -305,7 +347,8 @@ public class ValueNumbering extends InnerVisitor {
         if (expression.fields == null) {
             repr = repr.add(expression + ":" + expression.type);
         } else {
-            repr = repr.add("Tup(");
+            // The type distinguishes nullable tuples
+            repr = repr.add("(" + expression.type + ")Tup(");
             int operand = 0;
             for (DBSPExpression elem : expression.fields)
                 repr = repr.add(this.getId(elem, expression, operand++)).add(",");
@@ -315,7 +358,8 @@ public class ValueNumbering extends InnerVisitor {
     }
 
     @Override public void postorder(DBSPUnaryExpression expression) {
-        Representation repr = new Representation(expression.opcode.toString(), false)
+        // The type distinguishes conversions such as INTEGER_TO_DECIMAL to different precisions
+        Representation repr = new Representation("(" + expression.type + ")" + expression.opcode, false)
                 .add(this.getId(expression.source, expression, 0));
         boolean expensive = expression.opcode != DBSPOpcode.NOT;
         this.checkRepresentation(expression, repr, expensive);
@@ -324,6 +368,9 @@ public class ValueNumbering extends InnerVisitor {
     @Override public void postorder(DBSPVariablePath var) {
         IDBSPDeclaration decl = this.resolver.reference.get(var);
         Utilities.enforce(decl != null);
+        DBSPTypeRef ref = var.getType().as(DBSPTypeRef.class);
+        if (ref != null && ref.mutable)
+            this.mutable.add(decl);
         Representation repr = new Representation(
                 Long.toString(decl.getId()), Linq.set(decl), false, false);
         this.checkRepresentation(var, repr, false);
@@ -353,10 +400,18 @@ public class ValueNumbering extends InnerVisitor {
         this.representation.clear();
         this.resolver.apply(node);
         this.foundAssignment = false;
+        this.mutable.clear();
     }
 
     @Override
     public void endVisit() {
+        // An expression that reads a mutable variable has no canonical representative
+        Iterator<Map.Entry<DBSPExpression, CanonicalExpression>> entries = this.canonical.entrySet().iterator();
+        while (entries.hasNext()) {
+            CanonicalExpression canon = entries.next().getValue();
+            if (!Collections.disjoint(canon.dependsOn, this.mutable))
+                entries.remove();
+        }
         if (this.getDebugLevel() >= 1) {
             IIndentStream stream = Logger.INSTANCE.belowLevel(this, 1);
             this.dump(stream);

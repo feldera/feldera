@@ -8,22 +8,26 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
@@ -36,19 +40,19 @@ import org.junit.Test;
 public class EquivalenceTests {
     final ExpressionBuilder b = new ExpressionBuilder();
 
-    /** Count the let expressions that CSE introduced */
-    static void assertLets(DBSPCompiler compiler, IDBSPInnerNode node, int expected) {
+    /** Count the LazyCell variables that CSE introduced */
+    static void assertCseVariables(DBSPCompiler compiler, IDBSPInnerNode node, int expected) {
         InnerVisitor visitor = new InnerVisitor(compiler) {
-            int lets = 0;
+            int variables = 0;
 
             @Override
-            public void postorder(DBSPLetExpression expression) {
-                this.lets++;
+            public void postorder(DBSPLazyExpression expression) {
+                this.variables++;
             }
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(expected, this.lets);
+                Assert.assertEquals(expected, this.variables);
             }
         };
         visitor.apply(node);
@@ -57,13 +61,14 @@ public class EquivalenceTests {
     static IDBSPInnerNode cse(DBSPCompiler compiler, DBSPClosureExpression closure) {
         DBSPOperator fake = new DBSPConstantOperator(
                 CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()));
-        ValueNumbering numbering = new ValueNumbering(compiler);
-        numbering.setOperatorContext(fake);
-        numbering.apply(closure);
-        ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
+        InnerCSE cse = new InnerCSE(compiler);
         cse.setOperatorContext(fake);
-        cse.apply(closure);
-        return cse.get(closure);
+        return cse.apply(closure);
+    }
+
+    /** Fails if 'node' references a variable that is not in scope */
+    static void assertResolves(DBSPCompiler compiler, IDBSPInnerNode node) {
+        new ResolveReferences(compiler, false).apply(node);
     }
 
     @Test
@@ -76,7 +81,7 @@ public class EquivalenceTests {
             return b.tuple(a, b.add(sum, sum));
         });
         // Find 2 common subexpressions; one has a single use
-        assertLets(compiler, cse(compiler, closure), 2);
+        assertCseVariables(compiler, cse(compiler, closure), 2);
     }
 
     @Test
@@ -113,8 +118,129 @@ public class EquivalenceTests {
         DBSPClosureExpression closure = block.closure(var);
 
         // Crash on incorrect translation.
-        ResolveReferences resolver = new ResolveReferences(compiler, false);
-        resolver.apply(cse(compiler, closure));
+        assertResolves(compiler, cse(compiler, closure));
+    }
+
+    @Test
+    public void testCSEAfterLastLet() {
+        // |t| { let a = t.0; let c = t.1; Tup(a + c, a + c) }
+        // The variable for a + c must follow 'let c'
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32n(), b.i32n()));
+        DBSPLetStatement a = new DBSPLetStatement("a", b.field(t, 0));
+        DBSPLetStatement c = new DBSPLetStatement("c", b.field(t, 1));
+        DBSPExpression sum0 = b.add(a.getVarReference(), c.getVarReference());
+        DBSPExpression sum1 = b.add(a.getVarReference(), c.getVarReference());
+        DBSPExpression block = new DBSPBlockExpression(Linq.list(a, c), b.tuple(sum0, sum1));
+        IDBSPInnerNode result = cse(compiler, block.closure(t));
+        assertCseVariables(compiler, result, 1);
+        assertResolves(compiler, result);
+    }
+
+    @Test
+    public void testCSENestedBlocks() {
+        // |t| { let a = t.0; { let c = t.1; Tup((a + c) * (a + c), f(a + 1), g(a + 1)) } }
+        // CSE creates variables for a + c and a + 1; each variable must follow the let statements of its operands.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32n(), b.i32n()));
+        DBSPLetStatement a = new DBSPLetStatement("a", b.field(t, 0));
+        DBSPLetStatement c = new DBSPLetStatement("c", b.field(t, 1));
+        DBSPExpression product = b.binary(b.i32n(), DBSPOpcode.MUL,
+                b.add(a.getVarReference(), c.getVarReference()),
+                b.add(a.getVarReference(), c.getVarReference()));
+        DBSPExpression inner = new DBSPBlockExpression(Linq.list(c), b.tuple(product,
+                b.call("f", b.add(a.getVarReference(), b.lit(1, true))),
+                b.call("g", b.add(a.getVarReference(), b.lit(1, true)))));
+        IDBSPInnerNode result = cse(compiler, new DBSPBlockExpression(Linq.list(a), inner).closure(t));
+        assertCseVariables(compiler, result, 2);
+        assertResolves(compiler, result);
+    }
+
+    @Test
+    public void testCSESharedAcrossClosures() {
+        // |t| Tup(f(|u| u + e), e, e), where e = t.0 + 1 is a single Java object.
+        // The variable for e that the inner closure declares is not in scope in the outer closure.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32n()));
+        DBSPExpression e = b.add(b.field(t, 0), b.lit(1, true));
+        DBSPVariablePath u = b.i32n().var();
+        DBSPClosureExpression inner = b.add(u, e).closure(u);
+        DBSPClosureExpression closure = b.tuple(b.call(b.i32n(), "f", inner), e, e).closure(t);
+        assertResolves(compiler, cse(compiler, closure));
+    }
+
+    @Test
+    public void testCSEDistinguishesTypes() {
+        // Each pair of fields differs only in a type, so CSE may not merge them
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPType i128 = b.integer(DBSPTypeCode.INT128, false);
+        DBSPType i64 = b.integer(DBSPTypeCode.INT64, false);
+        DBSPVariablePath t = b.refVar(b.tup(i128, b.i32()));
+        DBSPType decimal10 = b.decimal(10, 2);
+        DBSPType decimal20 = b.decimal(20, 4);
+        DBSPExpression toDecimal10 = b.unary(decimal10, DBSPOpcode.INTEGER_TO_DECIMAL, b.field(t, 0));
+        DBSPExpression toDecimal20 = b.unary(decimal20, DBSPOpcode.INTEGER_TO_DECIMAL, b.field(t, 0));
+        DBSPExpression onTuple = b.call("f", new DBSPTupleExpression(false, b.field(t, 1)));
+        DBSPExpression onNullableTuple = b.call("f", new DBSPTupleExpression(true, b.field(t, 1)));
+        DBSPExpression gI32 = new DBSPPath(new DBSPSimplePathSegment("g", b.i32())).toExpression();
+        DBSPExpression gI64 = new DBSPPath(new DBSPSimplePathSegment("g", i64)).toExpression();
+        DBSPExpression callI32 = new DBSPApplyExpression(gI32, b.i32(), b.field(t, 1));
+        DBSPExpression callI64 = new DBSPApplyExpression(gI64, b.i32(), b.field(t, 1));
+        DBSPClosureExpression closure = b.tuple(
+                toDecimal10, toDecimal20, onTuple, onNullableTuple, callI32, callI64).closure(t);
+        assertCseVariables(compiler, cse(compiler, closure), 0);
+    }
+
+    @Test
+    public void testCSEUsersWithoutNumber() {
+        // |t| Tup(e + unwrap(t.1), e + unwrap(t.1)), where e = t.0 + 1.
+        // Unwrap has no value number, so neither sum has one; e has two users.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32(), b.i32n()));
+        DBSPExpression[] sums = new DBSPExpression[2];
+        for (int i = 0; i < sums.length; i++) {
+            DBSPExpression e = b.add(b.field(t, 0), b.lit(1));
+            DBSPExpression unwrap = b.unwrap(b.field(t, 1));
+            sums[i] = b.add(e, unwrap);
+        }
+        DBSPClosureExpression closure = b.tuple(sums).closure(t);
+        assertCseVariables(compiler, cse(compiler, closure), 1);
+    }
+
+    @Test
+    public void testCSEMutableVariables() {
+        // |acc, vec: &mut Tup1<i32?>, row| Tup(f(acc.0), g(&mut acc), f(acc.0), h(vec), h(vec), f(row.0), f(row.0))
+        // g can change acc between the two calls f(acc.0), and each call h(vec) can change vec.
+        // Only f(row.0) is a common subexpression.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath acc = b.tup(b.i32n()).var();
+        DBSPVariablePath vec = b.tup(b.i32n()).ref(true).var();
+        DBSPVariablePath row = b.tup(b.i32n()).var();
+        DBSPClosureExpression closure = b.tuple(
+                b.call("f", acc.field(0)),
+                b.call("g", acc.borrow(true)),
+                b.call("f", acc.field(0)),
+                b.call("h", vec),
+                b.call("h", vec),
+                b.call("f", row.field(0)),
+                b.call("f", row.field(0))).closure(acc, vec, row);
+        assertCseVariables(compiler, cse(compiler, closure), 1);
+    }
+
+    @Test
+    public void testCSEMutableFieldBorrow() {
+        // |acc, row| Tup(f(acc.0), g(&mut acc.0), f(acc.0), f(row.0), f(row.0))
+        // g can change acc.0 between the two calls f(acc.0); only f(row.0) is a common subexpression.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath acc = b.tup(b.i32n()).var();
+        DBSPVariablePath row = b.tup(b.i32n()).var();
+        DBSPClosureExpression closure = b.tuple(
+                b.call("f", acc.field(0)),
+                b.call("g", acc.field(0).borrow(true)),
+                b.call("f", acc.field(0)),
+                b.call("f", row.field(0)),
+                b.call("f", row.field(0))).closure(acc, row);
+        assertCseVariables(compiler, cse(compiler, closure), 1);
     }
 
     @Test
@@ -129,7 +255,7 @@ public class EquivalenceTests {
                     b.ifThenElse(cond, b.field(t, 2), un));
         });
         // Find 2 common subexpressions
-        assertLets(compiler, cse(compiler, closure), 2);
+        assertCseVariables(compiler, cse(compiler, closure), 2);
     }
 
     @Test
