@@ -200,7 +200,7 @@
 
 <div class="pipeline-table-wrapper w-fit min-w-full">
   <!-- Opaque in the page's tint, so the rows scrolling under the controls stay hidden. -->
-  <div class="sticky top-0 z-10 bg-page pb-2" bind:clientHeight={controlsHeight}>
+  <div class="sticky top-0 z-10 bg-page py-2" bind:clientHeight={controlsHeight}>
     <!-- The header and the controls share one wrapping row: the controls sit beside the
          header and drop to their own line only when they no longer fit next to it. -->
     <div

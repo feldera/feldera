@@ -392,7 +392,7 @@
         {/if}
       </div>
       {#if legend.length}
-        <div class="hidden items-center gap-4 text-xs lg:flex">
+        <div class="hidden items-center gap-4 text-sm lg:flex">
           {@render legendItem(noDataSwatch, noDataLabel)}
           {#each legend as status}
             {@render legendItem(healthStatusColors(status).healthDot, healthStatusLabel(status))}

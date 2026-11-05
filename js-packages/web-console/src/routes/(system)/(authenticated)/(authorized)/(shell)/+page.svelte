@@ -189,7 +189,7 @@
       <!-- Without the banner, pad the section so it starts 60px below the header logo. -->
       <div
         class="flex flex-col"
-        class:pt-9={!showWelcomeBanner || welcomed.value}
+        class:pt-6={!showWelcomeBanner || welcomed.value}
         data-testid="box-pipelines-section"
       >
         {#snippet header()}
