@@ -10,12 +10,18 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- OIDC (login and federated tokens): when a refresh of an issuer's signing
+  keys fails, the API server keeps using the keys it fetched before, for up to
+  1 hour.  Before, one failed fetch refused every token of that issuer with a
+  401 for the refresh cooldown, which is 30 seconds for federated tokens.
+
 - API: when the API server cannot open a connection to a pipeline, it now
   sends a 503 with error code `PipelineInteractionConnectFailed`. Before, it
   sent `PipelineInteractionUnreachable`, the code it also uses when the
   connection fails during a request. The request was not sent, so a client
   can safely retry it. The Python SDK and the Rust client now retry it for
   all requests, HTTP ingress included.
+
 - Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` also
   refuse a `runtime_config` with `resources.memory_min` or
   `resources.memory_max` above `kubernetesRunner.upperLimitMemoryMegabyte`, or
