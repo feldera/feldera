@@ -1,11 +1,12 @@
 <script lang="ts">
   import { nubLast } from 'common-lib/array'
+  import { TabsPanel } from 'common-ui'
+  import { createRawSnippet } from 'svelte'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
-  import Footer from '#lib/components/layout/Footer.svelte'
   import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
   import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
   import BookADemo from '#lib/components/other/BookADemo.svelte'
-  import DemoTile from '#lib/components/other/DemoTile.svelte'
+  import DemosGrid from '#lib/components/other/DemosGrid.svelte'
   import CreatePipelineButton from '#lib/components/pipelines/CreatePipelineButton.svelte'
   import { useAdaptiveDrawer } from '#lib/compositions/layout/useAdaptiveDrawer.svelte.ts'
   import { useDemos } from '#lib/compositions/useDemos.svelte.ts'
@@ -34,7 +35,26 @@
     Tutorial: 'Tutorials',
     Example: 'Examples'
   }
-  const items = $derived(types.map((type) => ({ value: type, label: plurals[type] ?? type })))
+  // Set the label as text, so a demo type from the server cannot inject markup.
+  const textSnippet = (text: string) =>
+    createRawSnippet(() => ({
+      render: () => '<span></span>',
+      setup: (span) => {
+        span.textContent = text
+      }
+    }))
+  // Every tab shows the same grid, filtered by the current tab.
+  const tabs = $derived(
+    types.map((type) => ({
+      id: type,
+      label: textSnippet(plurals[type] ?? type),
+      panel: DemosGrid,
+      keepAlive: false
+    }))
+  )
+  const filteredDemos = $derived(
+    demos.current.filter((demo) => !demo || demosType === 'All' || demo.type === demosType)
+  )
 </script>
 
 <AppHeader>
@@ -59,30 +79,11 @@
     {/if}
   {/snippet}
 </AppHeader>
-<!-- Underlined tabs like the pipeline page's, with the selected one in the chart olive. -->
-<div class="mb-5 flex gap-1 border-b border-line px-2 pt-2 md:px-8" role="tablist">
-  {#each items as item (item.value)}
-    {@const selected = item.value === demosType}
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      class="relative -mb-px px-3 pt-2.5 pb-2 whitespace-nowrap transition-colors {selected
-        ? 'text-surface-950-50 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-chart-line'
-        : 'text-surface-600-400 hover:text-surface-950-50'}"
-      onclick={() => (demosType = item.value)}
-    >
-      {item.label}
-    </button>
-  {/each}
-</div>
-<div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
-  <div class="grid grid-cols-1 gap-4 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5">
-    {#each demos.current.filter((demo) => {
-      return !demo || demosType === 'All' || demo.type === demosType
-    }) as demo}
-      <DemoTile {demo} placement="demos"></DemoTile>
-    {/each}
-  </div>
-  <Footer></Footer>
-</div>
+<TabsPanel
+  {tabs}
+  bind:currentTab={demosType}
+  tabProps={{ demos: filteredDemos }}
+  tabLabelVariant="underline"
+  framed={false}
+  headerClass="md:px-8"
+/>
