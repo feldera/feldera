@@ -2,7 +2,7 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { InlineDropdown, useIsScreenMd, useIsTablet } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import IconBookOpen from '#assets/icons/feldera-material-icons/book-open.svg?component'
+  import IconBookOpen from 'lucide-static/icons/book-open.svg?component'
   import IconDiscord from '#assets/icons/vendors/discord-logomark-color.svg?component'
   import IconSlack from '#assets/icons/vendors/slack-logomark-color.svg?component'
   import FelderaLogomarkLight from '#assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
@@ -174,7 +174,8 @@
                     href={link.href}
                     target="_blank"
                     rel="noreferrer"
-                    ><link.icon class="h-4 w-4 fill-surface-950-50"></link.icon>{link.title}</a
+                    ><link.icon class="h-4 w-4 fill-surface-950-50" stroke-width="1.5"
+                    ></link.icon>{link.title}</a
                   >
                 {/each}
               </div>
