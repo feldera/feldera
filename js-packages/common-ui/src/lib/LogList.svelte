@@ -177,8 +177,10 @@
 </script>
 
 <!-- The outer wrapper is positioned so ScrollDownFab (absolute-positioned) can anchor inside
-     LogList itself — wrappers don't have to add their own `relative` parent. -->
-<div class="relative flex h-full w-full flex-col">
+     LogList itself — wrappers don't have to add their own `relative` parent.
+     In a flex column it takes only the height left after its siblings (`min-h-0 flex-1`);
+     elsewhere it fills its parent (`h-full`). -->
+<div class="relative flex h-full min-h-0 w-full flex-1 flex-col">
   {@render header?.()}
   <!-- onscroll re-paints the highlight: when the matched row scrolls into view, virtua mounts
        a fresh DOM node, so the previously-painted Range is gone and must be re-created
