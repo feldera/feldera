@@ -8,7 +8,7 @@
   import { browser } from '$app/env'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
 
-  import '#assets/fonts/feldera-material-icons.css'
+  import '#assets/icons/fd.css'
   import '#assets/fonts/generic-icons.css'
 
   import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'

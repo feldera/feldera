@@ -27,7 +27,7 @@
     itemTextClass="flex flex-nowrap items-center gap-3"
   >
     {#snippet label(item)}
-      <span class="fd fd-{item.value === 'light' ? 'sun' : 'moon'} text-[16px]"></span>
+      <span class="fd {item.value === 'light' ? 'fd-sun' : 'fd-moon'} text-[16px]"></span>
       {item.label}
     {/snippet}
   </SegmentedControl>
