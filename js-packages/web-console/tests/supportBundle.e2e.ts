@@ -214,9 +214,14 @@ async function assertLogsPanelPopulates(viewer: Page) {
  * (issue #6409). The diagram is canvas-rendered, so we reach into cytoscape via
  * the container's private `_cyreg.cy` field and emit a synthetic `click` on the
  * first leaf — the same event the user's mouse would fire.
+ *
+ * `persistent ID` is one of the attributes gated behind "Show advanced" (basic
+ * mode only shows the 4 essential metrics), so the switch has to be turned on
+ * before the row appears.
  */
 async function assertNodeMetricsShowPersistentId(viewer: Page) {
   await viewer.getByText('Metrics', { exact: true }).first().click()
+  await viewer.getByText('Show advanced', { exact: true }).click()
 
   const diagram = viewer.getByTestId('visualizer-diagram')
   await expect(diagram).toBeVisible({ timeout: 30_000 })
