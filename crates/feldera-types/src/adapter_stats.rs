@@ -147,6 +147,23 @@ pub struct CompletedWatermark {
     pub completed_at: DateTime<Utc>,
 }
 
+/// A watermark that the circuit has taken in.
+///
+/// The outputs computed from the input may not be complete yet: in a
+/// transaction, they wait for the commit.
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CircuitInputWatermark {
+    /// Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs).
+    #[schema(value_type = Object)]
+    pub metadata: JsonValue,
+    /// Timestamp when the data was ingested from the wire.
+    #[serde(serialize_with = "serialize_timestamp_micros")]
+    pub ingested_at: DateTime<Utc>,
+    /// Timestamp when the circuit finished the step that took the data in.
+    #[serde(serialize_with = "serialize_timestamp_micros")]
+    pub processed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, ToSchema, Clone)]
 pub enum ConnectorHealthStatus {
     #[default]
@@ -294,9 +311,15 @@ pub struct ExternalInputEndpointStatus {
     /// The latest completed watermark.
     #[schema(value_type = Option<CompletedWatermark>)]
     pub completed_frontier: Option<CompletedWatermark>,
+    /// The latest watermark that the circuit has taken in.
+    ///
+    /// It moves during a transaction too, while `completed_frontier` waits for
+    /// the commit.
+    #[schema(value_type = Option<CircuitInputWatermark>)]
+    pub circuit_input_frontier: Option<CircuitInputWatermark>,
 }
 
-/// How to combine the metadata of the completed frontiers that the hosts of a
+/// How to combine the metadata of the frontiers that the hosts of a
 /// distributed input connector report (see
 /// [`ExternalInputEndpointStatus::merge`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -331,7 +354,7 @@ impl ExternalInputEndpointStatus {
     /// that host.  A host that is not at end of input and has completed no
     /// input yet gives no frontier.  Hosts at end of input do not hold back
     /// the frontier; if every host is at end of input, the frontier is the
-    /// newest one.
+    /// newest one.  Its circuit input frontier combines in the same way.
     ///
     /// `frontier_merge` says how to combine the frontiers' metadata.
     pub fn merge(&mut self, other: Self, frontier_merge: FrontierMerge) {
@@ -349,6 +372,7 @@ impl ExternalInputEndpointStatus {
             paused,
             barrier,
             completed_frontier,
+            circuit_input_frontier,
         } = other;
         let (a_eoi, b_eoi) = (self.metrics.end_of_input, metrics.end_of_input);
         self.metrics.merge(&metrics);
@@ -367,42 +391,119 @@ impl ExternalInputEndpointStatus {
         };
         self.paused &= paused;
         self.barrier |= barrier;
-        let (a, b) = (self.completed_frontier.take(), completed_frontier);
-        let several = !a_eoi && !b_eoi && a.is_some() && b.is_some();
-        // Joining with no partitions puts one host's metadata in the joined
-        // form.
-        let no_partitions = serde_json::json!({"partitions": [], "offsets": []});
-        let metadata = |f: &Option<CompletedWatermark>| {
-            f.as_ref().map_or(&no_partitions, |f| &f.metadata).clone()
-        };
-        let joined = join_partitions(&metadata(&a), &metadata(&b));
-        let oldest = |a: CompletedWatermark, b: CompletedWatermark| {
-            if b.ingested_at < a.ingested_at { b } else { a }
-        };
-        let newest = |a: CompletedWatermark, b: CompletedWatermark| {
-            if b.ingested_at > a.ingested_at { b } else { a }
-        };
-        self.completed_frontier = match (a_eoi, b_eoi) {
-            (false, false) => a.zip(b).map(|(a, b)| oldest(a, b)),
-            (false, true) => a,
-            (true, false) => b,
-            (true, true) => match (a, b) {
-                (Some(a), Some(b)) => Some(newest(a, b)),
-                (a, b) => a.or(b),
-            },
-        };
-        if let Some(frontier) = &mut self.completed_frontier {
-            match frontier_merge {
-                FrontierMerge::Shared => (),
-                FrontierMerge::Partitioned => frontier.metadata = joined,
-                FrontierMerge::Opaque => {
-                    if several {
-                        frontier.metadata = JsonValue::Null;
-                    }
+        self.completed_frontier = merge_frontiers(
+            (self.completed_frontier.take(), a_eoi),
+            (completed_frontier, b_eoi),
+            frontier_merge,
+        );
+        self.circuit_input_frontier = merge_frontiers(
+            (self.circuit_input_frontier.take(), a_eoi),
+            (circuit_input_frontier, b_eoi),
+            frontier_merge,
+        );
+    }
+}
+
+/// A watermark that marks a frontier in an input connector's status.
+trait Frontier {
+    /// Timestamp when the data was ingested from the wire.
+    fn ingested_at(&self) -> DateTime<Utc>;
+
+    /// Metadata that describes the position in the input stream.
+    fn metadata(&self) -> &JsonValue;
+
+    /// Mutable access to [`Self::metadata`].
+    fn metadata_mut(&mut self) -> &mut JsonValue;
+}
+
+impl Frontier for CompletedWatermark {
+    fn ingested_at(&self) -> DateTime<Utc> {
+        self.ingested_at
+    }
+
+    fn metadata(&self) -> &JsonValue {
+        &self.metadata
+    }
+
+    fn metadata_mut(&mut self) -> &mut JsonValue {
+        &mut self.metadata
+    }
+}
+
+impl Frontier for CircuitInputWatermark {
+    fn ingested_at(&self) -> DateTime<Utc> {
+        self.ingested_at
+    }
+
+    fn metadata(&self) -> &JsonValue {
+        &self.metadata
+    }
+
+    fn metadata_mut(&mut self) -> &mut JsonValue {
+        &mut self.metadata
+    }
+}
+
+/// Combines frontiers `a` and `b`, which two hosts report for their parts of
+/// the same distributed connector, as [`ExternalInputEndpointStatus::merge`]
+/// describes.
+///
+/// # Arguments
+///
+/// * `a` - one host's frontier, and whether that host is at end of input.
+/// * `b` - the other host's frontier, and whether that host is at end of
+///   input.
+/// * `frontier_merge` - how to combine the frontiers' metadata.
+///
+/// # Returns
+///
+/// The frontier of the two parts together, or `None` if they have none.
+fn merge_frontiers<F: Frontier>(
+    (a, a_eoi): (Option<F>, bool),
+    (b, b_eoi): (Option<F>, bool),
+    frontier_merge: FrontierMerge,
+) -> Option<F> {
+    let several = !a_eoi && !b_eoi && a.is_some() && b.is_some();
+    // Joining with no partitions puts one host's metadata in the joined
+    // form.
+    let no_partitions = serde_json::json!({"partitions": [], "offsets": []});
+    let metadata = |f: &Option<F>| f.as_ref().map_or(&no_partitions, F::metadata).clone();
+    let joined = join_partitions(&metadata(&a), &metadata(&b));
+    let oldest = |a: F, b: F| {
+        if b.ingested_at() < a.ingested_at() {
+            b
+        } else {
+            a
+        }
+    };
+    let newest = |a: F, b: F| {
+        if b.ingested_at() > a.ingested_at() {
+            b
+        } else {
+            a
+        }
+    };
+    let mut frontier = match (a_eoi, b_eoi) {
+        (false, false) => a.zip(b).map(|(a, b)| oldest(a, b)),
+        (false, true) => a,
+        (true, false) => b,
+        (true, true) => match (a, b) {
+            (Some(a), Some(b)) => Some(newest(a, b)),
+            (a, b) => a.or(b),
+        },
+    };
+    if let Some(frontier) = &mut frontier {
+        match frontier_merge {
+            FrontierMerge::Shared => (),
+            FrontierMerge::Partitioned => *frontier.metadata_mut() = joined,
+            FrontierMerge::Opaque => {
+                if several {
+                    *frontier.metadata_mut() = JsonValue::Null;
                 }
             }
         }
     }
+    frontier
 }
 
 /// Joins two [`FrontierMerge::Partitioned`] metadata values.  Returns null if
@@ -797,9 +898,9 @@ mod tests {
         use chrono::{DateTime, TimeZone, Utc};
 
         use crate::adapter_stats::{
-            CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
-            ExternalInputEndpointMetrics, ExternalInputEndpointStatus, FrontierMerge,
-            ShortEndpointConfig,
+            CircuitInputWatermark, CompletedWatermark, ConnectorError, ConnectorHealth,
+            ConnectorHealthStatus, ExternalInputEndpointMetrics, ExternalInputEndpointStatus,
+            FrontierMerge, ShortEndpointConfig,
         };
         use serde_json::{Value, json};
 
@@ -825,6 +926,14 @@ mod tests {
             }
         }
 
+        fn circuit_input_frontier(ingested_secs: i64) -> CircuitInputWatermark {
+            CircuitInputWatermark {
+                metadata: serde_json::json!(ingested_secs),
+                ingested_at: time(ingested_secs),
+                processed_at: time(ingested_secs + 1),
+            }
+        }
+
         fn status() -> ExternalInputEndpointStatus {
             ExternalInputEndpointStatus {
                 endpoint_name: "t.kafka".into(),
@@ -846,6 +955,7 @@ mod tests {
                 paused: false,
                 barrier: false,
                 completed_frontier: None,
+                circuit_input_frontier: None,
             }
         }
 
@@ -897,7 +1007,8 @@ mod tests {
 
         /// Merges hosts given as (end of input, frontier ingestion time,
         /// metadata) with `kind`, and returns the merged frontier's ingestion
-        /// time and metadata.
+        /// time and metadata.  Each host reports the same completed and circuit
+        /// input frontiers, which must merge alike.
         fn merge_metadata(
             hosts: Vec<(bool, Option<(i64, Value)>)>,
             kind: FrontierMerge,
@@ -905,15 +1016,24 @@ mod tests {
             let mut statuses = hosts.into_iter().map(|(eoi, f)| {
                 let mut s = status();
                 s.metrics.end_of_input = eoi;
-                s.completed_frontier = f.map(|(secs, metadata)| CompletedWatermark {
+                s.completed_frontier = f.clone().map(|(secs, metadata)| CompletedWatermark {
                     metadata,
                     ..frontier(secs)
+                });
+                s.circuit_input_frontier = f.map(|(secs, metadata)| CircuitInputWatermark {
+                    metadata,
+                    ..circuit_input_frontier(secs)
                 });
                 s
             });
             let mut x = statuses.next().unwrap();
             statuses.for_each(|y| x.merge(y, kind));
-            x.completed_frontier.map(|f| (f.ingested_at, f.metadata))
+            let completed = x.completed_frontier.map(|f| (f.ingested_at, f.metadata));
+            let circuit_input = x
+                .circuit_input_frontier
+                .map(|f| (f.ingested_at, f.metadata));
+            assert_eq!(completed, circuit_input);
+            completed
         }
 
         /// Shared metadata stays with its host's frontier, however many
@@ -1057,17 +1177,26 @@ mod tests {
         fn opaque_frontier_merge() {
             // Merges hosts given as (end of input, frontier) and returns the
             // merged frontier's ingestion time and whether it kept metadata.
+            // Each host reports the same completed and circuit input
+            // frontiers, which must merge alike.
             let merged = |hosts: &[(bool, Option<i64>)]| {
                 let mut statuses = hosts.iter().map(|&(eoi, f)| {
                     let mut s = status();
                     s.metrics.end_of_input = eoi;
                     s.completed_frontier = f.map(frontier);
+                    s.circuit_input_frontier = f.map(circuit_input_frontier);
                     s
                 });
                 let mut x = statuses.next().unwrap();
                 statuses.for_each(|y| x.merge(y, FrontierMerge::Opaque));
-                x.completed_frontier
-                    .map(|f| (f.ingested_at, !f.metadata.is_null()))
+                let completed = x
+                    .completed_frontier
+                    .map(|f| (f.ingested_at, !f.metadata.is_null()));
+                let circuit_input = x
+                    .circuit_input_frontier
+                    .map(|f| (f.ingested_at, !f.metadata.is_null()));
+                assert_eq!(completed, circuit_input);
+                completed
             };
             let (busy, done) = (false, true);
 
