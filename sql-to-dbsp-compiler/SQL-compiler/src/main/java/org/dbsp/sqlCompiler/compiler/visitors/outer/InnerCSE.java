@@ -10,11 +10,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.util.Logger;
 
 /** Perform common-subexpression elimination on the inner IR */
 public class InnerCSE implements IRTransform {
+    final DBSPCompiler compiler;
     final ValueNumbering numbering;
     final ExpressionsCSE cse;
 
@@ -23,7 +25,8 @@ public class InnerCSE implements IRTransform {
         return !operator.is(DBSPConstantOperator.class);
     }
 
-    InnerCSE(DBSPCompiler compiler) {
+    public InnerCSE(DBSPCompiler compiler) {
+        this.compiler = compiler;
         this.numbering = new ValueNumbering(compiler);
         this.cse = new ExpressionsCSE(compiler, this.numbering.canonical);
     }
@@ -43,9 +46,12 @@ public class InnerCSE implements IRTransform {
         }
         if (!node.isExpression())
             return node;
-        this.numbering.apply(node);
+        // ExpressionsCSE translates each node once, but a subtree shared by two closures
+        // needs a separate translation in each closure.
+        DBSPExpression tree = node.to(DBSPExpression.class).ensureTree(this.compiler);
+        this.numbering.apply(tree);
         if (!this.numbering.foundAssignment) {
-            return this.cse.apply(node);
+            return this.cse.apply(tree);
         } else {
             Logger.INSTANCE.belowLevel(ExpressionsCSE.class, 1)
                     .append("Skipping ")
