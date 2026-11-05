@@ -53,7 +53,8 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         Utilities.enforce(error.parameters.length == 4);
     }
 
-    public static final String LATE_ERROR = "Late value";
+    /** Message of the ERROR_VIEW records for late data. */
+    public static final String LATE_ERROR = "Late row";
 
     public OutputPort left() {
         return this.inputs.get(0);

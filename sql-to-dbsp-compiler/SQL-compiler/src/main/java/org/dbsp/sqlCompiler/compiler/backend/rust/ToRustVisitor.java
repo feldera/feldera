@@ -877,7 +877,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         operator.filter.accept(this.innerVisitor);
         this.builder.append(", ");
+        operator.keyFilter.accept(this.innerVisitor);
+        this.builder.append(", ");
         operator.error.accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.keyError.accept(this.innerVisitor);
         this.builder.decrease().append(");").newline();
         this.builder.newline()
                 .append(operator.getOutput(0).getName(this.preferHash))

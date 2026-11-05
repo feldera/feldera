@@ -178,18 +178,23 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPClosureExpression timestamp = this.transform(operator.timestamp).to(DBSPClosureExpression.class);
         DBSPClosureExpression lub = this.transform(operator.lub).to(DBSPClosureExpression.class);
         DBSPClosureExpression filter = this.transform(operator.filter).to(DBSPClosureExpression.class);
+        DBSPClosureExpression keyFilter = this.transform(operator.keyFilter).to(DBSPClosureExpression.class);
         DBSPClosureExpression error = this.transform(operator.error).to(DBSPClosureExpression.class);
+        DBSPClosureExpression keyError = this.transform(operator.keyError).to(DBSPClosureExpression.class);
         if (!originalRowType.sameType(operator.originalRowType) ||
             !outputType.sameType(operator.outputType(0)) ||
             initializer != operator.initializer ||
             timestamp != operator.timestamp ||
             lub != operator.lub ||
             filter != operator.filter ||
-            error != operator.error) {
+            keyFilter != operator.keyFilter ||
+            error != operator.error ||
+            keyError != operator.keyError) {
             result = new DBSPInputMapWithWaterlineOperator(
                     operator.getRelNode(), operator.sourceName, operator.keyFields,
                     outputType, originalRowType, operator.metadata,
-                    operator.tableName, operator.kind, initializer, timestamp, lub, filter, error);
+                    operator.tableName, operator.kind, initializer, timestamp, lub,
+                    filter, keyFilter, error, keyError);
         }
         this.map(operator, result, true);
     }

@@ -256,7 +256,9 @@ impl RootCircuit {
         extract_ts: Box<dyn Fn(&DynData, &DynData, &mut DynData)>,
         least_upper_bound: LeastUpperBoundFunc<DynData>,
         filter_func: Box<dyn Fn(&DynData, &DynData, &DynData) -> bool>,
+        key_filter_func: Box<dyn Fn(&DynData, &DynData) -> bool>,
         report_func: Box<dyn Fn(&DynData, &DynData, &DynData, ZWeight, &mut DynData)>,
+        report_key_func: Box<dyn Fn(&DynData, &DynData, ZWeight, &mut DynData)>,
     ) -> (
         IndexedZSetStream<DynData, DynData>,
         Stream<RootCircuit, OrdZSet<DynData>>,
@@ -271,7 +273,9 @@ impl RootCircuit {
             extract_ts,
             least_upper_bound,
             filter_func,
+            key_filter_func,
             report_func,
+            report_key_func,
         )
     }
 }
@@ -480,7 +484,9 @@ impl RootCircuit {
         extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut W)>,
         least_upper_bound: LeastUpperBoundFunc<W>,
         filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+        key_filter_func: Box<dyn Fn(&W, &B::Key) -> bool>,
         report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+        report_key_func: Box<dyn Fn(&W, &B::Key, ZWeight, &mut E)>,
     ) -> (
         Stream<Self, B>,
         Stream<Self, OrdZSet<E>>,
@@ -519,7 +525,9 @@ impl RootCircuit {
             extract_ts,
             least_upper_bound,
             filter_func,
+            key_filter_func,
             report_func,
+            report_key_func,
         )
     }
 
@@ -625,7 +633,9 @@ impl RootCircuit {
         extract_ts: Box<dyn Fn(&K, &V, &mut W)>,
         least_upper_bound: LeastUpperBoundFunc<W>,
         filter_func: Box<dyn Fn(&W, &K, &V) -> bool>,
+        key_filter_func: Box<dyn Fn(&W, &K) -> bool>,
         report_func: Box<dyn Fn(&W, &K, &V, ZWeight, &mut E)>,
+        report_key_func: Box<dyn Fn(&W, &K, ZWeight, &mut E)>,
     ) -> (
         IndexedZSetStream<K, V>,
         Stream<RootCircuit, OrdZSet<E>>,
@@ -662,7 +672,9 @@ impl RootCircuit {
                 extract_ts,
                 least_upper_bound,
                 filter_func,
+                key_filter_func,
                 report_func,
+                report_key_func,
             );
 
             (upsert, errors, waterline, zset_handle)
@@ -1778,13 +1790,15 @@ mod test {
     fn map_with_waterline_reinsert_within_step() {
         let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(1, |circuit| {
             let (stream, _errors, _waterline, handle) = circuit
-                .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _>(
+                .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _, _, _>(
                     |v, u| *v = ((*v as i64) + u) as u64,
                     || 0u64,
                     |_k, v| *v,
                     |wl1, wl2| max(*wl1, *wl2),
                     |_wl, _k, _v| true,
+                    |_wl, _k| true,
                     |_wl, k, v, _w| format!("key: {k}, value: {v}"),
+                    |_wl, k, _w| format!("key: {k}"),
                 );
             Ok((handle, stream.accumulate_output()))
         })
@@ -1969,13 +1983,15 @@ mod test {
         OutputHandle<OrdZSet<String>>,
     ) {
         let (stream, errors, waterline, input_handle) = circuit
-            .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _>(
+            .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _, _, _>(
                 |v, u| *v = ((*v as i64) + u) as u64,
                 || 0u64,
                 |_k, v| *v,
                 |wl1, wl2| max(*wl1, *wl2),
                 |wl, _k, v| *v >= *wl,
+                |_wl, _k| true,
                 |wl, k, v, w| format!("waterline: {wl}, key: {k}, value: {v}, weight: {w}"),
+                |wl, k, w| format!("waterline: {wl}, key: {k}, weight: {w}"),
             );
 
         let output_handle = stream.output();
@@ -2097,13 +2113,15 @@ mod test {
         OutputHandle<OrdZSet<String>>,
     ) {
         let (stream, errors, waterline, input_handle) = circuit
-            .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _>(
+            .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _, _, _>(
                 |v, u| *v = ((*v as i64) + u) as u64,
                 || 0u64,
                 |k, _v| *k,
                 |wl1, wl2| max(*wl1, *wl2),
                 |wl, k, _v| *k >= *wl,
+                |wl, k| *k >= *wl,
                 |wl, k, v, w| format!("waterline: {wl}, key: {k}, value: {v}, weight: {w}"),
+                |wl, k, w| format!("waterline: {wl}, key: {k}, weight: {w}"),
             );
 
         stream.integrate_trace_retain_keys(&waterline, |key, wl| *key >= *wl);
@@ -2171,6 +2189,7 @@ mod test {
                 Tup2(4, Update::Insert(5)), // ok
             ], // waterline: 4
             vec![
+                Tup2(1, Update::Update(1)), // rejected
                 Tup2(3, Update::Delete),    // rejected
                 Tup2(5, Update::Insert(6)), // ok
                 Tup2(5, Update::Delete),    // ok
@@ -2193,12 +2212,19 @@ mod test {
             ),
             (
                 indexed_zset! { 3 => {1 => -1, 4 => 1}, 4 => {5 => 1} },
-                zset! {"waterline: 3, key: 1, value: 1, weight: -1".to_string() => 1, "waterline: 3, key: 2, value: 2, weight: 1".to_string() => 1},
+                zset! {
+                    "waterline: 3, key: 1, value: 1, weight: 1".to_string() => 1,
+                    "waterline: 3, key: 1, weight: -1".to_string() => 1,
+                    "waterline: 3, key: 2, value: 2, weight: 1".to_string() => 1,
+                },
                 4,
             ),
             (
                 indexed_zset! {},
-                zset! {"waterline: 4, key: 3, value: 4, weight: -1".to_string() => 1},
+                zset! {
+                    "waterline: 4, key: 1, weight: 1".to_string() => 1,
+                    "waterline: 4, key: 3, weight: -1".to_string() => 1,
+                },
                 4,
             ),
             (
