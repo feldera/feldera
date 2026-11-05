@@ -200,7 +200,7 @@
     ]
   }
 
-  const handleSeriesHover = <T,>(setValue: (value: T | null) => void) => ({
+  const handleSeriesHover = <T>(setValue: (value: T | null) => void) => ({
     mouseover: (e: CustomEvent<ECMouseEvent>) => {
       if (e.detail.componentType !== 'series') {
         return

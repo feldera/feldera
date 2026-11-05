@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { errorTextClass, errorTextHoverClass } from 'common-ui/statusTone'
   import { partition } from 'common-lib/array'
   import { promisePool } from 'common-lib/promise'
   import { Tooltip } from 'common-ui'
+  import { errorTextClass, errorTextHoverClass } from 'common-ui/statusTone'
   import { fade } from 'svelte/transition'
   import Popup from '#lib/components/common/Popup.svelte'
   import SlidingPanels from '#lib/components/common/SlidingPanels.svelte'

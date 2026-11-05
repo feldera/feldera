@@ -1,19 +1,19 @@
-@import '../assets/fonts/dm-sans.css' layer(base); /* '@fontsource-variable/public-sans' */
-@import '@fontsource-variable/geist-mono' layer(base);
-@import url('@fortawesome/fontawesome-free/css/brands.min.css') layer(base);
+@import "../assets/fonts/dm-sans.css" layer(base); /* '@fontsource-variable/public-sans' */
+@import "@fontsource-variable/geist-mono" layer(base);
+@import url("@fortawesome/fontawesome-free/css/brands.min.css") layer(base);
 
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /* Scan profiler packages for Tailwind classes */
-@source '../../node_modules/profiler-layout/**/*.{svelte}';
-@source '../../node_modules/common-ui/src/**/*.{svelte,ts}';
+@source "../../node_modules/profiler-layout/**/*.{svelte}";
+@source "../../node_modules/common-ui/src/**/*.{svelte,ts}";
 
-@import '@skeletonlabs/skeleton';
-@import '@skeletonlabs/skeleton-svelte';
+@import "@skeletonlabs/skeleton";
+@import "@skeletonlabs/skeleton-svelte";
 
-@import 'feldera-theme/feldera-modern.css';
+@import "feldera-theme/feldera-modern.css";
 
-@plugin 'tailwind-scrollbar' {
+@plugin "tailwind-scrollbar" {
   nocompatible: true;
 }
 
@@ -27,10 +27,10 @@
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
 
-  --font-brands: 'Font Awesome 6 Brands';
-  --font-dm-mono: 'Geist Mono Variable';
+  --font-brands: "Font Awesome 6 Brands";
+  --font-dm-mono: "Geist Mono Variable";
   /* Every monospace text uses Geist Mono, the code editor's font, so `font-mono` matches it. */
-  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --color-dark: rgb(24 24 24);
 
@@ -122,7 +122,7 @@
     margin-inline-end: auto;
   }
   &::after {
-    content: '';
+    content: "";
     margin-inline-start: auto;
     margin-inline-end: calc(var(--btn-gap) * -1);
   }
@@ -225,7 +225,7 @@
    A focused field still takes the primary ring. */
 :is(.btn, .btn-icon):is(.preset-filled-surface-50-950, .preset-tonal-surface),
 .select,
-.input:not([type='range'], [type='file']) {
+.input:not([type="range"], [type="file"]) {
   background-color: var(--color-control);
   box-shadow: inset 0 0 0 1px var(--color-line);
   &:focus-visible {
@@ -316,7 +316,7 @@ input:focus {
 
 /* Search inputs match `.btn` and `.select`: 32px high with the same corner radius. Skeleton's
    `.input` already gives them the same 12px side padding and 14/20 text. */
-.input[type='search'] {
+.input[type="search"] {
   height: 32px;
   padding-block: 0;
   border-radius: var(--radius-md);
@@ -349,11 +349,11 @@ input:focus {
   &:checked {
     border-color: transparent;
     background-color: var(--color-primary-500);
-    background-image: url('../assets/icons/generic/checkbox-check.svg');
+    background-image: url("../assets/icons/generic/checkbox-check.svg");
 
     /* The dark-mode fill is near white, so the check mark turns black. */
     &:where(.dark, .dark *) {
-      background-image: url('../assets/icons/generic/checkbox-check-dark.svg');
+      background-image: url("../assets/icons/generic/checkbox-check-dark.svg");
     }
   }
 }

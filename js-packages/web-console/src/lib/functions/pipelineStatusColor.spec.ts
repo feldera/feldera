@@ -61,13 +61,12 @@ describe('pipelineStatusColor', () => {
 })
 
 describe('statusToneColors', () => {
-  it.each(Object.entries(statusToneColors))(
-    'builds %s classes from its theme colours',
-    (tone, colors) => {
-      expect(colors.chip).toBe(`bg-status-${tone}-subtle text-status-${tone}`)
-      expect(colors.dot).toBe(`bg-status-${tone}-pip`)
-    }
-  )
+  it.each(
+    Object.entries(statusToneColors)
+  )('builds %s classes from its theme colours', (tone, colors) => {
+    expect(colors.chip).toBe(`bg-status-${tone}-subtle text-status-${tone}`)
+    expect(colors.dot).toBe(`bg-status-${tone}-pip`)
+  })
 
   it.each([
     'chip',
