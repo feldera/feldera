@@ -61,8 +61,8 @@ The specific behavior of this transformation depends on the data format and tran
   once fault tolerance (because Kafka connectors use the key to
   deduplicate output in exactly once fault tolerance).
 - Kafka output connectors configured with the [JSON
-  format](/formats/json#the-debezium-format) and `"update_format": "debezium"`,
-  with the same exception for exactly once fault tolerance.
+  format](/formats/json#the-debezium-format) and `"update_format": "debezium"`.
+  With exactly once fault tolerance, set `"tombstones_on_delete": false`.
 - [Postgres output connector](/connectors/sinks/postgresql)
 - [Delta Lake output connector](/connectors/sinks/delta)
 

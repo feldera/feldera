@@ -76,6 +76,12 @@ as errors and not written. Use a format that writes a deletion with a value,
 such as `debezium`, or at-least-once fault tolerance. Other formats are safe
 on compacted topics.
 
+The JSON `debezium` format with an `index` writes each deletion as a `d` event
+with a value, and then a tombstone. With exactly-once fault tolerance, set
+`"tombstones_on_delete": false` in its format configuration. Otherwise the
+connector writes the `d` events and reports an error for each tombstone. See
+[the Debezium format](/formats/json#the-debezium-format).
+
 ## Delivery, retries, and backpressure
 
 For pipelines without exactly-once fault tolerance, the connector defaults
