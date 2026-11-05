@@ -4,12 +4,10 @@ import { tagDisplayName } from './tags.ts'
 
 type Searchable = { name: string; tags: string[] }
 
-const hasTagMatching = (pipeline: Searchable, query: string) =>
-  pipeline.tags.some((tag) => matchesSubstring(tagDisplayName(tag), query))
-
 /**
- * Whether a pipeline matches the search: its name or one of its tag names contains `query`,
- * and it carries a tag with the name of each tag in `tagFilters`.
+ * Whether a pipeline matches the search. A pipeline matches if both are true:
+ * - its name or one of its tag names contains `query`,
+ * - it has a tag with the name of each tag in `tagFilters`. The tag colors can differ.
  */
 export const matchesPipelineSearch = (
   pipeline: Searchable,
@@ -21,10 +19,13 @@ export const matchesPipelineSearch = (
     return false
   }
   const trimmed = query.trim()
-  return matchesSubstring(pipeline.name, trimmed) || hasTagMatching(pipeline, trimmed)
+  return (
+    matchesSubstring(pipeline.name, trimmed) ||
+    pipelineTagNames.some((name) => matchesSubstring(name, trimmed))
+  )
 }
 
-/** Move the pipelines whose name contains `query` to the front. Keeps the order inside each group. */
+/** A stable sort that moves the pipelines whose name contains `query` to the front. */
 export const nameMatchesFirst = <P extends Searchable>(
   pipelines: readonly P[],
   query: string

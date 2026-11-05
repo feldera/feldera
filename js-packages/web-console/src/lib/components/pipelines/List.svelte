@@ -20,7 +20,7 @@
     pipelines: PipelineThumb[] | undefined
     onclose?: () => void
     onaction?: () => void
-    /** Where the tags that match the search show; see `PipelineSearch`. */
+    /** The place of the tag list. See `tagsLayout` in `PipelineSearch`. */
     tagsLayout?: 'right' | 'below'
   } = $props()
 
