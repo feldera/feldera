@@ -21,7 +21,7 @@ use rdkafka::{
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
@@ -41,6 +41,9 @@ const MAX_MESSAGE_OVERHEAD: usize = 64;
 /// longer than this while it delivers.
 const DELIVERY_STALL_TIMEOUT: Duration = Duration::from_secs(10);
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_millis(100);
+
+/// How often `batch_end` checks for shutdown while it waits for deliveries.
+const DELIVERY_WAIT_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Pending deliveries include the record currently waiting for queue space.
 /// IDs preserve enqueue order even when acknowledgements arrive out of order.
@@ -66,6 +69,9 @@ struct KafkaOutputContext {
     /// Also serializes health publication across send, delivery, and timer.
     delivery_state: Mutex<DeliveryState>,
 
+    /// Notified whenever an entry leaves `delivery_state.pending`.
+    delivery_done: Condvar,
+
     deferred_logging: DeferredLogging,
 
     oauthbearer_config: OauthbearerAuth,
@@ -88,6 +94,7 @@ impl KafkaOutputContext {
             callbacks: RwLock::new(None),
             metrics: Arc::new(KafkaOutputMetrics::default()),
             delivery_state: Mutex::new(DeliveryState::default()),
+            delivery_done: Condvar::new(),
             deferred_logging: DeferredLogging::new(),
             topic: kafka_config.topic.clone(),
             memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
@@ -105,6 +112,7 @@ impl KafkaOutputContext {
     fn complete_delivery(&self, id: usize, error: Option<&KafkaError>) {
         let mut state = self.delivery_state.lock().unwrap();
         state.pending.remove(&id);
+        self.delivery_done.notify_all();
         match error {
             None => {
                 self.metrics
@@ -378,6 +386,7 @@ impl KafkaOutputEndpoint {
         if let Err(error) = &result {
             let mut state = context.delivery_state.lock().unwrap();
             state.pending.remove(&id);
+            context.delivery_done.notify_all();
             if !self.shutdown.is_cancelled() {
                 state.failure = Some(format!(
                     "could not enqueue output for topic '{}': {error}; check broker configuration and message limits",
@@ -457,6 +466,32 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 
         record = record.headers(all_headers);
         self.send(record)
+    }
+
+    /// Waits until Kafka has acknowledged or failed every record sent so far.
+    ///
+    /// The controller counts a batch as transmitted once this returns, and a
+    /// checkpoint may then cover it.  Records still in librdkafka's queue
+    /// would be lost if the pipeline crashed after that checkpoint, which
+    /// breaks at-least-once output.
+    fn batch_end(&mut self) -> AnyResult<()> {
+        let context = self.kafka_producer.context();
+        let mut state = context.delivery_state.lock().unwrap();
+        while !state.pending.is_empty() {
+            if self.shutdown.is_cancelled() {
+                bail!(
+                    "gave up waiting for {} records to reach Kafka topic '{}' because the pipeline is shutting down",
+                    state.pending.len(),
+                    self.config.topic
+                );
+            }
+            state = context
+                .delivery_done
+                .wait_timeout(state, DELIVERY_WAIT_INTERVAL)
+                .unwrap()
+                .0;
+        }
+        Ok(())
     }
 
     fn is_fault_tolerant(&self) -> bool {
@@ -621,6 +656,48 @@ mod tests {
             callbacks.health_status(),
             Some(ConnectorHealthStatus::Unhealthy)
         ));
+    }
+
+    /// `batch_end` returns only after Kafka acknowledges the batch, so that
+    /// a checkpoint never covers records still queued in librdkafka.
+    ///
+    /// Without `batch_end`, the batch ends while the broker is down and
+    /// nothing is delivered yet.
+    #[test]
+    fn batch_end_waits_for_delivery() {
+        let cluster = MockCluster::new(1).unwrap();
+        cluster.create_topic("test_topic", 1, 1).unwrap();
+        let (mut endpoint, callbacks) = endpoint(&cluster, json!({}));
+        cluster.broker_down(1).unwrap();
+        endpoint.push_buffer(b"record").unwrap();
+        let batch = std::thread::spawn(move || {
+            endpoint.batch_end().unwrap();
+            endpoint
+        });
+        std::thread::sleep(Duration::from_secs(1));
+        assert!(!batch.is_finished(), "batch ended before delivery");
+        cluster.broker_up(1).unwrap();
+        let _endpoint = batch.join().unwrap();
+        assert_eq!(
+            callbacks.metric("kafka_output_delivered_messages_total"),
+            1.0
+        );
+    }
+
+    /// A shutdown ends a `batch_end` that waits for a broker that is down.
+    #[test]
+    fn shutdown_ends_batch_end() {
+        let cluster = MockCluster::new(1).unwrap();
+        cluster.create_topic("test_topic", 1, 1).unwrap();
+        let (mut endpoint, _callbacks) = endpoint(&cluster, json!({}));
+        cluster.broker_down(1).unwrap();
+        endpoint.push_buffer(b"record").unwrap();
+        let shutdown = endpoint.shutdown.clone();
+        let batch = std::thread::spawn(move || endpoint.batch_end());
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(!batch.is_finished(), "batch ended before delivery");
+        shutdown.cancel();
+        assert!(batch.join().unwrap().is_err());
     }
 
     #[test]
