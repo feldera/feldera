@@ -1,5 +1,4 @@
 <script lang="ts" module>
-  import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
   import type { Field } from '#lib/services/manager/index.ts'
   import { isDataRow, isErrorRow, isWarningRow, type Row } from '#lib/types/adhocQuery.ts'
   import type { SQLValueJS } from '#lib/types/sql.ts'
@@ -21,7 +20,6 @@
 
   const handleKeyDown =
     (onSubmitQuery: (query: string) => void, disabled: boolean) => (e: KeyboardEvent) => {
-      // Enter to submit, Shift + Enter to enter newline
       if (e.key === 'Enter') {
         if (e.shiftKey || e.altKey || e.ctrlKey) {
           return
@@ -74,24 +72,28 @@
     number?: number
   } & QueryData = $props()
 
-  // The chevron folds the whole query (SQL and results) down to its header.
+  // Folds the whole query, SQL and results, down to its header.
   let collapsed = $state(false)
-  // The SQL can be limited to three lines, and its long lines wrapped or scrolled sideways.
-  let sqlMinimized = $state(false)
+  let showThreeSqlLines = $state(false)
   let wrapSql = $state(true)
+  // Shared by the 24px icon buttons. Each button adds its own colour.
+  const iconButtonClass =
+    'btn-icon btn-icon-sm h-6 w-6 shrink-0 hover:bg-row-hover hover:text-surface-950-50'
 
-  const theme = useSkeletonTheme()
+  // Every result row, and the header row, is this tall. The virtual list depends on it.
+  const ROW_HEIGHT_PX = 28
 
-  // Handle hover popup over table cells to display full SQL value
+  // A click on a cell shows its full value in a popup.
   let popupRef: HTMLElement | undefined = $state()
   let tooltip = usePopoverTooltip<SQLValueJS>(() => popupRef)
+  // The table only grows, so its columns do not jump as the virtual list scrolls other rows in.
   const keepMaxWidth = (element: HTMLElement) => {
+    let maxWidth = 0
     const observer = new ResizeObserver(([entry]) => {
-      maxW = Math.max(maxW, entry.borderBoxSize[0].inlineSize)
-      element.style.minWidth = `${maxW}px`
+      maxWidth = Math.max(maxWidth, entry.borderBoxSize[0].inlineSize)
+      element.style.minWidth = `${maxWidth}px`
     })
     observer.observe(element)
-    let maxW = $state(0)
     return {
       destroy() {
         observer.disconnect()
@@ -109,14 +111,14 @@
   const truncated = $derived(rows.some(isWarningRow))
   const counted = $derived(returned === 1 ? '1 row' : `${returned} rows`)
 
-  // A query streams its rows, so until it ends the count is a running total. A result cut short,
-  // by a failure, by the row cap or by the user, is explicit.
+  // A query streams its rows, so until it ends the count is a running total. If a failure, the
+  // row cap or the user stops the result early, the count says so.
   const rowCount = $derived.by(() => {
     if (progress) {
       return returned === 0 ? 'No rows returned yet' : `${counted} so far`
     }
     if (failed) {
-      // With no rows, the failure message the table prints says it all.
+      // With no rows, the error row in the table is enough.
       return returned === 0 ? '' : `${counted}, then the query failed`
     }
     if (truncated) {
@@ -140,18 +142,15 @@
     }
   }}
 >
-  <!-- Each query and its results form one block on a darker background that hugs its
-       content: the 1000px SQL box, or wider results. -->
+  <!-- The block fits its content, which is the 1000px SQL box or wider results. -->
   <div
     class="flex w-fit max-w-full min-w-0 flex-col gap-2 rounded-lg border border-panel-line bg-surface-950-50/[0.03] p-2 dark:bg-black/20"
   >
-    <!-- A header on the block's darker background with the title, the result status and the
-         actions; then the framed SQL, which can collapse once the query has run; then results. -->
-    <!-- As tall as its 24px buttons, so Run sits 8px from the top as from the right. -->
+    <!-- As tall as the 24px buttons, so Run is 8px from the top and from the right edge. -->
     <div class="flex h-6 w-full flex-nowrap items-center gap-2">
       {#if result}
         <button
-          class="fd fd-chevron-down btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[16px] text-surface-600-400 transition-transform hover:bg-row-hover hover:text-surface-950-50 {collapsed
+          class="fd fd-chevron-down {iconButtonClass} text-[16px] text-surface-600-400 transition-transform {collapsed
             ? '-rotate-90'
             : ''}"
           onclick={() => (collapsed = !collapsed)}
@@ -167,9 +166,8 @@
         <span class="shrink-0 whitespace-nowrap text-surface-600-400">{rowCount}</span>
       {/if}
       {#if collapsed}
-        <span
-          class="min-w-0 truncate text-sm text-surface-500"
-          style="font-family: {theme.config.monospaceFontFamily}">{query.split('\n')[0]}</span
+        <span class="min-w-0 truncate font-mono text-sm text-surface-500"
+          >{query.split('\n')[0]}</span
         >
       {/if}
       <div class="flex min-w-0 flex-1 items-center">
@@ -184,19 +182,18 @@
       {#if result && result.columns.length && !collapsed}
         <!-- Copies the results, as comma-separated JSON values. -->
         <ClipboardCopyButton
-          class="btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+          class="{iconButtonClass} text-[14px] text-surface-600-400"
           value={() => tableToCSJV(result)}
         ></ClipboardCopyButton>
         <Tooltip placement="top">Copy results</Tooltip>
       {/if}
       {#if !isLastQuery}
         <button
-          class="fd fd-trash-2 btn-icon btn-icon-sm h-6 w-6 shrink-0 text-[14px] text-surface-600-400 hover:bg-row-hover hover:text-surface-950-50"
+          class="fd fd-trash-2 {iconButtonClass} text-[14px] text-surface-600-400"
           onclick={onDeleteQuery}
           aria-label="Delete query"
         ></button>
       {/if}
-      <!-- Run (or Stop) always sits at the right edge; the other actions sit to its left. -->
       {#if progress}
         <button
           class="btn h-6 preset-outlined-surface-200-800 btn-sm px-2.5"
@@ -222,186 +219,156 @@
       <div
         class="relative flex w-[1000px] max-w-full flex-col overflow-hidden rounded border border-surface-200-800 bg-panel transition-colors focus-within:border-surface-400-600"
       >
+        <!-- The right padding keeps the SQL clear of the two 24px buttons in the corner. -->
         <textarea
           bind:value={query}
-          style="font-family: {theme.config.monospaceFontFamily}; field-sizing: content"
+          style="field-sizing: content"
           wrap={wrapSql ? 'soft' : 'off'}
-          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 text-md text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {sqlMinimized
+          class="scrollbar min-h-16 w-full overflow-auto border-0 bg-transparent py-2.5 pr-16 pl-3 font-mono text-md text-surface-950-50 outline-none placeholder:text-surface-500 focus:ring-0 {showThreeSqlLines
             ? 'max-h-[80px] resize-none'
             : 'resize-y'} {wrapSql ? '' : 'whitespace-pre'}"
           placeholder="SELECT * FROM ..."
           onkeydown={handleKeyDown(onSubmitQuery, disabled)}
         ></textarea>
-        <!-- View controls in the box's top-right corner: wrap long lines, and show at most three
-             lines of SQL. -->
         <div class="absolute top-1.5 right-1.5 flex items-center gap-0.5">
           <button
             type="button"
-            class="btn-icon btn-icon-sm h-6 w-6 text-surface-500 hover:bg-row-hover hover:text-surface-950-50 {wrapSql
+            class="fd fd-wrap-text {iconButtonClass} text-[14px] {wrapSql
               ? 'text-surface-950-50'
-              : ''}"
+              : 'text-surface-500'}"
             onclick={() => (wrapSql = !wrapSql)}
             aria-label={wrapSql ? "Don't wrap lines" : 'Wrap lines'}
             aria-pressed={wrapSql}
             title={wrapSql ? "Don't wrap lines" : 'Wrap lines'}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              ><path d="M3 6h18M3 12h15a3 3 0 1 1 0 6h-4M3 18h7" /><path d="m16 16-2 2 2 2" /></svg
-            >
-          </button>
+          ></button>
           <button
             type="button"
-            class="btn-icon btn-icon-sm h-6 w-6 text-surface-500 hover:bg-row-hover hover:text-surface-950-50"
-            onclick={() => (sqlMinimized = !sqlMinimized)}
-            aria-label={sqlMinimized ? 'Show all lines' : 'Show three lines'}
-            title={sqlMinimized ? 'Show all lines' : 'Show three lines'}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              class="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              {#if sqlMinimized}
-                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-              {:else}
-                <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
-              {/if}
-            </svg>
-          </button>
+            class="fd {showThreeSqlLines
+              ? 'fd-maximize-2'
+              : 'fd-minimize-2'} {iconButtonClass} text-[14px] text-surface-500"
+            onclick={() => (showThreeSqlLines = !showThreeSqlLines)}
+            aria-label={showThreeSqlLines ? 'Show all lines' : 'Show three lines'}
+            title={showThreeSqlLines ? 'Show all lines' : 'Show three lines'}
+          ></button>
         </div>
       </div>
     {/if}
 
     {#if result && !collapsed}
-      {@const itemHeight = 'h-7'}
+      {@const rowHeight = `height: ${ROW_HEIGHT_PX}px`}
       {#key result.columns}
-        <div class="pr-4">
-          <div class="relative flex h-full w-fit max-w-full flex-nowrap items-end">
-            {#snippet listContainer(
-              items: Snippet,
-              {
-                height,
-                onscroll,
-                setClientHeight
-              }: {
-                height?: string
-                onscroll?: UIEventHandler<HTMLDivElement>
-                setClientHeight?: (value: number) => void
-              }
-            )}
-              {@const _ = {
-                set clientHeight(value: number) {
-                  setClientHeight?.(value)
-                }
-              }}
-              <div
-                class="relative scrollbar h-full max-h-[80cqh] w-fit max-w-full overflow-auto rounded border border-panel-line"
-                use:reverseScroll.action
-                {onscroll}
-                bind:clientHeight={_.clientHeight}
+        <div class="relative w-fit max-w-full pr-4">
+          {#snippet listContainer(
+            items: Snippet,
+            {
+              height,
+              onscroll,
+              setClientHeight
+            }: {
+              height?: string
+              onscroll?: UIEventHandler<HTMLDivElement>
+              setClientHeight?: (value: number) => void
+            }
+          )}
+            <!-- 80cqh is 80% of the ad-hoc tab's height, because TabAdHocQuery.svelte makes the
+                 tab a size container. -->
+            <div
+              class="relative scrollbar max-h-[80cqh] w-fit max-w-full overflow-auto rounded border border-panel-line"
+              use:reverseScroll.action
+              {onscroll}
+              bind:clientHeight={() => 0, (value) => setClientHeight?.(value)}
+            >
+              <!-- The lines between rows are inset shadows, because borders would make the rows
+                   taller than ROW_HEIGHT_PX. -->
+              <table
+                style:height
+                class="w-fit border-separate border-spacing-0 [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--color-panel-line)] [&_th]:shadow-[inset_0_-1px_0_var(--color-panel-line)]"
+                use:keepMaxWidth
               >
-                <!-- A framed table with a line between rows. The lines are inset shadows, so
-                     every row stays exactly 28px for the virtual list. -->
-                <table
-                  style:height
-                  class="w-fit border-separate border-spacing-0 [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--color-panel-line)] [&_th]:shadow-[inset_0_-1px_0_var(--color-panel-line)]"
-                  use:keepMaxWidth
-                >
-                  {#if result.columns.length}
-                    <thead>
-                      <tr>
-                        <th
-                          class="sticky top-0 z-10 bg-panel px-3 text-right font-normal text-surface-500 {itemHeight}"
-                          >#</th
-                        >
-                        {#each result.columns as column}
-                          <SqlColumnHeader {column} class="sticky top-0 z-10 bg-panel {itemHeight}"
-                          ></SqlColumnHeader>
-                        {/each}
-                      </tr>
-                    </thead>
-                  {/if}
-                  <tbody>
-                    {@render items()}
-                  </tbody>
-                </table>
-              </div>
-            {/snippet}
-            {#snippet item({ index, style }: { index: number; style?: string })}
-              {@const row = rows[index]}
-              {#if !row}{:else if isDataRow(row)}
-                <tr {style} class="{itemHeight} whitespace-nowrap hover:bg-row-hover">
-                  <td class="px-3 text-right text-surface-500 tabular-nums select-none">{index}</td>
-                  {#each row.cells as value}
-                    <SQLValue
-                      {value}
-                      class="cursor-pointer"
-                      props={{
-                        onclick: tooltip.showTooltip(value),
-                        onmouseleave: tooltip.onmouseleave
-                      }}
-                    ></SQLValue>
-                  {/each}
-                </tr>
-              {:else if isErrorRow(row)}
-                <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
-                  <td colspan="99999999">
-                    <!-- At least one 28px row like the data rows; a long error wraps below. -->
-                    <div class="flex min-h-7 items-start gap-1.5 rounded px-2 py-1 {errorRowClass}">
-                      <span class="fd fd-circle-x mt-[3px] shrink-0 text-[14px]"></span>
-                      <span class="inline-block whitespace-pre-wrap first-letter:uppercase"
-                        >{row.error}</span
+                {#if result.columns.length}
+                  <thead>
+                    <tr>
+                      <th
+                        class="sticky top-0 z-10 bg-panel px-3 text-right font-normal text-surface-500"
+                        style={rowHeight}>#</th
                       >
-                    </div>
-                  </td>
-                </tr>
-              {:else}
-                <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
-                  <td colspan="99999999" class="preset-tonal-warning px-2">{row.warning}</td>
-                </tr>
-              {/if}
-            {/snippet}
-            {#if rows.length < 2}
-              {#snippet items()}
-                {#each rows as _, i}
-                  {@render item({ index: i })}
+                      {#each result.columns as column}
+                        <SqlColumnHeader
+                          {column}
+                          class="sticky top-0 z-10 bg-panel"
+                          style={rowHeight}
+                        ></SqlColumnHeader>
+                      {/each}
+                    </tr>
+                  </thead>
+                {/if}
+                <tbody>
+                  {@render items()}
+                </tbody>
+              </table>
+            </div>
+          {/snippet}
+          {#snippet item({ index, style }: { index: number; style?: string })}
+            {@const row = rows[index]}
+            {#if !row}{:else if isDataRow(row)}
+              <tr style="{rowHeight}; {style}" class="whitespace-nowrap hover:bg-row-hover">
+                <td class="px-3 text-right text-surface-500 tabular-nums select-none">{index}</td>
+                {#each row.cells as value}
+                  <SQLValue
+                    {value}
+                    class="cursor-pointer"
+                    props={{
+                      onclick: tooltip.showTooltip(value),
+                      onmouseleave: tooltip.onmouseleave
+                    }}
+                  ></SQLValue>
                 {/each}
-              {/snippet}
-              {@render listContainer(items, {})}
+              </tr>
+            {:else if isErrorRow(row)}
+              <tr style="{rowHeight}; {style}" use:selectScope tabindex={-1}>
+                <td colspan={result.columns.length + 1}>
+                  <div
+                    class="flex items-start gap-1.5 rounded px-2 py-1 {errorRowClass}"
+                    style="min-height: {ROW_HEIGHT_PX}px"
+                  >
+                    <span class="fd fd-circle-x mt-[3px] shrink-0 text-[14px]"></span>
+                    <span class="inline-block whitespace-pre-wrap first-letter:uppercase"
+                      >{row.error}</span
+                    >
+                  </div>
+                </td>
+              </tr>
             {:else}
-              <List
-                itemSize={28}
-                itemCount={rows.length}
-                stickyIndices={[]}
-                marginTop={28}
-                {listContainer}
-                {item}
-              >
-                {#snippet emptyItem()}
-                  <tr class="hidden"></tr>
-                {/snippet}
-                {#snippet footer()}
-                  <tr style="height: auto; ">
-                    <td></td>
-                  </tr>
-                {/snippet}
-              </List>
+              <tr style="{rowHeight}; {style}" use:selectScope tabindex={-1}>
+                <td colspan={result.columns.length + 1} class="preset-tonal-warning px-2"
+                  >{row.warning}</td
+                >
+              </tr>
             {/if}
-            <ScrollDownFab class="mr-7" {reverseScroll}></ScrollDownFab>
-          </div>
+          {/snippet}
+          <List
+            itemSize={ROW_HEIGHT_PX}
+            itemCount={rows.length}
+            marginTop={result.columns.length ? ROW_HEIGHT_PX : 0}
+            {listContainer}
+            {item}
+          >
+            <!-- The list requires this row for zebra stripes. The result rows have no stripes. -->
+            {#snippet emptyItem()}
+              <tr class="hidden"></tr>
+            {/snippet}
+            <!-- The table is as tall as all the rows, but the list renders only the visible ones.
+                 This row takes the remaining height, so the rendered rows stay ROW_HEIGHT_PX
+                 tall. -->
+            {#snippet footer()}
+              <tr style="height: auto">
+                <td></td>
+              </tr>
+            {/snippet}
+          </List>
+          <!-- The button is positioned in the wrapper above, which includes the 16px right
+               padding. -->
+          <ScrollDownFab class="mr-11" {reverseScroll}></ScrollDownFab>
         </div>
       {/key}
     {/if}
