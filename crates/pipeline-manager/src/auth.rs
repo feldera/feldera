@@ -68,7 +68,7 @@ use rand::{Rng, distributions::Alphanumeric};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use static_assertions::assert_impl_any;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -338,6 +338,17 @@ fn audiences_from_claim(aud: Option<&serde_json::Value>) -> Vec<String> {
     }
 }
 
+const FEDERATED_TOKEN_REJECTED: &str = "Federated token rejected: the token is invalid or \
+     expired, or no OIDC trust relationship matches it. Retry after a few seconds. If the \
+     error continues, make sure that the token is current and that a trust relationship \
+     matches its issuer, subject and audience";
+
+/// The time of every federated rejection. A request also waits for a JWKS fetch
+/// only this long, so the fetch does not show in the response time. Any client
+/// can already hold a connection for 5 s, the actix request timeout, so this
+/// adds no new load.
+const FEDERATED_REJECTION_FLOOR: Duration = Duration::from_secs(2);
+
 /// Verify a JWT against the issuer named in its `iss` claim, then resolve
 /// the request to a tenant via a registered trust relationship.
 async fn oidc_trust_auth(
@@ -379,30 +390,39 @@ async fn oidc_trust_auth(
 
     let state = req.app_data::<Data<ServerState>>().unwrap().clone();
 
+    // All rejections after this point use the same reply and the same minimum
+    // time. Thus a caller cannot find out if a tenant trusts `iss`.
+    let started = tokio::time::Instant::now();
+    let rejected = async |req: ServiceRequest| {
+        tokio::time::sleep_until(started + FEDERATED_REJECTION_FLOOR).await;
+        unauthorized(FEDERATED_TOKEN_REJECTED.to_string(), req)
+    };
+
     // SSRF/DoS gate: only fetch discovery/JWKS for an issuer that at least one
     // trust names, whether configured at launch or registered in a tenant. The
     // two sources earn different destination policies, because the operator
     // picked one and a tenant administrator picked the other.
+    // The query runs for all issuers. Thus a database outage gives the same
+    // error for an operator issuer and for an unknown issuer.
+    let tenant_trusted = match state.db.lock().await.is_trusted_issuer(&iss).await {
+        Ok(trusted) => trusted,
+        Err(e) => {
+            error!("Trusted-issuer check failed for '{iss}': {e}");
+            return unavailable(e, req);
+        }
+    };
     let destination = if state.config.owner_trusts.names_issuer(&iss) {
         Some(OidcDestination::OperatorConfigured)
+    } else if tenant_trusted {
+        Some(OidcDestination::TenantRegistered(
+            state.config.tenant_issuer_policy(),
+        ))
     } else {
-        match state.db.lock().await.is_trusted_issuer(&iss).await {
-            Ok(true) => Some(OidcDestination::TenantRegistered(
-                state.config.tenant_issuer_policy(),
-            )),
-            Ok(false) => None,
-            Err(e) => {
-                error!("Trusted-issuer check failed for '{iss}': {e}");
-                return unavailable(e, req);
-            }
-        }
+        None
     };
     let Some(destination) = destination else {
         debug!("Federated token from unregistered issuer '{iss}' rejected");
-        return unauthorized(
-            "No OIDC trust relationship matches this token".to_string(),
-            req,
-        );
+        return rejected(req).await;
     };
 
     let fetch = || {
@@ -410,15 +430,27 @@ async fn oidc_trust_auth(
         async move { fetch_issuer_jwks(&iss, destination, &clients).await }
     };
     let cooldown = ISSUER_REFRESH_COOLDOWN;
-    let jwk = match resolve_issuer_jwk(&state.issuer_jwk_cache, &iss, &kid, fetch, cooldown).await {
-        Ok(k) => k,
-        Err(e) => {
+    // The fetch continues in its own task and fills the cache, so a login that
+    // times out here can try again.
+    let lookup = resolve_issuer_jwk(&state.issuer_jwk_cache, &iss, &kid, fetch, cooldown);
+    let jwk = match tokio::time::timeout_at(started + FEDERATED_REJECTION_FLOOR, lookup).await {
+        Ok(Ok(k)) => k,
+        Err(_) => {
+            warn!("Federated JWKS fetch for issuer '{iss}' did not complete in time");
+            // A slow refresh keeps the earlier keys, as a failed refresh does.
+            let usable = state.issuer_jwk_cache.lock().await.usable(&iss, &kid);
+            match usable {
+                Some(k) => k,
+                None => return rejected(req).await,
+            }
+        }
+        Ok(Err(e)) => {
             // The detail stays in the log. The caller chose this fetch's
             // destination, so echoing the outcome would report whether an
             // internal address answered.
             // Debug escapes the client-chosen `kid` in the message.
             error!("Federated JWKS fetch for issuer '{iss}' failed: {e:?}");
-            return unauthorized("Could not verify the token's signing key".to_string(), req);
+            return rejected(req).await;
         }
     };
 
@@ -432,12 +464,15 @@ async fn oidc_trust_auth(
     let token_data = match decode::<OidcClaim>(token, &jwk, &validation) {
         Ok(td) => td,
         Err(e) => {
-            debug!("Federated token verification failed: {:?}", e.kind());
-            return unauthorized(format!("JWT verification failed: {}", e), req);
+            info!(
+                "Federated token for issuer '{iss}' failed verification: {:?}",
+                e.kind()
+            );
+            return rejected(req).await;
         }
     };
     if token_data.claims.iss != iss {
-        return unauthorized("iss mismatch between header peek and body".to_string(), req);
+        return rejected(req).await;
     }
 
     let audiences = audiences_from_claim(token_data.claims.aud.as_ref());
@@ -466,10 +501,7 @@ async fn oidc_trust_auth(
             "Federated JWT rejected: no trust relationship matches iss='{iss}' sub='{}' from {ip}",
             token_data.claims.sub
         );
-        return unauthorized(
-            "No OIDC trust relationship matches this token".to_string(),
-            req,
-        );
+        return rejected(req).await;
     }
 
     let label = format!("oidc:{}", token_data.claims.sub);
@@ -2050,7 +2082,14 @@ mod test {
         api_key: Option<String>,
         validation: Validation,
     ) -> ServiceResponse<EitherBody<BoxBody>> {
-        let (app, _, _db) = login_app(decoding_key, api_key, validation, "some-url").await;
+        let (app, _, _db) = login_app(
+            decoding_key,
+            api_key,
+            validation,
+            "some-url",
+            default_manager_test_config(),
+        )
+        .await;
         test::call_service(&app, req).await
     }
 
@@ -2062,6 +2101,7 @@ mod test {
         api_key: Option<String>,
         validation: Validation,
         jwk_uri: &str,
+        manager_config: ApiServerConfig,
     ) -> (
         impl actix_web::dev::Service<
             actix_http::Request,
@@ -2115,8 +2155,6 @@ mod test {
             disable_cluster_monitor_resources: false,
             allow_rust_udfs: true,
         };
-
-        let manager_config = default_manager_test_config();
 
         let (conn, db_guard) = crate::db::test::setup_pg().await;
         if let Some(api_key) = api_key {
@@ -2290,7 +2328,14 @@ mod test {
         let (jwk_uri, fetching, release) = held_jwks_server(r#"{"keys":[]}"#).await;
         let (token, decoding_key) = setup(default_claim()).await;
         let validation = validation("some-client", "some-iss");
-        let (app, _, _db) = login_app(Some(decoding_key), None, validation, &jwk_uri).await;
+        let (app, _, _db) = login_app(
+            Some(decoding_key),
+            None,
+            validation,
+            &jwk_uri,
+            default_manager_test_config(),
+        )
+        .await;
 
         let call = |token: String| {
             let req = test::TestRequest::get()
@@ -2357,7 +2402,14 @@ mod test {
             .await;
         let jwk_uri = format!("{}/jwks", jwks.uri());
         let validation = validation("some-client", "some-iss");
-        let (app, state, _db) = login_app(None, None, validation, &jwk_uri).await;
+        let (app, state, _db) = login_app(
+            None,
+            None,
+            validation,
+            &jwk_uri,
+            default_manager_test_config(),
+        )
+        .await;
         let (token, _) = setup(default_claim()).await;
         let req = test::TestRequest::get()
             .uri("/")
@@ -2553,6 +2605,275 @@ mod test {
             "Bearer error_description=\"InvalidSignature\"",
             res.headers().get("www-authenticate").unwrap()
         );
+    }
+
+    /// A caller cannot find out if a tenant trusts the issuer of a token. All
+    /// rejections give the same reply and take the minimum time. This includes
+    /// tokens with a valid signature, because anyone can get such a token from
+    /// a public issuer, for example GitHub Actions.
+    #[tokio::test]
+    async fn federated_rejections_do_not_reveal_trusted_issuers() {
+        const TRUSTED: &str = "https://trusted.example.com";
+        const SLOW: &str = "https://slow.example.com";
+        const OPERATOR: &str = "https://operator.example.com";
+        let pem = |rsa: &RsaPrivateKey| {
+            EncodingKey::from_rsa_pem(rsa.to_pkcs1_pem(LineEnding::LF).unwrap().as_bytes()).unwrap()
+        };
+        let issuer_rsa = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
+        let issuer_key = pem(&issuer_rsa);
+        let forged_key = pem(&RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap());
+        let public_key = DecodingKey::from_rsa_pem(
+            RsaPublicKey::from(&issuer_rsa)
+                .to_public_key_pem(LineEnding::LF)
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+
+        let mut config = default_manager_test_config();
+        config.owner_trusts = crate::config::OwnerTrusts(vec![crate::config::OwnerTrust {
+            issuer: OPERATOR.to_string(),
+            subject: "repo:x".to_string(),
+            audience: None,
+        }]);
+        let (app, state, _db) = login_app(
+            None,
+            None,
+            validation("some-client", "some-iss"),
+            "some-url",
+            config,
+        )
+        .await;
+        {
+            let db = state.db.lock().await;
+            let tenant = db
+                .get_or_create_tenant_id(Uuid::now_v7(), "t".to_string(), "p".to_string())
+                .await
+                .unwrap();
+            for (name, issuer) in [("ci", TRUSTED), ("slow", SLOW)] {
+                db.create_oidc_trust(
+                    tenant,
+                    Uuid::now_v7(),
+                    name,
+                    None,
+                    issuer,
+                    "repo:x",
+                    None,
+                    Role::Write,
+                    crate::oidc::destination::TenantIssuerPolicy::PublicHttpsOnly,
+                )
+                .await
+                .unwrap();
+            }
+        }
+        {
+            // The cooldown stops a JWKS fetch for an unknown kid.
+            let mut cache = state.issuer_jwk_cache.lock().await;
+            for issuer in [TRUSTED, OPERATOR] {
+                let keys = HashMap::from([("rsa01".to_owned(), public_key.clone())]);
+                cache.insert(issuer, keys);
+                cache.start_cooldown(issuer, Duration::from_secs(600));
+            }
+        }
+        // A held refresh gate makes a JWKS fetch for SLOW wait forever.
+        let gate = state.issuer_jwk_cache.lock().await.refresh_gate(SLOW);
+        let _slow_fetch = gate.lock().await;
+        let token = |iss: &str, kid: &str, key: &EncodingKey, exp: i64| {
+            let mut claim = default_claim();
+            claim.iss = iss.to_string();
+            claim.exp = exp;
+            let mut header = Header::new(Algorithm::RS256);
+            header.kid = Some(kid.to_string());
+            encode(&header, &claim, key).unwrap()
+        };
+        let reply = async |token: String| {
+            let req = test::TestRequest::get()
+                .uri("/")
+                .insert_header((http::header::AUTHORIZATION, format!("Bearer {token}")))
+                .to_request();
+            let sent = std::time::Instant::now();
+            let res = test::call_service(&app, req).await;
+            assert_eq!(401, res.status());
+            assert!(sent.elapsed() >= super::FEDERATED_REJECTION_FLOOR);
+            let header = res.headers().get("www-authenticate").cloned().unwrap();
+            (header, test::read_body(res).await)
+        };
+        let valid = Utc::now().timestamp() + 1000;
+
+        let cases = [
+            (
+                "untrusted issuer",
+                token("https://other.example.com", "rsa01", &forged_key, valid),
+            ),
+            ("unknown kid", token(TRUSTED, "unknown", &forged_key, valid)),
+            (
+                "forged signature",
+                token(TRUSTED, "rsa01", &forged_key, valid),
+            ),
+            // The subject of default_claim does not match "repo:x".
+            (
+                "subject unmatched",
+                token(TRUSTED, "rsa01", &issuer_key, valid),
+            ),
+            (
+                "expired",
+                token(TRUSTED, "rsa01", &issuer_key, valid - 10_000),
+            ),
+            (
+                "operator issuer",
+                token(OPERATOR, "rsa01", &forged_key, valid),
+            ),
+            ("slow issuer", token(SLOW, "rsa01", &forged_key, valid)),
+        ];
+        // Concurrent, so the test sleeps the minimum time once.
+        let reply = &reply;
+        let replies = futures_util::future::join_all(
+            cases.map(|(case, token)| async move { (case, reply(token).await) }),
+        );
+        let replies = tokio::time::timeout(10 * super::FEDERATED_REJECTION_FLOOR, replies)
+            .await
+            .expect("a rejection must not wait for a JWKS fetch");
+        assert_eq!(
+            format!(
+                "Bearer error_description=\"{}\"",
+                super::FEDERATED_TOKEN_REJECTED
+            ),
+            replies[0].1.0
+        );
+        for (case, reply) in &replies {
+            assert_eq!(&replies[0].1, reply, "{case}");
+        }
+
+        // A matching token from a tenant trust does not wait for the minimum time.
+        let mut claim = default_claim();
+        claim.iss = TRUSTED.to_string();
+        claim.sub = "repo:x".to_string();
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("rsa01".to_string());
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((
+                http::header::AUTHORIZATION,
+                format!("Bearer {}", encode(&header, &claim, &issuer_key).unwrap()),
+            ))
+            .to_request();
+        let sent = std::time::Instant::now();
+        assert_eq!(200, test::call_service(&app, req).await.status());
+        assert!(sent.elapsed() < super::FEDERATED_REJECTION_FLOOR);
+
+        // A database outage gives the same reply for an operator issuer.
+        state.db.lock().await.pool.close();
+        let mut outage = vec![];
+        for iss in ["https://other.example.com", OPERATOR] {
+            let req = test::TestRequest::get()
+                .uri("/")
+                .insert_header((
+                    http::header::AUTHORIZATION,
+                    format!("Bearer {}", token(iss, "rsa01", &forged_key, valid)),
+                ))
+                .to_request();
+            let res = test::call_service(&app, req).await;
+            outage.push((res.status(), test::read_body(res).await));
+        }
+        assert_eq!(outage[0], outage[1]);
+        assert!(outage[0].0.is_server_error());
+    }
+
+    /// A login whose key fetch takes longer than the minimum time is rejected,
+    /// but the fetch fills the cache, so the next login succeeds without delay.
+    /// A slow refresh of old keys does not reject a login.
+    #[tokio::test]
+    async fn federated_login_after_slow_key_fetch_succeeds_on_retry() {
+        use rsa::traits::PublicKeyParts;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let rsa = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
+        let b64 = |bytes: Vec<u8>| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let issuer = MockServer::start().await;
+        let floor = super::FEDERATED_REJECTION_FLOOR;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/openid-configuration"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(
+                        serde_json::json!({ "jwks_uri": format!("{}/jwks", issuer.uri()) }),
+                    )
+                    .set_delay(floor + Duration::from_secs(1)),
+            )
+            .mount(&issuer)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "keys": [{
+                "kty": "RSA", "alg": "RS256", "use": "sig", "kid": "rsa01",
+                "n": b64(rsa.n().to_bytes_be()), "e": b64(rsa.e().to_bytes_be()),
+            }] })),
+            )
+            .mount(&issuer)
+            .await;
+
+        let mut config = default_manager_test_config();
+        config.owner_trusts = crate::config::OwnerTrusts(vec![crate::config::OwnerTrust {
+            issuer: issuer.uri(),
+            subject: "some-sub".to_string(),
+            audience: None,
+        }]);
+        let (app, state, _db) = login_app(
+            None,
+            None,
+            validation("some-client", "some-iss"),
+            "some-url",
+            config,
+        )
+        .await;
+        let mut claim = default_claim();
+        claim.iss = issuer.uri();
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some("rsa01".to_string());
+        let pem = rsa.to_pkcs1_pem(LineEnding::LF).unwrap();
+        let token = encode(
+            &header,
+            &claim,
+            &EncodingKey::from_rsa_pem(pem.as_bytes()).unwrap(),
+        )
+        .unwrap();
+        let login = async || {
+            let req = test::TestRequest::get()
+                .uri("/")
+                .insert_header((http::header::AUTHORIZATION, format!("Bearer {token}")))
+                .to_request();
+            let sent = std::time::Instant::now();
+            let status = test::call_service(&app, req).await.status();
+            (status, sent.elapsed())
+        };
+
+        let (status, _) = login().await;
+        assert_eq!(401, status, "the key fetch is slower than the minimum time");
+        // The fetch holds the issuer's refresh gate until the cache is filled.
+        let gate = state
+            .issuer_jwk_cache
+            .lock()
+            .await
+            .refresh_gate(&issuer.uri());
+        drop(gate.lock().await);
+        let (status, elapsed) = login().await;
+        assert_eq!(200, status);
+        assert!(
+            elapsed < floor,
+            "a successful login does not wait: {elapsed:?}"
+        );
+
+        // When the keys are old and the refresh is slow, the old keys are used.
+        {
+            let mut cache = state.issuer_jwk_cache.lock().await;
+            cache.issuers.get_mut(&issuer.uri()).unwrap().fetched_at -= super::JWK_FRESH_FOR;
+            cache.cooldown_until.clear();
+        }
+        let (status, elapsed) = login().await;
+        assert_eq!(200, status);
+        assert!(elapsed >= floor, "the refresh was started: {elapsed:?}");
     }
 
     #[tokio::test]
