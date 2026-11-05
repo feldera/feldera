@@ -39,6 +39,15 @@ maintaining an internal index on the specified key columns:
 - On **delete events**, Feldera verifies that the specified key exists before applying the deletion.
  If no matching record is found, the delete is ignored.
 
+- On **update events**, which change some columns of a record (see the
+ [JSON format](/formats/json#the-insertdelete-format)), Feldera changes the record
+ with the specified key. If no matching record is found, the update is ignored.
+
+If the primary key includes a column with a [`LATENESS`](/sql/streaming#lateness-expressions)
+annotation, Feldera rejects every insert, delete, or update event that violates the lateness
+of this column, whether or not a record with the same key exists, and records the event
+in [`ERROR_VIEW`](/sql/system#error_view).
+
 ## Views with Unique Keys
 
 As Feldera processes changes to input tables, it emits incremental updates to output views as a stream of inserts and deletes. An update to an existing record is represented as a delete of the old value followed by an insert of the new value. In many cases, it is preferable to combine these two events into a single atomic update, which requires identifying them as pertaining to the same key.

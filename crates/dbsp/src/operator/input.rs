@@ -607,8 +607,8 @@ impl RootCircuit {
     /// Like `add_input_map`, but additionally tracks a waterline of the input collection and
     /// rejects inputs that are below the waterline.
     ///
-    /// An input is rejected if the input record itself is below the waterline or if the existing
-    /// record it replaces is below the waterline.
+    /// An input is rejected if its key is below the waterline, if the input record itself is
+    /// below the waterline, or if the existing record it replaces is below the waterline.
     ///
     /// # Type arguments
     ///
@@ -625,7 +625,11 @@ impl RootCircuit {
     /// - `extract_ts`: A function that extracts the timestamp from the key/value pair.
     /// - `least_upper_bound`: A function that computes the least upper bound of two waterlines.
     /// - `filter_func`: A function that filters out records below the waterline.
+    /// - `key_filter_func`: A function that filters out keys below the waterline.  Every
+    ///   update of a key that fails this filter is rejected.
     /// - `report_func`: A function that reports errors when the waterline is violated.
+    /// - `report_key_func`: A function that reports a rejected deletion (weight -1) or
+    ///   partial update (weight 1) of a key below the waterline.
     ///
     /// # Returns
     ///
@@ -642,15 +646,20 @@ impl RootCircuit {
     /// the output stream returned by this function:
     /// `stream.integrate_trace_retain_keys(&waterline, |key, wl| *key >= *wl)`, where
     /// `waterline` is the stream of waterline values returned by this function.
+    /// The retention condition must retain every key that passes `key_filter_func`, e.g.,
+    /// `|wl, key| *key >= *wl`: the operator does not read the rows of the other keys.
     #[track_caller]
-    pub fn add_input_map_with_waterline<K, V, U, W, E, PF, IF, WF, LB, FF, RF>(
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_input_map_with_waterline<K, V, U, W, E, PF, IF, WF, LB, FF, KF, RF, RK>(
         &self,
         patch_func: PF,
         init: IF,
         extract_ts: WF,
         least_upper_bound: LB,
         filter_func: FF,
+        key_filter_func: KF,
         report_func: RF,
+        report_key_func: RK,
     ) -> (
         Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         Stream<RootCircuit, OrdZSet<E>>,
@@ -668,7 +677,9 @@ impl RootCircuit {
         WF: Fn(&K, &V) -> W + 'static,
         LB: Fn(&W, &W) -> W + Clone + 'static,
         FF: Fn(&W, &K, &V) -> bool + 'static,
+        KF: Fn(&W, &K) -> bool + 'static,
         RF: Fn(&W, &K, &V, ZWeight) -> E + 'static,
+        RK: Fn(&W, &K, ZWeight) -> E + 'static,
     {
         self.add_input_map_with_waterline_persistent(
             None,
@@ -677,13 +688,15 @@ impl RootCircuit {
             extract_ts,
             least_upper_bound,
             filter_func,
+            key_filter_func,
             report_func,
+            report_key_func,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
     #[track_caller]
-    pub fn add_input_map_with_waterline_persistent<K, V, U, W, E, PF, IF, WF, LB, FF, RF>(
+    pub fn add_input_map_with_waterline_persistent<K, V, U, W, E, PF, IF, WF, LB, FF, KF, RF, RK>(
         &self,
         persistent_id: Option<&str>,
         patch_func: PF,
@@ -691,7 +704,9 @@ impl RootCircuit {
         extract_ts: WF,
         least_upper_bound: LB,
         filter_func: FF,
+        key_filter_func: KF,
         report_func: RF,
+        report_key_func: RK,
     ) -> (
         Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         Stream<RootCircuit, OrdZSet<E>>,
@@ -709,7 +724,9 @@ impl RootCircuit {
         WF: Fn(&K, &V) -> W + 'static,
         LB: Fn(&W, &W) -> W + Clone + 'static,
         FF: Fn(&W, &K, &V) -> bool + 'static,
+        KF: Fn(&W, &K) -> bool + 'static,
         RF: Fn(&W, &K, &V, ZWeight) -> E + 'static,
+        RK: Fn(&W, &K, ZWeight) -> E + 'static,
     {
         let factories = AddInputMapWithWaterlineFactories::new::<K, V, U, E>();
         let (stream, errors, waterline, handle) = self.dyn_add_input_map_with_waterline_mono(
@@ -739,6 +756,12 @@ impl RootCircuit {
 
                 filter_func(wl, k, v)
             }),
+            Box::new(move |wl: &DynData, k: &DynData| {
+                let wl = unsafe { wl.downcast::<W>() };
+                let k = unsafe { k.downcast::<K>() };
+
+                key_filter_func(wl, k)
+            }),
             Box::new(
                 move |wl: &DynData, k: &DynData, v: &DynData, w: ZWeight, err: &mut DynData| {
                     let wl = unsafe { wl.downcast::<W>() };
@@ -747,6 +770,15 @@ impl RootCircuit {
                     let err = unsafe { err.downcast_mut::<E>() };
 
                     *err = report_func(wl, k, v, w);
+                },
+            ),
+            Box::new(
+                move |wl: &DynData, k: &DynData, w: ZWeight, err: &mut DynData| {
+                    let wl = unsafe { wl.downcast::<W>() };
+                    let k = unsafe { k.downcast::<K>() };
+                    let err = unsafe { err.downcast_mut::<E>() };
+
+                    *err = report_key_func(wl, k, w);
                 },
             ),
         );

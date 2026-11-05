@@ -338,8 +338,10 @@ where
     }
 
     // Like `input_upsert`, but additionally tracks a waterline of the input collection and
-    // rejects inputs that are below the waterline.  An input is rejected if the input record
-    // itself is below the waterline or if the existing record it replaces is below the waterline.
+    // rejects inputs that are below the waterline.  An input is rejected if its key is below
+    // the waterline, if the input record itself is below the waterline, or if the existing
+    // record it replaces is below the waterline.  The operator does not read the trace for
+    // a key below the waterline, so garbage collection may remove the rows of such keys.
     #[allow(clippy::too_many_arguments)]
     pub fn input_upsert_with_waterline<B, W, E>(
         &self,
@@ -350,7 +352,9 @@ where
         extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut W)>,
         least_upper_bound: LeastUpperBoundFunc<W>,
         filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+        key_filter_func: Box<dyn Fn(&W, &B::Key) -> bool>,
         report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+        report_key_func: Box<dyn Fn(&W, &B::Key, ZWeight, &mut E)>,
     ) -> (
         Stream<RootCircuit, B>,
         Stream<RootCircuit, OrdZSet<E>>,
@@ -426,7 +430,9 @@ where
                         factories.clone(),
                         patch_func,
                         filter_func,
+                        key_filter_func,
                         report_func,
+                        report_key_func,
                         error_stream_val.clone(),
                     ),
                     &delayed_trace,
@@ -711,7 +717,11 @@ where
     factories: InputUpsertWithWaterlineFactories<B, U, E>,
     patch_func: PatchFunc<T::Val, U>,
     filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+    // False for a key below the waterline.
+    key_filter_func: Box<dyn Fn(&W, &B::Key) -> bool>,
     report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+    // Reports a rejected update for which only the key is known.
+    report_key_func: Box<dyn Fn(&W, &B::Key, ZWeight, &mut E)>,
     error_stream_val: RefStreamValue<OrdZSet<E>>,
 
     // Input batch sizes.
@@ -735,14 +745,18 @@ where
         factories: InputUpsertWithWaterlineFactories<B, U, E>,
         patch_func: PatchFunc<T::Val, U>,
         filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+        key_filter_func: Box<dyn Fn(&W, &B::Key) -> bool>,
         report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+        report_key_func: Box<dyn Fn(&W, &B::Key, ZWeight, &mut E)>,
         error_stream_val: RefStreamValue<OrdZSet<E>>,
     ) -> Self {
         Self {
             factories,
             patch_func,
             filter_func,
+            key_filter_func,
             report_func,
+            report_key_func,
             error_stream_val,
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
@@ -849,6 +863,10 @@ where
         // all updates for this key.
         let mut skip_key = false;
 
+        // Set to true when the current key doesn't satisfy `key_filter_func`:
+        // every update for this key is rejected.
+        let mut late_key = false;
+
         while !updates.is_empty() {
             let (index, key_upd) = updates
                 .iter()
@@ -890,11 +908,14 @@ where
                 }
 
                 skip_key = false;
+                late_key = !(self.key_filter_func)(waterline, key);
                 cur_key = Some(key);
                 cur_val.set_none();
 
                 // Generate retraction if `key` is present in the trace.
-                if trace_cursor.seek_key_exact(key, None) {
+                // Garbage collection may have removed the rows of a late key,
+                // so the operator does not read the trace for such a key.
+                if !late_key && trace_cursor.seek_key_exact(key, None) {
                     // println!("{}: found key in trace_cursor", Runtime::worker_index());
                     while trace_cursor.val_valid() {
                         let weight = **trace_cursor.weight();
@@ -931,7 +952,31 @@ where
                 }
             }
 
-            if !skip_key {
+            if late_key {
+                match upd.get() {
+                    UpdateRef::Insert(val) => {
+                        errors.push_with(&mut |item| {
+                            let (kv, err_weight) = item.split_mut();
+                            **err_weight = HasOne::one();
+                            (self.report_func)(waterline, key, val, 1, kv.fst_mut());
+                        });
+                    }
+                    UpdateRef::Delete => {
+                        errors.push_with(&mut |item| {
+                            let (kv, err_weight) = item.split_mut();
+                            **err_weight = HasOne::one();
+                            (self.report_key_func)(waterline, key, -1, kv.fst_mut());
+                        });
+                    }
+                    UpdateRef::Update(_) => {
+                        errors.push_with(&mut |item| {
+                            let (kv, err_weight) = item.split_mut();
+                            **err_weight = HasOne::one();
+                            (self.report_key_func)(waterline, key, 1, kv.fst_mut());
+                        });
+                    }
+                }
+            } else if !skip_key {
                 match upd.get() {
                     UpdateRef::Delete => {
                         // TODO: if cur_val.is_none(), report missing key.

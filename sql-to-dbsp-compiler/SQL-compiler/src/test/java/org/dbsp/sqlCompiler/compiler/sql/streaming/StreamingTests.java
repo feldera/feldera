@@ -3590,7 +3590,7 @@ public class StreamingTests extends StreamingTestBase {
                         new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
-                                        new DBSPStringLiteral("Late value"),
+                                        new DBSPStringLiteral("Late row"),
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
                         ))))));
         // Insert tuple after waterline, should change average.
@@ -3623,7 +3623,7 @@ public class StreamingTests extends StreamingTestBase {
                         new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
-                                        new DBSPStringLiteral("Late value"),
+                                        new DBSPStringLiteral("Late row"),
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
                                 ))))));
         // Insert tuple in the past, but before the last waterline
@@ -3685,11 +3685,11 @@ public class StreamingTests extends StreamingTestBase {
                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
                 new Change(
                         new TableData("E", new DBSPZSetExpression(
-                                new DBSPTupleExpression(new DBSPStringLiteral("Late value")))),
+                                new DBSPTupleExpression(new DBSPStringLiteral("Late row")))),
                         new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
-                                        new DBSPStringLiteral("Late value"),
+                                        new DBSPStringLiteral("Late row"),
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
                                 ))))));
         // Insert tuple after waterline, should change average.
@@ -3712,11 +3712,11 @@ public class StreamingTests extends StreamingTestBase {
                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
                 new Change(
                         new TableData("E", new DBSPZSetExpression(
-                                new DBSPTupleExpression(new DBSPStringLiteral("Late value")))),
+                                new DBSPTupleExpression(new DBSPStringLiteral("Late row")))),
                         new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
-                                        new DBSPStringLiteral("Late value"),
+                                        new DBSPStringLiteral("Late row"),
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
                                 ))))));
         // Insert tuple in the past, but before the last waterline

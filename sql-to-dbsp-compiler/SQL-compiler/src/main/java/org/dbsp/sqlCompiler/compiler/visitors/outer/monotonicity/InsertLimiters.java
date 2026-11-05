@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -1695,6 +1696,70 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return type.pairwiseOperation(node, DBSPOpcode.AGG_MAX);
     }
 
+    /** The primary key columns of a table that have a LATENESS.
+     * @param keyProjection   The key columns; monotone if the column has a LATENESS.
+     * @param waterlineFields For each key column with a LATENESS, its field in the waterline. */
+    record KeyLateness(PartiallyMonotoneTuple keyProjection, List<Integer> waterlineFields) {
+        /** The fields of the waterline 'w' that belong to key columns. */
+        DBSPTupleExpression keyWaterline(DBSPVariablePath w) {
+            return new DBSPTupleExpression(
+                    Linq.map(this.waterlineFields, f -> w.deepCopy().deref().field(f)), false);
+        }
+    }
+
+    static KeyLateness keyLateness(DBSPSourceMultisetOperator input) {
+        List<IMaybeMonotoneType> keyFields = new ArrayList<>();
+        List<Integer> waterlineFields = new ArrayList<>();
+        int latenessIndex = 0;
+        for (IColumnMetadata column: input.to(IHasColumnsMetadata.class).getColumnsMetadata()) {
+            boolean hasLateness = column.getLateness() != null;
+            if (column.isPrimaryKey()) {
+                if (hasLateness) {
+                    keyFields.add(new MonotoneType(column.getType()));
+                    waterlineFields.add(latenessIndex);
+                } else {
+                    keyFields.add(NonMonotoneType.nonMonotone(column.getType()));
+                }
+            }
+            if (hasLateness)
+                latenessIndex++;
+        }
+        return new KeyLateness(new PartiallyMonotoneTuple(keyFields, false, false), waterlineFields);
+    }
+
+    /** The closure (waterline, key) -> bool of an input with a primary key;
+     * false for a key with a LATENESS column below the waterline. */
+    static DBSPClosureExpression keyFilter(KeyLateness keyLateness, DBSPType waterlineType, DBSPType keyType) {
+        DBSPVariablePath w = waterlineType.ref().var();
+        DBSPVariablePath k = keyType.ref().var();
+        if (keyLateness.waterlineFields().isEmpty())
+            return new DBSPBoolLiteral(true).closure(w, k);
+        DBSPExpression keyColumns = keyLateness.keyProjection().projectExpression(k.deref());
+        DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
+                keyColumns, keyLateness.keyWaterline(w), DBSPOpcode.CONTROLLED_FILTER_GTE);
+        return compare.closure(w, k);
+    }
+
+    /** The ERROR_VIEW row for late data: table or view, message, and 'data' formatted with Debug. */
+    static DBSPTupleExpression lateError(ProgramIdentifier tableOrViewName, DBSPExpression data) {
+        return new DBSPTupleExpression(
+                new DBSPStringLiteral(tableOrViewName.toString()),
+                new DBSPStringLiteral(DBSPControlledKeyFilterOperator.LATE_ERROR),
+                new DBSPApplyExpression("format!",
+                        DBSPTypeAny.INSTANCE,
+                        new DBSPStrLiteral("{:?}"),
+                        data).applyMethod("into", DBSPTypeString.varchar(false)));
+    }
+
+    /** The closure (waterline, key, weight) -> error for a rejected deletion
+     * or partial update of a late key. */
+    static DBSPClosureExpression keyError(ProgramIdentifier tableName, DBSPType waterlineType, DBSPType keyType) {
+        DBSPVariablePath w = waterlineType.ref().var();
+        DBSPVariablePath k = keyType.ref().var();
+        DBSPVariablePath weight = DBSPTypeWeight.INSTANCE.var();
+        return lateError(tableName, k).closure(w, k, weight);
+    }
+
     /** Process LATENESS annotations.
      * @return Return the original operator if there aren't any annotations, or
      * the operator that produces the result of the input filtered otherwise.
@@ -1775,10 +1840,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
             Utilities.enforce(lateness.error().parameters.length == 4);
             DBSPClosureExpression error = lateness.error().body.closure(
                     lateness.error().parameters[0], k.asParameter(), lateness.error().parameters[1], lateness.error().parameters[3]);
+            DBSPType keyType = indexedOutputType.keyType;
+            DBSPClosureExpression keyFilter = keyFilter(keyLateness(multisetInput), minValue.getType(), keyType);
+            DBSPClosureExpression keyError = keyError(viewOrTable, minValue.getType(), keyType);
             newSource = new DBSPInputMapWithWaterlineOperator(
                     multisetInput.getRelNode(), multisetInput.sourceName, keyFields,
                     indexedOutputType, multisetInput.originalRowType, multisetInput.metadata, multisetInput.tableName,
-                    multisetInput.kind, minValue.closure(), timestamp.closure(k, t), max, ff, error);
+                    multisetInput.kind, minValue.closure(), timestamp.closure(k, t), max,
+                    ff, keyFilter, error, keyError);
             this.errorStreams.add(newSource.getOutput(1));
             waterlineOutputPort = newSource.getOutput(2);
             this.addOperator(newSource);
@@ -1832,9 +1901,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 !multisetInput.getMetadata().materialized) {
             // The trace of an input with a primary key resolves upserts and deletions,
             // so it can be garbage-collected only by key, and only using LATENESS
-            // columns that belong to the key: a key pruned this way can never be
-            // legally referenced again, because any subsequent update or deletion
-            // carries the same key and is rejected as late.
+            // columns that belong to the key: the key filter of the input operator
+            // rejects every update or deletion of a key pruned this way, without
+            // reading the trace.
             // A LATENESS column outside the key permits no garbage collection at all:
             // - a live row (timestamp at or above the waterline) must be retained
             //   to produce the retraction when its key is updated or deleted;
@@ -1843,33 +1912,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
             //   its key as late; if the row is dropped, the next insert on that key
             //   is accepted as a brand-new key without a retraction, so the output
             //   would depend on when compaction runs.
-            List<IMaybeMonotoneType> keyFieldsMonotone = new ArrayList<>();
-            List<Integer> keyWaterlineFields = new ArrayList<>();
-            int latenessIndex = 0;
-            for (IColumnMetadata column: multisetInput.to(IHasColumnsMetadata.class).getColumnsMetadata()) {
-                boolean hasLateness = column.getLateness() != null;
-                if (column.isPrimaryKey()) {
-                    if (hasLateness) {
-                        keyFieldsMonotone.add(new MonotoneType(column.getType()));
-                        keyWaterlineFields.add(latenessIndex);
-                    } else {
-                        keyFieldsMonotone.add(NonMonotoneType.nonMonotone(column.getType()));
-                    }
-                }
-                if (hasLateness)
-                    latenessIndex++;
-            }
-            if (!keyWaterlineFields.isEmpty()) {
-                PartiallyMonotoneTuple keyProjection = new PartiallyMonotoneTuple(keyFieldsMonotone, false, false);
+            KeyLateness keyLateness = keyLateness(multisetInput);
+            if (!keyLateness.waterlineFields().isEmpty()) {
                 IMaybeMonotoneType projection = new PartiallyMonotoneTuple(
-                        List.of(keyProjection, NonMonotoneType.nonMonotone(indexedOutputType.elementType)),
+                        List.of(keyLateness.keyProjection(), NonMonotoneType.nonMonotone(indexedOutputType.elementType)),
                         true, false);
                 // Project the waterline to the components that correspond to key columns
                 DBSPVariablePath w = timestamp.getType().ref().var();
-                DBSPExpression keyWaterline = new DBSPRawTupleExpression(
-                        new DBSPTupleExpression(
-                                Linq.map(keyWaterlineFields, f -> w.deepCopy().deref().field(f)),
-                                false));
+                DBSPExpression keyWaterline = new DBSPRawTupleExpression(keyLateness.keyWaterline(w));
                 OutputPort control = this.createApply(extend.outputPort(), keyWaterline.closure(w));
                 DBSPSimpleOperator retain = DBSPIntegrateTraceRetainKeysOperator.create(
                         operator.getRelNode(), newSource.getOutput(0),
@@ -1956,13 +2006,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPVariablePath dataVar0 = dataVar.getType().var();
         DBSPVariablePath valArg = DBSPTypeRawTuple.EMPTY.ref().var();
         DBSPVariablePath weightArg = DBSPTypeWeight.INSTANCE.var();
-        DBSPClosureExpression error = new DBSPTupleExpression(
-                new DBSPStringLiteral(tableOrViewName.toString()),
-                new DBSPStringLiteral(DBSPControlledKeyFilterOperator.LATE_ERROR),
-                new DBSPApplyExpression("format!",
-                        DBSPTypeAny.INSTANCE,
-                        new DBSPStrLiteral("{:?}"),
-                        dataVar0).applyMethod("into", DBSPTypeString.varchar(false)))
+        DBSPClosureExpression error = lateError(tableOrViewName, dataVar0)
                 .closure(controlArg, dataVar0, valArg, weightArg);
         return new LatenessFilter(function, error);
     }

@@ -49,7 +49,11 @@ public class DBSPInputMapWithWaterlineOperator
     public final DBSPClosureExpression timestamp;
     public final DBSPClosureExpression lub;
     public final DBSPClosureExpression filter;
+    /** (waterline, key) -> bool; false for a key below the waterline, whose updates are all rejected. */
+    public final DBSPClosureExpression keyFilter;
     public final DBSPClosureExpression error;
+    /** (waterline, key, weight) -> error; the error for a rejected deletion or partial update of a late key. */
+    public final DBSPClosureExpression keyError;
 
     final DBSPTypeIndexedZSet outputType;
     final DBSPType waterlineType;
@@ -59,7 +63,8 @@ public class DBSPInputMapWithWaterlineOperator
             CalciteRelNode node, CalciteObject sourceName, List<Integer> keyFields, DBSPTypeIndexedZSet outputType,
             DBSPTypeStruct originalRowType, TableMetadata metadata, ProgramIdentifier name, StreamKind kind,
             DBSPClosureExpression initializer, DBSPClosureExpression timestamp, DBSPClosureExpression lub,
-            DBSPClosureExpression filter, DBSPClosureExpression error) {
+            DBSPClosureExpression filter, DBSPClosureExpression keyFilter,
+            DBSPClosureExpression error, DBSPClosureExpression keyError) {
         super(node);
         this.kind = kind;
         this.sourceName = sourceName;
@@ -73,12 +78,17 @@ public class DBSPInputMapWithWaterlineOperator
         this.initializer = initializer;
         this.timestamp = timestamp;
         this.filter = filter;
+        this.keyFilter = keyFilter;
         this.lub = lub;
         this.error = error;
+        this.keyError = keyError;
         this.operation = "input_map_with_waterline";
 
         this.errorType = TypeCompiler.makeZSet(error.getResultType());
         Utilities.enforce(initializer.parameters.length == 0);
+        Utilities.enforce(keyFilter.parameters.length == 2);
+        Utilities.enforce(keyError.parameters.length == 3);
+        Utilities.enforce(keyError.getResultType().sameType(error.getResultType()));
     }
 
     @Override
@@ -155,8 +165,12 @@ public class DBSPInputMapWithWaterlineOperator
         this.lub.accept(visitor);
         visitor.property("filter");
         this.filter.accept(visitor);
+        visitor.property("keyFilter");
+        this.keyFilter.accept(visitor);
         visitor.property("error");
         this.error.accept(visitor);
+        visitor.property("keyError");
+        this.keyError.accept(visitor);
     }
 
     @Override
@@ -195,22 +209,26 @@ public class DBSPInputMapWithWaterlineOperator
                 node, "lub", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression filter = DBSPNode.fromJsonInner(
                 node, "filter", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression keyFilter = DBSPNode.fromJsonInner(
+                node, "keyFilter", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression error = DBSPNode.fromJsonInner(
                 node, "error", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression keyError = DBSPNode.fromJsonInner(
+                node, "keyError", decoder, DBSPClosureExpression.class);
         ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         List<Integer> keyFields = Linq.list(Linq.map(
                 Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
         return new DBSPInputMapWithWaterlineOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
                 outputType, originalRowType, metadata, name, decoder.sourceKind(),
-                initializer, timestamp, lub, filter, error)
+                initializer, timestamp, lub, filter, keyFilter, error, keyError)
                 .addAnnotations(Annotations.fromJson(Utilities.getProperty(node, "annotations")), DBSPInputMapWithWaterlineOperator.class);
     }
 
     public DBSPInputMapWithWaterlineOperator withMetadata(TableMetadata metadata) {
         return new DBSPInputMapWithWaterlineOperator(this.getRelNode(), this.sourceName, this.keyFields,
                 this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName, this.kind,
-                this.initializer, this.timestamp, this.lub, this.filter, this.error);
+                this.initializer, this.timestamp, this.lub, this.filter, this.keyFilter, this.error, this.keyError);
     }
 
     /** The data output has the kind of the source this operator replaces;
