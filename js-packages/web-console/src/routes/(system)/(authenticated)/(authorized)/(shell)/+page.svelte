@@ -25,6 +25,7 @@
   import { usePipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
   import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
   import { useDemos } from '#lib/compositions/useDemos.svelte.ts'
+  import { measureScrollGutter } from '#lib/functions/measureScrollGutter.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import { preloadCode } from '$app/navigation'
 
@@ -79,30 +80,6 @@
 
   const demos = useDemos()
   const globalDialog = useGlobalDialog()
-
-  // The page's gutters make up for the scroll area's reserved scrollbar gutter through
-  // `--scroll-gutter-width`. Overlay scrollbars (macOS by default) reserve no gutter, so
-  // measure the real one. It is not `--scrollbar-width`, which sets the scrollbar's width:
-  // a measurement taken before that applies would then hold it at the old width.
-  let scrollArea: HTMLElement | undefined = $state()
-  $effect(() => {
-    const node = scrollArea
-    if (!node) {
-      return
-    }
-    const measure = () =>
-      document.body.style.setProperty(
-        '--scroll-gutter-width',
-        `${node.offsetWidth - node.clientWidth}px`
-      )
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(node)
-    return () => {
-      observer.disconnect()
-      document.body.style.removeProperty('--scroll-gutter-width')
-    }
-  })
 </script>
 
 {#snippet supportBundleDialog()}
@@ -136,7 +113,7 @@
      not the page scrolls (expanding the use cases no longer narrows the table), and the
      pipelines toolbar can make up that fixed width to line up with the header. -->
 <div
-  bind:this={scrollArea}
+  use:measureScrollGutter
   class="scrollbar flex h-full flex-col justify-between overflow-y-auto [scrollbar-gutter:stable]"
   data-testid="box-home-scroll-area"
 >
