@@ -1,5 +1,6 @@
 from requests import Response
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, List, Mapping, Optional
 from urllib.parse import urlparse
@@ -27,6 +28,26 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
     except ValueError:
         return None
     return max((retry_at - datetime.now(timezone.utc)).total_seconds(), 0.0)
+
+
+# RFC 6750 §3: `error_description` in a Bearer challenge, as a quoted string.
+_ERROR_DESCRIPTION_RE = re.compile(r'error_description="((?:[^"\\]|\\.)*)"')
+
+
+def _bearer_error_description(value: Optional[str]) -> Optional[str]:
+    """
+    Extract `error_description` from a `WWW-Authenticate` header.
+
+    The server puts why it refused a credential here, not in the body.
+    Returns `None` if the header is missing or has no description.
+    """
+    if not value:
+        return None
+    match = _ERROR_DESCRIPTION_RE.search(value)
+    if match is None:
+        return None
+    # Remove the quoted-string escapes: each `\X` becomes `X`.
+    return re.sub(r"\\(.)", r"\1", match.group(1))
 
 
 class FelderaError(Exception):
@@ -87,8 +108,11 @@ class FelderaAPIError(FelderaError):
                 err_msg += f"{auth_err}no credential provided"
             else:
                 # The credential may be an API key or a JWT/bearer token; do not
-                # assume which. The server `message` above carries the specifics.
+                # assume which. The `Reason` below carries the specifics.
                 err_msg += f"{auth_err}credential rejected (invalid or expired token / API key)"
+            reason = _bearer_error_description(request.headers.get("WWW-Authenticate"))
+            if reason:
+                err_msg += f"\nReason: {reason}"
 
         err_msg = err_msg.strip()
 
