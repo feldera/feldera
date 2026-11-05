@@ -753,12 +753,13 @@ groups related actions into multi-action dropdowns when multiple options are ava
         {#each buttons as button}
           <button
             class="flex flex-col gap-0.5 rounded px-3 py-2 text-left hover:bg-row-hover {button.disabled
-              ? 'pointer-events-none opacity-50'
+              ? 'pointer-events-none'
               : ''}"
             onclick={button.onclick}
           >
+            <!-- A disabled option dims only its text. Its badge stays fully opaque. -->
             <div class="flex items-center justify-between gap-2">
-              <span class="">{button.label}</span>
+              <span class={button.disabled ? 'opacity-70' : ''}>{button.label}</span>
 
               {#if button.disabled}
                 <!-- Why the option is unavailable, as a small badge. -->
@@ -768,7 +769,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
                 >
               {/if}
             </div>
-            <div class="text-sm text-surface-700-300">
+            <div class="text-sm text-surface-700-300 {button.disabled ? 'opacity-70' : ''}">
               {button.description}
             </div>
           </button>
