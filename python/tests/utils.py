@@ -850,9 +850,13 @@ def run_delta_spark(
     ]
     for attempt in range(1, max_attempts + 1):
         try:
-            completed = subprocess.run(
-                command, check=True, capture_output=capture_output, text=True
-            )
+            # Every run shares uv's package cache and Spark's Ivy cache, and
+            # neither tolerates concurrent writers: uv times out on its lock
+            # and Ivy leaves truncated jars. Runs are rare, so serialize them.
+            with _fixture_build_lock("delta-spark"):
+                completed = subprocess.run(
+                    command, check=True, capture_output=capture_output, text=True
+                )
             return completed.stdout if capture_output else ""
         except subprocess.CalledProcessError as e:
             if attempt == max_attempts:

@@ -75,6 +75,74 @@ def _build_fixture(subpath: str, build_log: str, barrier) -> None:
     utils.ensure_delta_spark_fixture(loc, "stub_builder.py")
 
 
+def _build_distinct_fixture(subpath: str, run_log: str, barrier) -> None:
+    """Child process: build its own fixture, logging when Spark ran."""
+    os.environ.pop("CI", None)
+
+    from tests import utils
+
+    def fake_builder_run(cmd, check=False, **kwargs):
+        start = time.monotonic()
+        time.sleep(_BUILD_SECONDS)
+        _write_fake_delta_tree(pathlib.Path(cmd[-1]), seed=os.getpid())
+        with open(run_log, "a", encoding="utf-8") as handle:
+            handle.write(f"{start} {time.monotonic()}\n")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    utils.subprocess = types.SimpleNamespace(
+        run=fake_builder_run,
+        CalledProcessError=subprocess.CalledProcessError,
+    )
+
+    loc = utils.DeltaTestLocation.create("fixture_lock_test", stable_subpath=subpath)
+    barrier.wait()
+    utils.ensure_delta_spark_fixture(loc, "stub_builder.py")
+
+
+def test_builders_of_different_fixtures_do_not_overlap(tmp_path):
+    """Spark runs share the uv and Ivy caches, so they must run one at a time.
+
+    Neither cache tolerates concurrent writers, so the per-fixture lock is not
+    enough when two workers build different fixtures.
+    """
+    if shutil.which("uv") is None:
+        pytest.skip("ensure_delta_spark_fixture requires `uv` on PATH")
+
+    subpaths = [f"build_lock_test_{uuid.uuid4().hex}" for _ in range(_BUILDERS)]
+    run_log = tmp_path / "runs.txt"
+    ctx = multiprocessing.get_context("spawn")
+    barrier = ctx.Barrier(_BUILDERS)
+    workers = [
+        ctx.Process(
+            target=_build_distinct_fixture, args=(subpath, str(run_log), barrier)
+        )
+        for subpath in subpaths
+    ]
+    try:
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=120)
+            if worker.is_alive():
+                worker.terminate()
+                worker.join(timeout=10)
+    finally:
+        for subpath in subpaths:
+            shutil.rmtree(LOCAL_FIXTURE_ROOT / subpath, ignore_errors=True)
+
+    assert [worker.exitcode for worker in workers] == [0] * _BUILDERS
+    runs = sorted(
+        tuple(map(float, line.split()))
+        for line in run_log.read_text(encoding="utf-8").splitlines()
+    )
+    assert len(runs) == _BUILDERS
+    for (_, prev_end), (next_start, _) in zip(runs, runs[1:]):
+        assert next_start >= prev_end, (
+            f"Spark runs overlapped ({runs}): concurrent runs corrupt the "
+            "shared uv and Ivy caches"
+        )
+
+
 @pytest.fixture(name="fixture_subpath")
 def fixture_subpath_fixture():
     """A cache path of this test's own, removed afterwards."""
