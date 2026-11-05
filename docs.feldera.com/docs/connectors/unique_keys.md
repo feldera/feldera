@@ -57,9 +57,10 @@ through an index (see [Materialized Tables and Views](/sql/materialized)).
 
 The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for:
 - Kafka output connectors configured with the [Avro
-  format](/formats/avro/), except in a pipeline configured for exactly
-  once fault tolerance (because Kafka connectors use the key to
-  deduplicate output in exactly once fault tolerance).
+  format](/formats/avro/). With exactly once fault tolerance, the
+  `confluent_jdbc` update format cannot write deletions (see [Message keys
+  with exactly-once fault
+  tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance)).
 - Kafka output connectors configured with the [JSON
   format](/formats/json#the-debezium-format) and `"update_format": "debezium"`.
   With exactly once fault tolerance, set `"tombstones_on_delete": false`.
