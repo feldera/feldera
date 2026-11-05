@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- API: when the API server cannot open a connection to a pipeline, it now
+  sends a 503 with error code `PipelineInteractionConnectFailed`. Before, it
+  sent `PipelineInteractionUnreachable`, the code it also uses when the
+  connection fails during a request. The request was not sent, so a client
+  can safely retry it. The Python SDK and the Rust client now retry it for
+  all requests, HTTP ingress included.
 - Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` also
   refuse a `runtime_config` with `resources.memory_min` or
   `resources.memory_max` above `kubernetesRunner.upperLimitMemoryMegabyte`, or

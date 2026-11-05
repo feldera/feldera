@@ -279,6 +279,7 @@ fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
             , body = ErrorResponse
             , examples(
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),

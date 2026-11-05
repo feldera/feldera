@@ -164,6 +164,44 @@ pub fn format_disconnected_error_message<T: Display>(_error: T) -> String {
         .to_string()
 }
 
+/// Converts an error from sending a request to a pipeline into a [`RunnerError`].
+///
+/// A failure to open the connection gets its own error code, because then the
+/// request was not sent and the client can safely retry it.
+fn pipeline_send_error(
+    pipeline_name: &str,
+    request_str: &str,
+    timeout: Duration,
+    e: SendRequestError,
+) -> RunnerError {
+    let pipeline_name = pipeline_name.to_string();
+    let request = request_str.to_string();
+    match e {
+        SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
+            pipeline_name,
+            request,
+            error: format_timeout_error_message(timeout, e),
+        },
+        SendRequestError::Connect(ConnectError::Disconnected) => {
+            RunnerError::PipelineInteractionUnreachable {
+                pipeline_name,
+                request,
+                error: format_disconnected_error_message(e),
+            }
+        }
+        SendRequestError::Connect(_) => RunnerError::PipelineInteractionConnectFailed {
+            pipeline_name,
+            request,
+            error: format!("{e}"),
+        },
+        _ => RunnerError::PipelineInteractionUnreachable {
+            pipeline_name,
+            request,
+            error: format!("{e}"),
+        },
+    }
+}
+
 /// Helper for the API server endpoints to interact through HTTP with a pipeline or a pipeline runner.
 pub struct RunnerInteraction {
     common_config: CommonConfig,
@@ -271,25 +309,10 @@ impl RunnerInteraction {
         }
         let request_str = Self::format_request(&request);
 
-        let mut original_response = request.send().await.map_err(|e| match e {
-            SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.clone(),
-                error: format_timeout_error_message(timeout, e),
-            },
-            SendRequestError::Connect(ConnectError::Disconnected) => {
-                RunnerError::PipelineInteractionUnreachable {
-                    pipeline_name: pipeline_name.to_string(),
-                    request: request_str.clone(),
-                    error: format_disconnected_error_message(e),
-                }
-            }
-            _ => RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.clone(),
-                error: format!("{e}"),
-            },
-        })?;
+        let mut original_response = request
+            .send()
+            .await
+            .map_err(|e| pipeline_send_error(pipeline_name, &request_str, timeout, e))?;
         let status = original_response.status();
 
         if !status.is_success() {
@@ -686,25 +709,10 @@ pub(crate) async fn streaming_proxy(
     let request_str = RunnerInteraction::format_request(&new_request);
 
     // Perform request to the pipeline
-    let response = new_request.send_stream(body).await.map_err(|e| match e {
-        SendRequestError::Timeout => RunnerError::PipelineInteractionUnreachable {
-            pipeline_name: pipeline_name.to_string(),
-            request: request_str.to_string(),
-            error: format_timeout_error_message(timeout, e),
-        },
-        SendRequestError::Connect(ConnectError::Disconnected) => {
-            RunnerError::PipelineInteractionUnreachable {
-                pipeline_name: pipeline_name.to_string(),
-                request: request_str.to_string(),
-                error: format_disconnected_error_message(e),
-            }
-        }
-        _ => RunnerError::PipelineInteractionUnreachable {
-            pipeline_name: pipeline_name.to_string(),
-            request: request_str.to_string(),
-            error: format!("{e}"),
-        },
-    })?;
+    let response = new_request
+        .send_stream(body)
+        .await
+        .map_err(|e| pipeline_send_error(pipeline_name, &request_str, timeout, e))?;
 
     let status = response.status();
 
@@ -735,8 +743,31 @@ mod tests {
     use super::*;
     use actix_web::body::to_bytes;
     use actix_web::test::TestRequest;
+    use feldera_types::error::DetailedError;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Only a failure to open the connection gets the retryable error code.
+    #[test]
+    fn send_error_connect_failure_is_distinct() {
+        let code = |e| {
+            pipeline_send_error("p", "POST /ingress/t0", Duration::from_secs(5), e)
+                .error_code()
+                .into_owned()
+        };
+        assert_eq!(
+            code(SendRequestError::Connect(ConnectError::Timeout)),
+            "PipelineInteractionConnectFailed"
+        );
+        assert_eq!(
+            code(SendRequestError::Connect(ConnectError::Disconnected)),
+            "PipelineInteractionUnreachable"
+        );
+        assert_eq!(
+            code(SendRequestError::Timeout),
+            "PipelineInteractionUnreachable"
+        );
+    }
 
     fn setup() {
         crate::ensure_default_crypto_provider();

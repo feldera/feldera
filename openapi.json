@@ -2175,6 +2175,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -2324,6 +2335,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -2445,6 +2467,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -2566,6 +2599,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -2708,6 +2752,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -2850,6 +2905,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -2974,6 +3040,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -3098,6 +3175,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -3219,6 +3307,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -3340,6 +3439,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -3628,6 +3738,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -3788,6 +3909,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -4203,6 +4335,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -4491,6 +4634,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -4698,6 +4852,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -5117,6 +5282,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -5404,6 +5580,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -5557,6 +5744,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -5793,6 +5991,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -5907,6 +6116,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -6037,6 +6257,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -6400,6 +6631,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -6517,6 +6759,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -6660,6 +6913,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -6804,6 +7068,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -6925,6 +7200,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -7046,6 +7332,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -7389,6 +7686,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -7532,6 +7840,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
@@ -7676,6 +7995,17 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Connection failed": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
+                      "error_code": "PipelineInteractionConnectFailed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "Failed to connect to host: Timeout while establishing connection"
+                      }
+                    }
+                  },
                   "Disconnected during response": {
                     "value": {
                       "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",

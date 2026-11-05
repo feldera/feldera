@@ -308,6 +308,7 @@ class TestRetryBehavior:
             "DeadlockDetected",
             "LockTookTooLong",
             "PipelineInteractionNotDeployed",
+            "PipelineInteractionConnectFailed",
             "CompilerUnavailable",
         ],
     )
@@ -324,6 +325,39 @@ class TestRetryBehavior:
     def test_post_503_other_code_is_not_retried(self):
         client = _make_client()
         body = json.dumps({"error_code": "RunnerInteractionUnreachable"})
+        with patch_requests("post", [_make_response(503, body.encode())]) as m:
+            with pytest.raises(FelderaAPIError):
+                client.post("/foo")
+        assert m.call_count == 1
+
+    def test_post_503_unreachable_connect_failure_is_retried(self):
+        # An older manager reports a failed connect with this code and wording.
+        client = _make_client()
+        body = json.dumps(
+            {
+                "message": "Error sending HTTP request to pipeline: Failed to "
+                "connect to host: Timeout while establishing connection",
+                "error_code": "PipelineInteractionUnreachable",
+                "details": {},
+            }
+        )
+        with patch_requests(
+            "post", [_make_response(503, body.encode()), _make_response(200, b"{}")]
+        ) as m:
+            client.post("/foo")
+        assert m.call_count == 2
+
+    def test_post_503_unreachable_mid_request_is_not_retried(self):
+        # The pipeline may already have applied the request.
+        client = _make_client()
+        body = json.dumps(
+            {
+                "message": "Error sending HTTP request to pipeline: timeout (5s) "
+                "was reached",
+                "error_code": "PipelineInteractionUnreachable",
+                "details": {},
+            }
+        )
         with patch_requests("post", [_make_response(503, body.encode())]) as m:
             with pytest.raises(FelderaAPIError):
                 client.post("/foo")

@@ -487,6 +487,14 @@ pub(crate) fn error_pipeline_interaction_currently_unavailable() -> ErrorRespons
     })
 }
 
+pub(crate) fn error_pipeline_interaction_connect_failed() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionConnectFailed {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
+        error: "Failed to connect to host: Timeout while establishing connection".to_string(),
+    })
+}
+
 pub(crate) fn error_pipeline_interaction_disconnected() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
         pipeline_name: "my_pipeline".to_string(),
