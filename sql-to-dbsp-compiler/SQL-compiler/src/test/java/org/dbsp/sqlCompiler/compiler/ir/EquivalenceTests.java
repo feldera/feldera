@@ -33,6 +33,8 @@ import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.math.BigDecimal;
+
 /** Unit tests for expression equivalence.
  * The alpha-equivalence tests build variables by hand: they need specific
  * names shared between distinct nodes, which {@link ExpressionBuilder}
@@ -241,6 +243,19 @@ public class EquivalenceTests {
                 b.call("f", row.field(0)),
                 b.call("f", row.field(0))).closure(acc, row);
         assertCseVariables(compiler, cse(compiler, closure), 1);
+    }
+
+    @Test
+    public void testCSEDecimalLiteral() {
+        // |t| Tup(f(1.50), g(1.50))
+        // A decimal literal is cheap, so CSE does not share it.
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPType decimal = b.decimal(10, 2);
+        DBSPExpression literal0 = b.lit(new BigDecimal("1.50"), decimal);
+        DBSPExpression literal1 = b.lit(new BigDecimal("1.50"), decimal);
+        DBSPClosureExpression closure = b.tuple(b.call("f", literal0), b.call("g", literal1)).closure(t);
+        assertCseVariables(compiler, cse(compiler, closure), 0);
     }
 
     @Test

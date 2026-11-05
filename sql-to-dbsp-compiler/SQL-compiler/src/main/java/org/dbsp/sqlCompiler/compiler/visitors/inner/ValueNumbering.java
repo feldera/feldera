@@ -8,7 +8,6 @@ import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -140,12 +139,12 @@ public class ValueNumbering extends InnerVisitor {
 
     @Override
     public void postorder(DBSPLiteral literal) {
+        // All literals are cheap
         Representation repr;
-        boolean expensive = literal.getType().is(DBSPTypeDecimal.class);
         if (literal.isNull()) {
             repr = new Representation("None::" + literal.getType(), false);
         } else {
-            repr = new Representation(literal + ":" + literal.getType(), expensive);
+            repr = new Representation(literal + ":" + literal.getType(), false);
         }
         this.checkRepresentation(literal, repr, false);
     }
