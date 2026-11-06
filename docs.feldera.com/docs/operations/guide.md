@@ -80,6 +80,12 @@ The support bundle has the following content:
 
 6. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.
 
+7. **Collection Log**: `collection_log.txt`, in a bundle that collects new
+   data. It has a line when the collection starts, a line every 10 seconds
+   while it runs, and a line with the time it took. The download starts
+   before the collection, and these lines keep it from being idle for long,
+   so a proxy does not close it during a slow collection.
+
 ## Common Error Messages
 
 ### Delta Lake Connection Errors

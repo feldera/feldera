@@ -9396,6 +9396,9 @@ export type GetPipelineSupportBundleErrors = {
    */
   404: ErrorResponse
   500: ErrorResponse
+  /**
+   * The database was busy before the response started (`LockTookTooLong` or `DeadlockDetected`)
+   */
   503: ErrorResponse
 }
 

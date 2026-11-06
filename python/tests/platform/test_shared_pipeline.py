@@ -900,8 +900,13 @@ class TestPipeline(SharedTestPipeline):
         # Verify it's a valid ZIP file
         with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
             file_list = zip_file.namelist()
-            # Only the two metadata files survive when every collection is disabled.
-            assert sorted(file_list) == ["metadata.json", "metadata.txt"]
+            # With every collection disabled, only the metadata files and the
+            # log of the new (empty) collection remain.
+            assert sorted(file_list) == [
+                "collection_log.txt",
+                "metadata.json",
+                "metadata.txt",
+            ]
 
         # Test with partial collections enabled
         support_bundle_bytes = self.pipeline.support_bundle(

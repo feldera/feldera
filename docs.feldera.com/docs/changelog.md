@@ -25,6 +25,10 @@ Source edition can be found on github.
   keys fails, the API server keeps using the keys it fetched before, for up to
   1 hour.  Before, one failed fetch refused every token of that issuer with a
   401 for the refresh cooldown, which is 30 seconds for federated tokens.
+- Behavior change (support bundle): the download starts at once. While it
+  collects new data, it writes a line every 10 seconds to `collection_log.txt`,
+  so a proxy does not close a slow download. Each request to the pipeline stops
+  after 120 seconds, including its response body.
 - Behavior change (Python SDK): `Pipeline.support_bundle()` no longer retries
   a bundle that collects new data, because each retry starts a new collection.
 
