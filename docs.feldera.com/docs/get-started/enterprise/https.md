@@ -196,6 +196,8 @@ the self-signed root.
    ```yaml
    httpsSecretRef: "feldera-https-config"
    caSecretRef: "feldera-ca-config"
+   # mtls:
+   #   enabled: true
    ```
 
 :::info

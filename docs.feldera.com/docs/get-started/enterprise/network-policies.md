@@ -176,6 +176,18 @@ Change the example to fit your deployment:
   [checkpoint sync](../../pipelines/checkpoint-sync.md), such as MinIO.
   This also applies to cloud endpoints with private addresses, such as
   AWS interface VPC endpoints.
+- **Pod, Service, or node addresses that are not private.** The `ipBlock`
+  rule allows every address that is not private. If the cluster uses
+  addresses outside the private ranges for pods, Services, or nodes, such
+  as privately used public IP ranges on GKE, add these ranges to `except`.
+  Otherwise, pipelines can reach the database and the API server. A public
+  endpoint of the Kubernetes API, as on EKS or GKE with public access, is
+  also reachable through this rule. Add its addresses to `except` if
+  pipelines must not reach it.
+- **IPv6.** The `ipBlock` rule allows only IPv4 addresses. On dual-stack
+  or IPv6 clusters, pipelines cannot connect to IPv6 addresses. To allow
+  them, add an `ipBlock` with `::/0` and an `except` list for the private
+  IPv6 ranges of your cluster, such as `fc00::/7` and `fe80::/10`.
 - **NodeLocal DNSCache.** With NodeLocal DNSCache, pods send DNS queries
   to a link-local address on the node, usually `169.254.20.10`, instead of
   to the `kube-dns` pods. The DNS rule does not match this traffic, and the
@@ -205,12 +217,26 @@ the running state. Then check one connector of each kind that you use.
 
 Also check that the policies block traffic. If the network plugin does
 not enforce NetworkPolicies, all the checks above pass, but the pipelines
-are not isolated. From a running pipeline pod, try to connect to the API
-server, which the `pipeline` policy blocks:
+are not isolated.
 
-```
-kubectl exec -n feldera <pipeline-pod> -- timeout 3 bash -c '</dev/tcp/<release>-api-server/8080' \
-  && echo "not isolated" || echo "isolated"
-```
+1. From a running pipeline pod, connect to the compiler server, which the
+   `pipeline` policy allows:
 
-The output must be `isolated`.
+   ```
+   kubectl exec -n feldera <pipeline-pod> -- timeout 3 bash -c '</dev/tcp/<release>-compiler-server-0/8085' \
+     && echo "connected" || echo "failed"
+   ```
+
+   The output must be `connected`. If it is `failed`, the check itself
+   does not work, for example because of a wrong pod name or missing
+   permission for `kubectl exec`. Fix that before step 2.
+
+2. From the same pod, connect to the API server, which the `pipeline`
+   policy blocks:
+
+   ```
+   kubectl exec -n feldera <pipeline-pod> -- timeout 3 bash -c '</dev/tcp/<release>-api-server/8080' \
+     && echo "not isolated" || echo "isolated"
+   ```
+
+   The output must be `isolated`.
