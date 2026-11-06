@@ -275,7 +275,26 @@ impl Inner {
         }
     }
 
-    fn prepare<C>(circuit: &C, active_nodes: Option<&BTreeSet<NodeId>>) -> Result<Self, Error>
+    /// Creates the scheduler internals for `circuit`.
+    ///
+    /// # Arguments
+    ///
+    /// * `circuit` - the circuit to schedule.
+    /// * `active_nodes` - the nodes to schedule, or `None` to schedule all of
+    ///   the nodes of `circuit`.
+    /// * `previous` - the internals that the new ones replace, if any.  The new
+    ///   internals take over their broadcasts instead of creating new ones,
+    ///   because preparing a scheduler again must not create exchanges (see
+    ///   [`Scheduler::prepare`]).
+    ///
+    /// # Returns
+    ///
+    /// The new internals, or an error if `circuit` cannot be scheduled.
+    fn prepare<C>(
+        circuit: &C,
+        active_nodes: Option<&BTreeSet<NodeId>>,
+        previous: Option<Inner>,
+    ) -> Result<Self, Error>
     where
         C: Circuit,
     {
@@ -360,14 +379,25 @@ impl Inner {
             );
         }
 
+        let (global_commit_consensus, metadata_broadcast) = match previous {
+            Some(previous) => (
+                previous.global_commit_consensus,
+                previous.metadata_broadcast,
+            ),
+            None => (
+                Broadcast::new("global commit consensus"),
+                Broadcast::new("metadata"),
+            ),
+        };
+
         let scheduler = Self {
             tasks,
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
             transaction_phase: TransactionPhase::CommitComplete,
-            global_commit_consensus: Broadcast::new("global commit consensus"),
-            metadata_broadcast: Broadcast::new("metadata"),
+            global_commit_consensus,
+            metadata_broadcast,
             exchange_metadata_before_step: true,
             flush_state: false,
         };
@@ -745,7 +775,8 @@ impl Scheduler for DynamicScheduler {
     where
         C: Circuit,
     {
-        self.0 = Some(RefCell::new(Inner::prepare(circuit, nodes)?));
+        let previous = self.0.take().map(RefCell::into_inner);
+        self.0 = Some(RefCell::new(Inner::prepare(circuit, nodes, previous)?));
         Ok(())
     }
 

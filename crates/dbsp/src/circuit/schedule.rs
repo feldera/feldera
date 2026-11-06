@@ -238,6 +238,9 @@ where
     ///
     /// This function can be invoked multiple times, e.g., once before running the circuit
     /// in the backfill mode, and once before running the circuit in the normal mode.
+    /// Invoking it again must not create exchanges.  Hosts invoke it independently, so
+    /// a host that resumes stepping first would otherwise send on an exchange that other
+    /// hosts have not created yet.
     ///
     /// # Arguments
     ///
