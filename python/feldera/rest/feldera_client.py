@@ -2340,7 +2340,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self.http.delete(path=f"/oidc_trust/{quote(name, safe='')}")
 
     def get_pipeline_support_bundle(
-        self, pipeline_name: str, params: Optional[Dict[str, Any]] = None
+        self,
+        pipeline_name: str,
+        params: Optional[Dict[str, Any]] = None,
+        retry: bool = False,
     ) -> bytes:
         """
         Generate a support bundle containing diagnostic information from a pipeline.
@@ -2351,6 +2354,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param pipeline_name: The name of the pipeline
         :param params: Optional query parameters to control data collection
+        :param retry: Whether to retry after a failure that can come late,
+            such as a gateway timeout or a dropped connection. A bundle that
+            collects new data is slow and loads the pipeline, so pass True
+            only with `collect=false` in `params`.
         :return: The support bundle as bytes (ZIP file)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
@@ -2359,6 +2366,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline_name}/support_bundle",
             params=params,
             stream=True,
+            idempotent=retry,
         )
 
         buffer = bytearray()
