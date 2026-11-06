@@ -2689,6 +2689,79 @@ pub fn replay_does_not_feed_http_input_during_commit(engine: &dyn PipelineTestEn
     controller.stop().unwrap();
 }
 
+/// Replay fails, rather than committing a transaction with the next one's
+/// input, if it hands a journaled step to the input endpoints before the
+/// previous transaction commits.
+///
+/// A test-only switch restores the eager feeding of an old bug.  The journal
+/// holds an API transaction and one more request in its own transaction, so
+/// replay crosses a transaction boundary.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn replay_fails_if_input_is_fed_before_commit(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    const FIRST: &str = "test_input1.api-ingress-first";
+    const SECOND: &str = "test_input1.api-ingress-second";
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = TestCircuit::Aggregate {
+        relation: relation(),
+        n_keys: 16,
+    };
+
+    let controller = engine
+        .controller(&circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+        .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), default_timeout_ms()).unwrap();
+    controller.start_transaction().unwrap();
+    let token = ingress_rows(&controller, FIRST, 0..10);
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
+    wait_for_completion(&controller, &token);
+    let token = ingress_rows(&controller, SECOND, 10..11);
+    wait_for_completion(&controller, &token);
+    controller.stop().unwrap();
+
+    // Restart from the journal, feeding replayed steps early.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            &circuit,
+            &config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller
+        .inner
+        .feed_replay_early
+        .store(true, Ordering::Release);
+    controller.start();
+    wait(|| !errors.lock().unwrap().is_empty(), default_timeout_ms())
+        .expect("replay did not detect input fed before a commit");
+    let errors = errors.lock().unwrap().clone();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("before the previous transaction committed")),
+        "{errors:?}"
+    );
+}
+
 /// Replay must not wait for input from an endpoint that the replayed step
 /// did not record.
 ///
