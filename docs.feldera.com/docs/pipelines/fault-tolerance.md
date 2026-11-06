@@ -160,6 +160,49 @@ only from those connectors until they advance to a point at which a
 checkpoint is possible, and then writes the checkpoint.  In some
 cases, this can take minutes or longer.
 
+## Statistics after a resume
+
+A checkpoint also stores the pipeline's record counters.  When a
+pipeline resumes from a checkpoint, these counters continue from their
+values at the time of the checkpoint:
+
+| Counter | Metrics | `/stats` fields |
+|---------|---------|-----------------|
+| Records the pipeline received and processed | `records_input_total`, `records_processed_total` | `total_input_records`, `total_processed_records` |
+| Records, bytes and errors for each input connector | `input_connector_records_total`, `input_connector_bytes_total`, `input_connector_errors_transport_total`, `input_connector_errors_parse_total` | the same counters in each input endpoint's metrics |
+| Records, bytes and errors for each output connector | `output_connector_records_total`, `output_connector_bytes_total`, `output_connector_errors_transport_total`, `output_connector_errors_encode_total` | the same counters in each output endpoint's metrics |
+
+Work performed between a checkpoint and a crash is not counted as
+performed when the pipeline resumes.  The pipeline does that work
+again after the resume, and it is counted then.  For example, suppose
+a pipeline reads 1,000,000 records in total.  It writes a checkpoint
+after 500,000 records, reads 250,000 more, and then fails.  After it
+resumes, it reports 500,000 processed records.  When it has read all
+of its input, it reports 1,000,000.  Thus, the counters show the
+1,000,000 records of committed work, not the 1,250,000 records of work
+that the pipeline actually performed.
+
+In the same way, the output counters do not count output that the
+pipeline sent after the checkpoint and before the failure.  With
+at-least-once fault tolerance, or with an output connector that is
+not fault tolerant, the pipeline can send that output again after the
+resume, so a destination can receive more records than the counters
+show.
+
+Because a resume can cause these counters to decrease, Prometheus
+sees a counter reset, in the same way as when a process restarts.
+
+Other statistics are for the current incarnation of the pipeline only,
+that is, for the current pipeline process, and start from zero after a
+resume.  These include:
+
+- `records_input_bytes_total`, `records_processed_bytes_total` and
+  `records_late_total`.
+- Counters that only some connectors export, such as the Delta Lake,
+  Iceberg and Kafka connector metrics.
+- Gauges and latency histograms.
+- The [process metrics](/operations/metrics#process-metrics).
+
 ## Fault-tolerant connectors
 
 For Feldera to checkpoint and resume, or to enable fault tolerance, all
