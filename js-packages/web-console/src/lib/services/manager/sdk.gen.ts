@@ -1800,6 +1800,14 @@ export const postPipelineStop = <ThrowOnError extends boolean = true>(
  * This endpoint collects various diagnostic data from the pipeline including
  * circuit profile, heap profile, metrics, logs, stats, and connector statistics,
  * and packages them into a single ZIP file for support purposes.
+ *
+ * The response starts before the data is collected, and has no
+ * `Content-Length`. When the bundle collects new data, its first entry,
+ * `collection_log.txt`, gets a line every 10 seconds until the collection is
+ * complete, so that the response is never idle for long. Data that the
+ * pipeline cannot supply is reported inside the bundle. A failure after the
+ * response started cuts the response short, so a client must check that the
+ * ZIP file is complete.
  */
 export const getPipelineSupportBundle = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineSupportBundleData, ThrowOnError>

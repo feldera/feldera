@@ -268,12 +268,13 @@ if [ ! -f test-support-bundle-none.zip ]; then
     echo "Support bundle file was not created"
     exit 1
 fi
-# With every collection disabled only metadata.txt and metadata.json remain.
-# grep matches each file row plus the trailing totals line, so 2 files => 3.
-file_count=$(unzip -l test-support-bundle-none.zip | grep -E "^\s*[0-9]+" | wc -l)
-if [ "$file_count" -ne 3 ]; then
-    echo "Expected 2 files in support bundle (metadata.txt, metadata.json), found $file_count"
-    unzip -l test-support-bundle-none.zip
+# With every collection disabled, only the metadata files and the log of the
+# new (empty) collection remain.
+files=$(unzip -Z1 test-support-bundle-none.zip | sort | tr '\n' ' ')
+expected="collection_log.txt metadata.json metadata.txt "
+if [ "$files" != "$expected" ]; then
+    echo "Expected support bundle files: $expected"
+    echo "Found: $files"
     exit 1
 fi
 

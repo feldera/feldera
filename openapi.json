@@ -6459,7 +6459,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Download Support Bundle",
-        "description": "Required role: `read` or higher.\n\nGenerate a support bundle for a pipeline.\n\nThis endpoint collects various diagnostic data from the pipeline including\ncircuit profile, heap profile, metrics, logs, stats, and connector statistics,\nand packages them into a single ZIP file for support purposes.",
+        "description": "Required role: `read` or higher.\n\nGenerate a support bundle for a pipeline.\n\nThis endpoint collects various diagnostic data from the pipeline including\ncircuit profile, heap profile, metrics, logs, stats, and connector statistics,\nand packages them into a single ZIP file for support purposes.\n\nThe response starts before the data is collected, and has no\n`Content-Length`. When the bundle collects new data, its first entry,\n`collection_log.txt`, gets a line every 10 seconds until the collection is\ncomplete, so that the response is never idle for long. Data that the\npipeline cannot supply is reported inside the bundle. A failure after the\nresponse started cuts the response short, so a client must check that the\nZIP file is complete.",
         "operationId": "get_pipeline_support_bundle",
         "parameters": [
           {
@@ -6624,46 +6624,11 @@
             }
           },
           "503": {
-            "description": "",
+            "description": "The database was busy before the response started (`LockTookTooLong` or `DeadlockDetected`)",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Connection failed": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: Failed to connect to host: Timeout while establishing connection Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionConnectFailed",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "Failed to connect to host: Timeout while establishing connection"
-                      }
-                    }
-                  },
-                  "Disconnected during response": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs. Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
-                      }
-                    }
-                  },
-                  "Response timeout": {
-                    "value": {
-                      "message": "Error sending HTTP request to pipeline: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response) Failed request: /pause pipeline-id=N/A pipeline-name=\"my_pipeline\"",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "pipeline_name": "my_pipeline",
-                        "request": "/pause",
-                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
-                      }
-                    }
-                  }
                 }
               }
             }
