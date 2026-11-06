@@ -13,13 +13,14 @@ use feldera_types::constants::{
     DBSP_FILE_EXTENSION, STATE_FILE, STATUS_FILE, STEPS_FILE,
 };
 use itertools::Itertools;
-use size_of::SizeOf;
+use size_of::{HumanBytes, SizeOf};
 use smallvec::SmallVec;
 use tracing::{debug, error, info, warn};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::ErrorKind;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use std::{
     collections::{HashSet, VecDeque},
     sync::Arc,
@@ -636,6 +637,83 @@ impl Checkpointer {
     }
 }
 
+/// Makes log messages about the progress of a slow checkpoint commit.
+///
+/// The first message comes after `interval`, then one more message comes
+/// after each `interval`.  A fast commit makes no messages.
+pub(super) struct CommitProgressLog {
+    uuid: Uuid,
+    start: Instant,
+    interval: Duration,
+    next_report: Instant,
+    total_operators: usize,
+    reported: bool,
+}
+
+impl CommitProgressLog {
+    /// Starts to track the commit of checkpoint `uuid`, which writes the state
+    /// of `total_operators` operators.
+    pub(super) fn new_at(
+        uuid: Uuid,
+        start: Instant,
+        interval: Duration,
+        total_operators: usize,
+    ) -> Self {
+        Self {
+            uuid,
+            start,
+            interval,
+            next_report: start + interval,
+            total_operators,
+            reported: false,
+        }
+    }
+
+    /// Returns the time of the next progress message.
+    pub(super) fn next_report(&self) -> Instant {
+        self.next_report
+    }
+
+    /// Returns a progress message if it is time for one.  `operators_done` is
+    /// the number of operators with state written, and `bytes_written` is the
+    /// number of bytes written since the start.
+    pub(super) fn check_at(
+        &mut self,
+        now: Instant,
+        operators_done: usize,
+        bytes_written: u64,
+    ) -> Option<String> {
+        if now < self.next_report {
+            return None;
+        }
+        while self.next_report <= now {
+            self.next_report += self.interval;
+        }
+        self.reported = true;
+        Some(format!(
+            "checkpoint {}: wrote state of {operators_done} of {} operators ({} written) in {} seconds",
+            self.uuid,
+            self.total_operators,
+            HumanBytes::from(bytes_written),
+            now.saturating_duration_since(self.start).as_secs()
+        ))
+    }
+
+    /// Returns a message for the end of the write phase, but only if the
+    /// commit was slow enough to make a progress message.
+    pub(super) fn finish_at(&self, now: Instant, bytes_written: u64) -> Option<String> {
+        self.reported.then(|| {
+            format!(
+                "checkpoint {}: wrote state of all {} operators ({} written) in {} seconds, now syncing to storage",
+                self.uuid,
+                self.total_operators,
+                HumanBytes::from(bytes_written),
+                now.saturating_duration_since(self.start).as_secs()
+            )
+        })
+    }
+}
+
 /// Build a `StorageError::StdIo { InvalidData, .. }` from an operator's
 /// checkpoint-restore failure. `operation` is the static stage tag (e.g.
 /// "Z1 checkpoint validation failed"); `detail` is the pre-formatted
@@ -794,7 +872,46 @@ mod test {
     use crate::storage::backend::posixio_impl::PosixBackend;
     use crate::utils::LogCapture;
 
-    use super::Checkpointer;
+    use super::{Checkpointer, CommitProgressLog};
+
+    /// A slow commit logs progress once per interval and once at the end.  A
+    /// fast commit logs nothing.
+    #[test]
+    fn commit_progress_log() {
+        use std::time::{Duration, Instant};
+
+        let uuid = uuid!("01234567-89ab-cdef-0123-456789abcdef");
+        let interval = Duration::from_secs(10);
+        let start = Instant::now();
+        let at = |secs| start + Duration::from_secs(secs);
+
+        // Fast commit.
+        let mut fast = CommitProgressLog::new_at(uuid, start, interval, 4);
+        assert_eq!(fast.check_at(at(9), 2, 0), None);
+        assert_eq!(fast.finish_at(at(9), 0), None);
+
+        // Slow commit.
+        let mut slow = CommitProgressLog::new_at(uuid, start, interval, 4);
+        assert_eq!(slow.next_report(), at(10));
+        assert_eq!(
+            slow.check_at(at(10), 1, 2048).as_deref(),
+            Some(
+                "checkpoint 01234567-89ab-cdef-0123-456789abcdef: wrote state of 1 of 4 operators (2.00 KiB written) in 10 seconds"
+            )
+        );
+        // Not again until the next interval.
+        assert_eq!(slow.check_at(at(19), 2, 4096), None);
+        assert!(slow.check_at(at(20), 2, 4096).is_some());
+        // A late check skips the missed intervals.
+        assert!(slow.check_at(at(45), 3, 4096).is_some());
+        assert_eq!(slow.next_report(), at(50));
+        assert_eq!(
+            slow.finish_at(at(47), 8192).as_deref(),
+            Some(
+                "checkpoint 01234567-89ab-cdef-0123-456789abcdef: wrote state of all 4 operators (8.00 KiB written) in 47 seconds, now syncing to storage"
+            )
+        );
+    }
 
     /// Backend wrapper that delegates everything to an inner backend but
     /// fails writes whose path equals `fail_on`.
