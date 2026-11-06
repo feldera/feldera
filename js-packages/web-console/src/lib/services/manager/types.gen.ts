@@ -3146,6 +3146,24 @@ export type InputEndpointMetrics = {
    */
   end_of_input: boolean
   /**
+   * Number of bytes in the most recent non-empty batch that the endpoint
+   * gave to the circuit.
+   *
+   * For a connector that runs on more than one host, this is the sum of
+   * each host's latest non-empty batch.  These batches can come from
+   * different steps, for example when a host has been idle.
+   */
+  latest_batch_bytes?: number
+  /**
+   * Number of records in the most recent non-empty batch that the endpoint
+   * gave to the circuit.
+   *
+   * For a connector that runs on more than one host, this is the sum of
+   * each host's latest non-empty batch.  These batches can come from
+   * different steps, for example when a host has been idle.
+   */
+  latest_batch_records?: number
+  /**
    * Number of parse errors.
    */
   num_parse_errors: number

@@ -2176,6 +2176,24 @@ impl Controller {
             metrics,
             labels,
             status,
+            "input_connector_latest_batch_records",
+            "Number of records in the most recent non-empty batch that an input connector gave to the circuit.",
+            ValueType::Gauge,
+            |s| s.metrics.latest_batch_records.load(Ordering::Relaxed),
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_latest_batch_bytes",
+            "Number of bytes in the most recent non-empty batch that an input connector gave to the circuit.",
+            ValueType::Gauge,
+            |s| s.metrics.latest_batch_bytes.load(Ordering::Relaxed),
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
             "input_connector_errors_transport_total",
             "Total number of errors encountered by the input connector at the transport layer.",
             ValueType::Counter,

@@ -209,6 +209,22 @@ pub struct ExternalInputEndpointMetrics {
     pub buffered_records: u64,
     /// Number of bytes currently buffered by the endpoint (not yet consumed by the circuit).
     pub buffered_bytes: u64,
+    /// Number of records in the most recent non-empty batch that the endpoint
+    /// gave to the circuit.
+    ///
+    /// For a connector that runs on more than one host, this is the sum of
+    /// each host's latest non-empty batch.  These batches can come from
+    /// different steps, for example when a host has been idle.
+    #[serde(default)]
+    pub latest_batch_records: u64,
+    /// Number of bytes in the most recent non-empty batch that the endpoint
+    /// gave to the circuit.
+    ///
+    /// For a connector that runs on more than one host, this is the sum of
+    /// each host's latest non-empty batch.  These batches can come from
+    /// different steps, for example when a host has been idle.
+    #[serde(default)]
+    pub latest_batch_bytes: u64,
     /// Number of transport errors.
     pub num_transport_errors: u64,
     /// Number of parse errors.
@@ -245,6 +261,8 @@ impl ExternalInputEndpointMetrics {
             total_records,
             buffered_records,
             buffered_bytes,
+            latest_batch_records,
+            latest_batch_bytes,
             num_transport_errors,
             num_parse_errors,
             end_of_input,
@@ -254,6 +272,9 @@ impl ExternalInputEndpointMetrics {
         self.total_records += total_records;
         self.buffered_records += buffered_records;
         self.buffered_bytes += buffered_bytes;
+        // Each host gives its own batch to the step, so add them.
+        self.latest_batch_records += latest_batch_records;
+        self.latest_batch_bytes += latest_batch_bytes;
         self.num_transport_errors += num_transport_errors;
         self.num_parse_errors += num_parse_errors;
         self.end_of_input &= end_of_input;
@@ -834,6 +855,8 @@ mod tests {
                     total_records: 1,
                     buffered_records: 2,
                     buffered_bytes: 20,
+                    latest_batch_records: 5,
+                    latest_batch_bytes: 50,
                     num_transport_errors: 3,
                     num_parse_errors: 4,
                     end_of_input: true,
@@ -866,6 +889,7 @@ mod tests {
                 ),
                 (20, 2, 4, 40)
             );
+            assert_eq!((m.latest_batch_records, m.latest_batch_bytes), (10, 100));
             assert_eq!((m.num_transport_errors, m.num_parse_errors), (6, 8));
             assert!(!m.end_of_input);
             assert_eq!(m.processing_latency_p99_micros, Some(500));
