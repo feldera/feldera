@@ -188,6 +188,8 @@ impl From<&CheckpointInputEndpointMetrics> for InputEndpointMetrics {
             buffered_bytes: AtomicU64::new(0),
             circuit_input_records: AtomicU64::new(value.circuit_input_records),
             circuit_input_bytes: AtomicU64::new(value.circuit_input_bytes),
+            latest_batch_records: AtomicU64::new(0),
+            latest_batch_bytes: AtomicU64::new(0),
             num_transport_errors: AtomicU64::new(value.num_transport_errors),
             num_parse_errors: AtomicU64::new(value.num_parse_errors),
             end_of_input: AtomicBool::new(false),

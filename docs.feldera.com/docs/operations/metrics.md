@@ -195,6 +195,8 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 | <a name='input_connector_iceberg_snapshot_completed_seconds'>`input_connector_iceberg_snapshot_completed_seconds`</a> |gauge | Unix epoch seconds when this run finished reading the snapshot (0 if it has not, including after a resume past the snapshot). |
 | <a name='input_connector_iceberg_snapshot_records_total'>`input_connector_iceberg_snapshot_records_total`</a> |counter | Total records this run loaded from the snapshot (0 after a resume past the snapshot). |
 | <a name='input_connector_iceberg_snapshot_transaction_starts'>`input_connector_iceberg_snapshot_transaction_starts`</a> |counter | Number of Feldera snapshot transactions started by this connector. |
+| <a name='input_connector_latest_batch_bytes'>`input_connector_latest_batch_bytes`</a> |gauge | Number of bytes in the most recent non-empty batch that an input connector gave to the circuit. |
+| <a name='input_connector_latest_batch_records'>`input_connector_latest_batch_records`</a> |gauge | Number of records in the most recent non-empty batch that an input connector gave to the circuit. |
 | <a name='input_connector_processing_latency_seconds'>`input_connector_processing_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data and computes output updates, over the last 600 seconds or 10,000 samples. |
 | <a name='input_connector_records_total'>`input_connector_records_total`</a> |counter | Total number of records received by an input connector. |
 | <a name='input_connector_running'>`input_connector_running`</a> |gauge | Whether the input connector is running (1) or paused by the user (0). |
