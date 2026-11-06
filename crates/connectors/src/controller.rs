@@ -1688,8 +1688,7 @@ impl Controller {
 
         self.initiate_stop();
         let circuit_result = match self.circuit_thread_handle.lock().unwrap().take() {
-            Some(handle) => handle
-                .join()
+            Some(handle) => wait_for_circuit_stop(handle)
                 .map_err(|_| ControllerError::controller_panic())
                 .and_then(|result| result),
             None => Ok(()),
@@ -11026,6 +11025,28 @@ impl RunningCheckpoint {
     }
 }
 
+/// Waits for the circuit thread to exit.  Logs a message if the wait is long,
+/// because a slow checkpoint or a large state can make stop slow.
+fn wait_for_circuit_stop<T>(handle: JoinHandle<T>) -> thread::Result<T> {
+    let mut long_wait = LongOperationWarning::new(Duration::from_secs(10));
+    while !handle.is_finished() {
+        sleep(Duration::from_millis(10));
+        long_wait.check(|elapsed| {
+            info!(
+                "pipeline stop: waiting for the circuit to stop after {} seconds",
+                elapsed.as_secs()
+            )
+        });
+    }
+    if long_wait.elapsed() >= Duration::from_secs(10) {
+        info!(
+            "pipeline stop: circuit stopped after {} seconds",
+            long_wait.elapsed().as_secs()
+        );
+    }
+    handle.join()
+}
+
 struct CheckpointThread {
     checkpoint: Checkpoint,
     status: Arc<ControllerStatus>,
@@ -11109,6 +11130,7 @@ impl CheckpointThread {
         // Finalize the checkpoint on storage. [CheckpointPublisher::metadata]
         // reports the circuit's metadata before publication, so that the
         // state stored with the checkpoint can record it.
+        let publisher_uuid = publisher.metadata().uuid;
         self.checkpoint.circuit = Some(publisher.metadata().clone());
         publisher.publish(&self.checkpoint)?;
 
@@ -11122,6 +11144,18 @@ impl CheckpointThread {
         CHECKPOINT_DELAY.record(self.delay.as_micros());
         CHECKPOINT_WRITTEN_MEGABYTES.record(bytes_written / 1_000_000);
         CHECKPOINT_PROCESSED_RECORDS.store(self.checkpoint.processed_records, Ordering::Relaxed);
+
+        // Tell the user about a slow checkpoint.  Fast checkpoints log nothing.
+        let elapsed = self.start_checkpoint.elapsed();
+        if elapsed >= Duration::from_secs(10) {
+            info!(
+                "checkpoint {} completed in {} seconds ({} written, pipeline blocked for {} seconds)",
+                publisher_uuid,
+                elapsed.as_secs(),
+                HumanBytes::from(bytes_written),
+                self.delay.as_secs()
+            );
+        }
 
         Ok(self.checkpoint)
     }
@@ -11528,6 +11562,26 @@ mod all_hosts_transaction_tests {
             TransactionInfo::new(false, sender).joined_transaction("c"),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod wait_for_circuit_stop_tests {
+    use super::wait_for_circuit_stop;
+    use std::thread;
+    use std::time::Duration;
+
+    /// The wait returns the thread's result, also when the thread panics.
+    #[test]
+    fn returns_thread_result() {
+        let handle = thread::spawn(|| {
+            thread::sleep(Duration::from_millis(50));
+            7
+        });
+        assert_eq!(wait_for_circuit_stop(handle).unwrap(), 7);
+
+        let handle = thread::spawn(|| -> u32 { panic!("circuit thread panic") });
+        assert!(wait_for_circuit_stop(handle).is_err());
     }
 }
 
