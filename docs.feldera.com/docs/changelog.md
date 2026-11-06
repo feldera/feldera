@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Iceberg input: in follow mode, a retry after a failed read no longer
+  ingests the rows that the failed read already ingested. Before, a retry
+  ingested them again, and a deleted row could get a negative weight on a
+  table without a primary key.
 - OIDC (login and federated tokens): when a refresh of an issuer's signing
   keys fails, the API server keeps using the keys it fetched before, for up to
   1 hour.  Before, one failed fetch refused every token of that issuer with a

@@ -558,9 +558,9 @@ enum QueueEntry {
 
     /// Pushed after a failed read, before retrying or declaring a fatal error,
     /// so the connector stays checkpointable between retries. Any in-progress
-    /// transaction is committed (not rolled back), so a retry may re-emit rows
-    /// (at-least-once).  A distributed snapshot's transaction stays open
-    /// instead.
+    /// transaction is committed (not rolled back), so a snapshot retry, or a
+    /// restart from this point, may re-emit rows (at-least-once).  A
+    /// distributed snapshot's transaction stays open instead.
     Rollback,
 }
 
@@ -961,24 +961,17 @@ fn v2_delete_file_error(file: &DataFile) -> AnyError {
     }
 }
 
-/// Keep the selected rows of `batch`, then drop its last two columns, `_file`
-/// and `_pos`.
-fn select_positions(
-    batch: RecordBatch,
-    selected: &HashMap<String, Arc<RoaringTreemap>>,
-) -> AnyResult<RecordBatch> {
-    let columns = batch.num_columns();
-    if batch.num_rows() == 0 {
-        return Ok(batch.project(&(0..columns - 2).collect::<Vec<_>>())?);
-    }
+/// The data file of a non-empty `batch`, from its `_file` column at `column`.
+fn batch_file(batch: &RecordBatch, column: usize) -> AnyResult<String> {
     // `_file` is a run-end encoded constant, so cast one value only.
-    let file = cast(&batch.column(columns - 2).slice(0, 1), &DataType::Utf8)?;
-    let file = file.as_string::<i32>().value(0);
-    let positions = selected
-        .get(file)
-        .ok_or_else(|| anyhow!("internal error: no selected positions for data file '{file}'"))?;
+    let file = cast(&batch.column(column).slice(0, 1), &DataType::Utf8)?;
+    Ok(file.as_string::<i32>().value(0).to_string())
+}
+
+/// Keep the rows of `batch` whose last column, `_pos`, is in `positions`.
+fn select_positions(batch: &RecordBatch, positions: &RoaringTreemap) -> AnyResult<RecordBatch> {
     let pos = batch
-        .column(columns - 1)
+        .column(batch.num_columns() - 1)
         .as_primitive_opt::<Int64Type>()
         .ok_or_else(|| anyhow!("the '_pos' column is not Int64"))?;
     let keep: BooleanArray = pos
@@ -986,8 +979,20 @@ fn select_positions(
         .iter()
         .map(|&pos| Some(positions.contains(pos as u64)))
         .collect();
-    let batch = filter_record_batch(&batch, &keep)?;
-    Ok(batch.project(&(0..columns - 2).collect::<Vec<_>>())?)
+    Ok(filter_record_batch(batch, &keep)?)
+}
+
+/// A batch and, for a follow read, the data file that it comes from.
+type FileBatch = (RecordBatch, Option<String>);
+
+/// The rows of `batch` after the first `queued` rows of its file, which earlier
+/// attempts queued. A file reads in the same order every time, and `read`
+/// counts this attempt's rows of the file so far.
+fn skip_queued(batch: RecordBatch, read: &mut u64, queued: u64) -> RecordBatch {
+    let start = *read;
+    *read += batch.num_rows() as u64;
+    let skip = queued.saturating_sub(start).min(batch.num_rows() as u64) as usize;
+    batch.slice(skip, batch.num_rows() - skip)
 }
 
 /// Snapshots committed after `after_id`, oldest first, found by walking the
@@ -2417,23 +2422,30 @@ impl IcebergInputEndpointInner {
         field_ids: &[i32],
         name_mapping: &Option<Arc<NameMapping>>,
         reads: &[FileRead],
-    ) -> Result<stream::BoxStream<'static, AnyResult<RecordBatch>>, AnyError> {
+        queued: HashMap<String, u64>,
+    ) -> Result<stream::BoxStream<'static, AnyResult<FileBatch>>, AnyError> {
         let metadata = table.metadata();
         let selected: HashMap<String, Arc<RoaringTreemap>> = reads
             .iter()
             .filter_map(|read| Some((read.path.clone(), read.selected_positions.clone()?)))
             .collect();
-        let selected_field_ids: Vec<i32> = field_ids
+        // `_file` tells which file a batch is from; `_pos` is for selected reads.
+        let whole_field_ids: Vec<i32> = field_ids
             .iter()
             .copied()
-            .chain([RESERVED_FIELD_ID_FILE, RESERVED_FIELD_ID_POS])
+            .chain([RESERVED_FIELD_ID_FILE])
+            .collect();
+        let selected_field_ids: Vec<i32> = whole_field_ids
+            .iter()
+            .copied()
+            .chain([RESERVED_FIELD_ID_POS])
             .collect();
         let tasks: Vec<Result<FileScanTask, iceberg::Error>> = reads
             .iter()
             .map(|read| {
                 let field_ids = match read.selected_positions {
                     Some(_) => &selected_field_ids,
-                    None => field_ids,
+                    None => &whole_field_ids,
                 };
                 FileScanTask::builder()
                     .with_file_size_in_bytes(read.file_size_in_bytes)
@@ -2468,22 +2480,35 @@ impl IcebergInputEndpointInner {
             .with_data_file_concurrency_limit(self.config.num_parsers as usize)
             .build();
 
-        let num_fields = field_ids.len();
+        let data_columns: Vec<usize> = (0..field_ids.len()).collect();
+        // Rows of each file that this attempt read so far.
+        let mut read_rows: HashMap<String, u64> = HashMap::new();
         let batch_stream = reader
             .read(task_stream)
             .map_err(|e| read_error(e, "error starting Iceberg data-file read"))?
             .stream()
             .map(move |batch| {
                 let batch = batch.map_err(|e| read_error(e, "error reading Iceberg data file"))?;
-                // Only reads with selected positions add `_file` and `_pos`.
-                if batch.num_columns() > num_fields {
-                    select_positions(batch, &selected).map_err(|e| {
+                if batch.num_rows() == 0 {
+                    return Ok((batch.project(&data_columns)?, None));
+                }
+                let file = batch_file(&batch, data_columns.len())?;
+                // Only reads with selected positions add `_pos` after `_file`.
+                let batch = if batch.num_columns() > data_columns.len() + 1 {
+                    let positions = selected.get(&file).ok_or_else(|| {
+                        anyhow!("internal error: no selected positions for data file '{file}'")
+                    })?;
+                    select_positions(&batch, positions).map_err(|e| {
                         let message = format!("error selecting deleted rows: {e}");
                         e.context(message)
-                    })
+                    })?
                 } else {
-                    Ok(batch)
-                }
+                    batch
+                };
+                let batch = batch.project(&data_columns)?;
+                let queued = queued.get(&file).copied().unwrap_or_default();
+                let read = read_rows.entry(file.clone()).or_default();
+                Ok((skip_queued(batch, read, queued), Some(file)))
             })
             .boxed();
 
@@ -2491,8 +2516,8 @@ impl IcebergInputEndpointInner {
     }
 
     /// Read `reads` and push their rows to the circuit with `polarity`, wrapped
-    /// in `transaction`. Retries the whole read on transient failure, mirroring
-    /// [`execute_df`].
+    /// in `transaction`. Retries a transient failure, and the retry skips the
+    /// rows that earlier attempts queued.
     #[allow(clippy::too_many_arguments)]
     async fn push_changed_files(
         &self,
@@ -2511,38 +2536,50 @@ impl IcebergInputEndpointInner {
             return Ok(0);
         }
 
+        // Rows of each file that earlier attempts queued, which a retry skips.
+        let queued = Arc::new(Mutex::new(HashMap::new()));
         let max_retries = self.config.max_retries();
         let mut retry_count = 0;
         loop {
-            let result =
-                match self.read_changed_files_stream(table, schema, field_ids, name_mapping, reads)
-                {
-                    Ok(stream) => {
-                        self.drain_batch_stream(
-                            stream,
-                            polarity,
-                            transaction.clone(),
-                            input_stream,
-                            receiver,
-                        )
-                        .await
-                    }
-                    Err(e) => Err(e),
-                };
+            let queued_before = queued.lock().unwrap().clone();
+            let result = match self.read_changed_files_stream(
+                table,
+                schema,
+                field_ids,
+                name_mapping,
+                reads,
+                queued_before,
+            ) {
+                Ok(stream) => {
+                    self.drain_batch_stream(
+                        stream,
+                        polarity,
+                        transaction.clone(),
+                        Some(queued.clone()),
+                        input_stream,
+                        receiver,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            };
 
             match result {
-                Ok(total) => {
+                Ok(_) => {
+                    // Count the rows of every attempt, each once.
+                    let total: u64 = queued.lock().unwrap().values().sum();
                     self.metrics
                         .follow_records_total
-                        .fetch_add(total as u64, Ordering::Relaxed);
+                        .fetch_add(total, Ordering::Relaxed);
                     self.consumer
                         .update_connector_health(ConnectorHealth::healthy());
-                    return Ok(total);
+                    return Ok(total as usize);
                 }
                 Err(e) => {
                     // Commit any open transaction and mark a checkpointable
-                    // boundary between retries; rows already queued are not
-                    // rolled back, so a retry may re-emit them (at-least-once).
+                    // boundary between retries. The retry skips the rows
+                    // already queued, but a restart from this boundary reads
+                    // them again (at-least-once).
                     self.queue.push_entry(
                         InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::Rollback)
                             .with_commit_transaction(true),
@@ -3617,14 +3654,14 @@ impl IcebergInputEndpointInner {
             .execute_stream()
             .await
             .map_err(datafusion_read_error)?
-            .map(|batch| batch.map_err(datafusion_read_error))
+            .map(|batch| Ok((batch.map_err(datafusion_read_error)?, None)))
             .boxed();
 
         // The dataframe compiled and started streaming: the connector is healthy.
         self.consumer
             .update_connector_health(ConnectorHealth::healthy());
 
-        self.drain_batch_stream(stream, polarity, transaction, input_stream, receiver)
+        self.drain_batch_stream(stream, polarity, transaction, None, input_stream, receiver)
             .await
     }
 
@@ -3635,9 +3672,10 @@ impl IcebergInputEndpointInner {
     /// read path ([`push_changed_files`]). Blocks while the pipeline is paused.
     async fn drain_batch_stream(
         &self,
-        mut stream: stream::BoxStream<'static, AnyResult<RecordBatch>>,
+        mut stream: stream::BoxStream<'static, AnyResult<FileBatch>>,
         polarity: bool,
         transaction: Option<Option<String>>,
+        queued: Option<Arc<Mutex<HashMap<String, u64>>>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<usize, AnyError> {
@@ -3650,8 +3688,13 @@ impl IcebergInputEndpointInner {
         // Job queue that parses record batches on a pool of tasks and pushes the
         // resulting buffers to the input queue in enqueue order.
         let job_queue = JobQueue::<
-            (RecordBatch, DateTime<Utc>),
-            (Option<StagedInputBuffer>, Vec<ParseError>, DateTime<Utc>),
+            (FileBatch, DateTime<Utc>),
+            (
+                Option<StagedInputBuffer>,
+                Vec<ParseError>,
+                DateTime<Utc>,
+                Option<(String, u64)>,
+            ),
         >::new(
             num_parsers,
             // Both the worker closure and each per-job future need an owned
@@ -3663,10 +3706,11 @@ impl IcebergInputEndpointInner {
             //     more than once.
             move || {
                 let input_stream = input_stream.fork();
-                Box::new(move |(batch, timestamp)| {
+                Box::new(move |((batch, file), timestamp): (FileBatch, _)| {
                     Box::pin({
                         let mut input_stream = input_stream.fork();
                         async move {
+                            let rows = file.map(|file| (file, batch.num_rows() as u64));
                             let (buffer, errors) =
                                 Self::parse_record_batch(batch, polarity, input_stream.as_mut())
                                     .await;
@@ -3677,12 +3721,12 @@ impl IcebergInputEndpointInner {
                                 let len = buffer.len();
                                 StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
                             });
-                            (staged_buffer, errors, timestamp)
+                            (staged_buffer, errors, timestamp, rows)
                         }
                     })
                 })
             },
-            move |(buffer, errors, timestamp)| {
+            move |(buffer, errors, timestamp, rows)| {
                 // Data buffers carry no independent resume point, so their aux is
                 // `ResumeInfo(None)`; the caller's snapshot-boundary entry
                 // records the checkpointable position. Setting the start label on
@@ -3695,6 +3739,10 @@ impl IcebergInputEndpointInner {
                         .with_start_transaction(transaction.clone()),
                     errors,
                 );
+                // Count only the rows that reached the queue, which a retry skips.
+                if let (Some(queued), Some((file, rows))) = (&queued, rows) {
+                    *queued.lock().unwrap().entry(file).or_default() += rows;
+                }
             },
         );
 
@@ -3703,12 +3751,18 @@ impl IcebergInputEndpointInner {
 
         while let Some(batch) = stream.next().await {
             wait_running(receiver).await;
-            let batch = batch.map_err(|e| {
-                let message = format!("error retrieving batch {num_batches}: {e}");
-                e.context(message)
-            })?;
+            let batch = match batch {
+                Ok(batch) => batch,
+                Err(e) => {
+                    // Let the batches read before the error reach the queue, so
+                    // that none is pushed after the caller's `Rollback`.
+                    job_queue.flush().await;
+                    let message = format!("error retrieving batch {num_batches}: {e}");
+                    return Err(e.context(message));
+                }
+            };
             num_batches += 1;
-            total_records += batch.num_rows();
+            total_records += batch.0.num_rows();
             job_queue.push_job((batch, timestamp)).await;
             timestamp = Utc::now();
         }
@@ -4419,24 +4473,47 @@ mod deletion_vector_tests {
             ("_pos", Arc::new(Int64Array::from(vec![10, 11, 12, 13]))),
         ];
         let batch = RecordBatch::try_from_iter(columns).unwrap();
-        let data_columns: Vec<usize> = (0..batch.num_columns() - 2).collect();
-        let selected = HashMap::from([(
-            "f.parquet".to_string(),
-            Arc::new(RoaringTreemap::from_iter([11, 13])),
-        )]);
+        let file_column = batch.num_columns() - 2;
+        assert_eq!(batch_file(&batch, file_column).unwrap(), "f.parquet");
 
-        let expected = take_record_batch(&batch, &UInt32Array::from(vec![1, 3]))
-            .unwrap()
-            .project(&data_columns)
-            .unwrap();
-        assert_eq!(
-            select_positions(batch.clone(), &selected).unwrap(),
-            expected
-        );
+        let expected = take_record_batch(&batch, &UInt32Array::from(vec![1, 3])).unwrap();
+        let positions = RoaringTreemap::from_iter([11, 13]);
+        assert_eq!(select_positions(&batch, &positions).unwrap(), expected);
+    }
 
-        let empty = select_positions(batch.slice(0, 0), &selected).unwrap();
-        assert_eq!(empty.schema(), expected.schema());
-        assert_eq!(empty.num_rows(), 0);
+    /// A retry may split a file into other batches; it must still queue each
+    /// row exactly once, in order.
+    #[test]
+    fn a_retry_skips_the_rows_already_queued() {
+        use datafusion::arrow::array::{Array, Int64Array};
+
+        let file =
+            RecordBatch::try_from_iter([("x", Arc::new(Int64Array::from_iter_values(0..10)) as _)])
+                .unwrap();
+        let mut queued = 0;
+        let mut out = Vec::new();
+        // The first attempt queues rows 0..4 and fails; the second queues
+        // 4..7 in other batches and fails; the third reads the whole file.
+        for batches in [
+            vec![(0, 3), (3, 1)],
+            vec![(0, 2), (2, 5)],
+            vec![(0, 6), (6, 4)],
+        ] {
+            let mut read = 0;
+            let before = queued;
+            for (offset, len) in batches {
+                let batch = skip_queued(file.slice(offset, len), &mut read, before);
+                queued += batch.num_rows() as u64;
+                let x = batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                out.extend(x.values().iter().copied());
+            }
+        }
+        assert_eq!(out, (0..10).collect::<Vec<i64>>());
+        assert_eq!(queued, 10);
     }
 
     #[test]
