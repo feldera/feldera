@@ -26,7 +26,7 @@ support in the CNI. Check the documentation of your CNI.
 | Pipeline | Compiler server | 8085 | Download the pipeline binary and program info |
 | Pipeline | Pipeline | 8080, 9000 | Only multihost pipelines: coordinator and data exchange between hosts |
 | Pipeline | DNS (`kube-dns` in `kube-system`) | 53 (UDP and TCP) | Name resolution |
-| Pipeline | Systems that connectors use | depends on the connector | Kafka, object storage, databases and other connector endpoints |
+| Pipeline | Systems that connectors use | depends on the connector | Kafka, object storage, databases, and other connector endpoints |
 | API server, compiler server, Kubernetes runner | Postgres | 5432 | Control plane database |
 
 NetworkPolicies match the port of the pod, not of the Service. The
@@ -48,7 +48,7 @@ runner puts on each pipeline pod.
 
 ```yaml
 # Pipelines: ingress only from the control plane, egress only to DNS, the
-# compiler and the public internet.
+# compiler, and the public internet.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -95,7 +95,7 @@ spec:
         - protocol: TCP
           port: 8085
     # Connectors: the public internet, without private, shared, loopback,
-    # link-local (instance metadata), multicast and reserved addresses.
+    # link-local (instance metadata), multicast, and reserved addresses.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -189,7 +189,7 @@ Change the example to fit your deployment:
   database, leave out the `db` policy.
 - **Default deny.** Some clusters deny all traffic to a pod that no policy
   selects. In that case, also add policies that allow the traffic of the
-  API server, the compiler server and the runner.
+  API server, the compiler server, and the runner.
 
 ## Check the policies
 

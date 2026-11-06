@@ -33,7 +33,7 @@ from the other Feldera components.
 
 We recommend [cert-manager](https://cert-manager.io) to issue and renew
 these certificates, see [Using cert-manager](#using-cert-manager).  The
-sections after it describe how to create them by hand with OpenSSL.
+sections after it describe how to create them manually with OpenSSL.
 
 This document does not apply to the connection to the Postgres database used by the control plane,
 which can be [configured separately](helm-guide.md).
@@ -132,7 +132,7 @@ the self-signed root.
      ca:
        secretName: feldera-https-ca
    ---
-   # Wildcard server certificate of the API server, compiler, runner and pipelines.
+   # Wildcard server certificate of the API server, compiler, runner, and pipelines.
    apiVersion: cert-manager.io/v1
    kind: Certificate
    metadata:
@@ -233,7 +233,7 @@ hostname `localhost` and/or `127.0.0.1` to the certificate.
 
 :::
 
-This section and the next one create the certificates by hand.  Skip
+This section and the next one create the certificates manually.  Skip
 them if you [use cert-manager](#using-cert-manager).
 
 Any method for generating a signed certificate is acceptable.  We
