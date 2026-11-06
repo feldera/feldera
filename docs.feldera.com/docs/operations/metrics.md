@@ -107,7 +107,10 @@ which Feldera is built.
 ## Record Processing
 
 These metrics report overall counts of records as they pass through
-the pipeline.  They accumulate across checkpoint and resume.
+the pipeline.  `records_input_total` and `records_processed_total`
+accumulate across checkpoint and resume.  The other counters here
+start from zero when a pipeline resumes.  See [Statistics after a
+resume](/pipelines/fault-tolerance#statistics-after-a-resume).
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |
@@ -166,7 +169,13 @@ the SQL program or automatically generated as `unnamed-<number>`,
 where `<number>` counts starting from 1 for the first connector for a
 given table.
 
-These metrics accumulate across checkpoint and resume.
+`input_connector_records_total`, `input_connector_bytes_total`,
+`input_connector_errors_transport_total` and
+`input_connector_errors_parse_total` accumulate across checkpoint and
+resume.
+Other metrics here, including connector-specific counters, start from
+zero when a pipeline resumes.  See [Statistics after a
+resume](/pipelines/fault-tolerance#statistics-after-a-resume).
 
 For byte counters, for some input connectors, such as columnar
 formats, bytes are difficult to attribute accurately to records, so
@@ -207,7 +216,13 @@ the SQL program or automatically generated as `unnamed-<number>`,
 where `<number>` counts starting from 1 for the first connector for a
 given view.
 
-These metrics accumulate across checkpoint and resume.
+`output_connector_records_total`, `output_connector_bytes_total`,
+`output_connector_errors_transport_total` and
+`output_connector_errors_encode_total` accumulate across checkpoint and
+resume.
+Other metrics here, including connector-specific counters, start from
+zero when a pipeline resumes.  See [Statistics after a
+resume](/pipelines/fault-tolerance#statistics-after-a-resume).
 
 Some output connectors export metrics of their own in addition to these,
 under the same `endpoint` label, for example the
