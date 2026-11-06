@@ -59,11 +59,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--op",
-        choices=["create", "create-empty", "append", "overwrite"],
+        choices=[
+            "create",
+            "create-empty",
+            "append",
+            "append-files",
+            "overwrite",
+            "break-file",
+            "restore-file",
+        ],
         required=True,
     )
     parser.add_argument("--table", required=True, help="table as 'namespace.name'")
     parser.add_argument("--json-file", help="ndjson chunk to append")
+    parser.add_argument("--path", help="data file to break or restore")
     args = parser.parse_args()
 
     cat = catalog()
@@ -85,10 +94,34 @@ def main():
     else:
         table = cat.load_table(args.table)
 
+    if args.op in ("break-file", "restore-file"):
+        # Overwrite a data file with zeros of the same size, keeping a copy, so
+        # that a read fails on every store until the file is restored.
+        saved = args.path + ".orig"
+        src, dst = (args.path, saved) if args.op == "break-file" else (saved, args.path)
+        data = table.io.new_input(src).open().read()
+        table.io.new_output(dst).create(overwrite=True).write(data)
+        if args.op == "break-file":
+            table.io.new_output(args.path).create(overwrite=True).write(
+                bytes(len(data))
+            )
+        return
+
     chunk = arrow_chunk(args.json_file)
     if args.op == "overwrite":
         # Copy-on-write rewrite: removes the old data files, adds `chunk`.
         table.overwrite(chunk)
+    elif args.op == "append-files":
+        # One data file per row, in one snapshot; print the files in manifest order.
+        with table.transaction() as tx:
+            tx.set_properties({"write.target-file-size-bytes": "1"})
+            tx.append(chunk)
+        snapshot = table.current_snapshot()
+        for manifest in snapshot.manifests(table.io):
+            for entry in manifest.fetch_manifest_entry(table.io):
+                if entry.snapshot_id == snapshot.snapshot_id:
+                    print(entry.data_file.file_path)
+        return
     else:
         table.append(chunk)
     # Print the current snapshot id so the caller can log progress.

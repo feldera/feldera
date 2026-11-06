@@ -12,7 +12,7 @@ use chrono::{NaiveDateTime, TimeDelta};
 use crossbeam::channel::Receiver;
 use feldera_adapterlib::test::{Updates, ZSet, wait};
 use feldera_types::{
-    adapter_stats::TransactionStatus,
+    adapter_stats::{ConnectorHealthStatus, TransactionStatus},
     program_schema::{ColumnType, Field, Relation},
 };
 use serde_json::{Value, json};
@@ -930,54 +930,78 @@ fn rest_follow_config_with(table: &str, mode: &str, key: &str, value: Value) -> 
     config
 }
 
-/// Create (`op = "create"`) or append to (`op = "append"`) the REST-catalog test
-/// table with `chunk`, producing a new snapshot. Returns the new snapshot's id so
-/// a test can pin it as a follow start point. Shells out to the pyiceberg helper,
-/// since iceberg-rust cannot write tables.
-fn follow_table_op(op: &str, table: &str, chunk: &[Value]) -> i64 {
-    let ndjson = data_to_ndjson(chunk);
+/// Run the pyiceberg helper with `args` and return its stdout, since
+/// iceberg-rust can only append and these tests also overwrite rows.
+// TODO: write from Rust once iceberg-rust can overwrite and delete rows.
+fn follow_table_script(args: &[String]) -> String {
     let script = "../iceberg/src/test/follow_table.py";
     let python = env_or("FELDERA_ICEBERG_PYTHON", "python3");
     let output = std::process::Command::new(python)
         .arg(script)
-        .arg(format!("--op={op}"))
-        .arg(format!("--table={table}"))
-        .arg(format!("--json-file={}", ndjson.path().display()))
+        .args(args)
         .output()
         .unwrap_or_else(|e| panic!("failed to run '{script}': {e}"));
     if !output.status.success() {
         panic!(
-            "'{script} --op={op}' failed (status {}):\nstdout: {}\nstderr: {}",
+            "'{script} {args:?}' failed (status {}):\nstdout: {}\nstderr: {}",
             output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );
     }
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// Create (`op = "create"`) or append to (`op = "append"`) the REST-catalog test
+/// table with `chunk`, producing a new snapshot. Returns the new snapshot's id so
+/// a test can pin it as a follow start point.
+fn follow_table_op(op: &str, table: &str, chunk: &[Value]) -> i64 {
+    let ndjson = data_to_ndjson(chunk);
+    let stdout = follow_table_script(&[
+        format!("--op={op}"),
+        format!("--table={table}"),
+        format!("--json-file={}", ndjson.path().display()),
+    ]);
     // The writer prints the new snapshot id on its last stdout line.
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let last = stdout.trim().lines().last().unwrap_or_default();
     last.parse::<i64>()
-        .unwrap_or_else(|_| panic!("'{script} --op={op}' printed unexpected output: {last:?}"))
+        .unwrap_or_else(|_| panic!("'--op={op}' printed unexpected output: {last:?}"))
+}
+
+/// Append `chunk` to `table` with one data file per row, in one snapshot.
+/// Returns the data files in manifest order.
+fn follow_table_append_files(table: &str, chunk: &[Value]) -> Vec<String> {
+    let ndjson = data_to_ndjson(chunk);
+    let stdout = follow_table_script(&[
+        "--op=append-files".to_string(),
+        format!("--table={table}"),
+        format!("--json-file={}", ndjson.path().display()),
+    ]);
+    stdout.lines().map(str::to_string).collect()
+}
+
+/// Break (`op = "break-file"`) or restore (`op = "restore-file"`) the data
+/// file `path` of `table`.
+fn follow_table_file_op(op: &str, table: &str, path: &str) {
+    follow_table_script(&[
+        format!("--op={op}"),
+        format!("--table={table}"),
+        format!("--path={path}"),
+    ]);
 }
 
 /// Create the REST-catalog test table `table` without any snapshot.
 fn follow_table_create_empty(table: &str) {
-    let script = "../iceberg/src/test/follow_table.py";
-    let python = env_or("FELDERA_ICEBERG_PYTHON", "python3");
-    let output = std::process::Command::new(python)
-        .arg(script)
-        .arg("--op=create-empty")
-        .arg(format!("--table={table}"))
-        .output()
-        .unwrap_or_else(|e| panic!("failed to run '{script}': {e}"));
-    if !output.status.success() {
-        panic!(
-            "'{script} --op=create-empty' failed (status {}):\nstdout: {}\nstderr: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-    }
+    follow_table_script(&["--op=create-empty".to_string(), format!("--table={table}")]);
+}
+
+/// Whether the input connector of the test pipeline reports that it is unhealthy.
+fn input_is_unhealthy(pipeline: &Controller) -> bool {
+    pipeline
+        .input_endpoint_status("test_input1")
+        .ok()
+        .and_then(|s| s.health)
+        .is_some_and(|h| matches!(h.status, ConnectorHealthStatus::Unhealthy))
 }
 
 /// Read a single custom metric of the Iceberg connector, or `0.0` if absent.
@@ -1477,6 +1501,42 @@ pub fn rest_follow_copy_on_write_delete(engine: &dyn PipelineTestEngine) {
             assert_eq!(follow_output_zset(out_path), expected);
         },
     );
+}
+
+/// A retry after a read failed part way does not queue the read's rows again.
+/// One parser reads the files in order, so the broken last file fails last.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_retry_does_not_repeat_rows(engine: &dyn PipelineTestEngine) {
+    const TIMEOUT_MS: u64 = 120_000;
+    let all = data(10);
+    let (before, appended) = all.split_at(2);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.retry_no_repeat");
+
+    // Break the last file before the connector can see the snapshot.
+    let start = follow_table_op("create", table, before);
+    let files = follow_table_append_files(table, appended);
+    assert_eq!(
+        files.len(),
+        appended.len(),
+        "expected one data file per row"
+    );
+    let last = files.last().unwrap();
+    follow_table_file_op("break-file", table, last);
+
+    let mut config = rest_follow_config_with(table, "follow", "snapshot_id", json!(start));
+    config["num_parsers"] = json!(1);
+    with_follow_pipeline_cfg(engine, config, |pipeline, out_path| {
+        wait(|| input_is_unhealthy(pipeline), TIMEOUT_MS)
+            .expect("the read of the broken file never failed");
+        follow_table_file_op("restore-file", table, last);
+
+        // A repeated row shows up in the output before the last row does.
+        let expected = follow_expected_zset(appended);
+        let _ = wait(|| follow_output_zset(out_path) == expected, TIMEOUT_MS);
+        assert_eq!(follow_output_zset(out_path), expected);
+        assert_eq!(ingested_records(pipeline), appended.len() as u64);
+    });
 }
 
 /// Number of complete `insert_delete` records written to the output file so
