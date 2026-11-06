@@ -10,9 +10,8 @@ use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_adapterlib::test::ConnectorTestEngine;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::{ColumnType, Field, Relation};
-use uuid::Uuid;
 
-use crate::engine::{CircuitFactory, OpenStorageFn};
+use crate::engine::{Checkpoint, CircuitFactory, OpenStorageFn};
 use crate::{Controller, ControllerError, PipelineConfig};
 
 /// The callback that a test controller reports errors to: the error, and the tag of the
@@ -55,8 +54,9 @@ pub trait PipelineTestEngine: ConnectorTestEngine {
 
     /// Leaves the storage in the directory `path` as a crash after publishing a checkpoint,
     /// but before recording it as the one to resume from, leaves it: with the state of the
-    /// older checkpoint `checkpoint` as the state to resume from.
-    fn rewind_resume_state(&self, path: &Path, checkpoint: Uuid);
+    /// older checkpoint `checkpoint` as the state to resume from.  The older checkpoint
+    /// itself can be gone, because a pipeline keeps only its newest checkpoint.
+    fn rewind_resume_state(&self, path: &Path, checkpoint: &Checkpoint);
 
     /// Returns whether no pipeline of the engine holds the storage in the directory `path`
     /// any more, so that a new pipeline can open it.

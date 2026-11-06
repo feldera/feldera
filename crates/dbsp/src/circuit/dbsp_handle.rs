@@ -2244,15 +2244,15 @@ impl DBSPHandle {
         self.checkpointer()?.lock().unwrap().list_checkpoints()
     }
 
-    /// Remove the oldest checkpoint from the list.
-    /// - Prevents removing checkpoints whose UUID is in `except`.
+    /// Removes the checkpoints that the pipeline no longer needs after it
+    /// writes a checkpoint, except those whose UUID is in `except`.  See
+    /// [Checkpointer::gc_checkpoint].
     ///
-    /// # Returns
-    /// - Uuid of the removed checkpoints, if any were removed.
-    /// - An empty set if there were no checkpoints to remove.
+    /// Returns the UUIDs of the removed checkpoints.
     pub fn gc_checkpoint(
         &mut self,
         except: HashSet<uuid::Uuid>,
+        multihost: bool,
     ) -> Result<HashSet<uuid::Uuid>, DbspError> {
         // Make sure we don't GC during concurrent bootstrapping. The bootstrapping
         // circuit may hold on to batches no longer used by the primary circuit.
@@ -2260,7 +2260,10 @@ impl DBSPHandle {
             &[BootstrapCircuitState::None],
             "garbage-collect checkpoints",
         )?;
-        self.checkpointer()?.lock().unwrap().gc_checkpoint(except)
+        self.checkpointer()?
+            .lock()
+            .unwrap()
+            .gc_checkpoint(except, multihost)
     }
 
     /// Enable CPU profiler.
@@ -3993,6 +3996,55 @@ pub(crate) mod tests {
         let _ = tracing_subscriber::fmt::try_init();
     }
 
+    /// Keeping only the newest checkpoint must not delete any file that the
+    /// newest checkpoint needs: a circuit restored from it gives the same
+    /// output as the circuit that wrote it.
+    #[test]
+    fn gc_keep_one_then_restore() {
+        const SAMPLE_SIZE: usize = 10_000;
+        let temp = tempdir().expect("Can't create temp dir for storage");
+
+        let (uuid, expected) = {
+            let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
+                mkcircuit(mkconfig_with(temp.path(), 2, 0)).unwrap();
+            let mut uuid = None;
+            let mut expected = None;
+            for round in 0..5 {
+                // Insert new keys and delete old ones, so that the spines
+                // merge and the checkpoints have different batch files.
+                for i in round * 20..(round + 1) * 20 {
+                    sample_size_handle.set_for_all(SAMPLE_SIZE);
+                    let mut batch = vec![Tup2(i, Tup2(i, 1))];
+                    if i >= 30 {
+                        batch.push(Tup2(i - 30, Tup2(i - 30, -1)));
+                    }
+                    input_handle.append(&mut batch);
+                    dbsp.transaction().unwrap();
+                }
+                expected = Some(output_handle.take_from_all()[0].clone());
+
+                // Write two checkpoints with no step between them, so that
+                // they share all of their batch files.  Removing the older one
+                // must keep the files that the newer one uses.
+                for _ in 0..2 {
+                    uuid = Some(dbsp.checkpoint().run().expect("checkpoint failed").uuid);
+                    dbsp.gc_checkpoint(std::collections::HashSet::new(), false)
+                        .unwrap();
+                    assert_eq!(dbsp.list_checkpoints().unwrap().len(), 1);
+                }
+            }
+            (uuid.unwrap(), expected.unwrap())
+        };
+
+        let mut cconf = mkconfig_with(temp.path(), 2, 0);
+        cconf.storage.as_mut().unwrap().init_checkpoint = Some(uuid);
+        let (mut dbsp, (_input_handle, output_handle, sample_size_handle)) =
+            mkcircuit(cconf).unwrap();
+        sample_size_handle.set_for_all(SAMPLE_SIZE);
+        dbsp.transaction().unwrap();
+        assert_eq!(output_handle.take_from_all()[0], expected);
+    }
+
     /// Checks that we end up cleaning old checkpoints on disk after calling
     /// `gc_checkpoint`.
     #[test]
@@ -4034,13 +4086,23 @@ pub(crate) mod tests {
         let prev_count = count_directory_entries(temp.path()).unwrap();
         let num_checkpoints = dbsp.list_checkpoints().unwrap().len();
 
-        assert!(num_checkpoints > Checkpointer::MIN_CHECKPOINT_THRESHOLD);
+        assert!(num_checkpoints > 2);
 
-        // Only MIN_CHECKPONT_THRESHOLD checkpoints will be kept.
-        let _r = dbsp.gc_checkpoint(std::collections::HashSet::new());
+        // A multihost pipeline keeps the two newest checkpoints.
+        let _r = dbsp.gc_checkpoint(std::collections::HashSet::new(), true);
         let count = count_directory_entries(temp.path()).unwrap();
         assert!(count < prev_count);
-        assert!(dbsp.list_checkpoints().unwrap().len() <= Checkpointer::MIN_CHECKPOINT_THRESHOLD);
+        assert!(dbsp.list_checkpoints().unwrap().len() <= 2);
+
+        // A single-host pipeline keeps only the newest checkpoint, so this
+        // removes the files of the older one.
+        let newest = dbsp.list_checkpoints().unwrap().last().unwrap().uuid;
+        dbsp.gc_checkpoint(std::collections::HashSet::new(), false)
+            .unwrap();
+        assert!(count_directory_entries(temp.path()).unwrap() < count);
+        let remaining = dbsp.list_checkpoints().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].uuid, newest);
     }
 
     /// Make sure that leftover files from uncompleted checkpoints that were

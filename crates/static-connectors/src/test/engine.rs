@@ -34,7 +34,6 @@ use feldera_types::serde_with_context::{
 };
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
-use uuid::Uuid;
 
 use crate::engine::{static_circuit_factory, static_open_storage};
 use crate::seroutput::SerBatchImpl;
@@ -49,7 +48,7 @@ use crate::test::suites::{
 use crate::test::{KeyStruct, MockDeZSet, MockUpdate, TestStruct, TestStruct2};
 use crate::test::{published_schema, relations};
 use crate::{Catalog, CircuitCatalog, ControllerError};
-use dbsp_connectors::engine::OpenStorageFn;
+use dbsp_connectors::engine::{Checkpoint, OpenStorageFn};
 use dbsp_connectors::format::parquet::default_arrow_serde_config;
 
 pub(super) mod records;
@@ -691,12 +690,11 @@ impl PipelineTestEngine for StaticTestEngine {
         static_open_storage()
     }
 
-    /// The root `state.json` names the state to resume from, and each checkpoint keeps its
-    /// own copy of its state.
-    fn rewind_resume_state(&self, path: &Path, checkpoint: Uuid) {
-        std::fs::copy(
-            path.join(checkpoint.to_string()).join(STATE_FILE),
+    /// The root `state.json` names the state to resume from.
+    fn rewind_resume_state(&self, path: &Path, checkpoint: &Checkpoint) {
+        std::fs::write(
             path.join(STATE_FILE),
+            serde_json::to_vec(checkpoint).unwrap(),
         )
         .unwrap();
     }

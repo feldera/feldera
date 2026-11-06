@@ -4404,6 +4404,15 @@ impl CircuitThread {
         }
     }
 
+    /// The checkpoints that a checkpoint sync still needs, which garbage
+    /// collection must keep.
+    fn synced_checkpoints(&self) -> HashSet<Uuid> {
+        self.sync_checkpoint_requests
+            .iter()
+            .map(|c| c.uuid())
+            .collect()
+    }
+
     fn checkpoint(&mut self) {
         // Take the currently running checkpoint or try to start a new one.
         let running_checkpoint = if let Some(running_checkpoint) = self.running_checkpoint.take() {
@@ -11078,13 +11087,14 @@ impl RunningCheckpoint {
         checkpoint: Checkpoint,
         circuit: &mut CircuitThread,
     ) -> Result<Checkpoint, ControllerError> {
-        if let Err(error) = circuit.circuit.gc_checkpoint(
-            circuit
-                .sync_checkpoint_requests
-                .iter()
-                .map(|c| c.uuid())
-                .collect::<HashSet<_>>(),
-        ) {
+        let multihost = circuit
+            .controller
+            .status
+            .pipeline_config
+            .multihost
+            .is_some();
+        let keep = circuit.synced_checkpoints();
+        if let Err(error) = circuit.circuit.gc_checkpoint(keep, multihost) {
             error!("error removing old checkpoints: {error}");
         }
 

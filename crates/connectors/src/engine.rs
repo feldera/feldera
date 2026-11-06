@@ -160,8 +160,14 @@ pub trait CircuitDriver {
         processed_records: u64,
     ) -> Result<Box<dyn CheckpointCommitter>, ControllerError>;
 
-    /// Deletes every checkpoint but the newest and those in `keep`.
-    fn gc_checkpoint(&mut self, keep: HashSet<Uuid>) -> Result<(), ControllerError>;
+    /// Deletes the checkpoints that the pipeline no longer needs after it
+    /// writes a checkpoint, except those in `keep`.  `multihost` says whether
+    /// the pipeline is multihost, which can need more checkpoints.
+    fn gc_checkpoint(
+        &mut self,
+        keep: HashSet<Uuid>,
+        multihost: bool,
+    ) -> Result<(), ControllerError>;
 
     /// Whether the circuit is bootstrapping.
     fn bootstrap_in_progress(&self) -> bool;

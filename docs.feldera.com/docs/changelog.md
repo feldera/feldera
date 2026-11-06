@@ -32,6 +32,11 @@ Source edition can be found on github.
   `datafusion_memory` smaller.  A resize of `memory_max` now changes the
   budget of a running pipeline also when `max_rss` is set.
 
+- Storage: a pipeline now keeps only its newest checkpoint on storage.
+  Before, it also kept the checkpoint before it, which could use as much
+  storage again as the pipeline's state.  A multihost pipeline still
+  keeps both.
+
 ## v0.380.0
 
 - Incompatible change (SQL): the compiler no longer supports the `INTERNED`

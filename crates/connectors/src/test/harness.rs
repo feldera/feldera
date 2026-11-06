@@ -418,7 +418,6 @@ mod tests {
     use feldera_adapterlib::catalog::SerBatchReader;
     use feldera_adapterlib::test::{Capability, ConnectorTestEngine, InputOptions, TestCollection};
     use feldera_types::program_schema::Relation;
-    use uuid::Uuid;
 
     use super::{
         CaseFn, EngineCase, Gate, check_panic, gate_report, lock_of, split_filters, trial,
@@ -499,7 +498,7 @@ mod tests {
             Arc::new(|_config| Ok(None))
         }
 
-        fn rewind_resume_state(&self, _path: &Path, _checkpoint: Uuid) {}
+        fn rewind_resume_state(&self, _path: &Path, _checkpoint: &crate::engine::Checkpoint) {}
 
         fn storage_released(&self, _path: &Path) -> bool {
             true

@@ -7171,10 +7171,10 @@ pub mod test_http {
         })
     }
 
-    /// `GET /checkpoints` lists the published checkpoints oldest first: after two checkpoints,
-    /// both, in the order they were taken.
+    /// `GET /checkpoints` lists the published checkpoints.  A single-host pipeline keeps
+    /// only its newest checkpoint, so after two checkpoints it lists only the second.
     #[engine_test(requires(Storage, Checkpoints))]
-    pub fn checkpoints_lists_the_checkpoints_in_order(engine: &dyn PipelineTestEngine) {
+    pub fn checkpoints_lists_the_newest_checkpoint(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
 
@@ -7218,7 +7218,7 @@ pub mod test_http {
                 .into_iter()
                 .map(|checkpoint| checkpoint.uuid)
                 .collect();
-            assert_eq!(listed, [first, second]);
+            assert_eq!(listed, [second]);
         });
     }
 
