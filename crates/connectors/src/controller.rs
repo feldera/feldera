@@ -782,6 +782,9 @@ fn resolve_connector_config(
     config: &ConnectorConfig,
     refuse_local: bool,
 ) -> Result<ConnectorConfig, ControllerError> {
+    config
+        .validate_queue_limits()
+        .map_err(|e| ControllerError::invalid_queue_limits(endpoint_name, &e))?;
     let resolved = resolve_secret_references_in_connector_config(secrets_dir, config)
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
     if refuse_local && let Some((property, _)) = resolved.transport.local_file_uris(true).first() {
@@ -11550,6 +11553,37 @@ mod local_file_uri_tests {
             assert!(check(uri, false).is_ok());
         }
         assert!(check("s3://b/t", true).is_ok());
+    }
+
+    /// A connector with a backpressure threshold of 0 never runs, so the
+    /// controller refuses to add it.
+    #[test]
+    fn refuses_zero_queue_limits() {
+        let secrets = tempfile::tempdir().unwrap();
+        let check = |extra: serde_json::Value| {
+            let mut value = json!({"transport": {"name": "empty_input"}});
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let config = serde_json::from_value(value).unwrap();
+            resolve_connector_config(secrets.path(), "c", &config, false)
+        };
+        let error = check(json!({"max_queued_records": 0}))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("'max_queued_records' must be greater than 0"),
+            "{error}"
+        );
+        let error = check(json!({"max_queued_size": "0"}))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("'max_queued_size' must be greater than 0"),
+            "{error}"
+        );
+        assert!(check(json!({"max_queued_records": 1})).is_ok());
     }
 }
 

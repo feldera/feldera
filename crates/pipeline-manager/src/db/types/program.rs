@@ -720,6 +720,15 @@ fn parse_named_connectors(
                         }
                     })?;
                 }
+                connector.config.validate_queue_limits().map_err(|e| {
+                    ConnectorGenerationError::InvalidPropertyValue {
+                        position: value.value_position,
+                        relation: relation.sql_name(),
+                        key: "connectors".to_string(),
+                        value: value.value.clone(),
+                        reason: Box::new(e),
+                    }
+                })?;
             }
             Ok((connectors, Some(value.clone())))
         }
@@ -1247,6 +1256,76 @@ mod tests {
                 .input_connectors
                 .contains_key("events.unnamed-0")
         );
+    }
+
+    /// A connector with a backpressure threshold of 0 never runs, so
+    /// program info generation rejects it.
+    #[test]
+    fn zero_max_queued_records_is_rejected() {
+        let program_info = |connector: serde_json::Value, input: bool| {
+            let property_value = PropertyValue {
+                value: serde_json::json!([connector]).to_string(),
+                key_position: SourcePosition {
+                    start_line_number: 1,
+                    start_column: 1,
+                    end_line_number: 1,
+                    end_column: 10,
+                },
+                value_position: SourcePosition {
+                    start_line_number: 1,
+                    start_column: 11,
+                    end_line_number: 1,
+                    end_column: 100,
+                },
+            };
+            let mut properties = BTreeMap::new();
+            properties.insert("connectors".to_string(), property_value);
+            let relation = Relation::new(SqlIdentifier::from("t"), vec![], false, properties);
+            let schema = if input {
+                ProgramSchema {
+                    inputs: vec![relation],
+                    outputs: vec![],
+                }
+            } else {
+                ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![relation],
+                }
+            };
+            generate_program_info(
+                serde_json::to_value(schema).unwrap(),
+                String::new(),
+                String::new(),
+                None,
+                None,
+            )
+        };
+
+        let input = serde_json::json!({
+            "transport": {"name": "datagen", "config": {}},
+            "max_queued_records": 0
+        });
+        let err = program_info(input, true).unwrap_err().to_string();
+        assert!(
+            err.contains("'max_queued_records' must be greater than 0"),
+            "{err}"
+        );
+
+        let output = serde_json::json!({
+            "transport": {"name": "null_output"},
+            "max_queued_records": 0
+        });
+        let err = program_info(output, false).unwrap_err().to_string();
+        assert!(
+            err.contains("'max_queued_records' must be greater than 0"),
+            "{err}"
+        );
+
+        let input = serde_json::json!({
+            "transport": {"name": "datagen", "config": {}},
+            "max_queued_records": 1
+        });
+        program_info(input, true).unwrap();
     }
 
     /// Rust code or dependencies count as Rust UDFs; whitespace does not.
