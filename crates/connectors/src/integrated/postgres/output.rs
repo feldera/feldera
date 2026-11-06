@@ -24,6 +24,7 @@ use feldera_adapterlib::transport::{
 };
 use feldera_types::{
     format::json::JsonFlavor,
+    library_error::LibraryError,
     program_schema::{Relation, SqlIdentifier},
     transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
 };
@@ -152,9 +153,11 @@ impl Drop for PostgresWorker {
 const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client, BackoffError> {
-    let pgcnf = postgres::Config::from_str(&config.uri).map_err(|e| {
-        BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
-    })?;
+    let pgcnf = postgres::Config::from_str(&config.uri)
+        .map_err(LibraryError::wrap)
+        .map_err(|e| {
+            BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
+        })?;
 
     let client = match make_tls_connector(&config.tls, endpoint_name) {
         Ok(Some(connector)) => {
@@ -593,7 +596,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         // commit with `ROLLBACK` and no error, which would report the rows this
         // transaction wrote as written when they were all discarded.
         if self.transaction_state == TransactionState::Rejected {
-            let rollback = match transaction.rollback() {
+            let rollback = match transaction.rollback().map_err(LibraryError::wrap) {
                 Ok(()) => String::new(),
                 Err(e) => format!(" Rolling the transaction back also failed: {e}."),
             };
