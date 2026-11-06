@@ -3,6 +3,7 @@ import { monaco } from '@feldera/vite-plugin-monaco-editor'
 import svg from '@poppanator/sveltekit-svg'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
+import sbom from 'rollup-plugin-sbom'
 import { defineConfig } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 
@@ -22,7 +23,9 @@ export default defineConfig({
       features: ['browser', 'clipboard', 'find', 'wordHighlighter'],
       inlineWorkers: true
     }),
-    viteSingleFile()
+    viteSingleFile(),
+    // Only `build:sbom` sets JS_SBOM, so that the shipped bundle does not contain the SBOM files
+    process.env.JS_SBOM ? sbom({ includeWellKnown: false, detectVendoredPackages: true }) : null
   ],
   resolve: {
     alias: [

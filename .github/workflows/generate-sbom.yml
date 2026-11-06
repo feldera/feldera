@@ -9,6 +9,7 @@ env:
 jobs:
   generate-sbom:
     if: ${{ vars.CI_DRY_RUN != 'true' }}
+    needs: generate-js-sbom
     runs-on: ubuntu-latest-amd64
     steps:
       - name: Checkout repository
@@ -16,9 +17,12 @@ jobs:
 
       - name: Download Syft
         uses: anchore/sbom-action/download-syft@8d0a6505bf28ced3e85154d13dc6af83299e13f1 # v0.17.4
+        with:
+          syft-version: v1.55.0
 
+      # Skip npm packages. The generate-js-sbom job lists packages that get into the bundle
       - name: Create source SBOM
-        run: syft dir:. --output spdx-json=feldera-sbom-source-${GITHUB_SHA}.spdx.json
+        run: syft dir:. --select-catalogers "-javascript" --output spdx-json=feldera-sbom-source-${GITHUB_SHA}.spdx.json
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -32,6 +36,16 @@ jobs:
           IMAGE_REF=${{ vars.FELDERA_IMAGE_NAME }}:sha-${GITHUB_SHA}
           syft "$IMAGE_REF" --output spdx-json=feldera-sbom-image-${GITHUB_SHA}.spdx.json
 
+      - name: Download web-console and profiler-app SBOMs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: feldera-sbom-js
+          path: js-sbom
+
+      # syft cannot see the npm packages that the pipeline-manager binary contains.
+      - name: Add npm packages to image SBOM
+        run: node scripts/sbom-merge.mts "feldera-sbom-image-${GITHUB_SHA}.spdx.json" js-sbom/*.cdx.json
+
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -39,4 +53,31 @@ jobs:
           path: |
             feldera-sbom-source-${{ github.sha }}.spdx.json
             feldera-sbom-image-${{ github.sha }}.spdx.json
+          retention-days: 7
+
+  # Lists only the npm packages that the web-console and profiler-app bundles contain
+  generate-js-sbom:
+    if: ${{ vars.CI_DRY_RUN != 'true' }}
+    runs-on: [gke-runners-amd64]
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Create web-console and profiler-app SBOMs
+        run: |
+          bun install --frozen-lockfile
+          bun run sbom
+          for app in web-console profiler-app; do
+            mv "build/sbom/${app}.cdx.json" "feldera-sbom-${app}-${GITHUB_SHA}.cdx.json"
+          done
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: feldera-sbom-js
+          path: feldera-sbom-*-${{ github.sha }}.cdx.json
           retention-days: 7

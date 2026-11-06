@@ -6,6 +6,7 @@ import { sveltekit } from '@sveltejs/kit/vite'
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import { playwright } from '@vitest/browser-playwright'
+import sbom from 'rollup-plugin-sbom'
 import { type PluginOption } from 'vite'
 import devtoolsJson from 'vite-plugin-devtools-json'
 import virtual from 'vite-plugin-virtual'
@@ -194,7 +195,9 @@ export default defineConfig(async () => {
           ? `export { default, createBundle, TriageResults } from 'feldera-triage-plugins-impl'`
           : `export default []; export async function createBundle() { return {} }; export class TriageResults { constructor() { this.results = [] } }`
       }),
-      devtoolsJson()
+      devtoolsJson(),
+      // Only `build:sbom` sets JS_SBOM, so that the shipped bundle does not contain the SBOM files
+      process.env.JS_SBOM ? sbom({ includeWellKnown: false, detectVendoredPackages: true }) : null
     ] as PluginOption[],
     build: { minify: false },
     optimizeDeps: {

@@ -80,6 +80,10 @@ jobs:
           python3 scripts/file_changelog_release.py --dry-run \
             --tag "$newest" --changelog docs.feldera.com/docs/changelog.md
 
+      - name: SBOM script unit-tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bun test scripts/tests
+
       - name: dbt-feldera unit-tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
