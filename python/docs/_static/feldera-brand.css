@@ -1,0 +1,579 @@
+/*
+ * Feldera brand for the Python SDK reference (Sphinx, sphinx_rtd_theme), to match docs.feldera.com:
+ * DM Sans and Geist Mono, a Paper page, the Sink side nav with a Stone fill for the current page,
+ * Ink and grey text, Violet links, square corners and the dark code window.
+ * Colours are the brand palette from docs.feldera.com/src/css/custom.css.
+ */
+:root {
+  --fd-paper: #faf9f6;
+  --fd-card: #ffffff;
+  --fd-sink: #efeee8;
+  --fd-shell: #ececea;
+  --fd-stone: #d7d7cc;
+  --fd-ink: #201f1e;
+  --fd-grey: #605e5a;
+  --fd-muted: #78756f;
+  --fd-violet: #624eb3;
+  --fd-onyx: #0f100e;
+  --fd-moss: #63633d;
+  --fd-hair: rgb(32 31 30 / 0.1);
+  --fd-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --fd-mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+/* ---------- Page and type ---------- */
+
+body,
+.wy-body-for-nav,
+.wy-nav-content-wrap {
+  background: var(--fd-paper);
+  color: var(--fd-grey);
+  font-family: var(--fd-sans);
+}
+
+.wy-nav-content {
+  max-width: 56rem;
+  background: var(--fd-paper);
+}
+
+.rst-content,
+.rst-content p,
+.rst-content li {
+  font-family: var(--fd-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--fd-grey);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.rst-content .toctree-wrapper > p.caption,
+legend {
+  font-family: var(--fd-sans);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--fd-ink);
+}
+
+.rst-content h1 {
+  font-size: 2.25rem;
+  line-height: 1.15;
+}
+
+.rst-content h2 {
+  font-size: 1.6rem;
+  margin-top: 2.5rem;
+}
+
+.rst-content h3 {
+  font-size: 1.25rem;
+}
+
+/* Links in prose: Violet with a soft underline, as on docs.feldera.com. */
+a,
+a:visited {
+  color: var(--fd-violet);
+}
+
+.rst-content a {
+  text-decoration: underline;
+  text-decoration-color: rgb(98 78 179 / 0.35);
+  text-underline-offset: 0.18em;
+}
+
+.rst-content a:hover {
+  color: var(--fd-violet);
+  text-decoration-color: currentColor;
+}
+
+.rst-content .headerlink {
+  color: var(--fd-stone);
+  text-decoration: none;
+}
+
+/* ---------- Side nav: Sink, as the main docs nav ---------- */
+
+.wy-nav-side {
+  background: var(--fd-sink);
+  border-right: 1px solid var(--fd-hair);
+}
+
+.wy-side-nav-search {
+  background: var(--fd-sink);
+  border-bottom: 1px solid var(--fd-hair);
+}
+
+.wy-side-nav-search > a,
+.wy-side-nav-search .wy-dropdown > a {
+  color: var(--fd-ink);
+  font-family: var(--fd-sans);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.wy-side-nav-search > a .fa-home::before,
+.wy-side-nav-search > a.icon-home::before {
+  content: none;
+}
+
+.wy-side-nav-search input[type='text'] {
+  border: 1px solid var(--fd-stone);
+  border-radius: 0;
+  background: var(--fd-card);
+  box-shadow: none;
+  font-family: var(--fd-sans);
+  color: var(--fd-ink);
+}
+
+.wy-side-nav-search input[type='text']:focus {
+  border-color: var(--fd-ink);
+}
+
+/* Section captions ("Contents:", "API Reference:"): DM Sans medium in Ink, not blue capitals. */
+.wy-menu-vertical p.caption,
+.wy-menu-vertical header {
+  color: var(--fd-ink);
+  font-family: var(--fd-sans);
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.wy-menu-vertical a {
+  color: var(--fd-grey);
+  font-family: var(--fd-sans);
+  font-size: 14px;
+}
+
+.wy-menu-vertical a:hover,
+.wy-menu-vertical li.current a:hover,
+.wy-menu-vertical li.toctree-l2.current li.toctree-l3 > a:hover {
+  background: rgb(32 31 30 / 0.05);
+  color: var(--fd-ink);
+}
+
+/* Expanded branches: the same Sink, no grey bands or borders. */
+.wy-menu-vertical li.current,
+.wy-menu-vertical li.toctree-l2.current > a,
+.wy-menu-vertical li.toctree-l2.current li.toctree-l3 > a,
+.wy-menu-vertical li.toctree-l3.current > a,
+.wy-menu-vertical li.toctree-l3.current li.toctree-l4 > a {
+  background: transparent;
+  border: 0;
+}
+
+.wy-menu-vertical li.current a {
+  color: var(--fd-grey);
+  border: 0;
+}
+
+/* The current page: a square Stone fill with Ink text, as on docs.feldera.com. */
+.wy-menu-vertical li.current > a,
+.wy-menu-vertical li.on a,
+.wy-menu-vertical li.current > a:hover {
+  background: var(--fd-stone);
+  color: var(--fd-ink);
+  font-weight: 500;
+  border: 0;
+}
+
+.wy-menu-vertical a button.toctree-expand,
+.wy-menu-vertical a span.toctree-expand {
+  color: var(--fd-muted);
+}
+
+/* ---------- Top bar on phones ---------- */
+
+.wy-nav-top {
+  background: var(--fd-sink);
+  border-bottom: 1px solid var(--fd-hair);
+}
+
+.wy-nav-top a,
+.wy-nav-top i {
+  color: var(--fd-ink);
+}
+
+/* ---------- Breadcrumbs and footer ---------- */
+
+.wy-breadcrumbs li,
+.wy-breadcrumbs a,
+.rst-breadcrumbs-buttons {
+  font-family: var(--fd-sans);
+  color: var(--fd-muted);
+}
+
+.wy-breadcrumbs li a,
+.wy-breadcrumbs-aside a {
+  color: var(--fd-grey);
+}
+
+.wy-breadcrumbs + hr,
+footer hr {
+  border-color: var(--fd-hair);
+}
+
+footer,
+footer p {
+  color: var(--fd-muted);
+  font-size: 13px;
+}
+
+.rst-footer-buttons .btn,
+.btn-neutral {
+  background: var(--fd-card) !important;
+  color: var(--fd-ink) !important;
+  border: 1px solid var(--fd-stone);
+  border-radius: 0;
+  box-shadow: none;
+  font-family: var(--fd-sans);
+}
+
+.rst-footer-buttons .btn:hover {
+  border-color: var(--fd-ink);
+}
+
+/* ---------- Code: inline chips and the dark code window ---------- */
+
+code,
+.rst-content code,
+.rst-content tt,
+.rst-content code.literal {
+  font-family: var(--fd-mono);
+  font-size: 0.85em;
+  color: var(--fd-ink);
+  background: var(--fd-shell);
+  border: 0;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.rst-content a code.literal,
+.rst-content a code {
+  color: var(--fd-violet);
+}
+
+.rst-content div[class^='highlight'],
+.rst-content pre.literal-block {
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--fd-onyx);
+  overflow: hidden;
+}
+
+.rst-content div[class^='highlight'] pre,
+.rst-content pre.literal-block {
+  font-family: var(--fd-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: #e9e7e1;
+  background: var(--fd-onyx);
+  padding: 1rem 1.25rem;
+}
+
+/* Pygments on the dark window: Paper text, keywords in the light change tint, strings in Mist. */
+.highlight .k,
+.highlight .kn,
+.highlight .kd,
+.highlight .kc,
+.highlight .ow {
+  color: #ddddc1;
+  font-weight: 500;
+}
+
+.highlight .s,
+.highlight .s1,
+.highlight .s2,
+.highlight .sd {
+  color: #c4d4dc;
+}
+
+.highlight .c,
+.highlight .c1,
+.highlight .cm {
+  color: #8e8b84;
+  font-style: italic;
+}
+
+.highlight .nf,
+.highlight .nc,
+.highlight .nn {
+  color: #faf9f6;
+}
+
+.highlight .mi,
+.highlight .mf,
+.highlight .o,
+.highlight .p,
+.highlight .n,
+.highlight .nb,
+.highlight .bp {
+  color: #e9e7e1;
+}
+
+/* ---------- API entries: class and function signatures ---------- */
+
+/* Top-level signatures: a white card with a Stone edge and an Ink rule on top, not the blue band. */
+.rst-content dl.py:not(.field-list) > dt,
+html.writer-html5 .rst-content dl[class]:not(.option-list):not(.field-list):not(.footnote):not(.citation):not(.glossary):not(.simple) > dt {
+  background: var(--fd-card);
+  color: var(--fd-ink);
+  border: 1px solid var(--fd-stone);
+  border-top: 2px solid var(--fd-ink);
+  border-radius: 0;
+  font-family: var(--fd-mono);
+  font-size: 13px;
+  padding: 0.6rem 0.8rem;
+}
+
+/* Methods and attributes inside a class: a flat Shell band with an Ink rule on the left. */
+html.writer-html5 .rst-content dl[class]:not(.option-list):not(.field-list):not(.footnote):not(.citation):not(.glossary):not(.simple) dl:not(.option-list):not(.field-list):not(.footnote):not(.citation):not(.glossary):not(.simple) > dt {
+  background: var(--fd-shell);
+  color: var(--fd-ink);
+  border: 0;
+  border-left: 2px solid var(--fd-ink);
+  border-radius: 0;
+  font-family: var(--fd-mono);
+  font-size: 13px;
+}
+
+.rst-content dl dt .sig-name,
+.rst-content dl dt .descname {
+  font-family: var(--fd-mono);
+  font-weight: 600;
+  color: var(--fd-ink);
+}
+
+.rst-content dl dt .sig-prename,
+.rst-content dl dt .descclassname {
+  font-family: var(--fd-mono);
+  color: var(--fd-muted);
+}
+
+.rst-content dl dt em,
+.rst-content dl dt .sig-param {
+  font-family: var(--fd-mono);
+  font-style: normal;
+  color: var(--fd-grey);
+}
+
+.rst-content dl dt .property {
+  font-family: var(--fd-mono);
+  font-style: normal;
+  color: var(--fd-moss);
+}
+
+.rst-content .viewcode-link {
+  font-family: var(--fd-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fd-muted);
+}
+
+/* Parameters, Returns, Raises: mono labels, as lab labels. */
+.rst-content dl.field-list > dt {
+  font-family: var(--fd-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fd-muted);
+}
+
+.rst-content dl.field-list > dd strong {
+  font-family: var(--fd-mono);
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--fd-ink);
+}
+
+/* ---------- Admonitions and tables ---------- */
+
+.rst-content .admonition,
+.rst-content .note,
+.rst-content .warning,
+.rst-content .tip {
+  background: var(--fd-card);
+  border: 1px solid var(--fd-stone);
+  border-left: 2px solid var(--fd-ink);
+  border-radius: 0;
+}
+
+.rst-content .admonition-title,
+.rst-content .note .admonition-title,
+.rst-content .warning .admonition-title {
+  background: transparent;
+  color: var(--fd-ink);
+  font-family: var(--fd-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.rst-content .warning {
+  border-left-color: #9a5b13;
+}
+
+.rst-content table.docutils,
+.wy-table-bordered-all {
+  border: 1px solid var(--fd-stone);
+}
+
+.rst-content table.docutils thead th {
+  background: var(--fd-shell);
+  font-family: var(--fd-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fd-ink);
+}
+
+.rst-content table.docutils td,
+.rst-content table.docutils th {
+  border-color: var(--fd-hair);
+}
+
+.wy-table-odd td,
+.wy-table-striped tr:nth-child(2n-1) td,
+.rst-content table.docutils:not(.field-list) tr:nth-child(2n-1) td {
+  background: var(--fd-card);
+}
+
+/* ---------- The docs top bar ---------- */
+
+.fd-top {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  height: 64px;
+  padding: 0 1.5rem;
+  background: var(--fd-paper);
+  border-bottom: 1px solid rgb(32 31 30 / 0.06);
+  font-family: var(--fd-sans);
+}
+
+.fd-top-logo img {
+  display: block;
+  height: 2rem;
+  width: auto;
+}
+
+.fd-top-links,
+.fd-top-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.fd-top-right {
+  margin-left: auto;
+}
+
+.fd-top a:not(.fd-top-logo) {
+  color: var(--fd-grey);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.fd-top a:not(.fd-top-logo):hover,
+.fd-top a.is-current {
+  color: var(--fd-ink);
+}
+
+.fd-top a.is-current {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.5em;
+  text-decoration-color: rgb(32 31 30 / 0.14);
+}
+
+/* Everything below the bar starts under it. */
+.wy-nav-side {
+  top: 64px;
+  padding-bottom: 64px;
+}
+
+.wy-nav-content-wrap {
+  padding-top: 64px;
+}
+
+/* The nav: 260px wide, as the main docs nav, with its own small label over the search. */
+.wy-nav-side,
+.wy-side-scroll,
+.wy-menu-vertical {
+  width: 260px;
+}
+
+.wy-nav-content-wrap {
+  margin-left: 260px;
+}
+
+.wy-side-nav-search {
+  padding: 1rem 0.75rem 0.75rem;
+  text-align: left;
+}
+
+.fd-side-label {
+  margin: 0 0 0.6rem;
+  font-family: var(--fd-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fd-muted);
+}
+
+/* Section captions: a hairline above each, as the main docs nav closes one section before the next. */
+.wy-menu-vertical p.caption {
+  margin: 0.75rem 0.75rem 0.25rem;
+  padding: 0.75rem 0.5rem 0;
+  border-top: 1px solid rgb(32 31 30 / 0.07);
+}
+
+.wy-menu-vertical p.caption:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.wy-menu-vertical li.toctree-l1 > a {
+  padding: 0.35rem 1.25rem;
+}
+
+/* The main docs hide breadcrumbs and source links. */
+.wy-breadcrumbs,
+.wy-breadcrumbs + hr,
+.rst-content > div[role='navigation'] > hr {
+  display: none;
+}
+
+.rst-content {
+  padding-top: 0.5rem;
+}
+
+/* Phones: the bar keeps only the logo; the theme's own menu button sits below it. */
+@media (max-width: 768px) {
+  .fd-top-links,
+  .fd-top-right {
+    display: none;
+  }
+
+  .wy-nav-side {
+    top: 64px;
+  }
+
+  .wy-nav-content-wrap {
+    margin-left: 0;
+  }
+
+  .wy-nav-top {
+    margin-top: 0;
+  }
+}

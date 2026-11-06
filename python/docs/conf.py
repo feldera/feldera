@@ -38,3 +38,9 @@ autodoc_default_options = {
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+# The Feldera brand on top of the theme, to match docs.feldera.com: DM Sans and Geist Mono, then the
+# brand stylesheet in _static/.
+html_css_files = [
+    "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500;600&display=swap",
+    "feldera-brand.css",
+]
