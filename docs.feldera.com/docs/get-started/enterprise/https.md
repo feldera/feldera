@@ -418,6 +418,24 @@ section below describes one way to generate these files.
    "Received HTTP/0.9 when not allowed" (curl).
    Use `https://` as the protocol.
 
+:::note
+
+With `caSecretRef` and `kubernetesRunner.enablePerPipelineNamespace`, a
+pipeline in another namespace needs the server certificate in its own
+namespace. The pipeline uses it to verify the control plane. Without it,
+the pipeline pod stays in `ContainerCreating` with the event
+`secret "feldera-https-config" not found`. Copy only the certificate,
+not the private key, into each pipeline namespace:
+
+```
+kubectl get secret -n feldera feldera-https-config -o jsonpath='{.data.tls\.crt}' | base64 -d > tls.crt
+kubectl create secret generic feldera-https-config -n <pipeline-namespace> --from-file=tls.crt=tls.crt
+```
+
+Copy the certificate again each time it is renewed.
+
+:::
+
 ## Client certificates
 
 With the Helm value `mtls.enabled: true`, the compiler, runner, pipeline and
