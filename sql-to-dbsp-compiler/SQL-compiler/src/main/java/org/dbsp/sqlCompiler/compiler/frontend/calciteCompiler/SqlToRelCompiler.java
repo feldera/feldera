@@ -53,6 +53,7 @@ import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.metadata.ChainedRelMetadataProvider;
 import org.apache.calcite.rel.metadata.DefaultRelMetadataProvider;
+import org.apache.calcite.rel.metadata.JaninoRelMetadataProvider;
 import org.apache.calcite.rel.metadata.RelMdRowCount;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -377,6 +378,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         var metadataProvider = ChainedRelMetadataProvider.of(List.of(RelMdRowCount.SOURCE,
                 DefaultRelMetadataProvider.INSTANCE));
         this.cluster.setMetadataProvider(metadataProvider);
+        var queryProvider = JaninoRelMetadataProvider.of(metadataProvider);
+        this.cluster.setMetadataQuerySupplier(() -> new FelderaRelMetadataQuery(queryProvider));
         this.converterConfig = SqlToRelConverter.config()
                 .withExpand(false)
                 // IN lists with up to 50 constants stay filter predicates instead of joins with VALUES

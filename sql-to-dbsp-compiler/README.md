@@ -83,6 +83,23 @@ Compilation proceeds in several stages:
 
 ## Testing
 
+### Window-expression lineage
+
+The compiler treats expression-lineage queries containing a window function as
+unknown, including recursive queries for a projected window result. Window
+results depend on multiple rows and cannot be described by ordinary row-level
+lineage. Expanding their column origins across a large `UNION` can otherwise
+create a combinatorial number of copied window expressions and exhaust the Java
+heap. This restriction only withholds optional optimizer metadata; it does not
+remove the window or change its SQL semantics. Ordinary scalar and column
+lineage still use Calcite's metadata handlers.
+
+Run the focused metadata and compilation regression tests with:
+
+```sh
+mvn -pl SQL-compiler test -Dtest=FelderaRelMetadataQueryTests
+```
+
 ### Unit tests
 
 Unit tests are written using JUnit and test pointwise parts of the
