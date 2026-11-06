@@ -2,15 +2,16 @@
   import { TableHandler } from '@vincjo/datatables'
   import { dateMax } from 'common-lib/date'
   import { formatDateTime } from 'common-lib/format'
-  import { matchesSubstring } from 'common-lib/string'
   import { type NamesInUnion, unionName } from 'common-lib/union'
   import { Popover, Select, Tooltip } from 'common-ui'
   import { match } from 'ts-pattern'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatus.svelte'
+  import PipelineSearch from '#lib/components/pipelines/PipelineSearch.svelte'
   import ThSort from '#lib/components/pipelines/table/ThSort.svelte'
   import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { matchesPipelineSearch, nameMatchesFirst } from '#lib/functions/pipelines/search.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import type {
     PipelineStatus as PipelineStatusType,
@@ -82,10 +83,14 @@
     ['Unavailable', ['Unavailable']]
   ]
 
-  let nameSearch = $state('')
+  let searchQuery = $state('')
+  let tagFilters = $state<string[]>([])
   const pipelinesFiltered = $derived(
-    pipelinesWithLastChange.filter((p) => matchesSubstring(p.name, nameSearch))
+    pipelinesWithLastChange.filter((p) => matchesPipelineSearch(p, searchQuery, tagFilters))
   )
+  // Name matches come first. The rows keep the column sort order inside the name
+  // matches and inside the other rows.
+  const rowsInDisplayOrder = $derived(nameMatchesFirst(table.rows, searchQuery))
 
   // `knownTags` is the union of tags over every pipeline — the pool the per-row
   // tag picker chooses from.
@@ -131,15 +136,13 @@
            negative margin carries the controls into it so they end where the header's
            buttons do. -->
       <div class="relative -mr-[var(--scrollbar-width)] ml-auto flex flex-row items-center gap-2">
-        <input
-          data-testid="input-pipeline-search"
-          class="input sm:w-60"
-          type="search"
-          placeholder="Search pipelines..."
-          oninput={(e) => {
-            nameSearch = e.currentTarget.value
-          }}
-        />
+        <PipelineSearch
+          {pipelines}
+          bind:query={searchQuery}
+          bind:tagFilters
+          tagsLayout="above"
+          inputClass="w-full sm:w-60"
+        ></PipelineSearch>
         <!-- Same fill as the New Pipeline button next to it (`preset-filled-surface-50-950`).
              `!` because `Select`'s own background utility would otherwise win by CSS order. -->
         <Select
@@ -225,7 +228,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each table.rows as pipeline}
+        {#each rowsInDisplayOrder as pipeline}
           <tr class="group" data-testid="box-row-{pipeline.name}"
             ><td class="{rowTd} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
               <div class="flex h-full items-center">

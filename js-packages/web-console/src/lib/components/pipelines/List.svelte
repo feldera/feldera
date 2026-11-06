@@ -3,8 +3,9 @@
 </script>
 
 <script lang="ts">
-  import { matchesSubstring } from 'common-lib/string'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatusDot.svelte'
+  import PipelineSearch from '#lib/components/pipelines/PipelineSearch.svelte'
+  import { matchesPipelineSearch, nameMatchesFirst } from '#lib/functions/pipelines/search.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import { type PipelineThumb } from '#lib/services/pipelineManager.ts'
 
@@ -12,16 +13,26 @@
     pipelineName,
     pipelines = $bindable(),
     onclose,
-    onaction
+    onaction,
+    tagsLayout = 'right'
   }: {
     pipelineName: string
     pipelines: PipelineThumb[] | undefined
     onclose?: () => void
     onaction?: () => void
+    /** The place of the tag list. See `tagsLayout` in `PipelineSearch`. */
+    tagsLayout?: 'right' | 'below'
   } = $props()
 
-  let nameSearch = $state('')
-  const visiblePipelines = $derived(pipelines?.filter((p) => matchesSubstring(p.name, nameSearch)))
+  let searchQuery = $state('')
+  let tagFilters = $state<string[]>([])
+  const visiblePipelines = $derived(
+    pipelines &&
+      nameMatchesFirst(
+        pipelines.filter((p) => matchesPipelineSearch(p, searchQuery, tagFilters)),
+        searchQuery
+      )
+  )
   const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
     $effect(() => {
       node.scrollTop = scrollY
@@ -41,13 +52,15 @@
   style="overflow-y: overlay;"
   use:bindScrollY={{ scrollY }}
 >
-  <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2 pl-2">
-    <input
-      class="input min-w-0 flex-1"
-      type="search"
-      placeholder="Search pipelines..."
-      bind:value={nameSearch}
-    />
+  <div class="bg-white-dark sticky top-0 -mr-1 flex items-start gap-2 pb-2 pl-2">
+    <PipelineSearch
+      pipelines={pipelines ?? []}
+      bind:query={searchQuery}
+      bind:tagFilters
+      {tagsLayout}
+      class="flex-1"
+      inputClass="flex-1"
+    ></PipelineSearch>
     <button onclick={onclose} class="fd fd-x btn-icon text-[20px]" aria-label="Close pipelines list"
     ></button>
   </div>
