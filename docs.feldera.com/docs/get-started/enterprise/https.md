@@ -204,7 +204,10 @@ The Feldera components read the server certificate
 (`feldera-https-config`) when they start.  A renewed certificate takes
 effect after the next restart of the components, which must happen
 before the old certificate expires: within `renewBefore`, 30 days in the
-example above.  A Feldera upgrade restarts them.
+example above.  A Feldera upgrade restarts them.  This applies only to
+the server certificate.  The control plane client certificate that the
+chart issues for [client certificates](#client-certificates) takes effect
+without a restart.
 
 :::
 
@@ -447,7 +450,9 @@ Requirements:
 - `httpsSecretRef` and `caSecretRef` are set.
 - [cert-manager](https://cert-manager.io) runs in the cluster.  The chart
   creates an `Issuer` for the private CA and a `Certificate` for the control
-  plane.  The components read a renewed certificate without a restart.
+  plane.  The components read a renewed control plane certificate without
+  a restart.  The server certificate is different: see [Using
+  cert-manager](#using-cert-manager).
 
 ```
 httpsSecretRef: "feldera-https-config"

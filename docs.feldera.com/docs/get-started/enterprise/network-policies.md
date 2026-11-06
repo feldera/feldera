@@ -169,11 +169,18 @@ Change the example to fit your deployment:
           port: 9000
   ```
 
-- **Connectors in the cluster or the private network.** The example
-  blocks private addresses. If connectors use systems in your cluster or
-  VPC, such as Kafka, add an egress rule for each of them. This also
-  applies to cloud endpoints with private addresses, such as AWS interface
-  VPC endpoints.
+- **Systems in the cluster or the private network.** The example blocks
+  private addresses. If pipelines use systems in your cluster or VPC, add
+  an egress rule for each of them. These include connector endpoints,
+  such as Kafka, and the object storage for
+  [checkpoint sync](../../pipelines/checkpoint-sync.md), such as MinIO.
+  This also applies to cloud endpoints with private addresses, such as
+  AWS interface VPC endpoints.
+- **NodeLocal DNSCache.** With NodeLocal DNSCache, pods send DNS queries
+  to a link-local address on the node, usually `169.254.20.10`, instead of
+  to the `kube-dns` pods. The DNS rule does not match this traffic, and the
+  `ipBlock` rule excludes `169.254.0.0/16`. Allow that address on port 53,
+  UDP and TCP.
 - **Cloud credentials from link-local addresses.** The example blocks
   `169.254.0.0/16`, which includes the instance metadata service
   (`169.254.169.254`) and the EKS Pod Identity agent (`169.254.170.23`).
@@ -195,3 +202,15 @@ Change the example to fit your deployment:
 
 After you apply the policies, start a pipeline and check that it reaches
 the running state. Then check one connector of each kind that you use.
+
+Also check that the policies block traffic. If the network plugin does
+not enforce NetworkPolicies, all the checks above pass, but the pipelines
+are not isolated. From a running pipeline pod, try to connect to the API
+server, which the `pipeline` policy blocks:
+
+```
+kubectl exec -n feldera <pipeline-pod> -- timeout 3 bash -c '</dev/tcp/<release>-api-server/8080' \
+  && echo "not isolated" || echo "isolated"
+```
+
+The output must be `isolated`.
