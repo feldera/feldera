@@ -822,12 +822,14 @@ def run_delta_spark(
     delta_spark_spec: str = "delta-spark>=4.2,<5",
     max_attempts: int = 3,
     capture_output: bool = True,
+    timeout_s: float = 300,
 ) -> str:
     """Run a standalone Delta Spark script and return its stdout.
 
     Runs under ``uv run --no-project --with <delta_spark_spec>``, so the PySpark
     and JVM stack is pulled only when a test needs it. Retries because Spark
-    resolves delta-spark from Maven Central here, which fails transiently.
+    resolves delta-spark from Maven Central here, which fails transiently or
+    hangs; a run exceeding ``timeout_s`` is killed and retried like a failure.
 
     :param args: Positional arguments after the script path, each stringified.
     :param capture_output: ``False`` lets output through to the test log.
@@ -851,18 +853,23 @@ def run_delta_spark(
     for attempt in range(1, max_attempts + 1):
         try:
             completed = subprocess.run(
-                command, check=True, capture_output=capture_output, text=True
+                command,
+                check=True,
+                capture_output=capture_output,
+                text=True,
+                timeout=timeout_s,
             )
             return completed.stdout if capture_output else ""
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             if attempt == max_attempts:
                 raise
             logging.warning(
                 "Delta Spark script %s failed (attempt %d/%d); retrying. "
-                "Usually a transient Maven/Ivy download failure.\n%s",
+                "Usually a transient Maven/Ivy download failure.\n%s\n%s",
                 script,
                 attempt,
                 max_attempts,
+                e,
                 e.stderr,
             )
             time.sleep(5 * attempt)
@@ -966,14 +973,15 @@ def _build_delta_spark_fixture(
             )
             loc._place_tree(staging)
             break
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             if attempt == max_attempts:
                 raise
             logging.warning(
                 "PySpark Delta fixture build failed (attempt %d/%d); retrying. "
-                "Usually a transient Maven/Ivy download failure.",
+                "Usually a transient Maven/Ivy download failure.\n%s",
                 attempt,
                 max_attempts,
+                e,
             )
             time.sleep(5 * attempt)
         finally:
