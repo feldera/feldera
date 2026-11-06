@@ -6307,8 +6307,8 @@ fn test_restart_from_newest_published_checkpoint(
     wait_processed(&controller, 3 * RECORDS);
     controller.stop().unwrap();
 
-    let older_uuid = older.circuit.unwrap().uuid;
-    engine.rewind_resume_state(&storage_dir, older_uuid);
+    let older_uuid = older.circuit.as_ref().unwrap().uuid;
+    engine.rewind_resume_state(&storage_dir, &older);
 
     let controller = start_controller();
     if fault_tolerant {
@@ -12048,5 +12048,55 @@ pub fn paused_connector_holds_transaction(engine: &dyn PipelineTestEngine) {
     // Once it commits its part, it holds the transaction no longer.
     probe.commit_transaction();
     assert!(paused().is_empty());
+    controller.stop().unwrap();
+}
+
+/// Takes a checkpoint and returns its UUID.
+fn take_checkpoint(controller: &Controller) -> Uuid {
+    let (sender, receiver) = oneshot::channel();
+    controller.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
+    receiver
+        .blocking_recv()
+        .unwrap()
+        .unwrap()
+        .circuit
+        .unwrap()
+        .uuid
+}
+
+/// Storage-backed configuration for the checkpoint retention tests.
+fn retention_config(storage_dir: &Path, multihost: bool) -> PipelineConfig {
+    let mut config = json!({
+        "name": "test",
+        "workers": 2,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+    });
+    if multihost {
+        config["multihost"] = json!({ "hosts": 1 });
+    }
+    serde_json::from_value(config).unwrap()
+}
+
+/// A single-host pipeline keeps only its newest checkpoint.
+#[engine_test(requires(Storage))]
+pub fn single_host_keeps_one_checkpoint(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let config = retention_config(tempdir.path(), false);
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    for _ in 0..3 {
+        let uuid = take_checkpoint(&controller);
+        assert_eq!(published_checkpoints(engine, &config), vec![uuid]);
+    }
     controller.stop().unwrap();
 }

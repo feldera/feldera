@@ -238,9 +238,13 @@ impl CircuitDriver for StaticCircuitDriver {
         Ok(Box::new(StaticCheckpointCommitter { committer, backend }))
     }
 
-    fn gc_checkpoint(&mut self, keep: HashSet<Uuid>) -> Result<(), ControllerError> {
+    fn gc_checkpoint(
+        &mut self,
+        keep: HashSet<Uuid>,
+        multihost: bool,
+    ) -> Result<(), ControllerError> {
         self.handle
-            .gc_checkpoint(keep)
+            .gc_checkpoint(keep, multihost)
             .map(|_| ())
             .map_err(ControllerError::dbsp_error)
     }

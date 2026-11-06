@@ -46,9 +46,6 @@ pub struct Checkpointer {
 }
 
 impl Checkpointer {
-    /// We keep at least this many checkpoints around.
-    pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
-
     /// Returns the storage backend this checkpointer writes to.
     pub(super) fn backend(&self) -> &Arc<dyn StorageBackend> {
         &self.backend
@@ -552,18 +549,36 @@ impl Checkpointer {
         Ok(())
     }
 
-    /// Remove the oldest checkpoints from the list.
-    /// - Preserves at least `MIN_CHECKPOINT_THRESHOLD` checkpoints.
-    /// - Does not remove any checkpoints whose UUID is in the `except` list.
+    /// Removes the checkpoints that a pipeline no longer needs after it writes
+    /// a checkpoint, except those whose UUID is in `except`.
     ///
-    /// # Returns
-    /// - Uuid of the removed checkpoints, if there are more than `MIN_CHECKPOINT_THRESHOLD`.
-    /// - Empty set otherwise.
+    /// A single-host pipeline needs only the newest checkpoint.  A host of a
+    /// multihost pipeline also keeps the one before it, because a restart
+    /// resumes from the newest checkpoint that every host has.
+    ///
+    /// Returns the UUIDs of the removed checkpoints.
     pub fn gc_checkpoint(
         &mut self,
         except: HashSet<uuid::Uuid>,
+        multihost: bool,
     ) -> Result<HashSet<uuid::Uuid>, Error> {
-        if self.checkpoint_list.len() <= Self::MIN_CHECKPOINT_THRESHOLD {
+        self.gc_keeping(except, if multihost { 2 } else { 1 })
+    }
+
+    /// Remove the oldest checkpoints from the list.
+    /// - Preserves the newest `keep` checkpoints.  `keep` must be at least 1.
+    /// - Does not remove any checkpoints whose UUID is in the `except` list.
+    ///
+    /// # Returns
+    /// - Uuid of the removed checkpoints, if there are more than `keep`.
+    /// - Empty set otherwise.
+    fn gc_keeping(
+        &mut self,
+        except: HashSet<uuid::Uuid>,
+        keep: usize,
+    ) -> Result<HashSet<uuid::Uuid>, Error> {
+        debug_assert!(keep >= 1, "must keep at least one checkpoint");
+        if self.checkpoint_list.len() <= keep {
             return Ok(HashSet::new());
         }
 
@@ -579,11 +594,7 @@ impl Checkpointer {
         let to_remove: HashSet<_> = self
             .checkpoint_list
             .iter()
-            .take(
-                self.checkpoint_list
-                    .len()
-                    .saturating_sub(Self::MIN_CHECKPOINT_THRESHOLD),
-            )
+            .take(self.checkpoint_list.len().saturating_sub(keep))
             .map(|cpm| cpm.uuid)
             .filter(|cpm| !except.contains(cpm))
             .collect();
@@ -922,6 +933,10 @@ mod test {
         );
     }
 
+    /// The number of checkpoints that these tests keep in
+    /// [Checkpointer::gc_keeping].
+    const KEEP: usize = 2;
+
     /// Backend wrapper that delegates everything to an inner backend but
     /// fails writes whose path equals `fail_on`.
     struct CatalogFailingBackend {
@@ -1187,7 +1202,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         };
 
         let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
-        let uuids: Vec<_> = (0..Checkpointer::MIN_CHECKPOINT_THRESHOLD)
+        let uuids: Vec<_> = (0..KEEP)
             .map(|i| {
                 let uuid = uuid::Uuid::now_v7();
                 checkpointer
@@ -1229,9 +1244,9 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         ));
         let mut checkpointer = Checkpointer::new(backend).unwrap();
 
-        // Need more than MIN_CHECKPOINT_THRESHOLD checkpoints so gc has work.
+        // Need more than KEEP checkpoints so gc has work.
         let mut uuids = Vec::new();
-        for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD + 1 {
+        for i in 0..KEEP + 1 {
             let uuid = uuid::Uuid::now_v7();
             checkpointer
                 .commit_and_publish(uuid, 0, None, Some(i as u64), Some(0))
@@ -1248,7 +1263,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         std::fs::write(&deps, b"{not valid json").unwrap();
 
         let except: HashSet<_> = [protected].into_iter().collect();
-        let result = checkpointer.gc_checkpoint(except);
+        let result = checkpointer.gc_keeping(except, KEEP);
         assert!(
             result.is_err(),
             "gc_checkpoint should not return Ok with corrupt metadata on protected checkpoint {protected}",
@@ -1295,7 +1310,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         // it, so its successor resumes from A and checkpoints C from A's batches.
         let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
         let c = commit(&mut checkpointer, 335, &["w0-a.feldera", "w0-c.feldera"]);
-        checkpointer.gc_checkpoint(HashSet::new()).unwrap();
+        checkpointer.gc_keeping(HashSet::new(), KEEP).unwrap();
         drop(checkpointer);
 
         let log = LogCapture::new(|| drop(Checkpointer::new(make_backend()).unwrap())).log;
@@ -1391,12 +1406,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
                 .checkpoint_list
                 .iter()
                 .map(|cpm| cpm.uuid)
-                .take(
-                    self.checkpointer
-                        .checkpoint_list
-                        .len()
-                        .saturating_sub(Checkpointer::MIN_CHECKPOINT_THRESHOLD),
-                )
+                .take(self.checkpointer.checkpoint_list.len().saturating_sub(KEEP))
                 .collect()
         }
 
@@ -1433,7 +1443,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         fn checkpoint(mut self) -> TestState<MinCheckpoints> {
             self.precondition();
 
-            for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD {
+            for i in 0..KEEP {
                 self.checkpointer
                     .commit_and_publish(uuid::Uuid::now_v7(), 0, None, Some(i as u64), Some(0))
                     .unwrap();
@@ -1449,10 +1459,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
 
     impl TestState<MinCheckpoints> {
         fn precondition(&self) {
-            assert_eq!(
-                self.checkpointer.checkpoint_list.len(),
-                Checkpointer::MIN_CHECKPOINT_THRESHOLD
-            );
+            assert_eq!(self.checkpointer.checkpoint_list.len(), KEEP);
 
             assert!(self.extras().is_empty());
         }
@@ -1475,9 +1482,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
 
     impl TestState<ExtraCheckpoints> {
         fn precondition(&self) {
-            assert!(
-                self.checkpointer.checkpoint_list.len() > Checkpointer::MIN_CHECKPOINT_THRESHOLD
-            );
+            assert!(self.checkpointer.checkpoint_list.len() > KEEP);
 
             assert!(!self.extras().is_empty());
         }
@@ -1499,7 +1504,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         fn gc(mut self) -> TestState<MinCheckpoints> {
             self.precondition();
 
-            let removed = self.checkpointer.gc_checkpoint(HashSet::new()).unwrap();
+            let removed = self.checkpointer.gc_keeping(HashSet::new(), KEEP).unwrap();
             assert!(!removed.is_empty());
 
             TestState::<MinCheckpoints> {
@@ -1512,7 +1517,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         fn gc_with_except(mut self, except: uuid::Uuid) -> TestState<ExtraCheckpoints> {
             self.precondition();
 
-            self.checkpointer.gc_checkpoint([except].into()).unwrap();
+            self.checkpointer.gc_keeping([except].into(), KEEP).unwrap();
 
             assert!(self.extras().contains(&except));
 

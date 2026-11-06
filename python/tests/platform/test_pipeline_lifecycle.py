@@ -658,15 +658,18 @@ def test_pipeline_storage_details_checkpoints(pipeline_name):
     time.sleep(20)
     details = pipeline.storage_status_details()
     assert len(details["checkpoints"]) == 1
+    first = details["checkpoints"][0]
 
     # Explicitly perform another checkpoint
     pipeline.checkpoint(wait=True)
 
-    # Check another checkpoint was made
+    # Check another checkpoint was made.  A single host keeps only the newest
+    # checkpoint.  A multihost pipeline can also keep the one before it.
     assert pipeline.storage_status() == StorageStatus.INUSE
     time.sleep(20)
     details = pipeline.storage_status_details()
-    assert len(details["checkpoints"]) == 2
+    assert 1 <= len(details["checkpoints"]) <= 2
+    assert details["checkpoints"][-1] != first
 
     # After stopping, the details should still be available
     pipeline.stop(force=True)
