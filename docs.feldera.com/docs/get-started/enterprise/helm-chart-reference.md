@@ -203,7 +203,7 @@ Default settings applied to all pipeline pods.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `pipeline.serviceAccountName` | `null` | Default Kubernetes service account for pipeline pods. Typically used for IRSA-based cloud authentication. |
-| `pipeline.allowedServiceAccountNames` | `[]` | Service accounts a pipeline may select with `resources.service_account_name`. A pipeline that selects any other fails to start. List only accounts without Kubernetes API permissions; the chart refuses its own control-plane service accounts. |
+| `pipeline.allowedServiceAccountNames` | `[]` | Service accounts a pipeline may select with `resources.service_account_name`. An entry is an exact name or a pattern in which `*` matches any characters, such as `pipeline-irsa-*`; a pattern must match the whole name, and `*` allows every account. A pipeline that selects any other fails to start. List only accounts without Kubernetes API permissions; the control-plane service accounts are never allowed, even when a pattern matches them. Patterns need chart v0.380.0 or later. |
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
 | `pipeline.allowEnv` | `true` | Allow pipelines to set environment variables with `env` in their runtime configuration. A pipeline that sets them fails to start when this is `false`. |
 | `pipeline.allowRustUdfs` | `true` | Allow pipelines to have Rust UDFs (`udf_rust` and `udf_toml`), which compile to native code. When `false`, the API server refuses pipelines with Rust UDFs, and existing ones fail to compile and to start. Set it to `false` unless pipeline authors are trusted. |
