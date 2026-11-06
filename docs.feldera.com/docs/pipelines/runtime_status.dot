@@ -1,0 +1,40 @@
+// Source for runtime_status.png.  Regenerate with:
+//   dot -Tpng -Gdpi=200 runtime_status.dot -o runtime_status.png
+digraph runtime_status {
+    graph [bgcolor="#f8f7f3", pad=0.5, nodesep=0.5, ranksep=0.6];
+    node [shape=box, style="rounded,filled", fillcolor="white", color="#1f1f1f",
+          penwidth=2.2, fontname="Adwaita Sans", fontsize=17, width=2.4, height=0.6];
+    edge [color="#1f1f1f", penwidth=1.6, arrowhead=vee, arrowsize=0.8,
+          fontname="Liberation Mono", fontsize=12, fontcolor="#6b6b6b"];
+
+    start [label="Pipeline process starts", shape=plaintext, style="",
+           fontname="Liberation Mono", fontsize=13, fontcolor="#6b6b6b"];
+    ready [shape=point, width=0.12, style=filled, fillcolor="#1f1f1f"];
+
+    start -> Initializing;
+    Initializing -> Standby [label=" standby"];
+    Standby -> Initializing [label=" /activate"];
+    Initializing -> AwaitingApproval [label=" needs\n approval"];
+    Initializing -> Replaying [label=" journal"];
+    Initializing -> Bootstrapping [label=" changed"];
+    Initializing -> ConcurrentBootstrapping [label=" changed\n (concurrent)"];
+    AwaitingApproval -> Bootstrapping [label=" /approve"];
+    AwaitingApproval -> ConcurrentBootstrapping [label=" /approve\n (concurrent)"];
+    ConcurrentBootstrapping -> Synchronizing;
+
+    Initializing -> ready [arrowhead=none];
+    Replaying -> ready [arrowhead=none];
+    Bootstrapping -> ready [arrowhead=none];
+    Synchronizing -> ready [arrowhead=none];
+
+    ready -> Paused [label=" desired\n paused"];
+    ready -> Running [label=" desired\n running"];
+    Paused -> Running [label=" /resume"];
+    Running -> Paused [label=" /pause"];
+    Paused -> Suspended [label=" /stop\n force=false"];
+    Running -> Suspended [label=" /stop\n force=false"];
+
+    {rank=same; Standby; AwaitingApproval}
+    {rank=same; Replaying; Bootstrapping; ConcurrentBootstrapping}
+    {rank=same; Paused; Running}
+}
