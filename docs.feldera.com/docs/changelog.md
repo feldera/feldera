@@ -18,6 +18,9 @@ Source edition can be found on github.
   keys fails, the API server keeps using the keys it fetched before, for up to
   1 hour.  Before, one failed fetch refused every token of that issuer with a
   401 for the refresh cooldown, which is 30 seconds for federated tokens.
+- Connectors: Feldera now rejects a connector with `max_queued_records` (or
+  `max_queued_size`) set to 0. Before, such a configuration was accepted, but
+  the connector never read or wrote any data.
 
 ## v0.378.0
 

@@ -12109,6 +12109,18 @@
             "type": "boolean",
             "description": "True if end-of-input has been signaled."
           },
+          "latest_batch_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of bytes in the most recent non-empty batch that the endpoint\ngave to the circuit.\n\nFor a connector that runs on more than one host, this is the sum of\neach host's latest non-empty batch.  These batches can come from\ndifferent steps, for example when a host has been idle.",
+            "minimum": 0
+          },
+          "latest_batch_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records in the most recent non-empty batch that the endpoint\ngave to the circuit.\n\nFor a connector that runs on more than one host, this is the sum of\neach host's latest non-empty batch.  These batches can come from\ndifferent steps, for example when a host has been idle.",
+            "minimum": 0
+          },
           "num_parse_errors": {
             "type": "integer",
             "format": "int64",

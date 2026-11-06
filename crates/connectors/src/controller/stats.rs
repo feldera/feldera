@@ -1887,6 +1887,14 @@ pub struct InputEndpointMetrics {
     /// Equal to `total_bytes - buffered_bytes` in steady state.
     pub circuit_input_bytes: AtomicU64,
 
+    /// Number of records in the most recent non-empty batch pushed from the
+    /// endpoint's queue to the circuit.
+    pub latest_batch_records: AtomicU64,
+
+    /// Number of bytes in the most recent non-empty batch pushed from the
+    /// endpoint's queue to the circuit.
+    pub latest_batch_bytes: AtomicU64,
+
     pub num_transport_errors: AtomicU64,
 
     pub num_parse_errors: AtomicU64,
@@ -1907,6 +1915,8 @@ impl Default for InputEndpointMetrics {
             buffered_bytes: AtomicU64::new(0),
             circuit_input_records: AtomicU64::new(0),
             circuit_input_bytes: AtomicU64::new(0),
+            latest_batch_records: AtomicU64::new(0),
+            latest_batch_bytes: AtomicU64::new(0),
             num_transport_errors: AtomicU64::new(0),
             num_parse_errors: AtomicU64::new(0),
             end_of_input: AtomicBool::new(false),
@@ -1923,6 +1933,8 @@ impl InputEndpointMetrics {
             total_records: self.total_records.load(Ordering::Relaxed),
             buffered_records: self.buffered_records.load(Ordering::Relaxed),
             buffered_bytes: self.buffered_bytes.load(Ordering::Relaxed),
+            latest_batch_records: self.latest_batch_records.load(Ordering::Relaxed),
+            latest_batch_bytes: self.latest_batch_bytes.load(Ordering::Relaxed),
             num_transport_errors: self.num_transport_errors.load(Ordering::Relaxed),
             num_parse_errors: self.num_parse_errors.load(Ordering::Relaxed),
             end_of_input: self.end_of_input.load(Ordering::Relaxed),
@@ -2754,6 +2766,7 @@ impl InputEndpointStatus {
     /// Updates:
     /// * `buffered_records`
     /// * `circuit_input_records`
+    /// * `latest_batch_records` and `latest_batch_bytes`
     /// * `completion_tokens`
     ///
     /// # Arguments
@@ -2784,6 +2797,16 @@ impl InputEndpointStatus {
                 .record();
         }
         *self.progress.lock().unwrap() = Some(step_results);
+        // Keep the size of the last batch that has data, so that an idle
+        // connector shows its last real batch.
+        if num_records > 0 || num_bytes > 0 {
+            self.metrics
+                .latest_batch_records
+                .store(num_records, Ordering::Relaxed);
+            self.metrics
+                .latest_batch_bytes
+                .store(num_bytes, Ordering::Relaxed);
+        }
         self.metrics
             .buffered_records
             .fetch_sub(num_records, Ordering::Relaxed);
@@ -3524,6 +3547,39 @@ mod test {
         // The records are in step 5, so the token completes only once
         // `total_completed_steps` reaches 6.
         assert_eq!(endpoint.completion_status(token), Some(6));
+    }
+
+    /// The latest batch gauges show the size of the last non-empty batch
+    /// that the endpoint gave to the circuit.
+    #[test]
+    fn latest_batch_size() {
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+        }))
+        .unwrap();
+        let endpoint = InputEndpointStatus::new("test_endpoint", config, None, None, None);
+        let latest = |endpoint: &InputEndpointStatus| {
+            let metrics = endpoint.metrics.to_api_type();
+            (metrics.latest_batch_records, metrics.latest_batch_bytes)
+        };
+        let extend = |records, bytes| {
+            let amt = BufferSize { records, bytes };
+            endpoint.add_buffered(amt);
+            endpoint.extended(StepResults { amt, resume: None }, Vec::new(), 0, 0, 0);
+        };
+        assert_eq!(latest(&endpoint), (0, 0));
+
+        extend(3, 30);
+        assert_eq!(latest(&endpoint), (3, 30));
+
+        // The gauges show the latest batch, not a total.
+        extend(2, 25);
+        assert_eq!(latest(&endpoint), (2, 25));
+
+        // An empty batch does not change the gauges.
+        extend(0, 0);
+        assert_eq!(latest(&endpoint), (2, 25));
     }
 
     /// Each host of a distributed connector gets its share of the

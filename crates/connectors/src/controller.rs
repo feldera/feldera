@@ -782,6 +782,9 @@ fn resolve_connector_config(
     config: &ConnectorConfig,
     refuse_local: bool,
 ) -> Result<ConnectorConfig, ControllerError> {
+    config
+        .validate_queue_limits()
+        .map_err(|e| ControllerError::invalid_queue_limits(endpoint_name, &e))?;
     let resolved = resolve_secret_references_in_connector_config(secrets_dir, config)
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
     if refuse_local && let Some((property, _)) = resolved.transport.local_file_uris(true).first() {
@@ -1685,8 +1688,7 @@ impl Controller {
 
         self.initiate_stop();
         let circuit_result = match self.circuit_thread_handle.lock().unwrap().take() {
-            Some(handle) => handle
-                .join()
+            Some(handle) => wait_for_circuit_stop(handle)
                 .map_err(|_| ControllerError::controller_panic())
                 .and_then(|result| result),
             None => Ok(()),
@@ -2168,6 +2170,24 @@ impl Controller {
             "Amount of data currently buffered by an input connector, in bytes.",
             ValueType::Gauge,
             |s| s.metrics.buffered_bytes.load(Ordering::Relaxed),
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_latest_batch_records",
+            "Number of records in the most recent non-empty batch that an input connector gave to the circuit.",
+            ValueType::Gauge,
+            |s| s.metrics.latest_batch_records.load(Ordering::Relaxed),
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_latest_batch_bytes",
+            "Number of bytes in the most recent non-empty batch that an input connector gave to the circuit.",
+            ValueType::Gauge,
+            |s| s.metrics.latest_batch_bytes.load(Ordering::Relaxed),
         );
         write_input_metric(
             metrics,
@@ -11005,6 +11025,28 @@ impl RunningCheckpoint {
     }
 }
 
+/// Waits for the circuit thread to exit.  Logs a message if the wait is long,
+/// because a slow checkpoint or a large state can make stop slow.
+fn wait_for_circuit_stop<T>(handle: JoinHandle<T>) -> thread::Result<T> {
+    let mut long_wait = LongOperationWarning::new(Duration::from_secs(10));
+    while !handle.is_finished() {
+        sleep(Duration::from_millis(10));
+        long_wait.check(|elapsed| {
+            info!(
+                "pipeline stop: waiting for the circuit to stop after {} seconds",
+                elapsed.as_secs()
+            )
+        });
+    }
+    if long_wait.elapsed() >= Duration::from_secs(10) {
+        info!(
+            "pipeline stop: circuit stopped after {} seconds",
+            long_wait.elapsed().as_secs()
+        );
+    }
+    handle.join()
+}
+
 struct CheckpointThread {
     checkpoint: Checkpoint,
     status: Arc<ControllerStatus>,
@@ -11088,6 +11130,7 @@ impl CheckpointThread {
         // Finalize the checkpoint on storage. [CheckpointPublisher::metadata]
         // reports the circuit's metadata before publication, so that the
         // state stored with the checkpoint can record it.
+        let publisher_uuid = publisher.metadata().uuid;
         self.checkpoint.circuit = Some(publisher.metadata().clone());
         publisher.publish(&self.checkpoint)?;
 
@@ -11101,6 +11144,18 @@ impl CheckpointThread {
         CHECKPOINT_DELAY.record(self.delay.as_micros());
         CHECKPOINT_WRITTEN_MEGABYTES.record(bytes_written / 1_000_000);
         CHECKPOINT_PROCESSED_RECORDS.store(self.checkpoint.processed_records, Ordering::Relaxed);
+
+        // Tell the user about a slow checkpoint.  Fast checkpoints log nothing.
+        let elapsed = self.start_checkpoint.elapsed();
+        if elapsed >= Duration::from_secs(10) {
+            info!(
+                "checkpoint {} completed in {} seconds ({} written, pipeline blocked for {} seconds)",
+                publisher_uuid,
+                elapsed.as_secs(),
+                HumanBytes::from(bytes_written),
+                self.delay.as_secs()
+            );
+        }
 
         Ok(self.checkpoint)
     }
@@ -11511,6 +11566,26 @@ mod all_hosts_transaction_tests {
 }
 
 #[cfg(test)]
+mod wait_for_circuit_stop_tests {
+    use super::wait_for_circuit_stop;
+    use std::thread;
+    use std::time::Duration;
+
+    /// The wait returns the thread's result, also when the thread panics.
+    #[test]
+    fn returns_thread_result() {
+        let handle = thread::spawn(|| {
+            thread::sleep(Duration::from_millis(50));
+            7
+        });
+        assert_eq!(wait_for_circuit_stop(handle).unwrap(), 7);
+
+        let handle = thread::spawn(|| -> u32 { panic!("circuit thread panic") });
+        assert!(wait_for_circuit_stop(handle).is_err());
+    }
+}
+
+#[cfg(test)]
 mod local_file_uri_tests {
     use super::{refused_by, resolve_connector_config};
     use serde_json::json;
@@ -11550,6 +11625,37 @@ mod local_file_uri_tests {
             assert!(check(uri, false).is_ok());
         }
         assert!(check("s3://b/t", true).is_ok());
+    }
+
+    /// A connector with a backpressure threshold of 0 never runs, so the
+    /// controller refuses to add it.
+    #[test]
+    fn refuses_zero_queue_limits() {
+        let secrets = tempfile::tempdir().unwrap();
+        let check = |extra: serde_json::Value| {
+            let mut value = json!({"transport": {"name": "empty_input"}});
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let config = serde_json::from_value(value).unwrap();
+            resolve_connector_config(secrets.path(), "c", &config, false)
+        };
+        let error = check(json!({"max_queued_records": 0}))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("'max_queued_records' must be greater than 0"),
+            "{error}"
+        );
+        let error = check(json!({"max_queued_size": "0"}))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("'max_queued_size' must be greater than 0"),
+            "{error}"
+        );
+        assert!(check(json!({"max_queued_records": 1})).is_ok());
     }
 }
 
