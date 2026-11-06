@@ -1,7 +1,7 @@
 # Visualizing Pipeline Profiles
 
 {/* The icons are imported, not referenced as images: an imported SVG is drawn inline, so it takes the color of the text. */}
-import OpenSupportBundleIcon from '../../../js-packages/web-console/src/assets/icons/feldera-material-icons/stethoscope.svg';
+import OpenSupportBundleIcon from './stethoscope.svg';
 import SearchIcon from '../../../js-packages/common-ui/src/lib/icons/search.svg';
 
 ## Preliminaries
