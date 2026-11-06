@@ -7,6 +7,9 @@ import { ViewNavigator } from './navigator.js';
 import type { NodeId } from './profile.js';
 import { Option } from './util.js';
 
+/** The highest zoom the user can reach. `chips.ts` sizes the chip images for it. */
+export const MAX_ZOOM = 1.5;
+
 /**
  * Controls the position of the view on the diagram: the zoom level, where the view starts when a
  * profile opens, where a search moves the view, and the minimap that shows the view. When the user
@@ -94,10 +97,10 @@ export class Viewport implements DiagramObserver {
         this.toggled = Option.none();
     }
 
-    /** Set the zoom limits. The user cannot zoom in more than 1.5, and cannot zoom out more than
-     *  the zoom that fits the full graph in the view. */
+    /** Set the zoom limits. The user cannot zoom in more than `MAX_ZOOM`, and cannot zoom out more
+     *  than the zoom that fits the full graph in the view. */
     private clampZoom(): void {
-        this.cy.maxZoom(1.5);
+        this.cy.maxZoom(MAX_ZOOM);
         const rect = this.cy.container()?.getBoundingClientRect();
         if (rect !== undefined) {
             const bb = this.cy.elements().boundingBox();

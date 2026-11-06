@@ -84,7 +84,7 @@ export const CHIP_BACKGROUND_STYLE = {
     'background-image-containment': ['over', 'over'],
     'background-clip': ['none', 'none'],
     'background-repeat': ['no-repeat', 'no-repeat'],
-    // 1:1 with the SVG canvas, so chips stay crisp and undistorted.
+    // Same size as the SVG viewBox, so the chips are not distorted.
     'background-width': [`${round(CODE_CHIP_WIDTH)}px`, `${round(BADGE_CANVAS_WIDTH)}px`],
     'background-height': [`${CODE_CHIP_HEIGHT}px`, `${BADGE_HEIGHT}px`],
     // Both chips are anchored by their right edge and stacked on the top right corner: the code chip
@@ -95,6 +95,11 @@ export const CHIP_BACKGROUND_STYLE = {
     'background-offset-x': [`${-CHIP_INSET}px`, `${-CHIP_INSET}px`],
     'background-offset-y': [`${-CODE_CHIP_HEIGHT}px`, `${CHIP_INSET}px`],
 } as const;
+
+/** Image pixels per graph pixel in each chip image. WebKit rasterizes an SVG image at its intrinsic
+ *  size, and cytoscape then scales that bitmap, so a 1x image is blurry in Safari. Cytoscape caches
+ *  each node at a power-of-two scale of up to 4, which a Retina screen reaches at zoom above 1. */
+const CHIP_RASTER_SCALE = 4;
 
 const cache = new Map<string, string>();
 
@@ -128,7 +133,9 @@ function chipSvg(
 ): string {
     const p = DIAGRAM_PALETTES[theme];
     const boxLeft = canvasWidth - boxWidth;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${round(canvasWidth)}" height="${height}"`
+    // The viewBox keeps the drawing in graph pixels. Only the intrinsic size is scaled.
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${round(canvasWidth * CHIP_RASTER_SCALE)}"`
+        + ` height="${height * CHIP_RASTER_SCALE}"`
         + ` viewBox="0 0 ${round(canvasWidth)} ${height}">`
         + `<rect x="${round(boxLeft + 0.5)}" y="0.5" width="${round(boxWidth - 1)}" height="${height - 1}"`
         + ` rx="${round(radius)}" fill="${p.chipFill}" stroke="${p.chipBorder}" stroke-width="1"/>`

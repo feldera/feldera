@@ -15,6 +15,7 @@ import {
     formatLeafCount,
     nodeChips
 } from './chips.js'
+import { MAX_ZOOM } from './viewport.js'
 
 const decode = (uri: string): string => decodeURIComponent(uri.replace('data:image/svg+xml;utf8,', ''))
 
@@ -22,6 +23,12 @@ const decode = (uri: string): string => decodeURIComponent(uri.replace('data:ima
  *  its leading whitespace, so `width` does not also match `stroke-width`. */
 const attr = (svg: string, tag: string, name: string): number =>
     Number(new RegExp(`<${tag}[^>]*?\\s${name}="([\\d.]+)"`).exec(svg)![1])
+
+/** Width and height of the image in graph pixels, as its `viewBox` sets them. */
+const viewBox = (svg: string) => {
+    const [, width, height] = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg)!
+    return { width: Number(width), height: Number(height) }
+}
 
 /** The image without the icon, whose own shapes would otherwise count as the chip's. */
 const withoutIcon = (svg: string): string => svg.replace(/<g[\s\S]*?<\/g>/, '')
@@ -79,7 +86,22 @@ describe('nodeChips', () => {
         // The badge canvas is a fixed size in the stylesheet; a pill wider than the canvas would
         // be clipped, and a taller one would distort.
         const svg = decode(nodeChips(false, 999_999_999, 'light')[1]!)
-        expect(attr(svg, 'rect', 'width')).toBeLessThanOrEqual(attr(svg, 'svg', 'width'))
+        expect(attr(svg, 'rect', 'width')).toBeLessThanOrEqual(viewBox(svg).width)
+    })
+
+    it('rasterizes at the largest node cache scale, so Safari does not upscale the bitmap', () => {
+        // Safari rasterizes an SVG image at its intrinsic size. Cytoscape draws the image into a node
+        // cache at the power-of-two scale at or above zoom * devicePixelRatio (2 on Retina).
+        const RETINA_PIXEL_RATIO = 2
+        const MIN_SCALE = 2 ** Math.ceil(Math.log2(MAX_ZOOM * RETINA_PIXEL_RATIO))
+        for (const svg of nodeChips(true, 12, 'light').map((uri) => decode(uri))) {
+            const box = viewBox(svg)
+            expect(attr(svg, 'svg', 'width')).toBeGreaterThanOrEqual(MIN_SCALE * box.width)
+            expect(attr(svg, 'svg', 'height')).toBeGreaterThanOrEqual(MIN_SCALE * box.height)
+            // Same aspect ratio as the viewBox, so the chip is not distorted.
+            expect(attr(svg, 'svg', 'width') / attr(svg, 'svg', 'height'))
+                .toBeCloseTo(box.width / box.height, 5)
+        }
     })
 
     it('draws both chips at the node font size, the counter the taller of the two', () => {
@@ -87,9 +109,9 @@ describe('nodeChips', () => {
         for (const svg of [code!, badge!]) {
             expect(attr(svg, 'text', 'font-size')).toBe(CHIP_FONT_SIZE)
         }
-        expect(attr(code!, 'svg', 'height')).toBe(CODE_CHIP_HEIGHT)
+        expect(viewBox(code!).height).toBe(CODE_CHIP_HEIGHT)
         // The counter is taller by the padding around its count.
-        expect(attr(badge!, 'svg', 'height')).toBe(BADGE_HEIGHT)
+        expect(viewBox(badge!).height).toBe(BADGE_HEIGHT)
         expect(BADGE_HEIGHT).toBeGreaterThan(CODE_CHIP_HEIGHT)
     })
 
@@ -140,7 +162,7 @@ describe('nodeChips', () => {
             const svg = counter(leafCount)
             const pill = rects(svg)[0]!
             // The rect is inset by half its stroke, so its right edge lands half a pixel inside.
-            expect(pill.x + pill.width, String(leafCount)).toBeCloseTo(attr(svg, 'svg', 'width') - 0.5, 5)
+            expect(pill.x + pill.width, String(leafCount)).toBeCloseTo(viewBox(svg).width - 0.5, 5)
             expect(pill.width + 1).toBeCloseTo(badgePillWidth(formatLeafCount(leafCount)), 5)
         }
     })
@@ -207,7 +229,7 @@ describe('the code chip label', () => {
         // Three glyphs, not the nine characters of the escaped form: sizing the chip off the escaped
         // text would make it three times too wide.
         expect(attr(code, 'text', 'textLength')).toBeCloseTo(3 * CHIP_FONT_SIZE * 0.6, 5)
-        expect(attr(code, 'svg', 'width')).toBeCloseTo(CODE_CHIP_WIDTH, 5)
+        expect(viewBox(code).width).toBeCloseTo(CODE_CHIP_WIDTH, 5)
     })
 })
 
