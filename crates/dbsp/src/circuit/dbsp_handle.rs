@@ -1,5 +1,5 @@
 use crate::circuit::GlobalNodeId;
-use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::checkpointer::{Checkpointer, CommitProgressLog};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
@@ -14,9 +14,10 @@ use crate::{
     profile::Profiler,
 };
 use anyhow::Error as AnyError;
-use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
+use crossbeam::channel::{Receiver, RecvTimeoutError, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
+use feldera_storage::metrics::WRITE_BLOCKS_BYTES;
 use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::DevTweaks;
@@ -29,7 +30,7 @@ use itertools::Itertools as _;
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{
@@ -2679,6 +2680,9 @@ impl<'a> CheckpointBuilder<'a> {
 /// the file trailer when it transforms itself into a reader in `into_reader`.
 const CHECKPOINT_THREAD_CACHE_BYTES: usize = 64 * 1024;
 
+/// Time between log messages about the progress of a slow checkpoint commit.
+const CHECKPOINT_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
+
 /// First phase of checkpoint commit.
 ///
 /// The first phase writes all the data for the checkpoint into its directory.
@@ -2725,15 +2729,29 @@ impl CheckpointCommitter {
         //
         // We wait for all of them even if one of them fails so that we don't
         // leave any zombies.
-        let commit_thread_results = self
+        //
+        // While we wait, log the progress of a slow commit.  Each thread holds
+        // a clone of `done_sender`, so `done_receiver` disconnects when all of
+        // the threads exit.
+        let start = Instant::now();
+        let written_before = WRITE_BLOCKS_BYTES.sum();
+        let total_operators = self.worker_checkpoints.iter().map(Vec::len).sum();
+        let mut progress =
+            CommitProgressLog::new_at(uuid, start, CHECKPOINT_PROGRESS_INTERVAL, total_operators);
+        let operators_done = Arc::new(AtomicUsize::new(0));
+        let (done_sender, done_receiver) = bounded::<()>(0);
+        let handles = self
             .worker_checkpoints
             .into_iter()
             .enumerate()
             .map(|(index, operators)| {
                 let runtime = self.runtime.clone();
+                let operators_done = operators_done.clone();
+                let done_sender = done_sender.clone();
                 std::thread::Builder::new()
                     .name(format!("dbsp-commit-{index}"))
                     .spawn(move || {
+                        let _done_sender = done_sender;
                         // This thread doesn't run in the context of a dbsp
                         // foreground or background thread, which means it would
                         // by default use, and pollute, the shared auxiliary
@@ -2745,15 +2763,35 @@ impl CheckpointCommitter {
                         let mut committers = Vec::new();
                         for operator in operators {
                             committers.extend(operator.write(&checkpoint_dir)?);
+                            operators_done.fetch_add(1, Ordering::Relaxed);
                         }
                         Ok::<_, DbspError>(committers)
                     })
                     .expect("should be able to start checkpoint thread")
             })
-            .collect_vec()
+            .collect_vec();
+        drop(done_sender);
+        while let Err(RecvTimeoutError::Timeout) =
+            done_receiver.recv_deadline(progress.next_report())
+        {
+            if let Some(message) = progress.check_at(
+                Instant::now(),
+                operators_done.load(Ordering::Relaxed),
+                WRITE_BLOCKS_BYTES.sum().saturating_sub(written_before),
+            ) {
+                info!("{message}");
+            }
+        }
+        let commit_thread_results = handles
             .into_iter()
             .map(|handle| handle.join())
             .collect_vec();
+        if let Some(message) = progress.finish_at(
+            Instant::now(),
+            WRITE_BLOCKS_BYTES.sum().saturating_sub(written_before),
+        ) {
+            info!("{message}");
+        }
 
         // Check for errors, then get the FileCommitters out of them.
         let file_committers = commit_thread_results
