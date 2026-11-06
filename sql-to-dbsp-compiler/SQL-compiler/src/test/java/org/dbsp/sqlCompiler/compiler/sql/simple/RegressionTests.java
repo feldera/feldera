@@ -33,7 +33,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3653() {
         this.statementsFailingInCompilation("CREATE TYPE t AS (related t ARRAY);",
-                "error: Compilation error: At line 1, column 27: Unknown identifier 't'");
+                "1:27: error: Compilation error: Unknown identifier 't'");
     }
 
     @Test
@@ -514,7 +514,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3041() {
         this.statementsFailingInCompilation("CREATE MATERIALIZED VIEW v199 AS SELECT TRIM();",
-                "Error parsing SQL: Encountered \")\" at line 1");
+                "Error parsing SQL: Encountered \")\".\n");
     }
 
     @Test
@@ -2164,8 +2164,8 @@ public class RegressionTests extends SqlIoTest {
                 "CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')",
                 """
                 Not yet implemented: Function 'DATEADD' not yet implemented
-                This is tracked by issue https://github.com/feldera/feldera/issues/1265
                 Perhaps you can use DATE_ADD or addition between a date and an interval?
+                You can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues
                     1|CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')
                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
     }

@@ -258,8 +258,10 @@ important the measurement is, relative to the highest values of that
 measurement in the whole dataflow graph.
 
 Each node has only some of the measurements. For example, a node that
-keeps no state has no **State** section. Turn on **Show advanced** to show
-more measurements.
+keeps no state has no **State** section. By default, the tables show
+only **Runtime seconds**, **Input batches stats record count**, **Spine
+storage size bytes** and **Allocated memory bytes**. Turn on **Show
+advanced** to show all the measurements.
 
 ### The current metric
 
@@ -527,7 +529,10 @@ curl 'http://localhost:8080/v0/pipelines/my-pipeline/samply_profile' -o prof.jso
 ```
 
 ##### Failures
-- `400 Bad Request`: If no profiles have been triggered or completed yet
+- `400 Bad Request`: When you start a profile, if `duration_secs` is not
+  from 1 to 300
+- `400 Bad Request`: When you retrieve a profile, if no profiles have been
+  triggered or completed yet
 - `500 Internal Server Error`: If there was an error during profiling
 
 #### Inspect the profile

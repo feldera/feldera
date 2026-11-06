@@ -1799,6 +1799,34 @@ mod test {
         assert_eq!(b.convert_round_even::<10, 10>(), None);
     }
 
+    /// Half-even rounding of a value with magnitude below one unit of the
+    /// target scale (https://github.com/feldera/feldera/issues/7717).
+    #[test]
+    fn round_even_below_one() {
+        let s = |x: Fixed<5, 0>| x.to_string();
+        assert_eq!(s(Fixed::from_str("0.6").unwrap()), "1");
+        assert_eq!(s(Fixed::from_str("-0.6").unwrap()), "-1");
+        assert_eq!(s(Fixed::from_str("0.5").unwrap()), "0");
+        assert_eq!(s(Fixed::from_str("-0.5").unwrap()), "0");
+        assert_eq!(s(Fixed::from_str("0.4").unwrap()), "0");
+        assert_eq!(s(Fixed::from_str("1.6").unwrap()), "2");
+        assert_eq!(Fixed::<5, 1>::from_str("0.06").unwrap().to_string(), "0.1");
+
+        let ms = Fixed::<10, 4>::from_str("0.0006").unwrap();
+        assert_eq!(
+            ms.convert_round_even::<38, 3>().unwrap().to_string(),
+            "0.001"
+        );
+        let ms = Fixed::<10, 4>::from_str("-0.0006").unwrap();
+        assert_eq!(
+            ms.convert_round_even::<38, 3>().unwrap().to_string(),
+            "-0.001"
+        );
+
+        assert_eq!(s(Fixed::new_round_even(6, 1).unwrap()), "1");
+        assert_eq!(s(Fixed::new_round_even(-6, 1).unwrap()), "-1");
+    }
+
     #[test]
     fn constants() {
         assert_eq!(Fixed::<5, 0>::MAX, Fixed::<5, 0>(99999));

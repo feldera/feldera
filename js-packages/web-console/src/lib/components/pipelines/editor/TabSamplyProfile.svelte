@@ -53,7 +53,8 @@
   let hasAvailableProfile = $state(false)
 
   const minDuration = 1
-  const maxDuration = 3600
+  // Keep equal to `SamplyProfileParams::MAX_DURATION_SECS` in `feldera-types`.
+  const maxDuration = 300
 
   let pipelineNotRunning = $derived(!isPipelineInteractive(pipeline.current.status))
   let disabled = $derived(deleted || pipelineNotRunning || profilingNotEnabledMessage !== null)

@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
 
@@ -87,16 +88,25 @@ public class CSE extends Repeat {
             postorder(operator.to(DBSPOperator.class));
         }
 
-        /** The GC operators that garbage-collect the integral after {@code operator}. */
-        List<DBSPOperator> gcSuccessors(DBSPOperator operator) {
+        /** The GC operators that garbage-collect the integral after {@code port}. */
+        List<DBSPOperator> gcSuccessors(OutputPort port) {
             List<DBSPOperator> result = new ArrayList<>();
-            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
+            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(port.node())) {
                 DBSPOperator node = succ.node();
-                // A GC operator that reads 'operator' on several inputs is a successor once per input
-                if (node.is(IGCOperator.class) && node.to(IGCOperator.class).garbageCollects(operator)
+                // A GC operator that reads 'port' on several inputs is a successor once per input
+                if (node.is(IGCOperator.class) && node.to(IGCOperator.class).garbageCollects(port)
                         && !result.contains(node))
                     result.add(node);
             }
+            return result;
+        }
+
+        /** For each output of {@code operator}, by output number, the GC operators that
+         * garbage-collect the integral after that output. */
+        List<List<DBSPOperator>> outputGcSuccessors(DBSPOperator operator) {
+            List<List<DBSPOperator>> result = new ArrayList<>(operator.outputCount());
+            for (int i = 0; i < operator.outputCount(); i++)
+                result.add(this.gcSuccessors(operator.getOutput(i)));
             return result;
         }
 
@@ -112,8 +122,7 @@ public class CSE extends Repeat {
         }
 
         /** True if each GC operator in {@code left} has an equivalent GC operator in {@code right}, and the
-         * other way around.  Two equivalent operators can share a trace only if it is garbage-collected
-         * in the same way for both. */
+         * other way around. */
         private boolean sameGc(List<DBSPOperator> left, List<DBSPOperator> right) {
             if (left.size() != right.size())
                 return false;
@@ -131,6 +140,17 @@ public class CSE extends Repeat {
                 unmatched.remove(match);
             }
             return true;
+        }
+
+        /** True if each output of one operator is garbage-collected in the same way as the output
+         * with the same number of the other operator.  Two equivalent operators can share their
+         * traces only if they are garbage-collected in the same way for both.
+         * @param left   Result of {@link #outputGcSuccessors} for one operator.
+         * @param right  Result of {@link #outputGcSuccessors} for the other operator. */
+        private boolean sameOutputGc(List<List<DBSPOperator>> left, List<List<DBSPOperator>> right) {
+            if (left.size() != right.size())
+                return false;
+            return Linq.all(Linq.zipSameLength(left, right, this::sameGc));
         }
 
         @Override
@@ -164,7 +184,7 @@ public class CSE extends Repeat {
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
                 DBSPOperator base = destinations.get(i).node();
-                List<DBSPOperator> baseGc = this.gcSuccessors(base);
+                List<List<DBSPOperator>> baseGc = this.outputGcSuccessors(base);
                 for (int j = i + 1; j < destinations.size(); j++) {
                     DBSPOperator compare = destinations.get(j).node();
                     if (this.canonical.containsKey(compare))
@@ -174,7 +194,7 @@ public class CSE extends Repeat {
                         // E.g., a join where both inputs come from the same source
                         continue;
                     // The next round will CSE the GC operators as well
-                    if (base.equivalent(compare) && this.sameGc(baseGc, this.gcSuccessors(compare))) {
+                    if (base.equivalent(compare) && this.sameOutputGc(baseGc, this.outputGcSuccessors(compare))) {
                         this.setCanonical(compare, base);
                     }
                 }

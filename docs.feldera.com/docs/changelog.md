@@ -10,6 +10,122 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- API: when the API server cannot open a connection to a pipeline, it now
+  sends a 503 with error code `PipelineInteractionConnectFailed`. Before, it
+  sent `PipelineInteractionUnreachable`, the code it also uses when the
+  connection fails during a request. The request was not sent, so a client
+  can safely retry it. The Python SDK and the Rust client now retry it for
+  all requests, HTTP ingress included.
+- Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` also
+  refuse a `runtime_config` with `resources.memory_min` or
+  `resources.memory_max` above `kubernetesRunner.upperLimitMemoryMegabyte`, or
+  with both `storage_min` and `storage_max` when
+  `kubernetesRunner.enableStorageAutoscaling` is off, with a 400
+  `InvalidRuntimeConfig` error.  A `PATCH` of `deployment_config` refuses
+  memory above the limit.  Before, the next start failed.  See
+  [Resource limits](/pipelines/configuration#resource-limits).
+
+- Behavior change: on all installations, `POST`, `PUT`, and
+  `PATCH /v0/pipelines` refuse a `runtime_config` with `resources.memory_min`
+  more than `resources.memory_max`, with a 400 `InvalidRuntimeConfig` error.
+  A pipeline stored with such values still loads.
+
+- Iceberg input connector: follow mode reads V3 deletion vectors, so
+  merge-on-read `DELETE`, `UPDATE` and `MERGE` stream as changes.
+
+- Behavior change (Iceberg input connector): follow mode stops with an error
+  when a snapshot deletes rows and the table still has V2 delete files. Before,
+  it could emit rows that were already deleted.
+
+- Behavior change (Iceberg input connector): a read that a retry cannot fix,
+  such as a read of a missing file in follow mode, now fails at once.
+
+## v0.377.0
+
+- Experimental (Enterprise, Kubernetes): `deployment_config` in
+  `PATCH /v0/pipelines/{name}` can also grow the storage of a running pipeline,
+  through `storage_min` and `storage_max`, and change its volume attributes
+  class, through `volume_attributes_class`.  `storage_min` and `storage_max` can
+  only increase, and only when they are already set.  A resize outside the
+  [resource limits](/pipelines/configuration#resource-limits) of the
+  installation is refused.  See
+  [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
+  A start that keeps storage now takes the volume attributes class from the
+  last deployment.  If you changed the class of a stopped pipeline before this
+  upgrade, change it again before its next start.
+
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the hosts of a
+  multihost pipeline exchange data over TLS.  Each host presents its pipeline
+  certificate and admits only hosts of the same pipeline.  Set
+  `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
+  [Client certificates](/get-started/enterprise/https#client-certificates).
+
+- Bug fix (Iceberg input connector): nested columns in data files without
+  field ids, such as files added with `add_files`, now read their real values
+  instead of NULL. If the table has no name mapping, these columns now read as
+  NULL instead of values matched by position. A follow pipeline that read such
+  a file before the upgrade can show wrong rows when the file is deleted later.
+
+- Behavior change (CSV output): a connector with the `index` property fails at
+  startup. Before, the connector ignored the index and wrote each update as a
+  delete and an insert. Remove `index` from the connector to get the same
+  output as before.
+
+- Behavior change (JSON output with `"update_format": "debezium"` and the
+  default `kafka_connect_json_converter` flavor): the schema in the value of
+  each message now declares `before`. Before, it declared only `after` and
+  `op`, so a Kafka Connect consumer got each `d` event without the deleted
+  row. Messages are larger, because the schema of the row is in each message
+  twice.
+
+## v0.376.0
+
+- Behavior change (Python SDK): a request that is not idempotent, such as
+  HTTP ingress, `patch_pipeline` or a checkpoint, no longer retries after a
+  502, 503 or 504 response or a read timeout, because the server may already
+  have applied it and a retry could apply it twice (for example, insert the
+  same rows twice). It still retries a connect timeout, a 408 or 429
+  response, and a 503 whose error code shows the request was not applied
+  (`DeadlockDetected`, `LockTookTooLong`, `PipelineInteractionNotDeployed`,
+  `CompilerUnavailable`). GET requests and idempotent requests keep the full
+  retry policy.
+- Behavior change (DynamoDB output): a `BatchWriteItem` request that fails
+  with a retryable error, throttling included, is retried with backoff
+  against the `max_retries` budget instead of dropping the chunk once the
+  AWS SDK's own attempts run out. One budget now covers unprocessed items,
+  transient transaction cancellations, retryable request errors, temporary
+  credential failures, and item collections over their size limit. An error
+  that a retry cannot fix, such as a validation error or a missing table,
+  drops the chunk at once in both write modes, where transactional mode used
+  to retry it, and the other chunks of the step are still written, where a
+  failed chunk used to drop the rest of the step uncounted. Stale credentials
+  and unknown transaction cancellation reasons are retried. The connector
+  reports itself unhealthy once a chunk has retried for ten seconds and after
+  a chunk gives up, and healthy again once the writes land. The metric
+  `dynamodb_output_retries_total` counts retries as they start, and the gauge
+  `dynamodb_output_retrying_chunks` shows the chunks retrying now.
+  Diagnostics retain cancellation causes without dumping raw HTTP responses
+  or returned item data.
+  See [Retries and health](/connectors/sinks/dynamodb#retries-and-health).
+
+- Bug fix (Python SDK, fda): `commit_transaction(transaction_id=N)` and
+  `fda commit-transaction` failed with "doesn't match current active
+  transaction" if an earlier transaction, for example one that a connector
+  started, was still committing. Without a transaction ID, they returned
+  before the API's transaction committed. Now both wait for the transaction
+  that `start_transaction` started.
+
+- `POST /v0/pipelines/{pipeline_name}/commit_transaction` accepts optional
+  `transaction_id` and `incarnation_uuid` query parameters, and
+  `start_transaction` returns `incarnation_uuid`. With them, the pipeline
+  commits only the named transaction. A retry of the last commit succeeds
+  and does nothing. A commit of a transaction that a pipeline restart lost
+  fails, with `IncarnationUuidMismatch` if the request has
+  `incarnation_uuid`. The Python SDK and `fda` send both. In Python,
+  `Pipeline.start_transaction_response()` returns both values, and
+  `commit_transaction()` takes `incarnation_uuid`. See
+  [Transactions](/pipelines/transactions).
+
 ## v0.373.0
 
 - With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
@@ -42,7 +158,7 @@ Source edition can be found on github.
   `InvalidRuntimeConfig` error.  Before, the API accepted these values and the
   next start failed.  On all installations, `storage_min` cannot be more than
   `storage_max`.  A pipeline stored with such values still loads.  See
-  [Storage limits](/pipelines/configuration#storage-limits).
+  [Resource limits](/pipelines/configuration#resource-limits).
 
 - Incompatible change (SQL): date arithmetic now matches the SQL
   standard.  An interval holds whole numbers in every field except
@@ -632,6 +748,14 @@ Source edition can be found on github.
 
 ## v0.365.0
 
+- The Kafka output connector now writes keyed messages with exactly-once
+  fault tolerance, for example from the JSON `debezium` format or from
+  `key_fields`.  These messages were previously reported as errors and not
+  written.  Messages with the same key now go to the same partition in order,
+  so consumers can share a topic's partitions.  Keyless messages are written
+  as before.  Tombstones are still not supported in this mode.  See
+  [message keys with exactly-once fault tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance).
+
 - New connector (`nats_output`): write view output to a NATS subject. The
   connector publishes to JetStream: each message is acknowledged by the
   server before the pipeline moves on, every message carries a `Nats-Msg-Id`
@@ -661,6 +785,15 @@ Source edition can be found on github.
 - Behavior change (Enterprise, Kubernetes): pipeline StatefulSets now use the
   `OnDelete` update strategy.  To apply StatefulSet changes (e.g.,
   `kubectl rollout restart`, `kubectl edit`, etc.), delete the pod.
+
+- The Kafka output connector with exactly-once fault tolerance no longer
+  forces `batch.size`, `batch.num.messages` and `linger.ms` to their
+  minimums, which sent every message in its own request and limited
+  throughput.  librdkafka's defaults now apply, so output batches messages,
+  and large transactions finish before the transaction timeout.  The three
+  options can now be set in `fault_tolerance.producer_options`; before, any
+  other value was rejected.  See
+  [fault tolerance options](/connectors/sinks/kafka#fault-tolerance-options).
 
 ## v0.362.0
 

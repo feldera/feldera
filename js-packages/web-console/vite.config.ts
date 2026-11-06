@@ -103,7 +103,11 @@ const browserTestProject = ({
     name,
     browser: {
       enabled: true,
-      provider: playwright({ contextOptions: {} }),
+      // The UI scales the tested page down to fit its pane, and the screenshots with it.
+      ui: false,
+      // Without the UI, the tested page is scaled down only when its viewport
+      // (`page.viewport()` in a test) is larger than this browser window.
+      provider: playwright({ contextOptions: { viewport: { width: 1920, height: 1080 } } }),
       instances: [{ browser: 'chromium', headless: true }],
       expect: {
         toMatchScreenshot: {

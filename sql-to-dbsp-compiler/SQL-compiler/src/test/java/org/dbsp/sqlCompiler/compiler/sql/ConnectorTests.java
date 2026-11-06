@@ -550,6 +550,53 @@ public class ConnectorTests extends BaseSQLTests {
                 "\"key_fields\" is only valid with \"update_format\": \"debezium\"");
     }
 
+    @Test
+    public void jsonEncoderTombstonesWithoutDebezium() {
+        viewConnectorTest("""
+                "format": {
+                  "name": "json",
+                  "config": {
+                    "update_format": "insert_delete",
+                    "tombstones_on_delete": false
+                  }
+                }""",
+                "\"tombstones_on_delete\" is only valid with \"update_format\": \"debezium\"");
+    }
+
+    @Test
+    public void jsonEncoderTombstonesWithoutIndex() {
+        viewConnectorTest("""
+                "format": {
+                  "name": "json",
+                  "config": {
+                    "update_format": "debezium",
+                    "tombstones_on_delete": false
+                  }
+                }""",
+                "\"tombstones_on_delete\" is only valid with \"index\"");
+    }
+
+    @Test
+    public void jsonEncoderTombstonesWithIndex() {
+        runCleanConnectorTest("""
+                CREATE TABLE T (x INT);
+                CREATE VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "index": "ix",
+                    "transport": {
+                      "name": "kafka_output",
+                      "config": { "topic": "my-topic" }
+                    },
+                    "format": {
+                      "name": "json",
+                      "config": { "update_format": "debezium", "tombstones_on_delete": false }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;
+                CREATE INDEX IX ON V(x);""");
+    }
+
     // ---- Raw format config ----
 
     @Test

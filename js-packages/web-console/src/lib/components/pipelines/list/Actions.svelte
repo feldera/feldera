@@ -66,7 +66,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
   import { useToast } from '#lib/compositions/useToastNotification.ts'
-  import type { WritablePipeline } from '#lib/compositions/useWritablePipeline.svelte.ts'
+  import {
+    settlePendingPatches,
+    type WritablePipeline
+  } from '#lib/compositions/useWritablePipeline.svelte.ts'
   import {
     deletePipelineDisabledReason,
     editSettingsDisabledReason,
@@ -96,7 +99,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
     deleted?: boolean
     unsavedChanges: boolean
     onActionSuccess?: (pipelineName: string, action: PipelineAction) => void
-    saveFile: () => void
+    /** Saves all unsaved files. Resolves to `false` if the user cancels the save. */
+    saveFile: () => Promise<boolean>
     class?: string
   } = $props()
 
@@ -206,18 +210,19 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
   // Helper function to get raw actions for current pipeline status
   const getRawActions = (status: typeof pipeline.current.status) => {
+    const startable: (keyof typeof actions)[] = [
+      '_start',
+      '_start_paused',
+      '_standby',
+      '_storage_indicator',
+      '_saveFile',
+      '_configurations',
+      '_more'
+    ]
     return filterByPermission(
       match(status)
         .returnType<(keyof typeof actions)[]>()
-        .with('Stopped', () => [
-          '_start',
-          '_start_paused',
-          '_standby',
-          '_storage_indicator',
-          '_saveFile',
-          '_configurations',
-          '_more'
-        ])
+        .with('Stopped', () => startable)
         .with('Preparing', 'Provisioning', 'Initializing', () => [
           '_kill',
           '_spinner',
@@ -318,22 +323,24 @@ groups related actions into multi-action dropdowns when multiple options are ava
           { CompilingSql: P.any },
           { SqlCompiled: P.any },
           { CompilingRust: P.any },
-          (cause) => [
-            ...(Object.values(cause)[0].cause === 'upgrade' ? ['_unschedule' as const] : []),
-            '_start_pending',
-            '_storage_indicator',
-            '_saveFile',
-            '_configurations',
-            '_more'
-          ]
+          (status) =>
+            Object.values(status)[0].cause === 'start'
+              ? [
+                  '_unschedule',
+                  '_start_pending',
+                  '_storage_indicator',
+                  '_saveFile',
+                  '_configurations',
+                  '_more'
+                ]
+              : startable
         )
-        .with('SqlError', 'RustError', 'SystemError', () => [
-          '_start_error',
-          '_storage_indicator',
-          '_saveFile',
-          '_configurations',
-          '_more'
-        ])
+        // Unsaved changes may fix the error, so Start saves them and schedules a start.
+        .with('SqlError', 'RustError', 'SystemError', () =>
+          unsavedChanges
+            ? startable
+            : ['_start_error', '_storage_indicator', '_saveFile', '_configurations', '_more']
+        )
         .exhaustive()
     )
   }
@@ -419,11 +426,24 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const { postPipelineAction } = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
 
+  // Save the code and wait for its PATCH requests before the start request, because
+  // pipeline-manager rejects code changes after a start request. Resolves to `false`
+  // if the user cancels the save or a PATCH request fails.
+  const saveBeforeStart = async () =>
+    (await saveFile()) &&
+    settlePendingPatches().then(
+      () => true,
+      () => false
+    )
+
   const performStartAction = async (
     action: PipelineAction,
     pipelineName: string
     // nextStatus: PipelineStatus
   ) => {
+    if (!(await saveBeforeStart())) {
+      return
+    }
     const callbacks =
       action === 'start'
         ? {
@@ -479,8 +499,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const pipelineName = pipeline.current.name
         performStartAction('start', pipelineName)
       },
-      disabled: () => unsavedChanges,
-      disabledText: 'Save First',
+      disabled: () => false,
       standaloneButton: _start
     },
     _start_paused: {
@@ -490,8 +509,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const pipelineName = pipeline.current.name
         performStartAction('start_paused', pipelineName)
       },
-      disabled: () => unsavedChanges,
-      disabledText: 'Save First',
+      disabled: () => false,
       standaloneButton: _start_paused
     },
     _resume: {
@@ -501,8 +519,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const pipelineName = pipeline.current.name
         performStartAction('resume', pipelineName)
       },
-      disabled: () => unsavedChanges,
-      disabledText: 'Save First',
+      disabled: () => false,
       standaloneButton: _start
     },
     _stop: {
@@ -537,16 +554,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
     _standby: {
       label: 'Start in Standby',
       description: 'Put the pipeline in standby mode',
-      onclick: async () => {
+      onclick: () => {
         const pipelineName = pipeline.current.name
-        const { waitFor } = await postPipelineAction(pipelineName, 'standby')
-        waitFor().then(
-          (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'standby'),
-          toastError('Waiting for pipeline to standby')
-        )
+        performStartAction('standby', pipelineName)
       },
-      disabled: () => unsavedChanges,
-      disabledText: 'Save First',
+      disabled: () => false,
       standaloneButton: _standby
     },
     _activate: {
@@ -813,51 +825,48 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _start()}
   {@render start({
     text: 'Start',
-    action: 'start',
-    disabled: unsavedChanges
+    action: 'start'
   })}
-  {#if unsavedChanges}
-    <Tooltip placement="top">Save the program before running</Tooltip>
-  {/if}
 {/snippet}
 {#snippet _start_paused()}
   {@render start({
     text: 'Start',
-    action: 'start_paused',
-    disabled: unsavedChanges
+    action: 'start_paused'
   })}
-  {#if unsavedChanges}
-    <Tooltip placement="top">Save the program before running</Tooltip>
-  {/if}
 {/snippet}
 {#snippet _resume()}
   {@render start({
     text: 'Resume',
-    action: 'resume',
-    disabled: unsavedChanges
+    action: 'resume'
   })}
-  {#if unsavedChanges}
-    <Tooltip placement="top">Save the program before running</Tooltip>
-  {/if}
 {/snippet}
 {#snippet _standby()}
   {@render start({
     text: 'Standby',
-    action: 'standby',
-    disabled: unsavedChanges
+    action: 'standby'
   })}
   <Tooltip placement="top">Put the pipeline in standby mode</Tooltip>
 {/snippet}
 {#snippet _activate()}
   {@render start({
     text: 'Activate',
-    action: 'activate',
-    disabled: unsavedChanges
+    action: 'activate'
   })}
   <Tooltip placement="top">Activate the pipeline to start data ingress and processing</Tooltip>
 {/snippet}
+<!-- A split button, so that the disabled Start has the layout of the enabled one. -->
 {#snippet _start_disabled()}
-  {@render start({ text: 'Start', disabled: true })}
+  {@const config = multiActionConfigs.start}
+  <SplitButton
+    ontoggle={() => {}}
+    toggleLabel={config.ariaLabel}
+    toggleClass={config.buttonClass}
+    variant={config.variant}
+    size={config.size}
+    disabled
+  >
+    {@render start({ text: 'Start', disabled: true })}
+  </SplitButton>
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
@@ -865,7 +874,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {/snippet}
 {#snippet _start_pending()}
   {@render _start_disabled()}
-  <Tooltip placement="top">Wait for compilation to complete</Tooltip>
+  <Tooltip placement="top">The pipeline starts after compilation</Tooltip>
 {/snippet}
 {#snippet _pause()}
   <button
@@ -961,8 +970,15 @@ groups related actions into multi-action dropdowns when multiple options are ava
   <!-- TODO: add support for a short size when in mobile -->
   <button
     class="{buttonClass} {longClass} {basicBtnColor}"
-    onclick={() => {
-      globalDialog.dialog = killDialog
+    onclick={async () => {
+      // The pipeline does not run before the compilation ends, so the kill needs no
+      // confirmation.
+      const pipelineName = pipeline.current.name
+      const { waitFor } = await postPipelineAction(pipelineName, 'kill')
+      waitFor().then(
+        (shouldContinue) => shouldContinue && onActionSuccess?.(pipelineName, 'kill'),
+        toastError('Waiting for the pipeline start to cancel')
+      )
     }}
   >
     Cancel start

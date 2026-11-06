@@ -57,9 +57,13 @@ through an index (see [Materialized Tables and Views](/sql/materialized)).
 
 The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for:
 - Kafka output connectors configured with the [Avro
-  format](/formats/avro/), except in a pipeline configured for exactly
-  once fault tolerance (because Kafka connectors use the key to
-  deduplicate output in exactly once fault tolerance).
+  format](/formats/avro/). With exactly once fault tolerance, the
+  `confluent_jdbc` update format cannot write deletions (see [Message keys
+  with exactly-once fault
+  tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance)).
+- Kafka output connectors configured with the [JSON
+  format](/formats/json#the-debezium-format) and `"update_format": "debezium"`.
+  With exactly once fault tolerance, set `"tombstones_on_delete": false`.
 - [Postgres output connector](/connectors/sinks/postgresql)
 - [Delta Lake output connector](/connectors/sinks/delta)
 
@@ -134,6 +138,31 @@ AS
 
 -- Create an index over `my_view`.
 CREATE INDEX my_index ON my_view(id);
+```
+
+#### JSON Format
+
+With the Debezium update format, the connector writes one change event for each key, with
+`op` set to `c`, `u`, or `d`, and keys each Kafka message by the index columns. After each
+`d` event, the connector also writes a tombstone. See the
+[JSON format documentation](/formats/json#the-debezium-format).
+
+```sql
+CREATE TABLE t (id INT NOT NULL PRIMARY KEY, s VARCHAR);
+
+CREATE MATERIALIZED VIEW v WITH ('connectors' = '[{
+  "index": "v_idx",
+  "transport": {
+    "name": "kafka_output",
+    "config": {"bootstrap.servers": "localhost:9092", "topic": "v"}
+  },
+  "format": {
+    "name": "json",
+    "config": {"update_format": "debezium", "json_flavor": "default"}
+  }
+}]') AS SELECT * FROM t;
+
+CREATE INDEX v_idx ON v(id);
 ```
 
 :::warning

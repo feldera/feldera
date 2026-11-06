@@ -44,6 +44,11 @@ public class DBSPVariantNullLiteral extends DBSPLiteral {
     }
 
     @Override
+    public boolean hasNullableForm() {
+        return false;
+    }
+
+    @Override
     public String toSqlString() {
         return "null";
     }

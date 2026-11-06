@@ -22,7 +22,7 @@ CREATE VIEW s AS SELECT * FROM blah;
         expected = f"""
 Pipeline {pipeline_name} failed to compile:
 Compilation error
-From line 5, column 32 to line 5, column 35: Object 'blah' not found
+Object 'blah' not found
 Code snippet:
     4|);
     5|CREATE VIEW s AS SELECT * FROM blah;

@@ -119,6 +119,10 @@ mod kafka_connect_json_converter {
         schema: TypeSchema,
     }
 
+    /// Generate JSON schema for the Debezium value: `before`, `after`, and `op`.
+    ///
+    /// `before` holds the old row of a `u` event and the row of a `d` event. A Kafka Connect
+    /// JsonConverter drops the payload fields that the schema does not declare.
     pub fn debezium_value_schema_str(schema: &Relation) -> String {
         serde_json::to_string(&debezium_value_schema(schema)).unwrap()
     }
@@ -131,28 +135,26 @@ mod kafka_connect_json_converter {
     }
 
     fn debezium_value_schema(schema: &Relation) -> Type {
-        Type {
-            representation_type: RepresentationType::Struct {
-                fields: vec![
-                    JsonField {
-                        field: "after".to_string(),
-                        schema: TypeSchema {
-                            typ: relation_schema(schema, None),
-                            optional: true,
-                        },
-                    },
-                    JsonField {
-                        field: "op".to_string(),
-                        schema: TypeSchema {
-                            typ: Type {
-                                representation_type: RepresentationType::String,
-                                logical_type: None,
-                            },
-                            optional: false,
-                        },
-                    },
-                ],
+        let row = |field: &str| JsonField {
+            field: field.to_string(),
+            schema: TypeSchema {
+                typ: relation_schema(schema, None),
+                optional: true,
             },
+        };
+        let op = JsonField {
+            field: "op".to_string(),
+            schema: TypeSchema {
+                typ: Type {
+                    representation_type: RepresentationType::String,
+                    logical_type: None,
+                },
+                optional: false,
+            },
+        };
+        let fields = vec![row("before"), row("after"), op];
+        Type {
+            representation_type: RepresentationType::Struct { fields },
             logical_type: Some(LogicalType {
                 name: "Envelope".to_string(),
                 parameters: Default::default(),
@@ -404,7 +406,7 @@ mod kafka_connect_json_converter {
             let connect_schema = debezium_value_schema_str(&schema);
             let connect_schema_value: serde_json::Value =
                 serde_json::from_str(&connect_schema).unwrap();
-            let expected_value: serde_json::Value = serde_json::from_str(
+            let mut expected_value: serde_json::Value = serde_json::from_str(
                 r#"{
   "type": "struct",
   "fields": [
@@ -507,6 +509,11 @@ mod kafka_connect_json_converter {
 }"#,
             )
             .unwrap();
+            // `before` comes first and has the type of `after`.
+            let fields = expected_value["fields"].as_array_mut().unwrap();
+            let mut before = fields[0].clone();
+            before["field"] = serde_json::Value::from("before");
+            fields.insert(0, before);
             println!("{}", connect_schema);
             assert_eq!(&connect_schema_value, &expected_value);
         }

@@ -1,34 +1,46 @@
 .buttonGroup {
   display: flex;
-  column-gap: 0.2rem;
+  column-gap: 0.25rem;
   position: absolute;
   /* rtl:ignore */
-  right: calc(var(--ifm-pre-padding) / 2);
-  top: calc(var(--ifm-pre-padding) / 2);
+  right: 0.75rem;
+  top: 0.75rem;
 }
 
+/* The copy chip of the website's code window: code ground, white hairline, mono label */
 .buttonGroup button {
-  /* A background that matches the code surface makes the button invisible
-     except for its border — use a translucent light overlay instead so it
-     reads as a distinct chip against the dark code background. */
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--prism-color);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--ifm-global-radius);
-  padding: 0.4rem;
+  height: 1.625rem;
+  background: var(--color-onyx);
+  color: rgb(255 255 255 / 0.55);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.15);
+  border-radius: 0.375rem;
+  padding: 0 0.4rem;
   line-height: 0;
-  transition: opacity var(--ifm-transition-fast) ease-in-out, background-color var(--ifm-transition-fast) ease-in-out;
+  transition: opacity var(--ifm-transition-fast) ease-in-out, color var(--ifm-transition-fast) ease-in-out;
   opacity: 0;
+}
+
+.buttonGroup button svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .buttonGroup button:focus-visible,
 .buttonGroup button:hover {
   opacity: 1 !important;
-  background: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
 }
 
 :global(.theme-code-block:hover) .buttonGroup button {
-  opacity: 0.6;
+  opacity: 1;
+}
+
+/* Touch screens have no hover: show the buttons */
+@media (hover: none) {
+  .buttonGroup button {
+    opacity: 1;
+  }
 }

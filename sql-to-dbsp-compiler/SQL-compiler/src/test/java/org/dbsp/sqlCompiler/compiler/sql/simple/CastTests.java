@@ -953,6 +953,22 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7717() {
+        // Half-even rounding of a value below one unit of the target scale.
+        // DECIMAL to TIMESTAMP reads the value as milliseconds, so 0.0006 is 0.6 microseconds.
+        var ccs = this.getCCS("""
+                CREATE TABLE R(s VARCHAR, d DECIMAL(10, 4));
+                CREATE VIEW V AS SELECT CAST(s AS DECIMAL(5, 0)) AS a, CAST(d AS TIMESTAMP) AS b FROM R;""");
+        ccs.step("INSERT INTO R VALUES ('0.6', 0.0006), ('-0.6', -0.0006), ('0.5', 0.0005), ('1.5', 0.0015)", """
+                 a | b | weight
+                ----------------
+                 1 | 1970-01-01 00:00:00.000001 | 1
+                 -1 | 1969-12-31 23:59:59.999999 | 1
+                 0 | 1970-01-01 00:00:00 | 1
+                 2 | 1970-01-01 00:00:00.000002 | 1""");
+    }
+
+    @Test
     public void issue6257() {
         // Calcite rounds by truncating, so we are tied to that behavior
         this.qst("""

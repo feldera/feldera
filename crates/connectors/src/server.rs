@@ -1,5 +1,7 @@
 use crate::adhoc::set_snapshot;
-use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
+use crate::controller::{
+    CompletionToken, ConsistentSnapshot, ControllerBuilder, TransactionToCommit,
+};
 use crate::engine::{
     CircuitFactory, Engine, JsonProfileChunks, OpenStorageFn, PipelineStorage, ProgramLoader,
 };
@@ -50,7 +52,7 @@ use clap::Parser;
 use colored::Colorize;
 use feldera_adapterlib::PipelineState;
 use feldera_adapterlib::errors::controller::ConfigError;
-use feldera_mtls::{Caller, PipelineClientAuth};
+use feldera_mtls::{Caller, PipelineClientAuth, PipelinePeerTls};
 use feldera_observability as observability;
 use feldera_observability::json_logging::init_pipeline_logging_with_id;
 use feldera_types::adapter_stats::{
@@ -76,8 +78,8 @@ use feldera_types::coordination::{
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
-    ActivateParams, ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
-    SamplyProfileParams, StatsParams,
+    ActivateParams, ApproveParameters, CommitTransactionParams, MetricsFormat, MetricsParameters,
+    SamplyProfileGetParams, SamplyProfileParams, StatsParams,
 };
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, ConnectorStats, ExtendedRuntimeStatus,
@@ -951,7 +953,14 @@ pub fn run_server(
 
         // Initiate creating the controller so that we can get access to storage,
         // which is needed to determine the initial state.
-        let builder = ControllerBuilder::new(config, &open_storage)?;
+        // Every host of a deployment has the same deployment ID, so it
+        // identifies the hosts of this run to each other.
+        let builder = ControllerBuilder::new(config, &open_storage)?
+            .with_exchange_tls(
+                args.require_client_certificates
+                    .then(|| pipeline_peer_tls(args)),
+            )
+            .with_exchange_uuid(args.deployment_id);
         info!(
             "Pipeline deployment identifier from arguments: {}",
             args.deployment_id
@@ -1701,6 +1710,37 @@ fn pipeline_client_auth(args: &ServerArgs) -> PipelineClientAuth {
         .collect();
     PipelineClientAuth::from_chain(&chain, &args.extra_client_certificate_uris)
         .unwrap_or_else(|e| panic!("client certificates with '{path}': {e}"))
+}
+
+/// Loads the TLS configurations for exchange with the other hosts from the pipeline
+/// certificate and key.
+fn pipeline_peer_tls(args: &ServerArgs) -> PipelinePeerTls {
+    assert!(
+        args.enable_https,
+        "FELDERA_REQUIRE_CLIENT_CERTIFICATES requires --enable-https"
+    );
+    let cert_path = args
+        .https_tls_cert_path
+        .as_ref()
+        .expect("CLI argument --https-tls-cert-path is required");
+    let key_path = args
+        .https_tls_key_path
+        .as_ref()
+        .expect("CLI argument --https-tls-key-path is required");
+    let chain = CertificateDer::pem_file_iter(cert_path)
+        .expect("HTTPS TLS certificate should be read")
+        .flatten()
+        .collect();
+    let key = PrivateKeyDer::from_pem_file(key_path).expect("HTTPS TLS key should be read");
+    let tls = PipelinePeerTls::from_chain(chain, key)
+        .unwrap_or_else(|e| {
+            panic!(
+                "exchange TLS with certificate '{cert_path}' and key '{key_path}': {e}. The runner writes both files from the pipeline certificate, which it signs with the private CA (Helm value `caSecretRef`)"
+            )
+        });
+    observability::fips::log_rustls_fips_status("exchange TLS server config", tls.server.fips());
+    observability::fips::log_rustls_fips_status("exchange TLS client config", tls.client.fips());
+    tls
 }
 
 /// Refuses requests from callers other than the control plane, this pipeline and the listed
@@ -3827,6 +3867,14 @@ async fn samply_profile(
     query_params: web::Query<SamplyProfileParams>,
 ) -> Result<HttpResponse, PipelineError> {
     let duration = query_params.duration_secs;
+    if !(1..=SamplyProfileParams::MAX_DURATION_SECS).contains(&duration) {
+        return Err(PipelineError::InvalidParam {
+            error: format!(
+                "`duration_secs` must be from 1 to {}, not {duration}",
+                SamplyProfileParams::MAX_DURATION_SECS
+            ),
+        });
+    }
     let controller = state.controller()?;
 
     let state_samply_state = state.samply_state.clone();
@@ -4339,12 +4387,22 @@ async fn load_program(
 
 #[post("/start_transaction")]
 async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.start_transaction()?))
+    let mut response = state.controller()?.start_transaction()?;
+    response.incarnation_uuid = Some(state.incarnation_uuid);
+    Ok(HttpResponse::Ok().json(response))
 }
 
 #[post("/commit_transaction")]
-async fn commit_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    state.controller()?.start_commit_transaction()?;
+async fn commit_transaction(
+    state: WebData<ServerState>,
+    params: web::Query<CommitTransactionParams>,
+) -> Result<impl Responder, PipelineError> {
+    check_incarnation_uuid(&state, params.incarnation_uuid)?;
+    state.controller()?.start_commit_transaction(
+        params
+            .transaction_id
+            .map_or(TransactionToCommit::Open, TransactionToCommit::Id),
+    )?;
     Ok(HttpResponse::Ok().json("Transaction commit initiated"))
 }
 
@@ -6231,6 +6289,45 @@ pub mod test_http {
             }
 
             pause_pipeline(&server).await;
+        })
+    }
+
+    /// `POST /samply_profile` refuses a duration outside 1 to
+    /// `SamplyProfileParams::MAX_DURATION_SECS` seconds, before it starts Samply.
+    #[engine_test]
+    pub fn samply_profile_rejects_out_of_range_duration(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            crate::ensure_default_crypto_provider();
+
+            let server = start_test_server(
+                engine,
+                &json!({"name": "test", "inputs": {}, "outputs": {}}),
+                Uuid::new_v4(),
+            )
+            .await;
+
+            let max = feldera_types::query_params::SamplyProfileParams::MAX_DURATION_SECS;
+            for duration in [0, max + 1, 2_592_000, u64::MAX] {
+                let mut response = server
+                    .post(format!("/samply_profile?duration_secs={duration}"))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{duration}");
+                let body = response.body().await.unwrap();
+                let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(error["error_code"], "InvalidParam", "{duration}: {error}");
+            }
+
+            // The boundaries pass the range check, whether or not Samply then starts.
+            for duration in [1, max] {
+                let response = server
+                    .post(format!("/samply_profile?duration_secs={duration}"))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_ne!(response.status(), StatusCode::BAD_REQUEST, "{duration}");
+            }
         })
     }
 
@@ -8470,6 +8567,45 @@ pub mod test_http {
             // Receive output first, otherwise the token never gets marked as complete.
             TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
             wait_for_completion(&server, &token).await;
+        })
+    }
+
+    /// `/commit_transaction?transaction_id=N` commits transaction N only, and a retry of it
+    /// succeeds.  A commit that names another incarnation fails.
+    #[engine_test]
+    pub fn commit_transaction_by_id(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+
+            let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+            let server = start_test_server(engine, &config_json, Uuid::default()).await;
+            start_pipeline(&server).await;
+
+            let mut resp = server.post("/start_transaction").send().await.unwrap();
+            assert!(resp.status().is_success());
+            let started = resp.json::<serde_json::Value>().await.unwrap();
+            let tid = started["transaction_id"].as_i64().unwrap();
+            let incarnation = started["incarnation_uuid"].as_str().unwrap().to_string();
+
+            let commit = |tid: i64, incarnation: &str| {
+                let request = server.post(format!(
+                    "/commit_transaction?transaction_id={tid}&incarnation_uuid={incarnation}"
+                ));
+                async move { request.send().await.unwrap() }
+            };
+
+            let mut resp = commit(tid + 1, &incarnation).await;
+            assert_eq!(resp.status(), StatusCode::CONFLICT);
+            let error = resp.json::<serde_json::Value>().await.unwrap();
+            assert_eq!(error["error_code"], "TransactionIdMismatch", "{error}");
+
+            let mut resp = commit(tid, &Uuid::now_v7().to_string()).await;
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+            let error = resp.json::<serde_json::Value>().await.unwrap();
+            assert_eq!(error["error_code"], "IncarnationUuidMismatch", "{error}");
+
+            assert!(commit(tid, &incarnation).await.status().is_success());
+            assert!(commit(tid, &incarnation).await.status().is_success());
         })
     }
 

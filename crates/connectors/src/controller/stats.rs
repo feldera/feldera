@@ -1774,9 +1774,10 @@ impl ControllerStatus {
     /// `open()` and assigns the reader that it returns into the newly inserted
     /// entry.
     ///
-    /// Returns an error if the new endpoint would have a duplicate name or if
-    /// `open()` returns an error.  In either case, the final state is that the
-    /// endpoint is not inserted.
+    /// Returns an error if the new endpoint would have a duplicate name, if
+    /// `open()` returns an error, or if the pipeline stops before or during
+    /// `open()`.  In each case, the final state is that the endpoint is not
+    /// inserted.
     pub fn insert_input_endpoint<F>(
         &self,
         endpoint_id: u64,
@@ -1792,6 +1793,12 @@ impl ControllerStatus {
         // `eoi` to the controller, the eoi status is recorded and not dropped
         // on the floor.
         let mut status = self.inputs.write();
+        // `stop` sets `Terminated` before it clears the inputs under this
+        // lock, so a stop that already ran is visible here and a later one
+        // removes the entry below.
+        if self.state() == PipelineState::Terminated {
+            return Err(Self::pipeline_stopped(&endpoint_name));
+        }
         if status.values().any(|ep| ep.endpoint_name == endpoint_name) {
             return Err(ControllerError::duplicate_input_endpoint(endpoint_name));
         }
@@ -1800,8 +1807,18 @@ impl ControllerStatus {
 
         match open() {
             Ok(reader) => {
-                self.inputs.write().get_mut(&endpoint_id).unwrap().reader = Some(Arc::from(reader));
-                Ok(())
+                let reader: Arc<dyn InputReader> = Arc::from(reader);
+                match self.inputs.write().get_mut(&endpoint_id) {
+                    Some(endpoint) => {
+                        endpoint.reader = Some(reader);
+                        Ok(())
+                    }
+                    None => {
+                        // `stop` removed the endpoint while `open` ran.
+                        reader.disconnect();
+                        Err(Self::pipeline_stopped(&endpoint_name))
+                    }
+                }
             }
             Err(e) => {
                 self.inputs.write().remove(&endpoint_id);
@@ -1812,6 +1829,14 @@ impl ControllerStatus {
                 ))
             }
         }
+    }
+
+    fn pipeline_stopped(endpoint_name: &str) -> ControllerError {
+        ControllerError::input_transport_error(
+            endpoint_name,
+            true,
+            anyhow!("the pipeline stopped while the endpoint was being added"),
+        )
     }
 }
 

@@ -352,9 +352,9 @@ pub fn localfs_input_test_ordered_transactional(engine: &dyn PipelineTestEngine)
 }
 
 /// Create a local Iceberg table populated with `data` and return its metadata
-/// location. With `extra_columns`, the table gets columns that no test SQL
-/// schema declares (see `--extra-columns` in `create_test_table_s3.py`).
-fn create_localfs_table(data: &[Value], extra_columns: bool) -> String {
+/// location. `extra` holds flags of `create_test_table_s3.py`, such as
+/// `--extra-columns`.
+fn create_localfs_table(data: &[Value], extra: &[&str]) -> String {
     let table_dir = tempfile::TempDir::new().unwrap();
     let table_path = table_dir.path().display().to_string();
 
@@ -364,11 +364,7 @@ fn create_localfs_table(data: &[Value], extra_columns: bool) -> String {
     // Uncomment to inspect output parquet files produced by the test.
     std::mem::forget(table_dir);
 
-    let mut extra: Vec<&str> = Vec::new();
-    if extra_columns {
-        extra.push("--extra-columns");
-    }
-    run_table_script(&table_path, ndjson_file.path(), &extra)
+    run_table_script(&table_path, ndjson_file.path(), extra)
 }
 
 /// A `datetime` read must land on the snapshot current at that time.
@@ -473,7 +469,7 @@ fn iceberg_localfs_input_test(
 ) -> HashMap<String, f64> {
     let data = data(n_records);
 
-    let metadata_path = create_localfs_table(&data, false);
+    let metadata_path = create_localfs_table(&data, &[]);
 
     let mut config = json!({ "metadata_location": metadata_path });
     let config_obj = config.as_object_mut().unwrap();
@@ -522,7 +518,7 @@ fn iceberg_localfs_input_test(
 fn iceberg_localfs_input_subset_test(engine: &dyn PipelineTestEngine, skip_unused: bool) {
     let data = data(100_000);
 
-    let metadata_path = create_localfs_table(&data, true);
+    let metadata_path = create_localfs_table(&data, &["--extra-columns"]);
 
     let table_properties: &[(&str, &str)] = if skip_unused {
         &[("skip_unused_columns", "true")]
@@ -551,6 +547,56 @@ fn iceberg_localfs_input_subset_test(engine: &dyn PipelineTestEngine, skip_unuse
     let zset = output_zset(&subset_relation(), json_file.path());
 
     assert_eq!(zset, expected_zset);
+}
+
+/// A table migrated without field ids (`add_files`) reads its nested columns
+/// through the name mapping. iceberg-rust before 4dd8c946 read them as NULL.
+/// Its file has a page index, so the filters also check page pruning.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
+pub fn localfs_input_test_add_files(engine: &dyn PipelineTestEngine) {
+    // `add_files` needs all rows of a file in one partition, i.e. one day.
+    let data = data(50_000);
+    let metadata_path = create_localfs_table(&data, &["--add-files"]);
+
+    let i = |x: &Value| x["i"].as_i64().unwrap();
+    type Keep<'a> = &'a dyn Fn(&Value) -> bool;
+    let filters: [(&str, Keep); 9] = [
+        ("true", &|_| true),
+        ("i >= 31337 AND i < 31400", &|x| {
+            (31337..31400).contains(&i(x))
+        }),
+        ("i IN (5, 20000, 49999)", &|x| {
+            [5, 20000, 49999].contains(&i(x))
+        }),
+        ("NOT (i < 40000)", &|x| i(x) >= 40000),
+        ("i < 100 OR i > 49900", &|x| i(x) < 100 || i(x) > 49900),
+        ("s LIKE 's4999%'", &|x| {
+            x["s"].as_str().unwrap().starts_with("s4999")
+        }),
+        (
+            "ts >= TIMESTAMP '2024-01-01 10:00:00' AND ts < TIMESTAMP '2024-01-01 10:01:00'",
+            &|x| (36000..36060).contains(&i(x)),
+        ),
+        ("b AND i < 1000", &|x| i(x) % 2 == 1 && i(x) < 1000),
+        // Pushdown must unescape `\9` to `9`, or it prunes the matching rows.
+        ("s LIKE 's4\\9%'", &|x| {
+            x["s"].as_str().unwrap().starts_with("s49")
+        }),
+    ];
+    for (filter, keep) in filters {
+        let (json_file, _) = iceberg_snapshot_to_json(
+            engine,
+            &relation(),
+            &[],
+            json!({ "metadata_location": metadata_path, "snapshot_filter": filter }),
+        );
+        let expected: Vec<Value> = data.iter().filter(|x| keep(x)).cloned().collect();
+        assert_eq!(
+            output_zset(&relation(), json_file.path()),
+            expected_zset(&relation(), &expected),
+            "snapshot_filter: {filter}"
+        );
+    }
 }
 
 /// The connector reads only the columns the SQL table declares.
@@ -648,7 +694,7 @@ fn suspend_and_stop(pipeline: Controller) {
 )]
 pub fn localfs_input_test_resume_completed_snapshot(engine: &dyn PipelineTestEngine) {
     let data = data(100_000);
-    let metadata_path = create_localfs_table(&data, false);
+    let metadata_path = create_localfs_table(&data, &[]);
     let storage_dir = tempfile::TempDir::new().unwrap();
 
     // Ordered snapshot so the read is resumable per lateness range.
@@ -1463,4 +1509,302 @@ pub(super) fn expected_zset(relation: &Relation, rows: &[Value]) -> ZSet {
         .unwrap()
         .zset()
         .unwrap()
+}
+
+/// A table written by `crates/iceberg/src/test/create_v3_tables.py`.
+#[derive(serde::Deserialize)]
+struct SparkTable {
+    table: String,
+    start_snapshot_id: i64,
+    #[serde(default)]
+    end_snapshot_id: i64,
+    /// Rows a follow from `start_snapshot_id` reads, from snapshot summaries.
+    #[serde(default)]
+    follow_records: u64,
+    /// `(id, name)` of every row in the final table.
+    #[serde(default)]
+    rows: Vec<(i64, String)>,
+    #[serde(default)]
+    row_count: usize,
+}
+
+/// Build Spark table `name` (a `--table` of the script). Each case builds its
+/// own table, because cases run in parallel processes. Needs `uv` and a JDK.
+fn spark_table(name: &str) -> SparkTable {
+    spark_tables(&[name])
+}
+
+/// Build `names` in order and return the last. A retry builds them all again,
+/// because each one starts from the table that the one before it left.
+fn spark_tables(names: &[&str]) -> SparkTable {
+    let script = "../iceberg/src/test/create_v3_tables.py";
+    let namespace = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let run = |name: &str| {
+        // The script writes `leftover_old` with Iceberg 1.9, which has no
+        // Spark 4 runtime.
+        let pyspark = if name == "leftover_old" {
+            "3.5.7"
+        } else {
+            "4.0.1"
+        };
+        std::process::Command::new("uv")
+            .args([
+                "run",
+                "--no-project",
+                "--with",
+                &format!("pyspark=={pyspark}"),
+                "python",
+            ])
+            .arg(script)
+            .arg(format!("--namespace={namespace}"))
+            .arg(format!("--table={name}"))
+            .output()
+            .unwrap_or_else(|e| panic!("failed to run '{script}' (is `uv` on PATH?): {e}"))
+    };
+    // Jar downloads from Maven Central fail now and then; retry like the
+    // Delta Spark fixtures.
+    let mut attempt = 1;
+    let output = loop {
+        let mut output = run(names[0]);
+        for name in &names[1..] {
+            if !output.status.success() {
+                break;
+            }
+            output = run(name);
+        }
+        if output.status.success() || attempt == 3 {
+            break output;
+        }
+        eprintln!(
+            "'{script}' failed (attempt {attempt}/3), retrying:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::thread::sleep(std::time::Duration::from_secs(5 * attempt));
+        attempt += 1;
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "'{script}' failed (status {}):\nstdout: {stdout}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let last = stdout.trim().lines().last().unwrap_or_default();
+    serde_json::from_str(last)
+        .unwrap_or_else(|e| panic!("'{script}' printed unexpected output {last:?}: {e}"))
+}
+
+/// The zset of `table`'s final rows.
+fn spark_table_zset(table: &SparkTable) -> ZSet {
+    let rows: Vec<Value> = table
+        .rows
+        .iter()
+        .map(|(id, name)| json!({"id": id, "name": name, "created_at": "2024-01-01 00:00:00"}))
+        .collect();
+    expected_zset(&s3tables_relation(), &rows)
+}
+
+/// Follow a V3 table through merge-on-read changes, a copy-on-write DELETE and
+/// a compaction. Checks the final rows, and that only changed rows are read.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_v3_reads_only_changed_rows(engine: &dyn PipelineTestEngine) {
+    let v3 = &spark_table("v3");
+    let mut config = rest_follow_config_with(
+        &v3.table,
+        "snapshot_and_follow",
+        "snapshot_id",
+        json!(v3.start_snapshot_id),
+    );
+    config["end_snapshot_id"] = json!(v3.end_snapshot_id);
+
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        &s3tables_relation(),
+        &[],
+        config,
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(
+        || pipeline.status().pipeline_complete() || !err_receiver.is_empty(),
+        120_000,
+    )
+    .expect("timed out following the table");
+    assert!(err_receiver.is_empty(), "{:?}", err_receiver.try_recv());
+
+    assert_eq!(
+        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total") as u64,
+        v3.follow_records
+    );
+    assert_eq!(
+        output_zset(&s3tables_relation(), json_file.path()),
+        spark_table_zset(v3)
+    );
+    pipeline.stop().unwrap();
+}
+
+/// The columns of `create_v3_tables.py --table=types`: those of [`columns`]
+/// that Spark writes.
+pub fn v3_types_relation() -> Relation {
+    let basic_struct = || ColumnType::structure(false, &relations::basic_columns());
+    Relation::new(
+        "iceberg_v3_types".into(),
+        vec![
+            Field::new("b".into(), ColumnType::boolean(false)),
+            Field::new("i".into(), ColumnType::int(false)),
+            Field::new("l".into(), ColumnType::bigint(false)),
+            Field::new("r".into(), ColumnType::real(false)),
+            Field::new("d".into(), ColumnType::double(false)),
+            Field::new("dec".into(), ColumnType::decimal(10, 3, false)),
+            Field::new("dt".into(), ColumnType::date(false)),
+            Field::new("ts".into(), ColumnType::timestamp(false)),
+            Field::new("s".into(), ColumnType::varchar(false)),
+            Field::new("varbin".into(), ColumnType::varbinary(false)),
+            Field::new("tstz".into(), ColumnType::timestamp_tz(false)),
+            Field::new(
+                "string_array".into(),
+                ColumnType::array(false, ColumnType::varchar(false)),
+            ),
+            Field::new("struct1".into(), basic_struct()),
+            Field::new(
+                "struct_array".into(),
+                ColumnType::array(false, basic_struct()),
+            ),
+            Field::new(
+                "string_string_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::varchar(false),
+                ),
+            ),
+            Field::new(
+                "string_struct_map".into(),
+                ColumnType::map(false, ColumnType::varchar(false), basic_struct()),
+            ),
+        ],
+        false,
+        BTreeMap::new(),
+    )
+}
+
+/// Follow a V3 table with a column of each type through merge-on-read
+/// changes. The rows must match a snapshot read of the final snapshot.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_v3_reads_every_type(engine: &dyn PipelineTestEngine) {
+    let types = &spark_table("types");
+    let relation = v3_types_relation();
+    let mut config = rest_follow_config_with(
+        &types.table,
+        "snapshot_and_follow",
+        "snapshot_id",
+        json!(types.start_snapshot_id),
+    );
+    config["end_snapshot_id"] = json!(types.end_snapshot_id);
+
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        &relation,
+        &[],
+        config,
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(
+        || pipeline.status().pipeline_complete() || !err_receiver.is_empty(),
+        120_000,
+    )
+    .expect("timed out following the table");
+    assert!(err_receiver.is_empty(), "{:?}", err_receiver.try_recv());
+    assert_eq!(
+        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total") as u64,
+        types.follow_records
+    );
+    pipeline.stop().unwrap();
+
+    let (snapshot_file, _metrics) = iceberg_snapshot_to_json(
+        engine,
+        &relation,
+        &[],
+        rest_follow_config_with(
+            &types.table,
+            "snapshot",
+            "snapshot_id",
+            json!(types.end_snapshot_id),
+        ),
+    );
+    let expected = output_zset(&relation, snapshot_file.path());
+    assert_eq!(expected.len(), types.row_count);
+    assert_eq!(output_zset(&relation, json_file.path()), expected);
+}
+
+/// Follow a V3 table through a copy-on-write DELETE by Iceberg 1.9, which
+/// leaves the removed file's deletion vector in the table, and a later commit
+/// by Iceberg 1.10, which drops that vector. The deleted file's rows must not
+/// include the row its vector deleted, and the dropped vector changes no rows.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_v3_leftover_deletion_vector(engine: &dyn PipelineTestEngine) {
+    let new = &spark_tables(&["leftover_old", "leftover_new"]);
+    let mut config = rest_follow_config_with(
+        &new.table,
+        "snapshot_and_follow",
+        "snapshot_id",
+        json!(new.start_snapshot_id),
+    );
+    config["end_snapshot_id"] = json!(new.end_snapshot_id);
+
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        &s3tables_relation(),
+        &[],
+        config,
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(
+        || pipeline.status().pipeline_complete() || !err_receiver.is_empty(),
+        120_000,
+    )
+    .expect("timed out following the table");
+    assert!(err_receiver.is_empty(), "{:?}", err_receiver.try_recv());
+    assert_eq!(
+        output_zset(&s3tables_relation(), json_file.path()),
+        spark_table_zset(new)
+    );
+    pipeline.stop().unwrap();
+}
+
+/// Follow mode reads appends to a table that still has a V2 delete file, but
+/// rejects a delete, even one that does not touch the file it applies to.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_rejects_v2_delete_files(engine: &dyn PipelineTestEngine) {
+    let v2 = &spark_table("v2");
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        &s3tables_relation(),
+        &[],
+        rest_follow_config_with(
+            &v2.table,
+            "follow",
+            "snapshot_id",
+            json!(v2.start_snapshot_id),
+        ),
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+
+    let error = err_receiver
+        .recv_timeout(std::time::Duration::from_secs(120))
+        .expect("the connector should reject the V2 delete file");
+    assert!(error.contains("has a V2 position delete file"), "{error}");
+    // The append before the delete is read.
+    assert_eq!(
+        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total"),
+        10.0
+    );
+    pipeline.stop().unwrap();
 }

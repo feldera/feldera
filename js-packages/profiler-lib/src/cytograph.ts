@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
+import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -406,6 +406,8 @@ class GraphDiff {
 
 /** Handles updates and rendering for the displayed cytograph. */
 export class CytographRendering {
+    /** The progress message while the graph changes and ELK lays it out. */
+    static readonly LAYOUT_MESSAGE = "Computing layout...";
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
     /**
@@ -528,9 +530,7 @@ export class CytographRendering {
         elk: {
             'algorithm': 'layered',
             'elk.direction': 'DOWN',
-            'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-            // try to preserve the positions already computed
-            'elk.layered.nodeplacement.strategy': 'INTERACTIVE'
+            'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
         }
     };
 
@@ -608,12 +608,12 @@ export class CytographRendering {
             // The toplevel node stands for the whole circuit, so it holds the largest total of
             // every metric and has to be shaded against the metrics beside it instead.
             const overview = node.getId() === this.rootNodeId;
-            const shares = overview ? categoryShares(values) : undefined;
+            const shares = overview ? PropertyValue.categoryShares(values) : undefined;
             let totals = new Map<string, SerializedMeasurement>();
             for (const [metric, total] of values) {
                 const share = overview
                     ? shares!.get(metric) ?? 0
-                    : totalShare(total, scales.get(metric)?.maximum);
+                    : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
                 totals.set(metric, new SerializedMeasurement(total, share));
             }
             // additional key-value per node attributes
@@ -710,7 +710,7 @@ export class CytographRendering {
         // throw before rethrowing.
         this.renderingInFlight = true;
         this.callbacks.onRenderingChange?.(true);
-        this.message("Computing layout...");
+        this.message(CytographRendering.LAYOUT_MESSAGE);
         try {
             this.cy
                 .layout(options)

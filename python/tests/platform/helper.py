@@ -41,6 +41,11 @@ from tests.utils import wait_for_condition, wait_for_records
 
 API_PREFIX = "/v0"
 
+# A storage class the installation has. Unset: tests that need one skip that part.
+STORAGE_CLASS = os.environ.get("FELDERA_TEST_STORAGE_CLASS")
+# A volume attributes class the installation has. Unset: tests that need one skip.
+VOLUME_ATTRIBUTES_CLASS = os.environ.get("FELDERA_TEST_VOLUME_ATTRIBUTES_CLASS")
+
 # Pipeline create (POST /pipelines) and replace or update (PUT/PATCH /pipelines/<name>).
 _PIPELINE_WRITE_PATH = re.compile(rf"^{API_PREFIX}/pipelines(/[^/?]+)?/?(\?.*)?$")
 
@@ -295,7 +300,8 @@ def wait_for_pipeline_reachable(pipeline_name: str, timeout_s: float = 30.0) -> 
             return
         if (
             response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
-            and response.json().get("error_code") == "PipelineInteractionUnreachable"
+            and response.json().get("error_code")
+            in ("PipelineInteractionUnreachable", "PipelineInteractionConnectFailed")
         ):
             if time.monotonic() >= deadline:
                 raise TimeoutError(

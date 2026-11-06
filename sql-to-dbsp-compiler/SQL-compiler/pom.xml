@@ -17,9 +17,9 @@
         <maven.compiler.target>19</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <calcite.version>1.43.0</calcite.version>
-        <jackson.version>2.22.3</jackson.version>
+        <jackson.version>2.22.4</jackson.version>
         <janino.version>3.1.12</janino.version>
-        <project.version>0.376.0</project.version>
+        <project.version>0.378.0</project.version>
         <avatica.version>1.29.0</avatica.version>
     </properties>
 
@@ -280,6 +280,12 @@
             <groupId>com.jayway.jsonpath</groupId>
             <artifactId>json-path</artifactId>
             <version>2.10.0</version>
+        </dependency>
+        <!-- Pin json-path's json-smart to a fixed version -->
+        <dependency>
+            <groupId>net.minidev</groupId>
+            <artifactId>json-smart</artifactId>
+            <version>2.6.1</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>

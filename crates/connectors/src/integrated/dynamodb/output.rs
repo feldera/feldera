@@ -23,7 +23,10 @@ use crate::format::{Encoder, OutputConsumer};
 use crate::transport::OutputEndpoint;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 
-use super::helpers;
+#[cfg(any(test, feature = "testing"))]
+use super::health::NoHealthPublisher;
+use super::health::{ControllerHealthPublisher, HealthPublisher, RetryHealth};
+use super::helpers::{self, RetryPolicy};
 use super::metrics::DynamoDBOutputMetrics;
 
 /// DynamoDB rejects any item larger than 400 KB (name plus value bytes). A
@@ -77,7 +80,10 @@ pub(crate) struct DynamoDBWorker {
     table: String,
     write_mode: DynamoDBWriteMode,
     batch_size: usize,
-    max_retries: Option<u8>,
+    /// The retry budget of the chunk writers and how they wait.
+    policy: RetryPolicy,
+    /// The health of the endpoint, which the chunk writers of every worker share.
+    health: Arc<RetryHealth>,
     /// `ControllerInner::shutdown_token`, which ends the retry loops in
     /// [helpers::write_batch_chunk] and [helpers::write_transact_chunk].
     /// Those are unbounded when `max_retries` is `None`.
@@ -105,6 +111,10 @@ pub(crate) struct DynamoDBWorker {
     /// Completed tasks are drained eagerly in `flush()` and fully at `batch_end`.
     pending_writes: JoinSet<AnyResult<u64>>,
     completed_retries: u64,
+    /// Errors of chunks that gave up, held until the batch ends. A flush in
+    /// the middle of a step never fails on them, so that the step's other
+    /// chunks are still sent.
+    write_errors: Vec<anyhow::Error>,
 }
 
 impl DynamoDBWorker {
@@ -117,6 +127,36 @@ impl DynamoDBWorker {
         value_schema: &Relation,
     ) -> Self {
         let metrics = Arc::new(DynamoDBOutputMetrics::default());
+        let health = Arc::new(RetryHealth::new(
+            Box::new(NoHealthPublisher),
+            metrics.clone(),
+        ));
+        Self::with_client_and_policy(
+            client,
+            endpoint_name,
+            config,
+            key_schema,
+            value_schema,
+            metrics,
+            RetryPolicy::new(config.max_retries),
+            health,
+        )
+    }
+
+    /// A worker without a controller, with the retry policy and health of the
+    /// caller's choice.
+    #[cfg(any(test, feature = "testing"))]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn with_client_and_policy(
+        client: Client,
+        endpoint_name: &str,
+        config: &DynamoDBWriterConfig,
+        key_schema: &Relation,
+        value_schema: &Relation,
+        metrics: Arc<DynamoDBOutputMetrics>,
+        policy: RetryPolicy,
+        health: Arc<RetryHealth>,
+    ) -> Self {
         Self::with_client_and_controller(
             client,
             EndpointId::default(),
@@ -129,6 +169,8 @@ impl DynamoDBWorker {
             Arc::new(AtomicU64::new(0)),
             metrics,
             CancellationToken::new(),
+            policy,
+            health,
         )
     }
 
@@ -145,6 +187,8 @@ impl DynamoDBWorker {
         bytes_written: Arc<AtomicU64>,
         metrics: Arc<DynamoDBOutputMetrics>,
         shutdown: CancellationToken,
+        policy: RetryPolicy,
+        health: Arc<RetryHealth>,
     ) -> Self {
         Self {
             endpoint_id,
@@ -153,7 +197,8 @@ impl DynamoDBWorker {
             table: config.table.clone(),
             write_mode: config.write_mode,
             batch_size: config.effective_batch_size(),
-            max_retries: config.max_retries,
+            policy,
+            health,
             shutdown,
             put_condition: config.put_condition_expression.clone(),
             delete_condition: config.delete_condition_expression.clone(),
@@ -169,6 +214,7 @@ impl DynamoDBWorker {
             write_semaphore: Arc::new(Semaphore::new(config.max_concurrent_requests)),
             pending_writes: JoinSet::new(),
             completed_retries: 0,
+            write_errors: Vec::new(),
         }
     }
 
@@ -180,35 +226,50 @@ impl DynamoDBWorker {
         &self.key_schema.name
     }
 
-    /// Drains completed writes without waiting for in-flight writes, collecting retries and errors.
-    fn drain_completed_writes(&mut self) -> (u64, Vec<anyhow::Error>) {
+    /// Drains completed writes without waiting for in-flight writes. Returns
+    /// their retries and keeps their errors in `write_errors`.
+    fn drain_completed_writes(&mut self) -> u64 {
         let mut total_retries = std::mem::take(&mut self.completed_retries);
-        let mut errors = Vec::new();
 
         while let Some(result) = self.pending_writes.try_join_next() {
             match result {
                 Ok(Ok(retries)) => total_retries += retries,
-                Ok(Err(e)) => errors.push(e),
-                Err(e) => errors.push(anyhow!("write task panicked: {e}")),
+                Ok(Err(e)) => self.write_errors.push(e),
+                Err(e) => self.write_errors.push(anyhow!("write task panicked: {e}")),
             }
         }
 
-        (total_retries, errors)
+        total_retries
     }
 
-    /// Drains all `pending_writes`, collecting retries and errors.
-    fn drain_pending_writes(&mut self) -> (u64, Vec<anyhow::Error>) {
-        let (mut total_retries, mut errors) = self.drain_completed_writes();
+    /// Drains all `pending_writes`. Returns their retries and keeps their
+    /// errors in `write_errors`.
+    fn drain_pending_writes(&mut self) -> u64 {
+        let mut total_retries = self.drain_completed_writes();
         TOKIO.block_on(async {
             while let Some(result) = self.pending_writes.join_next().await {
                 match result {
                     Ok(Ok(retries)) => total_retries += retries,
-                    Ok(Err(e)) => errors.push(e),
-                    Err(e) => errors.push(anyhow!("write task panicked: {e}")),
+                    Ok(Err(e)) => self.write_errors.push(e),
+                    Err(e) => self.write_errors.push(anyhow!("write task panicked: {e}")),
                 }
             }
         });
-        (total_retries, errors)
+        total_retries
+    }
+
+    /// The errors held since the last batch end, joined into one.
+    fn take_write_errors(&mut self) -> Option<anyhow::Error> {
+        let errors = std::mem::take(&mut self.write_errors);
+        if errors.is_empty() {
+            return None;
+        }
+        let msg = errors
+            .iter()
+            .map(|e| format!("{e:#}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        Some(anyhow!("DynamoDB writes failed: {msg}"))
     }
 
     pub(crate) fn batch_start_inner(&mut self) {
@@ -218,24 +279,14 @@ impl DynamoDBWorker {
     }
 
     pub(crate) fn batch_end_inner(&mut self) -> AnyResult<u64> {
-        let flush_result = self.flush();
-
-        let (total_retries, mut errors) = self.drain_pending_writes();
-
-        if let Err(e) = flush_result {
-            errors.push(e);
+        if let Err(e) = self.flush() {
+            self.write_errors.push(e);
         }
-
-        if !errors.is_empty() {
-            let msg = errors
-                .iter()
-                .map(|e| format!("{e:#}"))
-                .collect::<Vec<_>>()
-                .join("; ");
-            bail!("DynamoDB writes failed: {msg}");
+        let total_retries = self.drain_pending_writes();
+        match self.take_write_errors() {
+            Some(error) => Err(error),
+            None => Ok(total_retries),
         }
-
-        Ok(total_retries)
     }
 
     fn push_request(&mut self, request: WriteRequest, bytes: usize) -> AnyResult<()> {
@@ -261,16 +312,10 @@ impl DynamoDBWorker {
             .block_on(Arc::clone(&self.write_semaphore).acquire_owned())
             .map_err(|_| anyhow!("DynamoDB write semaphore closed"))?;
         self.metrics.record_semaphore_wait(wait_start.elapsed());
-        let (retries, errors) = self.drain_completed_writes();
+        // A chunk that gave up is reported at the batch end. This chunk is
+        // still sent, so that one failure does not drop the rest of the step.
+        let retries = self.drain_completed_writes();
         self.completed_retries += retries;
-        if !errors.is_empty() {
-            let msg = errors
-                .iter()
-                .map(|e| format!("{e:#}"))
-                .collect::<Vec<_>>()
-                .join("; ");
-            bail!("DynamoDB writes failed: {msg}");
-        }
 
         let requests = std::mem::replace(&mut self.pending, Vec::with_capacity(self.batch_size));
         let rows = requests.len();
@@ -282,7 +327,8 @@ impl DynamoDBWorker {
         let write_mode = self.write_mode;
         let put_condition = self.put_condition.clone();
         let delete_condition = self.delete_condition.clone();
-        let max_retries: Option<usize> = self.max_retries.map(|n| n as usize);
+        let policy = self.policy.clone();
+        let health = self.health.clone();
         let shutdown = self.shutdown.clone();
         self.metrics.record_write_chunk();
         let task_metrics = self.metrics.clone();
@@ -298,9 +344,10 @@ impl DynamoDBWorker {
                         endpoint_name.clone(),
                         table,
                         requests,
-                        max_retries,
+                        &policy,
                         &shutdown,
                         &task_metrics,
+                        &health,
                     )
                     .await
                     .map(|retries| helpers::TransactChunkOutcome {
@@ -323,9 +370,10 @@ impl DynamoDBWorker {
                             client,
                             endpoint_name.clone(),
                             transact_items,
-                            max_retries,
+                            &policy,
                             &shutdown,
                             &task_metrics,
+                            &health,
                         )
                         .await
                     }
@@ -350,7 +398,6 @@ impl DynamoDBWorker {
                             helpers::written_totals(rows, bytes, outcome.suppressed);
                         task_records_written.fetch_add(written, Ordering::Relaxed);
                         task_bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
-                        task_metrics.record_retries(outcome.retries);
                         Ok(outcome.retries)
                     }
                     Err(error) => Err(error),
@@ -508,16 +555,11 @@ impl DynamoDBWorker {
                     }
                 }
                 WorkerCommand::Broadcast(BroadcastCommand::Shutdown) => {
-                    let (_, errors) = self.drain_pending_writes();
-                    if !errors.is_empty() {
-                        let msg = errors
-                            .iter()
-                            .map(|e| format!("{e:#}"))
-                            .collect::<Vec<_>>()
-                            .join("; ");
+                    self.drain_pending_writes();
+                    if let Some(error) = self.take_write_errors() {
                         warn!(
                             endpoint = %self.endpoint_name,
-                            "dynamodb: write error(s) on shutdown (data may be lost): {msg}"
+                            "dynamodb: write error(s) on shutdown (data may be lost): {error:#}"
                         );
                     }
                     break;
@@ -606,6 +648,42 @@ impl DynamoDBOutputEndpoint {
         is_index: bool,
         metrics: Arc<DynamoDBOutputMetrics>,
     ) -> Result<Self, ControllerError> {
+        let publisher = Box::new(ControllerHealthPublisher {
+            controller: controller.clone(),
+            endpoint_id,
+        });
+        Self::new_with_options(
+            endpoint_id,
+            endpoint_name,
+            config,
+            key_schema,
+            value_schema,
+            controller,
+            shutdown,
+            is_index,
+            metrics,
+            RetryPolicy::new(config.max_retries),
+            publisher,
+        )
+    }
+
+    /// Constructs the endpoint with the retry policy of the chunk writers and
+    /// the publisher of its health chosen by the caller. Tests use a policy
+    /// that waits on them and a publisher that records.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_options(
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        config: &DynamoDBWriterConfig,
+        key_schema: &Option<Relation>,
+        value_schema: &Relation,
+        controller: Weak<ControllerInner>,
+        shutdown: CancellationToken,
+        is_index: bool,
+        metrics: Arc<DynamoDBOutputMetrics>,
+        policy: RetryPolicy,
+        publisher: Box<dyn HealthPublisher>,
+    ) -> Result<Self, ControllerError> {
         config
             .validate()
             .map_err(|e| ControllerError::invalid_transport_configuration(endpoint_name, &e))?;
@@ -629,6 +707,7 @@ impl DynamoDBOutputEndpoint {
         }
 
         let client = helpers::make_client(config);
+        let health = Arc::new(RetryHealth::new(publisher, metrics.clone()));
         let mut handles = Vec::with_capacity(config.threads);
         for i in 0..config.threads {
             let worker = DynamoDBWorker::with_client_and_controller(
@@ -643,6 +722,8 @@ impl DynamoDBOutputEndpoint {
                 bytes_written.clone(),
                 metrics.clone(),
                 shutdown.clone(),
+                policy.clone(),
+                health.clone(),
             );
 
             let (cmd_tx, cmd_rx) = crossbeam::channel::bounded(1);
@@ -752,18 +833,22 @@ impl OutputConsumer for DynamoDBOutputEndpoint {
     }
 
     fn batch_end(&mut self) {
-        match self.broadcast_and_collect(BroadcastCommand::BatchEnd) {
-            Ok(batch_retries) => {
-                let num_rows = self.records_written.load(Ordering::Relaxed);
-                let num_bytes = self.bytes_written.load(Ordering::Relaxed);
+        let result = self.broadcast_and_collect(BroadcastCommand::BatchEnd);
 
-                if let Some(controller) = self.controller.upgrade() {
-                    controller.status.output_buffer(
-                        self.endpoint_id,
-                        num_bytes as usize,
-                        num_rows as usize,
-                    );
-                }
+        // The chunks that landed count whether or not another chunk of the
+        // step gave up.
+        let num_rows = self.records_written.load(Ordering::Relaxed);
+        let num_bytes = self.bytes_written.load(Ordering::Relaxed);
+        if let Some(controller) = self.controller.upgrade() {
+            controller.status.output_buffer(
+                self.endpoint_id,
+                num_bytes as usize,
+                num_rows as usize,
+            );
+        }
+
+        match result {
+            Ok(batch_retries) => {
                 self.rows_since_last_log += num_rows;
                 self.bytes_since_last_log += num_bytes;
                 self.retries_since_last_log += batch_retries;
@@ -795,9 +880,8 @@ impl OutputConsumer for DynamoDBOutputEndpoint {
             }
             Err(error) => {
                 if let Some(controller) = self.controller.upgrade() {
-                    // A write failure here means the chunk exhausted its retries
-                    // and the affected items were dropped (counted in
-                    // `failed_items`).
+                    // A chunk exhausted its retries or hit a permanent error.
+                    // Its items were dropped and counted in `failed_items`.
                     controller.output_transport_error(
                         self.endpoint_id,
                         &self.endpoint_name,

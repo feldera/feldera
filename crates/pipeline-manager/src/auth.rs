@@ -46,7 +46,7 @@
 //! pipeline manager side, we store a hash of the API key in the database along
 //! with the permissions.
 
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env, sync::Arc, time::Duration};
 
 use actix_web::HttpMessage;
 use actix_web::body::MessageBody;
@@ -406,13 +406,19 @@ async fn oidc_trust_auth(
         );
     };
 
-    let jwk = match resolve_issuer_jwk(&state, &iss, &kid, destination).await {
+    let fetch = || {
+        let (iss, clients) = (iss.clone(), state.oidc_clients.clone());
+        async move { fetch_issuer_jwks(&iss, destination, &clients).await }
+    };
+    let cooldown = ISSUER_REFRESH_COOLDOWN;
+    let jwk = match resolve_issuer_jwk(&state.issuer_jwk_cache, &iss, &kid, fetch, cooldown).await {
         Ok(k) => k,
         Err(e) => {
             // The detail stays in the log. The caller chose this fetch's
             // destination, so echoing the outcome would report whether an
             // internal address answered.
-            error!("Federated JWKS fetch for issuer '{iss}' failed: {e}");
+            // Debug escapes the client-chosen `kid` in the message.
+            error!("Federated JWKS fetch for issuer '{iss}' failed: {e:?}");
             return unauthorized("Could not verify the token's signing key".to_string(), req);
         }
     };
@@ -1225,50 +1231,68 @@ pub(crate) struct ProviderGenericOidc {
     pub(crate) jwk_uri: String,
 }
 
-/// Resolve the RSA decoding key for `(issuer, kid)` from the federated JWKS
-/// cache, fetching on a miss. The network fetch runs without holding the cache
-/// lock, so a slow issuer endpoint cannot serialize all federated auth.
+/// Resolve the RSA decoding key for `(issuer, kid)` from the JWKS cache, calling
+/// `fetch` on a miss. Serves both the login provider and federated issuers.
 ///
 /// An unverified token chooses the `kid`, so a miss must not cost a fetch per
-/// request. Refreshes for one issuer serialize on a gate, and a refresh that
-/// did not produce the requested `kid` blocks further fetches for
-/// [`ISSUER_REFRESH_COOLDOWN_SECONDS`]. A genuine key rollover still resolves on
-/// its first miss, because the cooldown only starts once a refresh has run.
-async fn resolve_issuer_jwk(
-    state: &ServerState,
+/// request. Refreshes for one issuer serialize on a gate, and each finished
+/// refresh, success or failure, starts a `cooldown` that rejects further misses
+/// without a fetch. A key rollover resolves on its first miss after the cooldown.
+///
+/// The refresh runs in its own task, without the cache lock. A slow issuer then
+/// delays only the misses for that issuer, and a request dropped mid-fetch
+/// cannot leave the refresh half done.
+async fn resolve_issuer_jwk<F>(
+    jwk_cache: &Arc<tokio::sync::Mutex<IssuerJwkCache>>,
     issuer: &str,
     kid: &str,
-    destination: OidcDestination,
-) -> Result<DecodingKey, AuthError> {
-    if let Some(key) = state.issuer_jwk_cache.lock().await.cached(issuer, kid) {
+    fetch: impl FnOnce() -> F,
+    cooldown: Duration,
+) -> Result<DecodingKey, AuthError>
+where
+    F: Future<Output = Result<HashMap<String, DecodingKey>, AuthError>> + Send + 'static,
+{
+    let not_found = || AuthError::JwkShape(format!("kid '{kid}' not in the JWKS of '{issuer}'"));
+    if let Some(key) = jwk_cache.lock().await.cached(issuer, kid) {
         return Ok(key);
     }
 
-    let gate = state.issuer_jwk_cache.lock().await.refresh_gate(issuer);
-    let _refreshing = gate.lock().await;
-
+    let gate = jwk_cache.lock().await.refresh_gate(issuer);
+    let refreshing = gate.lock_owned().await;
     {
-        let mut cache = state.issuer_jwk_cache.lock().await;
+        let mut cache = jwk_cache.lock().await;
         // A refresh may have completed while this request waited on the gate.
         if let Some(key) = cache.cached(issuer, kid) {
             return Ok(key);
         }
-        if cache.refreshed_recently(issuer) {
-            return Err(AuthError::JwkShape(
-                "kid not present in issuer JWKS".to_string(),
-            ));
+        if cache.cooling_down(issuer) {
+            return Err(AuthError::JwkShape(format!(
+                "kid '{kid}' not in the cached JWKS of '{issuer}', which was refreshed \
+                 or failed to refresh less than {cooldown:?} ago"
+            )));
         }
-        // Marked before the fetch, so that a failing issuer is retried on the
-        // cooldown rather than on every request.
-        cache.mark_refreshed(issuer);
     }
 
-    let keys = fetch_issuer_jwks(issuer, destination, &state.oidc_clients).await?;
-    let mut cache = state.issuer_jwk_cache.lock().await;
-    cache.insert(issuer, keys);
-    cache
+    let fetch = fetch();
+    let task_cache = jwk_cache.clone();
+    let task_issuer = issuer.to_string();
+    let refresh = tokio::spawn(async move {
+        // Held until the keys and the cooldown are in place.
+        let _refreshing = refreshing;
+        let keys = fetch.await;
+        let mut cache = task_cache.lock().await;
+        cache.start_cooldown(&task_issuer, cooldown);
+        cache.insert(&task_issuer, keys?);
+        Ok::<(), AuthError>(())
+    });
+    refresh
+        .await
+        .map_err(|e| AuthError::JwkShape(format!("JWKS refresh task failed: {e}")))??;
+    jwk_cache
+        .lock()
+        .await
         .cached(issuer, kid)
-        .ok_or_else(|| AuthError::JwkShape("kid not present in issuer JWKS".to_string()))
+        .ok_or_else(not_found)
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -1532,10 +1556,19 @@ async fn decode_oidc_token(
                     let kid = header.kid.unwrap();
 
                     let state = req.app_data::<Data<ServerState>>().unwrap();
-                    let cache = &mut state.jwk_cache.lock().await;
-                    let jwk = cache
-                        .get(&kid, &configuration.provider, &state.oidc_clients)
-                        .await?;
+                    let provider = &configuration.provider;
+                    let fetch = || {
+                        let (provider, clients) = (provider.clone(), state.oidc_clients.clone());
+                        async move { fetch_jwk_keys(&provider, &clients).await }
+                    };
+                    let jwk = resolve_issuer_jwk(
+                        &state.issuer_jwk_cache,
+                        provider.issuer(),
+                        &kid,
+                        fetch,
+                        LOGIN_REFRESH_COOLDOWN,
+                    )
+                    .await?;
 
                     let token_data = decode::<OidcClaim>(token, &jwk, &configuration.validation);
                     match token_data {
@@ -1590,12 +1623,8 @@ async fn decode_token_with_validation(
     Ok(token_data)
 }
 
-pub struct JwkCache {
-    cache: TimedCache<String, DecodingKey>,
-}
-
-/// JWKS cache keyed by (issuer, kid) for federated tokens whose issuer is
-/// dynamically discovered from a registered trust relationship.
+/// JWKS cache keyed by (issuer, kid), shared by the login provider and the
+/// federated issuers discovered from registered trust relationships.
 ///
 /// Lock order is always gate before cache. Take an issuer's gate first, then
 /// the lock around this struct, and release that lock before awaiting anything.
@@ -1605,21 +1634,23 @@ pub struct JwkCache {
 /// cache across the two.
 pub struct IssuerJwkCache {
     cache: TimedCache<(String, String), DecodingKey>,
-    /// Issuers refreshed within the cooldown. Membership is the whole value:
-    /// entries expire after [`ISSUER_REFRESH_COOLDOWN_SECONDS`].
-    recent_refresh: TimedCache<String, ()>,
-    /// One gate per issuer, so concurrent misses cost a single fetch.
-    refresh_gates: TimedCache<String, Arc<tokio::sync::Mutex<()>>>,
+    /// When each issuer's refresh cooldown ends.
+    cooldown_until: HashMap<String, tokio::time::Instant>,
+    /// One gate per issuer, so concurrent misses cost a single fetch. Never
+    /// replaced, so a refresh in flight always holds the issuer's only gate.
+    refresh_gates: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
 const DEFAULT_JWK_CACHE_LIFETIME_SECONDS: u64 = 120;
-const DEFAULT_JWK_CACHE_CAPACITY: usize = 10;
 const ISSUER_JWK_CACHE_CAPACITY: usize = 64;
 
-/// Minimum gap between JWKS refreshes for one issuer. An unverified token
-/// chooses the `kid`, so without this gap every unknown `kid` would cost a
-/// discovery fetch and a JWKS fetch.
-const ISSUER_REFRESH_COOLDOWN_SECONDS: u64 = 30;
+/// Minimum gap between JWKS refreshes for a federated issuer. A tenant runs
+/// that issuer, so it is long: each refresh costs a discovery and a JWKS fetch.
+const ISSUER_REFRESH_COOLDOWN: Duration = Duration::from_secs(30);
+
+/// Minimum gap between JWKS refreshes for the login provider. Short, so a new
+/// signing key or a failed fetch blocks logins for at most this long.
+const LOGIN_REFRESH_COOLDOWN: Duration = Duration::from_secs(1);
 
 impl IssuerJwkCache {
     pub(crate) fn new() -> Self {
@@ -1628,14 +1659,8 @@ impl IssuerJwkCache {
                 DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
                 ISSUER_JWK_CACHE_CAPACITY,
             ),
-            recent_refresh: TimedCache::with_lifespan_and_capacity(
-                ISSUER_REFRESH_COOLDOWN_SECONDS,
-                ISSUER_JWK_CACHE_CAPACITY,
-            ),
-            refresh_gates: TimedCache::with_lifespan_and_capacity(
-                DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
-                ISSUER_JWK_CACHE_CAPACITY,
-            ),
+            cooldown_until: HashMap::new(),
+            refresh_gates: HashMap::new(),
         }
     }
 
@@ -1647,74 +1672,35 @@ impl IssuerJwkCache {
             .cloned()
     }
 
-    /// Insert freshly fetched keys for `issuer`, keyed by `kid`.
+    /// Insert freshly fetched keys for `issuer`, keyed by `kid`. Drops expired
+    /// keys of every issuer, else keys never asked for again would stay forever.
     fn insert(&mut self, issuer: &str, keys: HashMap<String, DecodingKey>) {
+        self.cache.flush();
         for (kid, decoding_key) in keys {
             self.cache
                 .cache_set((issuer.to_string(), kid), decoding_key);
         }
     }
 
-    /// Whether `issuer` was refreshed within the cooldown.
-    fn refreshed_recently(&mut self, issuer: &str) -> bool {
-        self.recent_refresh.cache_get(&issuer.to_string()).is_some()
+    /// Whether `issuer` is within a refresh cooldown.
+    fn cooling_down(&self, issuer: &str) -> bool {
+        self.cooldown_until
+            .get(issuer)
+            .is_some_and(|until| tokio::time::Instant::now() < *until)
     }
 
-    /// Start `issuer`'s cooldown.
-    fn mark_refreshed(&mut self, issuer: &str) {
-        self.recent_refresh.cache_set(issuer.to_string(), ());
+    /// Start a cooldown of `duration` for `issuer`.
+    fn start_cooldown(&mut self, issuer: &str, duration: Duration) {
+        self.cooldown_until
+            .insert(issuer.to_string(), tokio::time::Instant::now() + duration);
     }
 
     /// The gate that serializes refreshes for `issuer`.
     fn refresh_gate(&mut self, issuer: &str) -> Arc<tokio::sync::Mutex<()>> {
-        let key = issuer.to_string();
-        if let Some(gate) = self.refresh_gates.cache_get(&key) {
-            return gate.clone();
-        }
-        let gate = Arc::new(tokio::sync::Mutex::new(()));
-        self.refresh_gates.cache_set(key, gate.clone());
-        gate
-    }
-}
-
-impl JwkCache {
-    pub(crate) fn new() -> JwkCache {
-        Self {
-            cache: TimedCache::with_lifespan_and_capacity(
-                DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
-                DEFAULT_JWK_CACHE_CAPACITY,
-            ),
-        }
-    }
-
-    async fn get(
-        &mut self,
-        key: &String,
-        provider: &AuthProvider,
-        clients: &OidcClients,
-    ) -> Result<DecodingKey, AuthError> {
-        let cache = &mut self.cache;
-        let val = &cache.cache_get(key);
-        match val {
-            Some(dk) => Ok((*dk).clone()),
-            None => {
-                // TODO: Introduce a minimum delay between refreshes
-                let fetched = fetch_jwk_keys(provider, clients).await;
-                match fetched {
-                    Ok(map) => {
-                        for (key_id, decoding_key) in map {
-                            cache.cache_set(key_id, decoding_key);
-                        }
-                        let val_retry = cache.cache_get(key);
-                        match val_retry {
-                            Some(val_retry) => Ok(val_retry.clone()),
-                            None => Err(AuthError::JwkShape("Invalid kid".to_owned())),
-                        }
-                    }
-                    Err(e) => Err(e),
-                }
-            }
-        }
+        self.refresh_gates
+            .entry(issuer.to_string())
+            .or_default()
+            .clone()
     }
 }
 
@@ -1854,10 +1840,12 @@ mod test {
     };
     use actix_web_httpauth::middleware::HttpAuthentication;
     use base64::Engine;
-    use cached::Cached;
     use chrono::Utc;
     use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, encode};
-    use tokio::sync::{Mutex, RwLock};
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+    use tokio::sync::{Mutex, RwLock, oneshot};
     use uuid::Uuid;
 
     use super::{AuthError, AuthenticatedPrincipal};
@@ -1966,6 +1954,8 @@ mod test {
             enable_volume_attributes_classes_allowlist: false,
             volume_attributes_classes: vec![],
             upper_limit_storage_megabyte: None,
+            upper_limit_memory_megabyte: None,
+            enable_storage_autoscaling: None,
         }
     }
 
@@ -2028,6 +2018,27 @@ mod test {
         api_key: Option<String>,
         validation: Validation,
     ) -> ServiceResponse<EitherBody<BoxBody>> {
+        let (app, _, _db) = login_app(decoding_key, api_key, validation, "some-url").await;
+        test::call_service(&app, req).await
+    }
+
+    /// The auth middleware over one route, with the login provider's JWKS at
+    /// `jwk_uri`, and its server state. The last value keeps the test database
+    /// alive.
+    async fn login_app(
+        decoding_key: Option<DecodingKey>,
+        api_key: Option<String>,
+        validation: Validation,
+        jwk_uri: &str,
+    ) -> (
+        impl actix_web::dev::Service<
+            actix_http::Request,
+            Response = ServiceResponse<EitherBody<BoxBody>>,
+            Error = actix_web::Error,
+        >,
+        actix_web::web::Data<ServerState>,
+        impl Sized,
+    ) {
         let client_id = validation
             .aud
             .as_ref()
@@ -2039,7 +2050,7 @@ mod test {
         let config = AuthConfiguration {
             provider: AuthProvider::AwsCognito(auth::ProviderAwsCognito {
                 issuer: "some-iss".to_string(),
-                jwk_uri: "some-url".to_string(),
+                jwk_uri: jwk_uri.to_string(),
                 login_url: "some".to_string(),
                 logout_url: "some".to_string(),
             }),
@@ -2075,7 +2086,7 @@ mod test {
 
         let manager_config = default_manager_test_config();
 
-        let (conn, _temp) = crate::db::test::setup_pg().await;
+        let (conn, db_guard) = crate::db::test::setup_pg().await;
         if let Some(api_key) = api_key {
             let tenant_id = conn
                 .get_or_create_tenant_id(
@@ -2107,15 +2118,13 @@ mod test {
             .unwrap(),
         );
         if let Some(decoding_key) = decoding_key {
-            state
-                .jwk_cache
-                .lock()
-                .await
-                .cache
-                .cache_set("rsa01".to_owned(), decoding_key);
+            state.issuer_jwk_cache.lock().await.insert(
+                "some-iss",
+                HashMap::from([("rsa01".to_owned(), decoding_key)]),
+            );
         }
         let app = App::new()
-            .app_data(state)
+            .app_data(state.clone())
             .app_data(config)
             .wrap(auth_middleware)
             .route(
@@ -2132,9 +2141,7 @@ mod test {
                     HttpResponse::build(StatusCode::OK).await
                 }),
             );
-        let app = test::init_service(app).await;
-
-        test::call_service(&app, req).await
+        (test::init_service(app).await, state, db_guard)
     }
 
     #[actix_web::test]
@@ -2206,6 +2213,132 @@ mod test {
             .to_request();
         let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(200, res.status());
+    }
+
+    /// A JWKS endpoint at the returned URL. It signals the first request, and
+    /// answers each with `body` only after the release fires.
+    async fn held_jwks_server(
+        body: &'static str,
+    ) -> (String, oneshot::Receiver<()>, oneshot::Sender<()>) {
+        use futures_util::FutureExt;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/jwks", listener.local_addr().unwrap());
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel::<()>();
+        let release = release_rx.shared();
+        tokio::spawn(async move {
+            let mut started = Some(started_tx);
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                if let Some(started) = started.take() {
+                    let _ = started.send(());
+                }
+                let release = release.clone();
+                tokio::spawn(async move {
+                    let _ = socket.read(&mut [0; 4096]).await;
+                    let _ = release.await;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                         content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                });
+            }
+        });
+        (url, started_rx, release_tx)
+    }
+
+    /// An unverified token picks the `kid`. On the login path, its JWKS fetch
+    /// must not block a valid login whose key is cached.
+    #[tokio::test]
+    async fn an_unknown_login_kid_does_not_block_a_valid_login() {
+        let (jwk_uri, fetching, release) = held_jwks_server(r#"{"keys":[]}"#).await;
+        let (token, decoding_key) = setup(default_claim()).await;
+        let validation = validation("some-client", "some-iss");
+        let (app, _, _db) = login_app(Some(decoding_key), None, validation, &jwk_uri).await;
+
+        let call = |token: String| {
+            let req = test::TestRequest::get()
+                .uri("/")
+                .insert_header((http::header::AUTHORIZATION, format!("Bearer {token}")))
+                .to_request();
+            test::call_service(&app, req)
+        };
+        // Same claims, unsigned, with a `kid` the provider never issued.
+        let unknown_kid = |kid: &str| {
+            let header = format!(r#"{{"alg":"RS256","kid":"{kid}"}}"#);
+            let claims = token.split('.').nth(1).unwrap();
+            format!("{}.{claims}.AAAA", super::URL_SAFE_NO_PAD.encode(header))
+        };
+
+        let unknown_done = AtomicUsize::new(0);
+        let unknown_call = |kid: &str| {
+            let call = call(unknown_kid(kid));
+            async {
+                let res = call.await;
+                unknown_done.fetch_add(1, Ordering::SeqCst);
+                res
+            }
+        };
+        // Bounds a broken build to a failure instead of a hang.
+        let guard = Duration::from_secs(60);
+        let (unknown, (valid, unknown_done_first)) = tokio::join!(unknown_call("unknown"), async {
+            // The JWKS server holds its answer until this login is done, so
+            // the unknown-kid request finishes first only if the login waited
+            // for its fetch to time out.
+            tokio::time::timeout(guard, fetching)
+                .await
+                .unwrap()
+                .unwrap();
+            let valid = tokio::time::timeout(guard, call(token.clone()))
+                .await
+                .unwrap();
+            let unknown_done_first = unknown_done.load(Ordering::SeqCst);
+            release.send(()).unwrap();
+            (valid, unknown_done_first)
+        },);
+
+        assert_eq!(200, valid.status());
+        assert_eq!(
+            0, unknown_done_first,
+            "a valid login waited behind a JWKS fetch"
+        );
+        assert_eq!(401, unknown.status());
+    }
+
+    /// A failed login JWKS fetch starts the one second login cooldown, so a
+    /// provider outage costs at most one fetch a second.
+    #[tokio::test]
+    async fn a_failed_login_jwks_fetch_starts_a_one_second_cooldown() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let jwks = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/jwks"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(1)
+            .mount(&jwks)
+            .await;
+        let jwk_uri = format!("{}/jwks", jwks.uri());
+        let validation = validation("some-client", "some-iss");
+        let (app, state, _db) = login_app(None, None, validation, &jwk_uri).await;
+        let (token, _) = setup(default_claim()).await;
+        let req = test::TestRequest::get()
+            .uri("/")
+            .insert_header((http::header::AUTHORIZATION, format!("Bearer {token}")))
+            .to_request();
+
+        let before = tokio::time::Instant::now();
+        assert_eq!(401, test::call_service(&app, req).await.status());
+        // Bounds instead of a timed retry, so a stalled machine cannot change
+        // the result.
+        let second = Duration::from_secs(1);
+        let until = state.issuer_jwk_cache.lock().await.cooldown_until["some-iss"];
+        assert!(before + second <= until && until <= tokio::time::Instant::now() + second);
     }
 
     #[tokio::test]
@@ -2527,17 +2660,142 @@ mod test {
         }
     }
 
-    /// An unverified token picks the `kid`, so a refresh that did not produce it
-    /// must not let the next request fetch again.
-    #[tokio::test]
-    async fn an_issuer_refresh_starts_a_cooldown() {
-        let mut cache = super::IssuerJwkCache::new();
-        assert!(!cache.refreshed_recently("https://idp.example.com"));
+    const COOLDOWN: Duration = Duration::from_secs(1);
 
-        cache.mark_refreshed("https://idp.example.com");
-        assert!(cache.refreshed_recently("https://idp.example.com"));
-        // The cooldown is per issuer, so one slow provider cannot block others.
-        assert!(!cache.refreshed_recently("https://other.example.com"));
+    fn one_key() -> HashMap<String, DecodingKey> {
+        HashMap::from([("real".to_string(), DecodingKey::from_secret(b"k"))])
+    }
+
+    /// Resolve `kid` for issuer "iss", counting fetches. The fetch succeeds
+    /// with [`one_key`] when `ok`, else fails.
+    async fn resolve_counting(
+        cache: &Arc<Mutex<super::IssuerJwkCache>>,
+        fetches: &Arc<AtomicUsize>,
+        kid: &str,
+        ok: bool,
+    ) -> Result<DecodingKey, AuthError> {
+        let fetches = fetches.clone();
+        let fetch = move || async move {
+            fetches.fetch_add(1, Ordering::SeqCst);
+            if ok {
+                Ok(one_key())
+            } else {
+                Err(AuthError::JwkShape("issuer down".to_string()))
+            }
+        };
+        super::resolve_issuer_jwk(cache, "iss", kid, fetch, COOLDOWN).await
+    }
+
+    /// A finished refresh, success or failure, starts the cooldown, and a miss
+    /// within it costs no fetch.
+    #[tokio::test(start_paused = true)]
+    async fn a_finished_refresh_starts_the_cooldown() {
+        let cache = Arc::new(Mutex::new(super::IssuerJwkCache::new()));
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let count = || fetches.load(Ordering::SeqCst);
+        let tick = Duration::from_millis(1);
+
+        // After a failure.
+        assert!(
+            resolve_counting(&cache, &fetches, "real", false)
+                .await
+                .is_err()
+        );
+        tokio::time::advance(COOLDOWN - tick).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "real", true)
+                .await
+                .is_err()
+        );
+        assert_eq!(1, count());
+        tokio::time::advance(tick).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "real", true)
+                .await
+                .is_ok()
+        );
+        assert_eq!(2, count());
+
+        // After a success, also for a kid it did not return.
+        tokio::time::advance(COOLDOWN - tick).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "unknown", true)
+                .await
+                .is_err()
+        );
+        assert_eq!(2, count());
+        tokio::time::advance(tick).await;
+        assert!(
+            resolve_counting(&cache, &fetches, "unknown", true)
+                .await
+                .is_err()
+        );
+        assert_eq!(3, count());
+
+        // The cooldown is per issuer, and a cached kid never fetches.
+        assert!(!cache.lock().await.cooling_down("other"));
+        assert!(
+            resolve_counting(&cache, &fetches, "real", true)
+                .await
+                .is_ok()
+        );
+        assert_eq!(3, count());
+    }
+
+    /// Misses that queue behind a refresh find the keys it fetched, rather
+    /// than the cooldown it started.
+    #[tokio::test]
+    async fn concurrent_misses_share_one_refresh() {
+        let cache = Arc::new(Mutex::new(super::IssuerJwkCache::new()));
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let (first, second) = tokio::join!(
+            resolve_counting(&cache, &fetches, "real", true),
+            resolve_counting(&cache, &fetches, "real", true),
+        );
+        assert!(first.is_ok() && second.is_ok());
+        assert_eq!(1, fetches.load(Ordering::SeqCst));
+    }
+
+    /// A client can drop its request mid-fetch. The refresh must still finish,
+    /// or the cooldown would stay armed with no keys fetched.
+    #[tokio::test(start_paused = true)]
+    async fn a_dropped_request_still_finishes_its_refresh() {
+        let cache = Arc::new(Mutex::new(super::IssuerJwkCache::new()));
+        let (started_tx, started) = oneshot::channel();
+        let (release, released) = oneshot::channel::<()>();
+        let fetch = move || async move {
+            started_tx.send(()).unwrap();
+            released.await.unwrap();
+            Ok(one_key())
+        };
+
+        let request = super::resolve_issuer_jwk(&cache, "iss", "real", fetch, COOLDOWN);
+        tokio::select! {
+            _ = request => panic!("the fetch has not been released yet"),
+            // Dropping `request` here is the client resetting the connection.
+            _ = started => {}
+        }
+        release.send(()).unwrap();
+        // The refresh holds the issuer's gate until it is done.
+        let gate = cache.lock().await.refresh_gate("iss");
+        let _done = gate.lock().await;
+
+        let mut cache = cache.lock().await;
+        assert!(cache.cached("iss", "real").is_some());
+        assert!(cache.cooling_down("iss"));
+    }
+
+    /// Expired keys go on the next refresh of any issuer, so keys nobody asks
+    /// for again do not stay forever.
+    #[tokio::test]
+    async fn a_refresh_drops_expired_keys() {
+        use cached::Cached;
+        let mut cache = super::IssuerJwkCache::new();
+        // Lifespan 0: every key is expired as soon as it is set.
+        cache.cache.cache_set_lifespan(0);
+        cache.insert("a", one_key());
+        cache.insert("b", one_key());
+        assert_eq!(1, cache.cache.cache_size());
     }
 
     /// Concurrent misses for one issuer share a gate, so they cost one fetch.

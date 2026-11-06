@@ -126,6 +126,11 @@ impl StaticTestEngine {
         engine.serve::<records::DatagenBytes>(datagen::bytes_relation(), BTreeMap::new());
         engine.serve::<records::DatagenTime>(datagen::time_relation(), BTreeMap::new());
         engine.serve::<records::Basic>(json_encoder::relation(), BTreeMap::new());
+        engine.serve_index::<records::BasicKey, records::Basic>(
+            json_encoder::key_relation(),
+            json_encoder::relation(),
+            |row| records::BasicKey { id: row.id },
+        );
         engine.serve::<records::JsonInput>(json_parser::relation(), BTreeMap::new());
         engine.serve::<records::EveryType>(json_parser::every_type_relation(), BTreeMap::new());
         engine.serve::<TestStructMetadata>(
@@ -393,10 +398,14 @@ impl StaticTestEngine {
         #[cfg(feature = "with-iceberg")]
         {
             use crate::test::suites::{iceberg, iceberg_s3tables};
-            use crate::test::{IcebergSubsetTestStruct, IcebergTestStruct, S3TablesTestStruct};
+            use crate::test::{
+                IcebergSparkTestStruct, IcebergSubsetTestStruct, IcebergTestStruct,
+                S3TablesTestStruct,
+            };
             engine.serve::<IcebergTestStruct>(iceberg::relation(), BTreeMap::new());
             engine.serve::<IcebergTestStruct>(iceberg::lateness_relation(), BTreeMap::new());
             engine.serve::<IcebergSubsetTestStruct>(iceberg::subset_relation(), BTreeMap::new());
+            engine.serve::<IcebergSparkTestStruct>(iceberg::v3_types_relation(), BTreeMap::new());
             engine.serve::<S3TablesTestStruct>(
                 iceberg_s3tables::s3tables_relation(),
                 BTreeMap::new(),

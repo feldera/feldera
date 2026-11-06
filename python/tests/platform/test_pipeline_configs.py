@@ -43,14 +43,12 @@ def test_pipeline_runtime_config(pipeline_name):
                 "resources": {
                     "cpu_cores_min": 5,
                     "storage_max": "2G",
-                    "storage_class": "normal",
                 },
             },
             lambda rc: (
                 rc.get("workers") == 100
                 and rc.get("resources", {}).get("cpu_cores_min") == 5
                 and rc.get("resources", {}).get("storage_max") == "2G"
-                and rc.get("resources", {}).get("storage_class") == "normal"
             ),
         ),
         (

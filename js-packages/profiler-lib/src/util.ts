@@ -99,6 +99,12 @@ export function assert(condition: any, message: string): asserts condition {
     }
 }
 
+/** Resolves after the browser paints the next frame. The browser calls `requestAnimationFrame`
+ *  callbacks just before a paint, and runs the timeout that the callback queues after that paint. */
+export function afterNextPaint(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
 /** A Map using an Option for lookups. */
 export class OMap<K, V> {
     private map = new Map<K, V>();
@@ -226,6 +232,8 @@ export class Graph<T> {
     edges: Set<Edge<T>>;
     inEdges = new Map<T, Set<Edge<T>>>();
     outEdges = new Map<T, Set<Edge<T>>>();
+    /** Key: `from->to`. Value: the number of edges from `from` to `to`. */
+    private readonly edgeCounts = new Map<string, number>();
 
     public constructor() {
         this.nodes = new Set();
@@ -238,13 +246,9 @@ export class Graph<T> {
 
     /** Add an edge; generates a unique id for the edge. */
     addEdge(from: T, to: T, weight: number, back: boolean): void {
-        let identical_count = 0;
-        for (const e of this.edges) {
-            if (e.from === from && e.to === to) {
-                identical_count++;
-            }
-        }
-        let id = from + "->" + to;
+        const endpoints = from + "->" + to;
+        const identical_count = this.edgeCounts.get(endpoints) ?? 0;
+        let id = endpoints;
         if (identical_count > 0) {
             id += ":" + (identical_count + 1);
         }
@@ -257,6 +261,7 @@ export class Graph<T> {
             throw new Error(`Node ${to} not in graph`);
         }
         this.edges.add(edge);
+        this.edgeCounts.set(endpoints, identical_count + 1);
 
         if (!this.outEdges.has(from)) {
             this.outEdges.set(from, new Set());

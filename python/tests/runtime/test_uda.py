@@ -234,7 +234,6 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
         ],
         update_format="insert_delete",
     )
-    pipeline.wait_for_idle()
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [
         {
@@ -291,7 +290,6 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
         ],
         update_format="insert_delete",
     )
-    pipeline.wait_for_idle()
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [
         {

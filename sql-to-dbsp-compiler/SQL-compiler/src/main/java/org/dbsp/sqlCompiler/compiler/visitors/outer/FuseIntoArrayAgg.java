@@ -36,7 +36,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -366,9 +365,9 @@ public class FuseIntoArrayAgg extends Repeat {
             if (!unwrapped.is(DBSPBinaryExpression.class))
                 return false;
             DBSPBinaryExpression value = unwrapped.to(DBSPBinaryExpression.class);
-            if (value.opcode != DBSPOpcode.COALESCE || !value.right.is(DBSPSomeExpression.class))
+            if (value.opcode != DBSPOpcode.COALESCE)
                 return false;
-            ISameValue ifEmpty = value.right.to(DBSPSomeExpression.class).expression.as(ISameValue.class);
+            ISameValue ifEmpty = value.right.neverFailsUnwrap(value.right.getNode()).as(ISameValue.class);
             if (ifEmpty == null || !ifEmpty.sameValue(empty.as(ISameValue.class)))
                 return false;
             MapReader reader = new MapReader(compiler, index);

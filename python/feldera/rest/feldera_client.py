@@ -89,6 +89,40 @@ def _validate_no_none_keys_in_map(data):
         return
 
 
+def _open_api_transaction(global_metrics: Mapping[str, Any]) -> Optional[int]:
+    """Return the ID of the transaction that the API started and did not yet
+    commit, or `None` if there is no such transaction.
+
+    `transaction_id` in `global_metrics` is the transaction that the pipeline
+    runs now.  That can be an earlier transaction that is still committing, so
+    this uses the initiators of the transaction instead.
+    """
+
+    initiators = global_metrics.get("transaction_initiators")
+    if initiators is None:
+        # A pipeline that does not report initiators.
+        return global_metrics["transaction_id"] or None
+    if initiators.get("initiated_by_api") != "Started":
+        return None
+    return initiators.get("transaction_id")
+
+
+def _transaction_pending(
+    global_metrics: Mapping[str, Any], transaction_id: int
+) -> bool:
+    """Return true if transaction `transaction_id` did not yet commit.
+
+    The transaction can be the one that the pipeline runs now, or the next one,
+    which waits for an earlier transaction to commit.
+    """
+
+    initiators = global_metrics.get("transaction_initiators") or {}
+    return transaction_id in (
+        global_metrics["transaction_id"],
+        initiators.get("transaction_id"),
+    )
+
+
 def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
 
@@ -276,12 +310,24 @@ class FelderaClient:
                 if expected_program_version is None:
                     return self.get_pipeline(name, PipelineFieldSelector.ALL)
 
+                # Accept a newer version: the compiler also bumps the version
+                # when it adopts a pipeline whose platform version differs
+                # from its own (e.g. during a rolling upgrade).
                 current_version = p.program_version or 0
-                if current_version == expected_program_version:
+                if current_version > expected_program_version:
+                    # Also the result of a concurrent edit by another client.
+                    logger.warning(
+                        "pipeline '%s' compiled program version %d, newer than "
+                        "the expected version %d",
+                        name,
+                        current_version,
+                        expected_program_version,
+                    )
+                if current_version >= expected_program_version:
                     return self.get_pipeline(name, PipelineFieldSelector.ALL)
                 else:
                     raise RuntimeError(
-                        f"program version ({current_version}) != expected program version ({expected_program_version})"
+                        f"program version ({current_version}) < expected program version ({expected_program_version})"
                     )
             elif status not in wait:
                 p = self.get_pipeline(name, PipelineFieldSelector.ALL)
@@ -1044,18 +1090,32 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def start_transaction(self, pipeline_name: str) -> int:
         """
-        Start a new transaction.
+        Start a new transaction and return its ID.
 
-            Transaction ID.
+        `start_transaction_response` is a better choice because it also
+        returns the pipeline's `incarnation_uuid`, which lets
+        `commit_transaction` detect a pipeline restart.
 
         :param pipeline_name: The name of the pipeline.
         """
 
-        resp = self.http.post(
+        return int(self.start_transaction_response(pipeline_name)["transaction_id"])
+
+    def start_transaction_response(self, pipeline_name: str) -> dict:
+        """
+        Start a new transaction, returning the full response.
+
+        :param pipeline_name: The name of the pipeline.
+        :return: dict with `transaction_id` and `incarnation_uuid`, the
+            latter identifying the pipeline process instance that started the
+            transaction; pass both to `commit_transaction`.  Transaction IDs
+            start again when the pipeline restarts, so `incarnation_uuid`
+            prevents a commit of another transaction with the same ID.
+        """
+
+        return self.http.post(
             path=f"/pipelines/{pipeline_name}/start_transaction",
         )
-
-        return int(resp.get("transaction_id"))
 
     def advance_clock(
         self,
@@ -1137,6 +1197,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         return self.http.post(
             path=f"/pipelines/{pipeline_name}/diff",
             body=body,
+            idempotent=True,
         )
 
     def validate_program(
@@ -1177,6 +1238,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         return self.http.post(
             path="/validate_program",
             body=body,
+            idempotent=True,
         )
 
     def commit_transaction(
@@ -1186,6 +1248,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         poll_interval_s: float = 0.5,
+        incarnation_uuid: Optional[str] = None,
     ):
         """
         Commits the currently active transaction.
@@ -1204,30 +1267,54 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param poll_interval_s: Polling interval at which to check while waiting for the
             transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
 
-        :raises RuntimeError: If there is currently no transaction in progress.
+        :param incarnation_uuid: The `incarnation_uuid` that `start_transaction_response` returned.
+            If the pipeline restarted since then, the commit fails with `IncarnationUuidMismatch`.
+            If not provided, the function uses the pipeline's incarnation when the call starts.
+
+        :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress,
+            or if the pipeline restarts while the function waits for the commit.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
+            If there is no current transaction, the pipeline checks `transaction_id`: if the last commit
+            request already committed it, the commit succeeds, so it is safe to call this again after a `TimeoutError`.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
         :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
 
         # TODO: implement this without using /stats when we have a better pipeline status reporting API.
         stats = self.get_pipeline_stats(pipeline_name)
-        current_transaction_id = stats["global_metrics"]["transaction_id"]
+        metrics = stats["global_metrics"]
+        current_incarnation = metrics.get("incarnation_uuid")
+        if incarnation_uuid is None:
+            incarnation_uuid = current_incarnation
+        current_transaction_id = _open_api_transaction(metrics)
 
-        if current_transaction_id == 0:
-            raise RuntimeError(
-                "Attempting to commit a transaction, but there is no transaction in progress"
-            )
-
-        if transaction_id and current_transaction_id != transaction_id:
+        if incarnation_uuid != current_incarnation:
+            # The pipeline restarted.  Let it report `IncarnationUuidMismatch`.
+            current_transaction_id = transaction_id
+        elif current_transaction_id is None:
+            if not transaction_id:
+                raise RuntimeError(
+                    "Attempting to commit a transaction, but there is no transaction in progress"
+                )
+            # Maybe a retry: the pipeline accepts a commit of the transaction
+            # that the last commit request committed.
+            current_transaction_id = transaction_id
+        elif transaction_id and current_transaction_id != transaction_id:
             raise ValueError(
                 f"Specified transaction id {transaction_id} doesn't match current active transaction id {current_transaction_id}"
             )
 
         transaction_id = current_transaction_id
 
+        # A pipeline that knows `transaction_id` commits only that transaction,
+        # and accepts a retry once the transaction is committing.
         self.http.post(
             path=f"/pipelines/{pipeline_name}/commit_transaction",
+            params={
+                "transaction_id": transaction_id,
+                "incarnation_uuid": incarnation_uuid,
+            },
+            idempotent=True,
         )
 
         start_time = time.monotonic()
@@ -1253,7 +1340,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     raise TimeoutError("Timed out waiting for transaction to commit")
 
             stats = self.get_pipeline_stats(pipeline_name)
-            if stats["global_metrics"]["transaction_id"] != transaction_id:
+            metrics = stats["global_metrics"]
+            if metrics.get("incarnation_uuid") != incarnation_uuid:
+                raise RuntimeError(
+                    f"Pipeline {pipeline_name} restarted while transaction {transaction_id} "
+                    "was committing, so the transaction might not have committed"
+                )
+            if not _transaction_pending(metrics, transaction_id):
                 wait_for_commit.done()
                 return
 
@@ -1619,6 +1712,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{quote(pipeline_name, safe='')}/egress/{quote(table_name, safe='')}",
             params=params,
             stream=True,
+            idempotent=True,
         )
 
         end = time.monotonic() + timeout if timeout else None
@@ -2279,7 +2373,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         Start the profiling this pipeline with samply.
 
         :param pipeline_name: The name of the pipeline
-        :param duration: The duration of the profile in seconds (default: 30)
+        :param duration: The duration of the profile in seconds, from 1 to 300 (default: 30)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 

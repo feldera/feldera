@@ -10,9 +10,14 @@ use feldera_storage::histogram::ExponentialHistogram;
 /// output-endpoint statistics.
 #[derive(Default)]
 pub(crate) struct DynamoDBOutputMetrics {
-    /// Write retries performed against DynamoDB.  A rising value signals
-    /// throttling or contention on the target table.
+    /// Write retries performed against DynamoDB, counted as each retry starts,
+    /// so a chunk that still retries or that gave up shows here.  A rising
+    /// value signals throttling or contention on the target table.
     retries: AtomicU64,
+
+    /// Chunks in a retry loop right now.  Zero is activity, not health: the
+    /// last chunk may have given up.
+    retrying_chunks: AtomicU64,
 
     /// Item-writes rejected by DynamoDB for lack of capacity, counted each time
     /// `BatchWriteItem` returns them as unprocessed.  Unlike `retries`, which
@@ -20,15 +25,19 @@ pub(crate) struct DynamoDBOutputMetrics {
     /// points at raising table capacity rather than connector concurrency.
     throttled_items: AtomicU64,
 
-    /// `TransactWriteItems` requests that failed and were retried.  This is the
+    /// `TransactWriteItems` requests that failed, retried or not, other than
+    /// cancellations caused only by condition checks.  This is the
     /// transactional-mode analogue of `throttled_items`: in transactional mode a
     /// failure surfaces as a whole-request error rather than as unprocessed
     /// items.
     transact_write_failures: AtomicU64,
 
-    /// Output records dropped after exhausting the configured write retries.
-    /// This can only happen in bounded-retry mode; a non-zero value means data
-    /// failed to reach the target table and was discarded.
+    /// Output records dropped after exhausting the configured write retries,
+    /// or because the write failed with an error that a retry cannot fix.
+    /// The latter happens with unbounded retries too.  A non-zero value means
+    /// data failed to reach the target table and was discarded.  Records in
+    /// flight when the pipeline stops are not counted: the connector did not
+    /// discard them.
     failed_items: AtomicU64,
 
     /// Output records dropped because they exceed DynamoDB's 400 KB item-size
@@ -73,17 +82,23 @@ impl DynamoDBOutputMetrics {
         self.retries.fetch_add(retries, Ordering::Relaxed);
     }
 
+    /// Set the number of chunks in a retry loop right now.
+    pub(super) fn set_retrying_chunks(&self, count: u64) {
+        self.retrying_chunks.store(count, Ordering::Relaxed);
+    }
+
     /// Add `count` item-writes returned by DynamoDB as unprocessed (throttled).
     pub(super) fn record_throttled_items(&self, count: u64) {
         self.throttled_items.fetch_add(count, Ordering::Relaxed);
     }
 
-    /// Record a failed `TransactWriteItems` request (which is then retried).
+    /// Record a failed `TransactWriteItems` request, retried or not.
     pub(super) fn record_transact_write_failure(&self) {
         self.transact_write_failures.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Add `count` records dropped after exhausting the configured retries.
+    /// Add `count` records dropped after exhausting the configured retries or
+    /// after an error that a retry cannot fix.
     pub(super) fn record_failed_items(&self, count: u64) {
         self.failed_items.fetch_add(count, Ordering::Relaxed);
     }
@@ -125,9 +140,16 @@ impl ConnectorMetrics for DynamoDBOutputMetrics {
         vec![
             (
                 "dynamodb_output_retries_total",
-                "Total number of DynamoDB write retries performed by the output connector.",
+                "Total number of DynamoDB write retries started by the output connector, \
+                 including those of chunks that still retry or that gave up.",
                 ValueType::Counter,
                 self.retries.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "dynamodb_output_retrying_chunks",
+                "Number of DynamoDB write chunks in a retry loop right now.",
+                ValueType::Gauge,
+                self.retrying_chunks.load(Ordering::Relaxed) as f64,
             ),
             (
                 "dynamodb_output_throttled_items_total",
@@ -138,14 +160,15 @@ impl ConnectorMetrics for DynamoDBOutputMetrics {
             ),
             (
                 "dynamodb_output_transact_write_failures_total",
-                "Total number of TransactWriteItems requests that failed and were retried.",
+                "Total number of TransactWriteItems requests that failed, retried or not, \
+                 other than cancellations caused only by condition checks.",
                 ValueType::Counter,
                 self.transact_write_failures.load(Ordering::Relaxed) as f64,
             ),
             (
                 "dynamodb_output_failed_items_total",
                 "Total number of output records dropped after exhausting the configured write \
-                 retries.",
+                 retries or after a write error that a retry cannot fix.",
                 ValueType::Counter,
                 self.failed_items.load(Ordering::Relaxed) as f64,
             ),

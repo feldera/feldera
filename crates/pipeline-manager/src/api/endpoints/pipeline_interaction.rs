@@ -18,8 +18,8 @@ use actix_web::{
 #[allow(unused_imports)]
 use feldera_types::checkpoint::RemoteCheckpoint;
 use feldera_types::query_params::{
-    ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
-    SamplyProfileParams, StatsParams,
+    ApproveParameters, CommitTransactionParams, MetricsFormat, MetricsParameters,
+    SamplyProfileGetParams, SamplyProfileParams, StatsParams,
 };
 use feldera_types::runtime_status::BootstrapConfig;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
@@ -88,6 +88,7 @@ pub mod support_bundle;
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -183,6 +184,7 @@ pub(crate) async fn http_input(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -270,6 +272,7 @@ pub(crate) async fn http_output(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -362,6 +365,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -436,6 +440,7 @@ pub(crate) async fn get_pipeline_input_connector_status(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -523,6 +528,7 @@ pub(crate) async fn get_pipeline_output_connector_status(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -617,6 +623,7 @@ pub(crate) async fn post_pipeline_output_connector_action(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -677,6 +684,7 @@ pub(crate) async fn post_pipeline_output_connector_command(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -800,6 +808,7 @@ pub(crate) async fn get_pipeline_metrics(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -860,6 +869,7 @@ pub(crate) async fn get_pipeline_time_series(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -915,6 +925,7 @@ pub(crate) async fn get_pipeline_time_series_stream(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -970,6 +981,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1152,6 +1164,7 @@ pub(crate) async fn post_pipeline_rebalance(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1205,6 +1218,7 @@ pub(crate) async fn post_pipeline_start_compaction(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1274,6 +1288,7 @@ pub(crate) async fn sync_checkpoint(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1348,6 +1363,7 @@ pub(crate) async fn checkpoint_pipeline(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1416,6 +1432,7 @@ pub(crate) async fn get_checkpoint_status(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1478,6 +1495,7 @@ pub(crate) async fn get_checkpoint_sync_status(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1542,6 +1560,7 @@ pub(crate) async fn get_checkpoints(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1585,6 +1604,9 @@ pub(crate) async fn get_remote_checkpoints(
     ),
     responses(
         (status = ACCEPTED, description = "Started profiling the pipeline with the Samply tool"),
+        (status = BAD_REQUEST
+            , description = "`duration_secs` is not from 1 to 300 (error code `InvalidParam`)"
+            , body = ErrorResponse),
         (status = CONFLICT
             , description = "Samply profile collection is already in progress"
             , body = ErrorResponse),
@@ -1598,6 +1620,7 @@ pub(crate) async fn get_remote_checkpoints(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1662,6 +1685,7 @@ pub(crate) async fn start_samply_profile(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1720,6 +1744,7 @@ pub(crate) async fn get_pipeline_samply_profile(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -1913,6 +1938,7 @@ pub(crate) async fn post_pipeline_resume(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -2007,6 +2033,7 @@ pub(crate) async fn post_pipeline_activate(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -2120,6 +2147,7 @@ fn request_is_websocket(request: &HttpRequest) -> bool {
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -2196,6 +2224,7 @@ pub(crate) async fn pipeline_adhoc_sql(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -2275,6 +2304,7 @@ pub(crate) async fn completion_token(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -2333,6 +2363,7 @@ pub(crate) async fn completion_status(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
@@ -2376,13 +2407,19 @@ pub(crate) async fn start_transaction(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        CommitTransactionParams,
     ),
     responses(
         (status = OK
             , description = "Commit operation initiated."
             , content_type = "application/json"),
+        (status = BAD_REQUEST
+            , description = "The given `incarnation_uuid` does not match the pipeline's \
+                              current incarnation (error code `IncarnationUuidMismatch`): \
+                              the pipeline process has restarted since the transaction started"
+            , body = ErrorResponse),
         (status = CONFLICT
-            , description = "Another transaction is already in progress."
+            , description = "Another transaction is already in progress, or `transaction_id` is not the transaction that the API started."
             , body = ErrorResponse),
         (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
@@ -2390,6 +2427,7 @@ pub(crate) async fn start_transaction(
                 ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
                 ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),

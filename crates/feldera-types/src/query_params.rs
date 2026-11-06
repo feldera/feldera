@@ -47,8 +47,13 @@ impl Default for ActivateParams {
 pub struct SamplyProfileParams {
     /// In a multihost pipeline, the ordinal of the pipeline to sample.
     pub ordinal: usize,
-    /// The number of seconds to sample for the profile.
+    /// The number of seconds to sample for the profile, from 1 to 300.
     pub duration_secs: u64,
+}
+
+impl SamplyProfileParams {
+    /// The longest profile a caller can request, in seconds.
+    pub const MAX_DURATION_SECS: u64 = 300;
 }
 
 /// Default query parameters for POST of a pipeline samply profile.
@@ -71,6 +76,35 @@ pub struct SamplyProfileGetParams {
     /// If true, returns 204 redirect with Retry-After header if profile collection is in progress.
     /// If false or not provided, returns the last collected profile.
     pub latest: bool,
+}
+
+/// Query parameters to the `/commit_transaction` endpoint.
+#[derive(Debug, Default, Deserialize, Serialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(default)]
+pub struct CommitTransactionParams {
+    /// The ID of the transaction to commit, which `/start_transaction`
+    /// returned:
+    ///
+    /// - If this is the transaction that the API started and that is still
+    ///   open, the request commits it.
+    /// - If this is the last transaction that `/commit_transaction`
+    ///   committed, the request succeeds and does nothing, so it is safe to
+    ///   retry.
+    /// - Otherwise, the request fails with 409 Conflict, for example if no
+    ///   transaction with this ID has started yet.
+    ///
+    /// Without this parameter, the request commits the transaction that the
+    /// API started.
+    #[param(value_type = Option<i64>)]
+    #[schema(value_type = Option<i64>)]
+    pub transaction_id: Option<crate::transaction::TransactionId>,
+
+    /// The `incarnation_uuid` that `/start_transaction` returned.  If the
+    /// pipeline restarted since then, the request fails with 400 Bad Request
+    /// and error code `IncarnationUuidMismatch`, because transaction IDs start
+    /// again after a restart.
+    pub incarnation_uuid: Option<uuid::Uuid>,
 }
 
 /// Query parameters to the `/approve` endpoint.

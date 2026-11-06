@@ -1,17 +1,16 @@
 import type { NamesInUnion } from 'common-lib/union'
 import { unionName } from 'common-lib/union'
 import invariant from 'tiny-invariant'
-import { match } from 'ts-pattern'
+import { match, P } from 'ts-pattern'
 import { hasSelectedRelations } from '#lib/components/pipelines/editor/TabChangeStream.svelte'
 import type {
-  ExtendedPipeline,
   PipelineAction,
   PipelineStatus,
   PipelineThumb
 } from '#lib/services/pipelineManager.ts'
 import { page } from '$app/state'
 import { usePipelineList, useUpdatePipelineList } from './pipelines/usePipelineList.svelte'
-import { type PipelineManagerApi, usePipelineManager } from './usePipelineManager.svelte'
+import { usePipelineManager } from './usePipelineManager.svelte'
 import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 
 let postPipelineAction: (
@@ -97,9 +96,33 @@ export const usePipelineAction = () => {
       .with('approve_changes', () => undefined)
       .exhaustive()
 
+    // A start or a stop does not end a compilation. For a compiling pipeline, the
+    // optimistic status keeps the compiling state and only sets whether a start is
+    // scheduled.
+    const compilingStatus = (status: PipelineStatus) => {
+      const cause = match(action)
+        .returnType<'start' | 'compile' | undefined>()
+        .with('start', 'start_paused', 'standby', () => 'start')
+        .with('stop', 'kill', () => 'compile')
+        .otherwise(() => undefined)
+      if (!cause) {
+        return undefined
+      }
+      return match(status)
+        .returnType<PipelineStatus | undefined>()
+        .with({ Queued: P.any }, () => ({ Queued: { cause } }))
+        .with({ CompilingSql: P.any }, () => ({ CompilingSql: { cause } }))
+        .with({ SqlCompiled: P.any }, () => ({ SqlCompiled: { cause } }))
+        .with({ CompilingRust: P.any }, () => ({ CompilingRust: { cause } }))
+        .otherwise(() => undefined)
+    }
+
     // Apply optimistic updates
     if (optimisticStatus) {
-      updatePipeline(pipeline_name, (p) => ({ ...p, status: optimisticStatus }))
+      updatePipeline(pipeline_name, (p) => ({
+        ...p,
+        status: compilingStatus(p.status) ?? optimisticStatus
+      }))
     } else if (action === 'clear') {
       updatePipeline(pipeline_name, (p) => ({ ...p, storageStatus: 'Clearing' }))
     }

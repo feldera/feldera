@@ -18,6 +18,7 @@ Once the User Pool is created:
 - Go to the **App clients** section and create a new app client.
 - **Select "Single-page application (SPA)"** as the app client type.
 - In the **Return URL** field, add: `https://<your-domain>/auth/callback/`
+- Make sure that token revocation is enabled for the app client. The Web Console revokes the refresh token at `<your-cognito-domain>/oauth2/revoke` when a user signs out (see [Sign out and token revocation](index.mdx#sign-out-and-token-revocation)). Cognito enables token revocation by default for new app clients, but an older app client can have it disabled. To check it, open the app client, select **Edit** in **App client information**, and find the setting under **Advanced configuration**. The API parameter is `EnableTokenRevocation`.
 
 :::note
 

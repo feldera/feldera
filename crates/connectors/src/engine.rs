@@ -21,6 +21,7 @@ use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_adapterlib::errors::journal::StepError;
 use feldera_adapterlib::transport::Step;
 use feldera_ir::LirCircuit;
+use feldera_mtls::PipelinePeerTls;
 use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::ExponentialHistogramSnapshot;
 use feldera_types::checkpoint::{
@@ -68,6 +69,14 @@ pub struct CircuitParams {
 
     /// The developer settings of the pipeline that the engine reads.
     pub dev_tweaks: DevTweaks,
+
+    /// TLS for exchange with the other hosts of a multihost pipeline, or `None` for
+    /// plaintext.
+    pub exchange_tls: Option<PipelinePeerTls>,
+
+    /// Identifies this run of a multihost pipeline to its hosts (see
+    /// `dbsp::circuit::CircuitConfig::exchange_uuid`).
+    pub exchange_uuid: Uuid,
 }
 
 /// What the circuit factory returns.
@@ -203,6 +212,13 @@ pub trait CircuitDriver {
 
     /// Starts compacting the circuit's stored state.
     fn start_compaction(&mut self) -> Result<(), ControllerError>;
+
+    /// Test-only: fails a circuit command with an error that kills the
+    /// circuit from the calling thread.
+    #[cfg(any(test, feature = "testing"))]
+    fn inject_fatal_error(&mut self) -> Result<(), ControllerError> {
+        unimplemented!("this engine cannot inject a fatal error")
+    }
 
     /// Stops the circuit and waits for its threads.
     fn kill(self: Box<Self>) -> Result<(), ControllerError>;

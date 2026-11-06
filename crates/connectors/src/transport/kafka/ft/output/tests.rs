@@ -26,7 +26,9 @@ mod real;
 const TOPIC: &str = "ft_test_topic";
 
 /// A connected sink on `cluster` with a one second transaction timeout, so
-/// that a delivery failure turns into an abortable transaction quickly.
+/// that a delivery failure turns into an abortable transaction quickly. The
+/// statistics interval is 100 ms, so the producer queue part of `memory()` is
+/// at most about 100 ms old (the default is 10 s).
 fn endpoint(
     cluster: &MockCluster<'_, DefaultProducerContext>,
 ) -> (
@@ -40,6 +42,7 @@ fn endpoint(
         "fault_tolerance": {
             "producer_options": {
                 "transaction.timeout.ms": "1000",
+                "statistics.interval.ms": "100",
             }
         }
     }))
@@ -60,6 +63,16 @@ fn cluster() -> MockCluster<'static, DefaultProducerContext> {
 /// Reads through the broker's current high watermark, including any records
 /// beyond the expected count. With read_committed, aborted records and control
 /// records are filtered by Kafka; the consumer still advances past them.
+///
+/// A broker answers EndTxn before it writes the commit markers, so a
+/// read_committed watermark can lag a decided commit. The end of a partition
+/// is therefore judged against the high watermark as it is at each EOF, not a
+/// snapshot taken before reading.
+///
+/// Precondition: every transaction on the topic has been decided. A
+/// read_committed consumer stops at the last stable offset, so an open
+/// transaction keeps it short of the high watermark until the broker's
+/// `transaction.timeout.ms` expires.
 fn read_records(
     bootstrap: &str,
     topic: &str,
@@ -67,16 +80,20 @@ fn read_records(
     isolation: &str,
 ) -> Vec<SpooledRecord> {
     use rdkafka::message::Headers;
-    let consumer: BaseConsumer = ClientConfig::new()
-        .set("bootstrap.servers", bootstrap)
-        .set("group.id", "verify-output")
-        .set("enable.partition.eof", "true")
-        .set("isolation.level", isolation)
-        .create()
-        .unwrap();
+    let consumer = |isolation: &str| -> BaseConsumer {
+        ClientConfig::new()
+            .set("bootstrap.servers", bootstrap)
+            .set("group.id", "verify-output")
+            .set("enable.partition.eof", "true")
+            .set("isolation.level", isolation)
+            .create()
+            .unwrap()
+    };
+    let watermarks = consumer("read_uncommitted");
+    let consumer = consumer(isolation);
     let mut received = Vec::new();
     for partition in 0..partition_count {
-        let (low, high) = consumer
+        let (low, _) = watermarks
             .fetch_watermarks(topic, partition, Duration::from_secs(10))
             .unwrap();
         let mut assignment = TopicPartitionList::new();
@@ -84,6 +101,7 @@ fn read_records(
             .add_partition_offset(topic, partition, Offset::Offset(low))
             .unwrap();
         consumer.assign(&assignment).unwrap();
+        let mut last_eof = None;
         wait(
             || {
                 match consumer.poll(Duration::from_millis(100)) {
@@ -102,13 +120,17 @@ fn read_records(
                             .unwrap_or_default(),
                     }),
                     Some(Err(KafkaError::PartitionEOF(_))) => {
-                        return consumer
+                        let (_, high) = watermarks
+                            .fetch_watermarks(topic, partition, Duration::from_secs(10))
+                            .unwrap();
+                        let position = consumer
                             .position()
                             .unwrap()
                             .find_partition(topic, partition)
                             .unwrap()
-                            .offset()
-                            == Offset::Offset(high);
+                            .offset();
+                        last_eof = Some((position, high));
+                        return position == Offset::Offset(high);
                     }
                     Some(Err(error)) => panic!("reading {topic}: {error}"),
                     None => {}
@@ -117,7 +139,11 @@ fn read_records(
             },
             60_000,
         )
-        .expect("the consumer must reach the high watermark");
+        .unwrap_or_else(|_| {
+            panic!(
+                "the consumer must reach the high watermark of {topic}[{partition}]; last EOF (position, high watermark): {last_eof:?}; an undecided transaction holds a read_committed consumer below the high watermark"
+            )
+        });
     }
     received
 }
@@ -257,7 +283,10 @@ fn an_outage_aborts_and_replays_the_transaction() {
         "{:?}",
         callbacks.errors()
     );
-    assert_eq!(endpoint.memory(), 0, "the spool must be released at commit");
+    // `memory()` also counts the producer queue from the last statistics
+    // callback, which can be from before the commit.
+    wait(|| endpoint.memory() == 0, 5_000)
+        .expect("the spool and the producer queue must be released at commit");
     assert_eq!(callbacks.metric("kafka_output_replay_spool_bytes"), 0.0);
 
     let received = read_topic(&cluster);
@@ -336,6 +365,40 @@ fn a_late_commit_response_is_retried_without_replay() {
         "{:?}",
         statuses(&callbacks)
     );
+    assert_eq!(read_topic(&cluster).len(), 1);
+}
+
+/// While the proxy holds commits, it passes an EndTxn error reply to the
+/// client, which retries, and holds only the reply that succeeds.
+#[test]
+fn proxy_passes_end_txn_errors_and_holds_the_success() {
+    let cluster = cluster();
+    let proxy = proxy::BrokerProxy::new(cluster.bootstrap_servers());
+    let config: KafkaOutputConfig = serde_json::from_value(json!({
+        "topic": TOPIC,
+        "bootstrap.servers": proxy.address,
+        "fault_tolerance": {
+            "producer_options": { "transaction.timeout.ms": "60000" }
+        }
+    }))
+    .unwrap();
+    let mut endpoint = KafkaOutputEndpoint::new(config, CancellationToken::new(), None).unwrap();
+    let callbacks = Arc::new(RecordingCallbacks::default());
+    endpoint.connect(callbacks.clone()).unwrap();
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint.push_buffer(b"retried commit").unwrap();
+    cluster.request_errors(
+        RDKafkaApiKey::EndTxn,
+        &[RDKafkaRespErr::RD_KAFKA_RESP_ERR_CONCURRENT_TRANSACTIONS],
+    );
+    proxy.hold_commit(true);
+    let worker = BatchWorker::new(endpoint);
+    wait(|| proxy.held_commits() > 0, 30_000).expect("the successful EndTxn must be held");
+    assert_eq!(proxy.passed_end_txn_errors(), 1);
+    assert_eq!(proxy.held_commits(), 1);
+    proxy.hold_commit(false);
+    let (result, _endpoint) = worker.finish();
+    result.unwrap();
     assert_eq!(read_topic(&cluster).len(), 1);
 }
 

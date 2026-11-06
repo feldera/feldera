@@ -6,7 +6,7 @@ This article is the second part of our series on building a billion cell spreads
 2. **Part 2 (this article):** Expose pipeline data to clients via a server.
 3. **Part 3:** [Add a browser-based UI](./part3.md).
 
-![spreadsheet-architecture-parts](./spreadsheet-architecture-parts.svg)
+![spreadsheet-architecture-parts](./spreadsheet-architecture-parts.png)
 
 - The code is available in the [GitHub repo](https://github.com/feldera/techdemo-spreadsheet).
 

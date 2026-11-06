@@ -206,6 +206,90 @@ You can connect to an external PostgreSQL database with the following steps:
    _Note:_ it must be a new installation. If you skip step 3, you must not set the `postgresTlsConfigMapRef`
    variable.
 
+### Rotate the database password
+
+To change the password of the bundled database, updating the secret alone isn't
+enough: Postgres only reads the password from the secret the first time it starts
+on an empty volume, and the Feldera components only read it when they start. So
+you change the password in Postgres itself, update the secret to match, and
+restart the components that connect to the database.
+
+The steps below assume the release name `feldera`, the namespace `feldera` and the
+secret `feldera-db-secret` from
+[Configure custom database credentials](#configure-custom-database-credentials).
+Adjust them if yours are different.
+
+If you use the default `feldera-db-insecure-secret`, don't change that secret.
+The Helm chart owns it, so the next `helm upgrade` sets the old password back.
+Move to your own secret instead: in step 1 read the user and password from
+`feldera-db-insecure-secret`, in step 3 create `feldera-db-secret`, and in step 4
+run `helm upgrade` with your usual values and
+`--set felderaDatabaseSecretRef="feldera-db-secret"` instead of the restart.
+The upgrade restarts the components with the new secret.
+
+1. **Choose a new password:** use only letters and digits. Feldera puts the password
+   into a `postgresql://` connection URL as is, so characters like `@`, `:` or `/`
+   break the connection. Also save the current user and password, in case you need
+   to go back.
+   ```bash
+   NEW_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32)
+   DB_USER=$(kubectl get secret -n feldera feldera-db-secret -o jsonpath='{.data.\.user}' | base64 -d)
+   OLD_PASSWORD=$(kubectl get secret -n feldera feldera-db-secret -o jsonpath='{.data.\.password}' | base64 -d)
+   ```
+
+2. **Change the password in Postgres:** inside the database pod, `psql` connects over
+   the local socket, so you don't need the old password. The statement goes in on
+   stdin, which keeps the password out of the process list.
+   ```bash
+   printf "ALTER ROLE \"%s\" PASSWORD '%s';\n" "$DB_USER" "$NEW_PASSWORD" | \
+     kubectl exec -i -n feldera feldera-db-0 -- sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1'
+   ```
+   It should print `ALTER ROLE`. From now on, new connections with the old password
+   fail. Connections that are already open continue to work, so do the next steps
+   right away.
+
+3. **Update the secret:**
+   ```bash
+   kubectl create secret generic feldera-db-secret -n feldera \
+     --from-literal=.user="$DB_USER" --from-literal=.password="$NEW_PASSWORD" \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+   Also update the place the secret comes from, for example your
+   `feldera-db-secret.yaml` file or your GitOps repository. If someone applies the
+   old value again later, the components can't log in after their next restart.
+
+   If the secret is managed by the External Secrets Operator, update the value in
+   your secret manager instead. The operator only syncs at its `refreshInterval`,
+   so force a sync and make sure the status is `SecretSynced` before step 4:
+   ```bash
+   kubectl annotate externalsecret -n feldera feldera-db-secret force-sync=$(date +%s) --overwrite
+   kubectl get externalsecret -n feldera feldera-db-secret
+   ```
+
+4. **Restart the Feldera components:**
+   ```bash
+   kubectl rollout restart -n feldera deployment/feldera-api-server deployment/feldera-kubernetes-runner statefulset/feldera-compiler-server
+   kubectl rollout status -n feldera deployment/feldera-api-server
+   kubectl rollout status -n feldera deployment/feldera-kubernetes-runner
+   kubectl rollout status -n feldera statefulset/feldera-compiler-server
+   ```
+   If compiler autoscaling is enabled, also restart
+   `deployment/feldera-compiler-artifact-server`. You don't need to restart the
+   database pod. If it restarts later, it keeps the new password.
+
+5. **Check:** all pods should be `Running`, and the API server logs should show no
+   authentication errors. Your pipelines keep running during the rotation.
+
+If step 2 fails, nothing has changed yet, and the components still use the old
+password.
+
+If step 3 or 4 fails, for example a pod stays in `CrashLoopBackOff` with
+authentication errors, go back to the old password: run steps 2 and 3 again with
+`"$OLD_PASSWORD"` in place of `"$NEW_PASSWORD"`, then do step 4.
+
+If you use an external database, change the password there, update
+`.connection_url` in the secret, and proceed to step 4.
+
 ### Feldera installation overview
 
 **Services:**

@@ -39,12 +39,48 @@ adds librdkafka settings for those two clients:
 fault tolerance model does. Omitting `fault_tolerance` leaves the consumer and
 producer with the connector's other Kafka options and the librdkafka defaults.
 
+The connector leaves producer batching (`batch.size`, `batch.num.messages` and
+`linger.ms`) at the librdkafka defaults, and you can tune it in
+`producer_options`. It sets `acks`, `enable.idempotence`, `retries` and
+`socket.nagle.disable` itself, and rejects other values for them.
+
 ```json
 "fault_tolerance": {
   "consumer_options": {"fetch.max.bytes": "10485760"},
   "producer_options": {"compression.type": "lz4"}
 }
 ```
+
+### Message keys with exactly-once fault tolerance
+
+To discard duplicate output after a restart, an exactly-once connector
+records a position in every message, and on startup reads the last message
+in each partition. Where the position goes depends on whether the format
+supplies a message key:
+
+- **No key** (for example, JSON with `insert_delete`): the position is the
+  message key, and messages are spread across partitions in turn.
+- **A key** (for example, JSON `debezium`, or JSON or Avro with `key_fields`):
+  the format's key is the message key, and the position is in a header named
+  `__feldera_position`, ahead of any other headers. Kafka assigns the
+  partition from the key, so all messages with the same key go to the same
+  partition in order, and consumers can share a topic's partitions.
+  `__feldera_position` is reserved; consumers can ignore it.
+
+A message with a key but no value (a tombstone) is not supported in this
+mode, because compaction eventually removes tombstones, and recovery would
+then read an older position and write committed output again. The Avro
+`confluent_jdbc` format and the JSON `redis` format write deletions as
+tombstones, so with exactly-once fault tolerance their deletions are reported
+as errors and not written. Use a format that writes a deletion with a value,
+such as `debezium`, or at-least-once fault tolerance. Other formats are safe
+on compacted topics.
+
+The JSON `debezium` format with an `index` writes each deletion as a `d` event
+with a value, and then a tombstone. With exactly-once fault tolerance, set
+`"tombstones_on_delete": false` in its format configuration. Otherwise the
+connector writes the `d` events and reports an error for each tombstone. See
+[the Debezium format](/formats/json#the-debezium-format).
 
 ## Delivery, retries, and backpressure
 

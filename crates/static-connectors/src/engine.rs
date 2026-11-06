@@ -15,6 +15,7 @@ use dbsp::circuit::metrics::{
     EXCHANGE_MESSAGES_RECEIVED, FILES_CREATED, FILES_DELETED, FILES_SYNCED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::{CircuitConfig, Mode};
+use dbsp::operator::communication::ExchangeTls;
 use dbsp::profile::{DbspProfile, GraphProfile, ProfileJsonWriter, WorkerProfile};
 use dbsp::{DBSPHandle, Runtime, WeakRuntime};
 use feldera_adapterlib::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
@@ -126,6 +127,8 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
             reserved_memory_bytes,
             pin_cpus,
             dev_tweaks,
+            exchange_tls,
+            exchange_uuid,
         } = params;
         let storage = storage.as_deref().map(|storage| {
             storage
@@ -143,7 +146,12 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
             )
             .with_mode(Mode::Persistent)
             .with_dev_tweaks(dev_tweaks)
-            .with_allow_input_during_commit(false);
+            .with_allow_input_during_commit(false)
+            .with_exchange_uuid(exchange_uuid)
+            .with_exchange_tls(exchange_tls.map(|tls| ExchangeTls {
+                client: tls.client,
+                server: tls.server,
+            }));
         let (handle, catalog) = circuit(config)?;
         let inputs = InputOperators::new(catalog.as_ref());
         let runtime = Arc::new(StaticRuntime::new(handle.runtime()));
@@ -326,6 +334,13 @@ impl CircuitDriver for StaticCircuitDriver {
     fn start_compaction(&mut self) -> Result<(), ControllerError> {
         self.handle
             .start_compaction()
+            .map_err(ControllerError::dbsp_error)
+    }
+
+    #[cfg(feature = "testing")]
+    fn inject_fatal_error(&mut self) -> Result<(), ControllerError> {
+        self.handle
+            .inject_fatal_error()
             .map_err(ControllerError::dbsp_error)
     }
 

@@ -120,7 +120,7 @@ describe('pipelineManager API error propagation', () => {
   })
 })
 
-// A concurrent bootstrap keeps the pre-existing views live. Each phase surfaces
+// Test that a concurrent bootstrap keeps the pre-existing views live. Each phase surfaces
 // as its own status label rather than being folded into Running, so the user
 // sees the backfill and cutover progress in the main status pill.
 describe('consolidatePipelineStatus concurrent bootstrap phase', () => {
@@ -141,5 +141,23 @@ describe('consolidatePipelineStatus concurrent bootstrap phase', () => {
     { deployment: 'Synchronizing' as const, desired: 'Suspended' as const }
   ])('reads as $deployment (desired $desired)', ({ deployment, desired }) => {
     expect(consolidate(deployment, desired).status).toBe(deployment)
+  })
+})
+
+// Test that a stopped pipeline that compiles reports why: `'start'` when a start waits
+// for the compilation, `'compile'` when only the program changed.
+describe('consolidatePipelineStatus compilation cause', () => {
+  it.each([
+    { program: 'Pending' as const, label: 'Queued' },
+    { program: 'CompilingSql' as const, label: 'CompilingSql' },
+    { program: 'SqlCompiled' as const, label: 'SqlCompiled' },
+    { program: 'CompilingRust' as const, label: 'CompilingRust' }
+  ])('$program reads as $label with the cause of the desired status', ({ program, label }) => {
+    const statusFor = (desired: CombinedDesiredStatus) =>
+      consolidatePipelineStatus(program, 'Stopped', desired, null).status
+    expect(statusFor('Stopped')).toEqual({ [label]: { cause: 'compile' } })
+    expect(statusFor('Running')).toEqual({ [label]: { cause: 'start' } })
+    expect(statusFor('Paused')).toEqual({ [label]: { cause: 'start' } })
+    expect(statusFor('Standby')).toEqual({ [label]: { cause: 'start' } })
   })
 })

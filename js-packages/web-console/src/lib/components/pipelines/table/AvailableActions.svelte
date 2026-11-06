@@ -56,11 +56,10 @@
         { CompilingSql: P.any },
         { SqlCompiled: P.any },
         { CompilingRust: P.any },
-        (cause) => [
-          ...(Object.values(cause)[0].cause === 'upgrade' ? ['kill' as const] : []),
-          ...storageAction,
-          'delete'
-        ]
+        (status) =>
+          Object.values(status)[0].cause === 'start'
+            ? ['kill', ...storageAction, 'delete']
+            : ['start', ...storageAction, 'delete']
       )
       .with('Stopped', () => ['start', ...storageAction, 'delete'])
       .with('Preparing', 'Provisioning', 'Initializing', () => ['kill', 'delete'])

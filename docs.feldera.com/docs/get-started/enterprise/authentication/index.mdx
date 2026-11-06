@@ -12,6 +12,17 @@ Feldera API supports two authentication types:
 
 - API key: Authorized Feldera users can generate API keys to be included in the `Authorization` HTTP header in the shape `Bearer <token>`
 
+### Sign out and token revocation
+
+When a user signs out of the Web Console, it sends the user's refresh token to the revocation endpoint of the identity provider
+to finalize the user session.
+
+Make sure that your identity provider allows token revocation for the Feldera application.
+If revocation is disabled, or the provider does not publish a revocation endpoint, sign-out still completes, but the refresh token stays valid and the console logs no error.
+The provider-specific setup guides below describe this step.
+
+Feldera validates the signature and expiration of an access token locally, so the access token stays usable until it expires.
+
 ## Authorization model
 
 **Feldera Tenant** is a scope of access to Feldera pipelines for their management and configuration. The same tenant can be assigned to multiple users for shared access. The ingress and egress business data flow, which is configured through connectors, has it's own connector-dependent authentication and is not subject to tenant-based authorization.

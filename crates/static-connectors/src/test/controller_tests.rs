@@ -94,17 +94,39 @@ fn test_storage_full_reports_storage_error() {
     controller.stop().unwrap();
 }
 
-/// A worker-side checkpoint failure must reach the caller of
-/// [Controller::checkpoint] rather than deadlock the circuit thread.
+/// Runs `f` on a new thread and returns its result, or panics if `f` does not
+/// return in time, so that a deadlock fails the test instead of hanging the
+/// test binary.
+fn call_with_timeout<T, F>(name: &str, f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (sender, receiver) = mpsc::channel();
+    thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            let _ = sender.send(f());
+        })
+        .unwrap();
+    receiver
+        .recv_timeout(Duration::from_secs(60))
+        .unwrap_or_else(|_| panic!("`{name}` must return instead of blocking forever"))
+}
+
+/// A worker error must reach the caller rather than deadlock the circuit
+/// thread.
 ///
-/// `DBSPHandle::broadcast_command` kills the circuit when a worker answers a
-/// command with an error, and killing the runtime joins its aux threads, one
-/// of which is each output endpoint's thread.  Those threads therefore have to
-/// exit on the kill: it runs on the circuit thread, so a thread that instead
-/// waits for the controller to reach `Terminated` waits on the thread that is
-/// waiting on it.  Regression test for issue #7075.
+/// A checkpoint error is not fatal, so the circuit keeps running.
+///
+/// A fatal error makes `DBSPHandle::broadcast_command` kill the circuit, and
+/// killing the runtime joins its aux threads, one of which is each output
+/// endpoint's thread.  Those threads therefore have to exit on the kill: it
+/// runs on the circuit thread, so a thread that instead waits for the
+/// controller to reach `Terminated` waits on the thread that is waiting on it.
+/// Regression test for issue #7075.
 #[test]
-fn checkpoint_error_does_not_deadlock() {
+fn worker_error_does_not_deadlock() {
     init_test_logger();
 
     let tempdir = TempDir::new().unwrap();
@@ -145,7 +167,7 @@ fn checkpoint_error_does_not_deadlock() {
     .unwrap();
 
     // The circuit has no persistent operator ids, so every worker fails the
-    // `Checkpoint` command with `StorageError::NoPersistentId`.
+    // `PrepareCheckpoint` command with `StorageError::NoPersistentId`.
     let circuit = TestCircuit::Identity {
         relation: TestStruct::relation_schema(),
         persistent_output_ids: vec![None],
@@ -163,25 +185,18 @@ fn checkpoint_error_does_not_deadlock() {
     controller.start();
     wait(|| !controller.is_replaying(), default_timeout_ms()).unwrap();
 
-    // Check from another thread so that the test reports a failure instead of
-    // hanging the whole test binary if the deadlock comes back.
-    let (sender, receiver) = mpsc::channel();
-    let checkpointer = controller.clone();
-    thread::Builder::new()
-        .name("checkpoint-requester".into())
-        .spawn(move || {
-            let _ = sender.send(checkpointer.checkpoint().err());
-        })
-        .unwrap();
-
-    let error = receiver
-        .recv_timeout(Duration::from_secs(60))
-        .expect("`checkpoint()` must return instead of blocking forever")
-        .expect("`checkpoint()` must fail on a circuit with no persistent operator ids");
+    let c = controller.clone();
+    let error = call_with_timeout("checkpoint", move || c.checkpoint())
+        .expect_err("`checkpoint()` must fail on a circuit with no persistent operator ids");
     assert!(
         error.to_string().contains("persistent id"),
         "unexpected checkpoint error: {error}"
     );
+    assert!(!controller.shutdown_token().is_cancelled());
+
+    let c = controller.clone();
+    call_with_timeout("inject_fatal_error", move || c.inject_fatal_error())
+        .expect_err("`inject_fatal_error()` must fail");
 
     // The kill is what put the pipeline in this state: this path never reaches
     // `Terminated`, so a shutdown signal that only tracked the state would

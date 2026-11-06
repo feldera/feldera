@@ -2097,6 +2097,14 @@ export type DevTweaks = {
    */
   streaming_exchange?: boolean | null
   /**
+   * Exchange data between the hosts of a multihost pipeline over TLS.
+   *
+   * This applies only when the pipeline has client certificates for TLS
+   * (with `mtls.enabled` in the Helm chart).  Set it to `false` to exchange
+   * data in plaintext even then.  The default is `true`.
+   */
+  tls_exchange?: boolean | null
+  /**
    * The share of the records at a spine's highest level with negative
    * weights above which the level merges its batches.
    *
@@ -2132,7 +2140,8 @@ export type DynamicConfig = {
 }
 
 /**
- * CPU and memory, the only fields that can change while the pipeline runs.
+ * CPU, memory, storage, and the volume attributes class, the only fields that can change while
+ * the pipeline runs.
  */
 export type DynamicResources = {
   cpu_cores_max?: number | null
@@ -2147,6 +2156,23 @@ export type DynamicResources = {
    * megabytes, is a deprecated alias.
    */
   memory_min?: string | null
+  /**
+   * The maximum storage, such as `"400Gi"`. `storage_mb_max`, a number of megabytes, is a
+   * deprecated alias.
+   */
+  storage_max?: string | null
+  /**
+   * Storage grows to `storage_min`, else `storage_max`. With both set, storage autoscaling
+   * expands it up to `storage_max`. A change can only increase a field that is already set.
+   * `storage_mb_min`, a number of megabytes, is a deprecated alias.
+   * Not serialized when unset, so that a pipeline on an older runtime accepts a memory update.
+   */
+  storage_min?: string | null
+  /**
+   * The Kubernetes volume attributes class of the storage, which sets its IOPS and
+   * throughput. A change cannot remove it.
+   */
+  volume_attributes_class?: string | null
 }
 
 /**
@@ -2221,20 +2247,30 @@ export type DynamoDbWriterConfig = {
    */
   max_concurrent_requests?: number
   /**
-   * Maximum number of retries for a failed or partially-applied DynamoDB write chunk.
+   * Maximum number of retries of a DynamoDB write chunk after its first request.
    *
-   * For `batch` writes, `BatchWriteItem` may return some items as "unprocessed" in a
-   * successful 200 response; those are re-submitted and counted as retries. For
-   * `transactional` writes, a failed `TransactWriteItems` call is retried in full.
+   * One budget covers every reason a chunk is sent again: items that a successful
+   * `BatchWriteItem` response returns as unprocessed, a `TransactWriteItems` call cancelled by
+   * transient contention, and a request that fails with a retryable error, such as
+   * throttling, a timeout, a network failure, a server error, or a temporary failure to
+   * obtain credentials. The AWS SDK makes its own few attempts first; only a retry that this
+   * connector starts after the SDK gave up counts here. Each retry waits longer than the
+   * previous one (exponential backoff with random jitter), up to a ceiling of roughly 13
+   * seconds.
    *
-   * Transient errors (throttling, network failures) are first handled transparently by the
-   * AWS SDK. Only attempts that reach this connector's retry loop count against this limit.
-   * Each retry waits longer than the previous one (exponential backoff), up to a ceiling
-   * of roughly 13 seconds.
+   * `0` permits no retry. Set to `null` to retry indefinitely: the connector keeps retrying
+   * at the ceiling interval, and the pipeline waits behind it, until DynamoDB recovers or
+   * the pipeline stops. When a bounded budget runs out, the chunk's remaining records are
+   * discarded and counted in `dynamodb_output_failed_items_total`.
    *
-   * Set to `null` to retry indefinitely. After the backoff ceiling is reached the connector
-   * keeps retrying at that interval, providing backpressure until DynamoDB recovers.
-   * Defaults to `10`.
+   * An error that a retry cannot fix, such as a validation error, a missing table, denied
+   * access, or an invalid credential configuration, discards the chunk at once, whatever
+   * the budget. Items of a transaction that fail their condition expression are dropped
+   * without a retry, which costs nothing here.
+   *
+   * Once a chunk has retried for ten seconds, the connector reports itself unhealthy in
+   * the pipeline's statistics, with the cause; it reports healthy again once no chunk
+   * retries and a chunk has landed. Defaults to `10`.
    */
   max_retries?: number | null
   /**
@@ -5560,7 +5596,8 @@ export type ResourceConfig = {
    * instance of this pipeline. The class sets mutable storage parameters
    * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
    * the `VolumeAttributesClass` feature gate) and CSI driver support.
-   * A change takes effect on the next start, also for existing storage.
+   * A change takes effect on the next start, also for existing storage, or
+   * while the pipeline runs through a `PATCH` of its `deployment_config`.
    */
   volume_attributes_class?: string | null
 }
@@ -6425,6 +6462,12 @@ export type StartFromCheckpoint = 'latest' | string | null
  * Response to a `/start_transaction` request.
  */
 export type StartTransactionResponse = {
+  /**
+   * Pass back to `/commit_transaction` to detect pipeline restarts.
+   *
+   * Only `None` if sent by an older pipeline.
+   */
+  incarnation_uuid?: string | null
   transaction_id: number
 }
 
@@ -8314,13 +8357,41 @@ export type CommitTransactionData = {
      */
     pipeline_name: string
   }
-  query?: never
+  query?: {
+    /**
+     * The ID of the transaction to commit, which `/start_transaction`
+     * returned:
+     *
+     * - If this is the transaction that the API started and that is still
+     * open, the request commits it.
+     * - If this is the last transaction that `/commit_transaction`
+     * committed, the request succeeds and does nothing, so it is safe to
+     * retry.
+     * - Otherwise, the request fails with 409 Conflict, for example if no
+     * transaction with this ID has started yet.
+     *
+     * Without this parameter, the request commits the transaction that the
+     * API started.
+     */
+    transaction_id?: number | null
+    /**
+     * The `incarnation_uuid` that `/start_transaction` returned.  If the
+     * pipeline restarted since then, the request fails with 400 Bad Request
+     * and error code `IncarnationUuidMismatch`, because transaction IDs start
+     * again after a restart.
+     */
+    incarnation_uuid?: string | null
+  }
   url: '/v0/pipelines/{pipeline_name}/commit_transaction'
 }
 
 export type CommitTransactionErrors = {
   /**
-   * Another transaction is already in progress.
+   * The given `incarnation_uuid` does not match the pipeline's current incarnation (error code `IncarnationUuidMismatch`): the pipeline process has restarted since the transaction started
+   */
+  400: ErrorResponse
+  /**
+   * Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.
    */
   409: ErrorResponse
   500: ErrorResponse
@@ -9009,7 +9080,7 @@ export type StartSamplyProfileData = {
      */
     ordinal?: number
     /**
-     * The number of seconds to sample for the profile.
+     * The number of seconds to sample for the profile, from 1 to 300.
      */
     duration_secs?: number
   }
@@ -9017,6 +9088,10 @@ export type StartSamplyProfileData = {
 }
 
 export type StartSamplyProfileErrors = {
+  /**
+   * `duration_secs` is not from 1 to 300 (error code `InvalidParam`)
+   */
+  400: ErrorResponse
   /**
    * Pipeline with that name does not exist
    */

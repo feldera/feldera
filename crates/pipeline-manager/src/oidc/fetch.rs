@@ -101,6 +101,7 @@ pub(crate) fn oidc_http_client(
 /// per JWKS resolution. Only two clients differ, by whether the destination
 /// policy restricts DNS, so hold both. Reuse also keeps the connection pool,
 /// so a repeat fetch to the same issuer skips the TLS handshake.
+#[derive(Clone)]
 pub(crate) struct OidcClients {
     /// Resolves any address: either the operator named this issuer, or the
     /// installation permits internal ones.

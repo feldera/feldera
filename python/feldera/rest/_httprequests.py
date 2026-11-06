@@ -46,6 +46,46 @@ def _is_502(exc: BaseException) -> bool:
     return isinstance(exc, FelderaAPIError) and exc.status_code == 502
 
 
+# Statuses that mean the server did not apply the request, so a retry is safe
+# even when the request is not idempotent. Other statuses can arrive after the
+# request was applied: a gateway sends 502/504 when the backend fails late, and
+# the manager sends 503 when a request it proxies to a pipeline fails mid-way.
+_NOT_APPLIED_STATUS_CODES = frozenset({408, 429})
+
+# Manager error codes sent with a 503 when the request was not applied: the
+# database rolled back the transaction, or the manager refused the request
+# before any side effect. One exception: pause, resume, activate and approve
+# forward to the pipeline before a database call, so a DB error code there can
+# follow an applied action. Repeating those actions asks for the same state,
+# so the retry is harmless.
+_NOT_APPLIED_ERROR_CODES = frozenset(
+    {
+        "DeadlockDetected",
+        "LockTookTooLong",
+        "PipelineInteractionNotDeployed",
+        "PipelineInteractionConnectFailed",
+        "CompilerUnavailable",
+    }
+)
+
+
+def _is_not_applied_503(exc: FelderaAPIError) -> bool:
+    """True if a 503 shows that the manager did not apply the request.
+
+    Managers that predate `PipelineInteractionConnectFailed` send
+    `PipelineInteractionUnreachable` when they cannot connect to the pipeline.
+    The awc prefix "Failed to connect to host" identifies that case.
+    """
+    if exc.status_code != 503:
+        return False
+    if exc.error_code in _NOT_APPLIED_ERROR_CODES:
+        return True
+    return (
+        exc.error_code == "PipelineInteractionUnreachable"
+        and "Failed to connect to host" in (exc.message or "")
+    )
+
+
 _SENSITIVE_HEADERS = {"authorization", "cookie", "proxy-authorization", "x-api-key"}
 
 # How often to re-resolve while waiting for a refresher to replace an expired
@@ -147,17 +187,27 @@ class HttpRequests:
     def _is_retryable(self, exc: BaseException, idempotent: bool) -> bool:
         """Define which exceptions are worth retrying.
 
-        `idempotent` gates `ConnectionError` (e.g. a connection reset mid-poll):
-        safe to retry for GET, where a lost response can't have caused a
-        server-side side effect, but not for POST/PUT/PATCH/DELETE, where the
-        original request may already have been applied.
+        `idempotent` gates every failure after which the server may already
+        have applied the request: a read timeout, a dropped connection, and
+        any retryable status not in `_NOT_APPLIED_STATUS_CODES`, unless
+        `_is_not_applied_503` shows the manager did not apply it. A connect
+        timeout always retries, because the request was never sent.
         """
+        if isinstance(exc, requests.exceptions.ConnectTimeout):
+            return True
         if isinstance(exc, requests.exceptions.Timeout):
-            return True
-        if idempotent and isinstance(exc, requests.exceptions.ConnectionError):
-            return True
+            return idempotent
+        if isinstance(exc, requests.exceptions.ConnectionError):
+            return idempotent
         if isinstance(exc, FelderaAPIError):
-            return exc.status_code in self.config.retry_config.retryable_status_codes
+            return (
+                exc.status_code in self.config.retry_config.retryable_status_codes
+                and (
+                    idempotent
+                    or exc.status_code in _NOT_APPLIED_STATUS_CODES
+                    or _is_not_applied_503(exc)
+                )
+            )
         return False
 
     def _custom_wait(self, retry_state: "RetryCallState") -> float:
@@ -312,14 +362,17 @@ class HttpRequests:
         `RetryConfig`.
 
         Retry policy:
-        - Status codes in `retry_config.retryable_status_codes` (default
-          408, 429, 502, 503, 504) and connection/read timeouts retry.
-        - For GET, and for any request marked `idempotent=True`, a
-          `ConnectionError` (e.g. connection reset mid-request) also
-          retries: a lost response can't change the outcome of an
-          idempotent request. Other POST/PUT/PATCH/DELETE requests do not
-          retry it, since the original request may already have been
-          applied.
+        - Connect timeouts always retry: the request was never sent.
+        - For GET, and for any request marked `idempotent=True`, status
+          codes in `retry_config.retryable_status_codes` (default 408, 429,
+          502, 503, 504), read timeouts, and a `ConnectionError` (e.g.
+          connection reset mid-request) retry: a repeat can't change the
+          outcome of an idempotent request.
+        - Other POST/PUT/PATCH/DELETE requests retry only 408, 429, and a
+          503 whose error code shows the request was not applied (when the
+          status is in `retryable_status_codes`). After any other failure
+          the original request may already have been applied, so a retry
+          could apply it twice.
         - A DELETE marked `idempotent=True` that receives 404 on a retry
           attempt reports success: the resource vanished between attempts,
           so an earlier attempt was applied and the postcondition holds.

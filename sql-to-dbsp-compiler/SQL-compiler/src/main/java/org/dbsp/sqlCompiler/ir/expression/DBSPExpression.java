@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -56,6 +57,7 @@ import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /** Base class for all expressions */
 public abstract class DBSPExpression
@@ -196,9 +198,25 @@ public abstract class DBSPExpression
         return new DBSPBinaryExpression(this.getNode(), this.getType(), DBSPOpcode.MUL_WEIGHT, this, weight);
     }
 
-    /** Convenient shortcut to wrap an expression into a Some() constructor. */
+    /** Wrap a non-nullable expression into a Some() constructor. */
+    public DBSPExpression some(CalciteObject node) {
+        Utilities.enforce(!this.getType().mayBeNull, () -> "some() applied to a nullable expression");
+        // Nullable tuple constructors and nullable literals are the only representations
+        // of Some(Tup(...)) and Some(literal)
+        DBSPLiteral literal = this.as(DBSPLiteral.class);
+        if (literal != null && literal.hasNullableForm())
+            return literal.getWithNullable(true);
+        DBSPTupleExpression tuple = this.as(DBSPTupleExpression.class);
+        if (tuple != null) {
+            DBSPTypeTuple type = tuple.getTypeAsTuple().withMayBeNull(true).to(DBSPTypeTuple.class);
+            return new DBSPTupleExpression(node, type, Objects.requireNonNull(tuple.fields));
+        }
+        return new DBSPSomeExpression(node, this);
+    }
+
+    /** Wrap a non-nullable expression into a Some() constructor. */
     public DBSPExpression some() {
-        return new DBSPSomeExpression(this.getNode(), this);
+        return this.some(this.getNode());
     }
 
     /** Apply some only if the expression is not nullable */

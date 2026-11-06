@@ -532,7 +532,8 @@ pub fn library_recreated_consumer_is_deleted_on_pause(engine: &dyn ConnectorTest
             WaitForRecords(2),
             DeleteConsumers,
             // The library notices the deletion and recreates the consumer.
-            WaitForConsumerCount {
+            // The connector's own count does not see either change.
+            WaitForServerConsumerCount {
                 count: 1,
                 timeout: CONSUMER_COUNT_TIMEOUT,
             },

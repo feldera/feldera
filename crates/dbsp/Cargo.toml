@@ -31,6 +31,9 @@ backend-mode = []
 # write pprof heap profiles; see `--heap-profile-dir` in `lazy_input_map`.
 heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
 
+# Test hooks for other crates, such as `DBSPHandle::inject_fatal_error`.
+testing = []
+
 [dependencies]
 num = { workspace = true }
 anyhow = { workspace = true }
@@ -53,6 +56,7 @@ rand = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
 size-of = { workspace = true, features = [ "hashbrown", "xxhash-xxh3" ] }
 tokio-util = { workspace = true }
+tokio-rustls = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 paste = { workspace = true }
@@ -129,6 +133,9 @@ reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["serde"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 tarpc = { workspace = true, features = ["full"] }
+rcgen = { workspace = true }
+# Supplies the crypto provider for exchange TLS tests.
+rustls = { workspace = true }
 
 [[bench]]
 name = "galen"

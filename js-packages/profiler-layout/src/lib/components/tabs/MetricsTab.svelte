@@ -33,7 +33,7 @@
     /** The time when the support bundle collected the selected profile. The Health tab uses it
      *  as the end of the observed period. */
     collectedAt: Date | null
-    /** When true, metrics flagged `advanced` in the profile metadata are shown too. */
+    /** When false, the Metrics tab shows only the basic metrics. */
     showAdvancedMetrics: boolean
     lookup: LookupCoordinator
     logText: string | undefined

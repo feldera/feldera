@@ -109,19 +109,23 @@ fn is_idempotent(method: &Method, operation_id: &str) -> bool {
 /// Whether a 503 body proves the request never reached the pipeline, making a
 /// retry safe even for non-idempotent operations.
 ///
-/// The api-server proxies pipeline-interaction endpoints and answers 503
-/// `PipelineInteractionUnreachable` for every proxy failure. Only the
-/// connect-phase failure ("Failed to connect to host", the awc connect error
-/// prefix) guarantees the pipeline never saw the request; an exchange that
-/// timed out or disconnected mid-flight carries different wording and may
-/// already have been applied. If the manager ever rewords the message, this
-/// check fails closed: the error surfaces as before, nothing double-applies.
+/// The api-server answers 503 `PipelineInteractionConnectFailed` when it could
+/// not connect to the pipeline. Older api-servers answer
+/// `PipelineInteractionUnreachable` for every proxy failure, so for that code
+/// only the connect-phase wording ("Failed to connect to host", the awc
+/// connect error prefix) proves the pipeline never saw the request. An
+/// exchange that timed out or disconnected mid-flight may already have been
+/// applied.
 fn is_never_dispatched_503(body: &[u8]) -> bool {
     serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|v| {
-        v.get("error_code").and_then(|c| c.as_str()) == Some("PipelineInteractionUnreachable")
-            && v.get("message")
+        match v.get("error_code").and_then(|c| c.as_str()) {
+            Some("PipelineInteractionConnectFailed") => true,
+            Some("PipelineInteractionUnreachable") => v
+                .get("message")
                 .and_then(|m| m.as_str())
-                .is_some_and(|m| m.contains("Failed to connect to host"))
+                .is_some_and(|m| m.contains("Failed to connect to host")),
+            _ => false,
+        }
     })
 }
 
@@ -381,12 +385,15 @@ mod tests {
         assert_eq!(retry_after(&HeaderMap::new()), None);
     }
 
-    /// Only the connect-phase wording marks a 503 as safe for any operation.
+    /// Only a connect-phase failure marks a 503 as safe for any operation.
     #[test]
     fn never_dispatched_detection() {
         let connect = br#"{"message": "Failed to connect to host: Timeout while establishing connection", "error_code": "PipelineInteractionUnreachable", "details": {}}"#;
         let timeout = br#"{"message": "timeout (5s) was reached", "error_code": "PipelineInteractionUnreachable", "details": {}}"#;
         let other_code = br#"{"message": "Failed to connect to host", "error_code": "PipelineInteractionNotDeployed", "details": {}}"#;
+        let connect_failed =
+            br#"{"message": "x", "error_code": "PipelineInteractionConnectFailed", "details": {}}"#;
+        assert!(is_never_dispatched_503(connect_failed));
         assert!(is_never_dispatched_503(connect));
         assert!(!is_never_dispatched_503(timeout));
         assert!(!is_never_dispatched_503(other_code));

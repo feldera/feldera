@@ -26,7 +26,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -55,24 +54,32 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.JsonStream;
+import org.dbsp.util.Utilities;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /** Serializes an inner node as a JSON string.
  * Since this visitor calls the visit methods for InnerVisitor, it should generally
- * only handle fields which are not visited by InnerVisitor, i.e., the ones which are not DBSPNode objects. */
+ * only handle fields which are not visited by InnerVisitor, i.e., the ones which are not DBSPNode objects.
+ * Every expression gets a "type" property. */
 public class ToJsonInnerVisitor extends InnerVisitor {
     public final JsonStream stream;
     final int verbosity;
     final Set<Long> serialized;
+    /** One entry for each node in the visitor context: true when the JSON object of the node
+     * already has a "type" property. */
+    final List<Boolean> hasType;
 
     public ToJsonInnerVisitor(DBSPCompiler compiler, JsonStream stream, int verbosity) {
         super(compiler);
         this.stream = stream;
         this.verbosity = verbosity;
         this.serialized = new HashSet<>();
+        this.hasType = new ArrayList<>();
     }
 
     boolean checkDone(IDBSPInnerNode node, boolean silent) {
@@ -100,12 +107,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void property(String name) {
+        if (name.equals("type") && !this.hasType.isEmpty())
+            this.hasType.set(this.hasType.size() - 1, true);
         this.stream.label(name);
     }
 
     @Override
     public void push(IDBSPInnerNode node) {
-        if (!this.checkDone(node, true)) {
+        boolean done = this.checkDone(node, true);
+        if (!done) {
             this.stream.appendClass(node);
             this.property("id");
             this.stream.append(node.getId());
@@ -119,7 +129,19 @@ public class ToJsonInnerVisitor extends InnerVisitor {
                 }
             }
         }
+        this.hasType.add(done);
         super.push(node);
+    }
+
+    @Override
+    public void pop(IDBSPInnerNode node) {
+        // Some expressions do not visit their type, because it follows from their children
+        if (!Utilities.last(this.hasType) && node instanceof DBSPExpression expression) {
+            this.property("type");
+            expression.getType().accept(this);
+        }
+        Utilities.removeLast(this.hasType);
+        super.pop(node);
     }
 
     @Override
@@ -696,13 +718,6 @@ public class ToJsonInnerVisitor extends InnerVisitor {
             this.property("value");
             this.stream.append(node.value.toString());
         }
-        super.postorder(node);
-    }
-
-    @Override
-    public void postorder(DBSPLiteral node) {
-        this.property("type");
-        node.type.accept(this);
         super.postorder(node);
     }
 

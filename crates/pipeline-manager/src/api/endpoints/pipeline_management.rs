@@ -37,7 +37,9 @@ use actix_web::{
 };
 use chrono::{DateTime, Utc};
 use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
-use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
+use feldera_types::config::{
+    InputEndpointConfig, OutputEndpointConfig, ResourceConfig, RuntimeConfig,
+};
 use feldera_types::error::ErrorResponse;
 use feldera_types::pipeline_diff::{PipelineDiff, compute_pipeline_diff};
 use feldera_types::program_schema::ProgramSchema;
@@ -106,8 +108,9 @@ pub struct PipelineInfo {
     pub version: Version,
     pub platform_version: String,
     pub runtime_config: RuntimeConfig,
-    /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
-    /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
+    /// The CPU, memory, storage, and volume attributes class of the pipeline's current or last
+    /// deployment, or `null` before its first start. Can differ from `runtime_config` after a `PATCH` of
+    /// `deployment_config`.
     pub deployment_config: Option<DynamicConfig>,
     pub program_code: String,
     pub udf_rust: String,
@@ -275,8 +278,9 @@ pub struct PipelineSelectedInfo {
     pub platform_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_config: Option<RuntimeConfig>,
-    /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
-    /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
+    /// The CPU, memory, storage, and volume attributes class of the pipeline's current or last
+    /// deployment, or `null` before its first start. Can differ from `runtime_config` after a `PATCH` of
+    /// `deployment_config`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deployment_config: Option<Option<DynamicConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -711,9 +715,10 @@ pub struct PatchPipeline {
     #[serde(flatten)]
     pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
-    /// Changes the CPU and memory of a running pipeline in place (experimental). Cannot be
-    /// combined with other fields. The change lasts across restarts until storage is cleared
-    /// or CPU or memory is changed in `runtime_config`.
+    /// Changes the CPU, memory, storage, and volume attributes class of a running pipeline in
+    /// place (experimental). Cannot be combined with other fields. Storage can only grow. The
+    /// change lasts across restarts until storage is cleared or the same resource is changed in
+    /// `runtime_config`.
     pub deployment_config: Option<DynamicConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -1130,7 +1135,7 @@ pub(crate) async fn post_pipeline(
     if let Some(deployment_config) = &body.deployment_config {
         check_unchanged_deployment_config(None, deployment_config)?;
     }
-    check_runtime_config_storage(&state, body.runtime_config.as_ref())?;
+    check_runtime_config_limits(&state, body.runtime_config.as_ref())?;
     let pipeline_descr: PipelineDescr = body.into();
     let pipeline = state
         .db
@@ -1212,7 +1217,7 @@ pub(crate) async fn put_pipeline(
         };
         check_unchanged_deployment_config(stored.as_ref(), deployment_config)?;
     }
-    check_runtime_config_storage(&state, body.runtime_config.as_ref())?;
+    check_runtime_config_limits(&state, body.runtime_config.as_ref())?;
     let pipeline_descr: PipelineDescr = body.into();
     let (is_new, pipeline) = db
         .new_or_update_pipeline(
@@ -1254,8 +1259,9 @@ pub(crate) async fn put_pipeline(
 ///
 /// Partially update a pipeline.
 ///
-/// A `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,
-/// enabled by `--enable-pipeline-resize`). It cannot be combined with other fields.
+/// A `deployment_config` changes the CPU, memory, storage, and volume attributes class of a
+/// running pipeline in place (experimental, enabled by `--enable-pipeline-resize`). It cannot be
+/// combined with other fields.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1314,7 +1320,7 @@ pub(crate) async fn patch_pipeline(
         )
         .await;
     }
-    check_runtime_config_storage(&state, body.runtime_config.as_ref())?;
+    check_runtime_config_limits(&state, body.runtime_config.as_ref())?;
     let pipeline = state
         .db
         .lock()
@@ -1348,9 +1354,9 @@ pub(crate) async fn patch_pipeline(
         .json(returned_pipeline))
 }
 
-/// Refuses a `runtime_config` with storage that the runner refuses at start, so that it fails
-/// now instead of at the next start. Only new values are checked: stored ones still load.
-fn check_runtime_config_storage(
+/// Refuses a `runtime_config` that the runner refuses at start, so that it fails now instead of
+/// at the next start. Only new values are checked: stored ones still load.
+fn check_runtime_config_limits(
     state: &ServerState,
     runtime_config: Option<&serde_json::Value>,
 ) -> Result<(), DBError> {
@@ -1361,13 +1367,23 @@ fn check_runtime_config_storage(
     let Ok(runtime_config) = serde_json::from_value::<RuntimeConfig>(value.clone()) else {
         return Ok(());
     };
+    let refused = |error| DBError::InvalidRuntimeConfig {
+        value: value.clone(),
+        error,
+    };
     state
         .config
         .check_storage(&runtime_config.resources)
-        .map_err(|error| DBError::InvalidRuntimeConfig {
-            value: value.clone(),
-            error: ValidationError::UnsupportedStorage(error),
+        .and_then(|()| {
+            state
+                .config
+                .check_storage_autoscaling(&runtime_config.resources)
         })
+        .map_err(|error| refused(ValidationError::UnsupportedStorage(error)))?;
+    state
+        .config
+        .check_memory(&runtime_config.resources)
+        .map_err(|error| refused(ValidationError::UnsupportedMemory(error)))
 }
 
 /// Handles a `PATCH` of `deployment_config`, which resizes a running pipeline.
@@ -1398,6 +1414,21 @@ async fn patch_deployment_config(
         })?;
     }
     let patch = parse_deployment_config_patch(deployment_config)?;
+    // Only the patched storage and memory are checked, as in `check_runtime_config_limits`.
+    let resources = &patch.resources;
+    let patched = ResourceConfig {
+        storage_min: resources.storage_min,
+        storage_max: resources.storage_max,
+        volume_attributes_class: resources.volume_attributes_class.clone(),
+        memory_min: resources.memory_min,
+        memory_max: resources.memory_max,
+        ..Default::default()
+    };
+    state
+        .config
+        .check_storage(&patched)
+        .and_then(|()| state.config.check_memory(&patched))
+        .map_err(|reason| DBError::InvalidDeploymentPatch { reason })?;
     let pipeline = state
         .db
         .lock()
@@ -2513,10 +2544,11 @@ mod tests {
         }
     }
 
-    /// `POST`, `PUT`, and `PATCH` refuse a `runtime_config` with storage that the runner refuses at
-    /// start. A stored `runtime_config` still loads, and other fields can still be edited.
+    /// `POST`, `PUT`, and `PATCH` refuse a `runtime_config` that the runner refuses at start, and a
+    /// `PATCH` of `deployment_config` refuses such a resize. A stored `runtime_config` still loads,
+    /// and other fields can still be edited.
     #[actix_web::test]
-    async fn runtime_config_storage_requests() {
+    async fn runtime_config_limit_requests() {
         use crate::api::main::ServerState;
         use crate::db::test::setup_pg;
         use crate::db::types::tenant::TenantId;
@@ -2531,6 +2563,8 @@ mod tests {
         let pipeline = |name: &str, resources: serde_json::Value| json!({"name": name, "program_code": "", "runtime_config": {"resources": resources}});
         let patch =
             |resources: serde_json::Value| json!({"runtime_config": {"resources": resources}});
+        let resize =
+            |resources: serde_json::Value| json!({"deployment_config": {"resources": resources}});
         let cases = [
             // (limits set, method, uri, body, expected status)
             // Stored before the limits were set.
@@ -2612,10 +2646,102 @@ mod tests {
                 patch(json!({"storage_class": "io2"})),
                 400,
             ),
+            (
+                true,
+                "POST",
+                "/pipelines",
+                pipeline("m", json!({"memory_max": "2G"})),
+                400,
+            ),
+            // At the limit.
+            (
+                true,
+                "PUT",
+                "/pipelines/p",
+                pipeline("p", json!({"memory_max": "1000M"})),
+                200,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/p",
+                patch(json!({"memory_max": "1001M"})),
+                400,
+            ),
+            // The deprecated spelling is checked too.
+            (
+                true,
+                "PATCH",
+                "/pipelines/p",
+                patch(json!({"memory_mb_max": 2000})),
+                400,
+            ),
+            // On all installations.
+            (
+                false,
+                "PATCH",
+                "/pipelines/p",
+                patch(json!({"memory_min": "2G", "memory_max": "1G"})),
+                400,
+            ),
+            (
+                true,
+                "POST",
+                "/pipelines",
+                pipeline("a", json!({"storage_min": "500M", "storage_max": "1G"})),
+                400,
+            ),
+            // Unset, storage autoscaling is not checked.
+            (
+                false,
+                "POST",
+                "/pipelines",
+                pipeline("a", json!({"storage_min": "500M", "storage_max": "1G"})),
+                201,
+            ),
+            // A resize is checked before the pipeline is looked up.
+            (
+                false,
+                "PATCH",
+                "/pipelines/missing",
+                resize(json!({"storage_max": "2G"})),
+                404,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                resize(json!({"storage_max": "2G"})),
+                400,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                resize(json!({"volume_attributes_class": "iops-4000"})),
+                400,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                resize(json!({"memory_max": "2G"})),
+                400,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                resize(json!({"volume_attributes_class": "fast", "memory_max": "500M"})),
+                404,
+            ),
         ];
         for (limits, method, uri, body, expected_status) in cases {
             let mut state = ServerState::test_state(db.clone()).await;
+            state.config.enable_pipeline_resize = true;
             if limits {
+                state.config.upper_limit_memory_megabyte = Some(1000.0);
+                state.config.enable_storage_autoscaling = Some(false);
                 state.config.upper_limit_storage_megabyte = Some(1000.0);
                 state.config.enable_storage_classes_allowlist = true;
                 state.config.storage_classes = vec!["gp3".to_string()];
@@ -2644,10 +2770,23 @@ mod tests {
             let response: serde_json::Value = test::read_body_json(resp).await;
             assert_eq!(status, expected_status, "{method} {uri} {body}: {response}");
             if expected_status == 400 {
-                assert_eq!(response["error_code"], "InvalidRuntimeConfig", "{response}");
                 let message = response["message"].as_str().unwrap();
+                let (code, prefixes): (_, &[&str]) = match body.get("deployment_config") {
+                    Some(_) => (
+                        "InvalidDeploymentPatch",
+                        &["Invalid deployment patch: resources."],
+                    ),
+                    None => (
+                        "InvalidRuntimeConfig",
+                        &[
+                            "unsupported storage: resources.",
+                            "unsupported memory: resources.",
+                        ],
+                    ),
+                };
+                assert_eq!(response["error_code"], code, "{response}");
                 assert!(
-                    message.contains("unsupported storage: resources."),
+                    prefixes.iter().any(|prefix| message.contains(prefix)),
                     "{message}"
                 );
             }

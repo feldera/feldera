@@ -86,6 +86,8 @@ public final class DBSPGeoPointConstructor
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         if (!other.is(DBSPGeoPointConstructor.class))
             return false;
+        if (!this.getType().sameType(other.getType()))
+            return false;
         DBSPGeoPointConstructor o = other.to(DBSPGeoPointConstructor.class);
         return context.equivalent(this.left, o.left) &&
                 context.equivalent(this.right, o.right);

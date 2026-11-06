@@ -141,6 +141,22 @@ RUN arch=`dpkg --print-architecture`; \
     && rpk version \
     && rm rpk-linux-$arch.zip
 
+# Install rclone for cloud's sync-checkpoint crate. Its tests run rclone and
+# `rclone serve s3`, which needs rclone 1.65 or later.
+# Not RCLONE_VERSION: rclone reads RCLONE_* variables as flags (here --version).
+ARG VERSION_RCLONE=1.75.2
+RUN ARCH=`dpkg --print-architecture`; \
+    case $ARCH in \
+      amd64) SHA256=efbfe852181f7191eb3c9043ed1ab49c9b2d0ba045c61c926a5da111c939ec5c ;; \
+      arm64) SHA256=b8ba161d5c837206fad79ff1aabf0a81aa02a5fb164cdbc0ff5db4160aecd278 ;; \
+      *) echo "error: no rclone checksum for $ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/rclone.deb https://downloads.rclone.org/v$VERSION_RCLONE/rclone-v$VERSION_RCLONE-linux-$ARCH.deb \
+    && echo "$SHA256  /tmp/rclone.deb" | sha256sum -c - \
+    && dpkg -i /tmp/rclone.deb \
+    && rm /tmp/rclone.deb \
+    && rclone version
+
 # Install aws cli
 RUN cd /home/ubuntu && curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
     && unzip awscliv2.zip \

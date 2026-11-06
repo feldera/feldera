@@ -64,7 +64,7 @@ The Kubernetes runner manages pipeline pod lifecycle.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kubernetesRunner.enablePerPipelineNamespace` | `false` | When `true`, pipelines can run in their own namespaces (requires `ClusterRole`/`ClusterRoleBinding`). When `false`, pipelines run in the same namespace as Feldera. |
-| `kubernetesRunner.enablePipelineResize` | `false` | **Experimental.** Allow changing the CPU and memory of a running single-host pipeline without a restart. Requires Kubernetes 1.34 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
+| `kubernetesRunner.enablePipelineResize` | `false` | **Experimental.** Allow changing the CPU, memory, storage, and volume attributes class of a running single-host pipeline without a restart. Requires Kubernetes 1.34 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
 | `kubernetesRunner.allowCustomPipelineTemplate` | `false` | **Experimental.** Allow pipelines to reference a ConfigMap containing a custom StatefulSet YAML template. The template format may change incompatibly across Feldera upgrades. |
 | `kubernetesRunner.pipelineStatefulSetLabels` | `[]` | Labels added to pipeline StatefulSet `metadata.labels`. Format: `["key=value"]`. |
 | `kubernetesRunner.pipelineStatefulSetPodLabels` | `[]` | Labels added to pipeline StatefulSet `spec.template.metadata.labels`. Format: `["key=value"]`. |
@@ -76,9 +76,10 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kubernetesRunner.lowerLimitMemoryMegabyte` | `100` | Minimum allowed memory (MB) for a pipeline pod. Also the default minimum if none is specified in pipeline resources. |
-| `kubernetesRunner.upperLimitMemoryMegabyte` | `32000` | Maximum allowed memory (MB) for a pipeline pod. Also the default maximum if none is specified. |
+| `kubernetesRunner.upperLimitMemoryMegabyte` | `32000` | Maximum allowed memory (MB) for a pipeline pod. Also the default maximum if none is specified. The API refuses a larger `memory_min` or `memory_max`. See [resource limits](/pipelines/configuration#resource-limits). |
 | `kubernetesRunner.defaultStorageMegabyte` | `30000` | Default persistent storage volume size (MB) per pipeline if not specified in pipeline resources. |
-| `kubernetesRunner.upperLimitStorageMegabyte` | `128000` | Maximum allowed persistent storage volume size (MB) per pipeline. The API refuses a larger `storage_min` or `storage_max`. See [storage limits](/pipelines/configuration#storage-limits). |
+| `kubernetesRunner.upperLimitStorageMegabyte` | `128000` | Maximum allowed persistent storage volume size (MB) per pipeline. The API refuses a larger `storage_min` or `storage_max`. See [resource limits](/pipelines/configuration#resource-limits). |
+| `kubernetesRunner.enableStorageAutoscaling` | `false` | Allow pipelines to set both `storage_min` and `storage_max`, which turns on storage autoscaling. When `false`, the API refuses such a runtime configuration. |
 | `kubernetesRunner.lowerLimitEphemeralStorageMegabyte` | `500` | Minimum ephemeral storage (MB) for a pipeline pod. Must be large enough to hold the pipeline executable. Also the default. |
 | `kubernetesRunner.upperLimitEphemeralStorageMegabyte` | `2000` | Maximum ephemeral storage (MB) for a pipeline pod. |
 
@@ -182,7 +183,7 @@ Tenant-based authorization for the API server. Requires `auth.enabled: true`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `allowedOrigins` | `null` | List of allowed CORS origins. `null` permits all origins. Example: `["https://app.example.com"]`. |
+| `allowedOrigins` | `null` | List of allowed CORS origins. The API server allows credentialed CORS requests only from listed origins. `null` allows CORS requests from all origins, but not credentialed ones. The web console and API clients authenticate with a token in the `Authorization` header, and work with `null`. Credentialed requests carry cookies or HTTP Basic authentication, which only matter for an authenticating proxy in front of the API server. Example: `["https://app.example.com"]`. |
 | `posthogTelemetryKey` | `null` | PostHog API key for usage telemetry. No data is collected when `null`. |
 | `FELDERA_HTTP_BASE_PATH` (set through `controlPlane.env`) | `""` | URL path prefix the API and web console are served under, for example `/feldera`, when an ingress mounts Feldera on a subpath. See [serving Feldera under a URL subpath](/get-started/docker#serving-feldera-under-a-url-subpath). |
 
@@ -212,6 +213,7 @@ Default settings applied to all pipeline pods.
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
 | `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
 | `pipeline.deniedConnectors` | `[]` | Connectors that pipelines may not use, by their `transport.name` (for example `file_input`). A pipeline that uses one fails to start. |
+| `pipeline.allowLocalFileUris` | `true` | Allow Delta Lake and Iceberg connectors to use a local path (`file://...` or a path with no scheme). When `false`, a pipeline that uses one fails to start. Use an object store URL instead, such as `s3://bucket/path`. |
 
 ### Extra volumes
 
@@ -378,7 +380,7 @@ Configure HTTPS for all Feldera components. See the [HTTPS guide](./https.md) fo
 |-----|---------|-------------|
 | `httpsSecretRef` | `null` | Name of a TLS secret (`kubectl create secret tls ...`) containing `tls.crt` and `tls.key`. When set, HTTPS is enabled for the API server, runner, compiler, and all pipelines. |
 | `caSecretRef` | `null` | Name of a TLS secret with a private CA certificate chain and key. The runner signs a certificate for each pipeline with it. Required for multihost pipelines and for `mtls.enabled`. See [private CA](./https.md#private-ca-certificate-chain-generation). |
-| `mtls.enabled` | `false` | Callers of the compiler, runner, pipeline and coordinator servers present client certificates. A pipeline may only download its own binary and program info, and may not call the runner or another pipeline. Requires `httpsSecretRef`, `caSecretRef` and [cert-manager](https://cert-manager.io). See [client certificates](./https.md#client-certificates). |
+| `mtls.enabled` | `false` | Callers of the compiler, runner, pipeline and coordinator servers present client certificates. A pipeline may only download its own binary and program info, and may not call the runner or another pipeline. The hosts of a multihost pipeline exchange data over TLS and admit only hosts of the same pipeline. Requires `httpsSecretRef`, `caSecretRef` and [cert-manager](https://cert-manager.io). See [client certificates](./https.md#client-certificates). |
 | `mtls.extraClientUris` | `[]` | URI SANs of external clients, such as sidecars, that pipelines and their coordinators admit like the control plane. Each must match exactly and lie outside `urn:feldera:`. Requires `mtls.enabled`. See [external clients](./https.md#external-clients). |
 
 ---

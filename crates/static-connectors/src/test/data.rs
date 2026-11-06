@@ -1207,6 +1207,82 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", SqlVariant, 18]
     (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, |_| None)
 });
 
+/// [`IcebergTestStruct`] without `tm` and `fixed`, which Spark cannot write.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+    OrdRepr,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct IcebergSparkTestStruct {
+    pub b: bool,
+    pub i: i32,
+    pub l: i64,
+    pub r: F32,
+    pub d: F64,
+    pub dec: SqlDecimal<10, 3>,
+    pub dt: Date,
+    pub ts: Timestamp,
+    pub s: String,
+    pub varbin: ByteArray,
+    pub tstz: TimestampTz,
+    pub string_array: Vec<String>,
+    pub struct1: TestStruct,
+    pub struct_array: Vec<TestStruct>,
+    pub string_string_map: BTreeMap<String, String>,
+    pub string_struct_map: BTreeMap<String, TestStruct>,
+}
+
+serialize_table_record!(IcebergSparkTestStruct[16]{
+    b["b"]: bool,
+    i["i"]: i32,
+    l["l"]: i64,
+    r["r"]: F32,
+    d["d"]: F64,
+    dec["dec"]: SqlDecimal,
+    dt["dt"]: Date,
+    ts["ts"]: Timestamp,
+    s["s"]: String,
+    varbin["varbin"]: ByteArray,
+    tstz["tstz"]: TimestampTz,
+    string_array["string_array"]: Vec<String>,
+    struct1["struct1"]: TestStruct,
+    struct_array["struct_array"]: Vec<TestStruct>,
+    string_string_map["string_string_map"]: BTreeMap<String, String>,
+    string_struct_map["string_struct_map"]: BTreeMap<String, TestStruct>
+});
+
+deserialize_table_record!(IcebergSparkTestStruct["IcebergSparkTestStruct", SqlVariant, 16] {
+    (b, "b", false, bool, |_| None),
+    (i, "i", false, i32, |_| None),
+    (l, "l", false, i64, |_| None),
+    (r, "r", false, F32, |_| None),
+    (d, "d", false, F64, |_| None),
+    (dec, "dec", false, SqlDecimal<10, 3>, |_| None),
+    (dt, "dt", false, Date, |_| None),
+    (ts, "ts", false, Timestamp, |_| None),
+    (s, "s", false, String, |_| None),
+    (varbin, "varbin", false, ByteArray, |_| None),
+    (tstz, "tstz", false, TimestampTz, |_| None),
+    (string_array, "string_array", false, Vec<String>, |_| None),
+    (struct1, "struct1", false, TestStruct, |_| None),
+    (struct_array, "struct_array", false, Vec<TestStruct>, |_| None),
+    (string_string_map, "string_string_map", false, BTreeMap<String, String>, |_| None),
+    (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, |_| None)
+});
+
 /// Records in the Amazon S3 Tables integration-test table (`dev.test_table`).
 ///
 /// Mirrors the table created by the `s3tables` test-setup script:

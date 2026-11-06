@@ -41,7 +41,7 @@ The Iceberg input connector supports [fault tolerance](/pipelines/fault-toleranc
 | `table_name`                | string | Specifies the Iceberg table name within the catalog in the `namespace.table` format. This option is applicable when an Iceberg catalog is configured using the `catalog_type` property.|
 | `catalog_type`              | enum   | Type of the Iceberg catalog used to access the table. Supported options include `rest`, `glue`, and `s3tables`. This property is mutually exclusive with `metadata_location`.|
 | `num_parsers`               | integer| Number of parallel parsing tasks used to process data read from the table. Increasing this value can improve throughput by parsing record batches concurrently. Recommended range: 1-10. Default: `4`.|
-| `max_retries`               | integer| <p>Maximum number of retries for reading the table snapshot. When reading the snapshot fails partway through, for example because an object store read times out or is throttled, the connector retries the entire read with exponential backoff. This is in addition to the lower-level retries performed by the object store client.</p><p>Defaults to unlimited retries. Set to `0` to disable retries.</p>|
+| `max_retries`               | integer| <p>Maximum number of retries for a failed read, for example when an object store read times out or is throttled. The connector retries with exponential backoff, in addition to the retries of the object store client.</p><p>Defaults to unlimited retries. Set to `0` to disable retries.</p><p>A read that a retry cannot fix, such as a read of a missing file in follow mode, fails at once.</p>|
 
 [*]: Required fields
 
@@ -192,9 +192,17 @@ Requirements and limitations:
 * **A catalog is required.** Set `catalog_type`; follow mode cannot be used with
   `metadata_location`, which points at a fixed snapshot and cannot observe new
   commits.
-* **Copy-on-write only.** Follow mode reads copy-on-write changes. If a followed
-  snapshot adds a merge-on-read delete file (position or equality deletes), the
-  connector stops with an error. Configure the writer to use copy-on-write.
+* **Copy-on-write and deletion vectors.** Follow mode reads copy-on-write
+  changes and V3 deletion vectors, which merge-on-read `DELETE`, `UPDATE` and
+  `MERGE` write. To find the rows that a new deletion vector deletes, it reads
+  the whole data file. It skips compactions.
+* **No V2 delete files.** Follow mode stops with an error when a snapshot adds
+  or removes a V2 position or equality delete file, or deletes rows while the
+  table has one. To follow such a table, configure the writer to use
+  copy-on-write or deletion vectors, rewrite the table without V2 delete files,
+  then start the connector without a checkpoint, in `snapshot_and_follow`
+  mode. A rewrite can leave V2 delete files that apply to no row. Spark
+  `rewrite_data_files` removes them with the option `remove-dangling-deletes`. Snapshot mode reads all delete files.
 
 ## Transactions
 

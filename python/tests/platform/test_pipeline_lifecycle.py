@@ -8,6 +8,8 @@ from feldera.runtime_config import RuntimeConfig
 from feldera.enums import BootstrapPolicy
 from tests import TEST_CLIENT
 from .helper import (
+    STORAGE_CLASS,
+    VOLUME_ATTRIBUTES_CLASS,
     wait_for_condition,
     create_pipeline,
     patch_json,
@@ -770,6 +772,8 @@ def helper_test_restricted_runtime_config_edit(
 @gen_pipeline_name
 def test_volume_attributes_class_edit_with_storage(pipeline_name):
     """`resources.volume_attributes_class` can change without clearing storage."""
+    if not VOLUME_ATTRIBUTES_CLASS:
+        pytest.skip("FELDERA_TEST_VOLUME_ATTRIBUTES_CLASS is not set")
     pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
     pipeline.start()
     pipeline.stop(force=True)
@@ -777,13 +781,13 @@ def test_volume_attributes_class_edit_with_storage(pipeline_name):
     runtime_config: dict = TEST_CLIENT.http.get(
         f"/pipelines/{pipeline_name}?selector=all"
     )["runtime_config"]
-    runtime_config["resources"]["volume_attributes_class"] = "example"
+    runtime_config["resources"]["volume_attributes_class"] = VOLUME_ATTRIBUTES_CLASS
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
     assert (
         TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
             "runtime_config"
         ]["resources"]["volume_attributes_class"]
-        == "example"
+        == VOLUME_ATTRIBUTES_CLASS
     )
 
 
@@ -833,14 +837,15 @@ def test_runtime_config_edit_restricted(pipeline_name):
     )
 
     # runtime_config.resources.storage_class
-    helper_test_restricted_runtime_config_edit(
-        pipeline_name,
-        pipeline,
-        "`runtime_config.resources.storage_class`",
-        {"resources": {"storage_class": "example"}},
-        lambda r: r["resources"]["storage_class"],
-        "example",
-    )
+    if STORAGE_CLASS:
+        helper_test_restricted_runtime_config_edit(
+            pipeline_name,
+            pipeline,
+            "`runtime_config.resources.storage_class`",
+            {"resources": {"storage_class": STORAGE_CLASS}},
+            lambda r: r["resources"]["storage_class"],
+            STORAGE_CLASS,
+        )
 
 
 @gen_pipeline_name
@@ -855,6 +860,7 @@ def test_deployment_resources(pipeline_name):
             "cpu_cores_max": 1,
             "memory_min": "1G",
             "memory_max": "1G",
+            "storage_max": "4Gi",
         }
     )
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
@@ -874,6 +880,9 @@ def test_deployment_resources(pipeline_name):
 
     def current_cpu_cores_min():
         return current()["deployment_config"]["resources"]["cpu_cores_min"]
+
+    def current_storage_max():
+        return current()["deployment_config"]["resources"]["storage_max"]
 
     def put(deployment_config):
         pipeline = current()
@@ -938,16 +947,26 @@ def test_deployment_resources(pipeline_name):
     assert_error(put({"resources": {"cpu_cores_min": 0.5}}), "InvalidDeploymentPatch")
     assert current_cpu_cores_min() == 0.25
 
+    # A storage field can only increase, and one that is not set cannot be set.
+    assert patch({"storage_max": "5Gi"}).status_code == HTTPStatus.OK
+    assert_error(patch({"storage_max": "5000M"}), "InvalidDeploymentPatch")
+    assert_error(patch({"storage_min": "5Gi"}), "InvalidDeploymentPatch")
+    assert current_storage_max() == "5Gi"
+    # A class that exists depends on the cluster, so only an empty one is tried.
+    assert_error(patch({"volume_attributes_class": ""}), "InvalidDeploymentPatch")
+
     # A restart keeps the resize.
     pipeline.stop(force=True)
     pipeline.start()
     assert current_cpu_cores_min() == 0.25
+    assert current_storage_max() == "5Gi"
 
     # Clearing storage resets it.
     pipeline.stop(force=True)
     pipeline.clear_storage()
     pipeline.start()
     assert current_cpu_cores_min() == 0.5
+    assert current_storage_max() == "4Gi"
 
     # A CPU edit while stopped replaces it.
     assert patch({"cpu_cores_min": 0.25}).status_code == HTTPStatus.OK
@@ -956,6 +975,13 @@ def test_deployment_resources(pipeline_name):
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
     pipeline.start()
     assert current_cpu_cores_min() == 0.75
+    # ... and keeps a storage resize.
+    assert patch({"storage_max": "6Gi"}).status_code == HTTPStatus.OK
+    pipeline.stop(force=True)
+    runtime_config["resources"]["cpu_cores_min"] = 0.5
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
+    pipeline.start()
+    assert current_storage_max() == "6Gi"
     pipeline.stop(force=True)
 
 

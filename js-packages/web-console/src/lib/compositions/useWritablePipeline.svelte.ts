@@ -5,6 +5,12 @@ import {
 } from '#lib/compositions/usePipelineManager.svelte.ts'
 import type { ExtendedPipeline, Pipeline, PipelineThumb } from '#lib/services/pipelineManager.ts'
 
+// Module-level because `writablePipeline` is re-created whenever the pipeline changes.
+const pendingPatches = new Set<Promise<unknown>>()
+
+/** Wait for every pipeline patch in flight. Rejects if one of them fails. */
+export const settlePendingPatches = () => Promise.all(pendingPatches)
+
 export const writablePipeline = ({
   api,
   pipeline,
@@ -31,7 +37,11 @@ export const writablePipeline = ({
       if (optimistic) {
         update(newPipeline)
       }
-      const res = await api.patchPipeline(pipeline.current.name, newPipeline)
+      const request = api.patchPipeline(pipeline.current.name, newPipeline)
+      pendingPatches.add(request)
+      const forget = () => pendingPatches.delete(request)
+      request.then(forget, forget)
+      const res = await request
       if (!optimistic) {
         set(res)
       }

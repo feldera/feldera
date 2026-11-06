@@ -7,7 +7,7 @@ use super::{
 use crate::controller::{ControllerStatusContext, TransactionInfo};
 use crate::{
     ConfigError, Controller, ControllerError, InputConsumer, InputEndpoint, OutputEndpoint,
-    OutputEndpointCallbacks, TransportInputEndpoint,
+    OutputEndpointCallbacks, TransactionToCommit, TransportInputEndpoint,
     engine::PipelineStorage,
     format::{LineSplitter, SpongeSplitter},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
@@ -1550,6 +1550,120 @@ pub fn step_does_not_wait_for_endpoint_without_reader(engine: &dyn PipelineTestE
     );
 }
 
+/// Stopping the pipeline while a new input endpoint is in `open()` must make
+/// adding the endpoint fail, not panic.
+///
+/// `stop` removes every input endpoint, including one that is registered but
+/// whose reader is not set yet.
+#[engine_test]
+pub fn stop_during_input_endpoint_open(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let adder = {
+        let controller = controller.clone();
+        thread::spawn(move || {
+            controller.add_input_endpoint(
+                "gated",
+                endpoint_config,
+                Box::new(GatedOpenEndpoint {
+                    entered: entered_tx,
+                    release: Mutex::new(release_rx),
+                    inner: TransactionalInputEndpoint::new(),
+                }),
+                None,
+            )
+        })
+    };
+
+    // Stop while the endpoint is registered without a reader.
+    entered_rx.recv().unwrap();
+    controller.initiate_stop();
+    release_tx.send(()).unwrap();
+    let result = adder.join();
+    controller.stop().unwrap();
+    assert!(
+        result.is_ok(),
+        "adding an input endpoint panicked when the pipeline stopped during open()"
+    );
+    assert!(
+        result.unwrap().is_err(),
+        "adding an input endpoint succeeded although the pipeline stopped"
+    );
+}
+
+/// Adding an input endpoint after the pipeline stopped must fail and leave no
+/// endpoint behind.
+///
+/// `stop` clears the inputs only once, so an endpoint added after it would
+/// keep a live reader on a terminated controller.
+#[engine_test]
+pub fn add_input_endpoint_after_stop(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    controller.initiate_stop();
+
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let result = controller.add_input_endpoint(
+        "late",
+        endpoint_config,
+        Box::new(TransactionalInputEndpoint::new()),
+        None,
+    );
+    // Check before `Controller::stop`, which clears the inputs again.
+    let num_inputs = controller.status().input_status().len();
+    controller.stop().unwrap();
+    assert!(
+        result.is_err(),
+        "adding an input endpoint succeeded although the pipeline stopped"
+    );
+    assert_eq!(
+        num_inputs, 0,
+        "a stopped pipeline kept a new input endpoint"
+    );
+}
+
 /// A commit that takes several steps must finish even if a client starts a
 /// new API transaction while it runs.
 ///
@@ -1620,7 +1734,9 @@ pub fn api_transaction_started_during_commit_does_not_stall_it(engine: &dyn Pipe
             )
             .unwrap();
     }));
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     receiver
         .recv_timeout(Duration::from_millis(TIMEOUT_MS))
         .expect("X's commit finished in one step, so the test cannot start Y during it")
@@ -1633,7 +1749,9 @@ pub fn api_transaction_started_during_commit_does_not_stall_it(engine: &dyn Pipe
     );
 
     // Commit Y, so that the pipeline stops cleanly whatever happened to X.
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait(
         || controller.inner.get_transaction_state() == TransactionState::None,
         TIMEOUT_MS,
@@ -1747,7 +1865,9 @@ pub fn api_transaction_committed_before_it_starts(engine: &dyn PipelineTestEngin
     // No step runs between the start and the commit.
     controller.start_transaction().unwrap();
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
     controller.stop().unwrap();
@@ -1770,7 +1890,9 @@ pub fn api_transaction_commit_includes_queued_records(engine: &dyn PipelineTestE
     // The step trigger ignores this input, so it is all still queued when the
     // commit request arrives.
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
     controller.stop().unwrap();
@@ -1803,7 +1925,9 @@ pub fn api_transaction_commit_does_not_wait_for_held_back_input(engine: &dyn Pip
     push_records(&feeder, 0..5);
     feeder.commit_transaction();
     push_records(&feeder, 5..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     wait_for_commit(&controller, before);
     controller.stop().unwrap();
@@ -1843,7 +1967,9 @@ pub fn api_transaction_commit_is_not_starved_by_later_input(engine: &dyn Pipelin
     )
     .unwrap();
 
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait_for_commit(&controller, before);
     stop.store(true, Ordering::Release);
     sender.join().unwrap();
@@ -1871,8 +1997,63 @@ pub fn api_transaction_commit_does_not_wait_for_removed_endpoint(engine: &dyn Pi
     *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |_| {
         inner.disconnect_input(&endpoint_id);
     }));
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
+    wait_for_commit(&controller, before);
+    controller.stop().unwrap();
+}
+
+/// A retry of an API commit must not add the input that arrived after the
+/// first request to the commit.
+#[engine_test]
+pub fn retried_api_commit_keeps_its_input(engine: &dyn PipelineTestEngine) {
+    let (controller, feeder, before) = start_api_transaction_test(engine, false);
+    let tid = controller.start_transaction().unwrap().transaction_id;
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+    push_records(&feeder, 0..100);
+
+    // The first step after the commit request waits, so the commit cannot
+    // take its input before the retry.
+    let (entered_sender, entered) = std::sync::mpsc::channel();
+    let (release, release_receiver) = std::sync::mpsc::channel::<()>();
+    *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |_| {
+        entered_sender.send(()).unwrap();
+        let _ = release_receiver.recv();
+    }));
+    controller
+        .start_commit_transaction(TransactionToCommit::Id(tid))
+        .unwrap();
+    entered
+        .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS))
+        .expect("no step ran after the commit request");
+
+    let commit_target = || {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .commit_target
+            .clone()
+            .expect("the commit has no target")
+    };
+    let target = commit_target();
+    push_records(&feeder, 100..200);
+    controller
+        .start_commit_transaction(TransactionToCommit::Id(tid))
+        .unwrap();
+    let retried = commit_target();
+    assert_eq!(retried.records, target.records);
+    assert_eq!(retried.polls_begun, target.polls_begun);
+
+    drop(release);
     wait_for_commit(&controller, before);
     controller.stop().unwrap();
 }
@@ -1915,7 +2096,9 @@ pub fn multihost_api_transaction_committed_before_it_starts(engine: &dyn Pipelin
     // The coordinator has not asked for a step, so none runs.
     controller.start_transaction().unwrap();
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
 
     let step = controller.step_watcher().borrow().step;
     controller.set_coordination_request(StepRequest::new(step, StepAction::Step, StepInputs::None));
@@ -1957,11 +2140,13 @@ pub fn api_transaction_committed_during_another_commit(engine: &dyn PipelineTest
     *controller.inner.commit_step_hook.lock().unwrap() = Some(Box::new(move |inner| {
         let result = inner.start_transaction_from_api().and_then(|_| {
             push_records(&y_feeder, 100..200);
-            inner.start_commit_transaction_from_api()
+            inner.start_commit_transaction_from_api(TransactionToCommit::Open)
         });
         sender.send(result.is_ok()).unwrap();
     }));
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     assert!(
         receiver
             .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS))
@@ -2101,7 +2286,9 @@ pub fn api_transaction_commit_during_a_step_includes_queued_records(
 
     hold_next_step(&controller, &gate);
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     gate.release();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
@@ -2118,7 +2305,9 @@ pub fn api_transaction_committed_before_it_starts_during_a_step(engine: &dyn Pip
     controller.start_transaction().unwrap();
     hold_next_step(&controller, &gate);
     push_records(&feeder, 0..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     gate.release();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
@@ -2156,7 +2345,9 @@ pub fn api_transaction_commit_during_a_step_includes_records_of_a_new_endpoint(
         .add_input_endpoint("late", config, Box::new(late.clone()), None)
         .unwrap();
     push_records(&late, 0..100);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     gate.release();
 
     assert_eq!(transactions_to_commit(&controller, 100, before), 1);
@@ -2431,7 +2622,9 @@ pub fn replay_does_not_feed_http_input_during_commit(engine: &dyn PipelineTestEn
     wait(|| !controller.is_replaying(), default_timeout_ms()).unwrap();
     let first_tid = controller.start_transaction().unwrap().transaction_id;
     let token = ingress_rows(&controller, FIRST, 0..RECORDS);
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait_for_completion(&controller, &token);
     let token = ingress_rows(&controller, SECOND, RECORDS..RECORDS + 1);
     wait_for_completion(&controller, &token);
@@ -5428,30 +5621,98 @@ const ALIASED_VIEW: &str = "test_output1";
 /// name, as in feldera/feldera#7281; the second sorts before it.
 const ALIASED_INDEXES: [&str; 2] = ["test_output1_idx", "idx1"];
 
-/// Configuration of a CSV file connector writing to `path`.
-///
-/// # Arguments
-///
-/// * `path` - File the connector writes to.
-/// * `index` - Index the connector reads from, or `None` to read from
-///   [`ALIASED_VIEW`] itself.
-///
-/// # Returns
-///
-/// The connector configuration as JSON.
-fn aliased_index_output(path: &Path, index: Option<&str>) -> serde_json::Value {
-    let mut config = json!({
+/// Configuration of a CSV file connector on [`ALIASED_VIEW`] writing to `path`.
+fn aliased_view_output(path: &Path) -> serde_json::Value {
+    json!({
         "stream": ALIASED_VIEW,
         "transport": {
             "name": "file_output",
             "config": { "path": path.display().to_string() },
         },
         "format": { "name": "csv", "config": {} },
-    });
-    if let Some(index) = index {
-        config["index"] = json!(index);
+    })
+}
+
+/// An output endpoint that keeps the value of each keyed message and skips tombstones,
+/// standing in for a transport that writes keys, such as Kafka.
+struct KeyedOutputEndpoint(Arc<Mutex<Vec<u8>>>);
+
+impl OutputEndpoint for KeyedOutputEndpoint {
+    fn connect(
+        &mut self,
+        _callbacks: Arc<dyn OutputEndpointCallbacks>,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
     }
-    config
+
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
+    fn push_buffer(&mut self, _buffer: &[u8]) -> Result<(), anyhow::Error> {
+        unreachable!("the test uses a format that pushes keys, not buffers")
+    }
+
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> Result<(), anyhow::Error> {
+        if let Some(val) = val {
+            self.0.lock().unwrap().extend_from_slice(val);
+        }
+        Ok(())
+    }
+
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+/// Attaches the connector `index_output` on `index`, an index of [`ALIASED_VIEW`], to
+/// `controller`. The connector writes Debezium JSON.
+///
+/// # Returns
+///
+/// The values of the messages that the connector writes.
+fn attach_aliased_index_output(
+    controller: &Controller,
+    index: &str,
+    send_snapshot: bool,
+) -> Arc<Mutex<Vec<u8>>> {
+    let config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": ALIASED_VIEW,
+        "index": index,
+        "send_snapshot": send_snapshot,
+        "transport": { "name": "null_output" },
+        "format": {
+            "name": "json",
+            "config": { "update_format": "debezium", "json_flavor": "default" },
+        },
+    }))
+    .unwrap();
+    let output = Arc::new(Mutex::new(Vec::new()));
+    controller
+        .add_output_endpoint(
+            "index_output",
+            &config,
+            Box::new(KeyedOutputEndpoint(output.clone())),
+            None,
+        )
+        .unwrap();
+    output
+}
+
+/// Ensures that `output`, Debezium JSON, holds exactly the rows of [`for_ids`] with the ids
+/// in `expect`, each inserted once.
+#[track_caller]
+fn check_debezium_ids(output: &Mutex<Vec<u8>>, expect: Range<usize>) {
+    let actual = read::debezium_updates(&relation(), &output.lock().unwrap()).unwrap();
+    assert!(actual.weights().iter().all(|weight| *weight == 1));
+    let expect = for_ids(expect);
+    assert_eq!(actual.len(), expect.len());
+    assert_eq!(actual.zset().unwrap(), expect.zset().unwrap());
 }
 
 /// Starts a controller for [`TestCircuit::AliasedIndex`].
@@ -5548,25 +5809,22 @@ pub fn view_and_aliased_index_connectors_receive_the_same_output(engine: &dyn Pi
         let tempdir = TempDir::new().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let view_path = tempdir.path().join("view.csv");
-        let index_path = tempdir.path().join("index.csv");
         File::create_new(&input_path).unwrap();
 
         let controller = start_aliased_index_controller(
             engine,
             &input_path,
             index,
-            json!({
-                "view_output": aliased_index_output(&view_path, None),
-                "index_output": aliased_index_output(&index_path, Some(index)),
-            }),
+            json!({ "view_output": aliased_view_output(&view_path) }),
         );
+        let index_output = attach_aliased_index_output(&controller, index, false);
         append_input(&input_path, 0..100);
         check_endpoint_transmitted(&controller, "view_output", 100);
         check_endpoint_transmitted(&controller, "index_output", 100);
         controller.stop().unwrap();
 
         check_file_contents(&view_path, 0..100);
-        check_file_contents(&index_path, 0..100);
+        check_debezium_ids(&index_output, 0..100);
     }
 }
 
@@ -5585,20 +5843,15 @@ pub fn closing_a_view_connector_does_not_starve_its_aliased_index(engine: &dyn P
         let tempdir = TempDir::new().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let view_path = tempdir.path().join("view.csv");
-        let index_path = tempdir.path().join("index.csv");
         File::create_new(&input_path).unwrap();
 
-        let controller = start_aliased_index_controller(
-            engine,
-            &input_path,
-            index,
-            json!({ "index_output": aliased_index_output(&index_path, Some(index)) }),
-        );
+        let controller = start_aliased_index_controller(engine, &input_path, index, json!({}));
+        let index_output = attach_aliased_index_output(&controller, index, false);
 
         // Connect a connector to the view and disconnect it, as an `/egress`
         // request does when its client goes away.
         let view_config: OutputEndpointConfig =
-            serde_json::from_value(aliased_index_output(&view_path, None)).unwrap();
+            serde_json::from_value(aliased_view_output(&view_path)).unwrap();
         let view_endpoint = controller
             .inner
             .connect_output("view_output", &view_config, None)
@@ -5609,7 +5862,7 @@ pub fn closing_a_view_connector_does_not_starve_its_aliased_index(engine: &dyn P
         check_endpoint_transmitted(&controller, "index_output", 100);
         controller.stop().unwrap();
 
-        check_file_contents(&index_path, 0..100);
+        check_debezium_ids(&index_output, 0..100);
     }
 }
 
@@ -5626,7 +5879,6 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
     for index in ALIASED_INDEXES {
         let tempdir = TempDir::new().unwrap();
         let input_path = tempdir.path().join("input.csv");
-        let index_path = tempdir.path().join("index.csv");
         File::create_new(&input_path).unwrap();
 
         let controller = start_aliased_index_controller(engine, &input_path, index, json!({}));
@@ -5645,13 +5897,7 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
 
         // Attach the connector after the view holds every record, so that
         // only the snapshot can deliver them.
-        let mut index_config = aliased_index_output(&index_path, Some(index));
-        index_config["send_snapshot"] = json!(true);
-        let index_config: OutputEndpointConfig = serde_json::from_value(index_config).unwrap();
-        controller
-            .inner
-            .connect_output("index_output", &index_config, None)
-            .unwrap();
+        let index_output = attach_aliased_index_output(&controller, index, true);
 
         wait(
             || output_endpoint_metrics(&controller, "index_output").transmitted_records >= 100,
@@ -5660,7 +5906,7 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
         .unwrap_or_else(|()| panic!("the connector on '{index}' received no snapshot"));
         controller.stop().unwrap();
 
-        check_file_contents(&index_path, 0..100);
+        check_debezium_ids(&index_output, 0..100);
     }
 }
 
@@ -5750,7 +5996,9 @@ pub fn connector_attached_between_transactions_receives_no_earlier_output(
     )
     .unwrap();
 
-    controller.start_commit_transaction().unwrap();
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
     wait(
         || {
             output_endpoint_metrics(&controller, "test_output1").total_processed_input_records
@@ -10023,7 +10271,9 @@ fn transaction_rounds(
                 .expect("timed out waiting for a transaction to ingest its slice");
 
             // Every commit lands with the rest of the input still queued.
-            controller.start_commit_transaction().unwrap();
+            controller
+                .start_commit_transaction(TransactionToCommit::Open)
+                .unwrap();
             wait_fast(
                 || controller.inner.get_transaction_state() == TransactionState::None,
                 default_timeout_ms(),
@@ -10214,7 +10464,9 @@ fn transaction_view_consistency(
             controller.status().num_buffered_input_records()
         );
 
-        controller.start_commit_transaction().unwrap();
+        controller
+            .start_commit_transaction(TransactionToCommit::Open)
+            .unwrap();
         wait(|| controller.pipeline_complete(), default_timeout_ms())
             .expect("timed out waiting for the pipeline to complete");
 

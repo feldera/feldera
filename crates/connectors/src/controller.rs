@@ -69,6 +69,7 @@ use feldera_adapterlib::transport::{
 };
 use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
+use feldera_mtls::PipelinePeerTls;
 use feldera_observability::system::process_rss_bytes;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::disk::DiskUsage;
@@ -267,6 +268,12 @@ pub struct ControllerBuilder {
 
     /// The pipeline's storage, if it has any.
     storage: Option<Arc<dyn PipelineStorage>>,
+
+    /// TLS for exchange with the other hosts of a multihost pipeline, if any.
+    exchange_tls: Option<PipelinePeerTls>,
+
+    /// Identifies this run of a multihost pipeline to its hosts.
+    exchange_uuid: Uuid,
 }
 
 /// Controller creation is a three-step process:
@@ -317,6 +324,8 @@ impl ControllerBuilder {
             input_choices: BTreeMap::new(),
             output_assignment: BTreeMap::new(),
             storage,
+            exchange_tls: None,
+            exchange_uuid: Uuid::nil(),
         })
     }
 
@@ -433,6 +442,23 @@ impl ControllerBuilder {
         }
     }
 
+    /// Sets TLS for exchange with the other hosts of a multihost pipeline.
+    pub(crate) fn with_exchange_tls(self, exchange_tls: Option<PipelinePeerTls>) -> Self {
+        Self {
+            exchange_tls,
+            ..self
+        }
+    }
+
+    /// Sets the UUID that identifies this run of a multihost pipeline to its
+    /// hosts.  Every host must use the same one.
+    pub(crate) fn with_exchange_uuid(self, exchange_uuid: Uuid) -> Self {
+        Self {
+            exchange_uuid,
+            ..self
+        }
+    }
+
     /// Creates a [ControllerInit] that will open the specific
     /// `checkpoint_uuid`.
     pub(crate) fn open_checkpoint(
@@ -441,26 +467,24 @@ impl ControllerBuilder {
     ) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::with_checkpoint(
-            self.layout,
+            self.layout.clone(),
             self.config.clone(),
             self.storage.clone().unwrap(),
             checkpoint_uuid,
         )
-        .map(|init| {
-            init.with_input_distribution(self.input_distribution, self.input_choices)
-                .with_output_assignment(self.output_assignment)
-        })
+        .map(|init| self.finish(init))
     }
 
     /// Creates a [ControllerInit] that will start fresh without using a
     /// checkpoint.
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
-        ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
-            .map(|init| {
-                init.with_input_distribution(self.input_distribution, self.input_choices)
-                    .with_output_assignment(self.output_assignment)
-            })
+        ControllerInit::without_checkpoint(
+            self.layout.clone(),
+            self.config.clone(),
+            self.storage.clone(),
+        )
+        .map(|init| self.finish(init))
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
@@ -468,14 +492,20 @@ impl ControllerBuilder {
     pub(crate) fn open_latest_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::with_latest_checkpoint(
-            self.layout,
+            self.layout.clone(),
             self.config.clone(),
             self.storage.clone(),
         )
-        .map(|init| {
-            init.with_input_distribution(self.input_distribution, self.input_choices)
-                .with_output_assignment(self.output_assignment)
-        })
+        .map(|init| self.finish(init))
+    }
+
+    /// Passes the settings of this builder that `init` does not have yet to
+    /// `init`.  Every `open_*` method calls this, so that they cannot differ.
+    fn finish(self, init: ControllerInit) -> ControllerInit {
+        init.with_input_distribution(self.input_distribution, self.input_choices)
+            .with_output_assignment(self.output_assignment)
+            .with_exchange_tls(self.exchange_tls)
+            .with_exchange_uuid(self.exchange_uuid)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -634,6 +664,8 @@ enum Command {
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
     Rebalance(RebalanceCallbackFn),
     StartCompaction(StartCompactionCallbackFn),
+    #[cfg(any(test, feature = "testing"))]
+    InjectFatalError(RebalanceCallbackFn),
 }
 
 /// Tracks whether the initial snapshot has been delivered for an output
@@ -810,6 +842,8 @@ impl Command {
             }
             Command::Rebalance(callback) => callback(Err(ControllerError::ControllerExit)),
             Command::StartCompaction(callback) => callback(Err(ControllerError::ControllerExit)),
+            #[cfg(any(test, feature = "testing"))]
+            Command::InjectFatalError(callback) => callback(Err(ControllerError::ControllerExit)),
         }
     }
 }
@@ -1456,11 +1490,14 @@ impl Controller {
         //
         // In experiments, a busy worker thread can emit over 1,000 markers per
         // second.  Round that up to 2,000 to allow for expansion, then
-        // quadruple it to allow for other threads.
+        // quadruple it to allow for other threads.  Markers past the limit are
+        // dropped, so a fixed ceiling keeps many workers from using too much.
+        const MAX_MARKER_MEMORY: usize = 1 << 30;
         let markers_per_second = self.layout().local_workers().len().saturating_mul(2000 * 4);
         let memory_limit = markers_per_second
             .saturating_mul(Span::BYTES)
-            .saturating_mul(duration as usize);
+            .saturating_mul(duration as usize)
+            .min(MAX_MARKER_MEMORY);
 
         let capture = CaptureOptions::new()
             .with_memory_limit(Some(memory_limit))
@@ -1673,10 +1710,16 @@ impl Controller {
         Ok(StartTransactionResponse::new(transaction_id))
     }
 
-    pub fn start_commit_transaction(&self) -> Result<(), ControllerError> {
+    /// Starts to commit the transaction that the API started.  With
+    /// [`TransactionToCommit::Id`], commits only that transaction, and
+    /// succeeds without doing anything if this function already committed it.
+    pub fn start_commit_transaction(
+        &self,
+        transaction: TransactionToCommit,
+    ) -> Result<(), ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
-        self.inner.start_commit_transaction_from_api()
+        self.inner.start_commit_transaction_from_api(transaction)
     }
 
     pub async fn async_stop(self) -> Result<(), ControllerError> {
@@ -2412,6 +2455,18 @@ impl Controller {
         token: &CompletionToken,
     ) -> Result<Option<Step>, ControllerError> {
         self.status().completion_status(token)
+    }
+
+    /// Test-only: makes the circuit thread fail a circuit command with an
+    /// error that kills the circuit from that thread.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn inject_fatal_error(&self) -> Result<(), ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .send_command(Command::InjectFatalError(Box::new(move |result| {
+                let _ = sender.send(result);
+            })));
+        reply_or_controller_exit(receiver.blocking_recv())
     }
 
     pub async fn rebalance(&self) -> Result<(), ControllerError> {
@@ -4490,6 +4545,10 @@ impl CircuitThread {
                         });
                 }
                 Command::Rebalance(reply_callback) => reply_callback(self.circuit.rebalance()),
+                #[cfg(any(test, feature = "testing"))]
+                Command::InjectFatalError(reply_callback) => {
+                    reply_callback(self.circuit.inject_fatal_error())
+                }
                 Command::StartCompaction(reply_callback) => {
                     reply_callback(self.circuit.start_compaction())
                 }
@@ -6550,12 +6609,27 @@ impl ControllerInit {
             reserved_memory_bytes: datafusion_memory.map_or(0, ConfigSize::as_bytes),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             dev_tweaks,
+            exchange_tls: None,
+            exchange_uuid: Uuid::nil(),
         })
     }
 
     /// Sets the host that writes each output relation of a multihost pipeline.
     fn with_output_assignment(mut self, output_assignment: BTreeMap<String, usize>) -> Self {
         self.circuit_params.output_assignment = output_assignment;
+        self
+    }
+
+    /// Sets TLS for exchange with the other hosts of a multihost pipeline.
+    fn with_exchange_tls(mut self, exchange_tls: Option<PipelinePeerTls>) -> Self {
+        self.circuit_params.exchange_tls = exchange_tls;
+        self
+    }
+
+    /// Sets the UUID that identifies this run of a multihost pipeline to its
+    /// hosts.
+    fn with_exchange_uuid(mut self, exchange_uuid: Uuid) -> Self {
+        self.circuit_params.exchange_uuid = exchange_uuid;
         self
     }
 
@@ -7442,6 +7516,16 @@ impl TransactionInitiators {
     }
 }
 
+/// The transaction that [`Controller::start_commit_transaction`] commits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransactionToCommit {
+    /// The transaction that the API started, whatever its ID.
+    Open,
+
+    /// Only the transaction with this ID.
+    Id(TransactionId),
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct TransactionInfo {
     /// Is this a multihost pipeline?
@@ -7455,6 +7539,15 @@ pub struct TransactionInfo {
 
     /// Used to assign the next transaction id.
     last_transaction_id: TransactionId,
+
+    /// The last transaction that `/commit_transaction` asked to commit.  A
+    /// retry of that request succeeds without doing anything.  A request that
+    /// names any other transaction, except the one that the API has open,
+    /// fails, including an older API commit, because only the last one is
+    /// kept.  We can't accept every ID up to `last_transaction_id`, because
+    /// that ID can belong to an automatic or connector transaction, or to one
+    /// that a restart lost.
+    last_api_commit: Option<TransactionId>,
 
     /// Entities that initiated the current transaction.
     ///
@@ -7513,6 +7606,7 @@ impl TransactionInfo {
         TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
+            last_api_commit: None,
             initiators: TransactionInitiators::default(),
             all_hosts_done: HashMap::new(),
             transaction_state: TransactionState::None,
@@ -7611,13 +7705,35 @@ impl TransactionInfo {
     }
 
     /// Commit the current transaction from the API.
-    fn start_commit_transaction_from_api(&mut self) -> Result<(), ControllerError> {
-        if self.initiators.initiated_by_api != Some(TransactionPhase::Started) {
-            Err(ControllerError::NoTransactionInProgress)
+    ///
+    /// With [`TransactionToCommit::Id`], commits only that transaction.
+    /// Returns false, without doing anything, if that is the last transaction
+    /// that this function committed, so that a retried request succeeds.
+    fn start_commit_transaction_from_api(
+        &mut self,
+        transaction: TransactionToCommit,
+    ) -> Result<bool, ControllerError> {
+        let open = if self.initiators.initiated_by_api == Some(TransactionPhase::Started) {
+            self.initiators.transaction_id
         } else {
-            self.initiators.initiated_by_api = Some(TransactionPhase::Committed);
-            Ok(())
+            None
+        };
+        match transaction {
+            TransactionToCommit::Open if open.is_none() => {
+                return Err(ControllerError::NoTransactionInProgress);
+            }
+            TransactionToCommit::Id(requested) if open != Some(requested) => {
+                return if self.last_api_commit == Some(requested) {
+                    Ok(false)
+                } else {
+                    Err(ControllerError::TransactionIdMismatch { requested, open })
+                };
+            }
+            _ => (),
         }
+        self.initiators.initiated_by_api = Some(TransactionPhase::Committed);
+        self.last_api_commit = open;
+        Ok(true)
     }
 
     /// Initiate a new transaction from a connector.
@@ -9776,12 +9892,17 @@ impl ControllerInner {
     ///
     /// Fails if transaction_requested is already None, i.e., there is no transaction in
     /// progress or commit has already been initiated for the current transaction.
-    pub fn start_commit_transaction_from_api(&self) -> Result<(), ControllerError> {
+    pub fn start_commit_transaction_from_api(
+        &self,
+        transaction: TransactionToCommit,
+    ) -> Result<(), ControllerError> {
         // Lock the input statuses first, like `input_step`.
         let statuses = self.status.input_status();
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
-        transaction_info.start_commit_transaction_from_api()?;
+        if !transaction_info.start_commit_transaction_from_api(transaction)? {
+            return Ok(());
+        }
 
         // The input queued now belongs to the transaction.  In a multihost
         // pipeline, the coordinator commits with steps that feed no input.
@@ -10976,7 +11097,7 @@ impl CheckpointThread {
 
 #[cfg(test)]
 mod controller_init_tests {
-    use super::ControllerInit;
+    use super::{ControllerBuilder, ControllerInit};
     use crate::ControllerError;
     use feldera_adapterlib::errors::controller::ConfigError;
     use feldera_types::config::{DevTweaks, InputEndpointConfig, PipelineConfig, RuntimeConfig};
@@ -10996,6 +11117,59 @@ mod controller_init_tests {
             inputs: Default::default(),
             outputs: Default::default(),
             program_ir: None,
+        }
+    }
+
+    /// Exchange TLS for a pipeline, from a new CA.
+    fn peer_tls() -> feldera_mtls::PipelinePeerTls {
+        use rcgen::{
+            BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
+            SanType,
+        };
+        use rustls::pki_types::PrivatePkcs8KeyDer;
+
+        let ca_key = KeyPair::generate().unwrap();
+        let mut ca_params = CertificateParams::default();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+
+        let key = KeyPair::generate().unwrap();
+        let mut params = CertificateParams::default();
+        let uri = feldera_mtls::pipeline_certificate_uri(uuid::Uuid::from_u128(1));
+        params.subject_alt_names = vec![SanType::URI(uri.as_str().try_into().unwrap())];
+        params.extended_key_usages = vec![
+            ExtendedKeyUsagePurpose::ServerAuth,
+            ExtendedKeyUsagePurpose::ClientAuth,
+        ];
+        let leaf = params.signed_by(&key, &issuer).unwrap();
+        feldera_mtls::PipelinePeerTls::from_chain(
+            vec![leaf.der().clone(), ca_cert.der().clone()],
+            PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+        )
+        .unwrap()
+    }
+
+    /// Opening a controller passes the builder's exchange TLS on to the
+    /// circuit.  Opening from a given checkpoint needs storage, but it shares
+    /// `ControllerBuilder::finish` with these.
+    #[test]
+    fn open_passes_exchange_tls() {
+        let open_storage: crate::engine::OpenStorageFn = std::sync::Arc::new(|_| Ok(None));
+        let config = pipeline_config(RuntimeConfig {
+            workers: 1,
+            ..Default::default()
+        });
+        let opens: [fn(ControllerBuilder) -> Result<ControllerInit, ControllerError>; 2] = [
+            ControllerBuilder::open_without_checkpoint,
+            ControllerBuilder::open_latest_checkpoint,
+        ];
+        for open in opens {
+            let builder = ControllerBuilder::new(&config, &open_storage)
+                .unwrap()
+                .with_exchange_tls(Some(peer_tls()));
+            let init = open(builder).unwrap();
+            assert!(init.circuit_params.exchange_tls.is_some());
         }
     }
 
@@ -11365,5 +11539,173 @@ mod local_file_uri_tests {
             assert!(check(uri, false).is_ok());
         }
         assert!(check("s3://b/t", true).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod commit_transaction_id_tests {
+    use super::{
+        ControllerError, TransactionCoordination, TransactionInfo, TransactionState,
+        TransactionToCommit::{Id, Open},
+    };
+    use std::time::Instant;
+
+    fn single_host() -> TransactionInfo {
+        let (sender, _receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        TransactionInfo::new(false, sender)
+    }
+
+    /// Checks that a commit that names the API's transaction commits it, and
+    /// that a retry of that commit succeeds and does nothing: while the
+    /// transaction commits, after it commits, and after the API starts the
+    /// next transaction.
+    #[test]
+    fn retried_commit_succeeds() {
+        let mut info = single_host();
+        let first = info.start_transaction_from_api().unwrap();
+        assert!(info.start_commit_transaction_from_api(Id(first)).unwrap());
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
+
+        info.transaction_state = TransactionState::Committing {
+            tid: first,
+            start: Instant::now(),
+            processed_records: 0,
+        };
+        info.clear_initiators();
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
+
+        info.transaction_state = TransactionState::None;
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
+
+        let second = info.start_transaction_from_api().unwrap();
+        assert!(!info.start_commit_transaction_from_api(Id(first)).unwrap());
+        assert!(info.start_commit_transaction_from_api(Id(second)).unwrap());
+
+        // Only the last commit can be retried.
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(first)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+    }
+
+    /// Checks that a commit fails if it names a transaction that the API did
+    /// not start.
+    #[test]
+    fn commit_of_another_transaction_fails() {
+        let mut info = single_host();
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(1)),
+            Err(ControllerError::TransactionIdMismatch {
+                requested: 1,
+                open: None
+            })
+        ));
+
+        // A connector's transaction, which the API did not join.
+        info.start_transaction_from_connector("c", None, false)
+            .unwrap();
+        let connector = info.initiators.transaction_id.unwrap();
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+
+        let api = info.start_transaction_from_api().unwrap();
+        assert_eq!(api, connector);
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(api + 1)),
+            Err(ControllerError::TransactionIdMismatch { open: Some(open), .. }) if open == api
+        ));
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(0)),
+            Err(ControllerError::TransactionIdMismatch { .. })
+        ));
+    }
+
+    /// Checks that, while a connector's transaction runs after the API's
+    /// transaction committed, a retry of the API's commit succeeds, and a
+    /// commit of the connector's transaction fails.
+    #[test]
+    fn connector_transaction_running_after_api_commit() {
+        let mut info = single_host();
+        let api = info.start_transaction_from_api().unwrap();
+        assert!(info.start_commit_transaction_from_api(Id(api)).unwrap());
+        info.clear_initiators();
+
+        info.start_transaction_from_connector("c", None, false)
+            .unwrap();
+        let connector = info.initiators.transaction_id.unwrap();
+        info.transaction_state = TransactionState::Started {
+            tid: connector,
+            start: Instant::now(),
+            processed_records: 0,
+        };
+        assert!(!info.start_commit_transaction_from_api(Id(api)).unwrap());
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+
+        // The connector asked to commit, but the transaction still runs.
+        info.clear_initiators();
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+    }
+
+    /// Checks that a commit fails if it names a transaction that
+    /// `/commit_transaction` did not commit: one that a connector committed,
+    /// or one that a restart lost while later transactions reused its ID.
+    #[test]
+    fn commit_of_unrequested_transaction_fails() {
+        let mut info = single_host();
+        info.start_transaction_from_connector("c", None, false)
+            .unwrap();
+        let connector = info.initiators.transaction_id.unwrap();
+        info.transaction_state = TransactionState::Committing {
+            tid: connector,
+            start: Instant::now(),
+            processed_records: 0,
+        };
+        info.clear_initiators();
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+        info.transaction_state = TransactionState::None;
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+
+        // After a restart, automatic transactions reached ID 7, so the
+        // API's transaction 5 from before the restart is lost.
+        let mut info = single_host();
+        info.last_transaction_id = 7;
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Id(5)),
+            Err(ControllerError::TransactionIdMismatch {
+                requested: 5,
+                open: None
+            })
+        ));
+    }
+
+    /// Checks that a commit without a transaction ID needs an open API
+    /// transaction.
+    #[test]
+    fn commit_without_id() {
+        let mut info = single_host();
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Open),
+            Err(ControllerError::NoTransactionInProgress)
+        ));
+        info.start_transaction_from_api().unwrap();
+        assert!(info.start_commit_transaction_from_api(Open).unwrap());
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Open),
+            Err(ControllerError::NoTransactionInProgress)
+        ));
     }
 }
