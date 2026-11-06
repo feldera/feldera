@@ -15,6 +15,8 @@ Source edition can be found on github.
   1 hour.  Before, one failed fetch refused every token of that issuer with a
   401 for the refresh cooldown, which is 30 seconds for federated tokens.
 
+## v0.378.0
+
 - API: when the API server cannot open a connection to a pipeline, it now
   sends a 503 with error code `PipelineInteractionConnectFailed`. Before, it
   sent `PipelineInteractionUnreachable`, the code it also uses when the
