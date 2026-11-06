@@ -1,0 +1,90 @@
+---
+title: Agents
+description: Use Feldera to give AI agents instantly fresh context over all of your data, historical and live, and to check permissions for every user and agent.
+---
+
+import {FlowDiagram, UseCaseGrid} from '@site/src/components/UseCases';
+
+# Agents
+
+Feldera supports agents in two ways. It gives agents instantly fresh context: SQL views that instantly reflect changes to live and historical data. For agent security, it keeps the permissions of every user and agent current, so each access check uses the latest rules.
+
+## Instantly fresh context
+
+An agent is only as good as its context. With Feldera, that context is a set of SQL views over all of your data, in any combination of historical and live sources. Feldera updates each view on every input change and pushes the changes to the agent as they occur, so the agent always acts on current data and never re-queries from scratch all the time.
+
+<FlowDiagram
+  nodes={[
+    {label: 'All your data', sub: 'historical + live'},
+    {label: 'Feldera pipeline', sub: 'incremental SQL views'},
+    {label: 'Agent', sub: 'LLM + tools'},
+  ]}
+  edges={['every change', 'view changes']}
+  loop="queries and/or defines SQL views"
+  loopTo={1}
+  caption="The agent defines the logic. Feldera evaluates it on every change."
+/>
+
+- **Agents write SQL.** An agent can define the context it needs as a SQL view and deploy it. The views, no matter how complex, instantly reflect changes to inputs (live and historical data).
+- **Current context for every action.** When input data changes, agents instantly know what changed in the views they listen to or query.
+
+<UseCaseGrid items={[
+  {
+    kind: 'Demo',
+    title: 'Agentic fraud detection',
+    description: 'An agent reads a report about a new fraud pattern, writes SQL views to detect it, and watches the results.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/agentic-fraud-detection',
+  },
+  {
+    kind: 'Demo',
+    title: 'Agent cost and signal accuracy',
+    description: 'One fraud detector on three engines. Inexact signals flag more transactions, and each flag costs an LLM call.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/agentic-tokens-demo',
+  },
+  {
+    kind: 'Guide',
+    title: 'Keeping a model in the loop',
+    description: 'A process outside the pipeline reads its inputs from a view and writes its results to a table, while the pipeline runs.',
+    href: '/use_cases/model_scoring/',
+  },
+  {
+    kind: 'Reference',
+    title: 'Subscribe to view changes',
+    description: 'Stream the changes to a view over HTTP, in JSON or CSV.',
+    href: '/connectors/sinks/http',
+  },
+  {
+    kind: 'Reference',
+    title: 'The fda CLI',
+    description: 'Create, update and start pipelines from a script or an agent.',
+    href: '/interface/cli',
+  },
+]} />
+
+## Agent security
+
+Agents act for users, so each action needs a permission check. Fine-grained authorization models express permissions as a graph of users, agents, groups and resources. Feldera evaluates these graphs with [recursive SQL](/sql/recursion), and updates the results incrementally when a permission or a resource changes. [Auth0 FGA](https://www.feldera.com/blog/auth0-and-feldera-incrementally-computing-7-billion-permission-checks), part of Okta, uses Feldera to precompute billions of permission checks for AI agents and search.
+
+- **Permission checks for every user and agent.** Feldera computes the access rights across deeply nested access graphs, so a check reads a precomputed answer.
+- **Current after each change.** When a permission changes, Feldera updates only the access rights that the change affects.
+
+<UseCaseGrid items={[
+  {
+    kind: 'Customer story',
+    title: 'Auth0 FGA: 7 billion permission checks',
+    description: 'How Auth0, part of Okta, keeps its FGA Permissions Index fresh in real time with Feldera.',
+    href: 'https://www.feldera.com/blog/auth0-and-feldera-incrementally-computing-7-billion-permission-checks',
+  },
+  {
+    kind: 'Guide',
+    title: 'Fine-grained authorization',
+    description: 'Evaluate Zanzibar-style permission rules for users and agents with recursive SQL, kept current on every change.',
+    href: '/use_cases/fine_grained_authorization/intro',
+  },
+  {
+    kind: 'Demo',
+    title: 'Agentic intrusion detection',
+    description: 'An agent turns access anomaly patterns into SQL views over a fine-grained authorization model.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/agentic-fine-grained-access',
+  },
+]} />

@@ -2,6 +2,8 @@
 slug: /
 ---
 
+import {HubGrid} from '@site/src/components/UseCases';
+
 # What is Feldera?
 
 Feldera is a fast query engine for *incremental computation*. It has the [unique](/literature/papers) ability to evaluate arbitrary SQL programs incrementally, making it more powerful, expressive and performant than existing alternatives like batch engines, warehouses, stream processors or streaming databases.
@@ -9,6 +11,14 @@ Feldera is a fast query engine for *incremental computation*. It has the [unique
 Our approach to incremental computation is simple. A Feldera pipeline is a set of SQL tables and views. Views can be deeply nested. Users start, stop or pause pipelines to manage and advance a computation. Pipelines continuously process changes, which are any number of inserts, updates or deletes to a set of tables. When the pipeline receives changes, Feldera incrementally updates all the views by only looking at the changes and it completely avoids recomputing over older data. While a pipeline is running, users can inspect the results of the views at any time.
 
 Our approach to incremental computation makes Feldera incredibly fast (millions of events per second on a laptop). It also enables **unified offline and online compute** over both live and historical data. Feldera users have built batch and real-time feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data, and more.
+
+## Explore by use case
+
+Guides and runnable demos for what you want to build. See all [guides](/tutorials/), or learn the product step by step in [Feldera Basics](/tutorials/basics/).
+
+<HubGrid />
+
+## Defining features
 
 Our defining features:
 

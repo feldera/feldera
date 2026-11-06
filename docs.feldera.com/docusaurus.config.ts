@@ -52,7 +52,7 @@ const felderaCodeTheme: PrismTheme = {
 const config: Config = {
   title: "Feldera Documentation",
   tagline: "Powerup your Data Lake with Incremental View Maintenance",
-  favicon: "img/favicon.svg",
+  // The favicon links are in headTags below, so they are in the HTML on every page, like feldera.com.
 
   // Set the production url of your site here
   url: "https://docs.feldera.com",
@@ -84,6 +84,24 @@ const config: Config = {
       attributes: {
         name: "color-scheme",
         content: "only light",
+      },
+    },
+    // Same favicon as feldera.com: the .ico for browsers without SVG icons, then the SVG, which turns
+    // light in a dark browser theme.
+    {
+      tagName: "link",
+      attributes: {
+        rel: "icon",
+        href: "/img/favicon.ico",
+        sizes: "any",
+      },
+    },
+    {
+      tagName: "link",
+      attributes: {
+        rel: "icon",
+        href: "/img/favicon.svg",
+        type: "image/svg+xml",
       },
     },
   ],
@@ -151,6 +169,10 @@ const config: Config = {
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
+          {
+            from: "/use_cases",
+            to: "/tutorials",
+          },
           {
             from: "/api/retrieve-authentication-provider-configuration",
             to: "/api/get-auth-config",
@@ -385,19 +407,27 @@ const config: Config = {
         href: "https://www.feldera.com",
       },
       items: [
+        // Guide | Reference | Changelog. Use cases live in the Guides section of the Guide.
         {
-          label: "Get Started",
-          to: "/get-started",
+          type: "docSidebar",
+          sidebarId: "docsSidebar",
+          label: "Guide",
           position: "left",
         },
         {
-          label: "SQL Reference",
-          to: "/sql",
+          type: "dropdown",
+          label: "Reference",
           position: "left",
+          items: [
+            { label: "SQL", to: "/sql" },
+            { label: "Connectors", to: "/connectors" },
+            { label: "REST API", href: "pathname:///api" },
+            { label: "Python SDK", href: "pathname:///python/" },
+          ],
         },
         {
-          label: "Connectors",
-          to: "/connectors",
+          label: "Changelog",
+          to: "/changelog",
           position: "left",
         },
         {
@@ -434,6 +464,10 @@ const config: Config = {
             {
               label: "Tutorial",
               to: "/tutorials/basics/part1",
+            },
+            {
+              label: "Guides",
+              to: "/tutorials",
             },
             {
               label: "SQL Reference",

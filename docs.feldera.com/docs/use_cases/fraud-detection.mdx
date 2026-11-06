@@ -1,0 +1,61 @@
+---
+title: Fraud detection
+description: Compute fraud features in SQL with Feldera, and use the same queries for model training and real-time scoring.
+---
+
+import {FlowDiagram, UseCaseGrid} from '@site/src/components/UseCases';
+
+# Fraud detection
+
+A fraud model is only as good as its features. With Feldera, you write the features once in SQL. The same queries compute training data from history and compute features for each live transaction, so training and scoring always agree.
+
+<FlowDiagram
+  nodes={[
+    {label: 'Transactions', sub: 'history + live stream'},
+    {label: 'Feature SQL', sub: 'joins, rolling windows'},
+    {label: 'Model', sub: 'training and scoring'},
+  ]}
+  edges={['every change', 'feature vectors']}
+  caption="One set of queries for training and inference. Perfect parity, no matter how complex."
+/>
+
+## Why Feldera
+
+- **One set of queries.** Train on [Delta Lake](/connectors/sources/delta) history and score live transactions from [Kafka](/connectors/sources/kafka) with the same SQL. You change only the connectors. The features are identical in training and inference, no matter how complex the queries.
+- **Exact features for each transaction.** Joins and [rolling aggregates](/tutorials/time-series) are updated incrementally, so each feature vector is correct when the transaction arrives.
+- **Models in the loop.** A model can [read its inputs from a view and write its scores to a table](/use_cases/model_scoring/), so the pipeline measures its accuracy while it runs.
+
+## Guides and demos
+
+<UseCaseGrid items={[
+  {
+    kind: 'Guide',
+    title: 'Real-time fraud features',
+    description: 'Write fraud features in SQL, train a model on historical data, then score a live transaction stream.',
+    href: '/use_cases/fraud_detection/',
+  },
+  {
+    kind: 'Guide',
+    title: 'Keeping an ML model in the loop',
+    description: 'Feed a model from a view, read its predictions from a table, and score its accuracy as data arrives.',
+    href: '/use_cases/model_scoring/',
+  },
+  {
+    kind: 'Demo',
+    title: 'Fraud detection on Delta Lake',
+    description: 'Compute features from public Delta tables on S3, train an XGBoost model, then score in real time.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/fraud-detection-delta-lake',
+  },
+  {
+    kind: 'Demo',
+    title: 'Hopsworks feature store',
+    description: 'Feldera computes features from Hopsworks Kafka. Hopsworks stores them and serves the model.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/hopsworks',
+  },
+  {
+    kind: 'Demo',
+    title: 'Agentic fraud detection',
+    description: 'An agent reads a report about a new fraud pattern and writes SQL views to detect it.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/agentic-fraud-detection',
+  },
+]} />
