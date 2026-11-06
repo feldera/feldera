@@ -2848,6 +2848,74 @@ fn test_concurrent_stateless_new_view() {
     );
 }
 
+/// A host whose cutover fails still waits at the cutover barrier, so the
+/// other hosts finish their cutover instead of waiting for it forever.
+#[test]
+fn test_concurrent_cutover_failure_does_not_hang() {
+    init_test_logger();
+
+    let n_hosts = 2;
+    let path = tempfile::tempdir().unwrap().keep();
+    let configure_host = move |host, config| host_config(config, &path, host);
+
+    // Run the old circuit and checkpoint it.
+    let mut hosts =
+        TestHosts::start_with(NUM_WORKERS, n_hosts, configure_host.clone(), |circuit| {
+            Ok(topo_shared_input_old(circuit))
+        });
+    for (i, chunk) in weighted_sequence(0, 16, 1).into_iter().enumerate() {
+        push_to_host::<_, TestData1<u64>>(&hosts, i, chunk, |handles| &handles.0);
+        hosts.transaction();
+    }
+    let checkpoints = hosts.checkpoint();
+    hosts.kill();
+
+    // Start the new circuit and bootstrap it concurrently, up to the cutover.
+    let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure_host, |circuit| {
+        Ok(topo_shared_input_new(circuit))
+    });
+    let outcomes = hosts.map_with_index(move |host, handle| {
+        handle
+            .start_concurrent_bootstrap(checkpoints[host].to_string().into())
+            .unwrap()
+    });
+    assert!(
+        outcomes.iter().all(|outcome| matches!(
+            outcome,
+            crate::circuit::ConcurrentRestoreOutcome::Concurrent(_)
+        )),
+        "expected a concurrent bootstrap, got {outcomes:?}"
+    );
+    while !step_bootstrap_circuits(&mut hosts) {}
+    hosts.for_each(|handle| handle.sync_concurrent_bootstrap().unwrap());
+    while !step_bootstrap_circuits(&mut hosts) {}
+
+    // Host 0 fails its cutover.  A hang shows up as a timeout.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let results = hosts.map_with_index(|host, handle| {
+            if host == 0 {
+                handle.fail_concurrent_bootstrap_cutover()
+            } else {
+                handle.complete_concurrent_bootstrap()
+            }
+        });
+        let _ = sender.send((results, hosts));
+    });
+    let (results, hosts) = receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("a host waited forever at the cutover");
+
+    assert!(results[0].is_err(), "host 0: {:?}", results[0]);
+    for (host, result) in results.iter().enumerate().skip(1) {
+        assert!(result.is_ok(), "host {host}: {result:?}");
+    }
+
+    // The fatal error already killed host 0, which `TestHosts::kill` does
+    // not accept.  Dropping a handle kills a host that still runs.
+    drop(hosts);
+}
+
 // --- Topology: a deterministic source feeds the new view's backfilled region. ---
 //
 // Regression test for a concurrent-bootstrap refusal bug.  The SQL compiler

@@ -1001,13 +1001,19 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::CutoverBootstrapCircuit) => {
+                    Ok(Command::CutoverBootstrapCircuit { inject_error }) => {
                         let status = match bootstrap_circuit.take() {
                             Some(bootstrap) => {
                                 // Dropping `bootstrap` after the state
                                 // transfer runs the bootstrap circuit's
                                 // teardown.
-                                let status = circuit.cutover_from(&bootstrap);
+                                let status = if inject_error {
+                                    Err(DbspError::IO(std::io::Error::other(
+                                        "injected cutover error",
+                                    )))
+                                } else {
+                                    circuit.cutover_from(&bootstrap)
+                                };
 
                                 // cutover_from() just prepared the main
                                 // circuit's scheduler again, and the new
@@ -1203,7 +1209,12 @@ enum Command {
     SyncBootstrapCircuit,
     /// Install the bootstrap circuit's state into the main circuit,
     /// reactivate the full main circuit, and delete the bootstrap circuit.
-    CutoverBootstrapCircuit,
+    CutoverBootstrapCircuit {
+        /// Test-only: fail in place of the cutover (see
+        /// [`DBSPHandle::fail_concurrent_bootstrap_cutover`]).  Always
+        /// `false` outside of tests.
+        inject_error: bool,
+    },
     /// Test-only: every worker replies with an error that is fatal.
     #[cfg(any(test, feature = "testing"))]
     InjectFatalError,
@@ -1250,7 +1261,7 @@ impl Command {
             | Command::DestroyBootstrapCircuit
             | Command::RestoreConcurrent(_)
             | Command::SyncBootstrapCircuit
-            | Command::CutoverBootstrapCircuit => true,
+            | Command::CutoverBootstrapCircuit { .. } => true,
 
             #[cfg(any(test, feature = "testing"))]
             Command::InjectFatalError => true,
@@ -1312,7 +1323,12 @@ impl Debug for Command {
                 f.debug_tuple("RestoreConcurrent").field(path).finish()
             }
             Command::SyncBootstrapCircuit => write!(f, "SyncBootstrapCircuit"),
-            Command::CutoverBootstrapCircuit => write!(f, "CutoverBootstrapCircuit"),
+            Command::CutoverBootstrapCircuit { inject_error } => {
+                write!(
+                    f,
+                    "CutoverBootstrapCircuit {{ inject_error: {inject_error} }}"
+                )
+            }
             #[cfg(any(test, feature = "testing"))]
             Command::InjectFatalError => write!(f, "InjectFatalError"),
         }
@@ -1997,6 +2013,21 @@ impl DBSPHandle {
     /// ([`Self::step_bootstrap_circuit`] returned `true` after
     /// [`Self::sync_concurrent_bootstrap`]).
     pub fn complete_concurrent_bootstrap(&mut self) -> Result<(), DbspError> {
+        self.cutover_concurrent_bootstrap(false)
+    }
+
+    /// Test-only: like [`Self::complete_concurrent_bootstrap`], but every
+    /// worker of this host fails in place of the cutover, with an error that
+    /// is fatal.  The workers still wait at the cutover barrier, as for a
+    /// real failure.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn fail_concurrent_bootstrap_cutover(&mut self) -> Result<(), DbspError> {
+        self.cutover_concurrent_bootstrap(true)
+    }
+
+    /// Implements [`Self::complete_concurrent_bootstrap`] and, if
+    /// `inject_error`, [`Self::fail_concurrent_bootstrap_cutover`].
+    fn cutover_concurrent_bootstrap(&mut self, inject_error: bool) -> Result<(), DbspError> {
         if self.concurrent_bootstrap_phase != Some(ConcurrentBootstrapPhase::Synchronizing) {
             return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(format!(
                 "cannot cut over in concurrent-bootstrap phase {:?} (expected Synchronizing)",
@@ -2007,7 +2038,7 @@ impl DBSPHandle {
         // completed.
         self.check_bootstrap_circuit_state(&[BootstrapCircuitState::Idle], "cut over")?;
 
-        self.broadcast_command(Command::CutoverBootstrapCircuit, |_, _| {})?;
+        self.broadcast_command(Command::CutoverBootstrapCircuit { inject_error }, |_, _| {})?;
         self.bootstrap_circuit_state = BootstrapCircuitState::None;
         self.concurrent_bootstrap_info = None;
         self.concurrent_bootstrap_phase = None;
