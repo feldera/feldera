@@ -1041,10 +1041,7 @@ impl Controller {
         config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
-        debug!(
-            "Connecting input endpoint '{endpoint_name}' with transport '{}'",
-            config.connector_config.transport.name()
-        );
+        debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
             .connect_input(endpoint_name, config, resume_info, None)
@@ -1121,10 +1118,7 @@ impl Controller {
         endpoint: Box<dyn OutputEndpoint>,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
-        debug!(
-            "Adding output endpoint '{endpoint_name}' with transport '{}'",
-            endpoint_config.connector_config.transport.name()
-        );
+        debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
         self.inner.fail_if_restoring()?;
 
         self.inner.add_output_endpoint(
@@ -8522,10 +8516,7 @@ impl ControllerInner {
             .as_ref()
             .map_or(1, |distributed| distributed.shard.n_hosts());
 
-        debug!(
-            "Adding input endpoint '{endpoint_name}' with transport '{}'",
-            endpoint_config.connector_config.transport.name()
-        );
+        debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         let resolved_connector_config = resolve_connector_config(
             &self.secrets_dir,
@@ -11727,5 +11718,56 @@ mod commit_transaction_id_tests {
             info.start_commit_transaction_from_api(Open),
             Err(ControllerError::NoTransactionInProgress)
         ));
+    }
+}
+
+#[cfg(all(test, feature = "with-kafka"))]
+mod credential_registration_tests {
+    use super::{input_transport_config_to_endpoint, resolve_connector_config};
+    use feldera_types::config::{ConnectorConfig, TransportConfig};
+    use serde_json::json;
+
+    #[test]
+    fn controller_and_transport_preserve_short_values_and_public_references() {
+        for password in ["on", "1"] {
+            let secrets = tempfile::tempdir().unwrap();
+            let directory = secrets.path().join("kubernetes/controller-registration");
+            std::fs::create_dir_all(&directory).unwrap();
+            let topic = format!("controller-public-topic-{password}-2136");
+            std::fs::write(directory.join(password), &topic).unwrap();
+            let reference = format!("${{secret:kubernetes:controller-registration/{password}}}");
+            let config: ConnectorConfig = serde_json::from_value(json!({
+                "transport":{"name":"kafka_input","config":{
+                    "topic":reference,"sasl.password":password,"bootstrap.servers":"127.0.0.1:1"
+                }},"format":{"name":"json","config":{}}
+            }))
+            .unwrap();
+            let original = config.clone();
+            let resolved =
+                resolve_connector_config(secrets.path(), "input", &config, false).unwrap();
+            // Kafka input construction validates/stores the config without I/O.
+            assert!(
+                input_transport_config_to_endpoint(
+                    &resolved.transport,
+                    "input",
+                    secrets.path(),
+                    None
+                )
+                .unwrap()
+                .is_some()
+            );
+            let TransportConfig::KafkaInput(kafka) = &resolved.transport else {
+                panic!("expected Kafka input");
+            };
+            assert_eq!(kafka.topic, topic);
+            assert_eq!(kafka.kafka_options["sasl.password"], password);
+            assert_eq!(config, original);
+            let error = anyhow::anyhow!("mode on slot 1 topic {topic}");
+            let response = crate::server::error::ErrorResponse::from_anyerror(&error);
+            assert_eq!(
+                response.message,
+                format!("mode on slot 1 topic {reference}")
+            );
+        }
     }
 }

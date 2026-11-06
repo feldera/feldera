@@ -20,6 +20,7 @@
 //! let endpoint = input_transport_config_to_endpoint(config.clone());
 //! let reader = endpoint.open(consumer, 0);
 //! ```
+use feldera_types::sensitive::SensitiveValues;
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
@@ -137,6 +138,7 @@ pub fn input_transport_config_to_endpoint(
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     debug_assert!(shard.is_none() || config.supports_distribution());
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
+    config.register_sensitive_values();
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
@@ -210,6 +212,7 @@ pub fn output_transport_config_to_endpoint(
     shutdown: CancellationToken,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
+    config.register_sensitive_values();
     match config {
         TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
         #[cfg(feature = "with-kafka")]

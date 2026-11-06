@@ -1008,14 +1008,19 @@ mod client_creation_error_tests {
     /// quoted by librdkafka and stays out as well.
     #[test]
     fn short_rejected_value_stays_out_of_the_error() {
-        let error = ClientConfig::new()
-            .set("security.protocol", "pw")
-            .create::<BaseConsumer>()
-            .err()
-            .expect("librdkafka rejects the value");
-        let text = client_creation_error(error).to_string();
-        assert!(!text.contains("\"pw\""), "value in error: {text}");
-        assert!(text.contains("security.protocol"), "option missing: {text}");
+        for value in ["pw", "on", "1"] {
+            let error = ClientConfig::new()
+                .set("security.protocol", value)
+                .create::<BaseConsumer>()
+                .err()
+                .expect("librdkafka rejects the value");
+            let text = client_creation_error(error).to_string();
+            assert!(
+                !text.contains(&format!("\"{value}\"")),
+                "value in error: {text}"
+            );
+            assert!(text.contains("security.protocol"), "option missing: {text}");
+        }
     }
 
     /// The producer error keeps its cause in its own text, which is what a

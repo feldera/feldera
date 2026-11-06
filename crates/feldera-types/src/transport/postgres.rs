@@ -543,6 +543,42 @@ impl PostgresWriterConfig {
     }
 }
 
+impl crate::sensitive::SensitiveValues for PostgresReaderConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        // The URI can be a URL or a libpq keyword string.
+        crate::sensitive::visit_connection_string("uri", &self.uri, visit);
+        crate::sensitive::visit_optional(
+            "ssl_client_key",
+            self.tls.ssl_client_key.as_deref(),
+            visit,
+        );
+    }
+}
+
+impl crate::sensitive::SensitiveValues for PostgresCdcReaderConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        // The URI can be a URL or a libpq keyword string.
+        crate::sensitive::visit_connection_string("uri", &self.uri, visit);
+        crate::sensitive::visit_optional(
+            "ssl_client_key",
+            self.tls.ssl_client_key.as_deref(),
+            visit,
+        );
+    }
+}
+
+impl crate::sensitive::SensitiveValues for PostgresWriterConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        // The URI can be a URL or a libpq keyword string.
+        crate::sensitive::visit_connection_string("uri", &self.uri, visit);
+        crate::sensitive::visit_optional(
+            "ssl_client_key",
+            self.tls.ssl_client_key.as_deref(),
+            visit,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

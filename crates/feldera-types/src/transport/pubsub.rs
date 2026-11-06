@@ -88,6 +88,12 @@ pub struct PubSubInputConfig {
     pub timestamp: Option<String>,
 }
 
+impl crate::sensitive::SensitiveValues for PubSubInputConfig {
+    fn visit_sensitive_values(&self, visit: &mut dyn FnMut(&str, &str)) {
+        crate::sensitive::visit_optional("credentials", self.credentials.as_deref(), visit);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
