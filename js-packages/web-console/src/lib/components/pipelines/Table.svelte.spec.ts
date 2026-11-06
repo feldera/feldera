@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
 import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
@@ -392,6 +392,34 @@ describe('Table — search', () => {
 
     await search.fill('char')
     await expect.poll(rowOrder).toEqual(['charlie'])
+  })
+})
+
+describe('Table — status filter', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  // Real pointer clicks, which fail if the option is covered or closes under the pointer.
+  const pickStatus = async (status: string) => {
+    await userEvent.click(page.getByTestId('select-pipeline-status'))
+    await userEvent.click(page.getByRole('option', { name: status, exact: true }))
+  }
+
+  it('stays open when picked from a second time', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    await pickStatus('Ready To Start')
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    await pickStatus('Running')
+    await expect.poll(rowOrder).toEqual([])
   })
 })
 
