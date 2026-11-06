@@ -36,9 +36,9 @@
     if (isOpen) {
       window.addEventListener('click', onclick, { capture: true })
     } else {
-      window.removeEventListener('click', onclick)
+      window.removeEventListener('click', onclick, { capture: true })
     }
-    return () => window.removeEventListener('click', onclick)
+    return () => window.removeEventListener('click', onclick, { capture: true })
   })
 </script>
 
