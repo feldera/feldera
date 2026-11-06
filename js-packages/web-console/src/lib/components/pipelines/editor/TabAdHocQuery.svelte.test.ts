@@ -83,10 +83,13 @@ describe('TabAdHocQuery — runtime error propagation over WebSocket', () => {
 
   // Render the tab against the running pipeline, type `sql`, and run it.
   const runQuery = async (sql: string) => {
-    const { unmount } = render(TabAdHocQuery, {
+    const { unmount, container } = render(TabAdHocQuery, {
       pipeline: { current: pipeline },
       deleted: false
     })
+    // The results scroll box is at most 80% of the tab's height, and the virtual list renders
+    // only the rows that fit. The tab fills its parent, so the parent needs a height.
+    container.style.height = '600px'
     await page.getByRole('textbox').first().fill(sql)
     await page.getByRole('button', { name: 'Run query' }).first().click()
     return unmount
