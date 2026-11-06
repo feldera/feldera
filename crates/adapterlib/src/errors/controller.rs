@@ -162,6 +162,11 @@ pub enum ConfigError {
         error: String,
     },
 
+    InvalidQueueLimits {
+        endpoint_name: String,
+        error: String,
+    },
+
     CyclicDependency {
         cycle: Vec<(String, String)>,
     },
@@ -218,6 +223,7 @@ impl DetailedError for ConfigError {
             Self::InvalidTransportConfig { .. } => Cow::from("InvalidTransportConfig"),
             Self::InvalidOutputBufferConfig { .. } => Cow::from("InvalidOutputBufferConfig"),
             Self::InvalidSoftDeleteConfig { .. } => Cow::from("InvalidSoftDeleteConfig"),
+            Self::InvalidQueueLimits { .. } => Cow::from("InvalidQueueLimits"),
             Self::FtRequiresStorage => Cow::from("FtRequiresStorage"),
             Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
             Self::CyclicDependency { .. } => Cow::from("CyclicDependency"),
@@ -416,6 +422,15 @@ impl Display for ConfigError {
                 write!(
                     f,
                     "endpoint '{endpoint_name}' cannot use the 'soft_delete' property: {error}"
+                )
+            }
+            Self::InvalidQueueLimits {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "invalid backpressure configuration for endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::CyclicDependency { cycle } => {
@@ -630,6 +645,13 @@ impl ConfigError {
 
     pub fn invalid_soft_delete_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::InvalidSoftDeleteConfig {
+            endpoint_name: endpoint_name.to_string(),
+            error: error.to_string(),
+        }
+    }
+
+    pub fn invalid_queue_limits(endpoint_name: &str, error: &str) -> Self {
+        Self::InvalidQueueLimits {
             endpoint_name: endpoint_name.to_string(),
             error: error.to_string(),
         }
@@ -1589,6 +1611,12 @@ impl ControllerError {
                 endpoint_name,
                 error,
             )),
+        }
+    }
+
+    pub fn invalid_queue_limits(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: Box::new(ConfigError::invalid_queue_limits(endpoint_name, error)),
         }
     }
 

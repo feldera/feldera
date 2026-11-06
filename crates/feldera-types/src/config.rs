@@ -3684,6 +3684,20 @@ impl ConnectorConfig {
         self
     }
 
+    /// Checks the backpressure thresholds.
+    ///
+    /// A threshold of 0 makes the queue always full, so backpressure never
+    /// lets the connector run.
+    pub fn validate_queue_limits(&self) -> Result<(), String> {
+        if self.max_queued_records == 0 {
+            return Err("'max_queued_records' must be greater than 0".to_string());
+        }
+        if self.max_queued_size.is_some() && self.max_queued_bytes() == 0 {
+            return Err("'max_queued_size' must be greater than 0".to_string());
+        }
+        Ok(())
+    }
+
     /// Compare two configs modulo the `paused` field and how their duration
     /// settings are spelled.
     ///
@@ -4490,6 +4504,48 @@ mod sync_config_tests {
             serde_json::from_str(r#"{"bucket": "ckpts/a", "take_bucket_ownership": true}"#)
                 .unwrap();
         assert!(sync.take_bucket_ownership);
+    }
+}
+
+#[cfg(test)]
+mod queue_limit_tests {
+    use super::ConnectorConfig;
+    use serde_json::json;
+
+    fn connector(extra: serde_json::Value) -> ConnectorConfig {
+        let mut value = json!({"transport": {"name": "datagen", "config": {}}});
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn zero_queue_limits_are_rejected() {
+        let err = connector(json!({"max_queued_records": 0}))
+            .validate_queue_limits()
+            .unwrap_err();
+        assert!(err.contains("max_queued_records"), "{err}");
+
+        for size in [json!(0), json!("0"), json!("0Mi")] {
+            let err = connector(json!({"max_queued_size": size}))
+                .validate_queue_limits()
+                .unwrap_err();
+            assert!(err.contains("max_queued_size"), "{err}");
+        }
+        let err = connector(json!({"max_queued_bytes": 0}))
+            .validate_queue_limits()
+            .unwrap_err();
+        assert!(err.contains("max_queued_size"), "{err}");
+    }
+
+    #[test]
+    fn nonzero_queue_limits_are_accepted() {
+        connector(json!({})).validate_queue_limits().unwrap();
+        connector(json!({"max_queued_records": 1, "max_queued_size": 1}))
+            .validate_queue_limits()
+            .unwrap();
     }
 }
 
