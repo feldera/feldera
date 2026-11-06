@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (Enterprise, Kubernetes): with
+  `kubernetesRunner.enablePerPipelineNamespace`, a pipeline can select a
+  namespace with `resources.namespace` only if the operator lists the
+  namespace in the Helm value `kubernetesRunner.allowedPipelineNamespaces`
+  as an exact name or a pattern.  Before, such a pipeline could select any
+  namespace.  A pipeline that already runs in another namespace can still
+  be stopped.
 - Iceberg input: in follow mode, a retry after a failed read no longer
   ingests the rows that the failed read already ingested. Before, a retry
   ingested them again, and a deleted row could get a negative weight on a
