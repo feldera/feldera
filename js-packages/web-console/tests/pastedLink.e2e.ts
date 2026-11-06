@@ -41,7 +41,9 @@ const startButton = (page: Page) =>
 const emptyCode = { programCode: '', programUdfRs: '', programUdfToml: '' }
 
 const fileTab = (page: Page, fileName: string) =>
-  page.locator('button.tab', { hasText: new RegExp(`^\\s*${fileName.replace('.', '\\.')}\\s*$`) })
+  page
+    .getByTestId('btn-file-tab')
+    .filter({ hasText: new RegExp(`^\\s*${fileName.replace('.', '\\.')}\\s*$`) })
 
 const expectUnsaved = (page: Page, fileName: string) =>
   expect(fileTab(page, fileName).getByTitle('Unsaved changes')).toBeVisible()
