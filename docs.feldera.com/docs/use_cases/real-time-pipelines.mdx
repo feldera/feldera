@@ -1,0 +1,67 @@
+---
+title: Real-time pipelines
+description: Replace scheduled batch jobs with Feldera SQL pipelines that update incrementally when the input changes.
+---
+
+import {FlowDiagram, UseCaseGrid} from '@site/src/components/UseCases';
+
+# Real-time pipelines
+
+A batch job computes all of its results again on each run, so the results are old and the compute cost increases with the data. A Feldera pipeline runs the same SQL incrementally. When the input changes, Feldera updates only the results that the change affects, from the raw tables to the final views.
+
+<FlowDiagram
+  nodes={[
+    {label: 'Sources', sub: 'Lakehouse, Kafka, CDC'},
+    {label: 'Feldera pipeline', sub: 'bronze → silver → gold'},
+    {label: 'Destinations', sub: 'Lakehouse, Kafka, databases'},
+  ]}
+  edges={['changes', 'changes']}
+  caption="Feldera backfills history from the lakehouse, then continues on the change stream."
+/>
+
+## Why Feldera
+
+- **The SQL you already run.** Feldera evaluates [full SQL](/sql) incrementally, including joins, aggregates, window functions, subqueries and [recursion](/sql/recursion).
+- **History and live data in one pipeline.** Load a snapshot from [Delta Lake](/connectors/sources/delta) or [Iceberg](/connectors/sources/iceberg), then continue on changes from [Kafka](/connectors/sources/kafka), [Debezium](/connectors/sources/debezium) or [PostgreSQL CDC](/connectors/sources/postgresql-cdc).
+- **Correct results.** Each view always equals the result of its query on all of the input. With [fault tolerance](/pipelines/fault-tolerance-overview), a pipeline continues from where it stopped after a crash.
+
+## Guides and demos
+
+<UseCaseGrid items={[
+  {
+    kind: 'Guide',
+    title: 'From batch jobs to real-time pipelines',
+    description: 'Convert a Spark SQL batch job into a Feldera pipeline, then run it on historical and live data.',
+    href: '/use_cases/batch/intro',
+  },
+  {
+    kind: 'Guide',
+    title: 'Real-time medallion architecture',
+    description: 'Keep bronze, silver and gold layers current in one pipeline. Includes a comparison with Spark and Databricks.',
+    href: '/use_cases/medallion_architecture/part1',
+  },
+  {
+    kind: 'Guide',
+    title: 'Time series analysis',
+    description: 'Lateness, final values, append-only tables and temporal filters for event data.',
+    href: '/tutorials/time-series',
+  },
+  {
+    kind: 'Demo',
+    title: 'Debezium PostgreSQL source',
+    description: 'Replicate a Postgres table into Feldera through Debezium and Kafka, in JSON and Avro.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/debezium-postgres',
+  },
+  {
+    kind: 'Demo',
+    title: 'Debezium MySQL source',
+    description: 'Replicate a MySQL database into Feldera through Debezium and Kafka.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/debezium-mysql',
+  },
+  {
+    kind: 'Demo',
+    title: 'JDBC sink',
+    description: 'Write the output of a view to PostgreSQL through the Debezium and Confluent JDBC sinks.',
+    href: 'https://github.com/feldera/feldera-demos/tree/main/debezium-jdbc',
+  },
+]} />

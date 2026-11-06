@@ -79,10 +79,11 @@ const installation = {
     ]
 };
 
-// Guides section
+// Guides section: Feldera Basics, then one hub per use case.
 const guides = {
     type: 'category',
     label: 'Guides',
+    collapsed: false,
     link: {
         type: 'doc',
         id: 'tutorials/index',
@@ -102,89 +103,136 @@ const guides = {
                 'tutorials/basics/part4'
             ]
         },
+        // Use cases: one hub page per theme, with its guides and demos.
         {
             type: 'category',
-            label: 'Accelerating Batch Analytics',
-            link: {
-                type: 'doc',
-                id: 'use_cases/batch/intro'
-            },
+            label: 'Use Cases',
+            collapsed: false,
             items: [
-                'use_cases/batch/part1',
-                'use_cases/batch/part2',
-                'use_cases/batch/part3',
-                'use_cases/batch/part4'
+                {
+                    type: 'category',
+                    label: 'Agents',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/agents'
+                    },
+                    items: [
+                        {
+                            type: 'link',
+                            label: 'Instantly fresh context',
+                            href: '/use_cases/agents#instantly-fresh-context',
+                        },
+                        {
+                            type: 'category',
+                            label: 'Agent security',
+                            items: [
+                                {
+                                    type: 'category',
+                                    label: 'Fine-Grained Authorization',
+                                    link: {
+                                        type: 'doc',
+                                        id: 'use_cases/fine_grained_authorization/intro'
+                                    },
+                                    items: [
+                                        'use_cases/fine_grained_authorization/static',
+                                        'use_cases/fine_grained_authorization/dynamic'
+                                    ]
+                                },
+                            ]
+                        },
+                    ]
+                },
+                {
+                    type: 'category',
+                    label: 'Real-time pipelines',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/real-time-pipelines'
+                    },
+                    items: [
+                        {
+                            type: 'category',
+                            label: 'From Batch to Real-Time',
+                            link: {
+                                type: 'doc',
+                                id: 'use_cases/batch/intro'
+                            },
+                            items: [
+                                'use_cases/batch/part1',
+                                'use_cases/batch/part2',
+                                'use_cases/batch/part3',
+                                'use_cases/batch/part4'
+                            ]
+                        },
+                        {
+                            type: 'category',
+                            label: 'Real-Time Medallion Architecture',
+                            link: {
+                                type: 'doc',
+                                id: 'use_cases/medallion_architecture/part1'
+                            },
+                            items: [
+                                'use_cases/medallion_architecture/part2',
+                                'use_cases/medallion_architecture/part3',
+                                'use_cases/medallion_architecture/part4'
+                            ]
+                        },
+                    ]
+                },
+                {
+                    type: 'category',
+                    label: 'Fraud detection',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/fraud-detection'
+                    },
+                    items: [
+                        {
+                            type: 'doc',
+                            id: 'use_cases/fraud_detection/fraud_detection',
+                            label: 'Real-Time Fraud Features',
+                        },
+                        {
+                            type: 'doc',
+                            id: 'use_cases/model_scoring/model_scoring',
+                            label: 'Keeping an ML Model in the Loop',
+                        },
+                    ]
+                },
             ]
         },
         {
             type: 'category',
-            label: 'Real-Time Medallion Architecture',
+            label: 'More examples',
             items: [
-                'use_cases/medallion_architecture/part1',
-                'use_cases/medallion_architecture/part2',
-                'use_cases/medallion_architecture/part3',
-                'use_cases/medallion_architecture/part4'
+                {
+                    type: 'category',
+                    label: 'OpenTelemetry Analysis',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/otel/intro'
+                    },
+                    items: [
+                        'use_cases/otel/representing_otel_data',
+                        'use_cases/otel/preprocessing',
+                        'use_cases/otel/insights',
+                        'use_cases/otel/grafana'
+                    ]
+                },
+                {
+                    type: 'category',
+                    label: 'Live Web Applications',
+                    link: {
+                        type: 'doc',
+                        id: 'use_cases/real_time_apps/part1'
+                    },
+                    items: [
+                        'use_cases/real_time_apps/part2',
+                        'use_cases/real_time_apps/part3',
+                    ]
+                },
             ]
         },
-        {
-            type: 'doc',
-            id: 'use_cases/fraud_detection/fraud_detection',
-            label: 'Real-time Fraud Detection',
-        },
-        {
-            type: 'doc',
-            id: 'use_cases/model_scoring/model_scoring',
-            label: 'Keeping an ML Model in the Loop',
-        },
-        {
-            type: 'category',
-            label: 'Real-time Web Applications',
-            items: [
-                'use_cases/real_time_apps/part1',
-                'use_cases/real_time_apps/part2',
-                'use_cases/real_time_apps/part3',
-            ]
-        },
-        'tutorials/time-series',
-        'tutorials/testing',
-        {
-            type: 'category',
-            label: 'Fine-Grained Authorization',
-            link: {
-                type: 'doc',
-                id: 'use_cases/fine_grained_authorization/intro'
-            },
-            items: [
-                'use_cases/fine_grained_authorization/static',
-                'use_cases/fine_grained_authorization/dynamic'
-            ]
-        },
-        {
-            type: 'category',
-            label: 'OpenTelemetry Analysis',
-            link: {
-                type: 'doc',
-                id: 'use_cases/otel/intro'
-            },
-            items: [
-                'use_cases/otel/representing_otel_data',
-                'use_cases/otel/preprocessing',
-                'use_cases/otel/insights',
-                'use_cases/otel/grafana'
-            ]
-        },
-        {
-            type: 'category',
-            label: 'Rest API',
-            link: {
-                type: 'doc',
-                id: 'tutorials/rest_api/index'
-            },
-            items: [
-                'tutorials/rest_api/cluster-monitoring'
-            ]
-        },
-        'tutorials/monitoring/index'
     ]
 };
 
@@ -200,6 +248,17 @@ const interface = {
     items: [
         'interface/web-console',
         'interface/cli',
+        {
+            type: 'category',
+            label: 'Using the REST API',
+            link: {
+                type: 'doc',
+                id: 'tutorials/rest_api/index'
+            },
+            items: [
+                'tutorials/rest_api/cluster-monitoring'
+            ]
+        },
         {
             type: 'link',
             label: "Python SDK",
@@ -467,11 +526,6 @@ const pipelines = {
         fault_tolerance,
         {
             type: 'doc',
-            label: "Reference: Pipeline Lifecycle",
-            id: "pipelines/lifecycle",
-        },
-        {
-            type: 'doc',
             label: "Settings",
             id: "pipelines/configuration",
         },
@@ -482,10 +536,17 @@ const pipelines = {
         },
         "pipelines/transactions",
         "pipelines/latency",
+        'tutorials/time-series',
         {
             type: 'doc',
             label: "Sidecar Containers",
             id: "pipelines/sidecar",
+        },
+        'tutorials/testing',
+        {
+            type: 'doc',
+            label: "Reference: Pipeline Lifecycle",
+            id: "pipelines/lifecycle",
         },
     ]
 };
@@ -518,6 +579,7 @@ const operations = {
         'operations/guide',
         'operations/memory',
         'operations/metrics',
+        'tutorials/monitoring/index',
         'operations/json-logging',
         'operations/visualizing-profiles',
         'operations/required-domains',
