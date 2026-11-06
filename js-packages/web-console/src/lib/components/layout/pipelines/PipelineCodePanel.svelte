@@ -468,7 +468,7 @@ example = "1.0"`,
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
     <!-- An unsaved file gets a dot after its name. -->
-    <button class={fileTabClass(isCurrent)} onclick={onClick}>
+    <button class={fileTabClass(isCurrent)} onclick={onClick} data-testid="btn-file-tab">
       {text}
       {#if !isSaved}
         <span class="size-1.5 shrink-0 rounded-full bg-current" title="Unsaved changes"></span>
