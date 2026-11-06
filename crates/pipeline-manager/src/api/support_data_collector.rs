@@ -12,6 +12,8 @@ use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
+use crate::runner::error::RunnerError;
+use crate::runner::interaction::format_timeout_error_message;
 use crate::runner::pipeline_logs::FollowMode;
 use actix_web::HttpResponse;
 use actix_web::http::Method;
@@ -121,7 +123,8 @@ impl Default for SupportBundleParameters {
     }
 }
 
-/// Fetch data from a pipeline endpoint.
+/// Fetch data from a pipeline endpoint, within `COLLECTION_TIMEOUT` from the
+/// request to the last byte of the body.
 ///
 /// `query_string` is appended verbatim after `?` and must already be URL-encoded
 /// (e.g., `"include_connector_errors=true"`). Pass `""` for endpoints that take no query.
@@ -133,11 +136,10 @@ async fn fetch_pipeline_data(
     pipeline_name: &str,
     endpoint: &str,
     query_string: &str,
-    timeout: Option<Duration>,
     body_size_limit: Option<usize>,
     accept_encoding: Option<&str>,
 ) -> Result<HttpResponse, ManagerError> {
-    state
+    let fetch = state
         .runner
         .forward_http_request_to_pipeline_by_name_with_accept_encoding(
             client,
@@ -146,11 +148,33 @@ async fn fetch_pipeline_data(
             Method::GET,
             endpoint,
             query_string,
-            timeout,
+            Some(COLLECTION_TIMEOUT),
             body_size_limit,
             accept_encoding,
-        )
-        .await
+        );
+    within(COLLECTION_TIMEOUT, pipeline_name, endpoint, fetch).await
+}
+
+/// Fails `fetch` if its whole response does not arrive within `limit`.
+///
+/// The runner's limit stops when the response headers arrive, so it does not
+/// stop a pipeline that sends its headers and then a slow body. For example,
+/// a multihost pipeline sends the headers of its profile with the first
+/// host's profile, before the other hosts' profiles arrive.
+async fn within(
+    limit: Duration,
+    pipeline_name: &str,
+    endpoint: &str,
+    fetch: impl Future<Output = Result<HttpResponse, ManagerError>>,
+) -> Result<HttpResponse, ManagerError> {
+    timeout(limit, fetch).await.unwrap_or_else(|_| {
+        Err(RunnerError::PipelineInteractionUnreachable {
+            pipeline_name: pipeline_name.to_string(),
+            request: format!("GET /{endpoint}"),
+            error: format_timeout_error_message(limit, "the response body was not complete"),
+        }
+        .into())
+    })
 }
 
 /// Reads the pipeline's retained logs.
@@ -607,7 +631,6 @@ impl SupportBundleData {
             pipeline_name,
             "dump_profile",
             "",
-            Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
             Some("gzip"),
         )
@@ -632,7 +655,6 @@ impl SupportBundleData {
             pipeline_name,
             "dump_json_profile",
             "",
-            Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
             Some("gzip"),
         )
@@ -654,7 +676,6 @@ impl SupportBundleData {
             pipeline_name,
             "heap_profile",
             "",
-            Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
             Some("gzip"),
         )
@@ -679,7 +700,6 @@ impl SupportBundleData {
             pipeline_name,
             "metrics",
             "",
-            Some(COLLECTION_TIMEOUT),
             None,
             None,
         )
@@ -717,7 +737,6 @@ impl SupportBundleData {
             pipeline_name,
             "stats",
             "include_connector_errors=true",
-            Some(COLLECTION_TIMEOUT),
             None,
             None,
         )
@@ -1643,6 +1662,51 @@ mod tests {
             Duration::ZERO,
             "waited after the stream ended"
         );
+    }
+
+    /// A pipeline that sends its headers at once and then never finishes its
+    /// body. The runner's limit stops at the headers, so without `within`
+    /// this fetch never ends.
+    #[actix_web::test]
+    async fn within_stops_a_body_that_never_ends() {
+        use crate::config::CommonConfig;
+        use crate::runner::interaction::RunnerInteraction;
+        use actix_web::{App, web};
+        use futures_util::stream;
+
+        crate::ensure_default_crypto_provider();
+        let server = actix_test::start(|| {
+            App::new().route(
+                "/slow",
+                web::get().to(|| async {
+                    let first = stream::once(async {
+                        Ok::<_, actix_web::Error>(web::Bytes::from_static(b"{"))
+                    });
+                    HttpResponse::Ok().streaming(first.chain(stream::pending()))
+                }),
+            )
+        });
+        let location = server.addr().to_string();
+        let config = CommonConfig::test_config();
+        let client = awc::Client::default();
+        let limit = Duration::from_millis(500);
+        let fetch = RunnerInteraction::forward_http_request_to_pipeline(
+            &config,
+            &client,
+            "p",
+            &location,
+            Method::GET,
+            "slow",
+            "",
+            Some(limit),
+            None,
+            None,
+        );
+        let result = timeout(Duration::from_secs(10), within(limit, "p", "slow", fetch))
+            .await
+            .expect("the limit did not stop the body");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("GET /slow"), "{error}");
     }
 
     /// Data collected before version 4 holds the JSON profile inside a zip;
