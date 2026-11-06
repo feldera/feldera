@@ -48,7 +48,7 @@ use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
 use super::SchedulerError;
 use super::bootstrap::BootstrapInfo;
-use super::runtime::WorkerPanicInfo;
+use super::runtime::{Barrier, WorkerPanicInfo};
 
 /// Default ratio of merger threads to worker threads.
 const DEFAULT_MERGER_THREAD_RATIO: usize = 1;
@@ -669,6 +669,9 @@ impl Runtime {
             // identical across workers.
             let mut bootstrap_circuit: Option<CircuitHandle> = None;
 
+            // The barrier that `Command::CutoverBootstrapCircuit` waits on.
+            let mut cutover_barrier: Option<Barrier> = None;
+
             while !Runtime::kill_in_progress() {
                 // Wait for command.
                 match command_receiver.try_recv() {
@@ -876,6 +879,11 @@ impl Runtime {
                             // instead.  No profiler is attached: profiler
                             // hooks are circuit event handlers and do not
                             // affect node ids.
+                            //
+                            // Create the barrier before the bootstrap circuit
+                            // can step (see `Command::CutoverBootstrapCircuit`).
+                            cutover_barrier
+                                .get_or_insert_with(|| Barrier::new("bootstrap cutover"));
                             let constructor = bootstrap_constructor.clone();
                             RootCircuit::build(move |circuit| constructor(circuit)).and_then(
                                 |(mut handle, _catalog)| {
@@ -999,7 +1007,32 @@ impl Runtime {
                                 // Dropping `bootstrap` after the state
                                 // transfer runs the bootstrap circuit's
                                 // teardown.
-                                circuit.cutover_from(&bootstrap).map(|_| Response::Unit)
+                                let status = circuit.cutover_from(&bootstrap);
+
+                                // cutover_from() just prepared the main
+                                // circuit's scheduler again, and the new
+                                // scheduler created new exchanges.  In a
+                                // multihost pipeline, no sync point guarantees
+                                // that all other hosts have also finished their
+                                // cutover.  However, they need to before any
+                                // host steps the main circuit; otherwise, a
+                                // host might send an exchange message to
+                                // another on which the exchange does not yet
+                                // exist.  Therefore, wait on a cross-host
+                                // barrier for the cutover to finish everywhere.
+                                // Wait even if the cutover failed, so that the
+                                // other hosts do not wait forever.
+                                //
+                                // cutover_barrier's own exchange is guaranteed
+                                // to exist everywhere because
+                                // CreateBootstrapCircuit created it, and the
+                                // bootstrap circuit then committed, which needs
+                                // a global_commit_consensus vote from every
+                                // worker on every host.
+                                let barrier = cutover_barrier
+                                    .as_ref()
+                                    .expect("CreateBootstrapCircuit creates the barrier");
+                                status.and(circuit.wait(barrier)).map(|_| Response::Unit)
                             }
                             None => Err(no_bootstrap_circuit()),
                         };

@@ -37,7 +37,7 @@ use crate::{
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
             TernarySinkOperator, UnaryOperator,
         },
-        runtime::Consensus,
+        runtime::{Barrier, Consensus},
         schedule::{
             CommitProgress, DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor,
             OnceExecutor, Scheduler,
@@ -7653,6 +7653,13 @@ impl CircuitHandle {
                     .run_until(async { self.executor.step(&self.circuit).await })
                     .await
             })
+            .map_err(DbspError::Scheduler)
+    }
+
+    /// Waits until every worker reaches `barrier`.
+    pub(crate) fn wait(&self, barrier: &Barrier) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(barrier.wait())
             .map_err(DbspError::Scheduler)
     }
 

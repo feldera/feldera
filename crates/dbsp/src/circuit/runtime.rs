@@ -1907,6 +1907,23 @@ impl Consensus {
     }
 }
 
+/// A barrier across all of the workers of a runtime, on all of its hosts.
+///
+/// Every worker must create the barrier at the same point and then call
+/// [`wait`](Self::wait) the same number of times, as for [Consensus].
+pub(crate) struct Barrier(Broadcast<()>);
+
+impl Barrier {
+    pub fn new(name: impl Display) -> Self {
+        Self(Broadcast::new(name))
+    }
+
+    /// Returns after every worker calls this.
+    pub async fn wait(&self) -> Result<(), SchedulerError> {
+        self.0.collect(()).await.map(|_| ())
+    }
+}
+
 /// A synchronization primitive that allows multiple threads within a runtime to broadcast
 /// a value to all other workers.
 pub(crate) enum Broadcast<T> {

@@ -2643,6 +2643,9 @@ fn run_concurrent_bootstrap_test_on_hosts<I, OO, ON>(
     // the concurrent path, where the new views emit deltas from the start.
     let mut cutover_happened = false;
 
+    // Whether the cutover ran the first transaction of phase 3.
+    let mut first_transaction_done = false;
+
     match expected {
         ExpectedOutcome::Concurrent => {
             let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
@@ -2687,9 +2690,27 @@ fn run_concurrent_bootstrap_test_on_hosts<I, OO, ON>(
             // Synchronization and cutover.
             hosts.for_each(|handle| handle.sync_concurrent_bootstrap().unwrap());
             while !step_bootstrap_circuits(&mut hosts) {}
-            hosts.for_each(|handle| handle.complete_concurrent_bootstrap().unwrap());
-
             offset += inputs2.len();
+
+            // Host 0 cuts over late, and each host runs the first
+            // post-cutover transaction right after its own cutover.  If the
+            // cutover did not wait for every host, another host would send on
+            // an exchange of its new scheduler before host 0 creates it.
+            let first_chunk = inputs3.iter().chain(inputs4.iter()).next();
+            if let Some(chunk) = first_chunk {
+                push_to_host::<_, I>(&hosts, offset, chunk.clone(), |handles| &handles.0);
+            }
+            let run_first = first_chunk.is_some();
+            hosts.map_with_index(move |host, handle| {
+                if host == 0 && n_hosts > 1 {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                handle.complete_concurrent_bootstrap().unwrap();
+                if run_first {
+                    handle.transaction().unwrap();
+                }
+            });
+            first_transaction_done = run_first;
             cutover_happened = true;
         }
         ExpectedOutcome::UpToDate => {
@@ -2726,8 +2747,11 @@ fn run_concurrent_bootstrap_test_on_hosts<I, OO, ON>(
         cumulative_new = ON::add(&cumulative_new, delta);
     }
     for (i, chunk) in inputs3.iter().chain(inputs4.iter()).enumerate() {
-        push_to_host::<_, I>(&hosts, offset + i, chunk.clone(), |handles| &handles.0);
-        hosts.transaction();
+        // The cutover ran the first transaction already.
+        if !(first_transaction_done && i == 0) {
+            push_to_host::<_, I>(&hosts, offset + i, chunk.clone(), |handles| &handles.0);
+            hosts.transaction();
+        }
         assert_eq!(
             read_from_hosts::<_, OO>(&hosts, |handles| &handles.1),
             ref_old[offset + i],
