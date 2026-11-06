@@ -35,6 +35,13 @@ Source edition can be found on github.
   can safely retry it. The Python SDK and the Rust client now retry it for
   all requests, HTTP ingress included.
 
+- Behavior change (Enterprise): every rejected federated token (OIDC trust
+  relationship) now gets the same 401 message, and the reply takes 2 s. A
+  login waits at most 2 s for the signing keys of its issuer. If the issuer is
+  slower, the login uses the keys that the server fetched before. If there are
+  no such keys, the login is rejected, and the next login uses the keys that
+  the server fetched in the background.
+
 - Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` also
   refuse a `runtime_config` with `resources.memory_min` or
   `resources.memory_max` above `kubernetesRunner.upperLimitMemoryMegabyte`, or
