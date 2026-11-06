@@ -25,6 +25,8 @@ Source edition can be found on github.
   keys fails, the API server keeps using the keys it fetched before, for up to
   1 hour.  Before, one failed fetch refused every token of that issuer with a
   401 for the refresh cooldown, which is 30 seconds for federated tokens.
+- Behavior change (Python SDK): `Pipeline.support_bundle()` no longer retries
+  a bundle that collects new data, because each retry starts a new collection.
 
 ## v0.378.0
 
