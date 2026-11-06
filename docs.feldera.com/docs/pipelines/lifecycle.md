@@ -175,6 +175,8 @@ The one exception to this is `/stop?force=false`, which will result in a forcefu
 | **Paused***           | The input connectors are paused.                                                                                                                                                                                                                                                                                                                             |
 | **Running***          | The input connectors are running.                                                                                                                                                                                                                                                                                                                            |
 | **Suspended***        | The circuit is terminated and a final checkpoint has been made. This status is normally not observed as the resources (desired) status will become Stopped once it is detected.                                                                                                                                                                              |
+| **ConcurrentBootstrapping** | The pipeline was modified, and it computes the modified views in the background while the views that did not change keep running. See [Concurrent bootstrapping](/pipelines/modifying#concurrent-bootstrapping). |
+| **Synchronizing**     | The last phase of a concurrent bootstrap. Inputs are paused for a short time while the computed views are brought online. |
 (*) Also a possible desired status
 
 ### Runtime status diagram
@@ -186,7 +188,42 @@ There are several transition restrictions:
 - **Suspended can only be cleared by stop-and-start:** Once a pipeline has been suspended, it can only again become
   `Paused` or `Running` again by stopping (which will happen automatically) and starting the pipeline.
 
-The diagram will be added in the future.
+![Runtime status diagram](runtime_status.png)
+
+**Runtime status diagram notes:**
+
+- **Start:** a new pipeline process starts in `Initializing`.  The
+  edges out of `Initializing` depend on the desired status and on
+  the state in storage:
+  - `standby`: the initial desired status is `Standby`.
+  - `needs approval`: the program changed since the checkpoint, and
+    the changes need the user's approval.
+  - `changed`: the program changed since the checkpoint, and no
+    approval is needed.  With `concurrent_bootstrap=true` on `/start`,
+    the pipeline goes to `ConcurrentBootstrapping` instead.
+  - `journal`: the journal has input that was not processed yet.
+  - Otherwise, the pipeline goes directly to the desired status,
+    `Paused` or `Running`.
+- **Stop, edit and start:** the runtime status exists only while the
+  resources status is `Provisioned`.  Stopping a pipeline ends its
+  runtime status, and a pipeline can be edited only while it is
+  stopped.  See the [resources status
+  diagram](#resources-status-diagram).  When the pipeline starts again,
+  a new process starts at `Initializing`.
+- **Restart:** if the pipeline process restarts, for example after a
+  crash, the runtime status starts again at `Initializing`, and the
+  pipeline goes through the statuses above again.
+- **Unavailable:** the runner reports `Unavailable` from any status
+  when it cannot get the status from the pipeline in time.  When the
+  pipeline answers again, the runner reports the status that the
+  pipeline gives.
+- **Errors:** if the pipeline fails in any status, the runner stops
+  the pipeline, and the resources status becomes `Stopping`.
+- **Suspended:** `/stop?force=false` writes a checkpoint and
+  suspends the pipeline.  The runner then stops the pipeline.
+- **Multihost:** each host of a multihost pipeline is in
+  `Coordination` until the coordinator tells it what to do.  The user
+  does not see this status.
 
 ### Multihost pipeline startup
 
