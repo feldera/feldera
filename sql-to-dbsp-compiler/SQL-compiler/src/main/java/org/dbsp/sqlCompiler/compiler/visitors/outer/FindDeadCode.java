@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
@@ -133,11 +132,6 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
        return this.keepInverseReachable(operator.outputPort());
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPInternOperator operator) {
-        return this.keepInverseReachable(operator.outputPort());
     }
 
     @Override

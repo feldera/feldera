@@ -32,7 +32,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
@@ -525,11 +524,6 @@ public class MultisetAnalysis extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator operator) {
-        this.sameAsInput(operator, 0);
-    }
-
-    @Override
-    public void postorder(DBSPInternOperator operator) {
         this.sameAsInput(operator, 0);
     }
 

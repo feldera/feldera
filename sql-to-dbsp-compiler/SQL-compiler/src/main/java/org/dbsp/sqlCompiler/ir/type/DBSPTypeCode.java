@@ -24,7 +24,6 @@ public enum DBSPTypeCode {
     NULL("NULL", "null", "()"),
     STR(null, "str", "str"),
     STRING("VARCHAR", "s", "SqlString"),
-    INTERNED_STRING("VARCHAR INTERNED", "InternedString", "InternedString"),
     TIME("TIME", "Time", "Time"),
     TIMESTAMP("TIMESTAMP", "Timestamp", "Timestamp"),
     TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "TimestampTz", "TimestampTz"),

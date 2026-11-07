@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.InternInner;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -54,9 +53,7 @@ public class Expensive extends InnerVisitor {
     public VisitDecision preorder(DBSPApplyExpression expression) {
         String functionName = expression.getFunctionName();
         if (functionName != null &&
-                (functionName.startsWith("tumble_") ||
-                functionName.equals(InternInner.internFunction) ||
-                functionName.equals(InternInner.uninternFunction))) {
+                functionName.startsWith("tumble_")) {
             // These functions are actually not expensive.
             return VisitDecision.STOP;
         }

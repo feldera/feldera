@@ -43,7 +43,7 @@ public class PersistentIdTests extends BaseSQLTests {
         fields.add(new DBSPTypeStruct.Field(CalciteObject.EMPTY, column, 0, INT));
         List<InputColumnMetadata> columnMetadata = new ArrayList<>();
         columnMetadata.add(new InputColumnMetadata(
-                CalciteObject.EMPTY, column, INT, false, null, null, null, false));
+                CalciteObject.EMPTY, column, INT, false, null, null, null));
         DBSPTypeStruct struct = new DBSPTypeStruct(CalciteObject.EMPTY, tableName, fields, false);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, new DBSPTypeZSet(struct.toTuple()), struct,

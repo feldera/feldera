@@ -48,7 +48,7 @@ void ExtendedTableElement(List<SqlNode> list) :
         {
             strategy = nullable ? ColumnStrategy.NULLABLE : ColumnStrategy.NOT_NULLABLE;
             column = new SqlExtendedColumnDeclaration(s.add(id).end(this), id,
-                            type.withNullable(nullable), null, strategy, null, null, false, null, false);
+                            type.withNullable(nullable), null, strategy, null, null, false, null);
         }
         ( column = ColumnAttribute(column) )*
         {
@@ -93,10 +93,6 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
         |
             <LATENESS> lateness = Expression(ExprContext.ACCEPT_NON_QUERY) {
                return column.setLateness(lateness);
-            }
-        |
-            <INTERNED> {
-               return column.setInterned();
             }
         |
             <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) {
@@ -359,7 +355,6 @@ void ColumnDeclaration(List<SqlNode> list) :
     final SqlIdentifier id;
     final SqlDataTypeSpec type;
     final boolean nullable;
-    boolean interned = false;
     Span s;
 }
 {
@@ -367,12 +362,9 @@ void ColumnDeclaration(List<SqlNode> list) :
     id = SimpleIdentifier()
     type = DataType()
     nullable = NullableOptDefaultTrue()
-    (
-        <INTERNED> { interned = true; }
-    )?
     {
         list.add(new SqlViewColumnDeclaration(s.add(id).end(this), id,
-            type.withNullable(nullable), interned));
+            type.withNullable(nullable)));
     }
 }
 

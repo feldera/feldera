@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -141,8 +140,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         }
 
         boolean hasOutput = (!this.operator.is(DBSPViewBaseOperator.class) || useHandles) &&
-                !this.operator.is(IGCOperator.class) &&
-                !this.operator.is(DBSPInternOperator.class);
+                !this.operator.is(IGCOperator.class);
         this.builder().append("pub fn create_")
                 .append(name)
                 .append("(circuit: &")

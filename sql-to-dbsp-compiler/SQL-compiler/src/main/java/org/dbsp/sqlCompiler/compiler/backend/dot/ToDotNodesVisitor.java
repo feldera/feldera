@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -101,21 +100,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(node.getIdString())
                 .append(annotations(node))
                 .append(this.details > 0 ? " " + node.viewName.name() : "")
-                .append("\"")
-                .append(" style=filled fillcolor=lightgrey")
-                .append("]")
-                .newline();
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPInternOperator node) {
-        this.stream.append(node.getNodeName(false))
-                .append(" [ shape=box,label=\"")
-                .append(node.getIdString())
-                .append(" ")
-                .append(node.operation)
-                .append(" ")
                 .append("\"")
                 .append(" style=filled fillcolor=lightgrey")
                 .append("]")

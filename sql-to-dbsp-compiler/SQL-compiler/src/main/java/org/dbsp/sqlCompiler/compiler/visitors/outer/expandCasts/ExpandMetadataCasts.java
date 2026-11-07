@@ -41,7 +41,7 @@ public class ExpandMetadataCasts extends CircuitCloneVisitor {
                 changes = true;
             if (changes) {
                 cm = new InputColumnMetadata(cm.getNode(), cm.name, cm.type, cm.isPrimaryKey,
-                        lateness, def, cm.defaultValuePosition, cm.interned);
+                        lateness, def, cm.defaultValuePosition);
             }
             metas.add(cm);
         }

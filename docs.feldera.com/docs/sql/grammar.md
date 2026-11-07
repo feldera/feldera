@@ -35,11 +35,6 @@ columnDecl
   :   column generalType
 ```
 
-<!--
-  TODO: interning is broken, restore this if it's supported
-  :   column generalType [ INTERNED ]
--->
-
 ## Creating user-defined types
 
 ```
@@ -89,11 +84,6 @@ keyValueList
 keyValue
   : stringLiteral '=' stringLiteral
 ```
-
-<!--
- TODO: Removed INTERNED from columnConstraint, add when supported
-    |   INTERNED
--->
 
 The list of `tableElement`s may end with a comma.
 
@@ -191,22 +181,6 @@ adding a primary key constraint to the table, a user
 instructs Feldera to also maintain the complete contents of the table.
 Such materialized tables can be browsed and queried at runtime.
 See [Materialized Tables and Views](materialized.md) for more details.
-
-<!--
-#### Interned strings
-
-The `INTERNED` annotation can be added to a column with type `VARCHAR`
-or `CHAR` (and other equivalent type aliases, such as `STRING` and
-`TEXT`), and is a hint to the compiler to use an interned
-implementation for these strings (currently this annotation is ignored
-on other column types).  Interned strings keep a single copy of each
-string and replace such strings with a cryptographic hash function of
-the string value.  This works well if strings are only used for
-equality comparisons; when interned strings participate in other
-computations, or before being emitted to the output, they are
-converted back to their original values.
-
--->
 
 #### Append-only tables
 
@@ -899,7 +873,7 @@ only when it is written as a [quoted identifier](identifiers.md), as in
 | F | `FETCH`, `FOREIGN`, `FRIDAY`, `FROM`, `FULL` |
 | G | `GROUP`, `GROUPING` |
 | H | `HAVING` |
-| I | `IN`, `INDEX`, `INNER`, `INSERT`, `INTERNED`, `INTERSECT`, `INTERVAL`, `INTO` |
+| I | `IN`, `INDEX`, `INNER`, `INSERT`, `INTERSECT`, `INTERVAL`, `INTO` |
 | J | `JOIN` |
 | L | `LATENESS`, `LATERAL`, `LEFT`, `LIMIT` |
 | M | `MATCH_CONDITION`, `MATCH_RECOGNIZE`, `MATERIALIZED`, `MEASURE`, `MERGE`, `MINUS`, `MONDAY` |

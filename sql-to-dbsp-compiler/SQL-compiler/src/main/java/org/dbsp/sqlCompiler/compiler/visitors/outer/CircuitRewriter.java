@@ -50,7 +50,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
@@ -464,16 +463,6 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPAggregateOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeIndexedZSet.class), (DBSPAggregator) function, aggregate, input)
                     .copyAnnotations(operator);
-        }
-        this.map(operator, result);
-    }
-
-    @Override
-    public void postorder(DBSPInternOperator operator) {
-        OutputPort input = this.mapped(operator.input());
-        DBSPSimpleOperator result = operator;
-        if (!input.equals(operator.input())) {
-            result = new DBSPInternOperator(input);
         }
         this.map(operator, result);
     }

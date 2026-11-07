@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
@@ -235,12 +234,6 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPHopOperator operator) {
-        if (this.replaceUnary(operator))
-            super.postorder(operator);
-    }
-
-    @Override
-    public void postorder(DBSPInternOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }

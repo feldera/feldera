@@ -50,7 +50,7 @@ public class TestTagRegions {
         DBSPTypeTuple tuple = str.toTuple();
         DBSPTypeZSet z = new DBSPTypeZSet(tuple);
         InputColumnMetadata inputMeta = new InputColumnMetadata(CalciteObject.EMPTY, col, tuple.getFieldType(0), false,
-                null, null, null, false);
+                null, null, null);
 
         var source = new DBSPSourceMultisetOperator(
                 CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, z, str,

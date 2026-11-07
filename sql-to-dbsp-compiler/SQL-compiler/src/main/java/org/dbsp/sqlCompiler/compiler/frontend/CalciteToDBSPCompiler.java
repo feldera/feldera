@@ -205,7 +205,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -2901,15 +2900,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                 metadata.getName().singleQuote());
             defaultValue = defaultValue.cast(defaultValue.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         }
-        if (metadata.interned) {
-            if (!type.is(DBSPTypeString.class))
-                this.compiler.reportWarning(metadata.node.getPositionRange(), "Illegal type interned",
-                        "INTERNED is only applicable to CHAR/VARCHAR types " +
-                                metadata.getName().singleQuote() +
-                        ", hint will be ignored");
-        }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, defaultValue, metadata.defaultValuePosition, metadata.interned);
+                metadata.isPrimaryKey, lateness, defaultValue, metadata.defaultValuePosition);
     }
 
     private DBSPNode compileCreateView(CreateViewStatement view) {

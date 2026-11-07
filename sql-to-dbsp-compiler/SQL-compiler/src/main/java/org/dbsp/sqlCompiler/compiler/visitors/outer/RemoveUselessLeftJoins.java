@@ -10,5 +10,6 @@ public class RemoveUselessLeftJoins extends Passes {
         KeyAnalysis keys = new KeyAnalysis(compiler);
         this.add(keys);
         this.add(new RemoveUselessLeftJoinsVisitor(compiler, keys));
+        this.add(new DeadCode(compiler, true));
     }
 }

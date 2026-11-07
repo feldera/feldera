@@ -11,5 +11,4 @@ public interface IColumnMetadata extends IHasSourcePositionRange, IHasType, IHas
     @Nullable DBSPExpression getDefaultValue();
     ProgramIdentifier getColumnName();
     boolean isPrimaryKey();
-    boolean isInterned();
 }

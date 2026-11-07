@@ -25,7 +25,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPInternedStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPShortIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLongIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
@@ -633,15 +632,6 @@ public abstract class InnerRewriteVisitor
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
         DBSPExpression result = new DBSPISizeLiteral(expression.getNode(), type, expression.value);
-        this.map(expression, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPInternedStringLiteral expression) {
-        this.push(expression);
-        this.pop(expression);
-        DBSPExpression result = new DBSPInternedStringLiteral();
         this.map(expression, result);
         return VisitDecision.STOP;
     }

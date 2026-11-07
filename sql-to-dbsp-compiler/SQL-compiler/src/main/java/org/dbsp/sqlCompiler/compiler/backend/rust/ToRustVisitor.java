@@ -1157,21 +1157,6 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPInternOperator operator) {
-        this.writeComments(operator)
-                .append("let ")
-                .append(operator.getNodeName(this.preferHash))
-                .append(" = ")
-                .append(this.getInputName(operator, 0))
-                .append(";")
-                .newline()
-                .append("build_string_interner(")
-                .append(operator.getNodeName(this.preferHash))
-                .append(".clone(), None);");
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
         return this.retainOperator(operator);
     }

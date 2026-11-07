@@ -61,11 +61,6 @@ public class ViewColumnMetadata
         return false;
     }
 
-    @Override
-    public boolean isInterned() {
-        return false;
-    }
-
     public ProgramIdentifier getName() {
         return this.columnName;
     }
