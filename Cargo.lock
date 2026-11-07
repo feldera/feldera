@@ -9400,6 +9400,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "tokio-stream",
  "toml",
+ "toml_edit",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -13598,6 +13599,7 @@ checksum = "310068873db2c5b3e7659d2cc35d21855dbafa50d1ce336397c666e3cb08137e"
 dependencies = [
  "indexmap 2.14.2",
  "toml_datetime 0.6.9",
+ "toml_write",
  "winnow 0.7.10",
 ]
 
@@ -13609,6 +13611,12 @@ checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
  "winnow 1.0.5",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"

@@ -18,10 +18,9 @@
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
-# Switching to the FIPS-validated module means building AWS-LC with -DFIPS=1
-# and moving aws-lc-rs to aws-lc-fips-sys in the same change. Doing one without
-# the other leaves two AWS-LC copies in the binary; validate-crypto-deps.sh
-# fails when that happens.
+# AWS_LC_FIPS=1 builds the AWS-LC FIPS module instead, for images whose Rust
+# side links aws-lc-fips-sys. Each side then carries a validated module: the
+# Rust crate its own shared copy, librdkafka this static one.
 AWS_LC_FIPS="${AWS_LC_FIPS:-0}"
 
 script_path="${BASH_SOURCE[0]:-$0}"
@@ -61,25 +60,33 @@ if [ -z "$librdkafka_commit" ]; then
     esac
 fi
 
-# Checked-in source identity per aws-lc-sys version: the commit behind the
-# AWS-LC release tag that crate vendors (its include/openssl/base.h names the
-# release), so the librdkafka in the process carries the same AWS-LC as the
-# Rust side. Fetching by commit OID rather than by tag means a retargeted
-# upstream ref cannot change what gets built. An aws-lc-sys bump in the
+# Checked-in source identity per crate version: the commit behind the AWS-LC
+# release tag that aws-lc-sys, or with AWS_LC_FIPS=1 aws-lc-fips-sys, vendors
+# (its include/openssl/base.h names the release), so the librdkafka in the
+# process carries the same AWS-LC as the Rust side. A crate bump in the
 # lockfile fails here until the new release is reviewed and its commit added.
 aws_lc_commit="${AWS_LC_COMMIT:-}"
 if [ -z "$aws_lc_commit" ]; then
-    aws_lc_sys_version=""
+    if [ "$AWS_LC_FIPS" = "1" ]; then
+        aws_lc_crate="aws-lc-fips-sys"
+    else
+        aws_lc_crate="aws-lc-sys"
+    fi
+    aws_lc_crate_version=""
     if [ -f "$lockfile" ]; then
-        aws_lc_sys_version=$(grep -A1 'name = "aws-lc-sys"' "$lockfile" |
+        aws_lc_crate_version=$(grep -A1 "name = \"$aws_lc_crate\"" "$lockfile" |
             grep '^version' | sed 's/version = //; s/"//g')
     fi
-    case "$aws_lc_sys_version" in
+    case "$aws_lc_crate:$aws_lc_crate_version" in
+        # AWS-LC v5.1.0
+        aws-lc-sys:0.42.0) aws_lc_commit="6283365b1d43abadfa9b997812cef06b095f7f04" ;;
         # AWS-LC v5.5.0
-        0.44.0) aws_lc_commit="991e67ff4cf04df4dd89e407f8b920c6936cb56a" ;;
+        aws-lc-sys:0.44.0) aws_lc_commit="991e67ff4cf04df4dd89e407f8b920c6936cb56a" ;;
+        # AWS-LC-FIPS-3.1.0: NIST certificate #5314 covers this static build.
+        aws-lc-fips-sys:0.13.11) aws_lc_commit="ae0cd62f49db4c32b77cb8ed080013bfb44ed90d" ;;
         *)
-            echo "error: no pinned AWS-LC commit for aws-lc-sys ${aws_lc_sys_version:-<none in $lockfile>}." >&2
-            echo "Review the AWS-LC release that aws-lc-sys vendors and add its" >&2
+            echo "error: no pinned AWS-LC commit for $aws_lc_crate ${aws_lc_crate_version:-<none in $lockfile>}." >&2
+            echo "Review the AWS-LC release that $aws_lc_crate vendors and add its" >&2
             echo "commit OID to this script, or set AWS_LC_COMMIT explicitly." >&2
             exit 1
             ;;
