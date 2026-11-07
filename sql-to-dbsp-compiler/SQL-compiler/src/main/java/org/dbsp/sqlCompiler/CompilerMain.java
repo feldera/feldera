@@ -30,6 +30,7 @@ import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.Gen2JsonVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
@@ -249,7 +250,9 @@ public class CompilerMain {
                         "Option --crates is not compatible with --jit or --gen2");
                 return compiler.messages;
             } else {
-                ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(compiler, 1);
+                ToJsonOuterVisitor visitor = this.options.ioOptions.gen2 ?
+                        Gen2JsonVisitor.create(compiler, 1) :
+                        ToJsonOuterVisitor.create(compiler, 1);
                 visitor.apply(circuit);
                 String str = visitor.getJsonString();
                 try (PrintStream stream = this.getOutputStream()) {

@@ -6,7 +6,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 
-/** Allocate compact names for output streams, to make the Rust easier to read and debug */
+/** Allocate compact names for output streams, to make the Rust easier to read and debug.
+ * A new name replaces the name that an operator already has. */
 public class CompactNames extends CircuitCloneVisitor {
     int id = 0;
 
@@ -14,15 +15,20 @@ public class CompactNames extends CircuitCloneVisitor {
         super(compiler, false);
     }
 
+    void rename(DBSPOperator operator) {
+        operator.annotations.remove(CompactName.class);
+        operator.addAnnotation(new CompactName("s" + this.id++), DBSPOperator.class);
+    }
+
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
-        operator.addAnnotation(new CompactName("s" + this.id++), DBSPOperator.class);
+        this.rename(operator);
         return super.preorder(operator);
     }
 
     @Override
     public VisitDecision preorder(DBSPNestedOperator operator) {
-        operator.addAnnotation(new CompactName("s" + this.id++), DBSPOperator.class);
+        this.rename(operator);
         return super.preorder(operator);
     }
 }
