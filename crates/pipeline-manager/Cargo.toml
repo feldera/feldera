@@ -128,7 +128,6 @@ tempfile = { workspace = true }
 # They are provided such that they are included in the workspace `Cargo.lock`.
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
 compare = { workspace = true }
-sha2 = { workspace = true }
 sysinfo = { workspace = true }  # For: disk space usage
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
