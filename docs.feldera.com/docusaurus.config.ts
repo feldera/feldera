@@ -51,7 +51,7 @@ const felderaCodeTheme: PrismTheme = {
 
 const config: Config = {
   title: "Feldera Documentation",
-  tagline: "Powerup your Data Lake with Incremental View Maintenance",
+  tagline: "Keep arbitrarily complex SQL queries instantly fresh over changing data.",
   // The favicon links are in headTags below, so they are in the HTML on every page, like feldera.com.
 
   // Set the production url of your site here
@@ -108,6 +108,7 @@ const config: Config = {
 
   clientModules: [
     require.resolve("./src/clientModules/detect-os.ts"),
+    require.resolve("./src/clientModules/api-child-attributes.ts"),
     // Brand fonts, self-hosted: DM Sans for text, Geist Mono for labels and code.
     require.resolve("@fontsource-variable/dm-sans/wght.css"),
     require.resolve("@fontsource-variable/geist-mono/wght.css"),

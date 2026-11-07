@@ -14,7 +14,7 @@ Our approach to incremental computation makes Feldera incredibly fast (millions 
 
 ## Explore by use case
 
-Guides and runnable demos for what you want to build. See all [guides](/tutorials/), or learn the product step by step in [Feldera Basics](/tutorials/basics/).
+Guides and runnable demos for what you want to build. [How to build a use case](/use_cases/how-to-build) gives the steps and a starting point for each. See all [guides](/tutorials/), or learn the product step by step in [Feldera Basics](/tutorials/basics/).
 
 <HubGrid />
 

@@ -1,0 +1,75 @@
+# Feldera Documentation
+
+> Feldera keeps arbitrarily complex SQL queries instantly fresh over changing data. It is an incremental compute engine: it maintains SQL views by processing only the changes to their inputs, so work is proportional to the size of the change. It supports full SQL incrementally, including joins, aggregates, window functions, correlated subqueries, recursive queries and deeply nested views. Feldera is built on DBSP (VLDB 2023 Best Paper). It is not a database: it works alongside your lakehouse, warehouse or database, which stays the system of record.
+
+A Feldera pipeline is a set of SQL tables and views. Input connectors feed changes into tables; Feldera updates every view incrementally; output connectors write the view changes out. You manage pipelines with the web console, the `fda` CLI, the Python SDK or the REST API.
+
+To build something, start with [How to build a use case](https://docs.feldera.com/use_cases/how-to-build): the steps, example SQL and a starting point for each use case. For the product overview and common questions, see https://www.feldera.com/llms.txt.
+
+## Use cases
+- [How to build a use case](https://docs.feldera.com/use_cases/how-to-build): Every use case has the same shape. Steps, example SQL and a starting point for each.
+- [Agents](https://docs.feldera.com/use_cases/agents): Give agents SQL views over all of your data, historical and live, that instantly reflect every change. Also agent security: permission checks for every user and agent.
+- [Fine-grained authorization](https://docs.feldera.com/use_cases/fine_grained_authorization/intro): A graph use case: Zanzibar-style permission rules with recursive SQL, current on every change. The same pattern covers any graph.
+- [Real-time pipelines](https://docs.feldera.com/use_cases/real-time-pipelines): Replace scheduled batch jobs with SQL pipelines that update when the input changes.
+- [From batch to real-time](https://docs.feldera.com/use_cases/batch/intro): Convert a periodic batch job into an incremental pipeline.
+- [Real-time medallion architecture](https://docs.feldera.com/use_cases/medallion_architecture/part1): Keep silver and gold layers fresh as bronze data lands.
+- [Fraud detection](https://docs.feldera.com/use_cases/fraud-detection): Compute fraud features in SQL, with one set of queries for training and inference.
+- [Real-time fraud features](https://docs.feldera.com/use_cases/fraud_detection/): Rolling-window features per card, fresh on every transaction.
+- [Keeping an ML model in the loop](https://docs.feldera.com/use_cases/model_scoring/): Score view rows with an external model and write the results back while the pipeline runs.
+
+## Get started
+- [What is Feldera?](https://docs.feldera.com/): Concepts and defining features.
+- [Install Feldera](https://docs.feldera.com/get-started/): Docker, the online sandbox, or Feldera Enterprise.
+- [Docker](https://docs.feldera.com/get-started/docker): Run Feldera locally.
+- [Sandbox](https://docs.feldera.com/get-started/sandbox): Try Feldera in the browser with no install.
+- [Feldera Basics](https://docs.feldera.com/tutorials/basics/): Learn the product step by step.
+- [Feldera Enterprise](https://docs.feldera.com/get-started/enterprise/): Install on Kubernetes with Helm, authentication, HTTPS.
+
+## Pipelines
+- [Pipelines](https://docs.feldera.com/pipelines/): How pipelines are defined, configured and changed.
+- [Pipeline lifecycle](https://docs.feldera.com/pipelines/lifecycle): The states a pipeline moves through.
+- [Transactions](https://docs.feldera.com/pipelines/transactions): Process large batches of input as one step.
+- [Fault tolerance and DR](https://docs.feldera.com/pipelines/fault-tolerance-overview): Checkpoints and crash recovery.
+- [Time series](https://docs.feldera.com/tutorials/time-series): Event-time windows, lateness and garbage collection.
+- [Testing pipelines](https://docs.feldera.com/tutorials/testing): Test pipelines with the Python SDK.
+
+## SQL
+- [Feldera SQL](https://docs.feldera.com/sql/): Overview of the supported SQL.
+- [Grammar](https://docs.feldera.com/sql/grammar): Full syntax.
+- [Types](https://docs.feldera.com/sql/types): Scalar and complex types.
+- [Function index](https://docs.feldera.com/sql/function-index): Every built-in function.
+- [Aggregates](https://docs.feldera.com/sql/aggregates): Standard and window aggregates.
+- [Materialized tables and views](https://docs.feldera.com/sql/materialized): Make contents available for queries.
+- [Recursive queries](https://docs.feldera.com/sql/recursion): Mutually recursive views.
+- [Streaming extensions](https://docs.feldera.com/sql/streaming): Time-series operators and lateness.
+- [Ad-hoc queries](https://docs.feldera.com/sql/ad-hoc): Query a running pipeline's state.
+- [User-defined functions](https://docs.feldera.com/sql/udf): Functions in SQL and Rust.
+- [Unsupported operations](https://docs.feldera.com/sql/unsupported-operations): What Feldera does not support yet.
+
+## Connectors and formats
+- [Connectors](https://docs.feldera.com/connectors/): Attach inputs and outputs to tables and views.
+- [Input connectors](https://docs.feldera.com/connectors/sources/): Delta Lake, Iceberg, Kafka, PostgreSQL and CDC, Debezium, S3, HTTP, Pub/Sub, NATS and more.
+- [Output connectors](https://docs.feldera.com/connectors/sinks/): Delta Lake, Kafka, PostgreSQL, Redis, HTTP and more.
+- [Secret references](https://docs.feldera.com/connectors/secret-references): Keep credentials out of SQL.
+- [Formats](https://docs.feldera.com/formats/): JSON, Avro, Parquet and CSV.
+
+## Interfaces
+- [OpenAPI specification](https://docs.feldera.com/openapi.json): The complete REST API as machine-readable JSON. Prefer this over the HTML reference.
+- [REST API reference](https://docs.feldera.com/api): Every endpoint, with request and response schemas.
+- [Using the REST API](https://docs.feldera.com/tutorials/rest_api/): Manage pipelines with curl.
+- [fda CLI](https://docs.feldera.com/interface/cli): Create, update and start pipelines from a terminal, a script or an agent.
+- [Python SDK](https://docs.feldera.com/python/): Define and control pipelines from Python.
+- [Web console](https://docs.feldera.com/interface/web-console): Write and run pipelines in the browser.
+- [Agent skills](https://github.com/feldera/feldera-skills): Skills for coding agents: install `fda` and Feldera, deploy a pipeline from SQL, translate Spark SQL.
+
+## Operations
+- [Operations guide](https://docs.feldera.com/operations/guide): Run Feldera in production.
+- [Memory](https://docs.feldera.com/operations/memory): How pipelines use memory and storage.
+- [Metrics](https://docs.feldera.com/operations/metrics): Prometheus metrics.
+- [Enterprise architecture](https://docs.feldera.com/architecture/enterprise): Multi-node clusters, isolation and scale-out.
+
+## Optional
+- [Papers](https://docs.feldera.com/literature/papers): DBSP and related research.
+- [Videos](https://docs.feldera.com/literature/videos): Talks and demos.
+- [Changelog](https://docs.feldera.com/changelog): Release history.
+- [GitHub](https://github.com/feldera/feldera): Source, examples and issues.

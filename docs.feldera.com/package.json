@@ -5,7 +5,7 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start --host 0.0.0.0 --no-open",
-    "build": "mkdir -p openapi && cp ../openapi.json ./openapi/openapi.json && docusaurus build",
+    "build": "mkdir -p openapi && cp ../openapi.json ./openapi/openapi.json && cp ../openapi.json ./static/openapi.json && docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
