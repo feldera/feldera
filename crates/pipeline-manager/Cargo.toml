@@ -32,7 +32,6 @@ feldera-observability = { workspace = true }
 # Error handling and asserts
 anyhow = { workspace = true, features = ["backtrace"] }
 thiserror = { workspace = true }
-static_assertions = { workspace = true }
 
 # Asynchronous runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
@@ -42,7 +41,6 @@ async-trait = { workspace = true }
 futures-util = { workspace = true }
 
 # Encoding, decoding and formatting
-rand = { workspace = true }
 uuid = { workspace = true, features = ["v7", "std", "serde"] }
 chrono = { workspace = true, features = ["clock", "serde"] }
 serde = { workspace = true, features = ["derive"] }
@@ -150,6 +148,7 @@ vergen-gitcl = { workspace = true, features = ["build", "cargo", "rustc", "si"] 
 
 [dev-dependencies]
 rsa = { workspace = true }
+rand = { workspace = true }
 proptest = { workspace = true }
 proptest-derive = { workspace = true }
 pg-client-config = { workspace = true }

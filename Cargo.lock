@@ -9393,7 +9393,6 @@ dependencies = [
  "serial_test",
  "sha2 0.10.9",
  "static-files",
- "static_assertions",
  "sysinfo 0.39.6",
  "tar",
  "tempfile",
