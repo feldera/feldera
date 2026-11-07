@@ -106,7 +106,7 @@ aws-runtime = "1.7.2"
 aws-smithy-runtime-api = "1.12.3"
 aws-smithy-types = "1.5.0"
 backoff = "0.4.0"
-aws-lc-rs = "1.18.0"
+aws-lc-rs = "1.17.1"
 rsa = { version = "0.9.10", features = ["std"] }
 rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs"] }
@@ -413,3 +413,11 @@ debug = true
 
 [profile.release]
 debug = "line-tables-only"
+
+# AWS-LC FIPS 3.1.0 is the validated module (NIST #5314 static, #5298 dynamic); aws-lc-rs 1.18
+# needs AWS-LC 4, which has no certificate yet. These forks accept 1.17.1, whose FIPS crate
+# bundles 3.1.0, by gating ML-DSA behind a feature that stays off.
+[patch.crates-io]
+rustls = { git = "https://github.com/feldera/rustls", rev = "b55214c7c1fdf140d3f80d2dd5d46b855f4de044" }
+rustls-webpki = { git = "https://github.com/feldera/webpki", rev = "e3d07c3858860f3503aa7d8a9fa8f608350107fa" }
+async-nats = { git = "https://github.com/feldera/nats.rs", rev = "c8a646aba25c2e56b4bae35d58d20521332bc0f3" }
