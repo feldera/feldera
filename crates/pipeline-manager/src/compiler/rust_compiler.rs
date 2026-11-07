@@ -1855,6 +1855,12 @@ pub(super) fn cargo_command_with_minimal_env() -> Result<Command, RustCompilatio
         command.env("CARGO_INCREMENTAL", cargo_incremental);
     }
 
+    // aws-lc-fips-sys reads this to build the FIPS module as a shared object, the form the
+    // pipeline executor ships; without it the module is linked statically.
+    if let Some(fips_module_static) = std::env::var_os("AWS_LC_FIPS_SYS_STATIC") {
+        command.env("AWS_LC_FIPS_SYS_STATIC", fips_module_static);
+    }
+
     // Preserve AWS_PROFILE if set, to allow sccache to use
     // credentials from there.
     // we avoid passing all AWS_* env vars to prevent leaking
