@@ -86,14 +86,13 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         this.map(operator, sink);
     }
 
+    /** The changes of a constant are the constant at the first step */
     @Override
     public void postorder(DBSPConstantOperator operator) {
-        DBSPSimpleOperator replacement;
-        this.addOperator(operator);
-        replacement = new DBSPDifferentiateOperator(operator.getRelNode(), operator.outputPort())
+        DBSPSimpleOperator changes = new DBSPIncrementalConstantOperator(operator.getRelNode(), operator.getFunction())
                 .copyAnnotations(operator);
-        this.addOperator(replacement);
-        DBSPSimpleOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), replacement.outputPort())
+        this.addOperator(changes);
+        DBSPSimpleOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), changes.outputPort())
                 .copyAnnotations(operator);
         this.map(operator, integral);
     }

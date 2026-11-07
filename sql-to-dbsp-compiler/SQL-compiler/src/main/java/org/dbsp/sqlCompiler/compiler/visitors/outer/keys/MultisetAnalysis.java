@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -302,15 +303,24 @@ public class MultisetAnalysis extends CircuitVisitor {
         this.set(operator, false);
     }
 
-    @Override
-    public void postorder(DBSPConstantOperator operator) {
-        DBSPExpression value = operator.getFunction();
+    /** The output of a constant with value 'value' may be a multiset unless the rows are certainly distinct */
+    void constant(DBSPSimpleOperator operator, DBSPExpression value) {
         boolean isSet;
         if (value.is(DBSPZSetExpression.class))
             isSet = value.to(DBSPZSetExpression.class).isCertainlyDistinct();
         else
             isSet = value.to(DBSPIndexedZSetExpression.class).isEmpty();
         this.set(operator, !isSet);
+    }
+
+    @Override
+    public void postorder(DBSPConstantOperator operator) {
+        this.constant(operator, operator.getFunction());
+    }
+
+    @Override
+    public void postorder(DBSPIncrementalConstantOperator operator) {
+        this.constant(operator, operator.getFunction());
     }
 
     @Override

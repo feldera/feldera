@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -48,7 +49,8 @@ public class CSE extends Repeat {
     public static class FindCSE extends CircuitWithGraphsVisitor {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
-        final List<DBSPConstantOperator> constants;
+        /** Constants and incremental constants: sources, which no common input links */
+        final List<DBSPSimpleOperator> constants;
 
         public FindCSE(DBSPCompiler compiler, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
@@ -59,7 +61,7 @@ public class CSE extends Repeat {
 
         /** True if two constants have the same type and the same values, compared as expressions,
          * with the same weights and in the same order. */
-        static boolean sameRows(DBSPConstantOperator left, DBSPConstantOperator right) {
+        static boolean sameRows(DBSPSimpleOperator left, DBSPSimpleOperator right) {
             if (!left.outputType.sameType(right.outputType))
                 return false;
             DBSPZSetExpression leftRows = left.getFunction().as(DBSPZSetExpression.class);
@@ -76,16 +78,26 @@ public class CSE extends Repeat {
             return true;
         }
 
-        @Override
-        public void postorder(DBSPConstantOperator operator) {
-            for (DBSPConstantOperator op: this.constants) {
-                if (op.equivalent(operator) || sameRows(op, operator)) {
+        /** Maps 'operator' to an earlier constant of the same class with the same rows */
+        void constant(DBSPSimpleOperator operator) {
+            for (DBSPSimpleOperator op: this.constants) {
+                if (op.getClass() == operator.getClass() && (op.equivalent(operator) || sameRows(op, operator))) {
                     this.setCanonical(operator, op);
                     return;
                 }
             }
             this.constants.add(operator);
             postorder(operator.to(DBSPOperator.class));
+        }
+
+        @Override
+        public void postorder(DBSPConstantOperator operator) {
+            this.constant(operator);
+        }
+
+        @Override
+        public void postorder(DBSPIncrementalConstantOperator operator) {
+            this.constant(operator);
         }
 
         /** The GC operators that garbage-collect the integral after {@code port}. */

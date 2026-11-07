@@ -2157,8 +2157,8 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.processJoinIndexOperator(operator);
     }
 
-    @Override
-    public VisitDecision preorder(DBSPConstantOperator operator) {
+    /** Generates a source that the {@code generator} type produces from the value of {@code operator}. */
+    VisitDecision constantSource(DBSPSimpleOperator operator, String generator) {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);
@@ -2170,12 +2170,23 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ")
                 .append("circuit.add_source(")
                 .increase()
-                .append("ConstantGenerator::new(");
+                .append(generator)
+                .append("::new(");
         operator.function.accept(this.innerVisitor);
         this.builder.append("));").decrease();
         this.tagStream(operator);
         this.innerVisitor.setOperatorContext(null);
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPConstantOperator operator) {
+        return this.constantSource(operator, "ConstantGenerator");
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIncrementalConstantOperator operator) {
+        return this.constantSource(operator, "IncrementalConstantGenerator");
     }
 
     @Override

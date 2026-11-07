@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
@@ -21,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -133,6 +135,14 @@ public class PullFilterVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPConstantOperator filteredConstant = PropagateConstants.filterConstant(this.compiler, c, filter);
             if (filteredConstant != null) {
                 this.map(operator, filteredConstant);
+                return;
+            }
+        } else if (source.node().is(DBSPIncrementalConstantOperator.class)) {
+            DBSPSimpleOperator changes = source.simpleNode();
+            DBSPZSetExpression rows = PropagateConstants.filterRows(
+                    this.compiler, changes.getFunction(), operator.getClosureFunction());
+            if (rows != null) {
+                this.map(operator, new DBSPIncrementalConstantOperator(changes.getRelNode(), rows));
                 return;
             }
         }

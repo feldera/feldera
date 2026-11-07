@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
@@ -22,7 +23,8 @@ public class InnerCSE implements IRTransform {
 
     /** Return 'true' for operators where we want to apply CSE */
     public static boolean process(DBSPOperator operator) {
-        return !operator.is(DBSPConstantOperator.class);
+        return !operator.is(DBSPConstantOperator.class)
+                && !operator.is(DBSPIncrementalConstantOperator.class);
     }
 
     public InnerCSE(DBSPCompiler compiler) {

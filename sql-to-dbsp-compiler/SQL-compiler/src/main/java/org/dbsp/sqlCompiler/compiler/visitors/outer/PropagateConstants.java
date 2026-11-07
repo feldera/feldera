@@ -32,10 +32,11 @@ public class PropagateConstants extends CircuitCloneVisitor {
         return port.node().is(DBSPConstantOperator.class);
     }
 
+    /** The rows of the constant 'value' that pass 'filter', or null if the filter cannot be
+     * evaluated at compile time. */
     @Nullable
-    public static DBSPConstantOperator filterConstant(DBSPCompiler compiler,
-            DBSPConstantOperator constant, DBSPClosureExpression filter) {
-        DBSPExpression value = constant.getFunction();
+    public static DBSPZSetExpression filterRows(DBSPCompiler compiler,
+            DBSPExpression value, DBSPClosureExpression filter) {
         Simplify simplify = new Simplify(compiler);
         if (value.is(DBSPZSetExpression.class)) {
             DBSPZSetExpression set = value.to(DBSPZSetExpression.class);
@@ -61,12 +62,19 @@ public class PropagateConstants extends CircuitCloneVisitor {
                     break;
                 }
             }
-            if (evaluated) {
-                DBSPZSetExpression zset = new DBSPZSetExpression(result, set.elementType);
-                return new DBSPConstantOperator(constant.getRelNode(), zset);
-            }
+            if (evaluated)
+                return new DBSPZSetExpression(result, set.elementType);
         }
         return null;
+    }
+
+    @Nullable
+    public static DBSPConstantOperator filterConstant(DBSPCompiler compiler,
+            DBSPConstantOperator constant, DBSPClosureExpression filter) {
+        DBSPZSetExpression rows = filterRows(compiler, constant.getFunction(), filter);
+        if (rows == null)
+            return null;
+        return new DBSPConstantOperator(constant.getRelNode(), rows);
     }
 
     @Nullable

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 import java.util.HashSet;
@@ -20,6 +21,11 @@ public class ConstantViews extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPConstantOperator operator) {
+        this.constant.add(operator.outputPort());
+    }
+
+    @Override
+    public void postorder(DBSPIncrementalConstantOperator operator) {
         this.constant.add(operator.outputPort());
     }
 
