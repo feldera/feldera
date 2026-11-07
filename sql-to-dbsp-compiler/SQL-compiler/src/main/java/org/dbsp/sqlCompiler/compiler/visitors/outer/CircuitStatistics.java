@@ -109,7 +109,7 @@ public class CircuitStatistics extends CircuitVisitor {
             this.stats.joins++;
         if (operator.is(ILinearAggregate.class))
             this.stats.linearAggregates++;
-        if (operator.is(ILinear.class) && !operator.is(ILinearAggregate.class))
+        if (operator.is(ILinear.class))
             this.stats.linear++;
         if (operator.is(IStateful.class))
             this.stats.stateful++;

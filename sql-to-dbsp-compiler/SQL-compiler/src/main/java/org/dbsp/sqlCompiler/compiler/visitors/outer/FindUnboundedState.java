@@ -171,6 +171,7 @@ public class FindUnboundedState extends Passes {
         if (operator.is(ILinear.class))
             return !operator.is(DBSPIntegrateOperator.class);
         return operator.is(INonLinearAggregate.class)
+                || operator.is(ILinearAggregate.class)
                 || operator.is(DBSPDistinctOperator.class)
                 || operator.is(DBSPStreamDistinctOperator.class)
                 || operator.is(DBSPBinaryDistinctOperator.class)

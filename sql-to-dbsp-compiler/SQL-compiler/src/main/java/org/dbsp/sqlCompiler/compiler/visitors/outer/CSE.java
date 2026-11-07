@@ -242,9 +242,8 @@ public class CSE extends Repeat {
                 super.replaceMultiOutput(operator);
                 return;
             }
-
-            IMultiOutput we = replacement.to(IMultiOutput.class);
-            this.map(operator, we, true);
+            for (int i = 0; i < operator.outputCount(); i++)
+                this.map(operator.getOutput(i), this.mapped(replacement.getOutput(i)), false);
         }
     }
 }
