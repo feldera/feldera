@@ -19,7 +19,6 @@ use rdkafka::{
     error::KafkaError,
     types::RDKafkaErrorCode,
 };
-use sha2::Digest;
 use std::cmp::min;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -98,8 +97,11 @@ fn save_pem_file(pem: &str, suffix: &str) -> AnyResult<PathBuf> {
     let mut path = std::env::current_dir()?;
 
     // hash the pem key for file name
-    let hash = sha2::Sha256::new().chain_update(pem).finalize();
-    let s = format!("{hash:x}-{suffix}");
+    let hash = hex::encode(aws_lc_rs::digest::digest(
+        &aws_lc_rs::digest::SHA256,
+        pem.as_bytes(),
+    ));
+    let s = format!("{hash}-{suffix}");
 
     path.push(&s);
     path.set_extension("pem");

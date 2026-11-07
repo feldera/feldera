@@ -222,7 +222,7 @@ tokio-util = { workspace = true, features = ["io", "rt"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }
-sha2 = { workspace = true }
+hex = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
 serde_bytes = { workspace = true }
