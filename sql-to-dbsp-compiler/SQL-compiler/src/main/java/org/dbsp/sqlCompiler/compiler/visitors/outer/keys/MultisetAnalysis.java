@@ -62,7 +62,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeightValidatorOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -463,12 +462,6 @@ public class MultisetAnalysis extends CircuitVisitor {
     @Override
     public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
         // Same output rows as DBSPPartitionedRollingAggregateOperator
-        this.set(operator, true);
-    }
-
-    @Override
-    public void postorder(DBSPWeighOperator operator) {
-        // The weights of the result hold aggregated values
         this.set(operator, true);
     }
 
