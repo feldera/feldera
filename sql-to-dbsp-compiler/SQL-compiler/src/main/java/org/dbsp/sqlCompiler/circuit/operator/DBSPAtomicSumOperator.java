@@ -17,7 +17,7 @@ import java.util.List;
 
 /** Semantically this operator is similar to a {@link DBSPSumOperator}, but the implementation is very
  * different: it guarantees that successors will not see partial results within a transaction sub-step */
-public final class DBSPAtomicSumOperator extends DBSPSimpleOperator implements ILinear {
+public final class DBSPAtomicSumOperator extends DBSPSimpleOperator implements ILinear, IPrimitive {
     public DBSPAtomicSumOperator(CalciteRelNode node, List<OutputPort> inputs) {
         super(node, "atomic_sum", null, inputs.get(0).outputType());
         for (OutputPort op: inputs) {

@@ -38,7 +38,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPFlatMapOperator extends DBSPUnaryOperator implements ILinear {
+public final class DBSPFlatMapOperator extends DBSPUnaryOperator implements ILinear, IPrimitive {
     public DBSPFlatMapOperator(CalciteRelNode node, DBSPExpression expression,
                                DBSPTypeZSet outputType, OutputPort input) {
         super(node, "flat_map", expression, outputType, input);

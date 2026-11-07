@@ -20,7 +20,7 @@ import java.util.Objects;
  * the value at the first step, and no changes after the first step.
  * The function field holds the value.  The operator keeps state: it records that it has
  * produced the value. */
-public final class DBSPIncrementalConstantOperator extends DBSPSimpleOperator implements IStateful {
+public final class DBSPIncrementalConstantOperator extends DBSPSimpleOperator implements IPrimitive, IStateful {
     public DBSPIncrementalConstantOperator(CalciteRelNode node, DBSPExpression value) {
         super(node, "incremental_constant", value, value.getType());
     }

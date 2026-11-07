@@ -39,7 +39,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPMapOperator extends DBSPUnaryOperator implements ILinear {
+public final class DBSPMapOperator extends DBSPUnaryOperator implements ILinear, IPrimitive {
     public DBSPMapOperator(CalciteRelNode node, DBSPExpression function,
                            DBSPTypeZSet outputType, OutputPort input) {
         super(node, "map", function, outputType, input);

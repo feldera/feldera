@@ -37,7 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPSubtractOperator extends DBSPBinaryOperator implements ILinear {
+public final class DBSPSubtractOperator extends DBSPBinaryOperator implements ILinear, IPrimitive {
     public DBSPSubtractOperator(CalciteRelNode node, OutputPort left, OutputPort right) {
         super(node, "minus", null, left.outputType(), left, right);
         if (!left.outputType().sameType(right.outputType()))
