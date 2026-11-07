@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.*;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -85,14 +86,34 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         return Utilities.getExists(this.remap, original);
     }
 
+    /** The input half of a split operator must feed the replacement of its output half,
+     * which this visitor has already mapped, because the output half precedes the input half.
+     * @param newPort  Port about to replace a port of the previous circuit.
+     * @param add      True if the newPort.node() operator is not yet in the new circuit.
+     * @return         newPort, or the output port of a copy of its operator that feeds the
+     *                 replacement output half. */
+    OutputPort relinkSplit(OutputPort newPort, boolean add) {
+        ISplitInput first = newPort.node().as(ISplitInput.class);
+        if (first == null)
+            return newPort;
+        OutputPort second = first.splitOutput().outputPort();
+        OutputPort replacement = this.remap.get(second);
+        if (replacement == null || replacement.equals(second))
+            return newPort;
+        Utilities.enforce(add, () -> this + ": " + newPort.node() + " is already in the circuit, but it feeds "
+                + second.node() + ", which was replaced by " + replacement.node());
+        return first.withSplitOutput(replacement.node().to(ISplitOutput.class)).outputPort();
+    }
+
     /**
      * The output that used to be computed by 'old' is now
      * computed by 'newPort',
      * @param oldPort  Port in the previous circuit.
-     * @param newPort  Port replacing it in the new circuit.
-     * @param add      If true add the newPort.node() operator to the new circuit.
+     * @param port     Port replacing it in the new circuit.
+     * @param add      If true add the port.node() operator to the new circuit.
      *                 This may not be necessary if the operator has already been added. */
-    protected void map(OutputPort oldPort, OutputPort newPort, boolean add) {
+    protected void map(OutputPort oldPort, OutputPort port, boolean add) {
+        OutputPort newPort = this.relinkSplit(port, add);
         if (!oldPort.equals(newPort)) {
             if (this.preservesTypes && oldPort.exists() && newPort.exists()) {
                 Utilities.enforce(oldPort.outputType().sameType(newPort.outputType()),
@@ -286,6 +307,46 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
 
     @Override
     public void postorder(DBSPIncrementalConstantOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDelayOutputOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDelayInputOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPIntegralOutputOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPIntegralInputOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAccumulatorOperator operator) {
+        this.replaceMultiOutput(operator);
+    }
+
+    @Override
+    public void postorder(DBSPIntegralOperator operator) {
+        this.replaceMultiOutput(operator);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateKernelOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPJoinKernelOperator operator) {
         this.replace(operator);
     }
 

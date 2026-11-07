@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
+import org.dbsp.sqlCompiler.circuit.operator.ISplitInput;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -149,6 +150,12 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
+        ISplitInput split = operator.as(ISplitInput.class);
+        if (split != null) {
+            // Conservatively, an input half and its output half are never dead
+            this.keep(split.splitOutput().outputPort().node());
+            return this.keepInverseReachable(operator.outputPort());
+        }
         return VisitDecision.STOP;
     }
 

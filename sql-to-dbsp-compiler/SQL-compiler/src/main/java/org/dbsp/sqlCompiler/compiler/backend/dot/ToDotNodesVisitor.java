@@ -18,6 +18,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IStateful;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPAccumulatorOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPIntegralOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -232,10 +234,12 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         }
         if (operator.is(IStateful.class)) {
             // There are more of these every day
-            return " style=filled fillcolor=orangered";
+            return STATEFUL_COLOR;
         }
         return "";
     }
+
+    static final String STATEFUL_COLOR = " style=filled fillcolor=orangered";
 
     String shorten(String operation) {
         if (operation.startsWith("accumulate_integrate_trace"))
@@ -347,6 +351,38 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                     .append(")\\l");
         }
         this.stream.append("\" ]")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    /** Port 0, spine, holds the changes of the step folded into one spine; port 1, changes, is a
+     * snapshot of that spine. */
+    @Override
+    public VisitDecision preorder(DBSPAccumulatorOperator node) {
+        this.stream.append(node.getNodeName(false))
+                .append(" [ shape=record")
+                .append(" label=\"<pN>")
+                .append(node.getIdString())
+                .append(" ")
+                .append(DBSPAccumulatorOperator.OPERATION)
+                .append(annotations(node))
+                .append("|<p0> spine|<p1> changes\" ]")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    /** Port 0, delayed, is the integral before the step; port 1, current, is the integral after the step. */
+    @Override
+    public VisitDecision preorder(DBSPIntegralOperator node) {
+        this.stream.append(node.getNodeName(false))
+                .append(" [ shape=record")
+                .append(STATEFUL_COLOR)
+                .append(" label=\"<pN>")
+                .append(node.getIdString())
+                .append(" ")
+                .append(DBSPIntegralOperator.OPERATION)
+                .append(annotations(node))
+                .append("|<p0> delayed|<p1> current\" ]")
                 .newline();
         return VisitDecision.STOP;
     }

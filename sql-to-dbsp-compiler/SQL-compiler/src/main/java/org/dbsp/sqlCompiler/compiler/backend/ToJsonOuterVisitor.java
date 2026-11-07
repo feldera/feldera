@@ -7,6 +7,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPDelayOutputOperator;
+import org.dbsp.sqlCompiler.circuit.operator.ISplitInput;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
@@ -141,6 +143,11 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
             port.asJson(this);
         }
         this.stream.endArray();
+        ISplitInput split = operator.as(ISplitInput.class);
+        if (split != null) {
+            this.label("splitOutput");
+            split.splitOutput().outputPort().asJson(this);
+        }
         operator.accept(this.innerVisitor);
         return VisitDecision.CONTINUE;
     }
@@ -179,6 +186,16 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
             return VisitDecision.STOP;
         this.label("numbering");
         this.stream.append(operator.numbering.name());
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDelayOutputOperator operator) {
+        VisitDecision decision = this.preorder(operator.to(DBSPSimpleOperator.class));
+        if (decision.stop())
+            return VisitDecision.STOP;
+        this.label("kind");
+        this.stream.append(operator.kind.name());
         return VisitDecision.CONTINUE;
     }
 

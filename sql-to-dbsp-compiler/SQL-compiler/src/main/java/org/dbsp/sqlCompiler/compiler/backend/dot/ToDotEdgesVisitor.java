@@ -2,9 +2,13 @@ package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.ISplitInput;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPAccumulatorOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPIntegralOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -59,6 +63,21 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPOperatorWithError node) {
+        return this.inputEdges(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAccumulatorOperator node) {
+        return this.inputEdges(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegralOperator node) {
+        return this.inputEdges(node);
+    }
+
+    /** Draws the input edges of an operator with several outputs. */
+    VisitDecision inputEdges(DBSPOperator node) {
         for (OutputPort i : node.inputs) {
             this.stream.append(this.getPortName(i))
                     .append(" -> ")
@@ -74,6 +93,17 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
                     .newline();
         }
         return VisitDecision.STOP;
+    }
+
+    /** Draws an implicit back edge from 'source' up to 'destination' as a dotted line.
+     * The edge is written from 'destination' to 'source' with dir=back, so dot ranks
+     * 'destination' above 'source'. */
+    void backEdge(String source, String destination) {
+        this.stream.append(destination)
+                .append(" -> ")
+                .append(source)
+                .append(" [dir=back style=dotted];")
+                .newline();
     }
 
     @Override
@@ -105,14 +135,14 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
                     source = nested.internalOutputs.get(index).simpleNode();
                 }
             }
-            if (source != null) {
-                this.stream.append(source.getOutputName())
-                        .append(" -> ")
-                        .append(node.getOutputName())
-                        .append(";")
-                        .newline();
-            }
+            if (source != null)
+                this.backEdge(source.getOutputName(), node.getOutputName());
         }
+
+        // Add the back-edge represented implicitly between the two halves of a split operator
+        ISplitInput split = node.as(ISplitInput.class);
+        if (split != null)
+            this.backEdge(node.getOutputName(), split.splitOutput().outputPort().simpleNode().getOutputName());
         return VisitDecision.STOP;
     }
 

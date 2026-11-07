@@ -12,6 +12,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPAccumulatorOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPIntegralOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRanges;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -134,12 +136,13 @@ public class ToJsonVisitor extends CircuitVisitor {
         this.builder.decrease().append("}");
     }
 
-    void processWithError(DBSPOperatorWithError operator) {
+    /** Emits an operator that is neither a simple operator nor a nested circuit. */
+    void processMultiOutput(DBSPOperator operator, String operation) {
         String name = operator.getCompactName();
         this.builder.appendJsonLabelAndColon(name)
                 .append("{").increase();
         this.builder.appendJsonLabelAndColon("operation")
-                .append("\"").append(operator.operation).append("\",").newline();
+                .append("\"").append(operation).append("\",").newline();
         this.builder.appendJsonLabelAndColon("inputs")
                 .append("[");
 
@@ -258,8 +261,13 @@ public class ToJsonVisitor extends CircuitVisitor {
                 this.process(op.to(DBSPSimpleOperator.class));
             } else if (op.is(DBSPNestedOperator.class)) {
                 this.processNested(op.to(DBSPNestedOperator.class));
+            } else if (op.is(DBSPAccumulatorOperator.class)) {
+                this.processMultiOutput(op, DBSPAccumulatorOperator.OPERATION);
+            } else if (op.is(DBSPIntegralOperator.class)) {
+                this.processMultiOutput(op, DBSPIntegralOperator.OPERATION);
             } else {
-                this.processWithError(op.to(DBSPOperatorWithError.class));
+                DBSPOperatorWithError withError = op.to(DBSPOperatorWithError.class);
+                this.processMultiOutput(withError, withError.operation);
             }
             this.pop(op);
         }
@@ -283,7 +291,12 @@ public class ToJsonVisitor extends CircuitVisitor {
             } else if (op.is(DBSPNestedOperator.class)) {
                 this.processNested(op.to(DBSPNestedOperator.class));
             } else if (op.is(DBSPOperatorWithError.class)) {
-                this.processWithError(op.to(DBSPOperatorWithError.class));
+                DBSPOperatorWithError withError = op.to(DBSPOperatorWithError.class);
+                this.processMultiOutput(withError, withError.operation);
+            } else if (op.is(DBSPAccumulatorOperator.class)) {
+                this.processMultiOutput(op, DBSPAccumulatorOperator.OPERATION);
+            } else if (op.is(DBSPIntegralOperator.class)) {
+                this.processMultiOutput(op, DBSPIntegralOperator.OPERATION);
             } else if (op.is(DBSPInputMapWithWaterlineOperator.class)) {
                 this.processInputMapWithWaterline(op.to(DBSPInputMapWithWaterlineOperator.class));
             }

@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetai
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPChainAggregateKernelOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -407,6 +408,26 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !input.equals(operator.input())) {
             result = new DBSPChainAggregateOperator(operator.getRelNode(), init.to(DBSPClosureExpression.class),
                     function.to(DBSPClosureExpression.class), outputType, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateKernelOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPExpression init = this.transform(operator.init);
+        OutputPort delta = this.mapped(operator.left());
+        OutputPort previous = this.mapped(operator.right());
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || !DBSPExpression.same(function, operator.function)
+                || !DBSPExpression.same(init, operator.init)
+                || !delta.equals(operator.left())
+                || !previous.equals(operator.right())) {
+            result = new DBSPChainAggregateKernelOperator(operator.getRelNode(), init.to(DBSPClosureExpression.class),
+                    function.to(DBSPClosureExpression.class), outputType, delta, previous)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

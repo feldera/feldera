@@ -66,7 +66,7 @@ public class JsonDecoder {
 
     static final String OUTER_ROOT = "org.dbsp.sqlCompiler.circuit";
     static final List<String> OUTER_PACKAGES = Arrays.asList(
-            "", "operator");
+            "", "operator", "operator.primitives");
     static final String INNER_ROOT = "org.dbsp.sqlCompiler.ir";
     static final List<String> INNER_PACKAGES = Arrays.asList(
             "", "expression", "type.primitive", "type.derived", "type.user",
