@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
@@ -331,6 +332,11 @@ public class FindUnboundedState extends Passes {
 
         @Override
         public void postorder(DBSPConstantOperator node) {
+            this.markBounded(node);
+        }
+
+        @Override
+        public void postorder(DBSPIncrementalConstantOperator node) {
             this.markBounded(node);
         }
 

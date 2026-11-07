@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -64,18 +65,26 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         this.emptySources = new ArrayList<>();
     }
 
+    /** True if 'value', the value of a constant, is an empty Z-set. */
+    static boolean isEmpty(DBSPExpression value) {
+        if (value.is(DBSPZSetExpression.class))
+            return value.to(DBSPZSetExpression.class).isEmpty();
+        if (value.is(DBSPIndexedZSetExpression.class))
+            return value.to(DBSPIndexedZSetExpression.class).isEmpty();
+        return false;
+    }
+
     @Override
     public void postorder(DBSPConstantOperator operator) {
-        DBSPExpression expression = operator.getFunction();
-        if (expression.is(DBSPZSetExpression.class)) {
-            DBSPZSetExpression lit = expression.to(DBSPZSetExpression.class);
-            if (lit.isEmpty())
-                this.emptySources.add(operator);
-        } else if (expression.is(DBSPIndexedZSetExpression.class)) {
-            DBSPIndexedZSetExpression lit = expression.to(DBSPIndexedZSetExpression.class);
-            if (lit.isEmpty())
-                this.emptySources.add(operator);
-        }
+        if (isEmpty(operator.getFunction()))
+            this.emptySources.add(operator);
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPIncrementalConstantOperator operator) {
+        if (isEmpty(operator.getFunction()))
+            this.emptySources.add(operator);
         super.postorder(operator);
     }
 
@@ -88,21 +97,18 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         }
     }
 
-    /** An empty stream with the type and kind of 'operator'.  A constant is a collection,
-     * so a differentiator follows it when the operator produces deltas.  'visitor' receives
-     * the constant in that case; the caller maps 'operator' to the result. */
-    static DBSPSimpleOperator emptyStream(CircuitCloneVisitor visitor, DBSPSimpleOperator operator) {
-        DBSPSimpleOperator constant = new DBSPConstantOperator(
-                operator.getRelNode(), emptySet(operator.getType()));
-        if (operator.outputKind(0) != StreamKind.DELTA)
-            return constant;
-        visitor.addOperator(constant);
-        return new DBSPDifferentiateOperator(operator.getRelNode(), constant.outputPort());
+    /** An empty stream with the type and kind of 'operator': an empty incremental constant
+     * when the operator produces deltas, else an empty constant. */
+    static DBSPSimpleOperator emptyStream(DBSPSimpleOperator operator) {
+        DBSPExpression empty = emptySet(operator.getType());
+        if (operator.outputKind(0) == StreamKind.DELTA)
+            return new DBSPIncrementalConstantOperator(operator.getRelNode(), empty);
+        return new DBSPConstantOperator(operator.getRelNode(), empty);
     }
 
     /** Replaces 'operator' with an empty stream of the same type and kind. */
     void replaceWithEmpty(DBSPSimpleOperator operator) {
-        DBSPSimpleOperator empty = emptyStream(this, operator);
+        DBSPSimpleOperator empty = emptyStream(operator);
         this.emptySources.add(empty);
         this.map(operator, empty);
     }

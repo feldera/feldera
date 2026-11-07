@@ -1515,7 +1515,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
         CompilerMessages msg = CompilerMain.execute(
-                "--dataflow", json.getPath(), "--noRust", file.getPath());
+                "-i", "--dataflow", json.getPath(), "--noRust", file.getPath());
         Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());
         String expected = TestUtil.readStringFromResourceFile("metadataTests-generateDF.json");
@@ -1568,7 +1568,7 @@ public class MetadataTests extends BaseSQLTests {
         PrintStream savedOut = System.out;
         System.setOut(NullPrintStream.INSTANCE);
         CompilerMessages msg = CompilerMain.execute(
-                "-v", "1", "--dataflow", json.getPath(), "--noRust", file.getPath());
+                "-i", "-v", "1", "--dataflow", json.getPath(), "--noRust", file.getPath());
         System.setOut(savedOut);
         Assert.assertEquals(0, msg.exitCode);
         String jsonContents = Utilities.readFile(json.toPath());

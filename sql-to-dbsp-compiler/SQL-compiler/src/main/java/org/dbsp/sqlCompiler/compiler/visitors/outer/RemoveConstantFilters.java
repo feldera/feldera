@@ -30,7 +30,7 @@ public class RemoveConstantFilters extends CircuitCloneVisitor {
                 OutputPort input = this.mapped(operator.input());
                 this.map(operator.outputPort(), input, false);
             } else {
-                this.map(operator, PropagateEmptySources.emptyStream(this, operator));
+                this.map(operator, PropagateEmptySources.emptyStream(operator));
             }
         }
         else {

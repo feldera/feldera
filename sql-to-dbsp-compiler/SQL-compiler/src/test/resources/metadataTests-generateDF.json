@@ -58,19 +58,9 @@
       ],
       "persistent_id": "5e6c4775639ef50da58436d192195ae13fa8cd9681af464d09f0927ebbd24bbf"
     }, "s1": {
-      "operation": "differentiate",
-      "inputs": [
-        { "node": "s0", "output": 0 }
-      ],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "6acba3a62a628e1ed8a2f5ed8863fca42efb944ed9a162acb59e31eab616b7b6"
-    }, "s2": {
       "operation": "map_index",
       "inputs": [
-        { "node": "s1", "output": 0 }
+        { "node": "s0", "output": 0 }
       ],
       "calcite": {
         "seq": [
@@ -81,11 +71,11 @@
           }]
       },
       "positions": [],
-      "persistent_id": "ef04d5bca5d46ebe4d169a894620ab1154ec5e39713d782d7cc351a958b028ab"
-    }, "s3": {
+      "persistent_id": "78963a7f7e37827c2a996ae34c9bafafe3d97919ba812162233a51fb09b55baf"
+    }, "s2": {
       "operation": "aggregate_linear_postprocess",
       "inputs": [
-        { "node": "s2", "output": 0 }
+        { "node": "s1", "output": 0 }
       ],
       "calcite": {
         "partial": 3
@@ -93,19 +83,29 @@
       "positions": [
         {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
       ],
-      "persistent_id": "df596bf4a52267f1050fae1a9f52933d3c1362a230dab631d8b7158736fa5502"
-    }, "s4": {
+      "persistent_id": "86109991ed6361c0e88f683071ad91bf9cccd7cd2b5d3c915fd61f8a4dfeb286"
+    }, "s3": {
       "operation": "map",
       "inputs": [
-        { "node": "s3", "output": 0 }
+        { "node": "s2", "output": 0 }
       ],
       "calcite": {
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "070bc0c077ca2f95f0d99dfe7b069934b691d094a7343f8b792f6fb19e6282c8"
+      "persistent_id": "7706b468a9815ae464fa7d937e03cd10fd042b24d79ea55ec8e3672307f449ff"
+    }, "s4": {
+      "operation": "map",
+      "inputs": [
+        { "node": "s2", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": [],
+      "persistent_id": "96a9953e1ac37cab6f362e291cdad38a463335df6646b65e2d641e94fc6b78fc"
     }, "s5": {
-      "operation": "integrate",
+      "operation": "neg",
       "inputs": [
         { "node": "s4", "output": 0 }
       ],
@@ -113,61 +113,31 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "0a3ac0e614fefeec439e68c7c1636d558216dfe24081b182df86fe7e5cbd19ef"
+      "persistent_id": "d02fe90a618dbdc136eb40ef800518a5e76f8a8501671376993b84f998cceb50"
     }, "s6": {
-      "operation": "map",
+      "operation": "incremental_constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 3
+      },
+      "positions": [],
+      "persistent_id": "846f657032b4a8d58432c4914cec8b21e5acac396342f15bde80158d2ef91b4d"
+    }, "s7": {
+      "operation": "atomic_sum",
       "inputs": [
+        { "node": "s6", "output": 0 },
+        { "node": "s5", "output": 0 },
         { "node": "s3", "output": 0 }
       ],
       "calcite": {
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "abc70d0c9c7fa5edabc7ab8620ac4efcc936490e4a4989741ef5cf6580f3495c"
-    }, "s7": {
-      "operation": "neg",
-      "inputs": [
-        { "node": "s6", "output": 0 }
-      ],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "851dad2aea06a87a955f64945e81fa25abbbb066c1bbe6dcb4cc0eec7724c724"
+      "persistent_id": "179258bf40fafaebeee5addd1a59a1afbdba805e708f1c35df5a6518a78f125c"
     }, "s8": {
-      "operation": "integrate",
-      "inputs": [
-        { "node": "s7", "output": 0 }
-      ],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "8b60ca49e1157d0c33a81b44856f9e392160829191a561cdef086a700dbc6afc"
-    }, "s9": {
-      "operation": "constant",
-      "inputs": [],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "709ce0f34e555a7f66437071d82742f5b5600f6f88ffd8dbcf2248c1a6dccc94"
-    }, "s10": {
-      "operation": "atomic_sum",
-      "inputs": [
-        { "node": "s9", "output": 0 },
-        { "node": "s8", "output": 0 },
-        { "node": "s5", "output": 0 }
-      ],
-      "calcite": {
-        "partial": 3
-      },
-      "positions": [],
-      "persistent_id": "cbe6c9fee90d97c8f6f24ca1f610f33e412a8ae6e5e969f99f6d2935048da7fd"
-    }, "s11": {
       "operation": "inspect",
       "inputs": [
-        { "node": "s10", "output": 0 }
+        { "node": "s7", "output": 0 }
       ],
       "view": "v",
       "calcite": {
@@ -176,26 +146,26 @@
       "positions": [
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40}
       ],
-      "persistent_id": "e4bfa4fdad3f2e1ce4703cf4ceda741a201ffdf63d42768f4cc6a0eeeb0c6d5c"
-    }, "s12": {
-      "operation": "constant",
+      "persistent_id": "1fc18cb208f340bccdf5a06a3bca5c0404aef83fb1bff81674fdae89f4aa8875"
+    }, "s9": {
+      "operation": "incremental_constant",
       "inputs": [],
       "calcite": {
         "partial": 0
       },
       "positions": [],
-      "persistent_id": "49e7f59afc3b81729767ec6943e8856d1bc4dfc15320c84878e2965bbed27a98"
-    }, "s13": {
+      "persistent_id": "f11bcf8ec65979e96fa2b731905e9ce3c0652db849b907c7887295c8241eb2a6"
+    }, "s10": {
       "operation": "inspect",
       "inputs": [
-        { "node": "s12", "output": 0 }
+        { "node": "s9", "output": 0 }
       ],
       "view": "error_view",
       "calcite": {
         "final": 0
       },
       "positions": [],
-      "persistent_id": "6319dce2fa7caa4a4a37a98c2e1afecbd8fcad96599a7e15b54a0f61360b1257"
+      "persistent_id": "f096f7da73c7dd23ed44bfd97579a9aec79ee751ee932a9234af3730f01c9b44"
     }
   },
   "sources": [

@@ -2227,8 +2227,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // computed from this one come later; a stream added after this point is never summed.
             OutputPort collected;
             if (this.errorStreams.isEmpty()) {
-                DBSPSimpleOperator c = new DBSPConstantOperator(operator.getRelNode(),
-                        DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType()));
+                DBSPExpression empty = DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType());
+                DBSPSimpleOperator c = operator.input().kind() == StreamKind.DELTA ?
+                        new DBSPIncrementalConstantOperator(operator.getRelNode(), empty) :
+                        new DBSPConstantOperator(operator.getRelNode(), empty);
                 this.addOperator(c);
                 collected = c.outputPort();
             } else if (this.errorStreams.size() > 1) {

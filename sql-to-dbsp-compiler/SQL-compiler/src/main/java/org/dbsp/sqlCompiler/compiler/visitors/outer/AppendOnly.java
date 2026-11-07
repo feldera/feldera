@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Logger;
 
@@ -78,6 +79,11 @@ public class AppendOnly extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPConstantOperator node) {
+        this.copy(node);
+    }
+
+    @Override
+    public void postorder(DBSPIncrementalConstantOperator node) {
         this.copy(node);
     }
 
