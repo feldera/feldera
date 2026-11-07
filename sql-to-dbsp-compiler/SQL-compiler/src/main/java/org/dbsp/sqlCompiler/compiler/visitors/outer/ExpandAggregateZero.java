@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.annotation.GlobalAggregate;
+import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -29,6 +29,9 @@ import java.util.Map;
 /** Replaces the {@link DBSPAggregateZeroOperator} with a graph;
  * see the diagram in the definition of this operator. */
 public class ExpandAggregateZero extends Passes {
+    /** Tag of the region of the operators that implement the zero of a global aggregate */
+    static final String REGION = "agg_zero";
+
     // Maps the aggregate zero operators in recursive components to constant values that have be inserted
     // in the outer component.
     final Map<DBSPAggregateZeroOperator, DBSPExpression> zeros = new HashMap<>();
@@ -95,7 +98,7 @@ public class ExpandAggregateZero extends Passes {
         @Override
         public void postorder(DBSPAggregateZeroOperator operator) {
             int id = this.crdId++;
-            GlobalAggregate ga = new GlobalAggregate(id);
+            RegionAnnotation region = new RegionAnnotation(REGION, id);
 
             CalciteRelNode node = operator.getRelNode();
             DBSPExpression emptySetResult = operator.getFunction();
@@ -103,27 +106,27 @@ public class ExpandAggregateZero extends Passes {
             DBSPVariablePath _t = emptySetResult.getType().ref().var();
             DBSPClosureExpression toZero = emptySetResult.closure(_t);
             DBSPSimpleOperator map1 = new DBSPMapOperator(node.intermediate(), toZero, input)
-                    .addAnnotation(ga, DBSPSimpleOperator.class);
+                    .addAnnotation(region, DBSPSimpleOperator.class);
             this.addOperator(map1);
             DBSPSimpleOperator neg = new DBSPNegateOperator(node.intermediate(), map1.outputPort())
-                    .addAnnotation(ga, DBSPSimpleOperator.class);
+                    .addAnnotation(region, DBSPSimpleOperator.class);
             this.addOperator(neg);
             DBSPSimpleOperator constant;
             if (this.zeroOperators.containsKey(operator)) {
                 constant = Utilities.getExists(this.zeroOperators, operator);
                 DBSPSimpleOperator delta = new DBSPDeltaOperator(node.intermediate(), constant.outputPort())
-                        .addAnnotation(ga, DBSPSimpleOperator.class);
+                        .addAnnotation(region, DBSPSimpleOperator.class);
                 this.addOperator(delta);
                 constant = new DBSPIntegrateOperator(node.intermediate(), delta.outputPort())
-                        .addAnnotation(ga, DBSPSimpleOperator.class);
+                        .addAnnotation(region, DBSPSimpleOperator.class);
             } else {
                 constant = new DBSPConstantOperator(
                         node.intermediate(), new DBSPZSetExpression(emptySetResult))
-                        .addAnnotation(ga, DBSPSimpleOperator.class);
+                        .addAnnotation(region, DBSPSimpleOperator.class);
             }
             this.addOperator(constant);
             DBSPSimpleOperator sum = new DBSPAtomicSumOperator(node, Linq.list(constant.outputPort(), neg.outputPort(), input))
-                    .addAnnotation(ga, DBSPSimpleOperator.class);
+                    .addAnnotation(region, DBSPSimpleOperator.class);
             this.map(operator, sum);
         }
     }
