@@ -48,7 +48,6 @@ data: {
     keywords: [
       "INDEX"
       "IF"
-      "INTERNED"
       "LATENESS"
       "AGGREGATE"
       "LINEAR"

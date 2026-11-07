@@ -575,14 +575,6 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
-    public void testAntiJoinIntern() {
-        this.getCCS("""
-                CREATE TABLE T(x VARCHAR INTERNED, y INT);
-                CREATE TABLE S(x VARCHAR);
-                CREATE VIEW V AS SELECT T.x, y FROM T LEFT JOIN S ON T.x = S.x;""");
-    }
-
-    @Test
     public void issue4335() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(id INT, od INT, val DECIMAL(5, 2), ct INT, e BOOLEAN);
@@ -647,9 +639,9 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
-    public void variantNullIntern() {
+    public void variantNullLeftJoin() {
         this.getCC("""
-                CREATE TABLE T(X INT, C VARCHAR INTERNED);
+                CREATE TABLE T(X INT, C VARCHAR);
                 CREATE TABLE S(X INT, Z VARIANT);
                 CREATE MATERIALIZED VIEW V AS SELECT T.X, S.Z
                 FROM T LEFT JOIN S ON T.X = S.X;""");
@@ -1769,37 +1761,6 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CAST(mapp1 AS MAP<VARCHAR, INT>) AS to_map
                 FROM tbl;""", "Cast function cannot convert value of type ");
-    }
-
-    @Test
-    public void issue5359() {
-        this.getCCS("""
-                CREATE TABLE source (
-                    id VARCHAR NOT NULL,
-                    key VARCHAR NOT NULL INTERNED,
-                    version BIGINT
-                ) WITH ('append_only' = 'true');
-
-                CREATE TABLE lookup (
-                    key VARCHAR NOT NULL INTERNED PRIMARY KEY,
-                    metadata VARCHAR
-                );
-
-                CREATE LOCAL VIEW v
-                AS
-                SELECT
-                    id,
-                    MAX(key) as key
-                FROM source
-                GROUP BY id;
-
-                CREATE VIEW result
-                AS
-                SELECT
-                    a.key,
-                    l.metadata
-                FROM v a
-                LEFT JOIN lookup l ON a.key = l.key;""");
     }
 
     @Test

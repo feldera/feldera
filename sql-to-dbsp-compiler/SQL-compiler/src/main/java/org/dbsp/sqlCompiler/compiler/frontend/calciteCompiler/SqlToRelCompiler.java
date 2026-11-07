@@ -1402,7 +1402,6 @@ public class SqlToRelCompiler implements IWritesLogs {
             RexNode lateness = null;
             RexNode defaultValue = null;
             SourcePositionRange defaultValueRange = null;
-            boolean interned;
             if (col instanceof SqlExtendedColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
@@ -1426,7 +1425,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                     defaultValue = DBSPCompiler.timed("Calcite.defaults",
                             () -> this.validateDefaultValue(cd, cd.defaultValue, sources));
                 }
-                interned = cd.interned;
             } else if (col instanceof SqlPrimaryKey ||
                        col instanceof SqlForeignKey) {
                 continue;
@@ -1479,7 +1477,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness, defaultValue, defaultValueRange, interned);
+                    lateness, defaultValue, defaultValueRange);
             result.add(meta);
             if (isPrimaryKey) {
                 keyColumns.add(field);
@@ -1607,7 +1605,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
             colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
-                    field, false, nameIsQuoted, lateness, null, null, false);
+                    field, false, nameIsQuoted, lateness, null, null);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
                 this.validateColumnType(true, position, field.getType(), field.getName(), viewName);
             columns.add(meta);
@@ -2595,7 +2593,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RelDataType type = this.specToRel(cd.dataType, false);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
             var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
-                    Utilities.identifierIsQuoted(cd.name), null, null, null, cd.interned);
+                    Utilities.identifierIsQuoted(cd.name), null, null, null);
             columns.add(meta);
         }
         var result = new DeclareViewStatement(node, ProgramIdentifier.fromSqlId(cv.name), columns);

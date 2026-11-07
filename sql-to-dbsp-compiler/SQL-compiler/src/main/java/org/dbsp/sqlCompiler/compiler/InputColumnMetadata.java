@@ -30,15 +30,13 @@ public class InputColumnMetadata implements IColumnMetadata {
     public final DBSPExpression defaultValue;
     @Nullable
     public final SourcePositionRange defaultValuePosition;
-    public final boolean interned;
     /** Set during compilation */
     boolean unused;
 
     public InputColumnMetadata(CalciteObject node, ProgramIdentifier name, DBSPType type, boolean isPrimaryKey,
                                @Nullable DBSPExpression lateness,
                                @Nullable DBSPExpression defaultValue,
-                               @Nullable SourcePositionRange defaultValuePosition,
-                               boolean interned) {
+                               @Nullable SourcePositionRange defaultValuePosition) {
         this.node = node;
         this.name = name;
         this.type = type;
@@ -46,7 +44,6 @@ public class InputColumnMetadata implements IColumnMetadata {
         this.lateness = lateness;
         this.defaultValue = defaultValue;
         this.defaultValuePosition = defaultValuePosition;
-        this.interned = interned;
         this.unused = false;
     }
 
@@ -85,11 +82,6 @@ public class InputColumnMetadata implements IColumnMetadata {
         return this.isPrimaryKey;
     }
 
-    @Override
-    public boolean isInterned() {
-        return this.interned;
-    }
-
     public void asJson(ToJsonInnerVisitor visitor, boolean emitUsage) {
         visitor.stream.beginObject()
                 .label("name");
@@ -106,8 +98,10 @@ public class InputColumnMetadata implements IColumnMetadata {
             visitor.stream.label("defaultValue");
             this.defaultValue.accept(visitor);
         }
+        // Legacy field: the compiler does not support INTERNED columns now, but the
+        // persistent ids of deployed pipelines hash this field, so it is always false.
         visitor.stream.label("interned")
-                        .append(this.interned);
+                .append(false);
         if (emitUsage) {
             // We do not always emit the "unused" field for backwards compatibility.
             visitor.stream.label("unused")
@@ -126,9 +120,8 @@ public class InputColumnMetadata implements IColumnMetadata {
         DBSPExpression defaultValue = null;
         if (node.has("defaultValue"))
             defaultValue = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
-        boolean interned = Utilities.getBooleanProperty(node, "interned");
         var result = new InputColumnMetadata(CalciteObject.EMPTY, name, type, isPrimaryKey,
-                lateness, defaultValue, SourcePositionRange.INVALID, interned);
+                lateness, defaultValue, SourcePositionRange.INVALID);
         if (node.has("unused")) {
             boolean unused = Utilities.getBooleanProperty(node, "unused");
             if (unused)

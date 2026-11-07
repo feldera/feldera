@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.InternInner;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
@@ -159,29 +158,6 @@ public class Simplify extends ExpressionTranslator {
         DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.unwrap(expression.getNode(), expression.message);
         this.map(expression, result);
-    }
-
-    @Override
-    public void postorder(DBSPApplyExpression expression) {
-        String function = expression.getFunctionName();
-        if (function != null &&
-                function.equals(InternInner.uninternFunction) &&
-                expression.arguments.length == 1) {
-            DBSPExpression arg = this.getE(expression.arguments[0]);
-            if (arg.is(DBSPApplyExpression.class)) {
-                DBSPApplyExpression callee = arg.to(DBSPApplyExpression.class);
-                String calleeFunction = callee.getFunctionName();
-                if (calleeFunction != null &&
-                        calleeFunction.equals(InternInner.internFunction) &&
-                        callee.arguments.length == 1) {
-                    DBSPExpression calleeArg = callee.arguments[0];
-                    // unintern(intern(x)) = x
-                    this.map(expression, calleeArg);
-                    return;
-                }
-            }
-        }
-        super.postorder(expression);
     }
 
     @Override

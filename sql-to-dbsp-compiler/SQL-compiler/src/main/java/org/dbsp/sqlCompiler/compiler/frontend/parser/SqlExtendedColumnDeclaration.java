@@ -30,7 +30,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                 @Override
                 public SqlCall createCall(
                         @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 10);
+                    Utilities.enforce(operands.length == 9);
                     return new SqlExtendedColumnDeclaration(pos,
                             (SqlIdentifier) Objects.requireNonNull(operands[0]),
                             (SqlDataTypeSpec) Objects.requireNonNull(operands[1]),
@@ -40,8 +40,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                             extract((SqlNodeList) Objects.requireNonNull(operands[5])),
                             ((SqlLiteral) Objects.requireNonNull(operands[6])).booleanValue(),
                             operands[7],
-                            operands[8],
-                            ((SqlLiteral) Objects.requireNonNull(operands[9])).booleanValue());
+                            operands[8]);
                 }
             };
 
@@ -57,13 +56,12 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     public boolean primaryKey;
     public @Nullable SqlNode lateness;
     public @Nullable SqlNode defaultValue;
-    public boolean interned;
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType,
             @Nullable SqlNode expression, ColumnStrategy strategy,
             @Nullable SqlIdentifier foreignKeyTable, @Nullable SqlIdentifier foreignKeyColumn,
-            boolean primaryKey, @Nullable SqlNode lateness, boolean interned) {
+            boolean primaryKey, @Nullable SqlNode lateness) {
         super(pos);
         this.name = name;
         this.dataType = dataType;
@@ -78,14 +76,12 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
             this.foreignKeyColumns.add(foreignKeyColumn);
         this.primaryKey = primaryKey;
         this.lateness = lateness;
-        this.interned = interned;
     }
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType, @Nullable SqlNode expression,
             ColumnStrategy strategy, List<SqlIdentifier> foreignKeyTables, List<SqlIdentifier> foreignKeyColumns,
-            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode defaultValue,
-            boolean interned) {
+            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode defaultValue) {
         super(pos);
         this.name = name;
         this.dataType = dataType;
@@ -96,7 +92,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.primaryKey = primaryKey;
         this.lateness = lateness;
         this.defaultValue = defaultValue;
-        this.interned = interned;
     }
 
     @Override public List<SqlNode> getOperandList() {
@@ -105,8 +100,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                 new SqlNodeList(this.foreignKeyTables, SqlParserPos.ZERO),
                 new SqlNodeList(this.foreignKeyColumns, SqlParserPos.ZERO),
                 SqlLiteral.createBoolean(this.primaryKey, SqlParserPos.ZERO),
-                this.lateness, this.defaultValue,
-                SqlLiteral.createBoolean(this.interned, SqlParserPos.ZERO));
+                this.lateness, this.defaultValue);
     }
 
     public SqlExtendedColumnDeclaration setPrimaryKey(SqlParserPos pos) {
@@ -139,15 +133,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                     " already has lateness", CalciteObject.create(lateness));
         }
         this.lateness = lateness;
-        return this;
-    }
-
-    public SqlExtendedColumnDeclaration setInterned() {
-        if (this.interned) {
-            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
-                    " already marked as interned");
-        }
-        this.interned = true;
         return this;
     }
 

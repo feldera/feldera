@@ -24,22 +24,19 @@ public class SqlViewColumnDeclaration extends SqlCall {
                 @Override
                 public SqlCall createCall(
                         @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 3);
+                    Utilities.enforce(operands.length == 2);
                     return new SqlViewColumnDeclaration(pos,
                             (SqlIdentifier) Objects.requireNonNull(operands[0]),
-                            (SqlDataTypeSpec) Objects.requireNonNull(operands[1]),
-                            ((SqlLiteral) Objects.requireNonNull(operands[2])).booleanValue());
+                            (SqlDataTypeSpec) Objects.requireNonNull(operands[1]));
                 }
             };
     public final SqlIdentifier name;
     public final SqlDataTypeSpec dataType;
-    public final boolean interned;
 
-    public SqlViewColumnDeclaration(SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType, boolean interned) {
+    public SqlViewColumnDeclaration(SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType) {
         super(pos);
         this.name = name;
         this.dataType = dataType;
-        this.interned = interned;
     }
 
     public SqlOperator getOperator() {
@@ -47,7 +44,7 @@ public class SqlViewColumnDeclaration extends SqlCall {
     }
 
     public List<SqlNode> getOperandList() {
-        return ImmutableList.of(this.name, this.dataType, SqlLiteral.createBoolean(this.interned, SqlParserPos.ZERO));
+        return ImmutableList.of(this.name, this.dataType);
     }
 
     public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
@@ -55,10 +52,6 @@ public class SqlViewColumnDeclaration extends SqlCall {
         this.dataType.unparse(writer, 0, 0);
         if (Boolean.FALSE.equals(this.dataType.getNullable())) {
             writer.keyword("NOT NULL");
-        }
-
-        if (this.interned) {
-            writer.keyword("INTERNED");
         }
     }
 }

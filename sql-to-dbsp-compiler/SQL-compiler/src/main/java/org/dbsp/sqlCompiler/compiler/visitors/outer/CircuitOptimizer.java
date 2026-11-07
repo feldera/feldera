@@ -41,7 +41,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleHashes;
@@ -148,7 +147,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new LeftJoinChains(compiler));
         this.add(new UnusedFields(compiler));
         this.add(new RemoveUselessLeftJoins(compiler));
-        this.add(new Intern(compiler));
         this.add(new CSE(compiler));
         // First invocation, fuses aggregates and maps
         this.add(new FuseIntoArrayAgg(compiler));

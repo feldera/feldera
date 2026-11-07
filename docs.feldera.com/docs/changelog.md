@@ -31,6 +31,10 @@ Source edition can be found on github.
   after 120 seconds, including its response body.
 - Behavior change (Python SDK): `Pipeline.support_bundle()` no longer retries
   a bundle that collects new data, because each retry starts a new collection.
+- Incompatible change (SQL): the compiler no longer supports the `INTERNED`
+  column annotation, and a program that uses it fails to compile.  Remove the
+  annotation to get the same results.  `INTERNED` is no longer a reserved
+  keyword.
 
 ## v0.378.0
 

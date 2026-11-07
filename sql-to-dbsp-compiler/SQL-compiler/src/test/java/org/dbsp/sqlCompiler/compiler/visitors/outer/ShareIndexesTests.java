@@ -467,7 +467,7 @@ public class ShareIndexesTests extends StreamingTestBase {
             ProgramIdentifier column = new ProgramIdentifier(columns[i]);
             fields.add(new DBSPTypeStruct.Field(CalciteObject.EMPTY, column, i, INT));
             columnMetadata.add(new InputColumnMetadata(
-                    CalciteObject.EMPTY, column, INT, false, null, null, null, false));
+                    CalciteObject.EMPTY, column, INT, false, null, null, null));
         }
         DBSPTypeStruct struct = new DBSPTypeStruct(CalciteObject.EMPTY, tableName, fields, false);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
