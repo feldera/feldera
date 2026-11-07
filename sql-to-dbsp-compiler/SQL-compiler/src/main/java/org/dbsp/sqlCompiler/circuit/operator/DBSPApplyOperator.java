@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
  * from a {@link DBSPWaterlineOperator}, which replicates its output to all workers.
  * So it's never OK to have an apply operator process inputs from standard operators.
  * In the type system such inputs would show up as ZSets or IndexedZSets. */
-public final class DBSPApplyOperator extends DBSPUnaryOperator implements ILinear {
+public final class DBSPApplyOperator extends DBSPUnaryOperator implements ILinear, IPrimitive {
     public static void noZsets(DBSPType type) {
         Utilities.enforce(!type.is(DBSPTypeZSet.class));
         Utilities.enforce(!type.is(DBSPTypeIndexedZSet.class));

@@ -44,7 +44,7 @@ import java.util.List;
 
 /** Same as a map with identity function, but, unlike a {@link DBSPMapOperator},
  * the output can be an IndexedZSet. */
-public final class DBSPNoopOperator extends DBSPUnaryOperator implements ILinear {
+public final class DBSPNoopOperator extends DBSPUnaryOperator implements ILinear, IPrimitive {
     static DBSPClosureExpression getClosure(DBSPType sourceType) {
         if (sourceType.is(DBSPTypeZSet.class)) {
             DBSPVariablePath var = sourceType.to(DBSPTypeZSet.class).elementType.ref().var();

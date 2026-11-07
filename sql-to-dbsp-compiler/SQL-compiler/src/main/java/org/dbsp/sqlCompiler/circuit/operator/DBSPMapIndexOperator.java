@@ -42,7 +42,7 @@ import java.util.Objects;
 
 /** Generate an IndexedZSet by applying a function to every element of an input dataset.
  * Output is always an IndexedZSet.  Input can be a ZSet or an IndexedZSet */
-public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILinear {
+public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILinear, IPrimitive {
     static DBSPTypeIndexedZSet extractType(DBSPClosureExpression expression) {
         return new DBSPTypeIndexedZSet(expression.getResultType().to(DBSPTypeRawTuple.class));
     }

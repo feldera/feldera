@@ -38,7 +38,7 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPSumOperator extends DBSPSimpleOperator implements ILinear {
+public final class DBSPSumOperator extends DBSPSimpleOperator implements ILinear, IPrimitive {
     public DBSPSumOperator(CalciteRelNode node, List<OutputPort> inputs) {
         super(node, "sum", null, inputs.get(0).outputType());
         for (OutputPort op: inputs) {

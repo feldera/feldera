@@ -20,7 +20,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
  * which applies an arbitrary function to its 2 inputs.
  * The inputs and outputs cannot be Z-sets or indexed Z-sets.
  * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
-public final class DBSPApply2Operator extends DBSPBinaryOperator implements ILinear {
+public final class DBSPApply2Operator extends DBSPBinaryOperator implements ILinear, IPrimitive {
     public DBSPApply2Operator(CalciteRelNode node, DBSPClosureExpression function,
                               OutputPort left, OutputPort right) {
         super(node, "apply2", function, function.getResultType(), left, right);

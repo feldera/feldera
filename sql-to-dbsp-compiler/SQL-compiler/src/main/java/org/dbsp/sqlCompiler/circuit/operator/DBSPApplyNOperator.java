@@ -21,7 +21,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
  * The inputs and outputs cannot be Z-sets or indexed Z-sets.
  * The comments from {@link DBSPApplyOperator} apply to this operator as well.
  * All inputs must have the same type. */
-public final class DBSPApplyNOperator extends DBSPSimpleOperator implements ILinear {
+public final class DBSPApplyNOperator extends DBSPSimpleOperator implements ILinear, IPrimitive {
     public DBSPApplyNOperator(CalciteRelNode node, DBSPClosureExpression function,
                               List<OutputPort> inputs) {
         super(node, "apply_n", function, function.getResultType());
