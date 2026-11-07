@@ -76,7 +76,9 @@ use std::time::{Duration, Instant};
 use std::vec;
 use tokio::spawn;
 use tokio::sync::{Mutex, oneshot};
+#[cfg(feature = "postgresql_embedded")]
 use tokio::time::sleep;
+#[cfg(feature = "postgresql_embedded")]
 use tracing::info;
 use uuid::Uuid;
 
@@ -104,13 +106,6 @@ impl Drop for DbHandle {
 
     #[cfg(not(feature = "postgresql_embedded"))]
     fn drop(&mut self) {
-        use tokio_postgres::{Connection, Socket, tls::NoTlsStream};
-        use tokio_postgres_rustls::RustlsStream as TlsStream;
-        enum ConnWrapper {
-            Tls(Connection<Socket, TlsStream<Socket>>),
-            NoTls(Connection<Socket, NoTlsStream>),
-        }
-
         let _r = async {
             let db_name = self.config.get_dbname().unwrap_or("");
 
@@ -118,28 +113,13 @@ impl Drop for DbHandle {
             // database. Thus, we make a new connection.
             let mut config = self.config.clone();
             config.dbname("");
-            let (client, conn) = if let Some(tls_connector) =
-                self.db.db_config.tls_connector().expect("Can't setup tls")
-            {
-                let (client, conn) = config.connect(tls_connector).await.unwrap();
-                (client, ConnWrapper::Tls(conn))
-            } else {
-                let (client, conn) = config.connect(tokio_postgres::NoTls).await.unwrap();
-                (client, ConnWrapper::NoTls(conn))
-            };
-
+            let (client, conn) = config
+                .connect(self.db.db_config.tls_connector().expect("Can't setup tls"))
+                .await
+                .unwrap();
             tokio::spawn(async move {
-                match conn {
-                    ConnWrapper::Tls(c) => {
-                        if let Err(e) = c.await {
-                            eprintln!("connection error: {}", e);
-                        }
-                    }
-                    ConnWrapper::NoTls(c) => {
-                        if let Err(e) = c.await {
-                            eprintln!("connection error: {}", e);
-                        }
-                    }
+                if let Err(e) = conn.await {
+                    eprintln!("connection error: {}", e);
                 }
             });
 
@@ -231,7 +211,7 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
         config.user(&pguser);
     };
 
-    let test_db = format!("test_{}", rand::thread_rng().gen::<u32>());
+    let test_db = format!("test_{}", rand::random::<u32>());
     let (client, conn) = config
         .connect(tokio_postgres::NoTls)
         .await
@@ -247,7 +227,7 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
         .expect("Failure in test setup");
     drop(client);
 
-    debug!("tests connecting to: {config:#?}");
+    tracing::debug!("tests connecting to: {config:#?}");
 
     config.dbname(&test_db);
     let conn = StoragePostgres::connect(&db_config).await.unwrap();
