@@ -53,6 +53,11 @@ public class Annotations {
         this.annotations.add(annotation);
     }
 
+    /** Remove all annotations of the specified type. */
+    public <T extends Annotation> void remove(Class<T> clazz) {
+        this.annotations.removeIf(a -> a.is(clazz));
+    }
+
     public boolean contains(Predicate<Annotation> test) {
         return Linq.any(this.annotations, test);
     }

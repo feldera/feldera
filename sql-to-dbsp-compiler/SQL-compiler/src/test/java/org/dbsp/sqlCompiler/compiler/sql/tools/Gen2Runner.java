@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.Gen2JsonVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
@@ -345,7 +346,7 @@ public final class Gen2Runner {
         StringBuilder dataflow = new StringBuilder();
         ccs.compiler.getDataflow(dataflow, ccs.circuit);
         JsonNode mir = MAPPER.readTree(dataflow.toString()).get("mir");
-        ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(ccs.compiler, 1);
+        ToJsonOuterVisitor visitor = Gen2JsonVisitor.create(ccs.compiler, 1);
         visitor.apply(ccs.circuit);
         return "{\"mir\":" + mir + ",\"program_schema\":" + ccs.compiler.metadata.asJson()
                 + ",\"circuit_ir\":" + visitor.getJsonString() + "}";

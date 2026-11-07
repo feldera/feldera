@@ -60,12 +60,15 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         this.innerVisitor = innerVisitor;
     }
 
-    public static ToJsonOuterVisitor create(DBSPCompiler compiler, int verbosity) {
+    static ToJsonInnerVisitor createInner(DBSPCompiler compiler) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.setIndentAmount(1);
         JsonStream json = new JsonStream(stream);
-        ToJsonInnerVisitor inner = new ToJsonInnerVisitor(compiler, json, 1);
-        return new ToJsonOuterVisitor(compiler, verbosity, inner);
+        return new ToJsonInnerVisitor(compiler, json, 1);
+    }
+
+    public static ToJsonOuterVisitor create(DBSPCompiler compiler, int verbosity) {
+        return new ToJsonOuterVisitor(compiler, verbosity, createInner(compiler));
     }
 
     final List<Integer> propertyIndexStack = new ArrayList<>();

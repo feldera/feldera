@@ -252,6 +252,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new MerkleHashes(compiler));
         this.add(new TagRegions(compiler));
         this.add(new CircuitStatistics(compiler));
+        this.add(new Conditional(compiler, new Gen2Lowering(compiler), () -> options.ioOptions.gen2));
     }
 
     /** Every pass must leave a circuit with consistent stream kinds; when the testing option
