@@ -868,6 +868,12 @@ pub trait InputReader: Send + Sync {
     /// waits for approval and the endpoint starts reading again from the
     /// beginning.)
     ///
+    /// The controller waits for an endpoint to act on a command such as
+    /// [InputReaderCommand::Queue] until it acts on it or closes, even after
+    /// it asks the endpoint to [InputReaderCommand::Disconnect].  An endpoint
+    /// that stops acting on commands without closing makes the controller wait
+    /// forever.
+    ///
     /// An endpoint is often implemented in terms of a channel to a thread. In
     /// such a case, this can be implemented in terms of `is_closed` on the
     /// channel's sender.
