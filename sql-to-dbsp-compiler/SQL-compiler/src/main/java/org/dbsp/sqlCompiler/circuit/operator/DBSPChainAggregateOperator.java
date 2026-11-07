@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -50,6 +51,14 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator implements ILi
                     outputType, newInputs.get(0)).copyAnnotations(this);
         }
         return this;
+    }
+
+    /** Before incrementalization a chain aggregate reads a collection and stands for the integral
+     * of the chain aggregate of its changes; the output has the kind of the input. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.DELTA, StreamKind.COLLECTION);
+        return this.input().kind();
     }
 
     @Override
