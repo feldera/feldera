@@ -8,8 +8,7 @@ use dbsp::dynamic::DynData;
 use dbsp::operator::dynamic::accumulator::EnableCount;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::{Spine, TypedBatch};
-use dbsp::utils::Tup1;
-use dbsp::{Batch, Circuit as _, OrdZSet, Runtime};
+use dbsp::{Batch, Circuit as _, Runtime};
 use dbsp::{
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
     operator::{LazyMapHandle, MapHandle, ZSetHandle},
@@ -19,15 +18,13 @@ use feldera_adapterlib::{
     errors::controller::ControllerError, postprocess::PostprocessorRegistry,
     preprocess::PreprocessorRegistry,
 };
-use feldera_sqllib::{SqlString, SqlVariant, build_string_interner};
+use feldera_sqllib::SqlVariant;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
-use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::mem::transmute;
 use std::sync::{Arc, Mutex};
 
 pub use feldera_adapterlib::catalog::*;
@@ -157,8 +154,6 @@ impl CircuitCatalog for Catalog {
         self.postprocessor_registry.clone()
     }
 }
-
-const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
 
 pub type OutputMapping = BTreeMap<String, usize>;
 
@@ -690,22 +685,6 @@ impl Catalog {
     {
         let name = schema.name.clone();
         let circuit = stream.circuit();
-
-        if name == SqlIdentifier::new(INTERNED_STRING_RELATION_NAME, false) {
-            if TypeId::of::<Z>() != TypeId::of::<OrdZSet<Tup1<SqlString>>>() {
-                panic!(
-                    "Reserved relation {INTERNED_STRING_RELATION_NAME} must have type OrdZSet<Tup1<SqlString>>, but it was declared with type {}",
-                    std::any::type_name::<Z>()
-                );
-            } else {
-                let stream = unsafe {
-                    transmute::<Stream<RootCircuit, Z>, Stream<RootCircuit, OrdZSet<Tup1<SqlString>>>>(
-                        stream.clone(),
-                    )
-                };
-                build_string_interner(stream, None)
-            }
-        }
 
         let (stream, enable_count, _) = self.gather_output_to_host(&name, &stream, false, false);
 

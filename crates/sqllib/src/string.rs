@@ -11,7 +11,6 @@ use crate::variant::LegacyVariant;
 use crate::{
     array::Array, some_function1, some_function2, some_function3, some_function4,
     some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_null_function1,
-    string_interner::*,
 };
 
 use arcstr::ArcStr;
@@ -38,7 +37,6 @@ use tracing::warn;
 use xxhash_rust::xxh64::xxh64;
 
 type StringRef = ArcStr;
-pub type InternedString = InternedStringId;
 
 /// An immutable reference counted string.
 #[derive(
@@ -1039,22 +1037,6 @@ pub fn xxhash_s_i64(source: SqlString, seed: i64) -> i64 {
 }
 
 some_polymorphic_function2!(xxhash, s, SqlString, i64, i64, i64);
-
-#[doc(hidden)]
-pub fn intern(s: Option<SqlString>) -> Option<InternedString> {
-    s.map(|s| intern_string(&s))
-}
-
-#[doc(hidden)]
-pub fn unintern(id: Option<InternedString>) -> Option<SqlString> {
-    match id {
-        None => None,
-        Some(id) => match unintern_string(&id) {
-            Some(s) => Some(s),
-            None => panic!("Interning library has not returned a string for id='{id}'"),
-        },
-    }
-}
 
 #[cfg(test)]
 mod test {
