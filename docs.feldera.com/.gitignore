@@ -25,3 +25,6 @@ yarn-error.log*
 /static/python
 /static/openapi
 /openapi/
+
+# Copied from ../openapi.json at build time, served at /openapi.json
+/static/openapi.json

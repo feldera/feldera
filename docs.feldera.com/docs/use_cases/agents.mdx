@@ -28,6 +28,8 @@ An agent is only as good as its context. With Feldera, that context is a set of 
 - **Agents write SQL.** An agent can define the context it needs as a SQL view and deploy it. The views, no matter how complex, instantly reflect changes to inputs (live and historical data).
 - **Current context for every action.** When input data changes, agents instantly know what changed in the views they listen to or query.
 
+**Build it:** connect your sources, let the agent create views with [`fda create`](/interface/cli), and have it read them with [`fda exec`](/sql/ad-hoc) or subscribe to their changes over [HTTP](/connectors/sinks/http). See [How to build a use case](/use_cases/how-to-build).
+
 <UseCaseGrid items={[
   {
     kind: 'Demo',
@@ -63,10 +65,12 @@ An agent is only as good as its context. With Feldera, that context is a set of 
 
 ## Agent security
 
-Agents act for users, so each action needs a permission check. Fine-grained authorization models express permissions as a graph of users, agents, groups and resources. Feldera evaluates these graphs with [recursive SQL](/sql/recursion), and updates the results incrementally when a permission or a resource changes. [Auth0 FGA](https://www.feldera.com/blog/auth0-and-feldera-incrementally-computing-7-billion-permission-checks), part of Okta, uses Feldera to precompute billions of permission checks for AI agents and search.
+Agents act for users, so each action needs a permission check. Fine-grained authorization is a graph problem: permissions are a graph of users, agents, groups and resources, and a check asks whether a path connects a user to a resource. Feldera evaluates these graphs with [recursive SQL](/sql/recursion), and updates the results incrementally when a permission or a resource changes. The same pattern works for any graph: reachability, hierarchies and transitive closure. [Auth0 FGA](https://www.feldera.com/blog/auth0-and-feldera-incrementally-computing-7-billion-permission-checks), part of Okta, uses Feldera to precompute billions of permission checks for AI agents and search.
 
 - **Permission checks for every user and agent.** Feldera computes the access rights across deeply nested access graphs, so a check reads a precomputed answer.
 - **Current after each change.** When a permission changes, Feldera updates only the access rights that the change affects.
+
+**Build it:** load users, groups, objects and relationship tuples from [PostgreSQL CDC](/connectors/sources/postgresql-cdc) or [Kafka](/connectors/sources/kafka). Resolve permissions with [recursive views](/sql/recursion), and write the results to [Redis](/connectors/sinks/redis) or [PostgreSQL](/connectors/sinks/postgresql) for fast lookups. Start from the [static FGA](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/09-fine-grained-authorization.sql) or [dynamic FGA](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/10-dynamic-fga.sql) example SQL.
 
 <UseCaseGrid items={[
   {

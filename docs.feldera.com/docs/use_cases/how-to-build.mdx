@@ -1,0 +1,115 @@
+---
+title: How to build a use case
+description: Every Feldera use case has the same shape. Connect sources to SQL tables, write the logic as SQL views, and send the results out. Steps, example SQL and starting points for each use case.
+---
+
+import {FlowDiagram} from '@site/src/components/UseCases';
+
+# How to build a use case
+
+Every Feldera use case has the same shape. Input connectors feed changes into SQL tables. SQL views compute the answers, and Feldera keeps them current on every change. Output connectors, queries or a change stream deliver the results. To build your use case, start from the [example](#pick-a-starting-point) closest to it, then change the sources, the views and the outputs.
+
+<FlowDiagram
+  nodes={[
+    {label: 'Sources', sub: 'Lakehouse, Kafka, CDC'},
+    {label: 'SQL tables and views', sub: 'one Feldera pipeline'},
+    {label: 'Results', sub: 'sinks, queries, change stream'},
+  ]}
+  edges={['changes', 'changes']}
+/>
+
+## Steps
+
+### 1. Run Feldera
+
+Run Feldera locally with [Docker](/get-started/docker), or use the [online sandbox](/get-started/sandbox). Install the [`fda` CLI](/interface/cli) to manage pipelines from a terminal, a script or an agent.
+
+### 2. Declare tables and connect sources
+
+A table declares the shape of an input. Its `connectors` property says where the data comes from. This table loads a Delta Lake table, then follows new versions of it:
+
+```sql
+CREATE TABLE orders (
+    order_id BIGINT NOT NULL PRIMARY KEY,
+    customer_id BIGINT,
+    status VARCHAR,
+    total DECIMAL(12, 2)
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "delta_table_input",
+        "config": {"uri": "s3://lake/orders", "mode": "snapshot_and_follow"}
+    }
+}]');
+```
+
+See all [input connectors](/connectors/sources/): Delta Lake, Iceberg, Kafka, PostgreSQL CDC, Debezium, S3, HTTP and more.
+
+### 3. Write the logic as views
+
+Write the answers you need as SQL views. Views can use [full SQL](/sql), build on each other, and be [recursive](/sql/recursion). Declare a view `MATERIALIZED` to [query it](/sql/ad-hoc) at any time:
+
+```sql
+CREATE MATERIALIZED VIEW revenue_by_status AS
+SELECT status, COUNT(*) AS orders, SUM(total) AS revenue
+FROM orders
+GROUP BY status;
+```
+
+### 4. Send results out
+
+Attach [output connectors](/connectors/sinks/) to a view to write its changes to Kafka, Delta Lake, PostgreSQL, Redis and other destinations:
+
+```sql
+CREATE VIEW large_orders
+WITH ('connectors' = '[{
+    "transport": {
+        "name": "kafka_output",
+        "config": {"bootstrap.servers": "broker:9092", "topic": "large-orders"}
+    },
+    "format": {"name": "json"}
+}]')
+AS SELECT * FROM orders WHERE total > 10000;
+```
+
+### 5. Deploy and start
+
+```bash
+fda create my-pipeline program.sql
+fda start my-pipeline
+```
+
+You can also use the [web console](/interface/web-console), the [Python SDK](pathname:///python/) or the [REST API](/api) ([OpenAPI spec](pathname:///openapi.json)).
+
+### 6. Read the results
+
+Query a materialized view:
+
+```bash
+fda exec my-pipeline "SELECT * FROM revenue_by_status"
+```
+
+Or subscribe to a view's changes over [HTTP](/connectors/sinks/http). With `send_snapshot=true`, you get the current contents first, then every change:
+
+```bash
+curl -X POST 'http://localhost:8080/v0/pipelines/my-pipeline/egress/revenue_by_status?format=json&send_snapshot=true'
+```
+
+## Pick a starting point
+
+Each example below is a complete pipeline. Copy its SQL, then change the connectors and the views.
+
+| Use case | Sources | Views | Results | Start from |
+|---|---|---|---|---|
+| [Agent context](/use_cases/agents#instantly-fresh-context) | Any mix of historical and live data | Views that the agent defines and deploys with `fda` | Ad-hoc queries, HTTP change stream | [Agentic fraud detection](https://github.com/feldera/feldera-demos/tree/main/agentic-fraud-detection) |
+| [Fine-grained authorization](/use_cases/agents#agent-security) (a graph use case) | Users, groups, objects and relationship tuples from PostgreSQL CDC or Kafka | Recursive views that resolve nested permissions | Redis, PostgreSQL or Kafka for fast lookups | [Static FGA](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/09-fine-grained-authorization.sql), [dynamic FGA](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/10-dynamic-fga.sql), [FGA guide](/use_cases/fine_grained_authorization/intro) |
+| Other graphs: reachability, hierarchies, transitive closure | Node and edge tables from any source | [Recursive views](/sql/recursion) | Any output | The FGA examples, [recursive queries](/sql/recursion) |
+| [Real-time medallion](/use_cases/real-time-pipelines) | Bronze Delta Lake or Iceberg tables | Silver and gold views | Delta Lake | [Medallion SQL](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/01-medallion-architecture.sql), [guide](/use_cases/medallion_architecture/part1) |
+| [Lakehouse batch jobs](/use_cases/real-time-pipelines) | The batch job's Delta Lake, Iceberg or S3 tables | The job's SQL as views | Back to the lakehouse | [Batch analytics SQL](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/00-accelerating-batch-analytics.sql), [guide](/use_cases/batch/intro) |
+| [Streaming and CDC](/use_cases/real-time-pipelines) | Kafka, Debezium, PostgreSQL CDC | Views of any complexity | Kafka, PostgreSQL, Redis, HTTP | [Debezium PostgreSQL](https://github.com/feldera/feldera-demos/tree/main/debezium-postgres), [Debezium MySQL](https://github.com/feldera/feldera-demos/tree/main/debezium-mysql) |
+| [Fraud detection](/use_cases/fraud-detection) | Transactions and reference data from Kafka and Delta Lake | Rolling-window features | A model, or a feature store | [Fraud SQL](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/02-fraud-detection.sql), [feature engineering SQL](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/05-feature-engineering.sql), [guide](/use_cases/fraud_detection/) |
+
+More complete pipelines: [example SQL programs](https://github.com/feldera/feldera/tree/main/crates/pipeline-manager/demos/sql) and [runnable demos](https://github.com/feldera/feldera-demos).
+
+## Coming from Spark SQL
+
+The `felderize` skill in [Feldera Agent Skills](https://github.com/feldera/feldera-skills) translates Spark SQL to Feldera SQL. The [batch jobs guide](/use_cases/batch/intro) shows a full conversion.

@@ -109,6 +109,7 @@ const guides = {
             label: 'Use Cases',
             collapsed: false,
             items: [
+                'use_cases/how-to-build',
                 {
                     type: 'category',
                     label: 'Agents',

@@ -15,7 +15,7 @@ Learn Feldera step by step, or start from what you want to build.
 
 ## Use cases
 
-Guides and runnable demos, sorted by what you want to build.
+Guides and runnable demos, sorted by what you want to build. Every use case has the same shape: see [How to build a use case](/use_cases/how-to-build) for the steps and a starting point for each.
 
 <HubGrid />
 

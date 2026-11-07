@@ -25,6 +25,18 @@ A batch job computes all of its results again on each run, so the results are ol
 - **History and live data in one pipeline.** Load a snapshot from [Delta Lake](/connectors/sources/delta) or [Iceberg](/connectors/sources/iceberg), then continue on changes from [Kafka](/connectors/sources/kafka), [Debezium](/connectors/sources/debezium) or [PostgreSQL CDC](/connectors/sources/postgresql-cdc).
 - **Correct results.** Each view always equals the result of its query on all of the input. With [fault tolerance](/pipelines/fault-tolerance-overview), a pipeline continues from where it stopped after a crash.
 
+## Build it
+
+The steps are in [How to build a use case](/use_cases/how-to-build). The usual shapes:
+
+| Shape | Sources | Results | Start from |
+|---|---|---|---|
+| Real-time medallion | Bronze [Delta Lake](/connectors/sources/delta) or [Iceberg](/connectors/sources/iceberg) tables in `snapshot_and_follow` mode | Silver and gold views, written to [Delta Lake](/connectors/sinks/delta) | [Medallion SQL](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/01-medallion-architecture.sql) |
+| Lakehouse batch job | The job's lakehouse or [S3](/connectors/sources/s3) tables | The job's SQL as views, written back to the lakehouse | [Batch analytics SQL](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/00-accelerating-batch-analytics.sql) |
+| Streaming and CDC | [Kafka](/connectors/sources/kafka), [Debezium](/connectors/sources/debezium), [PostgreSQL CDC](/connectors/sources/postgresql-cdc) | [Kafka](/connectors/sinks/kafka), [PostgreSQL](/connectors/sinks/postgresql), [Redis](/connectors/sinks/redis) | The Debezium demos below |
+
+To port Spark SQL, use the `felderize` skill in [Feldera Agent Skills](https://github.com/feldera/feldera-skills).
+
 ## Guides and demos
 
 <UseCaseGrid items={[

@@ -1288,3 +1288,367 @@ blockquote {
     text-align: left;
   }
 }
+
+/* REST API "try it" panel (docusaurus-theme-openapi). It reuses --ifm-pre-color, which is light
+   for the onyx code blocks, on its own light panels. Give the panel dark text on warm greys. */
+.api-wrapper .col--5 {
+  --openapi-card-background-color: var(--color-sink);
+  --openapi-input-background: var(--color-card);
+  --openapi-input-border: var(--color-ink);
+  --ifm-pre-color: var(--color-ink);
+  --ifm-menu-color-background-active: var(--color-ink);
+}
+html[data-theme] .api-wrapper .col--5 input {
+  border: 1px solid var(--color-stone);
+}
+.api-wrapper .col--5 input::placeholder {
+  color: var(--color-surface-400);
+}
+
+/* REST API schemas: a flat field list split by hairlines, not a card per level. A nested object
+   is indented behind one guide line on its left. */
+.theme-api-markdown.theme-api-markdown.markdown table {
+  margin: 0 0 2.25rem;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.theme-api-markdown.theme-api-markdown.markdown table thead,
+.theme-api-markdown.theme-api-markdown.markdown table tr:has(> th) {
+  background: none;
+  border-bottom: 1px solid var(--color-stone);
+}
+.theme-api-markdown.theme-api-markdown.markdown table th {
+  padding: 0 0 0.5rem;
+  font: 600 var(--text-sm) / 1.4 var(--ifm-font-family-base);
+  letter-spacing: 0;
+  color: var(--color-ink);
+}
+.theme-api-markdown.theme-api-markdown.markdown table tr {
+  border-bottom: 1px solid var(--hair-12);
+}
+.theme-api-markdown.theme-api-markdown.markdown table td {
+  padding: 0.875rem 0;
+}
+.theme-api-markdown.theme-api-markdown.markdown table tbody > tr:last-child {
+  border-bottom: 0;
+}
+
+/* Nested levels. The response "Schema" table sits flush with a small label. A field's child
+   attributes open as one bordered box under their toggle, so depth shows only where you opened it. */
+.theme-api-markdown.theme-api-markdown.markdown td table {
+  margin: 0.75rem 0 0;
+}
+.theme-api-markdown.theme-api-markdown.markdown td table thead {
+  border-bottom-color: var(--hair-12);
+}
+.theme-api-markdown.theme-api-markdown.markdown td table th {
+  padding-top: 0.25rem;
+  font: 400 var(--text-3xs) / 1.4 var(--font-mono);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-surface-500);
+}
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table {
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-stone);
+  border-top: 0;
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--hair-12);
+}
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr {
+  border: 0;
+}
+
+/* "Show N child attributes" toggle, added by src/clientModules/api-child-attributes.ts.
+   Closed it is a small outlined button. Open it spans the width as the box's header. */
+.theme-api-markdown .api-child-hidden {
+  display: none !important;
+}
+.theme-api-markdown .api-child-toggle {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  font: 400 var(--text-xs) / 1.4 var(--ifm-font-family-base);
+  color: var(--color-surface-600);
+  background: none;
+  border: 1px solid var(--color-stone);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.theme-api-markdown .api-child-toggle:hover {
+  color: var(--color-ink);
+}
+.theme-api-markdown .api-child-toggle[aria-expanded="true"] {
+  display: flex;
+  width: 100%;
+  padding-block: 0.5rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+.theme-api-markdown .api-child-toggle::before {
+  content: "+";
+  width: 0.75rem;
+  margin-right: 0.375rem;
+}
+.theme-api-markdown .api-child-toggle[aria-expanded="true"]::before {
+  content: "−";
+}
+
+/* REST API field hierarchy, as on Stripe: the field name leads (bold mono, no chip), the type
+   and optional or required flags follow small and muted, and the description reads as body text. */
+.theme-api-markdown.markdown td > code:first-child {
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ink);
+  background: none;
+  border: 0;
+}
+.theme-api-markdown.markdown td > code:first-child ~ span,
+.theme-api-markdown.markdown td > code:first-child ~ strong {
+  font-size: var(--text-3xs);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  text-transform: lowercase;
+}
+.theme-api-markdown.markdown td > code:first-child ~ span {
+  margin-left: 0.25rem;
+  color: var(--color-surface-600);
+}
+.theme-api-markdown.markdown td > div p {
+  font-size: var(--text-sm);
+  color: var(--color-surface-600);
+}
+.theme-api-markdown.markdown td > div p > strong:first-child {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-surface-500);
+}
+.theme-api-markdown.markdown td > div p code {
+  font-size: 0.8em;
+}
+
+/* Response code: a heading for its schema, not a chip. */
+.theme-api-markdown.markdown td > div[style*="flex"] code {
+  padding: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-ink);
+  background: none;
+  border: 0;
+}
+.theme-api-markdown.markdown td > div[style*="flex"] {
+  align-items: baseline;
+  font-size: var(--text-sm);
+  color: var(--color-surface-600);
+}
+
+/* Two-column fields, as in Swagger UI. The left column holds the field head (name, then type and
+   flag), built by src/clientModules/api-child-attributes.ts and floated into the cell's left
+   padding; a table cell contains its floats. Open child boxes span both columns. */
+.theme-api-markdown.theme-api-markdown.markdown td.api-field {
+  padding: 0.6rem 0 0.6rem 15rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td.api-field {
+  padding: 0.6rem 1rem 0.6rem 16rem;
+}
+.theme-api-markdown .api-field-head {
+  float: left;
+  width: 14rem;
+  margin-left: -15rem;
+  padding-right: 1rem;
+}
+.theme-api-markdown .api-field-head > code {
+  display: block;
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--color-ink);
+  background: none;
+  border: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.theme-api-markdown .api-field-meta {
+  display: block;
+  margin-top: 0.15rem;
+  font: 400 var(--text-3xs) / 1.4 var(--font-mono);
+  color: var(--color-surface-500);
+}
+.theme-api-markdown .api-field-flag--required {
+  color: var(--openapi-required);
+}
+/* The description column starts level with the name. Later blocks keep a small gap. */
+.theme-api-markdown td.api-field > div:not(.api-field-head) {
+  margin-top: 0 !important;
+}
+.theme-api-markdown td.api-field > div:not(.api-field-head) ~ div:not(.api-field-head) {
+  margin-top: 0.4rem !important;
+}
+.theme-api-markdown td.api-field > div:not(.api-field-head) p {
+  margin-bottom: 0;
+  line-height: 1.45;
+}
+
+/* Tables take the column's width, so text wraps and long code scrolls in its own block. */
+.theme-api-markdown.theme-api-markdown.markdown table {
+  table-layout: fixed;
+  width: 100% !important;
+}
+.theme-api-markdown.markdown td pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.theme-api-markdown.markdown td.api-field > .api-child-toggle {
+  clear: left;
+}
+.theme-api-markdown.markdown td.api-field > .api-child-toggle[aria-expanded="true"] {
+  margin-left: -15rem;
+  width: calc(100% + 15rem) !important;
+}
+.theme-api-markdown.markdown td.api-field > .api-child-toggle + table {
+  margin-left: -15rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td.api-field > .api-child-toggle[aria-expanded="true"],
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td.api-field > .api-child-toggle + table {
+  margin-left: -15rem;
+}
+
+/* Rows inside a schema need no dividers: the name column carries the rhythm. */
+.theme-api-markdown.theme-api-markdown.markdown table tr:has(> td.api-field) {
+  border-bottom: 0;
+}
+
+/* Narrow content column: the head stacks above the description. */
+@media (max-width: 640px) {
+  .theme-api-markdown.theme-api-markdown.markdown td.api-field {
+    padding-left: 0;
+  }
+  .theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td.api-field {
+    padding-left: 1rem;
+  }
+  .theme-api-markdown .api-field-head {
+    float: none;
+    width: auto;
+    margin: 0 0 0.25rem;
+  }
+  .theme-api-markdown.markdown td.api-field > .api-child-toggle[aria-expanded="true"],
+  .theme-api-markdown.markdown td.api-field > .api-child-toggle + table,
+  .theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td.api-field > .api-child-toggle[aria-expanded="true"],
+  .theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody > tr > td.api-field > .api-child-toggle + table {
+    margin-left: 0;
+    width: 100% !important;
+  }
+}
+
+
+/* API pages: let the content column shrink below its widest code line, so the "try it" panel
+   stays on the right. Long code lines scroll inside their block instead. */
+.api-wrapper .row > .col {
+  min-width: 0;
+}
+
+/* API sections as cards: parameters and request body each in one card. Responses are a list of
+   cards, one per success code, and one "Errors" card per run of shared error responses. */
+.theme-api-markdown.theme-api-markdown.markdown > table.api-section:not(.api-responses) {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-bottom: 1.5rem;
+  background: var(--color-card);
+  border: 1px solid var(--color-stone);
+  border-radius: 0.5rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-section:not(.api-responses) > thead th {
+  padding: 0.75rem 1rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-section > tbody > tr > td {
+  padding-inline: 1rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-section > tbody > tr > td.api-field {
+  padding-left: 16rem;
+}
+
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses,
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > thead,
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody,
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > thead > tr,
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > thead th,
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr > td {
+  display: block;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > thead {
+  border-bottom: 0;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr {
+  display: block;
+  margin-top: 0.75rem;
+  background: var(--color-card);
+  border: 1px solid var(--color-stone);
+  border-radius: 0.5rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr > td {
+  padding: 0.875rem 1rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr.api-error {
+  margin-top: 0;
+  border-top-width: 0;
+  border-radius: 0;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr.api-error.api-error-first {
+  margin-top: 0.75rem;
+  border-top-width: 1px;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr.api-error.api-error-last {
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr.api-error.api-error-first.api-error-last {
+  border-radius: 0.5rem;
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr.api-error:not(.api-error-last) {
+  border-bottom-color: var(--hair-12);
+}
+.theme-api-markdown.theme-api-markdown.markdown > table.api-responses > tbody > tr.api-error > td {
+  padding-block: 0.6rem;
+}
+.theme-api-markdown .api-errors-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: -0.6rem -1rem 0.6rem;
+  padding: 0.6rem 1rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ink);
+  border-bottom: 1px solid var(--hair-12);
+}
+.theme-api-markdown .api-errors-head a {
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+.theme-api-markdown .api-status-default {
+  color: var(--color-surface-600);
+}
+
+/* An open child box is a block, not a table: Chrome treats calc() with a percentage in a table's
+   width as auto, so the box could not span both columns. Its tbody does the table layout. The
+   plugin's inline margin-top would leave a gap under the toggle. */
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table:not(.api-child-hidden) {
+  display: block !important;
+  width: auto !important;
+  max-width: none;
+  margin-top: 0 !important;
+}
+.theme-api-markdown.theme-api-markdown.markdown .api-child-toggle + table > tbody {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}

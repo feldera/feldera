@@ -25,6 +25,10 @@ A fraud model is only as good as its features. With Feldera, you write the featu
 - **Exact features for each transaction.** Joins and [rolling aggregates](/tutorials/time-series) are updated incrementally, so each feature vector is correct when the transaction arrives.
 - **Models in the loop.** A model can [read its inputs from a view and write its scores to a table](/use_cases/model_scoring/), so the pipeline measures its accuracy while it runs.
 
+## Build it
+
+Load transactions from [Kafka](/connectors/sources/kafka) and history from [Delta Lake](/connectors/sources/delta). Write the features as views with joins and rolling aggregates. Read feature vectors with an [HTTP change stream](/connectors/sinks/http) or write them to a feature store. Start from the [fraud detection](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/02-fraud-detection.sql) or [feature engineering](https://github.com/feldera/feldera/blob/main/crates/pipeline-manager/demos/sql/05-feature-engineering.sql) example SQL. The steps are in [How to build a use case](/use_cases/how-to-build).
+
 ## Guides and demos
 
 <UseCaseGrid items={[
