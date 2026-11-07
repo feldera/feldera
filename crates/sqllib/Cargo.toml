@@ -19,7 +19,6 @@ readme = { workspace = true }
 arcstr = { workspace = true, features = ["serde"] }
 base58 = { workspace = true }
 base64 = { workspace = true }
-blake3 = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 dbsp = { workspace = true }
@@ -37,7 +36,6 @@ num-traits = { workspace = true, features = ["std"] }
 once_cell = { workspace = true }
 paste = { workspace = true }
 parquet-variant = { workspace = true }
-quick_cache = { workspace = true, features = ["stats"] }
 regex = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "smallvec"] }
 ryu = { workspace = true }
@@ -49,13 +47,11 @@ smallstr = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-typedmap = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 feldera-macros = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh64"] }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 derive_more = { version = "1.0", features = ["not"] }
 proptest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

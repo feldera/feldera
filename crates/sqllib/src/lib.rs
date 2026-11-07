@@ -76,9 +76,6 @@ pub use regex::Regex;
 #[doc(hidden)]
 pub use source::{SourcePosition, SourcePositionRange};
 
-mod string_interner;
-pub use string_interner::{build_string_interner, intern_string, unintern_string};
-
 // Re-export these types, so they can be used in UDFs without having to import the dbsp crate directly.
 // Perhaps they should be defined in sqllib in the first place?
 pub use dbsp::algebra::{F32, F64};
