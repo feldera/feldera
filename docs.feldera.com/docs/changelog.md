@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL): the compiler no longer supports the `INTERNED`
+  column annotation, and a program that uses it fails to compile.  Remove the
+  annotation to get the same results.  `INTERNED` is no longer a reserved
+  keyword.
+
+## v0.379.0
+
 - Incompatible change (Enterprise, Kubernetes): with
   `kubernetesRunner.enablePerPipelineNamespace`, a pipeline can select a
   namespace with `resources.namespace` only if the operator lists the
@@ -17,24 +24,24 @@ Source edition can be found on github.
   as an exact name or a pattern.  Before, such a pipeline could select any
   namespace.  A pipeline that already runs in another namespace can still
   be stopped.
+
 - Iceberg input: in follow mode, a retry after a failed read no longer
   ingests the rows that the failed read already ingested. Before, a retry
   ingested them again, and a deleted row could get a negative weight on a
   table without a primary key.
+
 - OIDC (login and federated tokens): when a refresh of an issuer's signing
   keys fails, the API server keeps using the keys it fetched before, for up to
   1 hour.  Before, one failed fetch refused every token of that issuer with a
   401 for the refresh cooldown, which is 30 seconds for federated tokens.
+
 - Behavior change (support bundle): the download starts at once. While it
   collects new data, it writes a line every 10 seconds to `collection_log.txt`,
   so a proxy does not close a slow download. Each request to the pipeline stops
   after 120 seconds, including its response body.
+
 - Behavior change (Python SDK): `Pipeline.support_bundle()` no longer retries
   a bundle that collects new data, because each retry starts a new collection.
-- Incompatible change (SQL): the compiler no longer supports the `INTERNED`
-  column annotation, and a program that uses it fails to compile.  Remove the
-  annotation to get the same results.  `INTERNED` is no longer a reserved
-  keyword.
 
 ## v0.378.0
 
