@@ -824,7 +824,7 @@ impl Scheduler for DynamicScheduler {
 
 #[cfg(test)]
 mod test {
-    use std::{borrow::Cow, cell::RefCell, rc::Rc};
+    use std::{borrow::Cow, cell::RefCell, collections::BTreeSet, rc::Rc};
 
     use serde_json::{Value, json};
 
@@ -963,5 +963,65 @@ mod test {
         for (workers, hosts) in [(2, 2), (4, 2), (3, 3)] {
             run_on_hosts(workers, hosts, check_first_step_metadata);
         }
+    }
+
+    /// Builds this worker's copy of a circuit and prepares its scheduler
+    /// again, first for part of the circuit and then for all of it, as a
+    /// bootstrap does.  Checks that neither preparation creates an exchange,
+    /// and runs a transaction after each one.
+    ///
+    /// Every exchange takes its ID from [Runtime::sequence_next], so the check
+    /// is that a preparation takes no ID from it.
+    ///
+    /// # Arguments
+    ///
+    /// None.  The runtime must have more than one worker, because with one
+    /// worker the scheduler creates no exchanges.
+    ///
+    /// # Returns
+    ///
+    /// Nothing.  Panics if a preparation creates an exchange.
+    fn check_prepare_again_creates_no_exchanges() {
+        let runtime = Runtime::runtime().unwrap();
+        let before_build = runtime.sequence_next();
+        let (mut handle, source) = RootCircuit::build(|circuit| {
+            let source = circuit.add_source(Generator::new(|| 0usize));
+            source.inspect(|_| ());
+            Ok(source.local_node_id())
+        })
+        .unwrap();
+
+        // Building the circuit prepares the scheduler for the first time,
+        // which creates its broadcasts.  Each one takes an ID, as a broadcast
+        // that a later preparation created would.
+        assert!(
+            runtime.sequence_next() > before_build + 1,
+            "worker {}: the scheduler's broadcasts took no IDs",
+            Runtime::worker_index()
+        );
+
+        for nodes in [Some(BTreeSet::from([source])), None] {
+            let before = runtime.sequence_next();
+            handle
+                .executor
+                .prepare(&handle.circuit, nodes.as_ref())
+                .unwrap();
+
+            // Each read takes one ID.
+            assert_eq!(
+                runtime.sequence_next(),
+                before + 1,
+                "worker {}: preparing the scheduler again took an ID",
+                Runtime::worker_index()
+            );
+            handle.transaction().unwrap();
+        }
+    }
+
+    /// Preparing a scheduler again creates no exchanges.
+    #[test]
+    fn prepare_again_creates_no_exchanges() {
+        init_test_logger();
+        run_on_hosts(2, 1, check_prepare_again_creates_no_exchanges);
     }
 }
