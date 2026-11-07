@@ -175,6 +175,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public boolean noRust = false;
         @Parameter(names = "--enterprise", description = "Generate code supporting enterprise features")
         public boolean enterprise = false;
+        @Parameter(names = "--fips", description = "Generate code that uses the FIPS cryptographic module")
+        public boolean fips = false;
         @Parameter(names="-o", description = "Output file; stdout if not specified")
         public String outputFile = "";
         @Parameter(names="--errors", description = "Error output file; stderr if not specified")

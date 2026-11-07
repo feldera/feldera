@@ -12,7 +12,9 @@ COPY scripts/install-librdkafka.sh /tmp/install-librdkafka.sh
 # the crate expecting it cannot drift apart. A stale image fails loudly at the
 # pkg-config probe rather than building against the wrong version.
 COPY Cargo.lock /tmp/Cargo.lock
-RUN CARGO_LOCK=/tmp/Cargo.lock PREFIX=/usr/local bash /tmp/install-librdkafka.sh
+# AWS_LC_FIPS=1 is for images whose Rust side links aws-lc-fips-sys; see the script.
+ARG AWS_LC_FIPS=0
+RUN AWS_LC_FIPS=$AWS_LC_FIPS CARGO_LOCK=/tmp/Cargo.lock PREFIX=/usr/local bash /tmp/install-librdkafka.sh
 
 # The base image contains tools to build the code given that
 # we need a Java and Rust compiler to run alongside the pipeline manager

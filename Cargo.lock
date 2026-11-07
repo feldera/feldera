@@ -9401,6 +9401,7 @@ dependencies = [
  "tokio-postgres 0.7.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-postgres-rustls",
  "tokio-stream",
+ "toml_edit",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -13566,8 +13567,15 @@ checksum = "310068873db2c5b3e7659d2cc35d21855dbafa50d1ce336397c666e3cb08137e"
 dependencies = [
  "indexmap 2.14.2",
  "toml_datetime",
+ "toml_write",
  "winnow",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tonic"

@@ -123,6 +123,7 @@ fdlimit = { workspace = true }  # For: raising file descriptor limit
 fs_extra = { workspace = true }  # For: determine directory size
 nix = { workspace = true, features = ["signal"] }  # For: terminating process group
 tempfile = { workspace = true }
+toml_edit = { workspace = true }  # For: the patch tables of generated pipeline workspaces
 # Not used
 # These dependencies are not used by this crate, but by the generated pipeline crates.
 # They are provided such that they are included in the workspace `Cargo.lock`.

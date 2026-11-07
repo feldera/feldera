@@ -119,8 +119,13 @@ public final class MultiCratesWriter extends RustWriter {
             // non-deterministic build fingerprint forced a recompile on every
             // test invocation. Production pipelines keep the default features.
             adaptersOptions.append(", default-features = false");
+        List<String> features = new ArrayList<>();
         if (options.ioOptions.enterprise)
-            adaptersOptions.append(", features = [\"feldera-enterprise\"]");
+            features.add("\"feldera-enterprise\"");
+        if (options.ioOptions.fips)
+            features.add("\"fips\"");
+        if (!features.isEmpty())
+            adaptersOptions.append(", features = [").append(String.join(", ", features)).append("]");
         deps = deps.replace("$FEATURES", adaptersOptions.toString());
         cargoStream.println(deps);
 
