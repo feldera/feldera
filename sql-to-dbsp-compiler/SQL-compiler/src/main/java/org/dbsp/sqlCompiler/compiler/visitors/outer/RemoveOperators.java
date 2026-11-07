@@ -25,6 +25,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
+import org.dbsp.sqlCompiler.circuit.operator.IMultiOutput;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPAccumulatorOperator;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.DBSPIntegralOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -55,9 +58,9 @@ public class RemoveOperators extends CircuitCloneVisitor {
         return VisitDecision.STOP;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPOperatorWithError node) {
-        if (this.keep.contains(node)) {
+    /** Copies an operator with several outputs if it is kept. */
+    VisitDecision replaceMultiOutputIfKept(IMultiOutput node) {
+        if (this.keep.contains(node.asOperator())) {
             this.replaceMultiOutput(node);
         } else {
             Logger.INSTANCE.belowLevel(this, 2)
@@ -66,6 +69,21 @@ public class RemoveOperators extends CircuitCloneVisitor {
                     .newline();
         }
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPOperatorWithError node) {
+        return this.replaceMultiOutputIfKept(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAccumulatorOperator node) {
+        return this.replaceMultiOutputIfKept(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegralOperator node) {
+        return this.replaceMultiOutputIfKept(node);
     }
 
     @Override

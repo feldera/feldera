@@ -10,6 +10,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.ISplitInput;
+import org.dbsp.sqlCompiler.circuit.operator.ISplitOutput;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -188,6 +190,12 @@ public class CSE extends Repeat {
                     .appendSupplier(canonical::toString)
                     .newline();
             this.canonical.put(operator, canonical);
+            ISplitInput split = operator.as(ISplitInput.class);
+            if (split != null) {
+                DBSPOperator outputHalf = split.splitOutput().outputPort().node();
+                DBSPOperator canonicalOutputHalf = canonical.to(ISplitInput.class).splitOutput().outputPort().node();
+                this.setCanonical(outputHalf, canonicalOutputHalf);
+            }
         }
 
         @Override
@@ -226,13 +234,20 @@ public class CSE extends Repeat {
 
         @Override
         public void replace(DBSPSimpleOperator operator) {
+            if (this.remap.containsKey(operator.outputPort()))
+                // An output half that moved up to the position of an output half that it replaces
+                return;
             DBSPOperator replacement = this.canonical.get(operator);
             if (replacement == null || replacement == operator) {
                 super.replace(operator);
                 return;
             }
-            OutputPort newReplacement = this.mapped(replacement.to(DBSPSimpleOperator.class).outputPort());
-            this.map(operator.outputPort(), newReplacement, false);
+            OutputPort kept = replacement.to(DBSPSimpleOperator.class).outputPort();
+            if (kept.node().is(ISplitOutput.class) && !this.remap.containsKey(kept))
+                // An output half has no inputs, so the kept one can move up to the position of
+                // the one it replaces, which can precede it
+                this.map(kept, kept, true);
+            this.map(operator.outputPort(), this.mapped(kept), false);
         }
 
         @Override

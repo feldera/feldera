@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.circuit.operator.primitives.*;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
@@ -2172,6 +2173,46 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPIncrementalConstantOperator operator) {
         return this.constantSource(operator, "IncrementalConstantGenerator");
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDelayOutputOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDelayInputOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegralOutputOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegralInputOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAccumulatorOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegralOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPChainAggregateKernelOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPJoinKernelOperator operator) {
+        throw new InternalCompilerError("No Rust implementation for " + operator);
     }
 
     @Override

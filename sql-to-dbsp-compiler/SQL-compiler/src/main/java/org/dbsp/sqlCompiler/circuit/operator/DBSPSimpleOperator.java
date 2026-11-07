@@ -327,7 +327,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         return 1;
     }
 
-    record CommonInfo(
+    protected record CommonInfo(
             @Nullable DBSPExpression function,
             DBSPType outputType,
             List<OutputPort> inputs,
@@ -353,7 +353,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         }
     }
 
-    static CommonInfo commonInfoFromJson(JsonNode node, JsonDecoder decoder) {
+    protected static CommonInfo commonInfoFromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType outputType = fromJsonInner(node, "outputType", decoder, DBSPType.class);
         DBSPExpression function = null;
         if (node.has("function"))
