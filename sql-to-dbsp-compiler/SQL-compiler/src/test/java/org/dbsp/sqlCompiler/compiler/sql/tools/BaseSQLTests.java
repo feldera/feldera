@@ -48,6 +48,7 @@ import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Assume;
+import org.junit.AssumptionViolatedException;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.rules.TestName;
@@ -253,12 +254,26 @@ public class BaseSQLTests {
     /** The cases the running test registered for the Gen-2 engine. */
     final List<TestCase> gen2Cases = new ArrayList<>();
 
-    /** Runs the test's Gen-2 cases once its body has passed: the body adds a case's steps
-     * after it registers the case. */
+    /** Skips the test if the test or its class is marked {@link NeedsSupport}. */
+    static void assumeSupported(Description description) {
+        NeedsSupport needs = description.getAnnotation(NeedsSupport.class);
+        Class<?> testClass = description.getTestClass();
+        if (needs == null && testClass != null)
+            needs = testClass.getAnnotation(NeedsSupport.class);
+        if (needs == null)
+            return;
+        String reason = needs.value().isEmpty() ? "" : ": " + needs.value();
+        throw new AssumptionViolatedException("Needs support" + reason);
+    }
+
+    /** Runs a test using the gen2 runner. */
     @Rule
     public final TestRule gen2Run = (base, description) -> new Statement() {
         @Override
         public void evaluate() throws Throwable {
+            if (Gen2Runner.isEnabled()) {
+                assumeSupported(description);
+            }
             base.evaluate();
             for (TestCase testCase : BaseSQLTests.this.gen2Cases)
                 Gen2Runner.run(testCase);
