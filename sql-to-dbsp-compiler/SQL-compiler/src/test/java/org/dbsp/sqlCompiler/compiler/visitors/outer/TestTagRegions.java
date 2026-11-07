@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.annotation.GlobalAggregate;
+import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -57,19 +57,19 @@ public class TestTagRegions {
                 new TableMetadata(table, Linq.list(inputMeta), new ArrayList<>(), null, false, false, null),
                 table, StreamKind.COLLECTION, null);
         if (addAnnotation.test(source))
-            source.addAnnotation(new GlobalAggregate(0), DBSPSimpleOperator.class);
+            source.addAnnotation(new RegionAnnotation("agg_zero", 0), DBSPSimpleOperator.class);
         circuit.addOperator(source);
         DBSPVariablePath var = tuple.ref().var();
         DBSPClosureExpression id = new DBSPTupleExpression(var.deref().field(0)).closure(var);
         var map = new DBSPMapOperator(CalciteEmptyRel.INSTANCE, id, source.outputPort());
         if (addAnnotation.test(map))
-            map.addAnnotation(new GlobalAggregate(0), DBSPSimpleOperator.class);
+            map.addAnnotation(new RegionAnnotation("agg_zero", 0), DBSPSimpleOperator.class);
         circuit.addOperator(map);
         ViewMetadata vMeta = new ViewMetadata(view, new ArrayList<>(), SqlCreateView.ViewKind.STANDARD,
                 -1, false, false, null);
         var sink = new DBSPSinkOperator(CalciteEmptyRel.INSTANCE, view, "V", str, vMeta, map.outputPort());
         if (addAnnotation.test(sink))
-            sink.addAnnotation(new GlobalAggregate(0), DBSPSimpleOperator.class);
+            sink.addAnnotation(new RegionAnnotation("agg_zero", 0), DBSPSimpleOperator.class);
         circuit.addOperator(sink);
         return circuit;
     }
@@ -136,7 +136,7 @@ public class TestTagRegions {
         DBSPCircuit circuit = this.createCircuit(operator -> true);
         // Add one more conflicting annotation on the input
         var input = Objects.requireNonNull(circuit.getInput(new ProgramIdentifier("T"))).asOperator();
-        input.addAnnotation(new GlobalAggregate(1), DBSPSimpleOperator.class);
+        input.addAnnotation(new RegionAnnotation("agg_zero", 1), DBSPSimpleOperator.class);
         Assert.assertEquals(2, input.annotations.size());
 
         Assert.assertNotNull(circuit);
