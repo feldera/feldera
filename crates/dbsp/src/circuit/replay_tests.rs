@@ -7,7 +7,7 @@ use crate::{
     circuit::dbsp_handle::CircuitStorageConfig,
     default_hash, indexed_zset,
     operator::{
-        ConstantGenerator, Max, Min,
+        ConstantGenerator, IncrementalConstantGenerator, Max, Min,
         dynamic::balance::{BalancerHint, PartitioningPolicy},
         time_series::{RelOffset, RelRange},
     },
@@ -2893,6 +2893,54 @@ fn test_concurrent_constant_source_new_view() {
         |config| config,
         Arc::new(topo_constant_source_old),
         Arc::new(topo_constant_source_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// An incremental constant in the region of a new view.  The bootstrap circuit runs it
+// from a clear state, so the new view receives the constant once, as in a run from
+// scratch; after the cutover the live operator must not produce it again.
+
+#[allow(clippy::type_complexity)]
+fn topo_incremental_constant_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (input, ih) = circuit.add_input_zset::<u64>();
+    input.set_persistent_id(Some("t1"));
+    input.integrate_trace();
+    let out_old = input
+        .map(|x| x + 5)
+        .accumulate_output_persistent(Some("out_old"));
+
+    let c = circuit.add_source(IncrementalConstantGenerator::new(zset! { 1000u64 => 1 }));
+    c.set_persistent_id(Some("incremental_constant"));
+    let out_new = input
+        .map(|x| x * 3)
+        .plus(&c)
+        .accumulate_output_persistent(Some("out_new"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_incremental_constant_new_view() {
+    let p1 = weighted_sequence(0, 16, 1);
+    let p2 = weighted_sequence(16, 24, 1);
+    let p3 = weighted_sequence(24, 28, 1);
+    let p4 = negate_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<TestData1<u64>, TestData1<u64>, TestData1<u64>>(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(topo_constant_source_old),
+        Arc::new(topo_incremental_constant_new),
         p1,
         p2,
         p3,
