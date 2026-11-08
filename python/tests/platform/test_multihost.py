@@ -1,11 +1,10 @@
 import json
 
-from confluent_kafka import Producer
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT, enterprise_only
-from tests.kafka import kafka_topics
+from tests.kafka import kafka_producer, kafka_topics
 from .helper import gen_pipeline_name, wait_for_condition
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -352,7 +351,7 @@ def test_distributed_kafka_input(pipeline_name):
     n_partitions = 2 * FELDERA_TEST_NUM_HOSTS + 1
 
     with kafka_topics("distributed-input", num_partitions=n_partitions) as [topic]:
-        producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+        producer = kafka_producer()
         for record_id in range(n_records):
             producer.produce(
                 topic,
@@ -466,7 +465,7 @@ def test_distributed_kafka_input_resume(pipeline_name):
     with kafka_topics("distributed-input-resume", num_partitions=n_partitions) as [
         topic
     ]:
-        producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+        producer = kafka_producer()
 
         def produce(record_ids):
             for record_id in record_ids:
