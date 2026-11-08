@@ -66,28 +66,45 @@ public class ValueNumbering extends InnerVisitor {
                     (this.expensive ? "*" : "");
         }
 
-        /** Check if an expression has multiple users in one closure.
+        /** One use of an expression: operand 'operand' of 'user'.  'user' is a canonical expression, or
+         * a user without a value number.  If CSE never shares 'user', 'outer' is a use of 'user'. */
+        record Use(@Nullable Use outer, DBSPExpression user, int operand) {}
+
+        /** The distinct uses of this expression in 'closure'.  CSE never shares a borrow, clone, deref
+         * or tuple, so each use of such a user, combined with the operand, is a use of this expression.
+         *
+         * @param translation A map from expression to canonical expression.
+         * @param closure     Only the users that are in this closure, and not in a closure nested in it, count. */
+        Set<Use> uses(Map<DBSPExpression, CanonicalExpression> translation, DBSPClosureExpression closure) {
+            Set<Use> result = new HashSet<>();
+            for (ExpressionUser l : this.users) {
+                if (l.closure != closure)
+                    continue;
+                CanonicalExpression user = translation.get(l.expression);
+                if (user == null) {
+                    result.add(new Use(null, l.expression, l.operand));
+                } else if (ExpressionsCSE.neverShared(user.expression)) {
+                    Set<Use> outerUses = user.uses(translation, closure);
+                    if (outerUses.isEmpty())
+                        result.add(new Use(null, user.expression, l.operand));
+                    for (Use outer : outerUses)
+                        result.add(new Use(outer, user.expression, l.operand));
+                } else {
+                    result.add(new Use(null, user.expression, l.operand));
+                }
+            }
+            return result;
+        }
+
+        /** Check if an expression has multiple uses in one closure.
          *
          * @param translation A map from expression to canonical expression.
          * @param closure     Only the users that are in this closure, and not in a closure nested in it, count.
-         * @return True if there are at least 2 users. */
+         * @return True if there are at least 2 uses. */
         boolean manyUsers(Map<DBSPExpression, CanonicalExpression> translation, DBSPClosureExpression closure) {
             if (this.users.size() < 2)
                 return false;
-            Set<ExpressionUser> canon = new HashSet<>();
-            for (var l: this.users) {
-                if (l.closure != closure)
-                    continue;
-                if (translation.containsKey(l.expression)) {
-                    DBSPExpression canonical = translation.get(l.expression).expression;
-                    canon.add(new ExpressionUser(canonical, l.operand, l.closure));
-                } else {
-                    canon.add(l);
-                }
-                if (canon.size() > 1)
-                    return true;
-            }
-            return false;
+            return this.uses(translation, closure).size() > 1;
         }
     }
 

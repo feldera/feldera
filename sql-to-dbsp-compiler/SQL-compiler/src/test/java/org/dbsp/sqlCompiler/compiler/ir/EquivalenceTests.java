@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -327,6 +328,71 @@ public class EquivalenceTests {
         DBSPBlockExpression translated = cell.consumer.to(DBSPBlockExpression.class);
         Assert.assertFalse(uses(compiler, translated.contents.get(0), cell.variable));
         Assert.assertTrue(uses(compiler, translated.contents.get(1), cell.variable));
+    }
+
+    static int countClones(DBSPCompiler compiler, IDBSPInnerNode node) {
+        int[] count = new int[1];
+        new InnerVisitor(compiler) {
+            @Override
+            public void postorder(DBSPCloneExpression expression) {
+                count[0]++;
+            }
+        }.apply(node);
+        return count[0];
+    }
+
+    @Test
+    public void testCSEUnderWrappers() {
+        // CSE does not share borrows, clones, or tuples; the expression that they wrap is shared instead
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        // |t| Tup(f(&h(t.0)), g(&h(t.0))), where h returns a String
+        // After CSE:
+        // |t: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| h(((*t).0)));
+        // Tup2::new(f(&(*t_1)), g(&(*t_1)), )}
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPExpression borrowed = b.tuple(
+                b.call("f", b.call(b.str(), "h", b.field(t, 0)).borrow()),
+                b.call("g", b.call(b.str(), "h", b.field(t, 0)).borrow()));
+        IDBSPInnerNode result = cse(compiler, borrowed.closure(t));
+        assertCseVariables(compiler, result, 1);
+        // The borrows read the cell without a clone
+        Assert.assertEquals(0, countClones(compiler, result));
+
+        // |u| Tup(f(h(u.0).clone()), g(h(u.0).clone()))
+        // After CSE:
+        // |u: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| h(((*u).0)));
+        // Tup2::new(f(((*t_1).clone())), g(((*t_1).clone())), )}
+        DBSPVariablePath u = b.refVar(b.tup(b.i32()));
+        DBSPExpression cloned = b.tuple(
+                b.call("f", b.call(b.str(), "h", b.field(u, 0)).applyClone()),
+                b.call("g", b.call(b.str(), "h", b.field(u, 0)).applyClone()));
+        result = cse(compiler, cloned.closure(u));
+        assertCseVariables(compiler, result, 1);
+
+        // |v| k(&h(v.0)) + k(&h(v.0))
+        // Only k(&h(v.0)) gets a cell: h(v.0) has a single use, in the shared k(&h(v.0))
+        // After CSE:
+        // |v: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| k(&h(((*v).0))));
+        // ((*t_1) + (*t_1))}
+        DBSPVariablePath v = b.refVar(b.tup(b.i32()));
+        DBSPExpression sum = b.add(
+                b.call("k", b.call(b.str(), "h", b.field(v, 0)).borrow()),
+                b.call("k", b.call(b.str(), "h", b.field(v, 0)).borrow()));
+        result = cse(compiler, sum.closure(v));
+        assertCseVariables(compiler, result, 1);
+
+        // |w| Tup(h(w.0), h(w.0)): the tuple has no users, and each field is a use
+        // After CSE:
+        // |w: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| h(((*w).0)));
+        // Tup2::new((*t_1), (*t_1), )}
+        DBSPVariablePath w = b.refVar(b.tup(b.i32()));
+        DBSPExpression pair = b.tuple(b.call("h", b.field(w, 0)), b.call("h", b.field(w, 0)));
+        result = cse(compiler, pair.closure(w));
+        assertCseVariables(compiler, result, 1);
     }
 
     @Test

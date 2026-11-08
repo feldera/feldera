@@ -104,6 +104,15 @@ public class ExpressionsCSE extends ExpressionTranslator {
         return null;
     }
 
+    /** True for the expressions that CSE does not replace with variables; they only wrap or group values */
+    static boolean neverShared(DBSPExpression expression) {
+        return expression.is(DBSPBorrowExpression.class)
+                || expression.is(DBSPCloneExpression.class)
+                || expression.is(DBSPDerefExpression.class)
+                || expression.is(DBSPTupleExpression.class)
+                || expression.is(DBSPRawTupleExpression.class);
+    }
+
     /** Set the replacement for 'expression'.  This looks up the value numbering map,
      * and if there is no associated variable already storing this result, it maps 'expression' to 'result'.
      * @param expression  Expression to rewrite.
@@ -111,6 +120,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
      */
     @Override
     protected void map(DBSPExpression expression, DBSPExpression result) {
+        Utilities.enforce(!neverShared(expression));
         ValueNumbering.CanonicalExpression canonical = this.numbering.get(expression);
         DBSPClosureExpression owner = this.enclosingClosure();
         if (canonical != null && owner != null) {
@@ -128,8 +138,15 @@ public class ExpressionsCSE extends ExpressionTranslator {
                 Utilities.putNew(variables, canonical.expression, var);
                 this.assignments.add(new Assignment(owner, var, result, canonical.dependsOn));
             }
-            if (var != null)
-                result = var.deref().applyCloneIfNeeded();
+            if (var != null) {
+                // An immutable borrow of the shared value needs no clone
+                IDBSPInnerNode parent = this.getParent();
+                DBSPBorrowExpression borrow = parent == null ? null : parent.as(DBSPBorrowExpression.class);
+                if (borrow != null && !borrow.mut)
+                    result = var.deref();
+                else
+                    result = var.deref().applyCloneIfNeeded();
+            }
             // If variable hasn't been created now, use the 'result' received as parameter
         }
         if (!this.translationMap.containsKey(expression)) {
