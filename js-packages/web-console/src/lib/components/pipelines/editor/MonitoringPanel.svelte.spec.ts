@@ -48,7 +48,16 @@ type FakeLogsStream = {
 const pipelineLogsStreamMock = vi.fn<(...args: unknown[]) => Promise<FakeLogsStream>>()
 
 vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
-  usePipelineManager: () => ({ pipelineLogsStream: pipelineLogsStreamMock })
+  usePipelineManager: () => ({
+    pipelineLogsStream: pipelineLogsStreamMock,
+    // The Runtime tab polls these as soon as it mounts. Leave the metrics
+    // stream pending so the test does not spin on reconnects.
+    silence: () => ({
+      pipelineTimeSeriesStream: () => new Promise(() => {}),
+      getPipelineCheckpoints: async () => [],
+      getCheckpointStatus: async () => null
+    })
+  })
 }))
 
 // Imported AFTER vi.mock so the mock takes effect.
@@ -84,14 +93,14 @@ const buildFakeLogsStream = (): FakeLogsStream => ({
 let testCounter = 0
 const nextPipelineName = () => `logsearch-test-${++testCounter}`
 
-// The minimal `pipeline` prop MonitoringPanel needs to render the Logs tab: a name (used as
-// the localStorage / log-stream key), a status, and an empty `compilerOutput` so the error
+// The minimal `pipeline` prop MonitoringPanel needs to render the Logs tab: a name (the
+// log-stream key), a status, and an empty `compilerOutput` so the error
 // extraction it runs on mount finds nothing to report.
-const pipelineProp = (name: string) =>
+const pipelineProp = (name: string, status: 'Running' | 'Stopped' | 'Paused' = 'Stopped') =>
   ({
     current: {
       name,
-      status: 'Stopped',
+      status,
       compilerOutput: {}
     }
   }) as any
@@ -326,25 +335,20 @@ describe('MonitoringPanel — log-search wiring', () => {
 //
 // Ad-Hoc Queries and Changes Stream read/stream live pipeline data and must not
 // be reachable without `exec:pipeline_data`. Their tab triggers are hidden, and
-// a saved selection pointing at one of them is dropped to the first visible tab
-// on init (so a `read` caller never lands on a blank panel).
+// a selection that points at one of them is dropped to the first visible tab
+// (so a `read` caller never lands on a blank panel).
 
-// Mount MonitoringPanel with an explicit role and, optionally, a pre-seeded
-// saved-tab in localStorage. Returns once the Logs tab has rendered a row, which
-// proves a visible tab is active.
+// Mount MonitoringPanel with an explicit role. Returns once the Logs tab has
+// rendered a row, which proves a visible tab is active.
 async function mountGatingPanel(opts: {
   role: 'read' | 'write'
   hiddenTabs: string[]
-  currentTab: 'Logs' | null
-  seedTab?: string
+  currentTab: 'Logs' | 'Ad-Hoc Queries' | null
 }) {
   roleState.current = opts.role
   pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
 
   const name = nextPipelineName()
-  if (opts.seedTab) {
-    localStorage.setItem(`pipelines/${name}/currentMonitoringTab`, JSON.stringify(opts.seedTab))
-  }
 
   mountTarget = document.createElement('div')
   mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
@@ -356,13 +360,22 @@ async function mountGatingPanel(opts: {
       pipeline: pipelineProp(name),
       // The Performance tab label counts connector problems, so `inputs`/`outputs`
       // must be iterable even when empty.
-      metrics: { current: { inputs: [], outputs: [] } } as any,
+      metrics: metricsWithConnectors(),
       deleted: false,
       hiddenTabs: opts.hiddenTabs,
       currentTab: opts.currentTab
     }
   } as any)
 }
+
+const metricsWithConnectors = () => ({ current: { inputs: [], outputs: [] } }) as any
+
+const selectedTabText = () =>
+  document
+    .querySelector(
+      '[role="tab"][aria-selected="true"], [role="tab"][data-selected], [role="tab"][data-state="active"]'
+    )
+    ?.textContent ?? ''
 
 const tabTexts = () =>
   Array.from(document.querySelectorAll('[role="tab"]')).map((t) => t.textContent ?? '')
@@ -398,19 +411,109 @@ describe('MonitoringPanel — exec:pipeline_data tab gating', () => {
     expect(labels.some((t) => t.includes('Change'))).toBe(false)
   })
 
-  it('switches away from a saved forbidden tab to the first visible tab', async () => {
-    // A caller who once had access saved 'Ad-Hoc Queries'; on init as `read`, all
-    // other tabs but Logs are hidden, so the panel must land on Logs, not blank.
+  it('switches away from a hidden tab to the first visible tab', async () => {
+    // Ad-Hoc Queries is not available to a read caller, and every other tab but
+    // Logs is hidden, so the panel must land on Logs, not a blank panel.
     await mountGatingPanel({
       role: 'read',
       hiddenTabs: ['Errors', 'Performance', 'Samply', 'Health'],
-      currentTab: null,
-      seedTab: 'Ad-Hoc Queries'
+      currentTab: 'Ad-Hoc Queries'
     })
 
-    // Logs rows render → the saved 'Ad-Hoc Queries' was replaced by a visible tab.
+    // Logs rows render → the unavailable tab was replaced by a visible one.
     await expectRowMounted(0)
     expect(tabTexts().some((t) => t.includes('Ad-Hoc'))).toBe(false)
+  })
+})
+
+describe('MonitoringPanel — tab opened with a pipeline', () => {
+  afterEach(async () => {
+    await mounted?.unmount()
+    mounted = undefined
+    mountTarget?.remove()
+    mountTarget = undefined
+    localStorage.clear()
+    roleState.current = 'write'
+    vi.clearAllMocks()
+  })
+
+  const mountWithStatus = (
+    status: 'Running' | 'Stopped' | 'Paused',
+    currentTab: 'Logs' | null = null
+  ) => {
+    const name = nextPipelineName()
+    mountTarget = document.createElement('div')
+    mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
+    document.body.appendChild(mountTarget)
+    const view = render(MonitoringPanel, {
+      target: mountTarget,
+      props: {
+        pipeline: pipelineProp(name, status),
+        metrics: metricsWithConnectors(),
+        deleted: false,
+        hiddenTabs: [],
+        currentTab
+      }
+    } as any)
+    mounted = view
+    return { name, view }
+  }
+
+  it('opens Runtime when the pipeline has live stats', async () => {
+    const name = nextPipelineName()
+    localStorage.setItem(`pipelines/${name}/currentMonitoringTab`, JSON.stringify('Errors'))
+    mountTarget = document.createElement('div')
+    mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
+    document.body.appendChild(mountTarget)
+    mounted = render(MonitoringPanel, {
+      target: mountTarget,
+      props: {
+        pipeline: pipelineProp(name, 'Running'),
+        metrics: metricsWithConnectors(),
+        deleted: false,
+        hiddenTabs: [],
+        currentTab: null
+      }
+    } as any)
+
+    await expect.poll(() => selectedTabText()).toContain('Runtime')
+    // The old key is left untouched. The panel neither reads it nor writes the new tab.
+    expect(localStorage.getItem(`pipelines/${name}/currentMonitoringTab`)).toBe(
+      JSON.stringify('Errors')
+    )
+  })
+
+  it('opens Runtime for a paused pipeline', async () => {
+    mountWithStatus('Paused')
+    await expect.poll(() => selectedTabText()).toContain('Runtime')
+  })
+
+  it('opens Compiler when the pipeline is stopped', async () => {
+    mountWithStatus('Stopped')
+    await expect.poll(() => selectedTabText()).toContain('Compiler')
+  })
+
+  it('keeps a tab the caller already selected', async () => {
+    pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
+    mountWithStatus('Running', 'Logs')
+    await expectRowMounted(0)
+    expect(selectedTabText()).toContain('Logs')
+  })
+
+  it('picks again when another pipeline is opened', async () => {
+    const { view } = mountWithStatus('Stopped')
+    await expect.poll(() => selectedTabText()).toContain('Compiler')
+
+    await view.rerender({
+      pipeline: pipelineProp('other-pipeline', 'Running'),
+      metrics: metricsWithConnectors(),
+      deleted: false,
+      hiddenTabs: [],
+      // Leftover selection from the pipeline that was just open.
+      currentTab: 'Errors'
+    })
+
+    await expect.poll(() => selectedTabText()).toContain('Runtime')
   })
 })
 

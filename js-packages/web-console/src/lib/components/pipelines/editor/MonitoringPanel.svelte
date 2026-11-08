@@ -13,7 +13,6 @@
 <script lang="ts">
   import { count } from 'common-lib/array'
   import CompactSwitch from '#lib/components/common/CompactSwitch.svelte'
-  import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
   import PanelAdHocQuery from '#lib/components/pipelines/editor/TabAdHocQuery.svelte'
   import PanelChangeStream from '#lib/components/pipelines/editor/TabChangeStream.svelte'
@@ -25,9 +24,8 @@
   import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
   import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
   import { statusCounterClass, statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
-  import { untrack } from 'svelte'
+  import { isMetricsAvailable } from '#lib/functions/pipelines/status.ts'
   import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
-  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
   import { ClipboardCopyButton, Tooltip } from 'common-ui'
   import DownloadSupportBundle from '#lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
@@ -66,7 +64,7 @@
   const layoutSettings = useLayoutSettings()
 
   // Ad-Hoc Queries and Changes Stream read/stream live pipeline data; both are
-  // hidden without exec:pipeline_data. `$effect.pre` below then drops a saved
+  // hidden without exec:pipeline_data. `$effect.pre` below then drops a
   // selection that points at a now-hidden tab back to the first visible tab.
   const canQueryData = usePermission('exec:pipeline_data')
   const dataTabs: MonitoringTabs[] = ['Ad-Hoc Queries', 'Changes Stream']
@@ -126,29 +124,33 @@
       (tab) => !hiddenTabs.includes(tab.id) && (canQueryData.allowed || !dataTabs.includes(tab.id))
     )
   )
-  const currentTabStorage = $derived(
-    useLocalStorage<MonitoringTabs>('pipelines/' + pipelineName + '/currentMonitoringTab', 'Errors')
-  )
-  $effect.pre(() => {
-    // Initialize from storage, or reset to first available tab if current is hidden
-    if (!tabs.some((t) => t.id === currentTab)) {
-      currentTab = tabs.some((t) => t.id === currentTabStorage.value)
-        ? currentTabStorage.value
-        : tabs[0].id
-    }
-  })
-  $effect(() => {
-    if (currentTab !== null) {
-      currentTabStorage.value = currentTab
-    }
-  })
+  // The pipeline page keeps this panel mounted across pipelines, and the parent
+  // keeps `currentTab` too. Choose once per pipeline: Runtime when that pipeline
+  // has live stats, otherwise the first visible tab (Compiler, unless hidden).
+  // A click after that stays until the next pipeline. An explicit tab passed in
+  // on the first mount is kept, so a caller can still open Logs directly.
+  let tabChosenFor = $state<string | null>(null)
 
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
-  const forgetCurrentTab = async () => currentTabStorage.remove()
-  $effect(() => {
-    untrack(() => pipelineActionCallbacks.add('', 'delete', forgetCurrentTab))
-    return () => {
-      pipelineActionCallbacks.remove('', 'delete', forgetCurrentTab)
+  const defaultTab = (): MonitoringTabs => {
+    if (
+      tabs.some((tab) => tab.id === 'Performance') &&
+      isMetricsAvailable(pipeline.current.status) === 'yes'
+    ) {
+      return 'Performance'
+    }
+    return tabs[0].id
+  }
+
+  $effect.pre(() => {
+    const name = pipelineName
+    const visible = tabs.some((tab) => tab.id === currentTab)
+    if (tabChosenFor !== name) {
+      if (tabChosenFor !== null || !visible) {
+        currentTab = defaultTab()
+      }
+      tabChosenFor = name
+    } else if (!visible) {
+      currentTab = tabs[0].id
     }
   })
 

@@ -129,9 +129,9 @@ test.describe('Profile viewer', () => {
 /**
  * Navigate to the pipeline page and open the support-bundle dropdown.
  *
- * MonitoringPanel defaults to the "Compiler" tab, whose tabBarEnd does NOT
- * include the support-bundle controls. Switching to the "Runtime" tab surfaces
- * TabBarEndPipelineInfo, which renders DownloadSupportBundle.
+ * A running pipeline opens on Runtime. That tab's toolbar renders
+ * DownloadSupportBundle. Select Runtime so the controls are present even
+ * when the pipeline is not running.
  */
 async function openSupportBundleControls(page: Page) {
   await page.goto(`/pipelines/${PIPELINE_NAME}`)
