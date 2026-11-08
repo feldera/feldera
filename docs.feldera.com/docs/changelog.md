@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Web Console: opening a pipeline that has live stats (running, paused,
+  bootstrapping, and the other states that report them) shows the Runtime tab.
+  The monitoring panel no longer reopens whichever tab was selected last time.
+
 ## v0.380.0
 
 - Incompatible change (SQL): the compiler no longer supports the `INTERNED`
