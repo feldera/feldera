@@ -24,10 +24,9 @@ from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 import fastavro
-from confluent_kafka import Producer
 from feldera import Pipeline, PipelineBuilder
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
-from tests.kafka import kafka_topics
+from tests.kafka import kafka_producer, kafka_topics
 from tests.platform.helper import wait_for_condition
 
 # Debezium envelope schema of the Avro stream.  It has no `is_delete` or `ts`
@@ -82,7 +81,7 @@ def _produce(
     topic: str, messages: list[bytes], first_change: int = FIRST_CHANGE
 ) -> None:
     """Produce `messages` oldest first, stamped one second apart."""
-    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+    producer = kafka_producer()
     for index, message in enumerate(messages):
         producer.produce(topic, value=message, timestamp=first_change + index * 1_000)
     remaining = producer.flush(timeout=30)

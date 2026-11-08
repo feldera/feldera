@@ -11,13 +11,13 @@ been decided, so the observed row set is final.
 import json
 from typing import Any, Optional
 
-from confluent_kafka import Producer
 from feldera import Pipeline, PipelineBuilder
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
 from tests.kafka import (
     create_topic,
     delete_topic_best_effort,
     kafka_admin,
+    kafka_producer,
     random_topic,
 )
 from tests.platform.helper import wait_for_condition
@@ -29,7 +29,7 @@ def _produce(
     topic: str, records: list[tuple[int, Optional[list[tuple[str, bytes]]]]]
 ) -> None:
     """Produce ``{"id": <id>}`` messages, each with the given headers (or none)."""
-    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+    producer = kafka_producer()
     for record_id, headers in records:
         producer.produce(
             topic,

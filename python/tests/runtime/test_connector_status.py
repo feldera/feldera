@@ -2,7 +2,6 @@ import json
 from datetime import datetime
 from typing import Any
 
-from confluent_kafka import Producer
 from feldera import Pipeline, PipelineBuilder
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
@@ -10,13 +9,14 @@ from tests.kafka import (
     create_topic,
     delete_topic_best_effort,
     kafka_admin,
+    kafka_producer,
     random_topic,
 )
 from tests.platform.helper import gen_pipeline_name, wait_for_condition
 
 
 def _produce_records(topic: str, values: list[str]) -> None:
-    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+    producer = kafka_producer()
     for value in values:
         producer.produce(topic, value=value.encode("utf-8"))
     remaining = producer.flush(timeout=30)
