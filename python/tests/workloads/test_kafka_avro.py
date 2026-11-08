@@ -13,6 +13,7 @@ import json
 import socket
 import uuid
 from datetime import datetime, timedelta
+from typing import Iterable
 
 _KAFKA_BOOTSTRAP = None
 _SCHEMA_REGISTRY = None
@@ -104,6 +105,32 @@ def delete_kafka_topics(admin: AdminClient, topics: list[str]):
             print(f"Deleted topic: {topic}")
         except Exception as e:
             print(f"Failed to delete {topic}: {e}")
+
+
+# The creation date that `Variant` writes into a topic name, as in
+# `<pipeline name>_topic2_20261108_ab12`.
+_TOPIC_DATE = re.compile(r"_topic2?_(\d{8})_[0-9a-f]{4}$")
+
+
+def stale_topics(topics: Iterable[str], cutoff: str) -> list[str]:
+    """Select the topics of this test that were created before a cutoff date.
+
+    Only the creation date in the name counts, so the topics of a recent run,
+    which another job may still be using, stay.
+
+    Args:
+        topics: Names of the topics in the cluster.
+        cutoff: A date as `%Y%m%d`; topics created before it are stale.
+
+    Returns:
+        The names of the stale topics, in the order of `topics`.
+    """
+    stale = []
+    for topic in topics:
+        match = _TOPIC_DATE.search(topic)
+        if "kafka_avro" in topic and match and match.group(1) < cutoff:
+            stale.append(topic)
+    return stale
 
 
 def delete_schema_subjects(registry_url: str, subjects: list[str]):
@@ -407,17 +434,7 @@ class TestKafkaAvro(unittest.TestCase):
 
         admin = get_kafka_admin()
         cutoff = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
-
-        topics_to_delete = []
-        for topic in admin.list_topics().topics:
-            if "kafka_avro" in topic:
-                try:
-                    if topic.split("_")[4] < cutoff:
-                        topics_to_delete.append(topic)
-                except IndexError:
-                    # Skip if topic doesn't have expected format
-                    pass
-
+        topics_to_delete = stale_topics(admin.list_topics().topics, cutoff)
         if topics_to_delete:
             print(f"Deleting {len(topics_to_delete)} stale topics: {topics_to_delete}")
             delete_kafka_topics(admin, topics_to_delete)
@@ -434,6 +451,20 @@ class TestKafkaAvro(unittest.TestCase):
         for cfg in configs_to_run:
             print(f"\n Running pipeline variant id = {cfg['id']}")
             create_and_run_pipeline_variant(cfg)
+
+
+def test_stale_topics_spares_recent_runs():
+    """Only this test's topics from before the cutoff are stale, so a run
+    leaves the topics of a recent run alone."""
+    variant = Variant(
+        TestKafkaAvro.TEST_CONFIGS[1], unique_pipeline_name("test_kafka_avro_1")
+    )
+    recent = [variant.topic1, variant.topic2]
+    old = [re.sub(r"_\d{8}_", "_20000101_", topic) for topic in recent]
+    other_test = "connector-errors-input-0a34f7998e7a"
+    cutoff = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
+
+    assert stale_topics(recent + old + [other_test], cutoff) == old
 
 
 # To run all pipelines in this test file:
