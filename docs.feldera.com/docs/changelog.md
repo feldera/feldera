@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.380.0
+
 - Incompatible change (SQL): the compiler no longer supports the `INTERNED`
   column annotation, and a program that uses it fails to compile.  Remove the
   annotation to get the same results.  `INTERNED` is no longer a reserved
