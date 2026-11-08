@@ -3,6 +3,7 @@ import unittest
 from feldera import PipelineBuilder
 from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
+from tests.kafka import BROKER_DEFAULT_REPLICATION_FACTOR
 import time
 import os
 from confluent_kafka.admin import AdminClient, NewTopic
@@ -396,7 +397,7 @@ class TestKafkaAvro(unittest.TestCase):
             "create_topic": True,
             "start_from": "earliest",
             "num_partitions": 3,  # pre-create topic with 3 partitions
-            "replication_factor": 1,
+            "replication_factor": BROKER_DEFAULT_REPLICATION_FACTOR,
         },
     ]
 
