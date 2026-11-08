@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
@@ -17,15 +18,18 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -240,6 +244,89 @@ public class EquivalenceTests {
         }
         DBSPClosureExpression closure = b.tuple(sums).closure(t);
         assertCseVariables(compiler, cse(compiler, closure), 1);
+    }
+
+    @Test
+    public void testCSEBlockInitializerAndResult() {
+        // A let initializer and a block result each count as a user of f(t.0)
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        // |t| { let a = f(t.0); Tup(a, g(f(t.0))) }
+        // After CSE:
+        // |t: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| f(((*t).0)));
+        // {
+        //     let a: i32 = (*t_1);
+        //     Tup2::new(a, g((*t_1)), )
+        // }}
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPLetStatement a = new DBSPLetStatement("a", b.call("f", b.field(t, 0)));
+        DBSPExpression initializer = new DBSPBlockExpression(Linq.list(a),
+                b.tuple(a.getVarReference(), b.call("g", b.call("f", b.field(t, 0)))));
+        IDBSPInnerNode result = cse(compiler, initializer.closure(t));
+        assertCseVariables(compiler, result, 1);
+        assertResolves(compiler, result);
+
+        // |u| { let c = f(u.0); f(u.0) }
+        // After CSE:
+        // |u: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| f(((*u).0)));
+        // {
+        //     let c: i32 = (*t_1);
+        //     (*t_1)
+        // }}
+        DBSPVariablePath u = b.refVar(b.tup(b.i32()));
+        DBSPLetStatement c = new DBSPLetStatement("c", b.call("f", b.field(u, 0)));
+        DBSPExpression last = new DBSPBlockExpression(Linq.list(c), b.call("f", b.field(u, 0)));
+        result = cse(compiler, last.closure(u));
+        assertCseVariables(compiler, result, 1);
+        assertResolves(compiler, result);
+    }
+
+    /** True if 'node' contains a reference to a variable with the name of 'var' */
+    static boolean uses(DBSPCompiler compiler, IDBSPInnerNode node, DBSPVariablePath var) {
+        boolean[] found = new boolean[1];
+        new InnerVisitor(compiler) {
+            @Override
+            public void postorder(DBSPVariablePath path) {
+                if (path.variable.equals(var.variable))
+                    found[0] = true;
+            }
+        }.apply(node);
+        return found[0];
+    }
+
+    @Test
+    public void testCSEInitializerAfterReturn() {
+        // The LazyCell for f(t.0) is declared before the block, but the guard does not read it,
+        // so f(t.0) is not evaluated when the block returns early
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        // |t| { if !c(t.0) { return None; } let a = f(t.0); Some(g(a, f(t.0))) }
+        // After CSE:
+        // |t: &Tup1<i32>|
+        // {let t_1 = LazyCell::new(|| f(((*t).0)));
+        // {
+        //     (if (! c(((*t).0))) {
+        //         return (i32?)null;
+        //     });
+        //     let a: i32 = (*t_1);
+        //     Some(g(a, (*t_1)))
+        // }}
+        DBSPVariablePath t = b.refVar(b.tup(b.i32()));
+        DBSPExpression guard = new DBSPIfExpression(CalciteObject.EMPTY,
+                b.call(b.bool(), "c", b.field(t, 0)).not(),
+                new DBSPReturnExpression(CalciteObject.EMPTY, b.i32n().none()), null);
+        DBSPLetStatement a = new DBSPLetStatement("a", b.call("f", b.field(t, 0)));
+        DBSPExpression block = new DBSPBlockExpression(
+                Linq.list(new DBSPExpressionStatement(guard), a),
+                b.call("g", a.getVarReference(), b.call("f", b.field(t, 0))).some());
+        IDBSPInnerNode result = cse(compiler, block.closure(t));
+        assertCseVariables(compiler, result, 1);
+        assertResolves(compiler, result);
+
+        DBSPLetExpression cell = result.to(DBSPClosureExpression.class).body.to(DBSPLetExpression.class);
+        DBSPBlockExpression translated = cell.consumer.to(DBSPBlockExpression.class);
+        Assert.assertFalse(uses(compiler, translated.contents.get(0), cell.variable));
+        Assert.assertTrue(uses(compiler, translated.contents.get(1), cell.variable));
     }
 
     @Test

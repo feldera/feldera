@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -160,12 +162,21 @@ public class ValueNumbering extends InnerVisitor {
         this.checkRepresentation(literal, repr, false);
     }
 
+    /** Record 'user' as a user of the canonical representative of 'expression'.
+     * Returns the representative, or null if 'expression' has no value number. */
+    @Nullable
+    CanonicalExpression use(DBSPExpression expression, DBSPExpression user, int operand) {
+        CanonicalExpression canon = this.canonical.get(expression);
+        if (canon != null)
+            canon.use(user, operand, this.innermostClosure());
+        return canon;
+    }
+
     Representation getId(DBSPExpression expression, DBSPExpression user, int operand) {
-        if (!this.canonical.containsKey(expression))
+        CanonicalExpression canon = this.use(expression, user, operand);
+        if (canon == null)
             // Invalid representation
             return new Representation("", new HashSet<>(), false, true);
-        CanonicalExpression canon = Utilities.getExists(this.canonical, expression);
-        canon.use(user, operand, this.innermostClosure());
         // Delimited with # symbols
         String id = "#" + canon.expression.getId() + "#";
         return new Representation(id, canon.dependsOn, canon.expensive, false);
@@ -236,6 +247,20 @@ public class ValueNumbering extends InnerVisitor {
         this.checkRepresentation(expression, repr, true);
     }
         
+    @Override
+    public void postorder(DBSPBlockExpression expression) {
+        // The block has no value number; it is the user of its let initializers and of its result
+        int operand = 0;
+        for (DBSPStatement stat : expression.contents) {
+            DBSPLetStatement let = stat.as(DBSPLetStatement.class);
+            if (let != null && let.initializer != null)
+                this.use(let.initializer, expression, operand);
+            operand++;
+        }
+        if (expression.lastExpression != null)
+            this.use(expression.lastExpression, expression, operand);
+    }
+
     @Override public void postorder(DBSPAssignmentExpression expression) {
         this.foundAssignment = true;
     }
