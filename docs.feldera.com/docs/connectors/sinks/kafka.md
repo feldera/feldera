@@ -92,12 +92,18 @@ pipeline stops advancing until the sink catches up. Configure
 `queue.buffering.max.messages` and `queue.buffering.max.kbytes` to bound the
 producer queue; the byte limit takes priority. These bounds apply per connector.
 
+At the end of each output batch, the connector waits until Kafka acknowledges
+or fails every record that it sent. Thus, a checkpoint never covers records
+that are only in the producer queue. While the broker is unreachable, this
+wait stops the sink, and output backs up as described above.
+
 To restore the former five-minute delivery deadline, add either
 `"message.timeout.ms": "300000"` or `"delivery.timeout.ms": "300000"` to the
 transport's `config` object. The two names are aliases; configure only one.
 An explicit finite timeout or retry count can cause undelivered records to be
 dropped. Permanent errors, such as a rejected oversized message, can also lose
-records. The connector reports these losses as errors. Shutdown does not
+records, even if a checkpoint covers them. The connector reports these losses
+as errors. Shutdown does not
 guarantee delivery of records still in the non-fault-tolerant producer queue.
 
 The connector reports unhealthy when a pending message has waited at least
