@@ -15,6 +15,11 @@ Source edition can be found on github.
   it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the
   read failed with `cannot skip miniblock of size 256`, and the input connector
   retried the file without making progress.
+- Incompatible change (Enterprise): the compiler server image no longer
+  includes the AWS CLI.  In `credential-provider` values, replace
+  `aws codeartifact get-authorization-token` with `codeartifact-token`, which
+  fetches CodeArtifact tokens for private Cargo registries.  See
+  [Private Cargo registry](/get-started/enterprise/private-cargo-registry).
 
 ## v0.380.0
 
