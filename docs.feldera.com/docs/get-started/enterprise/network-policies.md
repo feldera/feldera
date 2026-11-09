@@ -442,12 +442,19 @@ these components connect through a proxy, allow only the proxy instead.
   to a link-local address on the node, usually `169.254.20.10`, instead of
   to the `kube-dns` pods. Allow that address on port 53, UDP and TCP, in
   the `dns` policy.
-- **Compiler autoscaling.** With `compilerAutoscaling.enabled`, pipelines
-  and the runner connect to `<release>-compiler-artifact-server` instead
-  of the compiler server, and that pod also connects to the database.
-  Add `<release>-compiler-artifact-server` wherever the example selects
-  `<release>-compiler-server`, and give the artifact server a policy like
-  the `compiler-server` policy.
+- **Compiler autoscaling.** With `compilerAutoscaling.enabled`, the
+  `<release>-compiler-artifact-server` pod serves the pipeline binaries
+  and SQL program validation, and connects to the database. Do these
+  changes:
+  - Add `<release>-compiler-artifact-server` wherever the example selects
+    `<release>-compiler-server`.
+  - Give the artifact server a copy of the `compiler-server` policy.
+  - The compiler uploads the binaries to the artifact server. Allow
+    egress from the compiler to the artifact server on port 8085, and
+    ingress to the artifact server from the compiler.
+  - The pre-upgrade hook `<release>-compiler-sts-policy-hook` runs when
+    you turn autoscaling on or off, and needs egress to the Kubernetes
+    API.
 - **One namespace per pipeline.** With
   `kubernetesRunner.enablePerPipelineNamespace`, pipelines run outside the
   `feldera` namespace. Apply the `default-deny`, `dns`, and `pipeline`
