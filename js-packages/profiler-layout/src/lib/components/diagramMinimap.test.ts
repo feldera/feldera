@@ -49,7 +49,8 @@ describe('the minimap', () => {
   it('reaches the sides of the map where a region is what sets the width', async () => {
     // The other axis, on a circuit wide enough to have one: a region is the one thing drawn at its own
     // size, so it is what carries the picture out to the edges of a map that is its own box.
-    const { minimap, cleanup } = await mountDiagram('light', WITH_SOURCE.profile)
+    const { minimap, toggle, cleanup } = await mountDiagram('light', WITH_SOURCE.profile)
+    await toggle('region')
     const map = minimap()
     const ink = map.inked()
 

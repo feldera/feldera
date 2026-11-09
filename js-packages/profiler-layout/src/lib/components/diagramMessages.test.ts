@@ -17,9 +17,9 @@ describe('progress message', () => {
 
     cy.$id('region').emit('dblclick')
     expect(reported.messages).toEqual(['Computing layout...'])
-    // The frame that paints the message still shows the region expanded.
-    expect(await expandedAtPaint).toBe(true)
-    await expect.poll(() => cy.$id('region').isParent()).toBe(false)
+    // The frame that paints the message still shows the region collapsed.
+    expect(await expandedAtPaint).toBe(false)
+    await expect.poll(() => cy.$id('region').isParent()).toBe(true)
     await expect.poll(() => reported.messages.at(-1)).toBeNull()
     cleanup()
   })

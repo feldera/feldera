@@ -17,11 +17,7 @@ export class CircuitSelector {
     private onChange: () => void = () => { };
 
     constructor(private readonly circuit: CircuitProfile) {
-        if (circuit.simpleNodes.size < 100)
-            this.regionsExpanded = new Set(circuit.complexNodes.keys());
-        else
-            this.regionsExpanded = new Set();
-
+        this.regionsExpanded = new Set();
         let allKeys = new Set(this.circuit.simpleNodes.keys());
         this.allNodeIds = allKeys.union(new Set(this.circuit.complexNodes.keys()));
     }

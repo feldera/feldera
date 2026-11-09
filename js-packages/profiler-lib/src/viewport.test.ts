@@ -20,6 +20,7 @@ vi.mock('./navigator.js', () => ({
 }))
 
 import type { Core } from 'cytoscape'
+import { NODE_FONT_SIZE } from './diagramTheme.js'
 import type { NodeId } from './profile.js'
 import { Option } from './util.js'
 import { Viewport } from './viewport.js'
@@ -101,8 +102,12 @@ function viewportOver(boxes: Record<string, Box>, firstNode?: NodeId, graph?: { 
     return { cy, viewport }
 }
 
-/** Where the pan has to be for `box` to be centered in a 100x100 view at zoom 1. */
-const centeredOn = (box: Box) => ({ x: 50 - box.x, y: 50 - box.y })
+/** Where the pan has to be for `box` to be centered in a 100x100 view at `zoom`. */
+const centeredOn = (box: Box, zoom = 1) => ({ x: 50 - box.x * zoom, y: 50 - box.y * zoom })
+
+/** Size of the node text on screen, in CSS px, at `zoom`. Cytoscape scales the node canvas by the
+ *  zoom, and the text is drawn on it at `NODE_FONT_SIZE`. */
+const renderedFontSize = (zoom: number) => NODE_FONT_SIZE * zoom
 
 describe('the view after a layout that toggled a circuit region', () => {
     it('leaves the pan alone while any part of the circuit region is still on screen', () => {
@@ -175,11 +180,10 @@ describe('the first layout', () => {
             'light'
         )
         viewport.layoutSettled()
-        // The focus zoom: `FOCUS_FONT_SIZE` (11.25) divided by `NODE_FONT_SIZE` (12). A search uses
-        // the same zoom, so opening a profile and searching for a node in it give the same scale.
-        const zoom = cy.zoom()
-        expect(zoom).toBeCloseTo(11.25 / 12, 5)
-        expect(cy.pan()).toEqual({ x: 50 - first.x * zoom, y: 50 - first.y * zoom })
+        // At the focus zoom, the node text is 12 px on screen. A search uses the same zoom, so opening
+        // a profile and searching for a node in it give the same scale.
+        expect(renderedFontSize(cy.zoom())).toBeCloseTo(12, 5)
+        expect(cy.pan()).toEqual(centeredOn(first, cy.zoom()))
     })
 
     it('leaves the view where it is on every layout after that', () => {
@@ -215,17 +219,18 @@ describe('a search', () => {
         const { cy, viewport } = viewportOver({ n0: { x: 300, y: 300, w: 60, h: 8 } })
         cy.zoom(0.5)
         viewport.center('n0')
-        // The focus zoom (11.25 / 12), which is also the zoom that a profile opens at. So a search
-        // gives the same scale that the user saw when the profile opened.
-        expect(cy.zoom()).toBeCloseTo(11.25 / 12, 5)
+        // The focus zoom, which is also the zoom that a profile opens at. So a search gives the same
+        // scale that the user saw when the profile opened.
+        expect(renderedFontSize(cy.zoom())).toBeCloseTo(12, 5)
     })
 
     it('does not zoom out when the view is already closer than that', () => {
         const box = { x: 300, y: 300, w: 60, h: 20 }
         const { cy, viewport } = viewportOver({ n0: box })
+        cy.zoom(1.25)
         viewport.center('n0')
-        expect(cy.zoom()).toBe(1)
-        expect(cy.pan()).toEqual(centeredOn(box))
+        expect(cy.zoom()).toBe(1.25)
+        expect(cy.pan()).toEqual(centeredOn(box, 1.25))
     })
 
     it('ignores an id that is not in the graph', () => {

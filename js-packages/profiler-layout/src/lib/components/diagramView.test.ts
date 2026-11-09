@@ -59,12 +59,12 @@ describe('the view', () => {
     const before = { pan: { ...cy.pan() }, zoom: cy.zoom() }
 
     await toggle('region')
-    expect(cy.$id('region').isParent()).toBe(false)
+    expect(cy.$id('region').isParent()).toBe(true)
     expect(cy.pan()).toEqual(before.pan)
     expect(cy.zoom()).toBe(before.zoom)
 
     await toggle('region')
-    expect(cy.$id('region').isParent()).toBe(true)
+    expect(cy.$id('region').isParent()).toBe(false)
     expect(cy.pan()).toEqual(before.pan)
     expect(cy.zoom()).toBe(before.zoom)
     cleanup()

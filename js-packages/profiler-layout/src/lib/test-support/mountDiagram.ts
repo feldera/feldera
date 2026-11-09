@@ -21,8 +21,7 @@ export const OPERATORS = {
   }
 }
 
-/** One operator inside a region, which a circuit this small renders expanded - call `collapse()`
- *  to collapse the region. */
+/** One operator inside a region, which is collapsed when the circuit is first rendered. */
 export const CIRCUIT_REGION = {
   metrics: [],
   worker_profiles: [{ metadata: {} }],
