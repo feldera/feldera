@@ -34,8 +34,8 @@ Source edition can be found on github.
 
 - Storage: a pipeline now keeps only its newest checkpoint on storage.
   Before, it also kept the checkpoint before it, which could use as much
-  storage again as the pipeline's state.  A multihost pipeline still
-  keeps both.
+  storage again as the pipeline's state.  A multihost pipeline deletes
+  the older checkpoint when every host has written the newest one.
 
 ## v0.380.0
 

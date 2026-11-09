@@ -1829,6 +1829,7 @@ where
         .service(coordination_checkpoint_status)
         .service(coordination_checkpoint_prepare)
         .service(coordination_checkpoint_release)
+        .service(coordination_checkpoint_complete)
         .service(coordination_checkpoint_pull)
         .service(coordination_checkpoint_pull_status)
         .service(coordination_checkpoint_push)
@@ -5146,6 +5147,24 @@ async fn coordination_checkpoint_release(
     state: WebData<ServerState>,
 ) -> Result<HttpResponse, PipelineError> {
     state.controller()?.release_checkpoint();
+    Ok(HttpResponse::Ok().finish())
+}
+
+/// Request body for `POST /coordination/checkpoint/complete`.
+#[derive(Deserialize)]
+struct CoordinationCheckpointCompleteBody {
+    /// This host's copy of the checkpoint that every host has written.
+    uuid: Uuid,
+}
+
+/// Tells this host that every host has written a checkpoint, so that this host
+/// can delete its checkpoints that are older than `uuid`.
+#[post("/coordination/checkpoint/complete")]
+async fn coordination_checkpoint_complete(
+    state: WebData<ServerState>,
+    body: web::Json<CoordinationCheckpointCompleteBody>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.checkpoint_complete(body.uuid);
     Ok(HttpResponse::Ok().finish())
 }
 

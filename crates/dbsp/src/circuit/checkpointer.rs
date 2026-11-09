@@ -554,7 +554,9 @@ impl Checkpointer {
     ///
     /// A single-host pipeline needs only the newest checkpoint.  A host of a
     /// multihost pipeline also keeps the one before it, because a restart
-    /// resumes from the newest checkpoint that every host has.
+    /// resumes from the newest checkpoint that every host has.  When the
+    /// coordinator says that every host has the newest checkpoint, the host
+    /// deletes the older one with [Self::gc_checkpoints_before].
     ///
     /// Returns the UUIDs of the removed checkpoints.
     pub fn gc_checkpoint(
@@ -563,6 +565,26 @@ impl Checkpointer {
         multihost: bool,
     ) -> Result<HashSet<uuid::Uuid>, Error> {
         self.gc_keeping(except, if multihost { 2 } else { 1 })
+    }
+
+    /// Removes the checkpoints that are older than `uuid`, except those whose
+    /// UUID is in `except`.  A host of a multihost pipeline calls this when
+    /// the coordinator says that every host has `uuid`.  Does nothing if there
+    /// is no checkpoint `uuid`.
+    ///
+    /// Returns the UUIDs of the removed checkpoints.
+    pub fn gc_checkpoints_before(
+        &mut self,
+        except: HashSet<uuid::Uuid>,
+        uuid: uuid::Uuid,
+    ) -> Result<HashSet<uuid::Uuid>, Error> {
+        match self.checkpoint_list.iter().position(|cpm| cpm.uuid == uuid) {
+            Some(index) => self.gc_keeping(except, self.checkpoint_list.len() - index),
+            None => {
+                warn!("cannot delete checkpoints older than {uuid}: no such checkpoint");
+                Ok(HashSet::new())
+            }
+        }
     }
 
     /// Remove the oldest checkpoints from the list.

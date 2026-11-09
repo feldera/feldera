@@ -12100,3 +12100,39 @@ pub fn single_host_keeps_one_checkpoint(engine: &dyn PipelineTestEngine) {
     }
     controller.stop().unwrap();
 }
+
+/// A host of a multihost pipeline keeps its two newest checkpoints, until the
+/// coordinator says that every host has the newest one.
+#[engine_test(requires(Storage))]
+pub fn multihost_keeps_two_checkpoints_until_complete(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let config = retention_config(tempdir.path(), true);
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    let first = take_checkpoint(&controller);
+    let second = take_checkpoint(&controller);
+    let third = take_checkpoint(&controller);
+    assert_eq!(published_checkpoints(engine, &config), vec![second, third]);
+
+    // A checkpoint that this host no longer has changes nothing.
+    controller.checkpoint_complete(first);
+    sleep(Duration::from_millis(500));
+    assert_eq!(published_checkpoints(engine, &config), vec![second, third]);
+
+    // The coordinator says that every host has `third`.
+    controller.checkpoint_complete(third);
+    wait(
+        || published_checkpoints(engine, &config) == vec![third],
+        default_timeout_ms(),
+    )
+    .expect("the host kept its older checkpoint");
+    controller.stop().unwrap();
+}
