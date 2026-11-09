@@ -139,7 +139,12 @@ impl InputReader for InputGenerator {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        match self.table {
+            // The worker thread exits after a fatal error.
+            NexmarkTable::Bid => self.inner.command_sender.is_closed(),
+            // The other tables act on each command inside `request`.
+            _ => false,
+        }
     }
 }
 
@@ -508,10 +513,91 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
+    use dbsp_connectors::Parser;
     use dbsp_connectors::transport::input_transport_config_to_endpoint;
+    use feldera_adapterlib::ConnectorMetadata;
+    use feldera_adapterlib::catalog::StagedBuffers;
+    use feldera_adapterlib::format::{InputBuffer, ParseError, Splitter};
+    use feldera_adapterlib::test::{MockInputConsumer, wait};
+    use feldera_adapterlib::transport::InputReaderCommand;
     use feldera_types::config::TransportConfig;
+    use feldera_types::program_schema::Relation;
     use feldera_types::secret_resolver::default_secrets_directory;
+    use feldera_types::transport::nexmark::{NexmarkInputConfig, NexmarkTable};
     use serde_json::json;
+    use std::sync::{Arc, Mutex};
+
+    use super::NexmarkEndpoint;
+    use dbsp_connectors::TransportInputEndpoint;
+
+    /// The parser of a replay that fails before it generates an event.
+    struct UnusedParser;
+
+    impl Parser for UnusedParser {
+        fn parse(
+            &mut self,
+            _data: &[u8],
+            _metadata: Option<ConnectorMetadata>,
+        ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+            unreachable!("the replay fails before it generates an event")
+        }
+
+        fn stage(&self, _buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+            unreachable!("the replay fails before it generates an event")
+        }
+
+        fn splitter(&self) -> Box<dyn Splitter> {
+            unreachable!("the endpoint needs no splitter")
+        }
+
+        fn fork(&self) -> Box<dyn Parser> {
+            Box::new(UnusedParser)
+        }
+    }
+
+    /// A replay of metadata that does not decode fails the Bid endpoint and
+    /// closes it, so that the controller does not wait forever for the replay
+    /// to finish.
+    #[test]
+    fn replay_of_invalid_metadata_closes_the_bid_endpoint() {
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        let readers = [
+            NexmarkTable::Person,
+            NexmarkTable::Auction,
+            NexmarkTable::Bid,
+        ]
+        .map(|table| {
+            let consumer = MockInputConsumer::new();
+            consumer.on_error(Some(Box::new({
+                let errors = errors.clone();
+                move |fatal, error| errors.lock().unwrap().push((fatal, error.to_string()))
+            })));
+            NexmarkEndpoint::new(NexmarkInputConfig {
+                table,
+                options: None,
+            })
+            .open(
+                Box::new(consumer),
+                Box::new(UnusedParser),
+                Relation::empty(),
+                None,
+            )
+            .unwrap()
+        });
+        let bid = &readers[2];
+        assert!(!bid.is_closed());
+
+        bid.request(InputReaderCommand::Replay {
+            metadata: json!("not metadata"),
+            data: rmpv::Value::Nil,
+        });
+        wait(|| bid.is_closed(), 10_000).expect("the endpoint never closed");
+        assert!(
+            errors.lock().unwrap().iter().all(|(fatal, _)| *fatal),
+            "{:?}",
+            errors.lock().unwrap()
+        );
+    }
 
     /// The shared transport factory builds a Nexmark endpoint through the factory that this
     /// crate registers.
