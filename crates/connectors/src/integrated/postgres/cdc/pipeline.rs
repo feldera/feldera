@@ -144,7 +144,6 @@ impl PostgresCdcInputEndpoint {
                 config.clone(),
                 key,
                 consumer,
-                Arc::clone(&shared.stopping),
                 Arc::clone(&shared.parked),
             )),
             shared,
@@ -194,8 +193,6 @@ pub(super) struct PostgresCdcInputInner {
     pub(super) copy: Arc<CopyBarrier>,
     /// Fault tolerance is enabled: the slot advances only past checkpoints.
     pub(super) strict: bool,
-    /// etl is being stopped; shared with the [`SharedCdcPipeline`].
-    stopping: Arc<AtomicBool>,
     /// Results the stop could not answer; shared with the
     /// [`SharedCdcPipeline`], see [`ParkedResults`].
     parked: Arc<ParkedResults>,
@@ -207,7 +204,6 @@ impl PostgresCdcInputInner {
         config: PostgresCdcReaderConfig,
         key: PublicationKey,
         consumer: Box<dyn InputConsumer>,
-        stopping: Arc<AtomicBool>,
         parked: Arc<ParkedResults>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
@@ -241,7 +237,6 @@ impl PostgresCdcInputInner {
             completion_task_rx: Mutex::new(completion_task_rx),
             copy: Arc::new(CopyBarrier::new()),
             strict,
-            stopping,
             parked,
         }
     }
@@ -333,9 +328,9 @@ impl PostgresCdcInputInner {
 
 impl Drop for PostgresCdcInputInner {
     fn drop(&mut self) {
-        // Only a held copy barrier can be left to park once the worker that
-        // owned the etl pipeline has returned.
-        self.stopping.store(true, Ordering::SeqCst);
+        // The shared pipeline stops etl before the reader is dropped and
+        // turns away the writes it still issues; only a held copy barrier
+        // can be left to park.
         self.park_terminal();
     }
 }

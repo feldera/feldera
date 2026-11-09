@@ -1145,6 +1145,7 @@ fn destination_stopping(
         copy: Arc::clone(copy),
         consumer: Box::new(consumer),
         stopping: Arc::clone(stopping),
+        high_water: Arc::new(Mutex::new(HighWater::default())),
     }
 }
 
@@ -1891,7 +1892,6 @@ fn a_pipeline_that_hides_the_step_it_feeds_fails_the_endpoint() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(consumer.clone()),
-        Arc::new(AtomicBool::new(false)),
         Arc::default(),
     );
 
@@ -1920,7 +1920,6 @@ fn a_pipeline_that_tracks_no_steps_is_answered_by_the_flush() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(MockInputConsumer::new()),
-        Arc::new(AtomicBool::new(false)),
         Arc::default(),
     );
 
@@ -2029,7 +2028,6 @@ fn a_flush_that_races_the_watcher_stop_answers_the_durable_writes() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(StepAwareConsumer::new(3, 5)),
-        Arc::new(AtomicBool::new(false)),
         Arc::default(),
     );
 
@@ -2061,7 +2059,6 @@ fn a_flush_that_races_the_watcher_stop_drops_the_writes_it_has_not_reached() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(StepAwareConsumer::new(7, 5)),
-        Arc::new(AtomicBool::new(false)),
         Arc::default(),
     );
 
@@ -2191,4 +2188,20 @@ fn shared_settings_name_the_first_field_that_differs() {
     let mut user = base.clone();
     user.uri = base.uri.replace("postgres://", "postgres://someone_else@");
     assert_eq!(shared_settings_differ(&base, &user), Some("uri user"));
+}
+
+#[test]
+fn the_high_water_mark_drops_what_was_pushed_before() {
+    let mut mark = HighWater::default();
+    assert!(mark.admit((5, 0)), "a fresh member drops nothing");
+    assert!(!mark.admit((5, 0)), "the same event again is a replay");
+    assert!(!mark.admit((4, 9)), "an earlier transaction is a replay");
+    assert!(
+        mark.admit((5, 1)),
+        "the second half of a transaction split over two writes is new"
+    );
+    assert!(mark.admit((6, 0)));
+    assert!(!mark.admit((6, 0)));
+    mark.reset();
+    assert!(mark.admit((6, 0)), "after a new copy the stream is new");
 }

@@ -3,12 +3,15 @@
 
 use crate::{
     Controller, ControllerError,
-    integrated::postgres::test::{
-        cdc_tests::{
-            CdcTestTable, cdc_connector_url, cdc_relation, drop_slots_of_pipeline_id,
-            read_output_json,
+    integrated::postgres::{
+        cdc::{ETL_STARTS, RESTART_GRACE_MS},
+        test::{
+            cdc_tests::{
+                CdcTestTable, cdc_connector_url, cdc_relation, drop_slots_of_pipeline_id,
+                read_output_json,
+            },
+            postgres_url, unique_pg_name,
         },
-        postgres_url, unique_pg_name,
     },
     test::{
         engine_test,
@@ -18,7 +21,12 @@ use crate::{
 use crossbeam::channel::Receiver;
 use feldera_adapterlib::test::wait;
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 use tempfile::NamedTempFile;
 
 const WAIT_MS: u64 = 60_000;
@@ -35,6 +43,8 @@ struct TwoTables {
 
 impl TwoTables {
     fn new(prefix: &str) -> Self {
+        // Tests assert on restarts, so none waits for the grace.
+        RESTART_GRACE_MS.store(0, Ordering::Relaxed);
         let url = postgres_url();
         let a = CdcTestTable::new_simple(
             &unique_pg_name(&format!("{prefix}_a")),
@@ -57,14 +67,18 @@ impl TwoTables {
         &self.a.publication_name
     }
 
-    /// The id of the slot the two connectors share.
-    fn shared_slot_id(&self) -> String {
+    /// The id of the etl pipeline the two connectors share.
+    fn shared_pipeline_id(&self) -> u64 {
         crate::integrated::postgres::cdc::shared_pipeline_id(
             &cdc_connector_url(&self.a.url),
             self.publication(),
             PIPELINE_NAME,
         )
-        .to_string()
+    }
+
+    /// The id of the slot the two connectors share.
+    fn shared_slot_id(&self) -> String {
+        self.shared_pipeline_id().to_string()
     }
 
     /// The id of the slot `table` gets without sharing.
@@ -75,6 +89,16 @@ impl TwoTables {
             &format!("public.{}", table.table_name),
         )
         .to_string()
+    }
+
+    /// How many times etl started for the shared pipeline.
+    fn etl_starts(&self) -> usize {
+        ETL_STARTS
+            .lock()
+            .unwrap()
+            .get(&self.shared_pipeline_id())
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Connector configuration for `table`, with `extra` settings.
@@ -91,9 +115,17 @@ impl TwoTables {
         config
     }
 
-    /// A pipeline with connectors `cdc_a` and `cdc_b` on the two tables,
-    /// writing to `out_a` and `out_b`.
-    fn pipeline(&self, shared: bool, b_extra: Value, out_a: &Path, out_b: &Path) -> Value {
+    /// The input endpoint `cdc_<name>` on `table`, feeding `test_input<n>`.
+    fn input(&self, table: &CdcTestTable, n: usize, extra: Value) -> Value {
+        json!({
+            "stream": format!("test_input{n}"),
+            "transport": { "name": "postgres_cdc_input", "config": self.connector(table, extra) },
+        })
+    }
+
+    /// A pipeline with connectors `cdc_a` on `a` and, when `with_b`, `cdc_b`
+    /// on `b`, writing to `out_a` and `out_b`.
+    fn pipeline(&self, shared: bool, with_b: Option<Value>, out_a: &Path, out_b: &Path) -> Value {
         let output = |path: &Path, stream: &str| {
             json!({
                 "stream": stream,
@@ -104,20 +136,15 @@ impl TwoTables {
                 },
             })
         };
+        let mut inputs = json!({ "cdc_a": self.input(&self.a, 1, json!({})) });
+        if let Some(b_extra) = with_b {
+            inputs["cdc_b"] = self.input(&self.b, 2, b_extra);
+        }
         json!({
             "name": PIPELINE_NAME,
             "workers": 1,
             "dev_tweaks": { "shared_cdc_slot": shared },
-            "inputs": {
-                "cdc_a": {
-                    "stream": "test_input1",
-                    "transport": { "name": "postgres_cdc_input", "config": self.connector(&self.a, json!({})) },
-                },
-                "cdc_b": {
-                    "stream": "test_input2",
-                    "transport": { "name": "postgres_cdc_input", "config": self.connector(&self.b, b_extra) },
-                },
-            },
+            "inputs": inputs,
             "outputs": {
                 "test_output1": output(out_a, "test_output1"),
                 "test_output2": output(out_b, "test_output2"),
@@ -231,7 +258,7 @@ pub fn two_tables_share_one_slot(engine: &dyn PipelineTestEngine) {
 
     let (controller, errors) = start(
         engine,
-        tables.pipeline(true, json!({}), out_a.path(), out_b.path()),
+        tables.pipeline(true, Some(json!({})), out_a.path(), out_b.path()),
     )
     .unwrap();
     wait_for_inserts(out_a.path(), 3, &errors, "snapshot of a");
@@ -262,6 +289,7 @@ pub fn two_tables_share_one_slot(engine: &dyn PipelineTestEngine) {
     b.sort_unstable();
     assert_eq!(a, vec![1, 2, 3, 4], "table a arrives exactly once");
     assert_eq!(b, vec![101, 102, 103, 104], "table b arrives exactly once");
+    assert_eq!(tables.etl_starts(), 1, "a stop starts etl for nobody");
 }
 
 /// The settings that configure the whole etl pipeline must agree between
@@ -276,7 +304,7 @@ pub fn members_with_different_settings_are_rejected(engine: &dyn PipelineTestEng
         engine,
         tables.pipeline(
             true,
-            json!({ "batch": { "max_fill_ms": 123 } }),
+            Some(json!({ "batch": { "max_fill_ms": 123 } })),
             out_a.path(),
             out_b.path(),
         ),
@@ -305,7 +333,7 @@ pub fn without_the_setting_each_table_keeps_its_slot(engine: &dyn PipelineTestEn
 
     let (controller, errors) = start(
         engine,
-        tables.pipeline(false, json!({}), out_a.path(), out_b.path()),
+        tables.pipeline(false, Some(json!({})), out_a.path(), out_b.path()),
     )
     .unwrap();
     wait_for_inserts(out_a.path(), 2, &errors, "snapshot of a");
@@ -324,4 +352,150 @@ pub fn without_the_setting_each_table_keeps_its_slot(engine: &dyn PipelineTestEn
         );
     }
     controller.stop().unwrap();
+}
+
+/// A connector that connects while etl runs for another table makes etl
+/// start again with both, gets its snapshot, and the first table streams on
+/// with every row exactly once.
+#[engine_test(serial, services(Postgres))]
+pub fn a_late_connector_joins_the_running_publication(engine: &dyn PipelineTestEngine) {
+    let mut tables = TwoTables::new("cdc_shared_join");
+    insert_range(&mut tables.a, 1, 3);
+    insert_range(&mut tables.b, 101, 103);
+    let out_a = NamedTempFile::new().unwrap();
+    let out_b = NamedTempFile::new().unwrap();
+
+    let (controller, errors) = start(
+        engine,
+        tables.pipeline(true, None, out_a.path(), out_b.path()),
+    )
+    .unwrap();
+    wait_for_inserts(out_a.path(), 3, &errors, "snapshot of a");
+    assert_eq!(tables.etl_starts(), 1);
+
+    let input_b = serde_json::from_value(tables.input(&tables.b, 2, json!({}))).unwrap();
+    controller.connect_input("cdc_b", &input_b, None).unwrap();
+    wait_for_inserts(out_b.path(), 3, &errors, "snapshot of b after joining");
+    assert_eq!(
+        tables.etl_starts(),
+        2,
+        "etl started again with the new member"
+    );
+
+    insert_range(&mut tables.a, 4, 5);
+    insert_range(&mut tables.b, 104, 105);
+    wait_for_inserts(out_a.path(), 5, &errors, "streamed rows of a");
+    wait_for_inserts(out_b.path(), 5, &errors, "streamed rows of b");
+
+    let slots = apply_slots(&mut tables.a);
+    assert_eq!(
+        slots_with_token(&slots, &tables.shared_slot_id()).len(),
+        1,
+        "still one apply slot: {slots:?}"
+    );
+
+    controller.stop().unwrap();
+    let mut a = inserted_ids(out_a.path());
+    let mut b = inserted_ids(out_b.path());
+    a.sort_unstable();
+    b.sort_unstable();
+    assert_eq!(a, vec![1, 2, 3, 4, 5], "table a arrives exactly once");
+    assert_eq!(
+        b,
+        vec![101, 102, 103, 104, 105],
+        "table b arrives exactly once"
+    );
+}
+
+/// etl's stored state of `table` in the shared pipeline, if any.
+fn shared_etl_state(tables: &mut TwoTables, table: &str) -> Option<String> {
+    let pipeline_id = tables.shared_pipeline_id() as i64;
+    tables
+        .a
+        .client
+        .query(
+            "SELECT s.state::text FROM etl.replication_state s JOIN pg_class c \
+             ON c.oid::text = s.table_id::text \
+             WHERE s.pipeline_id = $1 AND s.is_current AND c.relname = $2",
+            &[&pipeline_id, &table],
+        )
+        .unwrap_or_else(|e| panic!("querying etl.replication_state failed: {e}"))
+        .first()
+        .map(|r| r.get(0))
+}
+
+/// Bulk insert ids `from..=to` with a `pad_bytes` long string, so the copy
+/// of the table takes several writes and some time.
+fn insert_padded_rows(table: &mut CdcTestTable, from: i64, to: i64, pad_bytes: usize) {
+    table.execute(&format!(
+        "INSERT INTO {} SELECT g, g % 2 = 0, g * 10, repeat('x', {pad_bytes}) \
+         FROM generate_series({from}, {to}) g",
+        table.table_name
+    ));
+}
+
+/// A disconnected connector leaves the publication; etl starts again once
+/// for the other connector, which streams on with every row exactly once.
+///
+/// The disconnect lands while etl is still copying the other table, with
+/// some of its rows already in the circuit. etl copies a table whose copy
+/// was under way again from scratch when it starts, so the restart has to
+/// wait for the copy.
+#[engine_test(serial, services(Postgres))]
+pub fn a_disconnected_member_leaves_the_others_streaming(engine: &dyn PipelineTestEngine) {
+    const ROWS: i64 = 400;
+    let mut tables = TwoTables::new("cdc_shared_leave");
+    insert_padded_rows(&mut tables.a, 1, ROWS, 50_000);
+    insert_range(&mut tables.b, 101, 103);
+    let out_a = NamedTempFile::new().unwrap();
+    let out_b = NamedTempFile::new().unwrap();
+
+    let (controller, errors) = start(
+        engine,
+        tables.pipeline(true, Some(json!({})), out_a.path(), out_b.path()),
+    )
+    .unwrap();
+    let a_name = tables.a.table_name.clone();
+    wait(
+        || {
+            !inserted_ids(out_a.path()).is_empty()
+                && shared_etl_state(&mut tables, &a_name).as_deref() == Some("data_sync")
+        },
+        WAIT_MS,
+    )
+    .expect("rows of a reach the circuit while etl still copies a");
+
+    let id_b = controller.input_endpoint_id_by_name("cdc_b").unwrap();
+    controller.disconnect_input(&id_b);
+    wait(|| tables.etl_starts() == 2, WAIT_MS).expect("etl starts again for the member that stays");
+
+    insert_range(&mut tables.a, ROWS + 1, ROWS + 3);
+    insert_range(&mut tables.b, 104, 106);
+    wait_for_inserts(
+        out_a.path(),
+        ROWS as usize + 3,
+        &errors,
+        "the copy and the streamed rows of a after the leave",
+    );
+
+    // Rows of `b` reach no Feldera table any more: give them time to arrive
+    // wrongly, then check that they did not.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        inserted_ids(out_b.path()).len() <= 3,
+        "b got nothing past its snapshot"
+    );
+    assert_eq!(tables.etl_starts(), 2, "one restart for the leave");
+
+    controller.stop().unwrap();
+    let mut a = inserted_ids(out_a.path());
+    a.sort_unstable();
+    assert_eq!(
+        a,
+        (1..=ROWS + 3).collect::<Vec<_>>(),
+        "table a arrives exactly once"
+    );
 }

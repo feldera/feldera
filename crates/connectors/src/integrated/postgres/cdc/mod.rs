@@ -79,3 +79,5 @@ pub use pipeline::PostgresCdcInputEndpoint;
 pub(crate) use pipeline::{
     ETL_STOP_GRACE, RUNTIME_SHUTDOWN_TIMEOUT, STOPPED_PAST_GRACE, WATCHER_SHUTDOWN_TIMEOUT,
 };
+#[cfg(any(test, feature = "testing"))]
+pub(crate) use shared::{ETL_STARTS, RESTART_GRACE_MS};

@@ -5,48 +5,101 @@ use super::*;
 use crate::integrated::{ConnectorRegistry, SharedConnectorState};
 use futures::future::select_all;
 use std::sync::Weak;
+use std::sync::atomic::AtomicU64;
+use tokio::sync::oneshot;
+
+/// Answers a connector that waits for etl to start.
+type InitSender = oneshot::Sender<Result<(), ControllerError>>;
+
+/// How long a pipeline waits after a member left before it starts etl again
+/// for the members that remain, in milliseconds. Members that leave one after
+/// another, as at a pipeline stop that the registry did not announce, then
+/// cost one restart. Tests set it to 0.
+pub(crate) static RESTART_GRACE_MS: AtomicU64 = AtomicU64::new(1000);
+
+/// How many times etl started, by pipeline id. Tests read it to tell a
+/// restart from none.
+pub(crate) static ETL_STARTS: Mutex<BTreeMap<u64, usize>> = Mutex::new(BTreeMap::new());
 
 /// The etl pipeline the connectors of one [`PublicationKey`] share.
 ///
 /// The connectors register through [`Self::join`], and etl starts once the
-/// controller has opened every connector, or at once for a connector that
-/// joins later. Each connector holds an `Arc` to it; the controller's
-/// [`ConnectorRegistry`] holds it weakly.
+/// controller has opened every connector. A connector that joins later, or
+/// one that leaves, makes the worker stop etl and start it again for the
+/// members that remain. Each connector holds an `Arc` to the pipeline; the
+/// controller's [`ConnectorRegistry`] holds it weakly.
 pub(super) struct SharedCdcPipeline {
     key: PublicationKey,
     /// The first connector that joined, by endpoint name, and its settings,
     /// which configure the whole etl pipeline; every later member must agree.
     first: Mutex<Option<(String, PostgresCdcReaderConfig)>>,
     registry: Arc<ConnectorRegistry>,
-    /// Connectors that joined and wait for etl to start.
-    joined: Mutex<Vec<Member>>,
-    /// The worker runs etl for the members it took.
-    running: AtomicBool,
-    /// The worker has returned; the pipeline takes no more members.
-    retired: AtomicBool,
+    membership: Mutex<Membership>,
     /// etl is being stopped. A write that starts afterwards queues nothing
     /// and parks its result; see [`FelderaDestination::wait_unpaused`].
     pub(super) stopping: Arc<AtomicBool>,
     /// Results the stop could not answer; see [`ParkedResults`].
     pub(super) parked: Arc<ParkedResults>,
-    /// Set when the pipeline stops; the worker then shuts etl down.
+    /// Set when the pipeline stops; the worker then shuts etl down for good.
     terminate: Sender<bool>,
+    /// Bumped when a connector joins while etl runs; the worker then starts
+    /// etl again with it.
+    joined_late: Sender<u64>,
     me: Weak<Self>,
+}
+
+/// Who is in the pipeline, and whether the worker runs.
+#[derive(Default)]
+struct Membership {
+    /// Connectors that joined and wait for etl to start, or to start again.
+    joined: Vec<Member>,
+    /// Connectors that joined while etl ran, answered with the result of the
+    /// next start.
+    late_joiners: Vec<InitSender>,
+    /// The worker runs etl for the members it took.
+    running: bool,
+    /// The worker has returned for good; the pipeline takes no more members.
+    retired: bool,
+}
+
+/// A member whose connector has reached etl at least once.
+struct RunningMember {
+    inner: Arc<PostgresCdcInputInner>,
+    destination: Arc<FelderaDestination>,
+    state_rx: Receiver<PipelineState>,
+    /// Answers etl once the step that holds a write is durable. Lives as long
+    /// as the member, across restarts of etl: the member's channel to it can
+    /// be taken only once.
+    watcher: Option<CompletionWatcher>,
+    /// The table error monitor reported the member's error: it stops reading,
+    /// like a disconnected member.
+    errored: AtomicBool,
+}
+
+/// Why one run of etl ended.
+enum EndReason {
+    /// The Feldera pipeline stops.
+    PipelineStop,
+    /// etl stopped on its own.
+    Etl(EtlResult<()>),
+    /// A connector was disconnected, or joined while etl ran, or its table
+    /// error monitor spoke. etl starts again for the members that remain.
+    MembershipChanged,
 }
 
 impl SharedCdcPipeline {
     pub(super) fn new(key: PublicationKey, registry: Arc<ConnectorRegistry>) -> Arc<Self> {
         let (terminate, _) = channel(false);
+        let (joined_late, _) = channel(0);
         Arc::new_cyclic(|me| Self {
             key,
             first: Mutex::new(None),
             registry,
-            joined: Mutex::new(Vec::new()),
-            running: AtomicBool::new(false),
-            retired: AtomicBool::new(false),
+            membership: Mutex::new(Membership::default()),
             stopping: Arc::new(AtomicBool::new(false)),
             parked: Arc::new(ParkedResults::default()),
             terminate,
+            joined_late,
             me: me.clone(),
         })
     }
@@ -67,13 +120,14 @@ impl SharedCdcPipeline {
     }
 
     /// Registers `member`. Until the controller has opened every connector,
-    /// the member waits for [`SharedConnectorState::initial_connect_done`];
-    /// a connector that joins afterwards starts etl now.
+    /// the member waits for [`SharedConnectorState::initial_connect_done`].
+    /// A connector that joins afterwards starts etl, or makes the running
+    /// etl stop and start again with it, and returns once etl runs.
     ///
     /// The connection user, TLS, `run_source_migrations`, `batch` and
     /// `memory_backpressure` configure the whole etl pipeline, so a member
     /// whose values differ from the first member's is refused.
-    pub(super) fn join(&self, member: Member) -> Result<(), ControllerError> {
+    pub(super) fn join(&self, mut member: Member) -> Result<(), ControllerError> {
         let name = member.inner.endpoint_name.clone();
         {
             let mut first = self.first.lock().unwrap();
@@ -96,37 +150,54 @@ impl SharedCdcPipeline {
                 *first = Some((name.clone(), member.inner.config.clone()));
             }
         }
-        if self.running.load(Ordering::SeqCst) {
-            return Err(ControllerError::input_transport_error(
-                &name,
-                true,
-                anyhow!(
-                    "the replication pipeline of publication '{}' is already running for \
-                     another connector; connecting a connector to it while it runs is not \
-                     supported yet. Stop the pipeline, then start it with this connector",
-                    self.key.publication()
-                ),
-            ));
-        }
-        self.joined.lock().unwrap().push(member);
-        if self.registry.is_initial_connect_done() {
-            self.start()
-        } else {
-            Ok(())
+        let late = {
+            let mut membership = self.membership.lock().unwrap();
+            if membership.running {
+                // The Feldera table of a connector that joins a running
+                // pipeline is empty, so its copy is read again.
+                member.redo_snapshot = true;
+                let (sender, receiver) = oneshot::channel();
+                membership.late_joiners.push(sender);
+                membership.joined.push(member);
+                Some(receiver)
+            } else {
+                membership.joined.push(member);
+                None
+            }
+        };
+        match late {
+            Some(receiver) => {
+                self.joined_late.send_modify(|n| *n += 1);
+                receiver.blocking_recv().map_err(|_| {
+                    ControllerError::input_transport_error(
+                        &name,
+                        true,
+                        anyhow!(
+                            "the replication pipeline of publication '{}' stopped before this \
+                             connector joined it; connect the connector again",
+                            self.key.publication()
+                        ),
+                    )
+                })?
+            }
+            None if self.registry.is_initial_connect_done() => self.start(),
+            None => Ok(()),
         }
     }
 
     /// Starts etl for the members that joined, on a thread of its own, and
     /// returns once etl runs or has failed to start.
     fn start(&self) -> Result<(), ControllerError> {
-        let members = std::mem::take(&mut *self.joined.lock().unwrap());
-        let Some(first) = members.first() else {
-            return Ok(());
+        let members = {
+            let mut membership = self.membership.lock().unwrap();
+            if membership.joined.is_empty() || membership.running {
+                return Ok(());
+            }
+            membership.running = true;
+            std::mem::take(&mut membership.joined)
         };
-        let label = first.inner.endpoint_name.clone();
-        self.running.store(true, Ordering::SeqCst);
-        let (init_status_sender, init_status_receiver) =
-            tokio::sync::oneshot::channel::<Result<(), ControllerError>>();
+        let label = members[0].inner.endpoint_name.clone();
+        let (init_status_sender, init_status_receiver) = oneshot::channel();
         let this = self
             .me
             .upgrade()
@@ -157,6 +228,7 @@ impl SharedCdcPipeline {
                                 true,
                                 anyhow!("failed to start the connector's tokio runtime: {e}"),
                             )));
+                        this.retire();
                         return;
                     }
                 };
@@ -173,32 +245,181 @@ impl SharedCdcPipeline {
         })?
     }
 
-    async fn worker_task(
-        self: Arc<Self>,
-        members: Vec<Member>,
-        init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
-    ) {
+    /// Takes the connectors that joined while etl ran, with the senders that
+    /// wait for the next start.
+    fn take_late_joiners(&self) -> (Vec<Member>, Vec<InitSender>) {
+        let mut membership = self.membership.lock().unwrap();
+        (
+            std::mem::take(&mut membership.joined),
+            std::mem::take(&mut membership.late_joiners),
+        )
+    }
+
+    /// The worker returns for good. Connectors that joined too late to be
+    /// started are told so, and the registry hands the next connector a new
+    /// pipeline.
+    fn retire(&self) {
+        self.stopping.store(true, Ordering::SeqCst);
+        let (_, late_joiners) = {
+            let mut membership = self.membership.lock().unwrap();
+            membership.running = false;
+            membership.retired = true;
+            (
+                std::mem::take(&mut membership.joined),
+                std::mem::take(&mut membership.late_joiners),
+            )
+        };
+        // The receivers see the dropped senders and report the stop.
+        drop(late_joiners);
+    }
+
+    /// Runs etl for `members`, and again after each change of membership,
+    /// until the pipeline stops or no member is left.
+    async fn worker_task(self: Arc<Self>, members: Vec<Member>, init: InitSender) {
         let label = members[0].inner.endpoint_name.clone();
-        self.worker_task_inner(members, init_status_sender).await;
+        let config = self.config();
+        let mut running: Vec<RunningMember> = Vec::new();
+        let mut newcomers = members;
+        let mut init = vec![init];
+        let mut terminate_rx = self.terminate.subscribe();
+        loop {
+            let Ok(reason) = self
+                .run_etl(&config, &label, &mut running, newcomers, init)
+                .await
+            else {
+                // The start failed, and every connector that waited for it
+                // has the error. Members that streamed before are left
+                // without etl, so they fail too.
+                for member in &running {
+                    member.inner.consumer.error(
+                        true,
+                        anyhow!(
+                            "the replication pipeline of publication '{}' failed to start again \
+                             after a connector joined or left; see the error of that connector",
+                            config.publication
+                        ),
+                        None,
+                    );
+                }
+                break;
+            };
+            match reason {
+                EndReason::PipelineStop => break,
+                EndReason::Etl(Err(e)) => {
+                    error!("postgres_cdc {label}: etl pipeline error: {e}");
+                    let text = e.to_string();
+                    for member in &running {
+                        member.inner.consumer.error(
+                            true,
+                            with_setup_hint(anyhow!(text.clone()), config.run_source_migrations),
+                            None,
+                        );
+                    }
+                    break;
+                }
+                EndReason::Etl(Ok(())) => {
+                    debug!("postgres_cdc {label}: etl pipeline ended");
+                    break;
+                }
+                EndReason::MembershipChanged => {
+                    if !self
+                        .after_leave(&mut running, &label, &mut terminate_rx)
+                        .await
+                    {
+                        break;
+                    }
+                }
+            }
+            (newcomers, init) = self.take_late_joiners();
+            if running.is_empty() && newcomers.is_empty() {
+                break;
+            }
+            info!(
+                "postgres_cdc {label}: starting etl again for publication '{}' with {} connectors",
+                config.publication,
+                running.len() + newcomers.len()
+            );
+        }
+        for member in &mut running {
+            stop_completion_watcher(&mut member.watcher, &label).await;
+        }
+        self.retire();
+        for member in &running {
+            member.inner.consumer.eoi();
+        }
         debug!("postgres_cdc {label}: worker task terminated");
     }
 
-    async fn worker_task_inner(
-        self: Arc<Self>,
-        members: Vec<Member>,
-        init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
-    ) {
-        let label = members[0].inner.endpoint_name.clone();
-        let config = self.config();
-        let pg_conn = match parse_pg_uri(&config.uri, &config.tls, &label) {
+    /// Drops the members that left, waits for the restart grace, and drops
+    /// those that left meanwhile: members that leave one after another cost
+    /// one restart. Returns false when the pipeline stops instead.
+    async fn after_leave(
+        &self,
+        running: &mut Vec<RunningMember>,
+        label: &str,
+        terminate_rx: &mut Receiver<bool>,
+    ) -> bool {
+        self.drop_terminated(running, label).await;
+        if !self.wait_grace(terminate_rx).await {
+            return false;
+        }
+        self.drop_terminated(running, label).await;
+        true
+    }
+
+    /// Waits for the restart grace, unless the pipeline stops meanwhile.
+    async fn wait_grace(&self, terminate_rx: &mut Receiver<bool>) -> bool {
+        let grace = Duration::from_millis(RESTART_GRACE_MS.load(Ordering::Relaxed));
+        select! {
+            _ = tokio::time::sleep(grace) => true,
+            _ = async { let _ = terminate_rx.wait_for(|terminate| *terminate).await; } => false,
+        }
+    }
+
+    /// Removes the members whose connectors were disconnected, or whose
+    /// monitor spoke, from `running`, and ends their input.
+    async fn drop_terminated(&self, running: &mut Vec<RunningMember>, label: &str) {
+        let mut index = 0;
+        while index < running.len() {
+            if running[index].leaves() {
+                let mut member = running.remove(index);
+                stop_completion_watcher(&mut member.watcher, label).await;
+                member.inner.consumer.eoi();
+                info!(
+                    "postgres_cdc {}: left publication '{}'",
+                    member.inner.endpoint_name,
+                    self.key.publication()
+                );
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    /// One run of etl: starts it for the running members and the newcomers,
+    /// answers `init` with the start result, and waits until it ends.
+    ///
+    /// Returns `Err` when the start failed; `init` then holds the error.
+    async fn run_etl(
+        &self,
+        config: &PostgresCdcReaderConfig,
+        label: &str,
+        running: &mut Vec<RunningMember>,
+        newcomers: Vec<Member>,
+        init: Vec<InitSender>,
+    ) -> Result<EndReason, ()> {
+        let pg_conn = match parse_pg_uri(&config.uri, &config.tls, label) {
             Ok(conn) => conn,
             Err(e) => {
-                let _ =
-                    init_status_sender.send(Err(ControllerError::invalid_transport_configuration(
-                        &label,
+                return fail_init(
+                    init,
+                    label,
+                    &config.publication,
+                    ControllerError::invalid_transport_configuration(
+                        label,
                         &format!("failed to parse Postgres URI: {e}"),
-                    )));
-                return;
+                    ),
+                );
             }
         };
 
@@ -206,30 +427,32 @@ impl SharedCdcPipeline {
         // error, and the most likely one after an unqualified name came to
         // mean `public`. Say so now, with the publication's table list, rather
         // than ingest nothing until the stall monitor speaks.
-        let catalog = connect_pg(&config.uri, &config.tls, &label).await;
+        let catalog = connect_pg(&config.uri, &config.tls, label).await;
         match &catalog {
             Ok(client) => match publication_tables(client, &config.publication).await {
                 Ok(tables) => {
-                    for member in &members {
+                    for member in &newcomers {
                         if let Some(problem) = source_table_missing_from(
                             &member.inner.config.source_table,
                             &config.publication,
                             &tables,
                         ) {
-                            let _ = init_status_sender.send(Err(
+                            return fail_init(
+                                init,
+                                label,
+                                &config.publication,
                                 ControllerError::input_transport_error(
                                     &member.inner.endpoint_name,
                                     true,
                                     anyhow!(problem),
                                 ),
-                            ));
-                            return;
+                            );
                         }
                     }
                 }
-                Err(e) => warn_publication_unlisted(&label, &config.publication, &e),
+                Err(e) => warn_publication_unlisted(label, &config.publication, &e),
             },
-            Err(e) => warn_publication_unlisted(&label, &config.publication, e),
+            Err(e) => warn_publication_unlisted(label, &config.publication, e),
         }
 
         // Skipped source migrations leave the event trigger to an
@@ -240,9 +463,12 @@ impl SharedCdcPipeline {
         if let (false, Ok(client)) = (config.run_source_migrations, &catalog)
             && let Err(e) = verify_ddl_event_trigger(client).await
         {
-            let _ = init_status_sender
-                .send(Err(ControllerError::input_transport_error(&label, true, e)));
-            return;
+            return fail_init(
+                init,
+                label,
+                &config.publication,
+                ControllerError::input_transport_error(label, true, e),
+            );
         }
 
         let pipeline_config = PipelineConfig {
@@ -288,16 +514,40 @@ impl SharedCdcPipeline {
             Ok(store) => store,
             Err(e) => {
                 let message = format!("failed to initialize PostgresStore: {e}");
-                let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                    &label,
-                    true,
-                    with_setup_hint(anyhow!(e).context(message), config.run_source_migrations),
-                )));
-                return;
+                return fail_init(
+                    init,
+                    label,
+                    &config.publication,
+                    ControllerError::input_transport_error(
+                        label,
+                        true,
+                        with_setup_hint(anyhow!(e).context(message), config.run_source_migrations),
+                    ),
+                );
             }
         };
 
-        for member in &members {
+        // etl reads the table states from the store's cache, which the
+        // reconciliation below fills for newcomers; a restart with no
+        // newcomer would otherwise start every table from scratch.
+        if let Err(e) = store.load_cache().await {
+            let message = format!("failed to load the replication state: {e}");
+            return fail_init(
+                init,
+                label,
+                &config.publication,
+                ControllerError::input_transport_error(
+                    label,
+                    true,
+                    with_setup_hint(anyhow!(e).context(message), config.run_source_migrations),
+                ),
+            );
+        }
+
+        // Members that streamed before keep their copy barrier as it is: the
+        // circuit holds what they pushed, and the restarted etl reads the
+        // changes it had not confirmed again.
+        for member in &newcomers {
             let inner = &member.inner;
             match reconcile_table_state(
                 &store,
@@ -322,23 +572,26 @@ impl SharedCdcPipeline {
                          reported problem, then restart the pipeline",
                         inner.config.source_table
                     );
-                    let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                        &inner.endpoint_name,
-                        true,
-                        with_setup_hint(anyhow!(e).context(message), config.run_source_migrations),
-                    )));
-                    return;
+                    return fail_init(
+                        init,
+                        label,
+                        &config.publication,
+                        ControllerError::input_transport_error(
+                            &inner.endpoint_name,
+                            true,
+                            with_setup_hint(
+                                anyhow!(e).context(message),
+                                config.run_source_migrations,
+                            ),
+                        ),
+                    );
                 }
             }
         }
 
-        let mut inners = Vec::with_capacity(members.len());
-        let mut state_rxs = Vec::with_capacity(members.len());
-        let mut destinations = Vec::with_capacity(members.len());
-        let mut monitors = Vec::with_capacity(members.len());
-        for member in members {
+        for member in newcomers {
             let inner = member.inner;
-            destinations.push(Arc::new(FelderaDestination {
+            let destination = Arc::new(FelderaDestination {
                 input_stream: Arc::new(Mutex::new(member.input_stream)),
                 queue: Arc::clone(&inner.queue),
                 source_table: inner.config.source_table.clone(),
@@ -351,25 +604,40 @@ impl SharedCdcPipeline {
                 copy: Arc::clone(&inner.copy),
                 consumer: inner.consumer.clone(),
                 stopping: Arc::clone(&self.stopping),
-            }));
-            monitors.push(TableErrorMonitor {
-                endpoint_name: inner.endpoint_name.clone(),
-                run_source_migrations: config.run_source_migrations,
-                consumer: inner.consumer.clone(),
-                store: store.clone(),
-                source_table: inner.config.source_table.clone(),
-                publication: config.publication.clone(),
-                copy: Arc::clone(&inner.copy),
-                pipeline_state_rx: member.state_rx.clone(),
+                high_water: Arc::new(Mutex::new(HighWater::default())),
             });
-            state_rxs.push(member.state_rx);
-            inners.push(inner);
+            running.push(RunningMember {
+                inner,
+                destination,
+                state_rx: member.state_rx,
+                watcher: None,
+                errored: AtomicBool::new(false),
+            });
         }
+        let monitors = running
+            .iter()
+            .map(|member| TableErrorMonitor {
+                endpoint_name: member.inner.endpoint_name.clone(),
+                run_source_migrations: config.run_source_migrations,
+                consumer: member.inner.consumer.clone(),
+                store: store.clone(),
+                source_table: member.inner.config.source_table.clone(),
+                publication: config.publication.clone(),
+                copy: Arc::clone(&member.inner.copy),
+                pipeline_state_rx: member.state_rx.clone(),
+            })
+            .collect::<Vec<_>>();
         let destination = DispatchingDestination::new(
-            destinations,
+            running
+                .iter()
+                .map(|member| Arc::clone(&member.destination))
+                .collect(),
             Arc::clone(&self.stopping),
             Arc::clone(&self.parked),
         );
+
+        // A new run of etl takes writes again.
+        self.stopping.store(false, Ordering::SeqCst);
 
         // Stopping the pipeline needs the pipeline itself, so a stop that
         // arrives while `start` runs takes effect once it returns: the
@@ -393,35 +661,41 @@ impl SharedCdcPipeline {
             }
         };
         drop(catalog);
-        match started {
-            Ok(()) => {
-                for inner in &inners {
-                    info!(
-                        "postgres_cdc {}: etl pipeline started for publication '{}', table '{}'",
-                        &inner.endpoint_name, &config.publication, &inner.config.source_table,
-                    );
-                }
-                let _ = init_status_sender.send(Ok(()));
-            }
-            Err(e) => {
-                let _ = init_status_sender
-                    .send(Err(ControllerError::input_transport_error(&label, true, e)));
-                self.shutdown_etl_pipeline(Some(&pipeline), &inners);
-                return;
-            }
+        if let Err(e) = started {
+            self.shutdown_etl_pipeline(Some(&pipeline), running);
+            return fail_init(
+                init,
+                label,
+                &config.publication,
+                ControllerError::input_transport_error(label, true, e),
+            );
+        }
+        *ETL_STARTS
+            .lock()
+            .unwrap()
+            .entry(self.pipeline_id())
+            .or_default() += 1;
+        for member in running.iter() {
+            info!(
+                "postgres_cdc {}: etl pipeline started for publication '{}', table '{}'",
+                &member.inner.endpoint_name, &config.publication, &member.inner.config.source_table,
+            );
+        }
+        for sender in init {
+            let _ = sender.send(Ok(()));
         }
 
-        // Spawn the completion watcher background tasks if tracking is
-        // available. The watchers and the channels were created in `new()`;
-        // we take the channels here after etl has started so startup
-        // failures do not leave a task behind. The watcher is cloned rather
-        // than taken: the reader keeps its own to read the frontier after the
-        // watcher stops, so a flush that races the stop can still tell the
-        // durable writes from the rest.
-        let mut completion_handles = inners
-            .iter()
-            .map(|inner| inner.spawn_completion_watcher(&self.parked))
-            .collect::<Vec<_>>();
+        // Spawn the completion watcher of each new member, if tracking is
+        // available. The channel is taken here, after etl has started, so
+        // startup failures do not leave a task behind. The watcher is cloned
+        // rather than taken: the reader keeps its own to read the frontier
+        // after the watcher stops, so a flush that races the stop can still
+        // tell the durable writes from the rest.
+        for member in running.iter_mut() {
+            if member.watcher.is_none() {
+                member.watcher = member.inner.spawn_completion_watcher(&self.parked);
+            }
+        }
 
         // Run the pipeline alongside a watcher for non-retriable per-table
         // errors. etl marks a table errored (e.g. on a source schema change)
@@ -429,72 +703,94 @@ impl SharedCdcPipeline {
         // forever while the input silently stalls; the watcher reports such an
         // error so the controller fails the endpoint instead.
         let mut terminate_rx = self.terminate.subscribe();
+        let mut joined_late_rx = self.joined_late.subscribe();
+        joined_late_rx.mark_unchanged();
         let pipeline_wait = pipeline.wait();
         tokio::pin!(pipeline_wait);
         // Drop the watch guards inside the blocks: holding one while awaiting
         // `pipeline_wait` blocks etl tasks that read the same watch in
         // `wait_unpaused`, once a reader's `Drop` queues another write.
-        let member_terminated = select_all(state_rxs.iter_mut().map(|rx| {
+        let mut member_terminated = Box::pin(select_all(running.iter().map(|member| {
+            let mut rx = member.state_rx.clone();
             Box::pin(async move {
                 let _ = rx
                     .wait_for(|state| state == &PipelineState::Terminated)
                     .await;
             }) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
-        }));
-        let monitor_spoke = select_all(monitors.into_iter().map(|monitor| {
+        })));
+        let mut monitor_spoke = Box::pin(select_all(monitors.into_iter().map(|monitor| {
             Box::pin(monitor.run()) as std::pin::Pin<Box<dyn Future<Output = ()> + Send>>
-        }));
-        let (pipeline_result, report_error) = select! {
-            result = &mut pipeline_wait => (result, true),
-            _ = async {
-                let _ = terminate_rx.wait_for(|terminate| *terminate).await;
-            } => {
-                debug!("postgres_cdc {label}: the pipeline stops; shutting down etl pipeline");
-                self.shutdown_etl_pipeline(Some(&pipeline), &inners);
-                stop_completion_watchers(&mut completion_handles, &label).await;
-                (self.await_etl_stop(&mut pipeline_wait, &label).await, false)
-            }
-            _ = member_terminated => {
-                debug!(
-                    "postgres_cdc {label}: received termination command; shutting down etl pipeline"
-                );
-                self.shutdown_etl_pipeline(Some(&pipeline), &inners);
-                stop_completion_watchers(&mut completion_handles, &label).await;
-                (self.await_etl_stop(&mut pipeline_wait, &label).await, false)
-            }
-            _ = monitor_spoke => {
-                self.shutdown_etl_pipeline(Some(&pipeline), &inners);
-                stop_completion_watchers(&mut completion_handles, &label).await;
-                (self.await_etl_stop(&mut pipeline_wait, &label).await, false)
+        })));
+        let mut joined_late = Box::pin(async move {
+            let _ = joined_late_rx.changed().await;
+        });
+        // A change of membership stops etl once no member that stays has a
+        // copy under way: etl would copy such a table again from scratch,
+        // into a circuit that already holds the rows it pushed. The members
+        // that leave are excluded, and their rows are dropped meanwhile. The
+        // monitors keep running, because they are what records a completed
+        // copy as closed.
+        let mut membership_changed = false;
+        let mut monitor_done = false;
+        let reason = loop {
+            select! {
+                result = &mut pipeline_wait => break EndReason::Etl(result),
+                _ = async {
+                    let _ = terminate_rx.wait_for(|terminate| *terminate).await;
+                } => break EndReason::PipelineStop,
+                _ = &mut member_terminated, if !membership_changed => {
+                    debug!("postgres_cdc {label}: a connector was disconnected");
+                    membership_changed = true;
+                }
+                _ = &mut joined_late, if !membership_changed => {
+                    debug!("postgres_cdc {label}: a connector joined");
+                    membership_changed = true;
+                }
+                (_, index, _) = &mut monitor_spoke, if !monitor_done => {
+                    running[index].errored.store(true, Ordering::SeqCst);
+                    monitor_done = true;
+                    membership_changed = true;
+                }
+                _ = tokio::time::sleep(Duration::from_millis(50)), if membership_changed => {
+                    let copies_open = running
+                        .iter()
+                        .filter(|member| !member.leaves())
+                        .filter(|member| member.inner.copy.copy_open())
+                        .count();
+                    if copies_open == 0 {
+                        break EndReason::MembershipChanged;
+                    }
+                }
             }
         };
-
-        if let Err(e) = pipeline_result {
-            let terminated = state_rxs
-                .iter()
-                .any(|rx| *rx.borrow() == PipelineState::Terminated);
-            if report_error && !terminated {
-                error!("postgres_cdc {label}: etl pipeline error: {e}");
-                let text = e.to_string();
-                for inner in &inners {
-                    inner.consumer.error(
-                        true,
-                        with_setup_hint(anyhow!(text.clone()), config.run_source_migrations),
-                        None,
-                    );
+        // A stop disconnects the members one by one; the stop comes first.
+        let reason = if *terminate_rx.borrow() {
+            EndReason::PipelineStop
+        } else {
+            reason
+        };
+        match &reason {
+            EndReason::Etl(_) => {
+                // etl is gone; the flag turns away what it still issues.
+                self.stopping.store(true, Ordering::SeqCst);
+                for member in running.iter() {
+                    member.inner.park_terminal();
                 }
-            } else {
-                debug!("postgres_cdc {label}: etl pipeline stopped during shutdown: {e}");
+            }
+            EndReason::PipelineStop => {
+                debug!("postgres_cdc {label}: the pipeline stops; shutting down etl pipeline");
+                self.shutdown_etl_pipeline(Some(&pipeline), running);
+                let result = self.await_etl_stop(&mut pipeline_wait, label).await;
+                debug_etl_stop(label, result);
+            }
+            EndReason::MembershipChanged => {
+                debug!("postgres_cdc {label}: the members change; shutting down etl pipeline");
+                self.shutdown_etl_pipeline(Some(&pipeline), running);
+                let result = self.await_etl_stop(&mut pipeline_wait, label).await;
+                debug_etl_stop(label, result);
             }
         }
-
-        stop_completion_watchers(&mut completion_handles, &label).await;
-
-        self.retired.store(true, Ordering::SeqCst);
-        self.running.store(false, Ordering::SeqCst);
-        for inner in &inners {
-            inner.consumer.eoi();
-        }
+        Ok(reason)
     }
 
     /// Wait for etl to stop after [`Self::shutdown_etl_pipeline`], for at
@@ -539,20 +835,24 @@ impl SharedCdcPipeline {
     /// answers still queued stay queued: a flush after the stop answers into
     /// a channel nobody reads, and the rest drop with the queue, after etl
     /// has stopped.
-    fn shutdown_etl_pipeline(
-        &self,
-        pipeline: Option<&EtlPipeline>,
-        inners: &[Arc<PostgresCdcInputInner>],
-    ) {
+    fn shutdown_etl_pipeline(&self, pipeline: Option<&EtlPipeline>, running: &[RunningMember]) {
         if let Some(pipeline) = pipeline {
             pipeline.shutdown();
         }
         // etl is asked to stop first; the flag then turns away the writes it
         // still issues before it sees the request.
         self.stopping.store(true, Ordering::SeqCst);
-        for inner in inners {
-            inner.park_terminal();
+        for member in running {
+            member.inner.park_terminal();
         }
+    }
+}
+
+impl RunningMember {
+    /// Whether the member leaves the pipeline: its connector was
+    /// disconnected, or its monitor reported an error.
+    fn leaves(&self) -> bool {
+        *self.state_rx.borrow() == PipelineState::Terminated || self.errored.load(Ordering::SeqCst)
     }
 }
 
@@ -565,10 +865,10 @@ impl SharedConnectorState for SharedCdcPipeline {
         self.terminate.send_replace(true);
     }
 
-    /// A pipeline that stops, or has stopped, takes no new member: a
-    /// connector that connects again gets a pipeline of its own.
+    /// A pipeline whose worker has returned takes no new member: a connector
+    /// that connects again gets a pipeline of its own.
     fn accepts_members(&self) -> bool {
-        !self.stopping.load(Ordering::SeqCst) && !self.retired.load(Ordering::SeqCst)
+        !self.membership.lock().unwrap().retired
     }
 }
 
@@ -598,6 +898,31 @@ pub(super) fn shared_settings_differ(
     }
 }
 
+/// Answers every connector that waited for the start with `error`: the first
+/// gets the original, the others its text.
+fn fail_init(
+    init: Vec<InitSender>,
+    label: &str,
+    publication: &str,
+    error: ControllerError,
+) -> Result<EndReason, ()> {
+    let text = error.to_string();
+    let mut init = init.into_iter();
+    if let Some(first) = init.next() {
+        let _ = first.send(Err(error));
+    }
+    for sender in init {
+        let _ = sender.send(Err(ControllerError::input_transport_error(
+            label,
+            true,
+            anyhow!(
+                "the replication pipeline of publication '{publication}' failed to start: {text}"
+            ),
+        )));
+    }
+    Err(())
+}
+
 fn warn_publication_unlisted(label: &str, publication: &str, error: &anyhow::Error) {
     warn!(
         "postgres_cdc {label}: could not list the tables of publication '{publication}' \
@@ -606,9 +931,8 @@ fn warn_publication_unlisted(label: &str, publication: &str, error: &anyhow::Err
     );
 }
 
-/// Stop every completion watcher, each within [`WATCHER_SHUTDOWN_TIMEOUT`].
-async fn stop_completion_watchers(watchers: &mut [Option<CompletionWatcher>], label: &str) {
-    for watcher in watchers {
-        stop_completion_watcher(watcher, label).await;
+fn debug_etl_stop(label: &str, result: EtlResult<()>) {
+    if let Err(e) = result {
+        debug!("postgres_cdc {label}: etl pipeline stopped during shutdown: {e}");
     }
 }

@@ -28,12 +28,17 @@ impl DispatchingDestination {
         }
     }
 
+    /// The members that still read: a disconnected connector's rows reach no
+    /// Feldera table until etl starts again without it.
+    fn live_members(&self) -> impl Iterator<Item = &Arc<FelderaDestination>> {
+        self.members.iter().filter(|member| !member.has_left())
+    }
+
     /// The members that read the table `schema` describes. Several Feldera
     /// tables can read one source table.
     fn members_for(&self, schema: &ReplicatedTableSchema) -> Vec<&Arc<FelderaDestination>> {
         let name = schema.name();
-        self.members
-            .iter()
+        self.live_members()
             .filter(|member| member.is_target_table(&name.schema, &name.name))
             .collect()
     }
@@ -44,7 +49,7 @@ impl DispatchingDestination {
         if self.stopping.load(Ordering::SeqCst) {
             return Admission::Stopping;
         }
-        for member in self.members.iter() {
+        for member in self.live_members() {
             if member.wait_unpaused().await == Admission::Stopping {
                 return Admission::Stopping;
             }
@@ -153,8 +158,7 @@ impl Destination for DispatchingDestination {
         // the last share to fire answers etl. A write with rows for no member
         // is answered at once.
         let members = self
-            .members
-            .iter()
+            .live_members()
             .filter(|member| {
                 events
                     .iter()
@@ -216,6 +220,40 @@ pub(super) struct FelderaDestination {
     /// The connector is shutting etl down; see
     /// [`FelderaDestination::wait_unpaused`].
     pub(super) stopping: Arc<AtomicBool>,
+    /// Position of the last streamed event pushed into the queue; see
+    /// [`HighWater`].
+    pub(super) high_water: Arc<Mutex<HighWater>>,
+}
+
+/// The position of the last streamed event a member pushed into its queue.
+///
+/// When etl starts again inside a running pipeline, after a connector joined
+/// or left, it reads from the slot's confirmed position and offers writes
+/// again that the member has already pushed, and the circuit has no
+/// checkpoint to fall back to as it has on a full restart. Events at or
+/// below the mark are dropped. The position orders events inside one
+/// transaction too, so a transaction split over two writes is covered.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct HighWater {
+    /// `(commit_lsn, tx_ordinal)` of the last event pushed.
+    mark: Option<(u64, u64)>,
+}
+
+impl HighWater {
+    /// Whether an event at `position` is new, and so to be pushed; the mark
+    /// then moves to it.
+    pub(super) fn admit(&mut self, position: (u64, u64)) -> bool {
+        if self.mark.is_some_and(|mark| position <= mark) {
+            return false;
+        }
+        self.mark = Some(position);
+        true
+    }
+
+    /// A copy of the table starts over: the stream after it is new.
+    pub(super) fn reset(&mut self) {
+        self.mark = None;
+    }
 }
 
 /// What the reader reports a step as resumable from. etl's `PostgresStore`
@@ -299,6 +337,7 @@ impl FelderaDestination {
     /// the circuit (#7122).
     pub(super) fn push_events(&self, events: &[Event], share: Ack) -> EtlResult<()> {
         let mut stream = self.input_stream.lock().unwrap();
+        let mut high_water = self.high_water.lock().unwrap();
         let mut queued = 0usize;
         let mut bytes = 0;
         let mut errors = Vec::new();
@@ -312,6 +351,9 @@ impl FelderaDestination {
                     else {
                         continue;
                     };
+                    if !high_water.admit((u64::from(insert.commit_lsn), insert.tx_ordinal)) {
+                        continue;
+                    }
                     let json_value =
                         row_to_json(insert.table_row.values(), &cols, &self.endpoint_name);
                     let json_str = json_value.to_string();
@@ -332,6 +374,9 @@ impl FelderaDestination {
                     else {
                         continue;
                     };
+                    if !high_water.admit((u64::from(update.commit_lsn), update.tx_ordinal)) {
+                        continue;
+                    }
                     // The new row is authoritative only when complete. A partial
                     // image (PostgreSQL `UnchangedToast` columns etl could not
                     // reconstruct) cannot be turned into a correct Feldera row,
@@ -386,6 +431,9 @@ impl FelderaDestination {
                     else {
                         continue;
                     };
+                    if !high_water.admit((u64::from(delete.commit_lsn), delete.tx_ordinal)) {
+                        continue;
+                    }
                     if let Some(old_row) = &delete.old_table_row {
                         let old_str = old_row_to_json(
                             &delete.replicated_table_schema,
@@ -464,6 +512,7 @@ impl FelderaDestination {
     /// of a new copy can reach the queue while the barrier is down (#6121).
     pub(super) fn note_copy_batch(&self) {
         if self.copy.note_copy_batch() {
+            self.high_water.lock().unwrap().reset();
             info!(
                 "postgres_cdc {}: etl is copying table '{}' again; checkpoints wait \
                  for the new copy",
@@ -562,6 +611,11 @@ impl FelderaDestination {
             }
             Ok(_) | Err(_) => Admission::Stopping,
         }
+    }
+
+    /// Whether the connector was disconnected.
+    pub(super) fn has_left(&self) -> bool {
+        *self.pipeline_state_rx.borrow() == PipelineState::Terminated
     }
 
     pub(super) fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
