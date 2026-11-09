@@ -25,7 +25,7 @@ use crate::{
     test::kafka::csv_messages,
     transport::{
         input_transport_config_to_endpoint,
-        kafka::ft::input::{BACKPRESSURE, Metadata},
+        kafka::ft::input::{BACKPRESSURE, DELAY_SPLIT, DRAINED, Metadata},
     },
 };
 use anyhow::Error as AnyError;
@@ -622,6 +622,67 @@ fn test_input_tombstone() {
     reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
     receiver.expect(vec![ConsumerCall::Replayed { num_records: 3 }]);
     assert_eq!(take_flushed(&receiver), vec!["m0", "", "m3"]);
+}
+
+/// A step queued before the reader reads the messages that it drained from
+/// the main queue at start-up must not resume past them.
+///
+/// Without the fix in `Stager::new`, the first step reports `5..5`, so a
+/// restart from it skips the 5 messages.
+#[test]
+fn test_input_queue_before_drained_messages() {
+    init_test_logger();
+
+    let topic = "kafka_queue_before_drained_ft";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    let producer = TestProducer::new();
+    for i in 0..5 {
+        producer.send_message(format!("m{i}").as_bytes(), topic, None);
+    }
+
+    let metadata = |offsets| {
+        serde_json::to_value(Metadata {
+            offsets: vec![offsets],
+            shard: None,
+            partitions: None,
+        })
+        .unwrap()
+    };
+
+    // librdkafka fetches into the main queue only if it is fast enough, so
+    // try again until a reader drains at least one message.
+    DELAY_SPLIT.lock().unwrap().insert(topic.into());
+    let mut attempts = 0;
+    let (_endpoint, receiver, reader) = loop {
+        attempts += 1;
+        DRAINED.lock().unwrap().remove(topic);
+        let (endpoint, receiver, reader) = create_reader(topic, None, false);
+
+        // Queue a step before `extend`, as a stop during start-up does.
+        reader.queue(false);
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: 0,
+            metadata: metadata(0..0),
+        }]);
+        if DRAINED.lock().unwrap().get(topic).copied().unwrap_or(0) > 0 {
+            break (endpoint, receiver, reader);
+        }
+        assert!(
+            attempts < 10,
+            "no message reached the main queue in {attempts} attempts, so this test checks nothing"
+        );
+    };
+    DELAY_SPLIT.lock().unwrap().remove(topic);
+
+    reader.extend();
+    receiver.expect_buffering(5);
+    reader.queue(false);
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: 5,
+        metadata: metadata(0..5),
+    }]);
+    assert_eq!(take_flushed(&receiver), vec!["m0", "m1", "m2", "m3", "m4"]);
 }
 
 /// A configured header filter drops non-matching messages before parsing, and
