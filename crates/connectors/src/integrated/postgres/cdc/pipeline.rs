@@ -1,7 +1,7 @@
 use super::*;
 
 /// The etl pipeline the connector runs: Postgres-backed state, Feldera sink.
-pub(super) type EtlPipeline = Pipeline<PostgresStore, FelderaDestination>;
+pub(super) type EtlPipeline = Pipeline<PostgresStore, DispatchingDestination>;
 
 /// Table errors a connector older than the `drain_on_shutdown` pin left behind
 /// when Feldera stopped it mid-write: the refusal it recorded itself, and the
@@ -101,6 +101,7 @@ pub(super) async fn verify_ddl_event_trigger(client: &tokio_postgres::Client) ->
 /// Integrated input connector that reads from Postgres via logical replication (CDC).
 pub struct PostgresCdcInputEndpoint {
     inner: Arc<PostgresCdcInputInner>,
+    shared: Arc<SharedCdcPipeline>,
 }
 
 impl PostgresCdcInputEndpoint {
@@ -112,6 +113,7 @@ impl PostgresCdcInputEndpoint {
         config: &PostgresCdcReaderConfig,
         pipeline_config: &feldera_types::config::PipelineConfig,
         layout: &feldera_types::circuit::Layout,
+        registry: Arc<ConnectorRegistry>,
         consumer: Box<dyn InputConsumer>,
     ) -> Result<Self, ControllerError> {
         config
@@ -129,6 +131,9 @@ impl PostgresCdcInputEndpoint {
         // pipeline, so the key is the per-table one.
         let _ = (pipeline_config, layout);
         let key = PublicationKey::per_table(config);
+        let shared = registry.get_or_create(&format!("postgres_cdc/{}", key.pipeline_id()), || {
+            SharedCdcPipeline::new(key.clone(), config.clone(), registry.clone())
+        });
 
         Ok(Self {
             inner: Arc::new(PostgresCdcInputInner::new(
@@ -136,7 +141,10 @@ impl PostgresCdcInputEndpoint {
                 config.clone(),
                 key,
                 consumer,
+                Arc::clone(&shared.stopping),
+                Arc::clone(&shared.parked),
             )),
+            shared,
         })
     }
 }
@@ -155,6 +163,7 @@ impl IntegratedInputEndpoint for PostgresCdcInputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(PostgresCdcInputReader::new(
             &self.inner,
+            &self.shared,
             input_handle,
             resume_info,
         )?))
@@ -163,7 +172,7 @@ impl IntegratedInputEndpoint for PostgresCdcInputEndpoint {
 
 pub(super) struct PostgresCdcInputInner {
     pub(super) endpoint_name: String,
-    config: PostgresCdcReaderConfig,
+    pub(super) config: PostgresCdcReaderConfig,
     pub(super) consumer: Box<dyn InputConsumer>,
     pub(super) queue: Arc<InputQueue<QueueAux>>,
     /// Deterministic pipeline ID used for replication slot naming and resume.
@@ -182,11 +191,10 @@ pub(super) struct PostgresCdcInputInner {
     pub(super) copy: Arc<CopyBarrier>,
     /// Fault tolerance is enabled: the slot advances only past checkpoints.
     pub(super) strict: bool,
-    /// The connector is shutting etl down. A write that starts afterwards
-    /// queues nothing and parks its result; see
-    /// [`FelderaDestination::wait_unpaused`].
+    /// etl is being stopped; shared with the [`SharedCdcPipeline`].
     stopping: Arc<AtomicBool>,
-    /// Results the stop could not answer; see [`ParkedResults`].
+    /// Results the stop could not answer; shared with the
+    /// [`SharedCdcPipeline`], see [`ParkedResults`].
     parked: Arc<ParkedResults>,
 }
 
@@ -196,6 +204,8 @@ impl PostgresCdcInputInner {
         config: PostgresCdcReaderConfig,
         key: PublicationKey,
         consumer: Box<dyn InputConsumer>,
+        stopping: Arc<AtomicBool>,
+        parked: Arc<ParkedResults>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         let completion_rx = consumer.completion_watcher();
@@ -228,8 +238,47 @@ impl PostgresCdcInputInner {
             completion_task_rx: Mutex::new(completion_task_rx),
             copy: Arc::new(CopyBarrier::new()),
             strict,
-            stopping: Arc::new(AtomicBool::new(false)),
-            parked: Arc::new(ParkedResults::default()),
+            stopping,
+            parked,
+        }
+    }
+
+    /// Whether the answers to etl wait for the step that holds their rows.
+    pub(super) fn defers_acks(&self) -> bool {
+        self.completion_task_tx.is_some()
+    }
+
+    /// Spawns the completion watcher, if the consumer tracks steps. Takes the
+    /// channel, so a second call spawns nothing.
+    pub(super) fn spawn_completion_watcher(
+        &self,
+        parked: &Arc<ParkedResults>,
+    ) -> Option<CompletionWatcher> {
+        match (
+            self.watcher_rx.lock().unwrap().as_ref().cloned(),
+            self.completion_task_rx.lock().unwrap().take(),
+        ) {
+            (Some(watcher), Some(rx)) => {
+                let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+                Some(CompletionWatcher {
+                    shutdown_tx,
+                    handle: tokio::spawn(completion_watcher_task(
+                        watcher,
+                        rx,
+                        shutdown_rx,
+                        Arc::clone(parked),
+                        self.endpoint_name.clone(),
+                    )),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// Parks the held copy barrier, if any, once etl is stopping.
+    pub(super) fn park_terminal(&self) {
+        if let Some(terminal) = self.copy.take_terminal() {
+            self.parked.park(terminal);
         }
     }
 
@@ -277,405 +326,14 @@ impl PostgresCdcInputInner {
             answer_durable_after_stop(&self.watcher_rx, &self.parked, flush_step, acks);
         }
     }
-
-    pub(super) async fn worker_task(
-        self: Arc<Self>,
-        input_stream: Box<dyn DeCollectionStream>,
-        feldera_required_columns: Vec<String>,
-        receiver: Receiver<PipelineState>,
-        init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
-        redo_snapshot: bool,
-        resumed_copy: ResumedCopy,
-    ) {
-        self.clone()
-            .worker_task_inner(
-                input_stream,
-                feldera_required_columns,
-                receiver,
-                init_status_sender,
-                redo_snapshot,
-                resumed_copy,
-            )
-            .await;
-        debug!(
-            "postgres_cdc {}: worker task terminated",
-            &self.endpoint_name
-        );
-    }
-
-    async fn worker_task_inner(
-        self: Arc<Self>,
-        input_stream: Box<dyn DeCollectionStream>,
-        feldera_required_columns: Vec<String>,
-        receiver: Receiver<PipelineState>,
-        init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
-        redo_snapshot: bool,
-        resumed_copy: ResumedCopy,
-    ) {
-        let pg_conn = match parse_pg_uri(&self.config.uri, &self.config.tls, &self.endpoint_name) {
-            Ok(conn) => conn,
-            Err(e) => {
-                let _ =
-                    init_status_sender.send(Err(ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        &format!("failed to parse Postgres URI: {e}"),
-                    )));
-                return;
-            }
-        };
-
-        // A `source_table` the publication does not carry is a configuration
-        // error, and the most likely one after an unqualified name came to
-        // mean `public`. Say so now, with the publication's table list, rather
-        // than ingest nothing until the stall monitor speaks.
-        let catalog = connect_pg(&self.config.uri, &self.config.tls, &self.endpoint_name).await;
-        match &catalog {
-            Ok(client) => match publication_tables(client, &self.config.publication).await {
-                Ok(tables) => {
-                    if let Some(problem) = source_table_missing_from(
-                        &self.config.source_table,
-                        &self.config.publication,
-                        &tables,
-                    ) {
-                        let _ =
-                            init_status_sender.send(Err(ControllerError::input_transport_error(
-                                &self.endpoint_name,
-                                true,
-                                anyhow!(problem),
-                            )));
-                        return;
-                    }
-                }
-                Err(e) => self.warn_publication_unlisted(&e),
-            },
-            Err(e) => self.warn_publication_unlisted(e),
-        }
-
-        // Skipped source migrations leave the event trigger to an
-        // administrator, so check it before touching the state store: a
-        // never-bootstrapped database then stays untouched. With migrations
-        // enabled the trigger is checked after etl installs it. A failed
-        // catalog connection is left for the state store to report.
-        if let (false, Ok(client)) = (self.config.run_source_migrations, &catalog)
-            && let Err(e) = verify_ddl_event_trigger(client).await
-        {
-            let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                &self.endpoint_name,
-                true,
-                e,
-            )));
-            return;
-        }
-
-        let pipeline_config = PipelineConfig {
-            id: self.pipeline_id,
-            publication_name: self.config.publication.clone(),
-            pg_connection: pg_conn.clone(),
-            // etl stores its replication state in the source database itself, so
-            // the state store reuses the source connection.
-            store_pg_connection: None,
-            // etl names its replication slots after the pipeline id alone, and
-            // failover slots need PostgreSQL 17 or later, so the connector
-            // keeps the default slot configuration.
-            replication_slot: Default::default(),
-            batch: batch_config_from(&self.config.batch),
-            table_error_retry_delay_ms: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_DELAY_MS,
-            table_error_retry_max_attempts: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_MAX_ATTEMPTS,
-            max_table_sync_workers: PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS,
-            max_copy_connections_per_table: PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE,
-            memory_refresh_interval_ms: PipelineConfig::DEFAULT_MEMORY_REFRESH_INTERVAL_MS,
-            memory_backpressure: Some(memory_backpressure_config_from(
-                &self.config.memory_backpressure,
-            )),
-            table_sync_copy: TableSyncCopyConfig::IncludeAllTables,
-            table_sync_monitor_refresh_interval_ms:
-                PipelineConfig::DEFAULT_TABLE_SYNC_MONITOR_REFRESH_INTERVAL_MS,
-            invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
-            // The initial copy needs etl's schema helpers. When migrations are
-            // disabled, an administrator must have installed them beforehand.
-            run_source_migrations: self.config.run_source_migrations,
-            replication_lag_refresh_interval_ms:
-                PipelineConfig::DEFAULT_REPLICATION_LAG_REFRESH_INTERVAL_MS,
-            settle_durable_interval_ms: None,
-            // A write becomes durable only when the circuit commits a step,
-            // and the circuit stops stepping once the connector is told to
-            // stop. Draining would wait for an answer that never comes, so
-            // etl abandons the pending write and the buffered batch instead;
-            // PostgreSQL offers them again on the next start.
-            drain_on_shutdown: false,
-        };
-
-        // Use PostgresStore to persist table replication phases across restarts.
-        // This allows etl to resume from the replication slot position instead of
-        // re-snapshotting the entire table on restart.
-        let store = match PostgresStore::new(self.pipeline_id, pg_conn).await {
-            Ok(store) => store,
-            Err(e) => {
-                let message = format!("failed to initialize PostgresStore: {e}");
-                let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    with_setup_hint(
-                        anyhow!(e).context(message),
-                        self.config.run_source_migrations,
-                    ),
-                )));
-                return;
-            }
-        };
-
-        match reconcile_table_state(
-            &store,
-            &self.config.source_table,
-            redo_snapshot,
-            resumed_copy,
-            &self.endpoint_name,
-        )
-        .await
-        {
-            Ok(reconciled) => {
-                if let Some(lsn) = resumed_copy.lsn().max(reconciled.sync_done_lsn) {
-                    self.copy.note_sync_done_lsn(lsn);
-                }
-                self.copy.set_copy_open(reconciled.copy_outstanding);
-            }
-            Err(e) => {
-                let message = format!(
-                    "could not reconcile the replication state of table '{}' before \
-                     starting: {e}. The connector keeps its resume position in schema 'etl' \
-                     of the source database and must read and update it at startup; fix the \
-                     reported problem, then restart the pipeline",
-                    self.config.source_table
-                );
-                let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    with_setup_hint(
-                        anyhow!(e).context(message),
-                        self.config.run_source_migrations,
-                    ),
-                )));
-                return;
-            }
-        }
-
-        let destination = FelderaDestination {
-            input_stream: Arc::new(Mutex::new(input_stream)),
-            queue: Arc::clone(&self.queue),
-            source_table: self.config.source_table.clone(),
-            endpoint_name: self.endpoint_name.clone(),
-            feldera_required_columns,
-            // One predicate decides deferral for the destination and the
-            // reader alike, so neither can answer etl on its own terms.
-            defer_acks: self.completion_task_tx.is_some(),
-            pipeline_state_rx: receiver.clone(),
-            copy: Arc::clone(&self.copy),
-            consumer: self.consumer.clone(),
-            stopping: Arc::clone(&self.stopping),
-            parked: Arc::clone(&self.parked),
-        };
-
-        let table_error_monitor = TableErrorMonitor {
-            endpoint_name: self.endpoint_name.clone(),
-            run_source_migrations: self.config.run_source_migrations,
-            consumer: self.consumer.clone(),
-            store: store.clone(),
-            source_table: self.config.source_table.clone(),
-            publication: self.config.publication.clone(),
-            copy: Arc::clone(&self.copy),
-            pipeline_state_rx: receiver.clone(),
-        };
-        // Stopping the pipeline needs the pipeline itself, so a stop that
-        // arrives while `start` runs takes effect once it returns: the
-        // termination branch below fires at once.
-        let mut pipeline = Pipeline::new(pipeline_config, store, destination);
-
-        let started = match pipeline.start().await {
-            Ok(()) if self.config.run_source_migrations => match &catalog {
-                // The migrations have installed the trigger by now; an
-                // administrator may still have disabled it since.
-                Ok(client) => verify_ddl_event_trigger(client).await,
-                Err(_) => Ok(()),
-            },
-            Ok(()) => Ok(()),
-            Err(e) => {
-                let message = format!("failed to start etl pipeline: {e}");
-                Err(with_setup_hint(
-                    anyhow!(e).context(message),
-                    self.config.run_source_migrations,
-                ))
-            }
-        };
-        drop(catalog);
-        match started {
-            Ok(()) => {
-                info!(
-                    "postgres_cdc {}: etl pipeline started for publication '{}', table '{}'",
-                    &self.endpoint_name, &self.config.publication, &self.config.source_table,
-                );
-                let _ = init_status_sender.send(Ok(()));
-            }
-            Err(e) => {
-                let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    e,
-                )));
-                self.shutdown_etl_pipeline(Some(&pipeline));
-                return;
-            }
-        }
-
-        // Spawn the completion watcher background task if tracking is available.
-        // The watcher and the channel were created in new(); we take the channel
-        // here after etl has started so startup failures do not leave a task
-        // behind. The watcher is cloned rather than taken: the reader keeps its
-        // own to read the frontier after the watcher stops, so a flush that
-        // races the stop can still tell the durable writes from the rest.
-        let mut completion_handle = match (
-            self.watcher_rx.lock().unwrap().as_ref().cloned(),
-            self.completion_task_rx.lock().unwrap().take(),
-        ) {
-            (Some(watcher), Some(rx)) => {
-                let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-                Some(CompletionWatcher {
-                    shutdown_tx,
-                    handle: tokio::spawn(completion_watcher_task(
-                        watcher,
-                        rx,
-                        shutdown_rx,
-                        Arc::clone(&self.parked),
-                        self.endpoint_name.clone(),
-                    )),
-                })
-            }
-            _ => None,
-        };
-
-        // Run the pipeline alongside a watcher for non-retriable per-table
-        // errors. etl marks a table errored (e.g. on a source schema change)
-        // without failing the whole pipeline, so `pipeline.wait` would block
-        // forever while the input silently stalls; the watcher reports such an
-        // error so the controller fails the endpoint instead.
-        let mut receiver_clone = receiver.clone();
-        let pipeline_wait = pipeline.wait();
-        tokio::pin!(pipeline_wait);
-        let (pipeline_result, report_error) = select! {
-            result = &mut pipeline_wait => (result, true),
-            // Drop the watch guard inside the block: holding it while awaiting
-            // `pipeline_wait` blocks etl tasks that read the same watch in
-            // `wait_unpaused`, once the reader's `Drop` queues another write.
-            _ = async {
-                let _ = receiver_clone
-                    .wait_for(|state| state == &PipelineState::Terminated)
-                    .await;
-            } => {
-                debug!(
-                    "postgres_cdc {}: received termination command; shutting down etl pipeline",
-                    &self.endpoint_name
-                );
-                self.shutdown_etl_pipeline(Some(&pipeline));
-                stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
-                (self.await_etl_stop(&mut pipeline_wait).await, false)
-            }
-            _ = table_error_monitor.run() => {
-                self.shutdown_etl_pipeline(Some(&pipeline));
-                stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
-                (self.await_etl_stop(&mut pipeline_wait).await, false)
-            }
-        };
-
-        if let Err(e) = pipeline_result {
-            if report_error && *receiver.borrow() != PipelineState::Terminated {
-                error!(
-                    "postgres_cdc {}: etl pipeline error: {e}",
-                    &self.endpoint_name
-                );
-                self.consumer.error(
-                    true,
-                    with_setup_hint(anyhow!(e), self.config.run_source_migrations),
-                    None,
-                );
-            } else {
-                debug!(
-                    "postgres_cdc {}: etl pipeline stopped during shutdown: {e}",
-                    &self.endpoint_name
-                );
-            }
-        }
-
-        stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
-
-        self.consumer.eoi();
-    }
-
-    fn warn_publication_unlisted(&self, error: &anyhow::Error) {
-        warn!(
-            "postgres_cdc {}: could not list the tables of publication '{}' ({error}); a \
-             source table the publication does not carry is reported by the stall \
-             monitor instead",
-            &self.endpoint_name, &self.config.publication
-        );
-    }
-
-    /// Wait for etl to stop after [`Self::shutdown_etl_pipeline`], for at
-    /// most [`ETL_STOP_GRACE`].
-    ///
-    /// The stop reaches this wait once the completion watcher has stopped,
-    /// which takes at most [`WATCHER_SHUTDOWN_TIMEOUT`], and the runtime
-    /// shutdown after it takes at most [`RUNTIME_SHUTDOWN_TIMEOUT`]. The three
-    /// together bound how long a stop holds the replication slots.
-    ///
-    /// etl closes its replication connections when its workers return, and
-    /// PostgreSQL releases the slots then. A worker that does not return
-    /// would keep its slot active for as long as it lives, so the wait is
-    /// bounded: past the grace the connector gives up on etl, and the runtime
-    /// etl runs on is shut down once the worker task returns, which closes
-    /// the connections in its stead.
-    async fn await_etl_stop(
-        &self,
-        pipeline_wait: impl Future<Output = EtlResult<()>>,
-    ) -> EtlResult<()> {
-        match tokio::time::timeout(ETL_STOP_GRACE, pipeline_wait).await {
-            Ok(result) => result,
-            Err(_) => {
-                STOPPED_PAST_GRACE.lock().unwrap().insert(self.pipeline_id);
-                warn!(
-                    "postgres_cdc {}: etl did not stop within {ETL_STOP_GRACE:?}, so its \
-                     replication connections are closed by force. PostgreSQL offers the changes \
-                     they had not confirmed again on the next start",
-                    &self.endpoint_name
-                );
-                Ok(())
-            }
-        }
-    }
-
-    /// Stops etl. With draining off, etl abandons the write it has pending
-    /// and the batch it has buffered, so nothing holds the replication slot
-    /// open; PostgreSQL offers those changes again on the next start. The
-    /// answers still queued stay queued: a flush after the stop answers into
-    /// a channel nobody reads, and the rest drop with the queue, after etl
-    /// has stopped.
-    ///
-    /// `pipeline` is `None` once the worker that owned it has returned, when
-    /// only a held copy barrier is left to park.
-    fn shutdown_etl_pipeline(&self, pipeline: Option<&EtlPipeline>) {
-        if let Some(pipeline) = pipeline {
-            pipeline.shutdown();
-        }
-        // etl is asked to stop first; the flag then turns away the writes it
-        // still issues before it sees the request.
-        self.stopping.store(true, Ordering::SeqCst);
-        if let Some(terminal) = self.copy.take_terminal() {
-            self.parked.park(terminal);
-        }
-    }
 }
 
 impl Drop for PostgresCdcInputInner {
     fn drop(&mut self) {
-        self.shutdown_etl_pipeline(None);
+        // Only a held copy barrier can be left to park once the worker that
+        // owned the etl pipeline has returned.
+        self.stopping.store(true, Ordering::SeqCst);
+        self.park_terminal();
     }
 }
 

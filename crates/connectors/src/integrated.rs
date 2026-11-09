@@ -169,6 +169,7 @@ pub fn create_integrated_input_endpoint(
             config,
             pipeline_config,
             layout,
+            registry,
             consumer,
         )?),
         transport => {

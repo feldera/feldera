@@ -1875,6 +1875,7 @@ fn a_uri_that_does_not_parse_fails_the_endpoint_at_creation() {
         &config,
         &test_pipeline_config(),
         &feldera_types::circuit::Layout::new_solo(1),
+        Arc::default(),
         Box::new(MockInputConsumer::new()),
     )
     .err()
@@ -1891,6 +1892,8 @@ fn a_pipeline_that_hides_the_step_it_feeds_fails_the_endpoint() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(consumer.clone()),
+        Arc::new(AtomicBool::new(false)),
+        Arc::default(),
     );
 
     let flag = Arc::new(AtomicBool::new(false));
@@ -1918,6 +1921,8 @@ fn a_pipeline_that_tracks_no_steps_is_answered_by_the_flush() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(MockInputConsumer::new()),
+        Arc::new(AtomicBool::new(false)),
+        Arc::default(),
     );
 
     let flag = Arc::new(AtomicBool::new(false));
@@ -2025,6 +2030,8 @@ fn a_flush_that_races_the_watcher_stop_answers_the_durable_writes() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(StepAwareConsumer::new(3, 5)),
+        Arc::new(AtomicBool::new(false)),
+        Arc::default(),
     );
 
     // Close the completion channel as the watcher does when it stops, so the
@@ -2055,6 +2062,8 @@ fn a_flush_that_races_the_watcher_stop_drops_the_writes_it_has_not_reached() {
         cdc_config(),
         PublicationKey::per_table(&cdc_config()),
         Box::new(StepAwareConsumer::new(7, 5)),
+        Arc::new(AtomicBool::new(false)),
+        Arc::default(),
     );
 
     inner

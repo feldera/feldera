@@ -22,11 +22,28 @@ pub(super) struct HeldAcks {
 pub(super) struct PostgresCdcInputReader {
     sender: Sender<PipelineState>,
     inner: Arc<PostgresCdcInputInner>,
+    /// Keeps the shared pipeline registered while this connector reads.
+    _shared: Arc<SharedCdcPipeline>,
+}
+
+/// One connector of a [`SharedCdcPipeline`]: what the reader learned at
+/// `open` and the pipeline needs to feed its Feldera table.
+pub(super) struct Member {
+    pub(super) inner: Arc<PostgresCdcInputInner>,
+    pub(super) input_stream: Box<dyn DeCollectionStream>,
+    /// Non-nullable columns of the Feldera table, in canonical form. Each of
+    /// them must exist in the PostgreSQL table.
+    pub(super) feldera_required_columns: Vec<String>,
+    /// The reader's pipeline state: `Paused`, `Running` or `Terminated`.
+    pub(super) state_rx: Receiver<PipelineState>,
+    pub(super) redo_snapshot: bool,
+    pub(super) resumed_copy: ResumedCopy,
 }
 
 impl PostgresCdcInputReader {
     pub(super) fn new(
         endpoint: &Arc<PostgresCdcInputInner>,
+        shared: &Arc<SharedCdcPipeline>,
         input_handle: &InputCollectionHandle,
         resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
@@ -40,18 +57,12 @@ impl PostgresCdcInputReader {
         // alone.
         let redo_snapshot = resume_info.is_none() && endpoint.strict;
         let resumed_copy = ResumedCopy::of(resume_info.as_ref());
-        let (sender, receiver) = channel(PipelineState::Paused);
-        let endpoint_clone = endpoint.clone();
-
-        let (init_status_sender, init_status_receiver) =
-            tokio::sync::oneshot::channel::<Result<(), ControllerError>>();
+        let (sender, state_rx) = channel(PipelineState::Paused);
 
         let input_stream = input_handle
             .handle
             .configure_deserializer(RecordFormat::Json(JsonFlavor::Datagen))?;
 
-        // Non-nullable columns of the Feldera table, in canonical form.
-        // Each of them must exist in the PostgreSQL table.
         let feldera_required_columns: Vec<String> = input_handle
             .schema
             .fields
@@ -60,60 +71,19 @@ impl PostgresCdcInputReader {
             .map(|f| f.name.name())
             .collect();
 
-        let endpoint_name = endpoint.endpoint_name.clone();
-        thread::Builder::new()
-            .name(format!("pgcdc-{endpoint_name}"))
-            .stack_size(RUNTIME_THREAD_STACK_SIZE)
-            .spawn(move || {
-                // etl spawns its workers onto the ambient runtime. A runtime of
-                // the connector's own keeps them off the process-wide one and,
-                // above all, lets a stop end them: shutting it down once the
-                // worker task has returned cancels whatever etl left running
-                // and closes its replication connections, so PostgreSQL
-                // releases the slots however the stop went (#7170, #7201).
-                let runtime = match tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(RUNTIME_WORKER_THREADS)
-                    .thread_name(format!("pgcdc-rt-{endpoint_name}"))
-                    .thread_stack_size(RUNTIME_THREAD_STACK_SIZE)
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => runtime,
-                    Err(e) => {
-                        let _ =
-                            init_status_sender.send(Err(ControllerError::input_transport_error(
-                                &endpoint_name,
-                                true,
-                                anyhow!("failed to start the connector's tokio runtime: {e}"),
-                            )));
-                        return;
-                    }
-                };
-                block_on_then_shut_down(
-                    runtime,
-                    endpoint_clone.worker_task(
-                        input_stream,
-                        feldera_required_columns,
-                        receiver,
-                        init_status_sender,
-                        redo_snapshot,
-                        resumed_copy,
-                    ),
-                );
-            })
-            .expect("failed to create Postgres CDC input connector thread");
-
-        init_status_receiver.blocking_recv().map_err(|_| {
-            ControllerError::input_transport_error(
-                &endpoint.endpoint_name,
-                true,
-                anyhow!("worker thread terminated unexpectedly during initialization"),
-            )
-        })??;
+        shared.join(Member {
+            inner: endpoint.clone(),
+            input_stream,
+            feldera_required_columns,
+            state_rx,
+            redo_snapshot,
+            resumed_copy,
+        })?;
 
         Ok(Self {
             sender,
             inner: endpoint.clone(),
+            _shared: Arc::clone(shared),
         })
     }
 }

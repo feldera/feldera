@@ -6,6 +6,7 @@ mod member;
 mod monitor;
 mod pipeline;
 mod reconcile;
+mod shared;
 #[cfg(any(test, feature = "testing"))]
 pub mod tests;
 
@@ -62,12 +63,14 @@ use url::Url;
 use xxhash_rust::xxh3::xxh3_64;
 
 use super::tls::{make_etl_tls_config, make_tls_connector};
+use crate::integrated::ConnectorRegistry;
 use destination::*;
 use key::*;
 use member::*;
 use monitor::*;
 use pipeline::*;
 use reconcile::*;
+use shared::*;
 
 #[cfg(any(test, feature = "testing"))]
 pub(crate) use key::pipeline_id;

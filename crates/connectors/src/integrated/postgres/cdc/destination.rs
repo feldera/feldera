@@ -1,6 +1,67 @@
 use super::*;
 
-/// etl Destination implementation that pushes data into a Feldera DeCollectionStream.
+/// The etl `Destination` of a [`SharedCdcPipeline`]: hands each call to the
+/// connectors that read the table it is about.
+///
+/// Until the per-publication key is wired, a pipeline has exactly one
+/// member, which also filters out the other tables of the publication.
+#[derive(Clone)]
+pub(super) struct DispatchingDestination {
+    members: Arc<Vec<Arc<FelderaDestination>>>,
+}
+
+impl DispatchingDestination {
+    pub(super) fn new(members: Vec<Arc<FelderaDestination>>) -> Self {
+        assert!(
+            !members.is_empty(),
+            "a pipeline without members is never started"
+        );
+        Self {
+            members: Arc::new(members),
+        }
+    }
+}
+
+impl Destination for DispatchingDestination {
+    fn name() -> &'static str {
+        "feldera"
+    }
+
+    async fn drop_table_for_copy(
+        &self,
+        replicated_table_schema: &ReplicatedTableSchema,
+        async_result: DropTableForCopyResult<()>,
+    ) -> EtlResult<()> {
+        self.members[0]
+            .drop_table_for_copy(replicated_table_schema, async_result)
+            .await
+    }
+
+    async fn write_table_rows(
+        &self,
+        replicated_table_schema: &ReplicatedTableSchema,
+        batch_id: Option<TableCopyBatchId>,
+        table_rows: Vec<TableRow>,
+        async_result: WriteTableRowsResult,
+    ) -> EtlResult<()> {
+        self.members[0]
+            .write_table_rows(replicated_table_schema, batch_id, table_rows, async_result)
+            .await
+    }
+
+    async fn write_events(
+        &self,
+        events: Vec<Event>,
+        durability: WriteEventsDurability,
+        async_result: WriteEventsResult,
+    ) -> EtlResult<()> {
+        self.members[0]
+            .write_events(events, durability, async_result)
+            .await
+    }
+}
+
+/// The part of the destination that feeds one Feldera table.
 #[derive(Clone)]
 pub(super) struct FelderaDestination {
     pub(super) input_stream: Arc<Mutex<Box<dyn DeCollectionStream>>>,
@@ -61,12 +122,8 @@ pub(super) fn resume_for(copy_open: bool, pipeline_id: u64, sync_done_lsn: Optio
 /// source table at the time of the step; see [`CopyBarrier::sync_done_lsn`].
 pub(super) const COPY_SYNC_LSN_KEY: &str = "copy_sync_lsn";
 
-impl Destination for FelderaDestination {
-    fn name() -> &'static str {
-        "feldera"
-    }
-
-    async fn drop_table_for_copy(
+impl FelderaDestination {
+    pub(super) async fn drop_table_for_copy(
         &self,
         replicated_table_schema: &ReplicatedTableSchema,
         async_result: DropTableForCopyResult<()>,
@@ -100,7 +157,7 @@ impl Destination for FelderaDestination {
         Ok(())
     }
 
-    async fn write_table_rows(
+    pub(super) async fn write_table_rows(
         &self,
         replicated_table_schema: &ReplicatedTableSchema,
         batch_id: Option<TableCopyBatchId>,
@@ -168,7 +225,7 @@ impl Destination for FelderaDestination {
         Ok(())
     }
 
-    async fn write_events(
+    pub(super) async fn write_events(
         &self,
         events: Vec<Event>,
         // The connector reports no streaming write as merely accepted, so it
