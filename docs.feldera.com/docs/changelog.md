@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Delta Lake: applying a deletion vector no longer fails on Parquet files that
+  Databricks Photon writes with 256-value `DELTA_BINARY_PACKED` miniblocks, as
+  it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the
+  read failed with `cannot skip miniblock of size 256`, and the input connector
+  retried the file without making progress.
+
 ## v0.380.0
 
 - Incompatible change (SQL): the compiler no longer supports the `INTERNED`

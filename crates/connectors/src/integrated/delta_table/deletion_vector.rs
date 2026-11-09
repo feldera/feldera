@@ -1969,6 +1969,88 @@ mod tests {
         let expected: Vec<i64> = wanted.iter().map(|&r| r as i64).collect();
         assert_eq!(got, expected, "must read exactly the bitmap rows");
     }
+
+    /// One `INT64` column, `id`, holding `0..312` in a single
+    /// `DELTA_BINARY_PACKED` page whose miniblocks hold 256 values each. The
+    /// values ascend by one, so every miniblock is packed at bit width 0.
+    /// Databricks Photon wrote the file for a table created with
+    /// `TBLPROPERTIES ('delta.parquet.format.version' = '2.12.0')`. The
+    /// `parquet` crate's own writer puts at most 64 values in a miniblock, so
+    /// the file is checked in.
+    const WIDE_MINIBLOCK_PARQUET: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/testdata/photon_256_value_miniblocks.parquet"
+    ));
+
+    /// [`filtered_parquet_table`] skips rows inside 256-value
+    /// `DELTA_BINARY_PACKED` miniblocks, both to apply a deletion vector and to
+    /// read a deletion-vector delta. parquet 58.3 to 59.3.1 fail these reads
+    /// with "cannot skip miniblock of size 256".
+    #[tokio::test]
+    async fn masked_reader_skips_rows_inside_wide_miniblocks() {
+        const TOTAL_ROWS: i64 = 312;
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("data.parquet"), WIDE_MINIBLOCK_PARQUET).unwrap();
+
+        // Row 0 is the page's first value, and the first miniblock holds rows
+        // 1 to 256. The runs start the file, sit inside the first miniblock,
+        // cross into the second, and end the file.
+        let bitmap_rows: Vec<i64> = [0..1, 10..20, 250..260, 311..312]
+            .into_iter()
+            .flatten()
+            .collect();
+        let other_rows: Vec<i64> = (0..TOTAL_ROWS)
+            .filter(|row| !bitmap_rows.contains(row))
+            .collect();
+        let declared = ReadSchema::new(&ArrowSchema::new(vec![ArrowField::new(
+            "id",
+            ArrowDataType::Int64,
+            false,
+        )]));
+        let store = unloaded_table(dir.path()).log_store().object_store();
+
+        for (read, mode, expected) in [
+            ("the other rows", ReadMode::NotInBitmap, &other_rows),
+            ("the bitmap rows", ReadMode::InBitmap, &bitmap_rows),
+        ] {
+            let provider = filtered_parquet_table(
+                Arc::clone(&store),
+                vec![MaskedFile {
+                    path: Path::from("data.parquet"),
+                    bitmap: RoaringTreemap::from_iter(bitmap_rows.iter().map(|&row| row as u64)),
+                }],
+                declared.clone(),
+                mode,
+                1,
+            )
+            .await
+            .unwrap();
+            let batches = SessionContext::new()
+                .read_table(provider)
+                .unwrap()
+                .collect()
+                .await
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "failed to read {read} of a file with 256-value miniblocks; \
+                         parquet 58.3 to 59.3.1 cannot skip rows inside them, so check \
+                         that Cargo.lock has parquet 59.3.2 or later: {e}"
+                    )
+                });
+
+            let mut got: Vec<i64> = Vec::new();
+            for batch in &batches {
+                let ids = batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                got.extend(ids.values().iter().copied());
+            }
+            got.sort();
+            assert_eq!(&got, expected, "wrong values when reading {read}");
+        }
+    }
 }
 
 #[cfg(test)]
