@@ -199,8 +199,6 @@ the child count chip changes to a square (expand) or a dash (collapse):
 | Collapse or expand a region | Double-click it, or click its child count chip |
 | Make a region the current node | Click it |
 
-A small pipeline opens with all its regions expanded.
-
 ## Displaying measurements
 
 The measurements are values that the running pipeline collects for each

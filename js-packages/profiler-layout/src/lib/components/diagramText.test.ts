@@ -67,9 +67,7 @@ describe('node text', () => {
   })
 
   it('keeps the text of a collapsed region in its second row, below the counter chip', async () => {
-    // A circuit this small renders its regions expanded, so the region has to be collapsed first.
-    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
-    await toggle('region')
+    const { cy, inkColumns, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     const region = cy.$id('region')
     expect(region.isParent()).toBe(false)
     cy.center(region)
@@ -97,6 +95,7 @@ describe('node text', () => {
     // A cytoscape parent is sized by the nodes it holds and ignores its own label, so a region around one
     // short operator would be narrower than its name, leaving the name running past both borders.
     const { cy, pixelAt, toggle, cleanup } = await mountDiagram('light', WIDE_REGION)
+    await toggle('region')
     const region = cy.$id('region')
     expect(region.isParent()).toBe(true)
     cy.center(region)

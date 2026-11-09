@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import { colorDistance, mountDiagram, settle, WITH_SOURCE } from '../test-support/mountDiagram.js'
 
-/** A region `outer` that holds an operator and a region `sub`, which holds one operator. In a
- *  circuit this small, all regions are expanded at the start. */
+/** A region `outer` that holds an operator and a region `sub`, which holds one operator. `outer`
+ *  opens collapsed, and `sub` shows expanded once `outer` is. */
 const NESTED = {
   metrics: [],
   worker_profiles: [{ metadata: {} }],
@@ -32,8 +32,13 @@ const NESTED = {
   }
 }
 
-const mount = (keepOpeningView = false) =>
-  mountDiagram('light', WITH_SOURCE.profile, keepOpeningView, WITH_SOURCE.dataflow)
+/** Mount `WITH_SOURCE` with its region expanded, since these tests click on what is inside it. */
+const mount = async (keepOpeningView = false) => {
+  const mounted = await mountDiagram('light', WITH_SOURCE.profile, keepOpeningView, WITH_SOURCE.dataflow)
+  await mounted.toggle('region')
+  mounted.reported.doubleClicks.length = 0
+  return mounted
+}
 
 /** A rendered point inside the code chip, which is above the top edge of the node: half a chip
  *  height above that edge, and half a chip width in from the right edge. */
@@ -361,8 +366,10 @@ describe('the overview report a profile opens with', () => {
 describe('a double click on a nested region', () => {
   it('does nothing, since only the top-level region around it expands and collapses', async () => {
     const { cy, toggle, reported, cleanup } = await mountDiagram('light', NESTED)
+    await toggle('outer')
     expect(cy.$id('outer').isParent()).toBe(true)
     expect(cy.$id('sub').isParent()).toBe(true)
+    reported.doubleClicks.length = 0
 
     await toggle('sub')
     expect(cy.$id('outer').isParent()).toBe(true)

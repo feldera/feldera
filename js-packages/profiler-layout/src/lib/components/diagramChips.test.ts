@@ -44,9 +44,8 @@ describe('chip buttons', () => {
   it('draws the network icon beside the count', async () => {
     // The icon is an SVG group scaled down inside the chip image, so only a real render says it came
     // out as strokes on the pill rather than as nothing at all.
-    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
-    // Collapsed, so the counter chip has a row of the node to itself.
-    await toggle('region')
+    // The region opens collapsed, so the counter chip has a row of the node to itself.
+    const { cy, inkColumns, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     cy.center(cy.$id('region'))
     await settle()
 
@@ -76,21 +75,21 @@ describe('chip buttons', () => {
     cleanup()
   })
 
-  it('collapses a region when its counter is clicked, and expands it again', async () => {
+  it('expands a region when its counter is clicked, and collapses it again', async () => {
     const { cy, click, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     const region = cy.$id('region')
     cy.center(region)
     await settle()
-    expect(region.isParent()).toBe(true)
+    expect(region.isParent()).toBe(false)
 
     await click(counterPoint(cy, 'region').x, counterPoint(cy, 'region').y)
-    expect(cy.$id('region').isParent()).toBe(false)
+    expect(cy.$id('region').isParent()).toBe(true)
 
-    // The chip is in the same corner of the collapsed node, so the same button undoes it.
+    // The chip is in the same corner of the expanded node, so the same button undoes it.
     cy.center(cy.$id('region'))
     await settle()
     await click(counterPoint(cy, 'region').x, counterPoint(cy, 'region').y)
-    expect(cy.$id('region').isParent()).toBe(true)
+    expect(cy.$id('region').isParent()).toBe(false)
     cleanup()
   })
 
@@ -103,14 +102,13 @@ describe('chip buttons', () => {
 
     const { x, y } = region.renderedPosition()
     await click(x, y)
-    expect(cy.$id('region').isParent()).toBe(true)
+    expect(cy.$id('region').isParent()).toBe(false)
     cleanup()
   })
 
   it('draws a control in place of the count while the circuit region is hovered', async () => {
-    const { cy, inkColumns, pointer, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
-    // Collapsed, so the counter chip has a row of the node to itself.
-    await toggle('region')
+    // The region opens collapsed, so the counter chip has a row of the node to itself.
+    const { cy, inkColumns, pointer, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     cy.center(cy.$id('region'))
     await settle()
 
@@ -138,8 +136,7 @@ describe('chip buttons', () => {
   })
 
   it('shows the count again once the pointer leaves', async () => {
-    const { cy, inkColumns, pointer, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
-    await toggle('region')
+    const { cy, inkColumns, pointer, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     cy.center(cy.$id('region'))
     await settle()
     const mass = (ink: Array<{ distance: number }>) => ink.reduce((sum, c) => sum + c.distance, 0)
