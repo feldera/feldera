@@ -1,24 +1,55 @@
 use super::*;
 
 /// The etl `Destination` of a [`SharedCdcPipeline`]: hands each call to the
-/// connectors that read the table it is about.
-///
-/// Until the per-publication key is wired, a pipeline has exactly one
-/// member, which also filters out the other tables of the publication.
+/// members that read the table it is about.
 #[derive(Clone)]
 pub(super) struct DispatchingDestination {
     members: Arc<Vec<Arc<FelderaDestination>>>,
+    /// etl is being stopped; see [`FelderaDestination::wait_unpaused`].
+    stopping: Arc<AtomicBool>,
+    /// Results the stop could not answer; see [`ParkedResults`].
+    parked: Arc<ParkedResults>,
 }
 
 impl DispatchingDestination {
-    pub(super) fn new(members: Vec<Arc<FelderaDestination>>) -> Self {
+    pub(super) fn new(
+        members: Vec<Arc<FelderaDestination>>,
+        stopping: Arc<AtomicBool>,
+        parked: Arc<ParkedResults>,
+    ) -> Self {
         assert!(
             !members.is_empty(),
             "a pipeline without members is never started"
         );
         Self {
             members: Arc::new(members),
+            stopping,
+            parked,
         }
+    }
+
+    /// The members that read the table `schema` describes. Several Feldera
+    /// tables can read one source table.
+    fn members_for(&self, schema: &ReplicatedTableSchema) -> Vec<&Arc<FelderaDestination>> {
+        let name = schema.name();
+        self.members
+            .iter()
+            .filter(|member| member.is_target_table(&name.schema, &name.name))
+            .collect()
+    }
+
+    /// Wait until no member is paused. The WAL stream is one ordered
+    /// sequence, so a write waits for every member it could feed.
+    async fn wait_unpaused(&self) -> Admission {
+        if self.stopping.load(Ordering::SeqCst) {
+            return Admission::Stopping;
+        }
+        for member in self.members.iter() {
+            if member.wait_unpaused().await == Admission::Stopping {
+                return Admission::Stopping;
+            }
+        }
+        Admission::Admit
     }
 }
 
@@ -32,9 +63,31 @@ impl Destination for DispatchingDestination {
         replicated_table_schema: &ReplicatedTableSchema,
         async_result: DropTableForCopyResult<()>,
     ) -> EtlResult<()> {
-        self.members[0]
-            .drop_table_for_copy(replicated_table_schema, async_result)
-            .await
+        if self.wait_unpaused().await == Admission::Stopping {
+            self.parked.park(async_result);
+            return Ok(());
+        }
+
+        // Feldera owns no physical destination object to drop; the data lives
+        // in the circuit, and a copy that starts over simply re-snapshots
+        // through `write_table_rows`.
+        //
+        // The call still carries the news that a copy is starting over, and it
+        // is the earliest such news etl gives: it precedes both the durable
+        // state of the new copy and its first row. Take it for the table's
+        // members, and let `write_table_rows` take it again if this hook stays
+        // silent, as it does whenever etl finds no destination metadata to
+        // drop.
+        for member in self.members_for(replicated_table_schema) {
+            member.note_copy_batch();
+        }
+
+        debug!(
+            "postgres_cdc: nothing to drop for table '{}'; the copy is read into the circuit",
+            replicated_table_schema.name()
+        );
+        async_result.send(Ok(()));
+        Ok(())
     }
 
     async fn write_table_rows(
@@ -44,20 +97,93 @@ impl Destination for DispatchingDestination {
         table_rows: Vec<TableRow>,
         async_result: WriteTableRowsResult,
     ) -> EtlResult<()> {
-        self.members[0]
-            .write_table_rows(replicated_table_schema, batch_id, table_rows, async_result)
-            .await
+        if self.wait_unpaused().await == Admission::Stopping {
+            self.parked.park(async_result);
+            return Ok(());
+        }
+
+        let members = self.members_for(replicated_table_schema);
+        if members.is_empty() {
+            // Rows of another table of the publication reach no Feldera table,
+            // so they are durable the moment they are dropped, and so is the
+            // barrier that closes their copy.
+            async_result.send(Ok(DestinationWriteStatus::Durable));
+            return Ok(());
+        }
+
+        // etl carries a batch id with every batch of rows and none with the
+        // terminal write it issues once every copy worker has finished, so the
+        // absent batch id is what marks the copy's durability barrier.
+        if batch_id.is_none() {
+            let fan_in = AckFanIn::new(
+                Box::new(move || async_result.send(Ok(DestinationWriteStatus::Durable))),
+                members.len(),
+            );
+            for member in members {
+                member.hold_copy_barrier(fan_in.share());
+            }
+            return Ok(());
+        }
+
+        for member in members {
+            member.push_copy_rows(replicated_table_schema, &table_rows)?;
+        }
+        // The rows are queued, not yet in the circuit. etl's terminal barrier
+        // is what answers for them, once they have been flushed.
+        async_result.send(Ok(DestinationWriteStatus::Accepted));
+        Ok(())
     }
 
     async fn write_events(
         &self,
         events: Vec<Event>,
-        durability: WriteEventsDurability,
+        // The connector reports no streaming write as merely accepted, so it
+        // owes etl no durability and answers `RequireDurable` exactly as it
+        // answers `MayDefer`: `Durable`, once the data has been stepped through
+        // the circuit.
+        _durability: WriteEventsDurability,
         async_result: WriteEventsResult,
     ) -> EtlResult<()> {
-        self.members[0]
-            .write_events(events, durability, async_result)
-            .await
+        if self.wait_unpaused().await == Admission::Stopping {
+            self.parked.park(async_result);
+            return Ok(());
+        }
+
+        // The members that got rows: each owes one share of the answer, and
+        // the last share to fire answers etl. A write with rows for no member
+        // is answered at once.
+        let members = self
+            .members
+            .iter()
+            .filter(|member| {
+                events
+                    .iter()
+                    .filter_map(event_table)
+                    .any(|name| member.is_target_table(&name.schema, &name.name))
+            })
+            .collect::<Vec<_>>();
+        let fan_in = AckFanIn::new(
+            Box::new(move || async_result.send(Ok(DestinationWriteStatus::Durable))),
+            members.len(),
+        );
+        for member in members {
+            member.push_events(&events, fan_in.share())?;
+        }
+        Ok(())
+    }
+}
+
+/// The table an event carries rows of, if any.
+fn event_table(event: &Event) -> Option<&etl::schema::TableName> {
+    match event {
+        Event::Insert(insert) => Some(insert.replicated_table_schema.name()),
+        Event::Update(update) => Some(update.replicated_table_schema.name()),
+        Event::Delete(delete) => Some(delete.replicated_table_schema.name()),
+        Event::Truncate(_)
+        | Event::Relation(_)
+        | Event::Begin(_)
+        | Event::Commit(_)
+        | Event::Unsupported => None,
     }
 }
 
@@ -90,9 +216,6 @@ pub(super) struct FelderaDestination {
     /// The connector is shutting etl down; see
     /// [`FelderaDestination::wait_unpaused`].
     pub(super) stopping: Arc<AtomicBool>,
-    /// Where a write that starts once the connector stops leaves its result;
-    /// see [`ParkedResults`].
-    pub(super) parked: Arc<ParkedResults>,
 }
 
 /// What the reader reports a step as resumable from. etl's `PostgresStore`
@@ -123,66 +246,15 @@ pub(super) fn resume_for(copy_open: bool, pipeline_id: u64, sync_done_lsn: Optio
 pub(super) const COPY_SYNC_LSN_KEY: &str = "copy_sync_lsn";
 
 impl FelderaDestination {
-    pub(super) async fn drop_table_for_copy(
+    /// Queue the rows of this member's table from a copy batch.
+    pub(super) fn push_copy_rows(
         &self,
         replicated_table_schema: &ReplicatedTableSchema,
-        async_result: DropTableForCopyResult<()>,
+        table_rows: &[TableRow],
     ) -> EtlResult<()> {
-        if self.wait_unpaused().await == Admission::Stopping {
-            self.parked.park(async_result);
+        let Some(column_names) = self.column_names_for_target_schema(replicated_table_schema)?
+        else {
             return Ok(());
-        }
-
-        // Feldera owns no physical destination object to drop; the data lives
-        // in the circuit, and a copy that starts over simply re-snapshots
-        // through `write_table_rows`.
-        //
-        // The call still carries the news that a copy is starting over, and it
-        // is the earliest such news etl gives: it precedes both the durable
-        // state of the new copy and its first row. Take it for the source
-        // table, and let `write_table_rows` take it again if this hook stays
-        // silent, as it does whenever etl finds no destination metadata to
-        // drop.
-        let name = replicated_table_schema.name();
-        if self.is_target_table(&name.schema, &name.name) {
-            self.note_copy_batch();
-        }
-
-        debug!(
-            "postgres_cdc {}: nothing to drop for table '{name}'; the copy is read \
-             into the circuit",
-            &self.endpoint_name,
-        );
-        async_result.send(Ok(()));
-        Ok(())
-    }
-
-    pub(super) async fn write_table_rows(
-        &self,
-        replicated_table_schema: &ReplicatedTableSchema,
-        batch_id: Option<TableCopyBatchId>,
-        table_rows: Vec<TableRow>,
-        async_result: WriteTableRowsResult,
-    ) -> EtlResult<()> {
-        if self.wait_unpaused().await == Admission::Stopping {
-            self.parked.park(async_result);
-            return Ok(());
-        }
-
-        let target_columns = self.column_names_for_target_schema(replicated_table_schema)?;
-        let column_names = match classify_copy_write(target_columns, batch_id.is_some()) {
-            // Rows of another table of the publication reach no Feldera table,
-            // so they are durable the moment they are dropped, and so is the
-            // barrier that closes their copy.
-            CopyWrite::OtherTable => {
-                async_result.send(Ok(DestinationWriteStatus::Durable));
-                return Ok(());
-            }
-            CopyWrite::TargetBarrier => {
-                self.hold_copy_barrier(async_result);
-                return Ok(());
-            }
-            CopyWrite::TargetBatch(column_names) => column_names,
         };
 
         self.note_copy_batch();
@@ -192,7 +264,7 @@ impl FelderaDestination {
         let mut errors = Vec::new();
         let timestamp = Utc::now();
 
-        for row in &table_rows {
+        for row in table_rows {
             let cells = row.values();
             let json_value = row_to_json(cells, &column_names, &self.endpoint_name);
 
@@ -218,35 +290,21 @@ impl FelderaDestination {
         if bytes > 0 || !errors.is_empty() {
             self.push_snapshot_buffer((stream.take_all(), errors), timestamp);
         }
-
-        // The rows are queued, not yet in the circuit. etl's terminal barrier
-        // is what answers for them, once they have been flushed.
-        async_result.send(Ok(DestinationWriteStatus::Accepted));
         Ok(())
     }
 
-    pub(super) async fn write_events(
-        &self,
-        events: Vec<Event>,
-        // The connector reports no streaming write as merely accepted, so it
-        // owes etl no durability and answers `RequireDurable` exactly as it
-        // answers `MayDefer`: `Durable`, once the data has been stepped through
-        // the circuit.
-        _durability: WriteEventsDurability,
-        async_result: WriteEventsResult,
-    ) -> EtlResult<()> {
-        if self.wait_unpaused().await == Admission::Stopping {
-            self.parked.park(async_result);
-            return Ok(());
-        }
-
+    /// Queue the rows of this member's table from a streamed write, and
+    /// arrange for `share` to answer for them: at once when nothing waits on
+    /// a step, otherwise with the flush that puts the write's last row into
+    /// the circuit (#7122).
+    pub(super) fn push_events(&self, events: &[Event], share: Ack) -> EtlResult<()> {
         let mut stream = self.input_stream.lock().unwrap();
         let mut queued = 0usize;
         let mut bytes = 0;
         let mut errors = Vec::new();
         let timestamp = Utc::now();
 
-        for event in &events {
+        for event in events {
             match event {
                 Event::Insert(insert) => {
                     let Some(cols) =
@@ -384,20 +442,14 @@ impl FelderaDestination {
         );
 
         match write_ending(queued, tail_rows, self.defer_acks) {
-            WriteEnding::AnswerUnqueued => {
-                async_result.send(Ok(DestinationWriteStatus::Durable));
-            }
+            WriteEnding::AnswerUnqueued => share(),
             WriteEnding::QueueTailAndAnswer => {
                 self.push_event_buffer((stream.take_all(), errors), timestamp, None);
-                async_result.send(Ok(DestinationWriteStatus::Durable));
+                share();
             }
-            WriteEnding::QueueClosingAck => self.push_event_buffer(
-                (stream.take_all(), errors),
-                timestamp,
-                Some(Box::new(move || {
-                    async_result.send(Ok(DestinationWriteStatus::Durable))
-                })),
-            ),
+            WriteEnding::QueueClosingAck => {
+                self.push_event_buffer((stream.take_all(), errors), timestamp, Some(share))
+            }
         }
 
         Ok(())
@@ -426,10 +478,8 @@ impl FelderaDestination {
     /// etl waits for this result before it records the copy as finished, so a
     /// copy the circuit does not hold in full can neither be checkpointed nor
     /// be skipped on the next start (#6121).
-    fn hold_copy_barrier(&self, async_result: WriteTableRowsResult) {
-        let lowered = self.copy.hold_terminal(Box::new(move || {
-            async_result.send(Ok(DestinationWriteStatus::Durable))
-        }));
+    pub(super) fn hold_copy_barrier(&self, terminal: Ack) {
+        let lowered = self.copy.hold_terminal(terminal);
         if lowered {
             // The circuit already held every row of the copy, so no flush is
             // left to report the lowered barrier. A checkpoint deferred on that
@@ -514,7 +564,7 @@ impl FelderaDestination {
         }
     }
 
-    fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
+    pub(super) fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
         is_target_table(&self.source_table, schema_name, table_name)
     }
 
@@ -569,6 +619,7 @@ impl FelderaDestination {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
 /// What one `write_table_rows` call asks of the connector, where
 /// `target_columns` holds the replicated column names when the call describes
 /// the source table and `has_batch_id` says whether it carries rows.
@@ -587,6 +638,7 @@ pub(super) fn classify_copy_write(
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
 /// What one `write_table_rows` call asks of the connector.
 #[derive(Debug)]
 pub(super) enum CopyWrite {

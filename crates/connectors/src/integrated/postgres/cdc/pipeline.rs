@@ -127,12 +127,15 @@ impl PostgresCdcInputEndpoint {
                 &format!("failed to parse Postgres URI: {e}"),
             )
         })?;
-        // Slot sharing is not wired yet: every connector keeps its own etl
-        // pipeline, so the key is the per-table one.
-        let _ = (pipeline_config, layout);
-        let key = PublicationKey::per_table(config);
+        let key = if pipeline_config.global.dev_tweaks.shared_cdc_slot() {
+            PublicationKey::per_publication(config, pipeline_config, layout).map_err(|e| {
+                ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+            })?
+        } else {
+            PublicationKey::per_table(config)
+        };
         let shared = registry.get_or_create(&format!("postgres_cdc/{}", key.pipeline_id()), || {
-            SharedCdcPipeline::new(key.clone(), config.clone(), registry.clone())
+            SharedCdcPipeline::new(key.clone(), registry.clone())
         });
 
         Ok(Self {

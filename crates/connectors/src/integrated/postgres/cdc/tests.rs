@@ -1145,7 +1145,6 @@ fn destination_stopping(
         copy: Arc::clone(copy),
         consumer: Box::new(consumer),
         stopping: Arc::clone(stopping),
-        parked: Arc::new(ParkedResults::default()),
     }
 }
 
@@ -2137,4 +2136,59 @@ fn test_memory_backpressure_config_from_default_matches_connector_default() {
         etl_config.resume_threshold,
         MemoryBackpressureConfig::default().resume_threshold
     );
+}
+
+// -----------------------------------------------------------------------
+// Shared pipeline: ack fan-in and shared settings
+// -----------------------------------------------------------------------
+
+#[test]
+fn a_fan_in_answers_once_the_last_share_fires() {
+    let flag = Arc::new(AtomicBool::new(false));
+    let fan_in = AckFanIn::new(terminal(&flag), 2);
+    let first = fan_in.share();
+    let second = fan_in.share();
+    first();
+    assert!(!answered(&flag), "one member still owes its share");
+    second();
+    assert!(answered(&flag), "the last share answers etl");
+}
+
+#[test]
+fn a_fan_in_without_shares_answers_at_once() {
+    let flag = Arc::new(AtomicBool::new(false));
+    let _fan_in = AckFanIn::new(terminal(&flag), 0);
+    assert!(
+        answered(&flag),
+        "a write with rows for no member is durable at once"
+    );
+}
+
+#[test]
+fn shared_settings_name_the_first_field_that_differs() {
+    let base = cdc_config();
+    assert_eq!(shared_settings_differ(&base, &base.clone()), None);
+
+    let mut other_table = base.clone();
+    other_table.source_table = "public.other".to_string();
+    assert_eq!(
+        shared_settings_differ(&base, &other_table),
+        None,
+        "the table is what members differ in"
+    );
+
+    let mut batch = base.clone();
+    batch.batch.max_fill_ms += 1;
+    assert_eq!(shared_settings_differ(&base, &batch), Some("batch"));
+
+    let mut migrations = base.clone();
+    migrations.run_source_migrations = !base.run_source_migrations;
+    assert_eq!(
+        shared_settings_differ(&base, &migrations),
+        Some("run_source_migrations")
+    );
+
+    let mut user = base.clone();
+    user.uri = base.uri.replace("postgres://", "postgres://someone_else@");
+    assert_eq!(shared_settings_differ(&base, &user), Some("uri user"));
 }

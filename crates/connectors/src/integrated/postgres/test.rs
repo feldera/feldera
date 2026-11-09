@@ -2833,6 +2833,9 @@ pub mod cdc_scenarios;
 pub mod cdc_privileges;
 
 #[cfg(feature = "with-postgres-cdc")]
+pub mod cdc_shared;
+
+#[cfg(feature = "with-postgres-cdc")]
 pub mod cdc_tests {
     use crate::{
         Controller,
@@ -3065,7 +3068,12 @@ col_int_array   INTEGER[]
             source_table,
         )
         .to_string();
+        drop_slots_of_pipeline_id(client, &pipeline_id);
+    }
 
+    /// Drop the replication slots etl created for the pipeline with id
+    /// `pipeline_id`.
+    pub(super) fn drop_slots_of_pipeline_id(client: &mut postgres::Client, pipeline_id: &str) {
         // The pipeline ID appears as a `_`-delimited token in every slot
         // name etl creates, so an exact-token match avoids dropping an
         // unrelated slot whose ID merely shares these digits.

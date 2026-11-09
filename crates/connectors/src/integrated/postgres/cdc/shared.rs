@@ -14,11 +14,16 @@ use std::sync::Weak;
 /// [`ConnectorRegistry`] holds it weakly.
 pub(super) struct SharedCdcPipeline {
     key: PublicationKey,
-    /// Connection and etl settings, from the first connector.
-    config: PostgresCdcReaderConfig,
+    /// The first connector that joined, by endpoint name, and its settings,
+    /// which configure the whole etl pipeline; every later member must agree.
+    first: Mutex<Option<(String, PostgresCdcReaderConfig)>>,
     registry: Arc<ConnectorRegistry>,
     /// Connectors that joined and wait for etl to start.
     joined: Mutex<Vec<Member>>,
+    /// The worker runs etl for the members it took.
+    running: AtomicBool,
+    /// The worker has returned; the pipeline takes no more members.
+    retired: AtomicBool,
     /// etl is being stopped. A write that starts afterwards queues nothing
     /// and parks its result; see [`FelderaDestination::wait_unpaused`].
     pub(super) stopping: Arc<AtomicBool>,
@@ -30,17 +35,15 @@ pub(super) struct SharedCdcPipeline {
 }
 
 impl SharedCdcPipeline {
-    pub(super) fn new(
-        key: PublicationKey,
-        config: PostgresCdcReaderConfig,
-        registry: Arc<ConnectorRegistry>,
-    ) -> Arc<Self> {
+    pub(super) fn new(key: PublicationKey, registry: Arc<ConnectorRegistry>) -> Arc<Self> {
         let (terminate, _) = channel(false);
         Arc::new_cyclic(|me| Self {
             key,
-            config,
+            first: Mutex::new(None),
             registry,
             joined: Mutex::new(Vec::new()),
+            running: AtomicBool::new(false),
+            retired: AtomicBool::new(false),
             stopping: Arc::new(AtomicBool::new(false)),
             parked: Arc::new(ParkedResults::default()),
             terminate,
@@ -53,10 +56,58 @@ impl SharedCdcPipeline {
         self.key.pipeline_id()
     }
 
+    /// The settings of the first member, which configure etl.
+    fn config(&self) -> PostgresCdcReaderConfig {
+        self.first
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|(_, config)| config.clone())
+            .expect("etl starts only once a member has joined")
+    }
+
     /// Registers `member`. Until the controller has opened every connector,
     /// the member waits for [`SharedConnectorState::initial_connect_done`];
     /// a connector that joins afterwards starts etl now.
+    ///
+    /// The connection user, TLS, `run_source_migrations`, `batch` and
+    /// `memory_backpressure` configure the whole etl pipeline, so a member
+    /// whose values differ from the first member's is refused.
     pub(super) fn join(&self, member: Member) -> Result<(), ControllerError> {
+        let name = member.inner.endpoint_name.clone();
+        {
+            let mut first = self.first.lock().unwrap();
+            if let Some((first, config)) = first.as_ref()
+                && let Some(field) = shared_settings_differ(config, &member.inner.config)
+            {
+                return Err(ControllerError::invalid_transport_configuration(
+                    &name,
+                    &format!(
+                        "connectors '{first}' and '{name}' read publication '{}' of '{}' with \
+                         different '{field}' settings. They share one replication slot, so \
+                         they must use the same settings. Make '{field}' the same on both, or \
+                         give one of them its own publication",
+                        self.key.publication(),
+                        self.key.connection()
+                    ),
+                ));
+            }
+            if first.is_none() {
+                *first = Some((name.clone(), member.inner.config.clone()));
+            }
+        }
+        if self.running.load(Ordering::SeqCst) {
+            return Err(ControllerError::input_transport_error(
+                &name,
+                true,
+                anyhow!(
+                    "the replication pipeline of publication '{}' is already running for \
+                     another connector; connecting a connector to it while it runs is not \
+                     supported yet. Stop the pipeline, then start it with this connector",
+                    self.key.publication()
+                ),
+            ));
+        }
         self.joined.lock().unwrap().push(member);
         if self.registry.is_initial_connect_done() {
             self.start()
@@ -73,6 +124,7 @@ impl SharedCdcPipeline {
             return Ok(());
         };
         let label = first.inner.endpoint_name.clone();
+        self.running.store(true, Ordering::SeqCst);
         let (init_status_sender, init_status_receiver) =
             tokio::sync::oneshot::channel::<Result<(), ControllerError>>();
         let this = self
@@ -137,7 +189,8 @@ impl SharedCdcPipeline {
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
     ) {
         let label = members[0].inner.endpoint_name.clone();
-        let pg_conn = match parse_pg_uri(&self.config.uri, &self.config.tls, &label) {
+        let config = self.config();
+        let pg_conn = match parse_pg_uri(&config.uri, &config.tls, &label) {
             Ok(conn) => conn,
             Err(e) => {
                 let _ =
@@ -153,14 +206,14 @@ impl SharedCdcPipeline {
         // error, and the most likely one after an unqualified name came to
         // mean `public`. Say so now, with the publication's table list, rather
         // than ingest nothing until the stall monitor speaks.
-        let catalog = connect_pg(&self.config.uri, &self.config.tls, &label).await;
+        let catalog = connect_pg(&config.uri, &config.tls, &label).await;
         match &catalog {
-            Ok(client) => match publication_tables(client, &self.config.publication).await {
+            Ok(client) => match publication_tables(client, &config.publication).await {
                 Ok(tables) => {
                     for member in &members {
                         if let Some(problem) = source_table_missing_from(
                             &member.inner.config.source_table,
-                            &self.config.publication,
+                            &config.publication,
                             &tables,
                         ) {
                             let _ = init_status_sender.send(Err(
@@ -174,9 +227,9 @@ impl SharedCdcPipeline {
                         }
                     }
                 }
-                Err(e) => self.warn_publication_unlisted(&label, &e),
+                Err(e) => warn_publication_unlisted(&label, &config.publication, &e),
             },
-            Err(e) => self.warn_publication_unlisted(&label, e),
+            Err(e) => warn_publication_unlisted(&label, &config.publication, e),
         }
 
         // Skipped source migrations leave the event trigger to an
@@ -184,7 +237,7 @@ impl SharedCdcPipeline {
         // never-bootstrapped database then stays untouched. With migrations
         // enabled the trigger is checked after etl installs it. A failed
         // catalog connection is left for the state store to report.
-        if let (false, Ok(client)) = (self.config.run_source_migrations, &catalog)
+        if let (false, Ok(client)) = (config.run_source_migrations, &catalog)
             && let Err(e) = verify_ddl_event_trigger(client).await
         {
             let _ = init_status_sender
@@ -194,7 +247,7 @@ impl SharedCdcPipeline {
 
         let pipeline_config = PipelineConfig {
             id: self.pipeline_id(),
-            publication_name: self.config.publication.clone(),
+            publication_name: config.publication.clone(),
             pg_connection: pg_conn.clone(),
             // etl stores its replication state in the source database itself, so
             // the state store reuses the source connection.
@@ -203,22 +256,20 @@ impl SharedCdcPipeline {
             // failover slots need PostgreSQL 17 or later, so the connector
             // keeps the default slot configuration.
             replication_slot: Default::default(),
-            batch: batch_config_from(&self.config.batch),
+            batch: batch_config_from(&config.batch),
             table_error_retry_delay_ms: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_DELAY_MS,
             table_error_retry_max_attempts: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_MAX_ATTEMPTS,
             max_table_sync_workers: PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS,
             max_copy_connections_per_table: PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE,
             memory_refresh_interval_ms: PipelineConfig::DEFAULT_MEMORY_REFRESH_INTERVAL_MS,
-            memory_backpressure: Some(memory_backpressure_config_from(
-                &self.config.memory_backpressure,
-            )),
+            memory_backpressure: Some(memory_backpressure_config_from(&config.memory_backpressure)),
             table_sync_copy: TableSyncCopyConfig::IncludeAllTables,
             table_sync_monitor_refresh_interval_ms:
                 PipelineConfig::DEFAULT_TABLE_SYNC_MONITOR_REFRESH_INTERVAL_MS,
             invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
             // The initial copy needs etl's schema helpers. When migrations are
             // disabled, an administrator must have installed them beforehand.
-            run_source_migrations: self.config.run_source_migrations,
+            run_source_migrations: config.run_source_migrations,
             replication_lag_refresh_interval_ms:
                 PipelineConfig::DEFAULT_REPLICATION_LAG_REFRESH_INTERVAL_MS,
             settle_durable_interval_ms: None,
@@ -240,10 +291,7 @@ impl SharedCdcPipeline {
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &label,
                     true,
-                    with_setup_hint(
-                        anyhow!(e).context(message),
-                        self.config.run_source_migrations,
-                    ),
+                    with_setup_hint(anyhow!(e).context(message), config.run_source_migrations),
                 )));
                 return;
             }
@@ -277,10 +325,7 @@ impl SharedCdcPipeline {
                     let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                         &inner.endpoint_name,
                         true,
-                        with_setup_hint(
-                            anyhow!(e).context(message),
-                            self.config.run_source_migrations,
-                        ),
+                        with_setup_hint(anyhow!(e).context(message), config.run_source_migrations),
                     )));
                     return;
                 }
@@ -306,22 +351,25 @@ impl SharedCdcPipeline {
                 copy: Arc::clone(&inner.copy),
                 consumer: inner.consumer.clone(),
                 stopping: Arc::clone(&self.stopping),
-                parked: Arc::clone(&self.parked),
             }));
             monitors.push(TableErrorMonitor {
                 endpoint_name: inner.endpoint_name.clone(),
-                run_source_migrations: self.config.run_source_migrations,
+                run_source_migrations: config.run_source_migrations,
                 consumer: inner.consumer.clone(),
                 store: store.clone(),
                 source_table: inner.config.source_table.clone(),
-                publication: self.config.publication.clone(),
+                publication: config.publication.clone(),
                 copy: Arc::clone(&inner.copy),
                 pipeline_state_rx: member.state_rx.clone(),
             });
             state_rxs.push(member.state_rx);
             inners.push(inner);
         }
-        let destination = DispatchingDestination::new(destinations);
+        let destination = DispatchingDestination::new(
+            destinations,
+            Arc::clone(&self.stopping),
+            Arc::clone(&self.parked),
+        );
 
         // Stopping the pipeline needs the pipeline itself, so a stop that
         // arrives while `start` runs takes effect once it returns: the
@@ -329,7 +377,7 @@ impl SharedCdcPipeline {
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
 
         let started = match pipeline.start().await {
-            Ok(()) if self.config.run_source_migrations => match &catalog {
+            Ok(()) if config.run_source_migrations => match &catalog {
                 // The migrations have installed the trigger by now; an
                 // administrator may still have disabled it since.
                 Ok(client) => verify_ddl_event_trigger(client).await,
@@ -340,7 +388,7 @@ impl SharedCdcPipeline {
                 let message = format!("failed to start etl pipeline: {e}");
                 Err(with_setup_hint(
                     anyhow!(e).context(message),
-                    self.config.run_source_migrations,
+                    config.run_source_migrations,
                 ))
             }
         };
@@ -350,7 +398,7 @@ impl SharedCdcPipeline {
                 for inner in &inners {
                     info!(
                         "postgres_cdc {}: etl pipeline started for publication '{}', table '{}'",
-                        &inner.endpoint_name, &self.config.publication, &inner.config.source_table,
+                        &inner.endpoint_name, &config.publication, &inner.config.source_table,
                     );
                 }
                 let _ = init_status_sender.send(Ok(()));
@@ -431,7 +479,7 @@ impl SharedCdcPipeline {
                 for inner in &inners {
                     inner.consumer.error(
                         true,
-                        with_setup_hint(anyhow!(text.clone()), self.config.run_source_migrations),
+                        with_setup_hint(anyhow!(text.clone()), config.run_source_migrations),
                         None,
                     );
                 }
@@ -442,18 +490,11 @@ impl SharedCdcPipeline {
 
         stop_completion_watchers(&mut completion_handles, &label).await;
 
+        self.retired.store(true, Ordering::SeqCst);
+        self.running.store(false, Ordering::SeqCst);
         for inner in &inners {
             inner.consumer.eoi();
         }
-    }
-
-    fn warn_publication_unlisted(&self, label: &str, error: &anyhow::Error) {
-        warn!(
-            "postgres_cdc {label}: could not list the tables of publication '{}' ({error}); a \
-             source table the publication does not carry is reported by the stall \
-             monitor instead",
-            &self.config.publication
-        );
     }
 
     /// Wait for etl to stop after [`Self::shutdown_etl_pipeline`], for at
@@ -523,6 +564,46 @@ impl SharedConnectorState for SharedCdcPipeline {
     fn shutdown(&self) {
         self.terminate.send_replace(true);
     }
+
+    /// A pipeline that stops, or has stopped, takes no new member: a
+    /// connector that connects again gets a pipeline of its own.
+    fn accepts_members(&self) -> bool {
+        !self.stopping.load(Ordering::SeqCst) && !self.retired.load(Ordering::SeqCst)
+    }
+}
+
+/// The first of the settings that configure the whole etl pipeline on which
+/// `a` and `b` differ, by the name the connector configuration uses.
+pub(super) fn shared_settings_differ(
+    a: &PostgresCdcReaderConfig,
+    b: &PostgresCdcReaderConfig,
+) -> Option<&'static str> {
+    let user = |config: &PostgresCdcReaderConfig| {
+        Url::parse(&config.uri)
+            .map(|url| url.username().to_string())
+            .unwrap_or_else(|_| config.uri.clone())
+    };
+    if user(a) != user(b) {
+        Some("uri user")
+    } else if a.tls != b.tls {
+        Some("tls")
+    } else if a.run_source_migrations != b.run_source_migrations {
+        Some("run_source_migrations")
+    } else if a.batch != b.batch {
+        Some("batch")
+    } else if a.memory_backpressure != b.memory_backpressure {
+        Some("memory_backpressure")
+    } else {
+        None
+    }
+}
+
+fn warn_publication_unlisted(label: &str, publication: &str, error: &anyhow::Error) {
+    warn!(
+        "postgres_cdc {label}: could not list the tables of publication '{publication}' \
+         ({error}); a source table the publication does not carry is reported by the stall \
+         monitor instead"
+    );
 }
 
 /// Stop every completion watcher, each within [`WATCHER_SHUTDOWN_TIMEOUT`].

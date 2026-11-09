@@ -407,6 +407,15 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_exchange: Option<bool>,
 
+    /// Whether the Postgres CDC connectors of this pipeline that read the
+    /// same publication of the same database share one etl pipeline, and so
+    /// one replication slot, instead of one slot per connector.
+    ///
+    /// The default is `false`. Turning it on renames the replication slots,
+    /// so every table is copied once more at the next start.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_cdc_slot: Option<bool>,
+
     /// Options not understood by this particular version.
     ///
     /// This allows the pipeline manager to take options that a custom or old
@@ -587,6 +596,10 @@ impl DevTweaks {
 
     pub fn tls_exchange(&self) -> bool {
         self.tls_exchange.unwrap_or(true)
+    }
+
+    pub fn shared_cdc_slot(&self) -> bool {
+        self.shared_cdc_slot.unwrap_or(false)
     }
 }
 

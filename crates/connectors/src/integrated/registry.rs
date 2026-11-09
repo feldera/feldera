@@ -28,6 +28,13 @@ pub trait SharedConnectorState: Any + Send + Sync {
     /// Runs when the pipeline stops, before the controller disconnects its
     /// inputs one by one.
     fn shutdown(&self) {}
+
+    /// Whether a connector may still join this object.  An object that is
+    /// winding down says no, and [`ConnectorRegistry::get_or_create`] then
+    /// makes a new one under the same key.
+    fn accepts_members(&self) -> bool {
+        true
+    }
 }
 
 struct Entry {
@@ -54,10 +61,10 @@ impl ConnectorRegistry {
         make: impl FnOnce() -> Arc<T>,
     ) -> Arc<T> {
         let mut entries = self.entries.lock().unwrap();
-        if let Some(live) = entries
-            .get(key)
-            .and_then(|entry| entry.any.upgrade())
-            .and_then(|any| any.downcast::<T>().ok())
+        if let Some(entry) = entries.get(key)
+            && let (Some(any), Some(shared)) = (entry.any.upgrade(), entry.shared.upgrade())
+            && shared.accepts_members()
+            && let Ok(live) = any.downcast::<T>()
         {
             return live;
         }
@@ -125,9 +132,14 @@ mod tests {
         started: AtomicUsize,
         stopped: AtomicUsize,
         fail_start: bool,
+        retired: AtomicBool,
     }
 
     impl SharedConnectorState for Counter {
+        fn accepts_members(&self) -> bool {
+            !self.retired.load(Ordering::SeqCst)
+        }
+
         fn initial_connect_done(&self) -> Result<(), ControllerError> {
             self.started.fetch_add(1, Ordering::SeqCst);
             if self.fail_start {
@@ -155,6 +167,21 @@ mod tests {
         drop((a, b));
         let c = registry.get_or_create("k", || Arc::new(Counter::default()));
         assert_eq!(c.started.load(Ordering::SeqCst), 0);
+    }
+
+    /// An object that winds down is still alive, held by its last connector,
+    /// but a new connector must not join it.
+    #[test]
+    fn a_retired_object_is_replaced() {
+        let registry = ConnectorRegistry::default();
+        let old = registry.get_or_create("k", || Arc::new(Counter::default()));
+        old.retired.store(true, Ordering::SeqCst);
+        let new = registry.get_or_create("k", || Arc::new(Counter::default()));
+        assert!(!Arc::ptr_eq(&old, &new));
+        assert!(Arc::ptr_eq(
+            &new,
+            &registry.get_or_create("k", || Arc::new(Counter::default()))
+        ));
     }
 
     #[test]

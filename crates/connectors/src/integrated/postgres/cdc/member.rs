@@ -447,6 +447,45 @@ pub(super) fn write_ending(queued: usize, tail_rows: bool, defer_acks: bool) -> 
     WriteEnding::QueueClosingAck
 }
 
+/// One etl `write_events` answer, owed by every member that got rows of the
+/// write. The last share answers etl; a write with no share is answered at
+/// once.
+pub(super) struct AckFanIn {
+    pending: AtomicUsize,
+    answer: Mutex<Option<Ack>>,
+}
+
+impl AckFanIn {
+    /// `answer` answers etl; `shares` is the number of members that owe a
+    /// share, each taken with [`Self::share`].
+    pub(super) fn new(answer: Ack, shares: usize) -> Arc<Self> {
+        let fan_in = Arc::new(Self {
+            pending: AtomicUsize::new(shares),
+            answer: Mutex::new(Some(answer)),
+        });
+        if shares == 0 {
+            fan_in.answer();
+        }
+        fan_in
+    }
+
+    /// One member's share of the answer; see [`QueueAux::ack`].
+    pub(super) fn share(self: &Arc<Self>) -> Ack {
+        let fan_in = Arc::clone(self);
+        Box::new(move || {
+            if fan_in.pending.fetch_sub(1, Ordering::AcqRel) == 1 {
+                fan_in.answer();
+            }
+        })
+    }
+
+    fn answer(&self) {
+        if let Some(answer) = self.answer.lock().unwrap().take() {
+            answer();
+        }
+    }
+}
+
 /// Per-entry auxiliary data on the input queue.
 #[derive(Default)]
 pub(super) struct QueueAux {

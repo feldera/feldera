@@ -42,8 +42,6 @@ impl PublicationKey {
     /// different tables of one publication must not share a slot or etl's
     /// `replication_state` rows, so the key needs the pipeline name. The
     /// pipeline manager always sets it.
-    // Slot sharing, which the next commit wires, is the only caller.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn per_publication(
         config: &PostgresCdcReaderConfig,
         pipeline_config: &FelderaPipelineConfig,
@@ -63,6 +61,15 @@ impl PublicationKey {
             feldera_pipeline: Some(feldera_pipeline),
             host_idx: (!layout.is_solo()).then(|| layout.local_host_idx()),
         })
+    }
+
+    /// `host:port/database` of the source, for messages.
+    pub(super) fn connection(&self) -> &str {
+        &self.connection
+    }
+
+    pub(super) fn publication(&self) -> &str {
+        &self.publication
     }
 
     /// The etl pipeline id. etl names the replication slots after it
@@ -112,6 +119,20 @@ fn connection_identity(uri: &str) -> String {
 #[cfg(any(test, feature = "testing"))]
 pub(crate) fn pipeline_id(uri: &str, publication: &str, source_table: &str) -> u64 {
     xxh3_64(stable_connection_identity(uri, publication, source_table).as_bytes())
+}
+
+/// Deterministic pipeline id of the per-publication key of a solo pipeline
+/// named `feldera_pipeline`, for tests that reconstruct it to clean up slots.
+#[cfg(any(test, feature = "testing"))]
+pub(crate) fn shared_pipeline_id(uri: &str, publication: &str, feldera_pipeline: &str) -> u64 {
+    PublicationKey {
+        connection: connection_identity(uri),
+        publication: publication.to_string(),
+        source_table: None,
+        feldera_pipeline: Some(feldera_pipeline.to_string()),
+        host_idx: None,
+    }
+    .pipeline_id()
 }
 
 /// The identity string of the per-table key.

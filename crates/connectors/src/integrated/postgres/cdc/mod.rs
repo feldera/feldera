@@ -73,7 +73,7 @@ use reconcile::*;
 use shared::*;
 
 #[cfg(any(test, feature = "testing"))]
-pub(crate) use key::pipeline_id;
+pub(crate) use key::{pipeline_id, shared_pipeline_id};
 pub use pipeline::PostgresCdcInputEndpoint;
 #[cfg(any(test, feature = "testing"))]
 pub(crate) use pipeline::{
