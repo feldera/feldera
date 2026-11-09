@@ -25,6 +25,7 @@ use serde_bytes::ByteBuf;
 use std::{
     hash::Hasher,
     iter::repeat,
+    ops::ControlFlow,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
@@ -142,7 +143,9 @@ impl HttpInputEndpointInner {
     async fn background_task(self: Arc<Self>, mut receiver: UnboundedReceiver<InputReaderCommand>) {
         let input_span = info_span!("http_input");
         while let Some(message) = receiver.recv().await {
-            input_span.in_scope(|| match message {
+            // A fatal error ends the task, which closes the endpoint, so that
+            // the controller stops waiting for it.
+            let flow = input_span.in_scope(|| match message {
                 InputReaderCommand::Replay { data, .. } => {
                     #[cfg(any(test, feature = "testing"))]
                     {
@@ -185,7 +188,7 @@ impl HttpInputEndpointInner {
                                     anyhow!("Cannot replay a journaled request: {error}"),
                                     Some("http-input"),
                                 );
-                                return;
+                                return ControlFlow::Break(());
                             }
                         };
                         let (mut buffer, errors) = details.parser.parse(&chunk, metadata);
@@ -197,9 +200,16 @@ impl HttpInputEndpointInner {
                         details.consumer.check_flush(buffer.flush());
                     }
                     details.consumer.replayed(total, hasher.finish());
+                    ControlFlow::Continue(())
                 }
-                InputReaderCommand::Extend => self.set_state(PipelineState::Running),
-                InputReaderCommand::Pause => self.set_state(PipelineState::Paused),
+                InputReaderCommand::Extend => {
+                    self.set_state(PipelineState::Running);
+                    ControlFlow::Continue(())
+                }
+                InputReaderCommand::Pause => {
+                    self.set_state(PipelineState::Paused);
+                    ControlFlow::Continue(())
+                }
                 InputReaderCommand::Queue { .. } => {
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
@@ -217,9 +227,16 @@ impl HttpInputEndpointInner {
                             .map(|t| Watermark::new(t, None))
                             .collect(),
                     );
+                    ControlFlow::Continue(())
                 }
-                InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
+                InputReaderCommand::Disconnect => {
+                    self.set_state(PipelineState::Terminated);
+                    ControlFlow::Continue(())
+                }
             });
+            if flow.is_break() {
+                break;
+            }
         }
     }
 
@@ -448,7 +465,8 @@ impl InputReader for HttpInputEndpoint {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        // The background task exits after a fatal error or a panic.
+        self.sender.is_closed()
     }
 }
 
@@ -495,7 +513,7 @@ mod test {
     use super::{Data, HttpInputEndpoint, REPLAY_GATES, RequestMetadata};
     use crate::TransportInputEndpoint;
     use crate::test::{MockInputConsumer, wait};
-    use crate::transport::InputReaderCommand;
+    use crate::transport::{InputReader, InputReaderCommand};
 
     /// Returns what the VARIANT JSON parser of `feldera-sqllib` reads from
     /// `json`, with the errors that `RequestMetadata::parse` reports: the
@@ -612,6 +630,23 @@ mod test {
         );
     }
 
+    /// An endpoint whose background task died is closed, so that the
+    /// controller stops waiting for it to answer a command.
+    #[test]
+    fn endpoint_is_closed_after_its_task_dies() {
+        let endpoint = HttpInputEndpoint::new(HttpInputConfig {
+            name: "closed".into(),
+        });
+        assert!(!endpoint.is_closed());
+
+        // Replay data that does not decode makes the task panic.
+        endpoint.request(InputReaderCommand::Replay {
+            metadata: serde_json::Value::Null,
+            data: rmpv::Value::Nil,
+        });
+        wait(|| endpoint.is_closed(), 10_000).expect("the endpoint never closed");
+    }
+
     /// Of two fields with one name, the last one counts, as in a JSON object.
     #[test]
     fn request_metadata_keeps_the_last_of_two_fields() {
@@ -670,10 +705,13 @@ mod test {
         }
     }
 
+    /// The errors that an endpoint reports, with whether each is fatal.
+    type Errors = Arc<Mutex<Vec<(bool, String)>>>;
+
     /// Opens an HTTP input endpoint named `name` and has it replay a request
-    /// whose connector metadata it refuses.  Returns the errors that the
-    /// replay reports.
-    fn replay_refused_metadata(name: &str) -> Arc<Mutex<Vec<(bool, String)>>> {
+    /// whose connector metadata it refuses.  Returns the reader and the errors
+    /// that the replay reports.
+    fn replay_refused_metadata(name: &str) -> (Box<dyn InputReader>, Errors) {
         let consumer = MockInputConsumer::new();
         let errors = Arc::new(Mutex::new(Vec::new()));
         consumer.on_error(Some(Box::new({
@@ -701,7 +739,7 @@ mod test {
             metadata: serde_json::Value::Null,
             data: rmpv::ext::to_value(data).unwrap(),
         });
-        errors
+        (reader, errors)
     }
 
     /// A replay gate that waits for another endpoint's replay must not keep
@@ -710,7 +748,7 @@ mod test {
     fn replay_gate_does_not_block_other_endpoints() {
         let entered = Arc::new(AtomicBool::new(false));
         let other_replayed = Arc::new(AtomicBool::new(false));
-        let other_errors = Arc::new(Mutex::new(None::<Arc<Mutex<Vec<(bool, String)>>>>));
+        let other_errors = Arc::new(Mutex::new(None::<(Box<dyn InputReader>, Errors)>));
         REPLAY_GATES.lock().unwrap().insert(
             "gated-replay".into(),
             Box::new({
@@ -725,7 +763,7 @@ mod test {
                                 .lock()
                                 .unwrap()
                                 .as_ref()
-                                .is_some_and(|errors| !errors.lock().unwrap().is_empty())
+                                .is_some_and(|(_, errors)| !errors.lock().unwrap().is_empty())
                         },
                         10_000,
                     );
@@ -733,7 +771,7 @@ mod test {
                 }
             }),
         );
-        let gated_errors = replay_refused_metadata("gated-replay");
+        let (_gated_reader, gated_errors) = replay_refused_metadata("gated-replay");
         wait(|| entered.load(Ordering::Acquire), 10_000).expect("the gate never ran");
         *other_errors.lock().unwrap() = Some(replay_refused_metadata("other-replay"));
         wait(|| !gated_errors.lock().unwrap().is_empty(), 20_000)
@@ -748,9 +786,14 @@ mod test {
     /// of an older version can, fails the endpoint instead of panicking.
     #[test]
     fn replay_of_refused_metadata_fails_the_endpoint() {
-        let errors = replay_refused_metadata("replay");
+        let (reader, errors) = replay_refused_metadata("replay");
 
         wait(|| !errors.lock().unwrap().is_empty(), 10_000).unwrap();
+
+        // The endpoint closes, so that the controller does not wait forever
+        // for the replay to finish.
+        wait(|| reader.is_closed(), 10_000).expect("the endpoint never closed");
+
         let errors = errors.lock().unwrap();
         let (fatal, error) = &errors[0];
         assert!(*fatal, "{error}");
