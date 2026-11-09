@@ -408,7 +408,7 @@ def test_delta_input_change_feed_matches_follow(pipeline_name):
     )
 
 
-def test_delta_input_change_feed_reads_only_changes(pipeline_name):
+def test_delta_input_change_feed_skips_unchanged(pipeline_name):
     """A one-row `UPDATE` ingests one row through the change feed, where
     `follow` ingests the whole rewritten file.
 

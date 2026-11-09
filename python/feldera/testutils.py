@@ -244,11 +244,14 @@ PIPELINE_NAME_MAX_LEN = 62
 def unique_pipeline_name(base_name: str) -> str:
     """
     In CI, multiple tests of different runs can run against the same Feldera instance, we
-    make sure the pipeline names they use are unique by appending the first 5 characters
-    of the commit SHA or 'local' if not in CI. The suite tag distinguishes
+    make sure the pipeline names they use are unique by prepending `run_` and the first 5
+    characters of the commit SHA or 'local' if not in CI. The suite tag distinguishes
     test suites of the same commit running concurrently against one instance.
+
+    Tests also name SQL relations and Avro records after the pipeline. The `run_`
+    prefix keeps those names valid when the commit SHA starts with a digit.
     """
-    ci_tag = os.getenv("GITHUB_SHA", "local")[:5] + suite_tag()
+    ci_tag = "run_" + os.getenv("GITHUB_SHA", "local")[:5] + suite_tag()
     name = f"{ci_tag}_{base_name}"
     # Fail here with a clear message rather than letting provisioning hit a
     # cryptic 422.

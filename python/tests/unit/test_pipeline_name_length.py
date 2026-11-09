@@ -11,11 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from feldera.testutils import PIPELINE_NAME_MAX_LEN, variant_pipeline_name
+from feldera.testutils import (
+    PIPELINE_NAME_MAX_LEN,
+    unique_pipeline_name,
+    variant_pipeline_name,
+)
 
-# The longest prefix `unique_pipeline_name` prepends: five characters of the
-# commit SHA, the one-character `python-multihost` suite tag, and the separator.
-LONGEST_TAG_LEN = len("abcde") + len("m") + len("_")
+# The longest prefix `unique_pipeline_name` prepends: `run_`, five characters of
+# the commit SHA, the one-character `python-multihost` suite tag, and the separator.
+LONGEST_TAG_LEN = len("run_abcde") + len("m") + len("_")
 
 TESTS_DIR = Path(__file__).resolve().parents[1]
 
@@ -70,6 +74,13 @@ def test_test_pipeline_names_fit_the_limit():
         f"these test names leave no room for the {LONGEST_TAG_LEN}-char CI tag within "
         f"the {PIPELINE_NAME_MAX_LEN}-char pipeline name limit:\n" + "\n".join(too_long)
     )
+
+
+def test_unique_pipeline_name_starts_with_a_letter(monkeypatch):
+    """Tests name SQL relations and Avro records after the pipeline, and an
+    Avro name cannot start with a digit, as a commit SHA can."""
+    monkeypatch.setenv("GITHUB_SHA", "457ed6cafabb4e3d844538c0ffc8efe1552b63f6")
+    assert unique_pipeline_name("test")[0].isalpha()
 
 
 def test_variant_pipeline_name_appends_the_variant():
