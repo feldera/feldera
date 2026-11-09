@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -815,6 +816,35 @@ def _fixture_build_lock(key: str) -> Iterator[None]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def _run_spark_subprocess(
+    command: Sequence[str], *, capture_output: bool, timeout_s: float
+) -> subprocess.CompletedProcess:
+    """Run ``command`` in its own process group; the whole group dies with it.
+
+    ``uv run`` starts ``python`` which starts the JVM. A plain
+    ``subprocess.run(timeout=...)`` SIGKILLs only ``uv``, which cannot forward
+    the signal, so a hung Spark would survive and overlap the retry.
+
+    :raises subprocess.CalledProcessError: On a non-zero exit, like ``check=True``.
+    :raises subprocess.TimeoutExpired: After ``timeout_s`` seconds.
+    """
+    pipe = subprocess.PIPE if capture_output else None
+    proc = subprocess.Popen(
+        command, stdout=pipe, stderr=pipe, text=True, start_new_session=True
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_s)
+    finally:
+        # Also after a clean exit: a leftover child is never wanted. Only
+        # ``proc`` itself is reaped; orphans in the group fall to init.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, command, stdout, stderr)
+    return subprocess.CompletedProcess(command, 0, stdout, stderr)
+
+
 def run_delta_spark(
     script: str | os.PathLike[str],
     args: Sequence[object] = (),
@@ -856,17 +886,17 @@ def run_delta_spark(
             # neither tolerates concurrent writers: uv times out on its lock
             # and Ivy leaves truncated jars. Runs are rare, so serialize them.
             with _fixture_build_lock("delta-spark"):
-                completed = subprocess.run(
-                    command,
-                    check=True,
-                    capture_output=capture_output,
-                    text=True,
-                    timeout=timeout_s,
+                completed = _run_spark_subprocess(
+                    command, capture_output=capture_output, timeout_s=timeout_s
                 )
             return completed.stdout if capture_output else ""
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             if attempt == max_attempts:
                 raise
+            # TimeoutExpired carries the partial output as bytes even in text mode.
+            stderr = e.stderr
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode(errors="replace")
             logging.warning(
                 "Delta Spark script %s failed (attempt %d/%d); retrying. "
                 "Usually a transient Maven/Ivy download failure.\n%s\n%s",
@@ -874,7 +904,7 @@ def run_delta_spark(
                 attempt,
                 max_attempts,
                 e,
-                e.stderr,
+                stderr,
             )
             time.sleep(5 * attempt)
     raise AssertionError("unreachable")
