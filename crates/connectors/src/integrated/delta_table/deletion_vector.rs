@@ -895,6 +895,13 @@ mod tests {
     use datafusion::physical_plan::ExecutionPlanProperties;
     use datafusion::prelude::SessionContext;
     use deltalake::{DeltaTableBuilder, ensure_table_uri};
+    use parquet::basic::{Compression, Encoding};
+    use parquet::column::page::{CompressedPage, Page, PageWriteSpec, PageWriter};
+    use parquet::column::writer::{get_column_writer, get_typed_column_writer_mut};
+    use parquet::data_type::Int64Type;
+    use parquet::file::properties::WriterProperties;
+    use parquet::file::writer::{SerializedFileWriter, SerializedPageWriter, TrackedWrite};
+    use parquet::schema::parser::parse_message_type;
     use proptest::prelude::*;
     use tempfile::TempDir;
 
@@ -1982,24 +1989,26 @@ mod tests {
         "/testdata/photon_256_value_miniblocks.parquet"
     ));
 
-    /// [`filtered_parquet_table`] skips rows inside 256-value
-    /// `DELTA_BINARY_PACKED` miniblocks, both to apply a deletion vector and to
-    /// read a deletion-vector delta. parquet 58.3 to 59.3.1 fail these reads
-    /// with "cannot skip miniblock of size 256".
-    #[tokio::test]
-    async fn masked_reader_skips_rows_inside_wide_miniblocks() {
-        const TOTAL_ROWS: i64 = 312;
-        let dir = TempDir::new().unwrap();
-        std::fs::write(dir.path().join("data.parquet"), WIDE_MINIBLOCK_PARQUET).unwrap();
-
-        // Row 0 is the page's first value, and the first miniblock holds rows
-        // 1 to 256. The runs start the file, sit inside the first miniblock,
-        // cross into the second, and end the file.
-        let bitmap_rows: Vec<i64> = [0..1, 10..20, 250..260, 311..312]
-            .into_iter()
-            .flatten()
-            .collect();
-        let other_rows: Vec<i64> = (0..TOTAL_ROWS)
+    /// Reads `file` in `dir` through [`filtered_parquet_table`] with a bitmap
+    /// of `bitmap_rows`, once in each [`ReadMode`], and checks that each read
+    /// returns the values of exactly the rows it should.
+    ///
+    /// # Arguments
+    ///
+    /// * `dir` - the directory that holds `file`.
+    /// * `file` - a Parquet file with one required `INT64` column, `id`, in
+    ///   256-value `DELTA_BINARY_PACKED` miniblocks.
+    /// * `total_rows` - the number of rows in `file`.
+    /// * `bitmap_rows` - the rows in the bitmap.
+    /// * `value` - the `id` that `file` holds in a given row.
+    async fn check_masked_reads(
+        dir: &std::path::Path,
+        file: &str,
+        total_rows: i64,
+        bitmap_rows: &[i64],
+        value: impl Fn(i64) -> i64,
+    ) {
+        let other_rows: Vec<i64> = (0..total_rows)
             .filter(|row| !bitmap_rows.contains(row))
             .collect();
         let declared = ReadSchema::new(&ArrowSchema::new(vec![ArrowField::new(
@@ -2007,16 +2016,16 @@ mod tests {
             ArrowDataType::Int64,
             false,
         )]));
-        let store = unloaded_table(dir.path()).log_store().object_store();
+        let store = unloaded_table(dir).log_store().object_store();
 
-        for (read, mode, expected) in [
-            ("the other rows", ReadMode::NotInBitmap, &other_rows),
-            ("the bitmap rows", ReadMode::InBitmap, &bitmap_rows),
+        for (read, mode, rows) in [
+            ("the other rows", ReadMode::NotInBitmap, &other_rows[..]),
+            ("the bitmap rows", ReadMode::InBitmap, bitmap_rows),
         ] {
             let provider = filtered_parquet_table(
                 Arc::clone(&store),
                 vec![MaskedFile {
-                    path: Path::from("data.parquet"),
+                    path: Path::from(file),
                     bitmap: RoaringTreemap::from_iter(bitmap_rows.iter().map(|&row| row as u64)),
                 }],
                 declared.clone(),
@@ -2032,7 +2041,7 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| {
                     panic!(
-                        "failed to read {read} of a file with 256-value miniblocks; \
+                        "failed to read {read} of {file}, whose miniblocks hold 256 values; \
                          parquet 58.3 to 59.3.1 cannot skip rows inside them, so check \
                          that Cargo.lock has parquet 59.3.2 or later: {e}"
                     )
@@ -2048,8 +2057,262 @@ mod tests {
                 got.extend(ids.values().iter().copied());
             }
             got.sort();
-            assert_eq!(&got, expected, "wrong values when reading {read}");
+            let expected: Vec<i64> = rows.iter().map(|&row| value(row)).collect();
+            assert_eq!(got, expected, "wrong values when reading {read} of {file}");
         }
+    }
+
+    /// [`filtered_parquet_table`] skips rows inside the 256-value miniblocks of
+    /// [`WIDE_MINIBLOCK_PARQUET`], both to apply a deletion vector and to read a
+    /// deletion-vector delta. parquet 58.3 to 59.3.1 fail these reads with
+    /// "cannot skip miniblock of size 256".
+    #[tokio::test]
+    async fn masked_reader_skips_rows_inside_wide_miniblocks() {
+        const TOTAL_ROWS: i64 = 312;
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("photon.parquet"), WIDE_MINIBLOCK_PARQUET).unwrap();
+
+        // Row 0 is the page's first value, and the first miniblock holds rows
+        // 1 to 256. The runs start the file, sit inside the first miniblock,
+        // cross into the second, and end the file.
+        let bitmap_rows: Vec<i64> = [0..1, 10..20, 250..260, 311..312]
+            .into_iter()
+            .flatten()
+            .collect();
+        check_masked_reads(
+            dir.path(),
+            "photon.parquet",
+            TOTAL_ROWS,
+            &bitmap_rows,
+            |row| row,
+        )
+        .await;
+    }
+
+    /// The number of values in each block of the pages that
+    /// [`encode_wide_miniblocks`] writes.
+    const VALUES_PER_BLOCK: usize = 1024;
+
+    /// The number of miniblocks in each block of those pages.
+    const MINIBLOCKS_PER_BLOCK: usize = 4;
+
+    /// 256 values, wider than the 64 that the `parquet` crate's writer uses.
+    const VALUES_PER_MINIBLOCK: usize = VALUES_PER_BLOCK / MINIBLOCKS_PER_BLOCK;
+
+    /// Appends `value` to `out` as ULEB128.
+    fn put_uleb128(mut value: u64, out: &mut Vec<u8>) {
+        while value >= 0x80 {
+            out.push(value as u8 | 0x80);
+            value >>= 7;
+        }
+        out.push(value as u8);
+    }
+
+    /// Appends `value` to `out` as zigzag-encoded ULEB128.
+    fn put_zigzag(value: i64, out: &mut Vec<u8>) {
+        put_uleb128(((value << 1) ^ (value >> 63)) as u64, out);
+    }
+
+    /// Encodes `values` as the data of a `DELTA_BINARY_PACKED` page whose blocks
+    /// hold [`VALUES_PER_BLOCK`] values in [`MINIBLOCKS_PER_BLOCK`] miniblocks.
+    ///
+    /// Each miniblock is packed at the smallest bit width that holds all its
+    /// deltas less the block's minimum delta. The last miniblock is padded with
+    /// zeros.
+    ///
+    /// # Arguments
+    ///
+    /// * `values` - the values to encode.
+    ///
+    /// # Returns
+    ///
+    /// The page's data.
+    fn encode_wide_miniblocks(values: &[i64]) -> Vec<u8> {
+        let mut out = Vec::new();
+        put_uleb128(VALUES_PER_BLOCK as u64, &mut out);
+        put_uleb128(MINIBLOCKS_PER_BLOCK as u64, &mut out);
+        put_uleb128(values.len() as u64, &mut out);
+        put_zigzag(values.first().copied().unwrap_or_default(), &mut out);
+
+        let deltas: Vec<i64> = values
+            .windows(2)
+            .map(|pair| pair[1].wrapping_sub(pair[0]))
+            .collect();
+        for block in deltas.chunks(VALUES_PER_BLOCK) {
+            let min_delta = *block.iter().min().unwrap();
+            put_zigzag(min_delta, &mut out);
+            let miniblocks: Vec<Vec<u64>> = block
+                .chunks(VALUES_PER_MINIBLOCK)
+                .map(|deltas| {
+                    deltas
+                        .iter()
+                        .map(|delta| delta.wrapping_sub(min_delta) as u64)
+                        .collect()
+                })
+                .collect();
+            // A block lists a width for every miniblock, even one it does not
+            // need, but stores no data for such a miniblock.
+            let widths: Vec<u32> = (0..MINIBLOCKS_PER_BLOCK)
+                .map(|index| {
+                    miniblocks.get(index).map_or(0, |miniblock| {
+                        miniblock
+                            .iter()
+                            .map(|value| u64::BITS - value.leading_zeros())
+                            .max()
+                            .unwrap()
+                    })
+                })
+                .collect();
+            out.extend(widths.iter().map(|&width| width as u8));
+            for (miniblock, &width) in miniblocks.iter().zip(&widths) {
+                // Pack the values from the least significant bit of each byte.
+                let mut bits: u128 = 0;
+                let mut pending: u32 = 0;
+                for index in 0..VALUES_PER_MINIBLOCK {
+                    bits |=
+                        u128::from(miniblock.get(index).copied().unwrap_or_default()) << pending;
+                    pending += width;
+                    while pending >= 8 {
+                        out.push(bits as u8);
+                        bits >>= 8;
+                        pending -= 8;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// A [`PageWriter`] that replaces the values of the one data page it is
+    /// given with [`encode_wide_miniblocks`] of the same values.
+    struct WideMiniblockPages<'a> {
+        /// Writes the pages into the column chunk.
+        inner: SerializedPageWriter<'a, Vec<u8>>,
+        /// All of the column's values, which the data page must hold.
+        values: &'a [i64],
+    }
+
+    impl PageWriter for WideMiniblockPages<'_> {
+        fn write_page(&mut self, page: CompressedPage) -> ParquetResult<PageWriteSpec> {
+            let Page::DataPage {
+                num_values,
+                def_level_encoding,
+                rep_level_encoding,
+                statistics,
+                ..
+            } = page.compressed_page().clone()
+            else {
+                return self.inner.write_page(page);
+            };
+            assert_eq!(
+                num_values as usize,
+                self.values.len(),
+                "every value must be in one data page"
+            );
+            let buf = Bytes::from(encode_wide_miniblocks(self.values));
+            let uncompressed_size = buf.len();
+            self.inner.write_page(CompressedPage::new(
+                Page::DataPage {
+                    buf,
+                    num_values,
+                    encoding: Encoding::DELTA_BINARY_PACKED,
+                    def_level_encoding,
+                    rep_level_encoding,
+                    statistics,
+                },
+                uncompressed_size,
+            ))
+        }
+
+        fn close(&mut self) -> ParquetResult<()> {
+            self.inner.close()
+        }
+    }
+
+    /// Writes `values` to a Parquet file at `path`, as one required `INT64`
+    /// column, `id`, in one `DELTA_BINARY_PACKED` page whose miniblocks hold
+    /// [`VALUES_PER_MINIBLOCK`] values.
+    ///
+    /// The `parquet` crate's column writer encodes the column chunk and computes
+    /// its metadata, and [`WideMiniblockPages`] re-encodes the page's values on
+    /// their way into the chunk.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - the file to create.
+    /// * `values` - the column's values, few enough to fit in one data page.
+    fn write_wide_miniblock_parquet(path: &std::path::Path, values: &[i64]) {
+        let schema = Arc::new(parse_message_type("message schema { REQUIRED INT64 id; }").unwrap());
+        // Uncompressed, so that the data of a page is its encoded values.
+        let props = Arc::new(
+            WriterProperties::builder()
+                .set_dictionary_enabled(false)
+                .set_encoding(Encoding::DELTA_BINARY_PACKED)
+                .set_compression(Compression::UNCOMPRESSED)
+                .build(),
+        );
+        let mut file = SerializedFileWriter::new(
+            std::fs::File::create(path).unwrap(),
+            schema,
+            Arc::clone(&props),
+        )
+        .unwrap();
+
+        let mut chunk = TrackedWrite::new(Vec::new());
+        let pages = WideMiniblockPages {
+            inner: SerializedPageWriter::new(&mut chunk),
+            values,
+        };
+        let mut column = get_column_writer(file.schema_descr().column(0), props, Box::new(pages));
+        get_typed_column_writer_mut::<Int64Type>(&mut column)
+            .write_batch(values, None, None)
+            .unwrap();
+        let closed = column.close().unwrap();
+
+        let mut row_group = file.next_row_group().unwrap();
+        row_group
+            .append_column(&Bytes::from(chunk.into_inner().unwrap()), closed)
+            .unwrap();
+        row_group.close().unwrap();
+        file.close().unwrap();
+    }
+
+    /// [`filtered_parquet_table`] skips rows inside 256-value
+    /// `DELTA_BINARY_PACKED` miniblocks packed at non-zero bit widths, both to
+    /// apply a deletion vector and to read a deletion-vector delta. parquet 58.3
+    /// to 59.3.1 fail these reads with "cannot skip miniblock of size 256", and
+    /// 58.2 panics on a skip of more than 64 rows inside one miniblock.
+    #[tokio::test]
+    async fn masked_reader_skips_rows_inside_bit_packed_wide_miniblocks() {
+        const TOTAL_ROWS: i64 = 1500;
+        let dir = TempDir::new().unwrap();
+        // Row r holds r * r, so the deltas grow, and the four miniblocks of the
+        // first block need 9, 10, 11, and 11 bits.
+        let square = |row: i64| row * row;
+        let squares: Vec<i64> = (0..TOTAL_ROWS).map(square).collect();
+        write_wide_miniblock_parquet(&dir.path().join("squares.parquet"), &squares);
+
+        // The file reads whole, so a failure below is in skipping rows.
+        check_masked_reads(dir.path(), "squares.parquet", TOTAL_ROWS, &[], square).await;
+
+        // Row 0 is the page's first value, and each block holds the next 1024
+        // rows. The runs start the file, sit inside the first miniblock, cross
+        // into the second, cross from the third into the fourth, cross into the
+        // second block, and end the file. Reading the bitmap rows skips the 230
+        // rows between the second and third runs, all inside the first
+        // miniblock.
+        let bitmap_rows: Vec<i64> = [0..1, 10..20, 250..260, 600..900, 1020..1030, 1499..1500]
+            .into_iter()
+            .flatten()
+            .collect();
+        check_masked_reads(
+            dir.path(),
+            "squares.parquet",
+            TOTAL_ROWS,
+            &bitmap_rows,
+            square,
+        )
+        .await;
     }
 }
 
