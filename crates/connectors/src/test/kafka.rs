@@ -20,7 +20,7 @@ use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
 use rdkafka::message::{BorrowedMessage, Header, OwnedHeaders};
 use rdkafka::{
-    ClientConfig, ClientContext, Message,
+    ClientConfig, ClientContext, Message, Offset, TopicPartitionList,
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::{Client, DefaultClientContext},
     config::{FromClientConfig, RDKafkaLogLevel},
@@ -189,6 +189,23 @@ impl KafkaResources {
         ))
         .unwrap();
         wait_for_completion(&self.admin_client, &[(topic, new_partition_count as i32)]);
+    }
+
+    /// Deletes the messages before `offset` in `partition` of `topic`, as
+    /// retention does.
+    pub fn delete_records(&self, topic: &str, partition: i32, offset: i64) {
+        let mut offsets = TopicPartitionList::new();
+        offsets
+            .add_partition_offset(topic, partition, Offset::Offset(offset))
+            .unwrap();
+        let result = block_on(
+            self.admin_client
+                .delete_records(&offsets, &AdminOptions::new()),
+        )
+        .unwrap();
+        for element in result.elements() {
+            element.error().unwrap();
+        }
     }
 }
 

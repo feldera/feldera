@@ -824,6 +824,56 @@ fn test_input_header_filter_boolean() {
     assert_eq!(take_flushed(&receiver), vec!["m1", "m3"]);
 }
 
+/// Replays `offsets` of partition 0 of `topic` with a new reader that starts
+/// at the earliest offset, and checks that the replay fails and closes the
+/// reader, instead of waiting forever for offsets that the topic lacks.
+#[cfg(test)]
+fn check_replay_of_missing_offsets_fails(topic: &str, offsets: Range<i64>) {
+    let (_endpoint, receiver, reader) = create_reader(topic, None, false);
+    receiver.inner.drop_buffered.store(true, Ordering::Release);
+    let metadata = Metadata {
+        offsets: vec![offsets],
+        shard: None,
+        partitions: None,
+    };
+    reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
+    receiver.expect(vec![ConsumerCall::Error(true)]);
+    wait(|| reader.is_closed(), 10_000).expect("the reader never closed");
+}
+
+/// A replay of offsets past the end of the partition, as after the topic was
+/// deleted and created again, fails.
+#[test]
+fn test_replay_past_end_of_partition_fails() {
+    init_test_logger();
+
+    let topic = "kafka_ft_replay_past_end";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+    let producer = TestProducer::new();
+    for _ in 0..3 {
+        producer.send_message(b"m", topic, None);
+    }
+
+    check_replay_of_missing_offsets_fails(topic, 0..10);
+}
+
+/// A replay of offsets that retention or compaction deleted fails, even
+/// though the partition holds later messages.
+#[test]
+fn test_replay_of_deleted_offsets_fails() {
+    init_test_logger();
+
+    let topic = "kafka_ft_replay_deleted";
+    let kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+    let producer = TestProducer::new();
+    for _ in 0..10 {
+        producer.send_message(b"m", topic, None);
+    }
+    kafka_resources.delete_records(topic, 0, 5);
+
+    check_replay_of_missing_offsets_fails(topic, 0..5);
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, PartialEq)]
 enum ConsumerCall {
