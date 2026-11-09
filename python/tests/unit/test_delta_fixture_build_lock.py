@@ -18,7 +18,6 @@ import shutil
 import subprocess
 import sys
 import time
-import types
 import uuid
 
 import pytest
@@ -57,7 +56,7 @@ def _build_fixture(subpath: str, build_log: str, barrier) -> None:
 
     from tests import utils
 
-    def fake_builder_run(cmd, check=False, **kwargs):
+    def fake_builder_run(cmd, **kwargs):
         staging = pathlib.Path(cmd[-1])
         time.sleep(_BUILD_SECONDS)
         _write_fake_delta_tree(staging, seed=os.getpid())
@@ -65,10 +64,7 @@ def _build_fixture(subpath: str, build_log: str, barrier) -> None:
             handle.write(f"{os.getpid()}\n")
         return subprocess.CompletedProcess(cmd, 0)
 
-    utils.subprocess = types.SimpleNamespace(
-        run=fake_builder_run,
-        CalledProcessError=subprocess.CalledProcessError,
-    )
+    utils._run_spark_subprocess = fake_builder_run
 
     loc = utils.DeltaTestLocation.create("fixture_lock_test", stable_subpath=subpath)
     barrier.wait()
@@ -81,7 +77,7 @@ def _build_distinct_fixture(subpath: str, run_log: str, barrier) -> None:
 
     from tests import utils
 
-    def fake_builder_run(cmd, check=False, **kwargs):
+    def fake_builder_run(cmd, **kwargs):
         start = time.monotonic()
         time.sleep(_BUILD_SECONDS)
         _write_fake_delta_tree(pathlib.Path(cmd[-1]), seed=os.getpid())
@@ -89,10 +85,7 @@ def _build_distinct_fixture(subpath: str, run_log: str, barrier) -> None:
             handle.write(f"{start} {time.monotonic()}\n")
         return subprocess.CompletedProcess(cmd, 0)
 
-    utils.subprocess = types.SimpleNamespace(
-        run=fake_builder_run,
-        CalledProcessError=subprocess.CalledProcessError,
-    )
+    utils._run_spark_subprocess = fake_builder_run
 
     loc = utils.DeltaTestLocation.create("fixture_lock_test", stable_subpath=subpath)
     barrier.wait()
@@ -225,19 +218,12 @@ def test_half_placed_fixture_is_rebuilt(monkeypatch, fixture_subpath):
 
     builds = []
 
-    def fake_builder_run(cmd, check=False, **kwargs):
+    def fake_builder_run(cmd, **kwargs):
         _write_fake_delta_tree(pathlib.Path(cmd[-1]), seed=len(builds))
         builds.append(cmd)
         return subprocess.CompletedProcess(cmd, 0)
 
-    monkeypatch.setattr(
-        utils,
-        "subprocess",
-        types.SimpleNamespace(
-            run=fake_builder_run,
-            CalledProcessError=subprocess.CalledProcessError,
-        ),
-    )
+    monkeypatch.setattr(utils, "_run_spark_subprocess", fake_builder_run)
 
     loc = utils.DeltaTestLocation.create(
         "fixture_lock_test", stable_subpath=fixture_subpath
@@ -268,24 +254,16 @@ def test_hung_builder_is_timed_out_and_retried(monkeypatch, tmp_path, fixture_su
     monkeypatch.setattr(utils.time, "sleep", lambda _: None)
     calls = []
 
-    def fake_builder_run(cmd, check=False, timeout=None, **kwargs):
-        calls.append(timeout)
-        if timeout is None:
+    def fake_builder_run(cmd, timeout_s=None, **kwargs):
+        calls.append(timeout_s)
+        if timeout_s is None:
             pytest.fail("the builder subprocess must be run with a timeout")
         if len(calls) == 1:
-            raise subprocess.TimeoutExpired(cmd, timeout)
+            raise subprocess.TimeoutExpired(cmd, timeout_s)
         _write_fake_delta_tree(pathlib.Path(cmd[-1]), seed=len(calls))
         return subprocess.CompletedProcess(cmd, 0, stdout="done")
 
-    monkeypatch.setattr(
-        utils,
-        "subprocess",
-        types.SimpleNamespace(
-            run=fake_builder_run,
-            CalledProcessError=subprocess.CalledProcessError,
-            TimeoutExpired=subprocess.TimeoutExpired,
-        ),
-    )
+    monkeypatch.setattr(utils, "_run_spark_subprocess", fake_builder_run)
 
     loc = utils.DeltaTestLocation.create(
         "fixture_lock_test", stable_subpath=fixture_subpath
@@ -300,6 +278,44 @@ def test_hung_builder_is_timed_out_and_retried(monkeypatch, tmp_path, fixture_su
     calls.clear()
     assert utils.run_delta_spark("stub_script.py", [tmp_path]) == "done"
     assert len(calls) == 2, "run_delta_spark must retry a timed-out run"
+
+
+def _process_state(pid: int) -> str:
+    """``ps`` state letters of ``pid``, or ``""`` once it is gone."""
+    return subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_timed_out_run_kills_the_whole_process_group(tmp_path):
+    """Killing only ``uv`` would leave the Spark JVM under it running.
+
+    A real subprocess tree stands in for ``uv -> python -> JVM``: the child
+    starts a grandchild, records its pid, then hangs.
+    """
+    from tests import utils
+
+    pid_file = tmp_path / "grandchild.pid"
+    script = (
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "time.sleep(60)\n"
+    )
+    with pytest.raises(subprocess.TimeoutExpired):
+        utils._run_spark_subprocess(
+            [sys.executable, "-c", script], capture_output=True, timeout_s=3
+        )
+
+    assert pid_file.is_file(), "the child never got to start its grandchild"
+    grandchild = int(pid_file.read_text())
+    # A dead but not yet reaped grandchild still shows up, as a zombie.
+    utils.wait_for_condition(
+        f"grandchild {grandchild} killed with the group",
+        lambda: _process_state(grandchild) in ("", "Z", "Z+"),
+        timeout_s=10,
+        poll_interval_s=0.1,
+    )
 
 
 @pytest.mark.parametrize(
