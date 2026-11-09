@@ -26,6 +26,7 @@ the documentation of your CNI.
 | From | To | Port (TCP) | Why |
 | --- | --- | --- | --- |
 | Clients, through an ingress controller or a gateway | API server | 8080 | Feldera API and web console |
+| API server | Compiler server | 8085 | SQL program validation |
 | API server | Kubernetes runner | 8089 | Runner API |
 | API server, Kubernetes runner | Pipeline | 80 | Control and data API of the pipeline |
 | Kubernetes runner | API server, compiler server, Kubernetes runner | 8080, 8085, 8089 | Health checks of the control plane |
@@ -98,8 +99,8 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# API server: clients and the runner, then the database, the runner,
-# pipelines, and the license server.
+# API server: clients and the runner, then the database, the compiler,
+# the runner, pipelines, and the license server.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -138,6 +139,14 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # SQL program validation.
+    - to:
+        - podSelector:
+            matchLabels:
+              feldera.service: <release>-compiler-server
+      ports:
+        - protocol: TCP
+          port: 8085
     - to:
         - podSelector:
             matchLabels:
@@ -253,8 +262,8 @@ spec:
         - protocol: TCP
           port: 443
 ---
-# Compiler: the runner and pipelines, then the database and the
-# Kubernetes API.
+# Compiler: the API server, the runner, and pipelines, then the database
+# and the Kubernetes API.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -269,6 +278,9 @@ spec:
     - Egress
   ingress:
     - from:
+        - podSelector:
+            matchLabels:
+              feldera.service: <release>-api-server
         - podSelector:
             matchLabels:
               feldera.service: <release>-kubernetes-runner
