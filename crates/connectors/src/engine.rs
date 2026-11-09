@@ -169,6 +169,15 @@ pub trait CircuitDriver {
         multihost: bool,
     ) -> Result<(), ControllerError>;
 
+    /// Deletes the checkpoints that are older than `uuid`, except those in
+    /// `keep`.  A host of a multihost pipeline does this when the coordinator
+    /// says that every host has `uuid`.
+    fn gc_checkpoints_before(
+        &mut self,
+        keep: HashSet<Uuid>,
+        uuid: Uuid,
+    ) -> Result<(), ControllerError>;
+
     /// Whether the circuit is bootstrapping.
     fn bootstrap_in_progress(&self) -> bool;
 

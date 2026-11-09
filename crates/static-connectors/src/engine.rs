@@ -249,6 +249,17 @@ impl CircuitDriver for StaticCircuitDriver {
             .map_err(ControllerError::dbsp_error)
     }
 
+    fn gc_checkpoints_before(
+        &mut self,
+        keep: HashSet<Uuid>,
+        uuid: Uuid,
+    ) -> Result<(), ControllerError> {
+        self.handle
+            .gc_checkpoints_before(keep, uuid)
+            .map(|_| ())
+            .map_err(ControllerError::dbsp_error)
+    }
+
     fn bootstrap_in_progress(&self) -> bool {
         self.handle.bootstrap_in_progress()
     }

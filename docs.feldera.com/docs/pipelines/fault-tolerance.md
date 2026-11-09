@@ -138,9 +138,9 @@ or disabled as described
 
 A pipeline keeps only its newest checkpoint on storage.  When it
 finishes writing a checkpoint, it deletes the older one, together with
-the files that only the older one uses.  A multihost pipeline also
-keeps the older checkpoint, because it resumes from the newest
-checkpoint that every host has.
+the files that only the older one uses.  A multihost pipeline keeps the
+older checkpoint until every host has written the newest one, because
+it resumes from the newest checkpoint that every host has.
 
 Feldera also has an HTTP API, `/checkpoint`, that allows the user to
 request writing a checkpoint immediately.  If automatic checkpoints

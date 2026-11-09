@@ -1414,6 +1414,14 @@ impl Controller {
         self.inner.unpark_circuit();
     }
 
+    /// Tells a host of a multihost pipeline that every host has written a
+    /// checkpoint, and that `uuid` is this host's copy.  The host then deletes
+    /// its checkpoints that are older than `uuid`.
+    pub fn checkpoint_complete(&self, uuid: Uuid) {
+        *self.inner.coordination_checkpoint_complete.lock().unwrap() = Some(uuid);
+        self.inner.unpark_circuit();
+    }
+
     pub async fn async_checkpoint(&self) -> Result<Checkpoint, Arc<ControllerError>> {
         let (sender, receiver) = oneshot::channel();
         self.start_checkpoint(Box::new(move |profile| {
@@ -3674,6 +3682,8 @@ impl CircuitThread {
                 self.checkpoint();
             }
 
+            self.gc_after_coordinated_checkpoint();
+
             self.poll_running_checkpoint_sync();
 
             if self.sync_checkpoint_requested() {
@@ -4401,6 +4411,28 @@ impl CircuitThread {
             drop(activity);
 
             self.checkpoint_sender.send_replace(checkpoint_coordination);
+        }
+    }
+
+    /// Deletes the checkpoints of a multihost host that are older than the
+    /// one that the coordinator says every host has.  Waits until no
+    /// checkpoint is running on this host.
+    fn gc_after_coordinated_checkpoint(&mut self) {
+        if self.running_checkpoint.is_some() {
+            return;
+        }
+        let Some(uuid) = self
+            .controller
+            .coordination_checkpoint_complete
+            .lock()
+            .unwrap()
+            .take()
+        else {
+            return;
+        };
+        let keep = self.synced_checkpoints();
+        if let Err(error) = self.circuit.gc_checkpoints_before(keep, uuid) {
+            error!("error removing old checkpoints: {error}");
         }
     }
 
@@ -8070,6 +8102,9 @@ pub struct ControllerInner {
     transaction_receiver: tokio::sync::watch::Receiver<TransactionCoordination>,
     coordination_request: Mutex<Option<StepRequest>>,
     coordination_prepare_checkpoint: AtomicBool,
+    /// This host's checkpoint that, according to the coordinator, every host
+    /// has written.  This host may delete the checkpoints older than it.
+    coordination_checkpoint_complete: Mutex<Option<Uuid>>,
     input_completion_notify: Arc<Notify>,
     // The mutex is acquired from async context by actix and
     // from the sync context by the circuit thread.
@@ -8251,6 +8286,7 @@ impl ControllerInner {
                 transaction_receiver,
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
+                coordination_checkpoint_complete: Mutex::new(None),
                 input_completion_notify,
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
                 #[cfg(any(test, feature = "testing"))]

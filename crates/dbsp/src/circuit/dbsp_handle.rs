@@ -2266,6 +2266,26 @@ impl DBSPHandle {
             .gc_checkpoint(except, multihost)
     }
 
+    /// Removes the checkpoints that are older than `uuid`, except those whose
+    /// UUID is in `except`.  See [Checkpointer::gc_checkpoints_before].
+    ///
+    /// Returns the UUIDs of the removed checkpoints.
+    pub fn gc_checkpoints_before(
+        &mut self,
+        except: HashSet<uuid::Uuid>,
+        uuid: uuid::Uuid,
+    ) -> Result<HashSet<uuid::Uuid>, DbspError> {
+        // See `gc_checkpoint`.
+        self.check_bootstrap_circuit_state(
+            &[BootstrapCircuitState::None],
+            "garbage-collect checkpoints",
+        )?;
+        self.checkpointer()?
+            .lock()
+            .unwrap()
+            .gc_checkpoints_before(except, uuid)
+    }
+
     /// Enable CPU profiler.
     ///
     /// Enable recording of CPU usage info.  When CPU profiling is enabled,
