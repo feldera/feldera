@@ -673,7 +673,7 @@ impl FelderaDestination {
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 /// What one `write_table_rows` call asks of the connector, where
 /// `target_columns` holds the replicated column names when the call describes
 /// the source table and `has_batch_id` says whether it carries rows.
@@ -692,7 +692,7 @@ pub(super) fn classify_copy_write(
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 /// What one `write_table_rows` call asks of the connector.
 #[derive(Debug)]
 pub(super) enum CopyWrite {

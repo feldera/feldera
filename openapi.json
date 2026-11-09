@@ -10935,6 +10935,12 @@
             "default": null,
             "nullable": true
           },
+          "shared_cdc_slot": {
+            "type": "boolean",
+            "description": "Whether the Postgres CDC connectors of this pipeline that read the\nsame publication of the same database share one etl pipeline, and so\none replication slot, instead of one slot per connector.\n\nThe default is `false`. Turning it on renames the replication slots,\nso every table is copied once more at the next start.",
+            "default": null,
+            "nullable": true
+          },
           "splitter_chunk_size_records": {
             "type": "integer",
             "format": "int64",

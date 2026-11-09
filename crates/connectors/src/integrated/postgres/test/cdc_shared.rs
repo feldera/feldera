@@ -541,6 +541,26 @@ impl ManyTables {
         )
     }
 
+    /// Like [`Self::pipeline`], with `extra` top-level pipeline settings.
+    /// How many times etl started for the shared pipeline.
+    fn etl_starts(&self) -> usize {
+        ETL_STARTS
+            .lock()
+            .unwrap()
+            .get(&self.shared_pipeline_id())
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn pipeline_with(&self, extra: Value) -> Value {
+        let mut config = self.pipeline();
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().cloned().unwrap_or_default());
+        config
+    }
+
     fn pipeline(&self) -> Value {
         let mut inputs = serde_json::Map::new();
         let mut outputs = serde_json::Map::new();
@@ -751,4 +771,72 @@ pub fn no_free_slot_is_an_actionable_error(engine: &dyn PipelineTestEngine) {
         assert!(error.contains(needle), "{needle:?} not in: {error}");
     }
     drop(dummies);
+}
+
+/// Starts a pipeline of `tables` from `config`.
+fn start_many(
+    engine: &dyn PipelineTestEngine,
+    tables: &ManyTables,
+    config: Value,
+) -> Result<(Controller, Receiver<String>), ControllerError> {
+    let config = serde_json::from_value(config).unwrap();
+    let (err_sender, errors) = crossbeam::channel::unbounded();
+    let controller = engine.controller(
+        &TestCircuit::Identity {
+            relation: cdc_relation(),
+            persistent_output_ids: vec![None; tables.tables.len()],
+            input_properties: Vec::new(),
+            materialized: true,
+            persistent_ids: true,
+            table_version: 0,
+            attribute_defaults: BTreeMap::new(),
+        },
+        &config,
+        Box::new(move |e, _| {
+            let _ = err_sender.send(format!("{e}"));
+        }),
+    )?;
+    controller.start();
+    Ok((controller, errors))
+}
+
+/// The connectors open on a pool of one thread, one after another. A
+/// connector that waited for its peers in `open` would never see them.
+#[engine_test(serial, services(Postgres))]
+pub fn members_open_one_at_a_time(engine: &dyn PipelineTestEngine) {
+    let mut tables = ManyTables::new("cdc_shared_pool", 3);
+    for (i, table) in tables.tables.iter_mut().enumerate() {
+        insert_range(table, 100 * i as i64 + 1, 100 * i as i64 + 2);
+    }
+    let (controller, errors) = start_many(
+        engine,
+        &tables,
+        tables.pipeline_with(json!({ "max_parallel_connector_init": 1 })),
+    )
+    .unwrap();
+    for (i, output) in tables.outputs.iter().enumerate() {
+        wait_for_inserts(output.path(), 2, &errors, &format!("snapshot of table {i}"));
+    }
+    assert_eq!(
+        tables.etl_starts(),
+        1,
+        "every connector joined before the one start"
+    );
+    controller.stop().unwrap();
+}
+
+/// The shared slot is named after the pipeline, so a pipeline without a
+/// name cannot share one.
+#[engine_test(serial, services(Postgres))]
+pub fn an_unnamed_pipeline_cannot_share_a_slot(engine: &dyn PipelineTestEngine) {
+    let tables = ManyTables::new("cdc_shared_unnamed", 1);
+    let mut config = tables.pipeline();
+    config.as_object_mut().unwrap().remove("name");
+    let error = start_many(engine, &tables, config)
+        .err()
+        .expect("a pipeline without a name is refused")
+        .to_string();
+    for needle in ["'name'", "shared slot"] {
+        assert!(error.contains(needle), "{needle:?} not in: {error}");
+    }
 }

@@ -2069,6 +2069,15 @@ export type DevTweaks = {
    */
   optimize_input_during_commit?: boolean | null
   /**
+   * Whether the Postgres CDC connectors of this pipeline that read the
+   * same publication of the same database share one etl pipeline, and so
+   * one replication slot, instead of one slot per connector.
+   *
+   * The default is `false`. Turning it on renames the replication slots,
+   * so every table is copied once more at the next start.
+   */
+  shared_cdc_slot?: boolean | null
+  /**
    * Controls the maximal number of records output by splitter operators
    * (joins, distinct, aggregation, rolling window and group operators) at
    * each step.
