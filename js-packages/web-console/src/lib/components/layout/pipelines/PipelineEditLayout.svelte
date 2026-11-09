@@ -448,14 +448,17 @@
           <PaneResizer class="pane-divider-horizontal h-px! bg-panel-line" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
-              <MonitoringPanel
-                pipeline={pipeline as WritablePipeline<true>}
-                metrics={metrics as { current: PipelineMetrics }}
-                {deleted}
-                hiddenTabs={singleton(currentInteractionTab)}
-                bind:currentTab={currentMonitoringTab}
-                {unsavedChanges}
-              ></MonitoringPanel>
+              <!-- A new pipeline remounts the panel, so it picks its opening tab again -->
+              {#key pipelineName}
+                <MonitoringPanel
+                  pipeline={pipeline as WritablePipeline<true>}
+                  metrics={metrics as { current: PipelineMetrics }}
+                  {deleted}
+                  hiddenTabs={singleton(currentInteractionTab)}
+                  bind:currentTab={currentMonitoringTab}
+                  {unsavedChanges}
+                ></MonitoringPanel>
+              {/key}
             {:else}
               <div class="flex flex-1 rounded-lg bg-surface-50-950 px-2 pt-3 pb-2"></div>
             {/if}
