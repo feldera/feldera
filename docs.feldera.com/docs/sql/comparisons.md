@@ -124,7 +124,7 @@ values:
 |-----------|------------------|
 | `=`, `<>`, `!=`, `<=>`, `IS [NOT] DISTINCT FROM`, `NULLIF` | the two operands |
 | `IN`, `NOT IN`, `=` or `<>` with `SOME`, `ANY`, or `ALL`, `CASE x WHEN v` | the value and each candidate |
-| `GROUP BY`, `PARTITION BY` | the grouping keys |
+| `GROUP BY`, `PARTITION BY`, `DISTINCT ON` | the grouping keys |
 | `DISTINCT`, `UNION`, `INTERSECT [ALL]`, `EXCEPT [ALL]`, `UNIQUE` | whole rows |
 | `COUNT(DISTINCT x)` and other `DISTINCT` aggregates, `MODE` | the aggregated values |
 | `NATURAL JOIN`, `JOIN ... USING` | the shared columns |

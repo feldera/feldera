@@ -71,4 +71,37 @@ public class TopKUnusedFieldsIncrementalTests extends StreamingTestBase {
                 ---------------------
                  n1   | 20  | -1""");
     }
+
+    /** DISTINCT ON replaces the kept row when a better row arrives, keeps the next row when the
+     * kept row is deleted, and drops a group when its last row is deleted. */
+    @Test
+    public void testDistinctOn() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(a INT, b INT, c INT);
+                CREATE VIEW V AS SELECT DISTINCT ON (a) a, b, c FROM T ORDER BY a, b DESC;""");
+        // Expected output validated with Postgres 14.
+        ccs.stepWeightOne("INSERT INTO T VALUES (1, 1, 10), (1, 2, 20), (2, 5, 30);",
+                """
+                 a | b | c
+                -----------
+                 1 | 2 | 20
+                 2 | 5 | 30""");
+        ccs.step("INSERT INTO T VALUES (1, 3, 40);",
+                """
+                 a | b | c  | weight
+                ---------------------
+                 1 | 2 | 20 | -1
+                 1 | 3 | 40 | 1""");
+        ccs.step("REMOVE FROM T VALUES (1, 3, 40);",
+                """
+                 a | b | c  | weight
+                ---------------------
+                 1 | 3 | 40 | -1
+                 1 | 2 | 20 | 1""");
+        ccs.step("REMOVE FROM T VALUES (2, 5, 30);",
+                """
+                 a | b | c  | weight
+                ---------------------
+                 2 | 5 | 30 | -1""");
+    }
 }

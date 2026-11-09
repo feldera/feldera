@@ -894,16 +894,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 new SourcePosition(e.getEndPosLine(), e.getEndPosColumn()));
     }
 
-    public static final Documentation.Link DISTINCT_ON_DOCUMENTATION =
-            new Documentation.Link("sql/unsupported-operations", "select-distinct-on");
-
     /** Rewrite the error message for some Calcite errors which are confusing */
     private CompilationError improveErrorMessage(CalciteContextException e) {
-        // Calcite's error message blames the SQL conformance level, which users cannot change
+        // Calcite's message does not say how the expressions must match
         Throwable cause = e.getCause();
-        if (cause != null && RESOURCE.distinctOnNotAllowed().str().equals(cause.getMessage()))
-            return new CompilationError(getRange(e), UnsupportedException.KIND,
-                    "SELECT DISTINCT ON is not supported.\n" + DISTINCT_ON_DOCUMENTATION.citation());
+        if (cause != null && RESOURCE.distinctOnOrderByMismatch().str().equals(cause.getMessage()))
+            return new CompilationError("The DISTINCT ON expressions must be the first ORDER BY expressions, " +
+                    "written the same way and in the same order", getRange(e));
         String message = e.getMessage();
         if (message != null && !message.isEmpty()) {
             var matcher = ITEM_ERROR.matcher(message);

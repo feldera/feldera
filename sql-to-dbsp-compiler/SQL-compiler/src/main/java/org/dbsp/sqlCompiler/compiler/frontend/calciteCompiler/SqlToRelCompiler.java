@@ -715,6 +715,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         public boolean allowLambdaClosure() {
             return false;
         }
+
+        @Override
+        public boolean isDistinctOnAllowed() {
+            return true;
+        }
     }
 
     /** Add a new set of operators to the operator table.  Creates a new validator, converter */

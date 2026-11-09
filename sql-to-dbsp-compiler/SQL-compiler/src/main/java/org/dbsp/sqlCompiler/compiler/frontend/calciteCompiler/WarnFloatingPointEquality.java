@@ -47,8 +47,8 @@ import java.util.function.UnaryOperator;
  * <p>Equality is explicit in {@code =}, {@code <>}, {@code IS [NOT] DISTINCT FROM},
  * {@code NULLIF}, {@code IN}, and in {@code =} or {@code <>} with {@code SOME}, {@code ANY},
  * or {@code ALL}; the parser rewrites {@code CASE x WHEN v} into {@code x = v}.
- * Equality is implicit in {@code GROUP BY}, {@code DISTINCT}, {@code DISTINCT}
- * aggregates, {@code MODE}, {@code UNION}, {@code INTERSECT}, {@code EXCEPT},
+ * Equality is implicit in {@code GROUP BY}, {@code DISTINCT}, {@code DISTINCT ON},
+ * {@code DISTINCT} aggregates, {@code MODE}, {@code UNION}, {@code INTERSECT}, {@code EXCEPT},
  * {@code UNIQUE}, {@code PARTITION BY}, {@code NATURAL JOIN}, {@code USING}, and in the
  * ties of the {@code RANK} family of window functions.
  *
@@ -146,7 +146,29 @@ public class WarnFloatingPointEquality extends SqlBasicVisitor<Void> {
         return super.visit(call);
     }
 
+    /** The type of a DISTINCT ON key, or null if the analysis cannot determine it.
+     * The key resolves names like an ORDER BY key, so it may name a SELECT item. */
+    @Nullable
+    RelDataType distinctOnKeyType(SqlSelect select, SqlNode key) {
+        try {
+            return this.validator.deriveType(this.validator.getOrderScope(select), key);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** DISTINCT compares whole rows; DISTINCT ON, which also has the DISTINCT keyword,
+     * compares only its keys */
     void checkDistinct(SqlSelect select) {
+        SqlNodeList distinctOn = select.getDistinctOn();
+        if (distinctOn != null && !distinctOn.isEmpty()) {
+            for (SqlNode key : distinctOn) {
+                RelDataType type = this.distinctOnKeyType(select, key);
+                if (type != null && containsFloatingPoint(type))
+                    this.warn(key.getParserPosition(), "DISTINCT ON", describeValues(type), "");
+            }
+            return;
+        }
         SqlNode distinct = select.getModifierNode(SqlSelectKeyword.DISTINCT);
         if (distinct == null)
             return;
