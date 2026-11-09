@@ -334,6 +334,19 @@ public class TopKTests extends SqlIoTest {
                 WHERE rn <= 1;""", 1, 5);
     }
 
+    /** A rank compared for equality with 1 is a TopK whichever operand comes first;
+     * the comparison fixes the rank, so the value does not hold it */
+    @Test
+    public void topKEqualsOne() {
+        String query = """
+                SELECT ID, DocumentId, Status, DateCreated, rn FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY ID ORDER BY DateCreated) AS rn
+                    FROM DocumentStatusLog)
+                WHERE ?;""";
+        this.checkTopKShape(query.replace("?", "rn = 1"), 1, 3);
+        this.checkTopKShape(query.replace("?", "1 = rn"), 1, 3);
+    }
+
     /** NULL partition keys form one partition and come back as NULL once the fields are reassembled. */
     @Test
     public void nullPartitionKey() {
