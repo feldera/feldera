@@ -3059,7 +3059,7 @@ col_int_array   INTEGER[]
         source_table: &str,
     ) {
         let connector_url = cdc_connector_url(url);
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &connector_url,
             publication,
             source_table,
@@ -3607,7 +3607,7 @@ col_int_array   INTEGER[]
     /// here is a timing race: the walsender releases the slot some time after
     /// the controller has stopped.
     pub(super) fn wait_for_slots_released(table: &mut CdcTestTable) {
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &cdc_connector_url(&table.url),
             &table.publication_name,
             &format!("public.{}", table.table_name),
@@ -3640,7 +3640,7 @@ col_int_array   INTEGER[]
     /// A failed query panics rather than reading as "no tables", which would let
     /// the `errored`-state assertions pass vacuously.
     pub(super) fn etl_table_states(table: &mut CdcTestTable) -> Vec<String> {
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &cdc_connector_url(&table.url),
             &table.publication_name,
             &format!("public.{}", table.table_name),
@@ -4381,7 +4381,7 @@ col_int_array   INTEGER[]
     /// release is prompt only when etl stopped on its own.
     #[engine_test(serial, services(Postgres))]
     pub fn stop_with_buffered_rows_releases_slots_promptly(engine: &dyn PipelineTestEngine) {
-        use crate::integrated::postgres::cdc_input::{
+        use crate::integrated::postgres::cdc::{
             ETL_STOP_GRACE, RUNTIME_SHUTDOWN_TIMEOUT, STOPPED_PAST_GRACE, WATCHER_SHUTDOWN_TIMEOUT,
             pipeline_id,
         };
@@ -4481,7 +4481,7 @@ col_int_array   INTEGER[]
             tokio::task::yield_now().await;
             pid
         });
-        runtime.shutdown_timeout(crate::integrated::postgres::cdc_input::RUNTIME_SHUTDOWN_TIMEOUT);
+        runtime.shutdown_timeout(crate::integrated::postgres::cdc::RUNTIME_SHUTDOWN_TIMEOUT);
 
         let mut observer = pg_connect(&url, &None);
         wait(
@@ -4741,7 +4741,7 @@ col_int_array   INTEGER[]
             tls: TlsConfig::disabled(),
             keepalive: TcpKeepaliveConfig::default(),
         };
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &connector_url,
             &table.publication_name,
             &format!("public.{}", table.table_name),

@@ -1295,7 +1295,7 @@ pub fn transactions_across_restart(engine: &dyn PipelineTestEngine) {
 
 /// The connector's pipeline id for `table`, as etl embeds it in slot names.
 fn slot_token(table: &CdcTestTable) -> String {
-    crate::integrated::postgres::cdc_input::pipeline_id(
+    crate::integrated::postgres::cdc::pipeline_id(
         &cdc_connector_url(&table.url),
         &table.publication_name,
         &format!("public.{}", table.table_name),
