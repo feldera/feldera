@@ -4,6 +4,7 @@ use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
 use datafusion::execution::runtime_env::RuntimeEnv;
 pub use feldera_adapterlib::transport::DistributedInput;
 use feldera_adapterlib::utils::datafusion::with_private_object_store_registry;
+use feldera_types::circuit::Layout;
 use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
@@ -117,12 +118,14 @@ pub fn create_integrated_output_endpoint(
 
 /// Creates an integrated input endpoint.  `distributed` is `Some` only for a
 /// distributed connector, whose transport must support distribution.
-/// `registry` holds what the connectors of the pipeline share.
-#[allow(unused_variables)]
+/// `registry` holds what the connectors of the pipeline share, and `layout`
+/// says which host of a multihost pipeline this is.
+#[allow(unused_variables, clippy::too_many_arguments)]
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
     config: &ConnectorConfig,
     pipeline_config: &PipelineConfig,
+    layout: &Layout,
     runtime_env: Arc<RuntimeEnv>,
     registry: Arc<ConnectorRegistry>,
     consumer: Box<dyn InputConsumer>,
@@ -164,6 +167,8 @@ pub fn create_integrated_input_endpoint(
         TransportConfig::PostgresCdcInput(config) => Box::new(PostgresCdcInputEndpoint::new(
             endpoint_name,
             config,
+            pipeline_config,
+            layout,
             consumer,
         )?),
         transport => {

@@ -1,6 +1,7 @@
 //! Postgres CDC input connector, built on etl.
 
 mod destination;
+mod key;
 mod member;
 mod monitor;
 mod pipeline;
@@ -62,14 +63,16 @@ use xxhash_rust::xxh3::xxh3_64;
 
 use super::tls::{make_etl_tls_config, make_tls_connector};
 use destination::*;
+use key::*;
 use member::*;
 use monitor::*;
 use pipeline::*;
 use reconcile::*;
 
+#[cfg(any(test, feature = "testing"))]
+pub(crate) use key::pipeline_id;
 pub use pipeline::PostgresCdcInputEndpoint;
 #[cfg(any(test, feature = "testing"))]
 pub(crate) use pipeline::{
     ETL_STOP_GRACE, RUNTIME_SHUTDOWN_TIMEOUT, STOPPED_PAST_GRACE, WATCHER_SHUTDOWN_TIMEOUT,
-    pipeline_id,
 };

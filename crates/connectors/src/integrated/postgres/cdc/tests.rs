@@ -1839,6 +1839,21 @@ impl InputConsumer for StepBlindConsumer {
 /// The configuration the reader needs to exist. Construction opens no
 /// connection, so the URI only has to parse.
 #[cfg(test)]
+/// A pipeline configuration with nothing but a name, for the endpoint constructor.
+fn test_pipeline_config() -> feldera_types::config::PipelineConfig {
+    feldera_types::config::PipelineConfig {
+        global: Default::default(),
+        multihost: None,
+        name: Some("test".to_string()),
+        given_name: None,
+        storage_config: None,
+        secrets_dir: None,
+        inputs: Default::default(),
+        outputs: Default::default(),
+        program_ir: None,
+    }
+}
+
 fn cdc_config() -> PostgresCdcReaderConfig {
     PostgresCdcReaderConfig {
         uri: "postgres://user@localhost:5432/db".to_string(),
@@ -1855,10 +1870,15 @@ fn cdc_config() -> PostgresCdcReaderConfig {
 fn a_uri_that_does_not_parse_fails_the_endpoint_at_creation() {
     let mut config = cdc_config();
     config.uri = "postgres://localhost:5432/db".to_string();
-    let error =
-        PostgresCdcInputEndpoint::new("cdc_in", &config, Box::new(MockInputConsumer::new()))
-            .err()
-            .expect("a URI without a username does not reach the reader");
+    let error = PostgresCdcInputEndpoint::new(
+        "cdc_in",
+        &config,
+        &test_pipeline_config(),
+        &feldera_types::circuit::Layout::new_solo(1),
+        Box::new(MockInputConsumer::new()),
+    )
+    .err()
+    .expect("a URI without a username does not reach the reader");
     let message = error.to_string();
     assert!(message.contains("missing username in URI"), "{message}");
 }
@@ -1866,7 +1886,12 @@ fn a_uri_that_does_not_parse_fails_the_endpoint_at_creation() {
 #[test]
 fn a_pipeline_that_hides_the_step_it_feeds_fails_the_endpoint() {
     let consumer = StepBlindConsumer::new();
-    let inner = PostgresCdcInputInner::new("cdc_in", cdc_config(), Box::new(consumer.clone()));
+    let inner = PostgresCdcInputInner::new(
+        "cdc_in",
+        cdc_config(),
+        PublicationKey::per_table(&cdc_config()),
+        Box::new(consumer.clone()),
+    );
 
     let flag = Arc::new(AtomicBool::new(false));
     inner.acknowledge_after_step(vec![terminal(&flag)]);
@@ -1888,8 +1913,12 @@ fn a_pipeline_that_hides_the_step_it_feeds_fails_the_endpoint() {
 
 #[test]
 fn a_pipeline_that_tracks_no_steps_is_answered_by_the_flush() {
-    let inner =
-        PostgresCdcInputInner::new("cdc_in", cdc_config(), Box::new(MockInputConsumer::new()));
+    let inner = PostgresCdcInputInner::new(
+        "cdc_in",
+        cdc_config(),
+        PublicationKey::per_table(&cdc_config()),
+        Box::new(MockInputConsumer::new()),
+    );
 
     let flag = Arc::new(AtomicBool::new(false));
     inner.acknowledge_after_step(vec![terminal(&flag)]);
@@ -1994,6 +2023,7 @@ fn a_flush_that_races_the_watcher_stop_answers_the_durable_writes() {
     let inner = PostgresCdcInputInner::new(
         "cdc_in",
         cdc_config(),
+        PublicationKey::per_table(&cdc_config()),
         Box::new(StepAwareConsumer::new(3, 5)),
     );
 
@@ -2023,6 +2053,7 @@ fn a_flush_that_races_the_watcher_stop_drops_the_writes_it_has_not_reached() {
     let inner = PostgresCdcInputInner::new(
         "cdc_in",
         cdc_config(),
+        PublicationKey::per_table(&cdc_config()),
         Box::new(StepAwareConsumer::new(7, 5)),
     );
 

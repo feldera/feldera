@@ -104,9 +104,14 @@ pub struct PostgresCdcInputEndpoint {
 }
 
 impl PostgresCdcInputEndpoint {
+    /// `pipeline_config` and `layout` identify the Feldera pipeline and the
+    /// host, which a replication slot shared by several connectors is named
+    /// after; see [`PublicationKey`].
     pub fn new(
         endpoint_name: &str,
         config: &PostgresCdcReaderConfig,
+        pipeline_config: &feldera_types::config::PipelineConfig,
+        layout: &feldera_types::circuit::Layout,
         consumer: Box<dyn InputConsumer>,
     ) -> Result<Self, ControllerError> {
         config
@@ -120,11 +125,16 @@ impl PostgresCdcInputEndpoint {
                 &format!("failed to parse Postgres URI: {e}"),
             )
         })?;
+        // Slot sharing is not wired yet: every connector keeps its own etl
+        // pipeline, so the key is the per-table one.
+        let _ = (pipeline_config, layout);
+        let key = PublicationKey::per_table(config);
 
         Ok(Self {
             inner: Arc::new(PostgresCdcInputInner::new(
                 endpoint_name,
                 config.clone(),
+                key,
                 consumer,
             )),
         })
@@ -184,12 +194,13 @@ impl PostgresCdcInputInner {
     pub(super) fn new(
         endpoint_name: &str,
         config: PostgresCdcReaderConfig,
+        key: PublicationKey,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         let completion_rx = consumer.completion_watcher();
 
-        let pipeline_id = pipeline_id(&config.uri, &config.publication, &config.source_table);
+        let pipeline_id = key.pipeline_id();
 
         // Use strict mode (gate slot on checkpoint) when fault tolerance is enabled;
         // fast mode (gate slot on step completion) otherwise.
@@ -876,41 +887,6 @@ pub(super) async fn stop_completion_watcher(
         handle.abort();
         let _ = handle.await;
     }
-}
-
-/// Deterministic pipeline ID derived from the connection config.
-///
-/// Stable across Rust versions (xxh3) and across password rotations: the
-/// identity string excludes the password and other volatile fields, so
-/// rotating the password does not change the ID — which would otherwise
-/// orphan the replication slot and stored etl state and force a full
-/// re-snapshot. etl names its replication slots after this ID (e.g.
-/// `supabase_etl_apply_<id>`), so tests reconstruct it to clean up slots.
-pub(crate) fn pipeline_id(uri: &str, publication: &str, source_table: &str) -> u64 {
-    xxh3_64(stable_connection_identity(uri, publication, source_table).as_bytes())
-}
-
-/// Build a stable identity string for pipeline_id hashing.
-///
-/// Extracts host/port/database from the URI (excludes password, username,
-/// and query parameters) combined with publication and source_table.
-/// Falls back to the raw URI if parsing fails — the pipeline will likely
-/// fail startup shortly after anyway with a clearer error.
-pub(super) fn stable_connection_identity(
-    uri: &str,
-    publication: &str,
-    source_table: &str,
-) -> String {
-    let (host, port, db) = match Url::parse(uri) {
-        Ok(url) => {
-            let host = url.host_str().unwrap_or("").to_string();
-            let port = url.port().unwrap_or(5432);
-            let db = url.path().trim_start_matches('/').to_string();
-            (host, port, db)
-        }
-        Err(_) => return format!("{uri}\0{publication}\0{source_table}"),
-    };
-    format!("{host}:{port}/{db}\0{publication}\0{source_table}")
 }
 
 /// Parse a Postgres URI into etl's PgConnectionConfig.

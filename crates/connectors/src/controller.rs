@@ -8733,6 +8733,7 @@ impl ControllerInner {
                     endpoint_name,
                     &resolved_connector_config,
                     &self.status.pipeline_config,
+                    &self.layout,
                     self.datafusion_runtime_env.clone(),
                     self.connector_registry.clone(),
                     probe,
