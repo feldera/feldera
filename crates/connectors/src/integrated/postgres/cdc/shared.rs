@@ -471,6 +471,42 @@ impl SharedCdcPipeline {
             );
         }
 
+        // The publication costs one apply slot plus one transient slot per
+        // copy worker. Size the copy workers to the slots that are free, so
+        // that a publication with more tables than slots still starts; a
+        // database with no slot left for the apply worker is reported now.
+        let mut max_table_sync_workers = PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS;
+        if let Ok(client) = &catalog {
+            match replication_slots_in_use(client, self.pipeline_id()).await {
+                Ok((max_slots, other_slots)) => match copy_worker_budget(max_slots, other_slots) {
+                    Some(workers) => max_table_sync_workers = workers,
+                    None => {
+                        return fail_init(
+                            init,
+                            label,
+                            &config.publication,
+                            ControllerError::input_transport_error(
+                                label,
+                                true,
+                                anyhow!(
+                                    "cannot read publication '{}': the database allows \
+                                     {max_slots} replication slots (max_replication_slots) \
+                                     and all {max_slots} are in use. Free a slot (see \
+                                     pg_replication_slots), or raise max_replication_slots \
+                                     and restart PostgreSQL",
+                                    config.publication
+                                ),
+                            ),
+                        );
+                    }
+                },
+                Err(e) => warn!(
+                    "postgres_cdc {label}: could not read the replication slots in use ({e}); \
+                     the copy runs with {max_table_sync_workers} workers"
+                ),
+            }
+        }
+
         let pipeline_config = PipelineConfig {
             id: self.pipeline_id(),
             publication_name: config.publication.clone(),
@@ -485,7 +521,7 @@ impl SharedCdcPipeline {
             batch: batch_config_from(&config.batch),
             table_error_retry_delay_ms: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_DELAY_MS,
             table_error_retry_max_attempts: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_MAX_ATTEMPTS,
-            max_table_sync_workers: PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS,
+            max_table_sync_workers,
             max_copy_connections_per_table: PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE,
             memory_refresh_interval_ms: PipelineConfig::DEFAULT_MEMORY_REFRESH_INTERVAL_MS,
             memory_backpressure: Some(memory_backpressure_config_from(&config.memory_backpressure)),
@@ -921,6 +957,39 @@ fn fail_init(
         )));
     }
     Err(())
+}
+
+/// `max_replication_slots` of the source and the number of slots in use that
+/// are not this pipeline's (etl names its slots after the pipeline id).
+async fn replication_slots_in_use(
+    client: &tokio_postgres::Client,
+    pipeline_id: u64,
+) -> AnyResult<(u64, u64)> {
+    let max_slots: String = client
+        .query_one("SHOW max_replication_slots", &[])
+        .await?
+        .get(0);
+    let max_slots = max_slots.parse::<u64>()?;
+    let id = pipeline_id.to_string();
+    let other_slots = client
+        .query("SELECT slot_name::text FROM pg_replication_slots", &[])
+        .await?
+        .iter()
+        .map(|row| row.get::<_, String>(0))
+        .filter(|name| !name.split('_').any(|token| token == id))
+        .count() as u64;
+    Ok((max_slots, other_slots))
+}
+
+/// How many copy workers fit next to the apply slot in the slots that
+/// `other_slots` leave free out of `max_slots`, at most etl's default and at
+/// least one, or `None` when not even the apply slot fits.
+pub(super) fn copy_worker_budget(max_slots: u64, other_slots: u64) -> Option<u16> {
+    let free = max_slots
+        .checked_sub(other_slots)
+        .filter(|free| *free > 0)?;
+    let workers = (free - 1).clamp(1, u64::from(PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS));
+    Some(workers as u16)
 }
 
 fn warn_publication_unlisted(label: &str, publication: &str, error: &anyhow::Error) {

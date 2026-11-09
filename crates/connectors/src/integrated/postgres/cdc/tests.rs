@@ -2205,3 +2205,19 @@ fn the_high_water_mark_drops_what_was_pushed_before() {
     mark.reset();
     assert!(mark.admit((6, 0)), "after a new copy the stream is new");
 }
+
+#[test]
+fn the_copy_workers_fit_the_free_slots() {
+    // 10 slots, none in use: etl's default of 4 copy workers.
+    assert_eq!(copy_worker_budget(10, 0), Some(4));
+    // 4 slots, none in use: the apply slot and 3 copy slots.
+    assert_eq!(copy_worker_budget(4, 0), Some(3));
+    // 4 slots, 2 in use: the apply slot and 1 copy slot.
+    assert_eq!(copy_worker_budget(4, 2), Some(1));
+    // 4 slots, 3 in use: the apply slot alone; the copy still gets a worker,
+    // and a copy slot that cannot be created is a table error.
+    assert_eq!(copy_worker_budget(4, 3), Some(1));
+    // Not even the apply slot fits.
+    assert_eq!(copy_worker_budget(4, 4), None);
+    assert_eq!(copy_worker_budget(4, 5), None);
+}

@@ -499,3 +499,256 @@ pub fn a_disconnected_member_leaves_the_others_streaming(engine: &dyn PipelineTe
         "table a arrives exactly once"
     );
 }
+
+/// `n` tables in one publication, each read by a connector `cdc_<i>` into
+/// `test_input<i>`.
+struct ManyTables {
+    tables: Vec<CdcTestTable>,
+    outputs: Vec<NamedTempFile>,
+}
+
+impl ManyTables {
+    fn new(prefix: &str, n: usize) -> Self {
+        RESTART_GRACE_MS.store(0, Ordering::Relaxed);
+        let url = postgres_url();
+        let mut tables = (0..n)
+            .map(|i| {
+                CdcTestTable::new_simple(
+                    &unique_pg_name(&format!("{prefix}_{i}")),
+                    &unique_pg_name(&format!("{prefix}_pub_{i}")),
+                    &url,
+                )
+            })
+            .collect::<Vec<_>>();
+        let publication = tables[0].publication_name.clone();
+        for table in &mut tables[1..] {
+            let name = table.table_name.clone();
+            table.execute(&format!("ALTER PUBLICATION {publication} ADD TABLE {name}"));
+        }
+        let outputs = (0..n).map(|_| NamedTempFile::new().unwrap()).collect();
+        Self { tables, outputs }
+    }
+
+    fn publication(&self) -> &str {
+        &self.tables[0].publication_name
+    }
+
+    fn shared_pipeline_id(&self) -> u64 {
+        crate::integrated::postgres::cdc::shared_pipeline_id(
+            &cdc_connector_url(&self.tables[0].url),
+            self.publication(),
+            PIPELINE_NAME,
+        )
+    }
+
+    fn pipeline(&self) -> Value {
+        let mut inputs = serde_json::Map::new();
+        let mut outputs = serde_json::Map::new();
+        for (i, (table, output)) in self.tables.iter().zip(&self.outputs).enumerate() {
+            let n = i + 1;
+            inputs.insert(
+                format!("cdc_{n}"),
+                json!({
+                    "stream": format!("test_input{n}"),
+                    "transport": {
+                        "name": "postgres_cdc_input",
+                        "config": {
+                            "uri": cdc_connector_url(&table.url),
+                            "publication": self.publication(),
+                            "source_table": format!("public.{}", table.table_name),
+                        },
+                    },
+                }),
+            );
+            outputs.insert(
+                format!("test_output{n}"),
+                json!({
+                    "stream": format!("test_output{n}"),
+                    "transport": { "name": "file_output", "config": { "path": output.path() } },
+                    "format": {
+                        "name": "json",
+                        "config": { "update_format": "insert_delete", "array": false },
+                    },
+                }),
+            );
+        }
+        json!({
+            "name": PIPELINE_NAME,
+            "workers": 1,
+            "dev_tweaks": { "shared_cdc_slot": true },
+            "inputs": inputs,
+            "outputs": outputs,
+        })
+    }
+}
+
+impl Drop for ManyTables {
+    fn drop(&mut self) {
+        let shared = self.shared_pipeline_id().to_string();
+        drop_slots_of_pipeline_id(&mut self.tables[0].client, &shared);
+    }
+}
+
+/// The issue's case: a publication with more tables than the database has
+/// replication slots. The tables share one apply slot, and the copy uses
+/// the slots that are left, so every table gets its rows.
+#[engine_test(serial, services(Postgres))]
+pub fn more_tables_than_replication_slots(engine: &dyn PipelineTestEngine) {
+    let mut tables = ManyTables::new("cdc_shared_many", 6);
+    let max_slots: String = tables.tables[0]
+        .client
+        .query_one("SHOW max_replication_slots", &[])
+        .unwrap()
+        .get(0);
+    let max_slots: usize = max_slots.parse().unwrap();
+    assert!(
+        tables.tables.len() > max_slots,
+        "the test needs more tables ({}) than slots ({max_slots})",
+        tables.tables.len()
+    );
+    for (i, table) in tables.tables.iter_mut().enumerate() {
+        let base = 100 * i as i64;
+        insert_range(table, base + 1, base + 3);
+    }
+
+    let config = serde_json::from_value(tables.pipeline()).unwrap();
+    let (err_sender, errors) = crossbeam::channel::unbounded();
+    let n = tables.tables.len();
+    let controller = engine
+        .controller(
+            &TestCircuit::Identity {
+                relation: cdc_relation(),
+                persistent_output_ids: vec![None; n],
+                input_properties: Vec::new(),
+                materialized: true,
+                persistent_ids: true,
+                table_version: 0,
+                attribute_defaults: BTreeMap::new(),
+            },
+            &config,
+            Box::new(move |e, _| {
+                let _ = err_sender.send(format!("{e}"));
+            }),
+        )
+        .unwrap();
+    controller.start();
+
+    for (i, output) in tables.outputs.iter().enumerate() {
+        wait_for_inserts(output.path(), 3, &errors, &format!("snapshot of table {i}"));
+    }
+    for (i, table) in tables.tables.iter_mut().enumerate() {
+        let base = 100 * i as i64;
+        insert_range(table, base + 4, base + 4);
+    }
+    for (i, output) in tables.outputs.iter().enumerate() {
+        wait_for_inserts(
+            output.path(),
+            4,
+            &errors,
+            &format!("streamed row of table {i}"),
+        );
+    }
+
+    let slots = apply_slots(&mut tables.tables[0]);
+    assert_eq!(
+        slots_with_token(&slots, &tables.shared_pipeline_id().to_string()).len(),
+        1,
+        "one apply slot for the publication: {slots:?}"
+    );
+    // Without the budget, etl asks for more copy slots than the database
+    // has, marks the table errored and retries later. The copy must fit the
+    // slots the first time.
+    let pipeline_id = tables.shared_pipeline_id() as i64;
+    let errored: i64 = tables.tables[0]
+        .client
+        .query_one(
+            "SELECT count(*) FROM etl.replication_state WHERE pipeline_id = $1 AND state::text = 'errored'",
+            &[&pipeline_id],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(errored, 0, "no table was ever errored for lack of a slot");
+    controller.stop().unwrap();
+    for (i, output) in tables.outputs.iter().enumerate() {
+        let base = 100 * i as i64;
+        let mut ids = inserted_ids(output.path());
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            (base + 1..=base + 4).collect::<Vec<_>>(),
+            "table {i} arrives exactly once"
+        );
+    }
+}
+
+/// Logical replication slots that fill the database's slot table, dropped
+/// with the guard.
+struct DummySlots {
+    client: postgres::Client,
+    names: Vec<String>,
+}
+
+impl DummySlots {
+    /// Takes every free slot.
+    fn fill(url: &str) -> Self {
+        let mut client = crate::integrated::postgres::test::pg::pg_connect(url, &None);
+        let max_slots: String = client
+            .query_one("SHOW max_replication_slots", &[])
+            .unwrap()
+            .get(0);
+        let used: i64 = client
+            .query_one("SELECT count(*) FROM pg_replication_slots", &[])
+            .unwrap()
+            .get(0);
+        let free = max_slots.parse::<i64>().unwrap() - used;
+        let names = (0..free)
+            .map(|i| {
+                let name = unique_pg_name(&format!("cdc_shared_dummy_{i}"));
+                client
+                    .execute(
+                        &format!("SELECT pg_create_logical_replication_slot('{name}', 'pgoutput')"),
+                        &[],
+                    )
+                    .unwrap();
+                name
+            })
+            .collect();
+        Self { client, names }
+    }
+}
+
+impl Drop for DummySlots {
+    fn drop(&mut self) {
+        for name in &self.names {
+            let _ = self
+                .client
+                .execute(&format!("SELECT pg_drop_replication_slot('{name}')"), &[]);
+        }
+    }
+}
+
+/// A database with no free replication slot refuses the publication with
+/// an error that names the limit and what to do.
+#[engine_test(serial, services(Postgres))]
+pub fn no_free_slot_is_an_actionable_error(engine: &dyn PipelineTestEngine) {
+    let tables = TwoTables::new("cdc_shared_full");
+    let dummies = DummySlots::fill(&tables.a.url);
+    assert!(
+        !dummies.names.is_empty(),
+        "the test needs a free slot to take"
+    );
+    let out_a = NamedTempFile::new().unwrap();
+    let out_b = NamedTempFile::new().unwrap();
+
+    let error = start(
+        engine,
+        tables.pipeline(true, Some(json!({})), out_a.path(), out_b.path()),
+    )
+    .err()
+    .expect("no slot is free, so the publication cannot be read")
+    .to_string();
+    for needle in ["max_replication_slots", "are in use", "Free a slot"] {
+        assert!(error.contains(needle), "{needle:?} not in: {error}");
+    }
+    drop(dummies);
+}
