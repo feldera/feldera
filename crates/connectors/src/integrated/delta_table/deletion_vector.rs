@@ -899,7 +899,7 @@ mod tests {
     use parquet::column::page::{CompressedPage, Page, PageWriteSpec, PageWriter};
     use parquet::column::writer::{get_column_writer, get_typed_column_writer_mut};
     use parquet::data_type::Int64Type;
-    use parquet::file::properties::WriterProperties;
+    use parquet::file::properties::{WriterProperties, WriterVersion};
     use parquet::file::writer::{SerializedFileWriter, SerializedPageWriter, TrackedWrite};
     use parquet::schema::parser::parse_message_type;
     use proptest::prelude::*;
@@ -1999,7 +1999,10 @@ mod tests {
     /// * `file` - a Parquet file with one required `INT64` column, `id`, in
     ///   256-value `DELTA_BINARY_PACKED` miniblocks.
     /// * `total_rows` - the number of rows in `file`.
-    /// * `bitmap_rows` - the rows in the bitmap.
+    /// * `bitmap_rows` - the rows in the bitmap. The runs of rows in and out of
+    ///   it must average 32 rows or more: with shorter runs, parquet's default
+    ///   `RowSelectionPolicy` decodes the unselected rows between selected ones
+    ///   and filters them out instead of skipping them.
     /// * `value` - the `id` that `file` holds in a given row.
     async fn check_masked_reads(
         dir: &std::path::Path,
@@ -2183,8 +2186,12 @@ mod tests {
         out
     }
 
-    /// A [`PageWriter`] that replaces the values of the one data page it is
+    /// A [`PageWriter`] that replaces the values of the one V1 data page it is
     /// given with [`encode_wide_miniblocks`] of the same values.
+    ///
+    /// It panics on a page of any other type, such as a V2 data page, which it
+    /// would otherwise write with the writer's 64-value miniblocks; the test
+    /// would then pass on a parquet that cannot skip rows inside wider ones.
     struct WideMiniblockPages<'a> {
         /// Writes the pages into the column chunk.
         inner: SerializedPageWriter<'a, Vec<u8>>,
@@ -2202,7 +2209,11 @@ mod tests {
                 ..
             } = page.compressed_page().clone()
             else {
-                return self.inner.write_page(page);
+                panic!(
+                    "expected a V1 data page, got {}; write the file with \
+                     WriterVersion::PARQUET_1_0 and no dictionary",
+                    page.page_type()
+                );
             };
             assert_eq!(
                 num_values as usize,
@@ -2243,9 +2254,11 @@ mod tests {
     /// * `values` - the column's values, few enough to fit in one data page.
     fn write_wide_miniblock_parquet(path: &std::path::Path, values: &[i64]) {
         let schema = Arc::new(parse_message_type("message schema { REQUIRED INT64 id; }").unwrap());
-        // Uncompressed, so that the data of a page is its encoded values.
+        // Only V1 data pages, which `WideMiniblockPages` requires, and
+        // uncompressed, so that the data of a page is its encoded values.
         let props = Arc::new(
             WriterProperties::builder()
+                .set_writer_version(WriterVersion::PARQUET_1_0)
                 .set_dictionary_enabled(false)
                 .set_encoding(Encoding::DELTA_BINARY_PACKED)
                 .set_compression(Compression::UNCOMPRESSED)
