@@ -270,7 +270,11 @@ once_cell = "1.20.2"
 opendal = { version = "0.58", default-features = false }
 ordered-float = { version = "4.2.0", features = ["serde"] }
 ouroboros = "0.18.4"
-parquet = "59"
+# Applying a Delta deletion vector to a file that Databricks Photon wrote
+# skips rows inside 256-value `DELTA_BINARY_PACKED` miniblocks, which parquet
+# supports from 59.3.2 on.
+# Test: `masked_reader_skips_rows_inside_wide_miniblocks`.
+parquet = "59.3.2"
 # The Parquet variant binary encoding, used to read and write Delta and
 # Iceberg VARIANT columns. Released from arrow-rs alongside `parquet`, and
 # sharing `arrow` with it, so keep the three on one point release.

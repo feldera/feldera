@@ -27,24 +27,13 @@ The table is keyed on `id`, which is what makes an ordering defect visible: a
 retraction on a keyed relation is a delete *by key*, so a post-image applied
 before its pre-image drops the row instead of cancelling out by value.
 
-Blocked on apache/arrow-rs#11018, with no released `parquet` that works.
-`deletion_vector.rs` applies a deletion vector as a Parquet row selection, so
-the reader *skips* the deleted rows, and `DeltaBitPackDecoder::skip` mishandles
-the 256-value miniblocks Photon writes: 58.3 and later reject them outright
-(`cannot skip miniblock of size 256`), while 58.2 and earlier panic once a skip
-run exceeds the buffer they size from the physical type -- 64 for INT64 --
-which a deletion vector's runs do. Downgrading trades the error for a panic; it
-is not a workaround.
+When the table carries `delta.parquet.format.version = 2.12.0` (a Unity Catalog
+schema default in our workspace), Databricks writes `DELTA_BINARY_PACKED`
+miniblocks of 256 values, and applying a deletion vector skips rows inside them.
 
-Only columns Photon delta-encodes are affected, which it does when the table
-carries `delta.parquet.format.version = 2.12.0` (a Unity Catalog schema default
-in our workspace). A column whose deltas are constant, such as a dense ascending
-key, takes a fast path that sidesteps both failures, so a fixture can pass while
-the defect is present -- see https://github.com/ryzhyk/parquet-photon-miniblock-repro.
-
-The symptom here is this test timing out on the first run rather than failing:
-the connector retries the unreadable file, so the error repeats in the pipeline
-log instead of surfacing.
+A file the connector cannot read makes this test time out rather than fail: the
+connector retries the file, so the error repeats in the pipeline log instead of
+surfacing.
 """
 
 from __future__ import annotations
