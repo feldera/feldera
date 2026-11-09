@@ -317,7 +317,9 @@ impl ClockReader {
                             _ => None,
                         }) else {
                             consumer.error(true, anyhow!("Invalid timestamp in replay log: {data:?}"), Some("clock"));
-                            continue;
+                            // Exit, which closes the endpoint, so that the
+                            // controller stops waiting for the replay.
+                            break;
                         };
                         consumer.buffered(RECORD_SIZE);
                         let mut buffer = parser.parse(Self::timestamp_to_record(ts_millis).as_bytes(), None).0.unwrap();
@@ -1088,5 +1090,86 @@ pub mod test {
             last + one_day_ms
         );
         pipeline.stop().unwrap();
+    }
+
+    /// The parser of a replay that fails before it parses a record.
+    #[cfg(test)]
+    struct UnusedParser;
+
+    #[cfg(test)]
+    impl feldera_adapterlib::format::Parser for UnusedParser {
+        fn parse(
+            &mut self,
+            _data: &[u8],
+            _metadata: Option<feldera_adapterlib::ConnectorMetadata>,
+        ) -> (
+            Option<Box<dyn feldera_adapterlib::format::InputBuffer>>,
+            Vec<feldera_adapterlib::format::ParseError>,
+        ) {
+            unreachable!("the replay fails before it parses a record")
+        }
+
+        fn stage(
+            &self,
+            _buffers: Vec<Box<dyn feldera_adapterlib::format::InputBuffer>>,
+        ) -> Box<dyn feldera_adapterlib::catalog::StagedBuffers> {
+            unreachable!("the replay fails before it stages a record")
+        }
+
+        fn splitter(&self) -> Box<dyn feldera_adapterlib::format::Splitter> {
+            unreachable!("a replay needs no splitter")
+        }
+
+        fn fork(&self) -> Box<dyn feldera_adapterlib::format::Parser> {
+            unreachable!("the endpoint parses on one thread")
+        }
+    }
+
+    /// A replay of a timestamp that is not an integer fails the endpoint and
+    /// closes it, so that the controller does not wait forever for the replay
+    /// to finish.
+    #[test]
+    fn replay_of_invalid_timestamp_closes_the_endpoint() {
+        use crate::transport::{InputReaderCommand, TransportInputEndpoint};
+        use feldera_adapterlib::test::MockInputConsumer;
+        use feldera_types::program_schema::Relation;
+        use feldera_types::transport::clock::ClockConfig;
+        use std::sync::{Arc, Mutex};
+
+        let consumer = MockInputConsumer::new();
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        consumer.on_error(Some(Box::new({
+            let errors = errors.clone();
+            move |fatal, error| errors.lock().unwrap().push((fatal, error.to_string()))
+        })));
+        let endpoint = super::ClockEndpoint::new(ClockConfig {
+            clock_resolution: Some(ConfigDuration::from_secs(1)),
+            timezone_offset_ms: 0,
+            now_offset_ms: None,
+            http_driven: false,
+        })
+        .unwrap();
+        let reader = endpoint
+            .open(
+                Box::new(consumer),
+                Box::new(UnusedParser),
+                Relation::empty(),
+                None,
+            )
+            .unwrap();
+        assert!(!reader.is_closed());
+
+        reader.request(InputReaderCommand::Replay {
+            metadata: serde_json::Value::Null,
+            data: rmpv::Value::from("not a timestamp"),
+        });
+        wait(|| reader.is_closed(), default_timeout_ms()).expect("the endpoint never closed");
+        let errors = errors.lock().unwrap();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].0, "{errors:?}");
+        assert!(
+            errors[0].1.starts_with("Invalid timestamp in replay log"),
+            "{errors:?}"
+        );
     }
 }
