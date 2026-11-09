@@ -127,10 +127,15 @@ compilerServer:
     config: |
       [registries.<custom name>]
       index = "sparse+<index url>"
-      credential-provider = "cargo:token-from-stdout aws codeartifact get-authorization-token --domain <domain> --domain-owner <account id> --region <codeartifact region> --profile workload-identity --query authorizationToken --output text"
+      credential-provider = "cargo:token-from-stdout codeartifact-token --domain <domain> --domain-owner <account id> --region <codeartifact region> --profile workload-identity"
 ```
 
 Note the `--profile workload-identity` in the `credential-provider` value. This is the profile for the AWS role that was set up in previous steps and must be included.
+
+`codeartifact-token` ships in the compiler server image and prints a CodeArtifact
+authorization token. It also accepts `--duration-seconds`, `--endpoint-url`,
+`--ca-bundle`, `--cli-connect-timeout`, `--cli-read-timeout` and
+`--no-verify-ssl`; run `codeartifact-token --help` for details.
 
 Upgrade the release, then check that the compiler server pod picked up the credentials by running:
 
