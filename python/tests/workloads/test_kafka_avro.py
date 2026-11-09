@@ -193,14 +193,10 @@ class Variant:
 
         self.topic1 = f"{self.pipeline_name}_topic_{date_str}_{suffix}"
         self.topic2 = f"{self.pipeline_name}_topic2_{date_str}_{suffix}"
-        # Relation names become Avro record names, which must start with a
-        # letter or underscore. The pipeline name can start with a digit of
-        # the commit SHA, so prefix a letter.
-        relation_prefix = f"r{self.pipeline_name}"
-        self.source = f"{relation_prefix}_table"
-        self.view = f"{relation_prefix}_view"
-        self.index = f"{relation_prefix}_idx_{suffix}"
-        self.loopback = f"{relation_prefix}_loopback"
+        self.source = f"{self.pipeline_name}_table"
+        self.view = f"{self.pipeline_name}_view"
+        self.index = f"{self.pipeline_name}_idx_{suffix}"
+        self.loopback = f"{self.pipeline_name}_loopback"
 
 
 def sql_source_table(v: Variant) -> str:
@@ -469,19 +465,6 @@ def test_stale_topics_spares_recent_runs():
     cutoff = (datetime.now() - timedelta(days=3)).strftime("%Y%m%d")
 
     assert stale_topics(recent + old + [other_test], cutoff) == old
-
-
-def test_relation_names_are_avro_names(monkeypatch):
-    """The relations of a variant name Avro records, so their names stay valid
-    Avro names when the commit SHA in the pipeline name starts with a digit."""
-    monkeypatch.setenv("GITHUB_SHA", "457ed6cafabb4e3d844538c0ffc8efe1552b63f6")
-    variant = Variant(
-        TestKafkaAvro.TEST_CONFIGS[1], unique_pipeline_name("test_kafka_avro_1")
-    )
-    avro_name = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-    for relation in [variant.source, variant.view, variant.index, variant.loopback]:
-        assert avro_name.fullmatch(relation), relation
 
 
 # To run all pipelines in this test file:

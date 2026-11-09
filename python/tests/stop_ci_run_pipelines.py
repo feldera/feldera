@@ -66,7 +66,7 @@ def main() -> int:
         "--prefix",
         default=None,
         help="Pipeline name prefix to sweep. Defaults to this run's own prefix, "
-        "the first five characters of GITHUB_SHA plus FELDERA_TEST_TAG_SUFFIX.",
+        "`run_`, the first five characters of GITHUB_SHA and FELDERA_TEST_TAG_SUFFIX.",
     )
     args = parser.parse_args()
 
