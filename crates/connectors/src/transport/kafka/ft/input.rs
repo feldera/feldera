@@ -56,7 +56,7 @@ use std::{
     iter,
     sync::{Arc, Mutex, Weak},
     thread::spawn,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::span::EnteredSpan;
@@ -67,6 +67,10 @@ use xxhash_rust::xxh3::Xxh3Default;
 const POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a replay step waits for messages before it asks the broker whether
+/// the partitions still hold the offsets that it waits for.
+const REPLAY_STALL_CHECK: Duration = Duration::from_secs(1);
 
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
@@ -624,11 +628,25 @@ impl KafkaFtInputReaderInner {
             }
             let mut total = BufferSize::empty();
             let mut hasher = KafkaFtHasher::new(&partitions[..n_offsets]);
+            let missing_offset = |partition: i32, max: i64| {
+                anyhow!(
+                    "cannot replay partition {partition} of topic {topic}: the journal holds input up to offset {max}, but the topic no longer holds that offset (retention or compaction may have deleted it, or the topic may have been deleted and created again)"
+                )
+            };
+            let mut stalled_since = Instant::now();
             loop {
                 // Process messages for all partitions.
+                let mut progress = false;
                 for (partition, receiver) in receivers.iter() {
                     let max = receiver.max_offset();
+
+                    // Once the receiver has gone past `max`, every message up
+                    // to `max` that the topic still holds is in the receiver.
+                    // Check before we read, so that we read all of them.
+                    let passed = receiver.next_offset() > max;
+
                     while let Some((offset, (mut msg, _timestamp))) = receiver.read(max) {
+                        progress = true;
                         let amt = msg.len();
                         total += amt;
                         hasher.add(partition, &msg);
@@ -638,9 +656,36 @@ impl KafkaFtInputReaderInner {
                             incomplete_partitions.remove(partition);
                         }
                     }
+                    if passed && incomplete_partitions.contains(partition) {
+                        return Err(missing_offset(*partition, max));
+                    }
                 }
                 if incomplete_partitions.is_empty() {
                     break;
+                }
+
+                // A partition that ends before `max`, for example because the
+                // topic was deleted and created again, never delivers it.
+                if progress {
+                    stalled_since = Instant::now();
+                } else if stalled_since.elapsed() >= REPLAY_STALL_CHECK {
+                    for &&partition in &incomplete_partitions {
+                        let max = receivers[&partition].max_offset();
+                        match self.kafka_consumer.fetch_watermarks(
+                            topic,
+                            partition,
+                            METADATA_TIMEOUT,
+                        ) {
+                            Ok((_low, high)) if high <= max => {
+                                return Err(missing_offset(partition, max));
+                            }
+                            Ok(_) => (),
+                            Err(error) => warn!(
+                                "error fetching watermarks for partition {partition} of topic {topic}: {error}"
+                            ),
+                        }
+                    }
+                    stalled_since = Instant::now();
                 }
 
                 // Poll the Kafka consumer. We don't want messages from it but it's obligatory.
@@ -1367,7 +1412,7 @@ impl PartitionReceiver {
     }
 
     fn next_offset(&self) -> i64 {
-        self.next_offset.load(Ordering::Relaxed)
+        self.next_offset.load(Ordering::Acquire)
     }
 
     /// Returns `true` if `message` satisfies the configured header filter, or if
@@ -1474,30 +1519,31 @@ impl PartitionReceiver {
                 let offset = message.offset();
                 let next_offset = self.next_offset();
                 if offset >= next_offset {
-                    self.next_offset.store(offset + 1, Ordering::Relaxed);
-
                     // Drop messages rejected by the header filter before parsing,
                     // so they never enter the offset ranges or the step hash.
-                    // This runs after advancing `next_offset` (the consume
-                    // position still moves forward) and is re-applied identically
-                    // on replay, keeping ranges and hashes deterministic.
-                    if !self.header_filter_admits(&message) {
-                        return;
+                    // The consume position still moves forward, and replay
+                    // applies the filter in the same way, keeping ranges and
+                    // hashes deterministic.
+                    if self.header_filter_admits(&message) {
+                        let timestamp = message.timestamp().to_millis().unwrap_or(i64::MIN);
+                        let (buffer, errors) = match message.payload() {
+                            Some(payload) => parser.parse(payload, self.create_metadata(&message)),
+                            // Skip tombstones; keep offsets.
+                            None => (None, Vec::new()),
+                        };
+                        self.n_bytes
+                            .fetch_add(buffer.len().bytes, Ordering::Relaxed);
+                        self.messages
+                            .lock()
+                            .unwrap()
+                            .insert(offset, (buffer, timestamp));
+                        consumer.parse_errors(errors);
                     }
 
-                    let timestamp = message.timestamp().to_millis().unwrap_or(i64::MIN);
-                    let (buffer, errors) = match message.payload() {
-                        Some(payload) => parser.parse(payload, self.create_metadata(&message)),
-                        // Skip tombstones; keep offsets.
-                        None => (None, Vec::new()),
-                    };
-                    self.n_bytes
-                        .fetch_add(buffer.len().bytes, Ordering::Relaxed);
-                    self.messages
-                        .lock()
-                        .unwrap()
-                        .insert(offset, (buffer, timestamp));
-                    consumer.parse_errors(errors);
+                    // Advance only after `messages` holds the message, so that
+                    // replay, which sees `next_offset` past an offset, also
+                    // finds that offset's message.
+                    self.next_offset.store(offset + 1, Ordering::Release);
                 } else {
                     tracing::error!(
                         "Received message in partition {} at out-of-order offset {offset} (expected offset {next_offset} or greater; initial offset for this partition was {})",
