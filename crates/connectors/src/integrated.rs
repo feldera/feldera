@@ -14,6 +14,9 @@ pub mod delta_table;
 #[cfg(feature = "with-dynamodb")]
 pub(crate) mod dynamodb;
 pub(crate) mod postgres;
+pub mod registry;
+
+pub use registry::{ConnectorRegistry, SharedConnectorState};
 
 #[cfg(feature = "with-dynamodb")]
 pub use crate::integrated::dynamodb::DynamoDBOutputEndpoint;
@@ -114,12 +117,14 @@ pub fn create_integrated_output_endpoint(
 
 /// Creates an integrated input endpoint.  `distributed` is `Some` only for a
 /// distributed connector, whose transport must support distribution.
+/// `registry` holds what the connectors of the pipeline share.
 #[allow(unused_variables)]
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
     config: &ConnectorConfig,
     pipeline_config: &PipelineConfig,
     runtime_env: Arc<RuntimeEnv>,
+    registry: Arc<ConnectorRegistry>,
     consumer: Box<dyn InputConsumer>,
     distributed: Option<DistributedInput>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
