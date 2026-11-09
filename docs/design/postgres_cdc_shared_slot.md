@@ -67,19 +67,21 @@ Postgres publication P ──one slot──▶ SharedCdcPipeline(P)            o
 | Concern | Decision |
 | --- | --- |
 | Feature flag | A `dev_tweaks` flag (`crates/feldera-types/src/config/dev_tweaks.rs:48`), off by default. When the flag is off, `PublicationKey` includes `source_table` and leaves out the Feldera pipeline and host. Each shared pipeline then has exactly one member and keeps today's id, so there is no re-snapshot and no slot cleanup. Legacy mode is a key choice, not a second code path. Make the flag default on after a stabilization period. |
-| Pipeline id | Flag on: `hash(feldera_pipeline, host_idx, host:port/db, publication)`. `feldera_pipeline` is `PipelineConfig.name` (`pipeline-<uuid>`, does not change on rename, `crates/feldera-types/src/config.rs:225-229`) when set. `host_idx` is `Layout::local_host_idx()` when the pipeline is not solo. Without them, two Feldera pipelines that read different tables of one publication would use one slot name and one set of `etl.replication_state` rows (section 9, R1). |
+| Pipeline id | Flag on: `hash(feldera_pipeline, host_idx, host:port/db, publication)`. `feldera_pipeline` is `PipelineConfig.name` (`pipeline-<uuid>`, does not change on rename, `crates/feldera-types/src/config.rs:225-229`). The field is an `Option`; with the flag on, a `None` is rejected at `open` with an actionable error (section 10.6), never left out of the hash. Without the name, two processes that read different tables of one publication would use one slot name and one set of `etl.replication_state` rows (section 9, R1). The pipeline manager always sets the name; the tests set `"name": "test"`. `host_idx` is `Layout::local_host_idx()` when the pipeline is not solo. |
 | Registry | Controller scope. Add a generic `ConnectorRegistry` (`Mutex<HashMap<String, Weak<dyn Any + Send + Sync>>>`) to `ControllerInner` next to `datafusion_runtime_env` (`controller.rs:7973`). Pass it through `create_integrated_input_endpoint` (`crates/connectors/src/integrated.rs:118`, call site `controller.rs:8673`). No field in the controller depends on a feature flag. |
 | Member config | `uri` user, TLS, `run_source_migrations`, `batch` and `memory_backpressure` apply to the whole etl pipeline. A member whose values differ from the first member's is rejected at `join`, under the members lock, with an error that names both connectors and the field (section 10.6). Nexmark rejects conflicting options in the same way. |
 | Startup | `open` keeps the synchronous per-table checks (publication listing, column validation) and registers the member without starting etl (`cdc_input.rs:231-300`). Connectors initialize in parallel on a pool of `max_parallel_connector_init` threads (`controller.rs:8175-8246`). An `open` that waits for its peers would deadlock when the pool has fewer threads than the publication has members. After `run_on_thread_pool` returns, the controller calls `ConnectorRegistry::initial_connect_done()`, and the shared pipelines start etl on that signal. The signal returns the start result, so a start error is still reported at pipeline start. Members learn of a failure through `consumer.error(fatal)`. Configs are not parsed to predict membership: a `${secret:...}` URI, a connector that starts `paused`, or a member whose checks fail would make such a prediction wrong. |
 | Copy scope | `IncludeAllTables`. With sharing, etl copies each table once. A table that no member reads costs one discarded copy, as in Materialize. `IncludeTables` is fixed when etl starts and would block the late join below. A dynamic predicate is an upstream etl follow-up. |
-| Late join (API `connect`, journal replay `add_inputs` at `controller.rs:5537`) | Set the new member's table to `Init` through the shared `PostgresStore`, confirm that the state is no longer `Ready`, then arm the member for routing. etl's apply worker starts a sync worker after the next commit or when idle. A member accepts `write_events` only after `drop_table_for_copy` or its first `write_table_rows` marked its copy as started, or when it resumed with a completed copy. Two cases fall back to stopping etl and starting it again with the new member set: a table that was not in the publication when etl started (etl reads the table list once, `pipeline.rs:391`), and etl failing on `Ready -> Init` at runtime. |
-| Leave (API `disconnect`, pipeline stop, journal replay `remove_inputs`) | A leave never counts an ack share as done. At pipeline stop the controller drops the readers one by one (`controller.rs:8474`), and a share counted as done would let the last member advance the slot past rows the others never stored. A leave parks the member's open fan-ins, as `ParkedResults` does today (`cdc_input.rs:401`), and stops etl, which with `drain_on_shutdown: false` abandons the pending write and reads it again on the next start. If members remain after a short membership-stable grace, etl starts again for them. A member that joins again snapshots its table again. |
-| Pause | The shared stream waits while any member is `Paused`. This replaces the per-endpoint `wait_unpaused` (`cdc_input.rs:2002`). The WAL stream is one ordered sequence, and a push into the queue of a paused member would defeat backpressure. Flink and PostgreSQL native stop the whole job too. Consequences to document: the controller pauses endpoints one by one on backpressure, so one busy Feldera table slows every table of the publication, and a large late-join snapshot holds checkpoints for the whole pipeline through the copy barrier. |
+| Late join (API `connect`, journal replay `add_inputs` at `controller.rs:5537`) | Set the new member's table to `Init` through the shared `PostgresStore`, confirm that the state is no longer `Ready`, then arm the member for routing. etl's apply worker starts a sync worker after the next commit or when idle. A member accepts `write_events` only after `drop_table_for_copy` or its first `write_table_rows` marked its copy as started, or when it resumed with a completed copy. Two cases fall back to stopping etl and starting it again with the new member set: a table that was not in the publication when etl started (etl reads the table list once, `pipeline.rs:391`), and etl failing on `Ready -> Init` at runtime. The restart replays events for the members that stay; their high-water mark (see Leave) drops the replayed ones. While a member is paused, the apply worker is blocked in `write_events` and cannot start the sync worker, so a late join completes its copy only after the unpause. |
+| Leave (API `disconnect` at `controller.rs:8474`, journal replay `remove_inputs`) | A leave never counts an ack share as done: a share counted as done would let the last member advance the slot past rows the others never stored. A leave parks the member's open fan-ins, as `ParkedResults` does today (`cdc_input.rs:401`), and stops etl, which with `drain_on_shutdown: false` abandons the pending write and reads it again on the next start. If members remain after a short membership-stable grace, etl starts again for them. A member that joins again snapshots its table again. |
+| Replay after a restart within a running pipeline | etl starts again from the slot's `confirmed_flush_lsn` and replays every batch after it. A member that stays has already pushed some of those rows into the circuit, and the circuit has no checkpoint to fall back to as it has on a full pipeline restart. Each member keeps a high-water `EventPosition` (`commit_lsn`, `tx_ordinal`, etl `crates/etl/src/event.rs:341`; every row event carries both) of the last event it pushed, and `write_events` drops the member's replayed events at or below it. The mark is in memory only: on a full pipeline restart the circuit is back at the checkpoint, the slot is confirmed only past checkpointed steps, and nothing before the mark is replayed. A transaction split over two batches is covered because the ordinal orders events inside one transaction. The same rule covers the late-join restart fallback. |
+| Pipeline stop | `Controller::stop` (`controller.rs:9495`) disconnects every input in a loop. Without a signal, N members would mean N-1 etl restarts during shutdown, and an etl started late can still hold the slot active when the next start runs. The controller calls `ConnectorRegistry::shutdown()` before the loop: it stops each shared pipeline once and suppresses restarts; every later leave only parks and unregisters. |
+| Pause | The shared stream waits while any member is `Paused`. This replaces the per-endpoint `wait_unpaused` (`cdc_input.rs:2002`). The WAL stream is one ordered sequence, and a push into the queue of a paused member would defeat backpressure. Flink and PostgreSQL native stop the whole job too. Consequences to document: the controller pauses endpoints one by one on backpressure, so one busy Feldera table slows every table of the publication; a large late-join snapshot holds checkpoints for the whole pipeline through the copy barrier; and a late join while a member is paused waits for the unpause, because the blocked apply worker starts no sync worker. |
 | Acks | A `write_events` batch can contain rows for several members. Fan-in: a counter of the members that got rows; the last queue entry of each member carries one share; the last share answers etl. Steps are pipeline-wide (`controller.rs:10530`), so the fan-in is the same as "wait for the largest `flush_step` among the members". A batch with no member rows answers `Durable` at once. |
 | Copy barrier | Stays per member (`CopyBarrier`, `cdc_input.rs:419`). etl's terminal `write_table_rows` is per table. |
 | Table errors | One monitor reads the store. An `Errored` member table fails only that member. An etl pipeline error fails all members. |
 | Upgrade (flag on) | Resume metadata carries the `pipeline_id` of the slot it was taken against (`resume_for`, `cdc_input.rs:1604`). A member whose metadata names a different id has no usable copy: the new slot starts at the current WAL position, so `reconcile_decision` (`cdc_input.rs:2297`) returns `RedoCopy`, with fault tolerance and without. Otherwise the changes between the checkpoint and the upgrade would be lost. Cleanup: when the metadata names a legacy id, drop the `supabase_etl_apply_*` and `supabase_etl_table_sync_*` slots of that id and delete its `etl.replication_state` rows. Without metadata, drop only inactive slots with the legacy id and log each one. Orphaned slots keep WAL without limit (Materialize and Flink document this). |
-| Slot budget | One apply slot plus up to `max_table_sync_workers` transient copy slots per publication. The etl default is 4 (etl `etl-config/src/shared/pipeline.rs:480`, pinned rev), so a shared pipeline can hold 5 slots during the initial copy. CI Postgres allows 4 (`test.rs:3052`). Read `max_replication_slots` and the slots in use at start and set `max_table_sync_workers` to what is free, at least 1. Report an actionable error when not even the apply slot is free. |
+| Slot budget | One apply slot plus up to `max_table_sync_workers` transient copy slots per publication. The etl default is 4 (etl `etl-config/src/shared/pipeline.rs:480`, pinned rev), so a shared pipeline can hold 5 slots during the initial copy. CI Postgres allows 4 (`test.rs:3052`). At start, read `max_replication_slots` and the slots in use, and set `max_table_sync_workers = min(4, max(free - 1, 1))`: the apply slot takes one, the rest are copy slots. Report an actionable error when not even the apply slot is free. The budget is a best effort, because other clients take slots concurrently and a late join needs a copy slot after the budget is fixed. A copy slot that cannot be created at runtime raises `SourceConfigurationLimitExceeded` (SQLSTATE 53400) or `ReplicationSlotNotCreated`; both are permanent in etl (`crates/etl/src/error.rs:293`, `:313`), so etl marks that table `Errored` with manual retry. It is a table error of that member only: the `TableErrorMonitor` reports it with an actionable message (section 10.6), and the other members stream on. Disconnecting and connecting the member again, or a pipeline restart, retries the copy. |
 | Runtime threads | `RUNTIME_WORKER_THREADS` (`cdc_input.rs:2943`) is sized for one copying table. Use `max_table_sync_workers * max_copy_connections_per_table`, with a cap. |
 
 ### 3.1 Types
@@ -130,6 +132,9 @@ impl ConnectorRegistry {
     pub fn get_or_create<T: Any + Send + Sync>(&self, key: &str, make: impl FnOnce() -> Arc<T>) -> Arc<T>;
     /// Called by the controller after the connector-init pool has returned.
     pub fn initial_connect_done(&self) -> Result<(), ControllerError>;
+    /// Called by `Controller::stop` before it disconnects the inputs: stops
+    /// each shared pipeline once and suppresses restarts.
+    pub fn shutdown(&self);
 }
 
 // ---------------------------------------------------------------- shared pipeline
@@ -204,6 +209,9 @@ pub struct Member {
     feldera_required_columns: Vec<String>,
     /// Per table: etl's terminal `write_table_rows` is per table.
     copy: Arc<CopyBarrier>,
+    /// Position of the last event pushed into `queue`. After an etl restart
+    /// inside a running pipeline, replayed events at or below it are dropped.
+    high_water: Mutex<Option<EventPosition>>,
     pipeline_state: watch::Receiver<PipelineState>,
     /// Strict (checkpoint frontier) or Fast (step frontier); unchanged.
     watcher: Option<WatcherReceiver>,
@@ -229,7 +237,8 @@ impl DispatchingDestination {
 impl Destination for DispatchingDestination {
     // drop_table_for_copy / write_table_rows: route to the table's members,
     // per-member CopyBarrier unchanged.
-    // write_events: split rows by member, one `AckFanIn` per batch.
+    // write_events: split rows by member, drop a member's events at or below
+    // its `high_water`, advance the mark, one `AckFanIn` per batch.
 }
 
 // ---------------------------------------------------------------- acks
@@ -260,7 +269,8 @@ impl AckFanIn {
 | Connector-init pool returned | `registry.initial_connect_done()` -> each shared pipeline starts its worker thread: `PostgresStore::new`, one `load_table_states`, legacy cleanup, per-member `reconcile_table_state` (`RedoCopy` when the resume metadata names another `pipeline_id`), slot budget, `Pipeline::new(config, store, DispatchingDestination)`; the call returns the start result |
 | Runtime `connect`, or journal replay `add_inputs` | `join` sees etl `Running`, calls `store.update_table_state(oid, Init)`, waits until the state is no longer `Ready`, arms the member; etl starts the sync worker. Table not in etl's schema store: stop and start again |
 | `write_events` with rows for members A and B | `AckFanIn::new(answer, 2)`; A and B each queue their last entry with one share; the slot advances when both have fired |
-| Member reader drop | `leave`: park its fan-ins, remove it from `by_table`, stop etl as `shutdown_etl_pipeline` does today (`cdc_input.rs:1119`); if members remain after the grace, start again |
+| Member reader drop | `leave`: park its fan-ins, remove it from `by_table`, stop etl as `shutdown_etl_pipeline` does today (`cdc_input.rs:1119`); if members remain after the grace, start again; the restarted etl replays from `confirmed_flush_lsn` and each member's `high_water` drops what it already pushed |
+| `Controller::stop` | `registry.shutdown()`: every shared pipeline stops etl once and refuses restarts; then the disconnect loop runs, and each leave only parks and unregisters |
 
 ## 4. Work breakdown
 
@@ -269,10 +279,10 @@ One commit per row. Each commit body says why.
 | # | Step | Files |
 | --- | --- | --- |
 | 1 | Refactor with no behavior change: split `cdc_input.rs` (5175 lines) into `pipeline.rs` (etl lifecycle), `member.rs` (reader, queue, copy barrier, acks), `destination.rs`, `reconcile.rs`, `monitor.rs`. A pure move: the commit body says so and the diff has no other edits. | `crates/connectors/src/integrated/postgres/cdc/` |
-| 2 | `ConnectorRegistry` on the controller, passed to the factory, with `initial_connect_done()` after the connector-init pool | `crates/connectors/src/controller.rs`, `crates/connectors/src/integrated.rs` |
+| 2 | `ConnectorRegistry` on the controller, passed to the factory, with `initial_connect_done()` after the connector-init pool and `shutdown()` in `Controller::stop` | `crates/connectors/src/controller.rs`, `crates/connectors/src/integrated.rs` |
 | 3 | `dev_tweaks` flag. `PublicationKey`. `SharedCdcPipeline` with one member in legacy mode: same ids, same behavior | `crates/feldera-types/src/config/dev_tweaks.rs`, `cdc/pipeline.rs` |
 | 4 | `DispatchingDestination`: route by table name, ack fan-in, any-paused wait, `SharedConfig` check | `cdc/destination.rs`, `cdc/pipeline.rs` |
-| 5 | Leave with park and restart. Late join through `Init` reset with arming. Legacy id detection and cleanup. Slot budget | `cdc/pipeline.rs`, `cdc/reconcile.rs` |
+| 5 | Leave with park and restart, with the per-member high-water mark. Late join through `Init` reset with arming. Legacy id detection and cleanup. Slot budget and the runtime copy-slot error | `cdc/pipeline.rs`, `cdc/reconcile.rs` |
 | 6 | Shared `TableErrorMonitor` and completion watcher | `cdc/monitor.rs` |
 | 7 | Integration test for `Ready -> Init` at runtime in this repository. Upstream etl test or fix if it fails | `test/cdc_scenarios.rs`, supabase/etl |
 | 8 | Docs and rustdoc | section 6 |
@@ -290,7 +300,11 @@ Integration tests use `#[engine_test(serial, services(Postgres))]` in `test.rs`,
 | two tables, one of them with the full type schema (`cdc_all_types_relation`, used by `all_types_replayed_after_restart` at `test/cdc_scenarios.rs:1005`) | every type arrives through the dispatching destination |
 | FT, two members, checkpoint and resume | the slot advances only past checkpoints that hold the rows of both members; the resume reads nothing again |
 | pause one member | the other stops too; start resumes both |
-| disconnect one member | etl starts again once for the other member; it loses no rows; one slot again |
+| disconnect one member while a fan-in is open (the pipeline is paused with rows for both members queued) | etl starts again once for the other member; the other member, a table without a primary key, has every row exactly once; one slot again |
+| stop a pipeline with N members | the etl start counter shows no start after `shutdown()`; the slot is released once |
+| unnamed pipeline (`PipelineConfig.name = None`), flag on | `open` fails with the error of section 10.6 |
+| slots filled after start, then a late join | the new member's table is `Errored`, its connector reports the actionable slot message, the other members keep streaming; free the slots and reconnect, and the copy completes |
+| late join while another member is paused | the copy does not start; after the unpause the new member snapshots and the others stream on |
 | stop with queued rows in two members | the stop answers no write `Durable`; after restart both tables hold every row (R2, finding 1) |
 | resume from a checkpoint of the per-table version, flag turned on | both tables snapshot again; a row changed between the checkpoint and the upgrade is present (finding 2) |
 | one member fails its column check at start | the other members start; the failing one reports its error at pipeline start (finding 3) |
@@ -305,6 +319,7 @@ Integration tests use `#[engine_test(serial, services(Postgres))]` in `test.rs`,
 | two publications, one database | two slots |
 | flag off | today's slot names; all existing CDC tests pass unchanged |
 | unit: ack fan-in | fires only after the last share; `park` keeps the sender alive |
+| unit: high-water mark | drops events at or below the mark, including the first half of a transaction split over two batches; keeps the rest; a fresh member drops nothing |
 | unit: any-paused predicate, dispatch by qualified name, legacy-id detection in resume metadata, `SharedConfig` comparison, slot budget arithmetic | |
 
 Each new test is run against the old behavior by reverting the relevant step, to confirm that it catches the problem.
@@ -335,7 +350,7 @@ Rustdoc, which becomes the OpenAPI text: `PostgresCdcReaderConfig.publication`, 
 1. Upgrade path: closed by the feature flag. With the flag off nothing changes. With the flag on each table snapshots once.
 2. Pause: any paused member pauses the publication (recommended), or a paused member buffers without limit.
 3. Upstream etl follow-ups: a dynamic copy predicate so tables that no member reads are not copied, and an option that leaves them out of replication to remove their transient slots and sync workers.
-4. Gen-2 engine: `feldera/forge` (`crates/crucible`) copies the connector config parsing. Check whether it also creates integrated input endpoints, and if so pass it a `ConnectorRegistry` too.
+4. Any other engine that creates integrated input endpoints must own a `ConnectorRegistry` too, and call `initial_connect_done()` and `shutdown()` at the same points.
 
 ## 8. Adversarial review
 
@@ -373,6 +388,17 @@ Findings against the first design, each with the change it caused.
 
 Items that stay open: the length of the membership-stable grace, and whether etl accepts `Ready -> Init` at runtime (work item 7 chooses between the `Init` path and the restart path for late joins).
 
+## 9.1 Review round 1 (PR 7872)
+
+| Finding | Change in this document |
+| --- | --- |
+| Restart after a leave replays rows that the staying members already pushed | New row "Replay after a restart within a running pipeline": per-member high-water `EventPosition`; `Member::high_water`; the disconnect test asserts exactly-once on a table without a primary key; unit test for the mark |
+| Pipeline stop is a series of leaves, N-1 restarts | New row "Pipeline stop": `ConnectorRegistry::shutdown()` before the disconnect loop in `Controller::stop`; stop test counts starts |
+| `PipelineConfig.name` is `Option` | A `None` with the flag on is rejected at `open`; message in 10.6; test |
+| Sizing from free slots is racy | Budget is `min(4, max(free - 1, 1))`; a copy slot failure at runtime is a permanent etl error and a table error of one member; message in 10.6; test that fills the slots after start |
+| Late join while a member is paused | Documented in the Late join and Pause rows; test |
+| Section 7 named a repository outside this one | Item 4 names no repository |
+
 ## 10. PR gates
 
 The `/feldera-pr-checks` gates applied to the plan, so that the PRs pass them.
@@ -392,6 +418,8 @@ The `/feldera-pr-checks` gates applied to the plan, so that the PRs pass them.
 | Risk | Rule |
 | --- | --- |
 | Grace timer before restart | Constant set to 0 in tests; assert on the start counter, not on time. |
+| Restarts during pipeline stop | `shutdown()` suppresses them; the stop test asserts a start count of zero, so a slot still active from a late start cannot make the next test flaky. |
+| Slots taken by another client | The slot-filled test creates its dummy slots itself and drops them in `Drop`. |
 | Late join waits for etl's next commit or idle tick | Wait on the table state in `etl.replication_state` with a condition, not a sleep. |
 | Parallel init order | Results must not depend on which member registers first; the pool-of-1 and default-pool tests cover both orders. |
 | Shared CI Postgres with 4 slots | Each test drops its slots in `Drop` (`test.rs:3035`) with the new id; the slot-budget logic keeps copies within the limit. |
@@ -425,6 +453,8 @@ The connector is experimental and the flag is an opt-in, which matches rule 5.
 | No free slot | `cannot read publication 'shop': the database allows 10 replication slots (max_replication_slots) and all 10 are in use. Free a slot (see pg_replication_slots), or raise max_replication_slots and restart PostgreSQL.` |
 | etl start failure reported to the other members | `the replication pipeline for publication 'shop', which this connector shares with 'items_cdc' and 'users_cdc', failed to start: <cause>. Fix the cause and restart the pipeline.` The cause keeps `with_setup_hint` (`cdc_input.rs`). |
 | Late join of a table that etl cannot find | `table 'public.items' was added to publication 'shop' after the replication pipeline started; restarting the replication pipeline to copy it.` (log warning, not an error) |
+| Unnamed pipeline, flag on | `connector 'orders_cdc' shares one replication slot per publication, which needs the pipeline name to keep the slot name unique, but the pipeline configuration has no 'name'. Set 'name' in the pipeline configuration, or turn off the shared slot setting.` |
+| Copy slot unavailable at runtime | `cannot copy table 'public.items': PostgreSQL has no free replication slot for the copy (max_replication_slots). The other tables of publication 'shop' continue. Free a slot (see pg_replication_slots) or raise max_replication_slots, then disconnect and connect this connector again to retry the copy.` |
 
 ### 10.7 Docs
 
