@@ -24,6 +24,7 @@
   import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
   import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
   import { statusCounterClass, statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
+  import { untrack } from 'svelte'
   import { isMetricsAvailable } from '#lib/functions/pipelines/status.ts'
   import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
   import { ClipboardCopyButton, Tooltip } from 'common-ui'
@@ -124,32 +125,16 @@
       (tab) => !hiddenTabs.includes(tab.id) && (canQueryData.allowed || !dataTabs.includes(tab.id))
     )
   )
-  // The pipeline page keeps this panel mounted across pipelines, and the parent
-  // keeps `currentTab` too. Choose once per pipeline: Runtime when that pipeline
-  // has live stats, otherwise the first visible tab (Compiler, unless hidden).
-  // A click after that stays until the next pipeline. An explicit tab passed in
-  // on the first mount is kept, so a caller can still open Logs directly.
-  let tabChosenFor = $state<string | null>(null)
-
-  const defaultTab = (): MonitoringTabs => {
-    if (
-      tabs.some((tab) => tab.id === 'Performance') &&
-      isMetricsAvailable(pipeline.current.status) === 'yes'
-    ) {
-      return 'Performance'
-    }
-    return tabs[0].id
-  }
-
+  // The parent remounts this panel for each pipeline. Open on Runtime when the
+  // pipeline has live stats, otherwise on the first visible tab.
+  currentTab = untrack(() =>
+    tabs.some((tab) => tab.id === 'Performance') &&
+    isMetricsAvailable(pipeline.current.status) === 'yes'
+      ? 'Performance'
+      : tabs[0].id
+  )
   $effect.pre(() => {
-    const name = pipelineName
-    const visible = tabs.some((tab) => tab.id === currentTab)
-    if (tabChosenFor !== name) {
-      if (tabChosenFor !== null || !visible) {
-        currentTab = defaultTab()
-      }
-      tabChosenFor = name
-    } else if (!visible) {
+    if (!tabs.some((tab) => tab.id === currentTab)) {
       currentTab = tabs[0].id
     }
   })

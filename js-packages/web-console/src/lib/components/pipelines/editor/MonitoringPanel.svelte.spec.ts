@@ -338,12 +338,11 @@ describe('MonitoringPanel — log-search wiring', () => {
 // a selection that points at one of them is dropped to the first visible tab
 // (so a `read` caller never lands on a blank panel).
 
-// Mount MonitoringPanel with an explicit role. Returns once the Logs tab has
-// rendered a row, which proves a visible tab is active.
+// Mount MonitoringPanel with an explicit role.
 async function mountGatingPanel(opts: {
   role: 'read' | 'write'
   hiddenTabs: string[]
-  currentTab: 'Logs' | 'Ad-Hoc Queries' | null
+  currentTab?: 'Ad-Hoc Queries'
 }) {
   roleState.current = opts.role
   pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
@@ -363,7 +362,7 @@ async function mountGatingPanel(opts: {
       metrics: metricsWithConnectors(),
       deleted: false,
       hiddenTabs: opts.hiddenTabs,
-      currentTab: opts.currentTab
+      currentTab: opts.currentTab ?? null
     }
   } as any)
 }
@@ -371,11 +370,9 @@ async function mountGatingPanel(opts: {
 const metricsWithConnectors = () => ({ current: { inputs: [], outputs: [] } }) as any
 
 const selectedTabText = () =>
-  document
-    .querySelector(
-      '[role="tab"][aria-selected="true"], [role="tab"][data-selected], [role="tab"][data-state="active"]'
-    )
-    ?.textContent ?? ''
+  document.querySelector(
+    '[role="tab"][aria-selected="true"], [role="tab"][data-selected], [role="tab"][data-state="active"]'
+  )?.textContent ?? ''
 
 const tabTexts = () =>
   Array.from(document.querySelectorAll('[role="tab"]')).map((t) => t.textContent ?? '')
@@ -392,8 +389,8 @@ describe('MonitoringPanel — exec:pipeline_data tab gating', () => {
   })
 
   it('shows the Ad-Hoc Queries and Changes Stream tabs for a write caller', async () => {
-    await mountGatingPanel({ role: 'write', hiddenTabs: [], currentTab: 'Logs' })
-    await expectRowMounted(0)
+    await mountGatingPanel({ role: 'write', hiddenTabs: [] })
+    await expect.poll(() => tabTexts().length).toBeGreaterThan(0)
 
     const labels = tabTexts()
     expect(labels.some((t) => t.includes('Ad-Hoc'))).toBe(true)
@@ -401,8 +398,8 @@ describe('MonitoringPanel — exec:pipeline_data tab gating', () => {
   })
 
   it('hides both tabs for a read-only caller', async () => {
-    await mountGatingPanel({ role: 'read', hiddenTabs: [], currentTab: 'Logs' })
-    await expectRowMounted(0)
+    await mountGatingPanel({ role: 'read', hiddenTabs: [] })
+    await expect.poll(() => tabTexts().length).toBeGreaterThan(0)
 
     // Reverting the gate (dropping the exec:pipeline_data check in the tabs
     // filter) renders these triggers and fails this test.
@@ -437,33 +434,30 @@ describe('MonitoringPanel — tab opened with a pipeline', () => {
     vi.clearAllMocks()
   })
 
-  const mountWithStatus = (
-    status: 'Running' | 'Stopped' | 'Paused',
-    currentTab: 'Logs' | null = null
-  ) => {
+  const mountWithStatus = (status: 'Running' | 'Stopped' | 'Paused') => {
     const name = nextPipelineName()
     mountTarget = document.createElement('div')
-    mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
+    mountTarget.style.cssText =
+      'height: 800px; width: 1200px; display: flex; flex-direction: column;'
     document.body.appendChild(mountTarget)
-    const view = render(MonitoringPanel, {
+    mounted = render(MonitoringPanel, {
       target: mountTarget,
       props: {
         pipeline: pipelineProp(name, status),
         metrics: metricsWithConnectors(),
         deleted: false,
         hiddenTabs: [],
-        currentTab
+        currentTab: null
       }
     } as any)
-    mounted = view
-    return { name, view }
   }
 
   it('opens Runtime when the pipeline has live stats', async () => {
     const name = nextPipelineName()
     localStorage.setItem(`pipelines/${name}/currentMonitoringTab`, JSON.stringify('Errors'))
     mountTarget = document.createElement('div')
-    mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
+    mountTarget.style.cssText =
+      'height: 800px; width: 1200px; display: flex; flex-direction: column;'
     document.body.appendChild(mountTarget)
     mounted = render(MonitoringPanel, {
       target: mountTarget,
@@ -491,29 +485,6 @@ describe('MonitoringPanel — tab opened with a pipeline', () => {
   it('opens Compiler when the pipeline is stopped', async () => {
     mountWithStatus('Stopped')
     await expect.poll(() => selectedTabText()).toContain('Compiler')
-  })
-
-  it('keeps a tab the caller already selected', async () => {
-    pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
-    mountWithStatus('Running', 'Logs')
-    await expectRowMounted(0)
-    expect(selectedTabText()).toContain('Logs')
-  })
-
-  it('picks again when another pipeline is opened', async () => {
-    const { view } = mountWithStatus('Stopped')
-    await expect.poll(() => selectedTabText()).toContain('Compiler')
-
-    await view.rerender({
-      pipeline: pipelineProp('other-pipeline', 'Running'),
-      metrics: metricsWithConnectors(),
-      deleted: false,
-      hiddenTabs: [],
-      // Leftover selection from the pipeline that was just open.
-      currentTab: 'Errors'
-    })
-
-    await expect.poll(() => selectedTabText()).toContain('Runtime')
   })
 })
 
