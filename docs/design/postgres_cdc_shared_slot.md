@@ -301,8 +301,11 @@ Branch `issue-7413`, on top of the plan commits. Each commit passes the CDC suit
 | 3 | `9a7b3168a` `PublicationKey` | Per-table id pinned by a unit test; per-publication key refuses an unnamed pipeline. |
 | 4a | `c73488a6c` `SharedCdcPipeline` | Owns the worker; one member per key, behavior unchanged. |
 | 4b | `309930d64` shared slot | Flag `dev_tweaks.shared_cdc_slot`; `DispatchingDestination` routes by table; `AckFanIn`; settings check against the first joined member (the first version compared with the creator's settings, and the mismatch test caught it); integration tests in `test/cdc_shared.rs`. A join while etl runs is refused until step 5. |
-| 5 | `dee6b524b` restart on membership change | Leave, late join and a member's table error all restart etl for the members that remain, after the restart grace (`RESTART_GRACE_MS`, 0 in tests). Per-member high-water mark. `ETL_STARTS` counts starts for tests. Two findings while implementing, see the rows "Replay after a restart" and "Restart waits for open copies". The slot budget is still open. |
-| 6 to 8 | open | |
+| 5 | `dee6b524b` restart on membership change | Leave, late join and a member's table error all restart etl for the members that remain, after the restart grace (`RESTART_GRACE_MS`, 0 in tests). Per-member high-water mark. `ETL_STARTS` counts starts for tests. Two findings while implementing, see the rows "Replay after a restart" and "Restart waits for open copies". Slot budget: `copy_worker_budget` sizes the copy workers from `max_replication_slots` and the slots that are not this pipeline's; the acceptance test runs 6 tables on the 4 slots of the CI image. |
+| 6 | not needed | The per-member monitors run under the shared worker; a monitor that speaks makes its member leave. |
+| 7 | not needed | A late join restarts etl; the `Ready -> Init` path stays an upstream option. |
+| 8 | next commit | Connector page section, changelog, rustdoc of the setting. |
+| open | | Legacy slot cleanup when the setting is turned on (the docs tell the user to drop the old slots). The FT two-member checkpoint test, the pause test, the two-Feldera-pipelines test, the journal replay test and the all-types member test of section 5 are not written yet. |
 
 ## 5. Tests
 

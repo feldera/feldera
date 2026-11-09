@@ -49,7 +49,9 @@ sets any of these fails to start.
 ### Batch configuration
 
 Controls how replication events are buffered into a batch before being
-flushed to Feldera.
+flushed to Feldera. With [one replication slot per
+publication](#one-replication-slot-per-publication), the setting applies to
+every connector of the publication, and all of them must set the same values.
 
 | Property              | Type    | Default | Description                                                                                                                                            |
 |-----------------------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -60,12 +62,41 @@ flushed to Feldera.
 ### Memory backpressure configuration
 
 Controls when the connector pauses reading further replication events to
-avoid exceeding available memory.
+avoid exceeding available memory. With [one replication slot per
+publication](#one-replication-slot-per-publication), the setting applies to
+every connector of the publication, and all of them must set the same values.
 
 | Property             | Type  | Default | Description                                                                                                         |
 |----------------------|-------|---------|---------------------------------------------------------------------------------------------------------------------|
 | `activate_threshold` | float | 0.85    | Memory usage ratio, in `(0.0, 1.0]`, above which backpressure is activated.                                         |
 | `resume_threshold`   | float | 0.75    | Memory usage ratio, in `[0.0, 1.0)`, below which backpressure is released. Must be lower than `activate_threshold`. |
+
+### One replication slot per publication
+
+By default each connector runs its own replication pipeline with its own
+replication slot, and each slot decodes the full write-ahead log of the
+database. A pipeline that reads many tables then needs as many slots, and
+PostgreSQL allows `max_replication_slots` of them, 10 by default.
+
+With `shared_cdc_slot` set in the `dev_tweaks` of the pipeline, the connectors
+of the pipeline that read the same publication of the same database share one
+replication pipeline and one slot:
+
+```json
+"dev_tweaks": { "shared_cdc_slot": true }
+```
+
+| Aspect | With `shared_cdc_slot` |
+| --- | --- |
+| Slots | One apply slot per publication, plus up to 4 transient slots while tables are read for the first time. The connector counts the free slots at start and uses fewer copy slots when fewer are free. A database with no free slot fails the start with an error that says so. |
+| Settings that must agree | The connectors of one publication must use the same `uri` user, TLS settings, `run_source_migrations`, `batch` and `memory_backpressure`. They configure the whole replication pipeline. A connector that differs fails the start with an error that names both connectors and the setting. |
+| Pause | The changes of a publication arrive as one ordered stream, so a paused connector pauses the stream for every table of the publication, and one Feldera table under backpressure slows every table of the publication. |
+| Connect and disconnect while the pipeline runs | The replication pipeline stops and starts again for the connectors that remain. A disconnected table is no longer read. A connector that connects later reads its table again from a snapshot; its connect call returns once the pipeline runs again, which waits for a first read of another table that is in progress. |
+| Multihost pipelines | Each host has its own slot. |
+| Turning the setting on or off | The slots get other names, so every table is read again from a snapshot at the next start. The slots with the old names stay in PostgreSQL and retain the write-ahead log; drop them with `SELECT pg_drop_replication_slot(slot_name)` once the pipeline runs with the new ones. |
+
+The setting is off by default. The `dev_tweaks` settings can change between
+releases.
 
 ## PostgreSQL setup
 
