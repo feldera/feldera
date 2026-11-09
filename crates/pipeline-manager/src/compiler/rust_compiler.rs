@@ -3056,7 +3056,6 @@ mod test {
         );
     }
 
-    /// Tests the binary delivery mode configuration.
     /// A program has the same prebuilt binary key in every pipeline and every compilation,
     /// and a different program has a different key.
     #[test]
@@ -3202,6 +3201,7 @@ mod test {
         assert_eq!(find_prebuilt_binary(&config, "abc123").await, None);
     }
 
+    /// Tests the binary delivery mode configuration.
     #[tokio::test]
     async fn binary_delivery_mode_from_config() {
         use crate::compiler::rust_compiler::FileDeliveryMode;

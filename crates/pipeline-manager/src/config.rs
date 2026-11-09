@@ -2019,9 +2019,10 @@ pub struct CompilerConfig {
     pub precompile: bool,
 
     /// Directory of pipeline binaries built ahead of time, each named by the
-    /// source checksum of the program it was built from.
+    /// prebuilt binary key of the program it was built from: a checksum of
+    /// the program that does not depend on the pipeline.
     ///
-    /// A Rust compilation whose source checksum names a file in this directory
+    /// A Rust compilation whose prebuilt binary key names a file in this directory
     /// delivers that file instead of running `cargo`. Environments that cannot
     /// compile at runtime (no network, little CPU) can thus still run a fixed
     /// set of programs.
