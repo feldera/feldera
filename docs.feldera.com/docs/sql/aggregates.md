@@ -425,6 +425,10 @@ SELECT * FROM (
 WHERE rn < 3
 ```
 
+`SELECT DISTINCT ON` is implemented as a TopK pattern with a limit of 1:
+`ROW_NUMBER` partitioned by the `DISTINCT ON` expressions and ordered by
+the `ORDER BY` clause, keeping the rows numbered 1.
+
 Window aggregation functions involving `ROWS BETWEEN` are implemented
 behind the scenes by computing `ROW_NUMBER` for each `PARTITION BY`
 group, so they inherit the cost of `ROW_NUMBER` as described above.

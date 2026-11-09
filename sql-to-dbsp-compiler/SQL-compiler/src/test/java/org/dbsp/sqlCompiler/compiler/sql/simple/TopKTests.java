@@ -9,6 +9,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.Map;
+
 public class TopKTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
@@ -402,5 +404,79 @@ public class TopKTests extends SqlIoTest {
             // No ties within any partition, so the three functions agree
             this.qst(paramQuery.replace("?", function));
         }
+    }
+
+    /** DISTINCT ON at the top level, in a CTE whose ORDER BY columns are not selected,
+     * and with an OFFSET and a LIMIT that depend on the ORDER BY */
+    @Test
+    public void distinctOn() {
+        // Validated on Postgres
+        this.qst("""
+                SELECT DISTINCT ON (DocumentId) DocumentId, Status, DateCreated
+                FROM DocumentStatusLog
+                ORDER BY DocumentId, DateCreated DESC;
+                 DocumentId | Status | DateCreated
+                -----------------------------------
+                 1          | S1     | 2011-09-02
+                 2          | S3     | 2011-08-01
+                 3          | S1     | 2011-08-02
+                (3 rows)
+
+                WITH latest AS (
+                    SELECT DISTINCT ON (DocumentId) Status
+                    FROM DocumentStatusLog
+                    ORDER BY DocumentId, DateCreated DESC)
+                SELECT Status, COUNT(*) AS c FROM latest GROUP BY Status;
+                 Status | c
+                ------------
+                 S1     | 2
+                 S3     | 1
+                (2 rows)
+
+                SELECT DISTINCT ON (DocumentId) DocumentId, Status, DateCreated
+                FROM DocumentStatusLog
+                ORDER BY DocumentId DESC, DateCreated
+                LIMIT 1 OFFSET 1;
+                 DocumentId | Status | DateCreated
+                -----------------------------------
+                 2          | S1     | 2011-07-28
+                (1 row)""");
+    }
+
+    /** NULL values sort first in ascending order and last in descending order, and their
+     * position decides which row DISTINCT ON keeps; NULL keys form one group */
+    @Test
+    public void distinctOnNulls() {
+        var ccs = this.getCCS("""
+                CREATE TABLE raw(id INT, ver INT, v INT);
+                CREATE VIEW asc_ver AS SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver;
+                CREATE VIEW desc_ver AS SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC;
+                CREATE VIEW desc_nulls_first AS
+                SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC NULLS FIRST;""");
+        // Validated on Postgres, with the NULL placement written explicitly
+        ccs.stepMultiView("""
+                INSERT INTO raw VALUES (1, NULL, 10), (1, 2, 20), (2, 1, 30), (2, 3, 40), (3, NULL, 70),
+                (NULL, 1, 50), (NULL, 2, 60);""", Map.of(
+                "asc_ver", """
+                 id | ver | v  | weight
+                -----------------------
+                 1  |     | 10 | 1
+                 2  | 1   | 30 | 1
+                 3  |     | 70 | 1
+                    | 1   | 50 | 1""",
+                "desc_ver", """
+                 id | ver | v  | weight
+                -----------------------
+                 1  | 2   | 20 | 1
+                 2  | 3   | 40 | 1
+                 3  |     | 70 | 1
+                    | 2   | 60 | 1""",
+                "desc_nulls_first", """
+                 id | ver | v  | weight
+                -----------------------
+                 1  |     | 10 | 1
+                 2  | 3   | 40 | 1
+                 3  |     | 70 | 1
+                    | 2   | 60 | 1"""));
     }
 }

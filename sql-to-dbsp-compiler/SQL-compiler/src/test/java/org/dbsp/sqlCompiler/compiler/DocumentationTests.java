@@ -23,7 +23,6 @@ public class DocumentationTests {
             RejectUnsupportedPlans.DISTINCT_WINDOW_DOCUMENTATION,
             RejectUnsupportedPlans.WITHIN_DISTINCT_DOCUMENTATION,
             SqlToRelCompiler.RECURSION_DOCUMENTATION,
-            DBSPCompiler.DISTINCT_ON_DOCUMENTATION,
             RewriteNow.NOW_DOCUMENTATION,
             StubsWriter.UDF_DOCUMENTATION,
             FindUnboundedState.DOCUMENTATION);

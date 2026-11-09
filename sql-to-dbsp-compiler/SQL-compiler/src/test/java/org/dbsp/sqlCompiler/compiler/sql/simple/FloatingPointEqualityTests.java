@@ -138,6 +138,18 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
         this.assertNoWarnings("CREATE VIEW V AS SELECT DISTINCT i FROM T;");
     }
 
+    /** DISTINCT ON compares its keys, not the selected columns */
+    @Test
+    public void distinctOn() {
+        this.assertWarnings("CREATE VIEW V AS SELECT DISTINCT ON (x) x, i FROM T ORDER BY x, i;",
+                "3:38: warning: Floating point equality: 'DISTINCT ON' " + DOUBLE);
+        this.assertWarnings("CREATE VIEW V AS SELECT DISTINCT ON (i, x + 1) i FROM T ORDER BY i, x + 1;",
+                "3:41: warning: Floating point equality: 'DISTINCT ON' " + DOUBLE);
+        this.assertWarnings("CREATE VIEW V AS SELECT DISTINCT ON (k) x AS k FROM T ORDER BY k;",
+                "3:38: warning: Floating point equality: 'DISTINCT ON' " + DOUBLE);
+        this.assertNoWarnings("CREATE VIEW V AS SELECT DISTINCT ON (i) x, y FROM T ORDER BY i, x;");
+    }
+
     @Test
     public void aggregates() {
         this.assertWarnings("CREATE VIEW V AS SELECT COUNT(DISTINCT x) FROM T;",

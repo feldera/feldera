@@ -334,7 +334,7 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ hintComment ] [ ALL | DISTINCT ] { * | projectItem [, projectItem ]* [ , ] }
+  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { * | projectItem [, projectItem ]* [ , ] }
       FROM tableExpression
       [ WHERE booleanExpression ]
       [ GROUP BY { ALL | [ ALL | DISTINCT ] { groupItem [, groupItem ]* } } ]
@@ -343,6 +343,26 @@ select
 ```
 
 The list of `projectItem`s may end with a comma.
+
+`DISTINCT ON` is a PostgreSQL extension of the SQL standard.  It
+allows you to eliminate duplicate rows based on specified expressions,
+keeping the first row in each group as determined by the `ORDER BY`
+clause. When using `DISTINCT ON`, the query must have an `ORDER BY`
+clause, and the expressions in the `DISTINCT ON` clause must be the
+first expressions of the `ORDER BY` clause, in the same order.  If two
+or more rows of a group are first in this order, the query keeps only
+one of them.  For example, the following query keeps the latest
+version of each `id`:
+
+```sql
+SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC;
+```
+
+The position of `NULL` values in the [order](#order) decides which
+row is kept.  In the query above, a row whose `ver` is `NULL` is kept
+only when every row with the same `id` has a `NULL` `ver`.  With
+`ORDER BY id, ver DESC NULLS FIRST`, the query keeps a row whose `ver`
+is `NULL` whenever its `id` has one.
 
 `GROUP BY ALL` without any groupItem specified groups by every
 expression in the `SELECT` clause that is not an aggregate function.
@@ -386,6 +406,11 @@ selectWithReplace
 orderItem
   :   expression [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ]
 ```
+
+Without `NULLS FIRST` or `NULLS LAST`, `NULL` values sort before all
+other values in ascending order (`ASC`), and after all other values in
+descending order (`DESC`).  This also applies to the `ORDER BY` of a
+window.
 
 `ORDER BY ALL` will order on all expressions of the `SELECT`
 statement, in the order they appear.  E.g., `SELECT x, y FROM t ORDER

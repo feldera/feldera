@@ -300,13 +300,26 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
-    public void distinctOnTest() {
-        // The newline checks that nothing follows the URL
+    public void distinctOnWithoutOrderBy() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE raw(id INT, ver INT, v INT);
-                CREATE VIEW v AS SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC;""", """
-                2:18: error: Not supported: SELECT DISTINCT ON is not supported.
-                See https://docs.feldera.com/sql/unsupported-operations#select-distinct-on
-                """);
+                CREATE VIEW v AS SELECT DISTINCT ON (id) id, ver, v FROM raw;""",
+                "SELECT DISTINCT ON requires an ORDER BY clause");
+    }
+
+    @Test
+    public void distinctOnOrderByMismatch() {
+        // The keys are the first ORDER BY expressions, but in another order
+        this.statementsFailingInCompilation("""
+                CREATE TABLE raw(id INT, ver INT, v INT);
+                CREATE VIEW v AS SELECT DISTINCT ON (id, ver) id, ver, v FROM raw ORDER BY ver, id, v;""",
+                "2:76: error: Compilation error: The DISTINCT ON expressions must be the first ORDER BY expressions, " +
+                        "written the same way and in the same order");
+        // An ORDER BY position does not match a column name
+        this.statementsFailingInCompilation("""
+                CREATE TABLE raw(id INT, ver INT, v INT);
+                CREATE VIEW v AS SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY 1, 2;""",
+                "2:71: error: Compilation error: The DISTINCT ON expressions must be the first ORDER BY expressions, " +
+                        "written the same way and in the same order");
     }
 }
