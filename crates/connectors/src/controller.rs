@@ -10641,6 +10641,26 @@ impl OutputProbe {
             controller,
         }
     }
+
+    /// Reports an error from the endpoint, unless the pipeline is shutting
+    /// down.  An endpoint that a shutdown cuts short fails its current
+    /// batch, which is not an endpoint fault: see `push_batch_to_encoder`.
+    fn endpoint_error(&self, error: AnyError, tag: &str) {
+        if self.controller.shutdown_token().is_cancelled() {
+            debug!(
+                "{}: endpoint gave up on the shutdown: {error}",
+                self.endpoint_name
+            );
+        } else {
+            self.controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                false,
+                error,
+                Some(tag),
+            );
+        }
+    }
 }
 
 impl OutputConsumer for OutputProbe {
@@ -10652,13 +10672,7 @@ impl OutputConsumer for OutputProbe {
         self.endpoint
             .batch_start(step, batch_type)
             .unwrap_or_else(|e| {
-                self.controller.output_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    false,
-                    e,
-                    Some("outprobe_batch_start"),
-                );
+                self.endpoint_error(e, "outprobe_batch_start");
             })
     }
 
@@ -10676,13 +10690,7 @@ impl OutputConsumer for OutputProbe {
                     .output_buffer(self.endpoint_id, num_bytes, num_records);
             }
             Err(error) => {
-                self.controller.output_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    false,
-                    error,
-                    Some("outprobe_push_buf"),
-                );
+                self.endpoint_error(error, "outprobe_push_buf");
             }
         }
     }
@@ -10704,26 +10712,14 @@ impl OutputConsumer for OutputProbe {
                     .output_buffer(self.endpoint_id, num_bytes, num_records);
             }
             Err(error) => {
-                self.controller.output_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    false,
-                    error,
-                    Some("outprobe_push_key"),
-                );
+                self.endpoint_error(error, "outprobe_push_key");
             }
         }
     }
 
     fn batch_end(&mut self) {
         self.endpoint.batch_end().unwrap_or_else(|e| {
-            self.controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                false,
-                e,
-                Some("outprobe_batch_end"),
-            );
+            self.endpoint_error(e, "outprobe_batch_end");
         })
     }
 

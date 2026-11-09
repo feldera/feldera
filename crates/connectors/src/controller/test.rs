@@ -5084,6 +5084,129 @@ pub fn output_endpoint_callbacks_reach_status_and_metrics(engine: &dyn PipelineT
     callbacks.error(false, anyhow!("error after stop"), Some("after-stop"));
 }
 
+/// An output endpoint whose first `batch_end` waits until the test releases
+/// it and then fails, as a sink does when a shutdown ends its wait.
+struct ShutdownFailingOutputEndpoint {
+    entered: mpsc::Sender<()>,
+    release: mpsc::Receiver<()>,
+    waited: bool,
+}
+
+impl OutputEndpoint for ShutdownFailingOutputEndpoint {
+    fn connect(
+        &mut self,
+        _callbacks: Arc<dyn OutputEndpointCallbacks>,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
+    fn push_buffer(&mut self, _buffer: &[u8]) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> Result<(), anyhow::Error> {
+        unreachable!("the test uses a format that pushes buffers, not keys")
+    }
+
+    fn batch_end(&mut self) -> Result<(), anyhow::Error> {
+        if self.waited {
+            return Ok(());
+        }
+        self.waited = true;
+        self.entered.send(()).unwrap();
+        self.release.recv().unwrap();
+        Err(anyhow!(
+            "gave up waiting because the pipeline is shutting down"
+        ))
+    }
+
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+/// An output endpoint error that a shutdown causes is not reported as an
+/// endpoint error.
+#[engine_test]
+pub fn output_endpoint_error_at_shutdown_is_not_reported(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(move |e, tag| errors_clone.lock().unwrap().push((e.to_string(), tag))),
+        )
+        .unwrap();
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let endpoint_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": { "name": "null_output" },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    controller
+        .add_output_endpoint(
+            "test_output1",
+            &endpoint_config,
+            Box::new(ShutdownFailingOutputEndpoint {
+                entered: entered_tx,
+                release: release_rx,
+                waited: false,
+            }),
+            None,
+        )
+        .unwrap();
+
+    controller.start();
+    append_input(&input_path, 0..10);
+    entered_rx
+        .recv_timeout(Duration::from_millis(default_timeout_ms()))
+        .unwrap();
+
+    // Fail `batch_end` only after the stop has begun.
+    controller.initiate_stop();
+    release_tx.send(()).unwrap();
+    controller.stop().unwrap();
+
+    let errors = errors.lock().unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
 /// The UUIDs in the checkpoint catalog, oldest first, or an empty list if the
 /// catalog does not exist yet.
 fn published_checkpoints(engine: &dyn PipelineTestEngine, config: &PipelineConfig) -> Vec<Uuid> {
