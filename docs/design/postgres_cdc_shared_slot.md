@@ -289,6 +289,20 @@ One commit per row. Each commit body says why.
 
 Steps 1 and 2 are independent and can be separate PRs.
 
+### 4.1 Status
+
+Branch `issue-7413`, on top of the plan commits. Each commit passes the CDC suite against `debezium/postgres:15` (49 tests, 18 ignored) plus the tests it adds.
+
+| Step | Commit | Notes |
+| --- | --- | --- |
+| 1 | `d7689c28c` split into `cdc/` | Pure move, checked by a line-multiset comparison. |
+| 2 | `0d1ff79e2` `ConnectorRegistry` | `initial_connect_done()`, `shutdown()`, `accepts_members()` (a winding-down object is replaced). |
+| 3 | `9a7b3168a` `PublicationKey` | Per-table id pinned by a unit test; per-publication key refuses an unnamed pipeline. |
+| 4a | `c73488a6c` `SharedCdcPipeline` | Owns the worker; one member per key, behavior unchanged. |
+| 4b | `309930d64` shared slot | Flag `dev_tweaks.shared_cdc_slot`; `DispatchingDestination` routes by table; `AckFanIn`; settings check against the first joined member (the first version compared with the creator's settings, and the mismatch test caught it); integration tests in `test/cdc_shared.rs`. A join while etl runs is refused until step 5. |
+| 5 | open | Leave and late join with restart, high-water mark, `shutdown()` wiring is done in step 2, slot budget. A member's table error still stops etl for every member. |
+| 6 to 8 | open | |
+
 ## 5. Tests
 
 Integration tests use `#[engine_test(serial, services(Postgres))]` in `test.rs`, `test/cdc_scenarios.rs` and `test/cdc_privileges.rs`. CI runs them against `debezium/postgres:15` (`.github/workflows/test-adapters.yml:43`, `POSTGRES_URL` at `:215`). These helpers rebuild the id from `(url, publication, table)` and must use `PublicationKey`: `drop_replication_slots` (`test.rs:3035`), `wait_for_slots_released` (`test.rs:3609`), `slot_token` (`test/cdc_scenarios.rs:1297`). These tests describe per-table slots and change with the flag on: `replication_slots_survive_restart` (`:1125`), `other_tables_in_publication_are_filtered` (`:1169`), `etl_state_lives_in_source_database` (`:892`). Run them with the flag off and with it on.
