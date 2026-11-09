@@ -508,6 +508,11 @@ impl KafkaFtInputReaderInner {
         self.kafka_consumer
             .assign(&assignment)
             .map_err(|error| self.refine_error(error).1)?;
+        #[cfg(any(test, feature = "testing"))]
+        if DELAY_SPLIT.lock().unwrap().contains(topic) {
+            // Let librdkafka fetch into the main queue before the split.
+            thread::sleep(Duration::from_secs(2));
+        }
 
         // Prepare to launch threads.
         let exit = Arc::new(AtomicBool::new(false));
@@ -587,6 +592,10 @@ impl KafkaFtInputReaderInner {
                     }
                 }
                 Ok(message) => {
+                    #[cfg(any(test, feature = "testing"))]
+                    {
+                        *DRAINED.lock().unwrap().entry(topic.clone()).or_default() += 1;
+                    }
                     let partition = message.partition();
                     let receiver = receivers.get_mut(&partition).ok_or_else(|| {
                         anyhow!("received message for nonexistent partition {partition}")
@@ -699,11 +708,14 @@ impl KafkaFtInputReaderInner {
             ) -> Self {
                 Self {
                     buffers: VecDeque::new(),
+                    // Not `next_offset`: messages drained from the main queue
+                    // can be waiting unread, and a step queued before they are
+                    // read must not resume past them.
                     offsets: receivers
                         .values()
                         .map(|r| {
-                            let next_offset = r.next_offset();
-                            next_offset..next_offset
+                            let offset = r.first_unread_offset();
+                            offset..offset
                         })
                         .collect(),
                     hasher: hashing.then(|| KafkaFtHasher::new(partitions)),
@@ -1225,6 +1237,17 @@ impl Metadata {
 #[cfg(any(test, feature = "testing"))]
 pub static BACKPRESSURE: Mutex<BTreeSet<(String, i32)>> = Mutex::new(BTreeSet::new());
 
+/// For testing purposes, topics whose readers wait between assigning their
+/// partitions and splitting their queues, so that messages reach the main
+/// queue.
+#[cfg(any(test, feature = "testing"))]
+pub static DELAY_SPLIT: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// For testing purposes, the number of messages drained from the main queue,
+/// per topic.
+#[cfg(any(test, feature = "testing"))]
+pub static DRAINED: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
+
 #[cfg(any(test, feature = "testing"))]
 fn update_backpressure(topic: &str, partition: i32, has_backpressure: bool) {
     let mut backpressure = BACKPRESSURE.lock().unwrap();
@@ -1368,6 +1391,15 @@ impl PartitionReceiver {
 
     fn next_offset(&self) -> i64 {
         self.next_offset.load(Ordering::Relaxed)
+    }
+
+    /// Returns the offset of the first message received but not yet read, or
+    /// `next_offset` if there is none.
+    fn first_unread_offset(&self) -> i64 {
+        let messages = self.messages.lock().unwrap();
+        messages
+            .first_key_value()
+            .map_or_else(|| self.next_offset(), |(offset, _)| *offset)
     }
 
     /// Returns `true` if `message` satisfies the configured header filter, or if
