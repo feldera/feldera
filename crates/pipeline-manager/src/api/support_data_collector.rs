@@ -256,6 +256,44 @@ fn gz_decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(decompressed)
 }
 
+/// A gzip member, split into the parts that a deflated ZIP entry holds.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct GzipMember<'a> {
+    /// The raw deflate stream.
+    pub deflate: &'a [u8],
+    /// CRC-32 of the uncompressed data.
+    pub crc32: u32,
+    /// Size of the uncompressed data, modulo 2^32.
+    pub size: u32,
+}
+
+/// Splits `data` into its deflate stream and trailer, if `data` is a gzip
+/// member with the 10-byte header without flags that `gz_compress` writes.
+fn gzip_member(data: &[u8]) -> Option<GzipMember<'_>> {
+    const HEADER: usize = 10;
+    const TRAILER: usize = 8;
+    // ID1, ID2, deflate method, no flags.
+    if data.len() < HEADER + TRAILER || data[..4] != [0x1f, 0x8b, 8, 0] {
+        return None;
+    }
+    let (rest, trailer) = data.split_at(data.len() - TRAILER);
+    let (crc32, size) = trailer.split_at(4);
+    Some(GzipMember {
+        deflate: &rest[HEADER..],
+        crc32: u32::from_le_bytes(crc32.try_into().ok()?),
+        size: u32::from_le_bytes(size.try_into().ok()?),
+    })
+}
+
+/// The data of one file in a support bundle.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ZipContent<'a> {
+    /// Bytes that the ZIP writer stores with the given method.
+    Bytes(&'a [u8], zip::CompressionMethod),
+    /// A gzip member whose deflate stream becomes the file's data unchanged.
+    Gzip(GzipMember<'a>),
+}
+
 /// A `Content-Encoding` the collector accepts from a pipeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TransportEncoding {
@@ -792,18 +830,15 @@ impl SupportBundleData {
     }
 
     /// Adds this collection's files to a bundle. `add_to_zip` receives the file
-    /// name, its bytes, and how to store them: items that are already
-    /// compressed (gzip, zip) are stored verbatim, everything else deflated.
+    /// name and its data: items that are already compressed (gzip, zip) are
+    /// stored verbatim, everything else deflated.
     #[allow(clippy::type_complexity)]
     pub(crate) async fn push_to_zip(
         &self,
-        add_to_zip: &mut dyn FnMut(
-            &str,
-            &[u8],
-            zip::CompressionMethod,
-        ) -> Result<(), Box<dyn std::error::Error>>,
+        add_to_zip: &mut dyn FnMut(&str, ZipContent<'_>) -> Result<(), Box<dyn std::error::Error>>,
         params: &SupportBundleParameters,
     ) -> Result<CollectionSummary, Box<dyn std::error::Error>> {
+        use ZipContent::{Bytes, Gzip};
         use zip::CompressionMethod::{Deflated, Stored};
 
         let mut summary = CollectionSummary::default();
@@ -812,7 +847,7 @@ impl SupportBundleData {
         if params.circuit_profile {
             match &self.circuit_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("circuit_profile.zip", content, Stored);
+                    let _ = add_to_zip("circuit_profile.zip", Bytes(content, Stored));
                     summary.collected("circuit_profile.zip");
                 }
                 Err(e) => {
@@ -826,7 +861,7 @@ impl SupportBundleData {
                 // which the bundle carries unchanged: a large profile is never
                 // inflated on the manager.
                 Ok(content) if self.version >= 4 => {
-                    let _ = add_to_zip("circuit_profile.json.gz", content, Stored);
+                    let _ = add_to_zip("circuit_profile.json.gz", Bytes(content, Stored));
                     summary.collected("circuit_profile.json.gz");
                 }
                 // Older versions hold a zip with `profile.json` inside.
@@ -834,7 +869,7 @@ impl SupportBundleData {
                     gz_compress(json).map_err(|e| format!("Failed to compress: {e}"))
                 }) {
                     Ok(gz) => {
-                        let _ = add_to_zip("circuit_profile.json.gz", &gz, Stored);
+                        let _ = add_to_zip("circuit_profile.json.gz", Bytes(&gz, Stored));
                         summary.collected("circuit_profile.json.gz");
                     }
                     Err(reason) => summary.failed("circuit_profile.json.gz", reason),
@@ -854,7 +889,7 @@ impl SupportBundleData {
         if params.heap_profile {
             match &self.heap_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("heap_profile.pb.gz", content, Stored);
+                    let _ = add_to_zip("heap_profile.pb.gz", Bytes(content, Stored));
                     summary.collected("heap_profile.pb.gz");
                 }
                 Err(e) => {
@@ -871,7 +906,7 @@ impl SupportBundleData {
         if params.metrics {
             match &self.metrics {
                 Ok(content) => {
-                    let _ = add_to_zip("metrics.txt", content, Deflated);
+                    let _ = add_to_zip("metrics.txt", Bytes(content, Deflated));
                     summary.collected("metrics.txt");
                 }
                 Err(e) => {
@@ -888,7 +923,7 @@ impl SupportBundleData {
         if params.logs {
             match &self.logs {
                 Ok(content) => {
-                    let _ = add_to_zip("logs.txt", content.as_bytes(), Deflated);
+                    let _ = add_to_zip("logs.txt", Bytes(content.as_bytes(), Deflated));
                     summary.collected("logs.txt");
                 }
                 Err(e) => {
@@ -905,7 +940,7 @@ impl SupportBundleData {
         if params.stats {
             match &self.stats {
                 Ok(content) => {
-                    let _ = add_to_zip("stats.json", content, Deflated);
+                    let _ = add_to_zip("stats.json", Bytes(content, Deflated));
                     summary.collected("stats.json");
                 }
                 Err(e) => {
@@ -921,27 +956,28 @@ impl SupportBundleData {
         // Add pipeline config
         if params.pipeline_config {
             match &self.pipeline_config {
-                Ok(content) => {
-                    // For version <= 4, the field is stored as gzip compressed JSON
-                    // For version > 0 it needs to be decompressed
-                    if self.version > 0 {
-                        match gz_decompress(content) {
-                            Ok(decompressed) => {
-                                let _ = add_to_zip("pipeline_config.json", &decompressed, Deflated);
-                                summary.collected("pipeline_config.json");
-                            }
-                            Err(e) => {
-                                summary.failed(
-                                    "pipeline_config.json",
-                                    format!("Failed to decompress: {}", e),
-                                );
-                            }
-                        }
-                    } else {
-                        let _ = add_to_zip("pipeline_config.json.gz", content, Stored);
-                        summary.collected("pipeline_config.json.gz");
-                    }
+                // The field holds gzip-compressed JSON, which version 0 bundles
+                // carry as it is.
+                Ok(content) if self.version == 0 => {
+                    let _ = add_to_zip("pipeline_config.json.gz", Bytes(content, Stored));
+                    summary.collected("pipeline_config.json.gz");
                 }
+                // Later versions carry the JSON: the stored deflate stream when
+                // possible, else the decompressed JSON, deflated again.
+                Ok(content) => match gzip_member(content) {
+                    Some(member) => {
+                        let _ = add_to_zip("pipeline_config.json", Gzip(member));
+                        summary.collected("pipeline_config.json");
+                    }
+                    None => match gz_decompress(content) {
+                        Ok(config) => {
+                            let _ = add_to_zip("pipeline_config.json", Bytes(&config, Deflated));
+                            summary.collected("pipeline_config.json");
+                        }
+                        Err(e) => summary
+                            .failed("pipeline_config.json", format!("Failed to decompress: {e}")),
+                    },
+                },
                 Err(e) => {
                     if e != SKIPPED_BY_USER {
                         let name = if self.version > 0 {
@@ -961,7 +997,7 @@ impl SupportBundleData {
         if params.system_config {
             match &self.system_config {
                 Ok(content) => {
-                    let _ = add_to_zip("system_config.json", content, Deflated);
+                    let _ = add_to_zip("system_config.json", Bytes(content, Deflated));
                     summary.collected("system_config.json");
                 }
                 Err(e) => {
@@ -978,7 +1014,7 @@ impl SupportBundleData {
         if params.dataflow_graph {
             match &self.dataflow_graph {
                 Ok(content) => {
-                    let _ = add_to_zip("dataflow_graph.json", content, Deflated);
+                    let _ = add_to_zip("dataflow_graph.json", Bytes(content, Deflated));
                     summary.collected("dataflow_graph.json");
                 }
                 Err(e) => {
@@ -997,7 +1033,7 @@ impl SupportBundleData {
         if params.pipeline_events {
             match &self.pipeline_events {
                 Ok(content) => {
-                    let _ = add_to_zip("pipeline_events.json", content, Deflated);
+                    let _ = add_to_zip("pipeline_events.json", Bytes(content, Deflated));
                     summary.collected("pipeline_events.json");
                 }
                 Err(e) => {
@@ -1713,6 +1749,22 @@ mod tests {
         assert!(error.contains("GET /slow"), "{error}");
     }
 
+    /// The bytes of a bundle file and how the ZIP writer stores them. A gzip
+    /// member is inflated, so that tests compare uncompressed data.
+    fn entry_data(content: ZipContent<'_>) -> (Vec<u8>, zip::CompressionMethod) {
+        match content {
+            ZipContent::Bytes(bytes, method) => (bytes.to_vec(), method),
+            ZipContent::Gzip(member) => {
+                use std::io::Read;
+                let mut data = Vec::new();
+                flate2::read::DeflateDecoder::new(member.deflate)
+                    .read_to_end(&mut data)
+                    .unwrap();
+                (data, zip::CompressionMethod::Deflated)
+            }
+        }
+    }
+
     /// Data collected before version 4 holds the JSON profile inside a zip;
     /// the bundle still carries it as `circuit_profile.json.gz`. A corrupt
     /// archive is reported properly.
@@ -1729,8 +1781,9 @@ mod tests {
 
         let params = SupportBundleParameters::default();
         let mut entries = Vec::new();
-        let mut add = |name: &str, content: &[u8], method: zip::CompressionMethod| {
-            entries.push((name.to_string(), content.to_vec(), method));
+        let mut add = |name: &str, content: ZipContent<'_>| {
+            let (content, method) = entry_data(content);
+            entries.push((name.to_string(), content, method));
             Ok(())
         };
 
@@ -1796,8 +1849,9 @@ mod tests {
 
         let summary = bundle_data
             .push_to_zip(
-                &mut |filename, content, method| {
-                    zip_entries.push((filename.to_string(), content.to_vec(), method));
+                &mut |filename, content| {
+                    let (content, method) = entry_data(content);
+                    zip_entries.push((filename.to_string(), content, method));
                     Ok(())
                 },
                 &all_enabled,
@@ -1841,8 +1895,9 @@ mod tests {
 
         let summary = bundle_data
             .push_to_zip(
-                &mut |filename, content, method| {
-                    zip_entries.push((filename.to_string(), content.to_vec(), method));
+                &mut |filename, content| {
+                    let (content, method) = entry_data(content);
+                    zip_entries.push((filename.to_string(), content, method));
                     Ok(())
                 },
                 &some_disabled,
