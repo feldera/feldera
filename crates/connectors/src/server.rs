@@ -1790,7 +1790,6 @@ where
         .service(time_series_stream)
         .service(metadata)
         .service(heap_profile)
-        .service(dump_profile)
         // Compressed when the client's `Accept-Encoding` admits it. `Compress` is
         // only used for profiles; the other live streams (`/egress`,
         // `/ingress`, `/time_series_stream`) are uncompressed, because gzip
@@ -3121,7 +3120,7 @@ pub mod test_http_helpers {
         (server, state_ret)
     }
 
-    /// Downloads both circuit profiles from a running pipeline.
+    /// Downloads the JSON circuit profile from a running pipeline.
     #[engine_test(requires(Profiles))]
     pub fn profiles_stream_from_running_pipeline(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
@@ -3176,19 +3175,6 @@ pub mod test_http_helpers {
                 workers
             );
             assert_eq!(gz_json["graph"], plain_json["graph"]);
-
-            // The dot profile is a zip with one `.dot` and `.txt` per worker plus a Makefile.
-            let mut dot = server.get("/dump_profile").send().await.unwrap();
-            assert_eq!(dot.status(), StatusCode::OK);
-            assert_eq!(
-                dot.headers().get("content-type").unwrap(),
-                "application/zip"
-            );
-            let dot_body = dot.body().limit(64 << 20).await.unwrap();
-            // Zip local headers carry entry names uncompressed, so they are visible as bytes.
-            assert!(dot_body.starts_with(b"PK\x03\x04"));
-            let contains = |name: &[u8]| dot_body.windows(name.len()).any(|w| w == name);
-            assert!(contains(b"0.dot") && contains(b"0.txt") && contains(b"Makefile"));
         })
     }
 
@@ -3821,33 +3807,6 @@ mod json_profile_body_tests {
         assert_eq!(body.try_next().await.unwrap(), Some(Bytes::from("{")));
         assert_eq!(body.try_next().await.unwrap_err().to_string(), "no profile");
     }
-}
-
-#[get("/dump_profile")]
-async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let profile = state.controller()?.async_graph_profile().await?;
-    // `ZipWriter` needs a synchronous `Write` sink, so the archive goes to an
-    // anonymous temporary file (removed when closed) and is streamed from there;
-    // memory consumption stays bounded.
-    let body = async_stream::try_stream! {
-        let file = spawn_blocking(move || -> std::io::Result<std::fs::File> {
-            let mut file = tempfile::tempfile()?;
-            profile.write_zip(&mut file)?;
-            std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))?;
-            Ok(file)
-        })
-        .await
-        .map_err(std::io::Error::other)??;
-        let mut chunks = tokio_util::io::ReaderStream::new(tokio::fs::File::from_std(file));
-        while let Some(chunk) = futures::StreamExt::next(&mut chunks).await {
-            yield chunk?;
-        }
-    };
-    Ok(HttpResponse::Ok()
-        .insert_header(header::ContentType("application/zip".parse().unwrap()))
-        .insert_header(header::ContentDisposition::attachment("profile.zip"))
-        .insert_header(header::ContentEncoding::Identity)
-        .streaming::<_, std::io::Error>(body))
 }
 
 /// Registered in [`build_app`] behind a `Compress` middleware, which negotiates

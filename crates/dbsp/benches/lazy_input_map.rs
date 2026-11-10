@@ -27,8 +27,7 @@
 //! `--presymbolicate` is worth its cost: without it the profile carries bare
 //! addresses until the front end resolves them, which makes it useless to
 //! anything but the front end.  `--samply-output` tells the run where that
-//! profile is going, so the summary it prints at the end names every profile
-//! the run produced, circuit and samply alike.
+//! profile is going, so the summary it prints at the end names it.
 //!
 //! `--stop-after ingest` keeps the recording to the steps that feed a
 //! transaction, with nothing after them.
@@ -369,10 +368,6 @@ struct Args {
     #[arg(long)]
     samply_output: Option<PathBuf>,
 
-    /// Where the per-stage circuit profiles are written.
-    #[arg(long, default_value = "profile")]
-    profile_dir: PathBuf,
-
     /// Where to write a jemalloc heap profile at the end of each stage, and
     /// after the first hundred rewriting transactions.  Needs a build with
     /// `--features heap-profile`.
@@ -430,9 +425,6 @@ struct Timing {
 
     transactions: Vec<Duration>,
 
-    /// Where each stage's circuit profile was written.
-    profiles: Vec<(String, PathBuf)>,
-
     /// The storage directory once the load has committed.
     loaded_bytes: u64,
 
@@ -471,13 +463,9 @@ impl Timing {
             self.report_transactions(batch);
         }
 
-        println!("  profiles:");
-        for (stage, path) in &self.profiles {
-            println!("    circuit[{stage}]: {}", path.display());
-        }
         match samply {
-            Some(path) => println!("    samply:          {}", path.display()),
-            None => println!("    samply:          not recorded (pass --samply-output)"),
+            Some(path) => println!("  samply: {}", path.display()),
+            None => println!("  samply: not recorded (pass --samply-output)"),
         }
     }
 
@@ -711,38 +699,21 @@ fn heap_profile(dir: Option<&Path>, stage: &str) -> Result<()> {
     }
 }
 
-/// Dumps the circuit's profile and returns the CPU seconds it has spent.
+/// Reports where the circuit's time went and returns the CPU seconds it has spent.
 ///
 /// The profile is cumulative, so a stage's own cost is the difference between
-/// the reading at its end and the one before it.  The dump is per worker, in
-/// graphviz, and carries the per-operator detail this total flattens away.
+/// the reading at its end and the one before it.
 ///
 /// # Arguments
 ///
 /// * `dbsp` - the circuit to profile, which must have its CPU profiler on.
-/// * `dir` - where to write the profile.
-/// * `stage` - names the profile, and so the point of the run it describes.
-/// * `written` - collects what was written, so the run can name it at the end.
+/// * `stage` - names the point of the run the profile describes.
 ///
 /// # Returns
 ///
 /// CPU seconds the circuit has spent since it started, which is cumulative rather than
 /// this stage's own.
-fn profile_stage(
-    dbsp: &mut DBSPHandle,
-    dir: &Path,
-    stage: &str,
-    written: &mut Vec<(String, PathBuf)>,
-) -> Result<f64> {
-    let into = dir.join(stage);
-    match dbsp.dump_profile(&into) {
-        Ok(path) => {
-            println!("  profile[{stage}] written to {}", path.display());
-            written.push((stage.to_string(), path));
-        }
-        Err(error) => println!("  profile[{stage}] could not be written: {error}"),
-    }
-
+fn profile_stage(dbsp: &mut DBSPHandle, stage: &str) -> Result<f64> {
     let profile = dbsp
         .retrieve_profile()
         .context("cannot retrieve the circuit profile")?;
@@ -1046,15 +1017,7 @@ where
                 Ok(handle)
             })
             .context("cannot build the circuit")?;
-            drive(
-                dbsp,
-                LazyWriter(handle),
-                args,
-                records,
-                temp.path(),
-                &args.profile_dir,
-                "lazy",
-            )
+            drive(dbsp, LazyWriter(handle), args, records, temp.path(), "lazy")
         }
         Map::Eager => {
             let (dbsp, handle) = Runtime::init_circuit(config, move |circuit: &mut RootCircuit| {
@@ -1069,7 +1032,6 @@ where
                 args,
                 records,
                 temp.path(),
-                &args.profile_dir,
                 "eager",
             )
         }
@@ -1217,7 +1179,6 @@ enum Load<V> {
 /// * `args` - the run's command line.
 /// * `records` - how many records the load writes.
 /// * `storage` - the circuit's storage directory, watched for its peak size.
-/// * `profile_dir` - where to write the profiles.
 /// * `stage_name` - names this map in what the run prints.
 ///
 /// # Returns
@@ -1229,11 +1190,9 @@ fn drive<V: Payload, W: Writer<V>>(
     args: &Args,
     records: u64,
     storage: &Path,
-    profile_dir: &Path,
     stage_name: &str,
 ) -> Result<Timing> {
     let disk = DiskWatch::start(storage.to_path_buf());
-    let mut profiles = Vec::new();
     let batches = records.div_ceil(args.load_batch as u64) as usize;
     if let Err(error) = dbsp.enable_cpu_profiler() {
         println!("  cpu profiling unavailable: {error}");
@@ -1279,12 +1238,7 @@ fn drive<V: Payload, W: Writer<V>>(
         }
     }
     let ingest = load_start.elapsed();
-    let ingest_cpu = profile_stage(
-        &mut dbsp,
-        profile_dir,
-        &format!("{stage_name}-ingest"),
-        &mut profiles,
-    )?;
+    let ingest_cpu = profile_stage(&mut dbsp, &format!("{stage_name}-ingest"))?;
     heap_profile(
         args.heap_profile_dir.as_deref(),
         &format!("{stage_name}-ingest"),
@@ -1308,7 +1262,6 @@ fn drive<V: Payload, W: Writer<V>>(
             commit_cpu: 0.0,
             transactions_cpu: 0.0,
             transactions: Vec::new(),
-            profiles,
             loaded_bytes: final_bytes,
             final_bytes,
             peak_bytes,
@@ -1319,12 +1272,7 @@ fn drive<V: Payload, W: Writer<V>>(
     dbsp.commit_transaction()
         .context("cannot commit the load")?;
     let commit = commit_start.elapsed();
-    let cumulative_cpu = profile_stage(
-        &mut dbsp,
-        profile_dir,
-        &format!("{stage_name}-commit"),
-        &mut profiles,
-    )?;
+    let cumulative_cpu = profile_stage(&mut dbsp, &format!("{stage_name}-commit"))?;
     let commit_cpu = cumulative_cpu - ingest_cpu;
     let loaded_bytes = dir_bytes(storage);
     heap_profile(
@@ -1355,7 +1303,6 @@ fn drive<V: Payload, W: Writer<V>>(
             commit_cpu,
             transactions_cpu: 0.0,
             transactions: Vec::new(),
-            profiles,
             loaded_bytes,
             final_bytes: loaded_bytes,
             peak_bytes,
@@ -1390,12 +1337,8 @@ fn drive<V: Payload, W: Writer<V>>(
     }
 
     // The run's last profile: what the whole thing cost, transactions included.
-    let transactions_cpu = profile_stage(
-        &mut dbsp,
-        profile_dir,
-        &format!("{stage_name}-final"),
-        &mut profiles,
-    )? - cumulative_cpu;
+    let transactions_cpu =
+        profile_stage(&mut dbsp, &format!("{stage_name}-final"))? - cumulative_cpu;
     println!("  transactions done, {transactions_cpu:.1} CPU-seconds");
     heap_profile(
         args.heap_profile_dir.as_deref(),
@@ -1415,7 +1358,6 @@ fn drive<V: Payload, W: Writer<V>>(
         commit_cpu,
         transactions_cpu,
         transactions,
-        profiles,
         loaded_bytes,
         final_bytes,
         peak_bytes,

@@ -535,11 +535,11 @@ def main():
 
             if profile:
                 response = requests.get(
-                    f"{api_url}/v0/pipelines/{full_name}/circuit_profile",
+                    f"{api_url}/v0/pipelines/{full_name}/circuit_json_profile",
                     headers=headers,
                 )
                 if response.status_code == 200:
-                    profile_file_name = full_name + ".zip"
+                    profile_file_name = full_name + ".json"
                     print(
                         "\nWriting circuit profile stats to "
                         + profile_file_name

@@ -901,62 +901,6 @@ pub(crate) async fn get_pipeline_time_series_stream(
         .await
 }
 
-/// Get Performance Profile
-///
-/// Retrieve the circuit performance profile of a running or paused pipeline.
-#[utoipa::path(
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-    ),
-    responses(
-        (status = OK
-            , description = "Circuit performance profile"
-            , content_type = "application/zip"
-            , body = Object),
-        (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
-            , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline_name())),
-        (status = SERVICE_UNAVAILABLE
-            , body = ErrorResponse
-            , examples(
-                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
-                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
-                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
-                ("Connection failed" = (value = json!(examples::error_pipeline_interaction_connect_failed()))),
-                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
-            )
-        ),
-        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
-    ),
-    tag = "Metrics & Debugging"
-)]
-#[get("/pipelines/{pipeline_name}/circuit_profile")]
-pub(crate) async fn get_pipeline_circuit_profile(
-    state: WebData<ServerState>,
-    client: WebData<awc::Client>,
-    tenant_id: ReqData<TenantId>,
-    path: web::Path<String>,
-    request: HttpRequest,
-    body: web::Payload,
-) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = path.into_inner();
-    state
-        .runner
-        .forward_streaming_http_request_to_pipeline_by_name(
-            client.as_ref(),
-            *tenant_id,
-            &pipeline_name,
-            "dump_profile",
-            request,
-            body,
-            Some(Duration::from_secs(120)),
-        )
-        .await
-}
-
 /// Performance Profile JSON
 ///
 /// Retrieve the circuit performance profile in JSON format of a running or paused pipeline.

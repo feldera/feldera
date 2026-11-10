@@ -76,7 +76,7 @@ The support bundle has the following content:
    The selector is intended for the bundle collector; regular callers
    polling `/stats` keep getting a lightweight, count-only response.
 
-5. **Circuit Profile**: from the [circuit profile](/api/get-performance-profile) endpoint.
+5. **Circuit Profile**: from the [circuit profile](/api/performance-profile-json) endpoint.
 
 6. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.
 

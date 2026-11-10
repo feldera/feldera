@@ -988,15 +988,6 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
         output: Option<PathBuf>,
     },
-    /// Obtains a circuit profile for a pipeline.
-    CircuitProfile {
-        /// The name of the pipeline.
-        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
-        name: String,
-        /// The ZIP file to write the profile to.
-        #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
-        output: Option<PathBuf>,
-    },
     /// Download a support bundle which contains debug information about the pipeline.
     SupportBundle {
         /// The name of the pipeline.

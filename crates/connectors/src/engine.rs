@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fmt::Debug;
 use std::io;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -194,9 +194,6 @@ pub trait CircuitDriver {
 
     /// The low-level form of the circuit.
     fn lir(&mut self) -> Result<LirCircuit, ControllerError>;
-
-    /// A profile of the circuit graph, with the metrics of its operators.
-    fn graph_profile(&mut self) -> Result<Box<dyn EngineGraphProfile>, ControllerError>;
 
     /// The profile of the circuit as JSON.
     fn json_profile(&mut self) -> Result<JsonProfileChunks, ControllerError>;
@@ -384,15 +381,6 @@ pub trait EngineRuntime: Send + Sync {
     fn has_wall_clock(&self) -> bool {
         true
     }
-}
-
-/// A profile of the circuit graph.
-pub trait EngineGraphProfile: Send {
-    /// Writes the profile under directory `dir`, and returns the path written.
-    fn dump(&self, dir: &Path) -> io::Result<PathBuf>;
-
-    /// Writes the profile to `out` as a Zip archive.
-    fn write_zip(&self, out: &mut dyn io::Write) -> io::Result<()>;
 }
 
 /// A JSON profile, in order, one chunk at a time.

@@ -87,9 +87,6 @@ fn main() -> Result<()> {
         }
     }
 
-    let profile_path = dbsp.dump_profile("profile").unwrap();
-    println!("profile dumped to {profile_path:?}");
-
     for handle in datagen_handles {
         handle
             .join()

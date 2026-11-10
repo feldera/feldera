@@ -21,7 +21,6 @@ const CLOCK_STEP: u64 = 10_000;
 const SEED: u64 = 0xD15E_A5E5_1A5A_B1E0;
 const PROGRESS_EVERY_BATCHES: usize = 50;
 const PROGRESS_EVERY_CLOCK_STEPS: usize = 50;
-const PROFILE_OUTPUT_DIR: &str = "window_min_file_storage.profile";
 const NEGATIVE_WEIGHT_MULTIPLIERS: &[u16] = &[0, 1, 2, 4, 6, 8];
 
 struct RunSummary {
@@ -149,10 +148,6 @@ fn run_workload(negative_weight_multiplier: u16) -> Result<RunSummary> {
         .retrieve_profile()
         .context("failed to retrieve runtime profile")?;
 
-    let profile_dump_path = dbsp
-        .dump_profile(PROFILE_OUTPUT_DIR)
-        .context("failed to dump graph profile")?;
-
     let total_storage_size = profile
         .total_storage_size()
         .map_err(|err| anyhow!("failed to compute total storage size from profile: {err:?}"))?;
@@ -175,7 +170,6 @@ fn run_workload(negative_weight_multiplier: u16) -> Result<RunSummary> {
     println!("overall_throughput_records_per_sec={overall_throughput}");
     println!("wall_clock_secs={}", wall_clock.as_secs_f64());
     println!("total_storage_size={total_storage_size}");
-    println!("profile_dump_path={}", profile_dump_path.display());
 
     Ok(RunSummary {
         negative_weight_multiplier,

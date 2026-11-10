@@ -213,7 +213,6 @@ It contains the following fields:
         endpoints::pipeline_interaction::post_pipeline_output_connector_command,
         endpoints::pipeline_interaction::get_pipeline_stats,
         endpoints::pipeline_interaction::get_pipeline_metrics,
-        endpoints::pipeline_interaction::get_pipeline_circuit_profile,
         endpoints::pipeline_interaction::get_pipeline_circuit_json_profile,
         endpoints::pipeline_interaction::get_pipeline_dataflow_graph,
         endpoints::pipeline_interaction::get_pipeline_heap_profile,
@@ -981,7 +980,6 @@ fn api_scope(base_path: &str) -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_metrics)
         .service(endpoints::pipeline_interaction::get_pipeline_time_series)
         .service(endpoints::pipeline_interaction::get_pipeline_time_series_stream)
-        .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_json_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_dataflow_graph)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)

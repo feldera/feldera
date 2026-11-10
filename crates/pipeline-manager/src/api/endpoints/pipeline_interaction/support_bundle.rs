@@ -562,12 +562,6 @@ mod tests {
             dirs
         );
         for dir in &dirs {
-            assert!(
-                names
-                    .iter()
-                    .any(|n| n == &format!("{dir}/circuit_profile.zip")),
-                "missing circuit_profile.zip in {dir}"
-            );
             // The JSON profile is stored gzip-compressed, exactly as collected.
             let json_gz = archive
                 .by_name(&format!("{dir}/circuit_profile.json.gz"))

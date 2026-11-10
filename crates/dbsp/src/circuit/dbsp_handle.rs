@@ -36,7 +36,6 @@ use std::time::Duration;
 use std::{
     collections::HashSet,
     fmt::{self, Debug, Formatter},
-    path::{Path, PathBuf},
     thread::Result as ThreadResult,
     time::Instant,
 };
@@ -45,7 +44,7 @@ use uuid::Uuid;
 
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
-use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
+use crate::profile::{DbspProfile, WorkerProfile};
 
 use super::SchedulerError;
 use super::bootstrap::BootstrapInfo;
@@ -509,7 +508,7 @@ impl CircuitConfig {
     }
 
     #[cfg(test)]
-    pub fn with_temporary_storage(self, path: impl AsRef<Path>) -> Self {
+    pub fn with_temporary_storage(self, path: impl AsRef<std::path::Path>) -> Self {
         Self {
             storage: Some(
                 CircuitStorageConfig::for_config(
@@ -732,21 +731,9 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::DumpProfile { runtime_elapsed }) => {
-                        if status_sender
-                            .send(Ok(Response::ProfileDump(
-                                profiler.dump_profile(runtime_elapsed),
-                            )))
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
                     Ok(Command::RetrieveGraph) => {
-                        // This is implemented by just asking the profiler to dump the graph
-                        // without any metadata.
                         if status_sender
-                            .send(Ok(Response::ProfileDump(profiler.dump_graph())))
+                            .send(Ok(Response::Graph(profiler.dump_graph())))
                             .is_err()
                         {
                             return;
@@ -1132,9 +1119,6 @@ enum Command {
     IsBootstrapComplete,
     CompleteBootstrap,
     EnableProfiler,
-    DumpProfile {
-        runtime_elapsed: Duration,
-    },
     /// Retrieve the circuit graph
     RetrieveGraph,
     RetrieveProfile {
@@ -1197,7 +1181,6 @@ impl Command {
             | Command::IsBootstrapComplete
             | Command::CompleteBootstrap
             | Command::EnableProfiler
-            | Command::DumpProfile { .. }
             | Command::RetrieveGraph
             | Command::RetrieveProfile { .. }
             | Command::GetLir
@@ -1238,10 +1221,6 @@ impl Debug for Command {
             Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
             Command::EnableProfiler => write!(f, "EnableProfiler"),
             Command::RetrieveGraph => write!(f, "RetrieveGraph"),
-            Command::DumpProfile { runtime_elapsed } => f
-                .debug_struct("DumpProfile")
-                .field("runtime_elapsed", runtime_elapsed)
-                .finish(),
             Command::RetrieveProfile { runtime_elapsed } => f
                 .debug_struct("RetrieveProfile")
                 .field("runtime_elapsed", runtime_elapsed)
@@ -1294,7 +1273,7 @@ enum Response {
     BootstrapComplete(bool),
     IsCompactionComplete(bool),
     CommitProgress(CommitProgress),
-    ProfileDump(Graph),
+    Graph(Graph),
     Profile(WorkerProfile),
     CheckpointPrepared(Vec<Box<dyn OperatorCheckpoint>>),
     CheckpointRestored(Option<BootstrapInfo>),
@@ -1308,9 +1287,6 @@ enum Response {
 /// A handle to control the execution of a circuit in a multithreaded runtime.
 #[derive(Debug)]
 pub struct DBSPHandle {
-    /// Time when the handle was created.
-    start_time: Instant,
-
     /// Time elapsed while the circuit is executing a step, multiplied by the
     /// number of foreground and background threads.
     runtime_elapsed: Duration,
@@ -1423,7 +1399,6 @@ impl DBSPHandle {
             .transpose()?
             .map(|checkpointer| Arc::new(Mutex::new(checkpointer)));
         Ok(Self {
-            start_time: Instant::now(),
             runtime: Some(runtime),
             command_senders,
             status_receivers,
@@ -2266,47 +2241,11 @@ impl DBSPHandle {
     /// Enable CPU profiler.
     ///
     /// Enable recording of CPU usage info.  When CPU profiling is enabled,
-    /// [`Self::dump_profile`] outputs CPU usage info along with memory
+    /// [`Self::retrieve_profile`] returns CPU usage info along with memory
     /// usage and other circuit metadata.  CPU profiling introduces small
     /// runtime overhead.
     pub fn enable_cpu_profiler(&mut self) -> Result<(), DbspError> {
         self.broadcast_command(Command::EnableProfiler, |_, _| {})
-    }
-
-    /// Dump profiling information to the specified directory.
-    ///
-    /// Creates `dir_path` if it doesn't exist.  For each worker thread, creates
-    /// `dir_path/<timestamp>/<worker>.dot` file containing worker profile in
-    /// the graphviz format.  If CPU profiling was enabled (see
-    /// [`Self::enable_cpu_profiler`]), the profile will contain both CPU and
-    /// memory usage information; otherwise only memory usage details are
-    /// reported.
-    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DbspError> {
-        Ok(self.graph_profile()?.dump(dir_path)?)
-    }
-
-    /// Returns an array of worker profiles in graphviz `.dot` format.  Each
-    /// array element corresponds to the profile of the corresponding worker.
-    /// If CPU profiling was enabled (see [`Self::enable_cpu_profiler`]), the
-    /// profile will contain both CPU and memory usage information; otherwise
-    /// only memory usage details are reported.
-    pub fn graph_profile(&mut self) -> Result<GraphProfile, DbspError> {
-        let mut worker_graphs = vec![Default::default(); self.status_receivers.len()];
-        self.broadcast_command(
-            Command::DumpProfile {
-                runtime_elapsed: self.runtime_elapsed(),
-            },
-            |worker, resp| {
-                if let Response::ProfileDump(prof) = resp {
-                    worker_graphs[worker] = prof;
-                }
-            },
-        )?;
-        Ok(GraphProfile {
-            elapsed_time: self.start_time.elapsed(),
-            worker_offset: self.runtime().layout().local_workers().start,
-            worker_graphs,
-        })
     }
 
     pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DbspError> {
@@ -2326,7 +2265,7 @@ impl DBSPHandle {
 
         self.broadcast_command(Command::RetrieveGraph, |worker, resp| {
             // They are all identical, but the command returns one per worker.
-            if let Response::ProfileDump(graph) = resp {
+            if let Response::Graph(graph) = resp {
                 graphs[worker] = graph;
             }
         })?;
@@ -3329,9 +3268,7 @@ pub(crate) mod tests {
 
         handle.enable_cpu_profiler().unwrap();
         handle.transaction().unwrap();
-        handle
-            .dump_profile(std::env::temp_dir().join("test_kill"))
-            .unwrap();
+        handle.retrieve_profile().unwrap();
         handle.kill().unwrap();
     }
 

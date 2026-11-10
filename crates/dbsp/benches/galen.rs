@@ -6,7 +6,6 @@ use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::{
     Circuit, OrdZSet, RootCircuit, Runtime, Stream,
-    monitor::TraceMonitor,
     operator::CsvSource,
     typed_batch::DynBatchReader,
     utils::{Tup2, Tup3},
@@ -47,7 +46,6 @@ type Number = u32;
 
 const GALEN_DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data");
 const GALEN_ARCHIVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data.zip");
-const GALEN_GRAPH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data/galen.dot");
 
 fn csv_source<T>(file: &str) -> CsvSource<BufReader<File>, T>
 where
@@ -92,54 +90,7 @@ fn main() -> Result<()> {
     unpack_galen_data()?;
 
     let hruntime = Runtime::run(args.workers, move |_parker| {
-        let monitor = TraceMonitor::new_panic_on_error();
         let circuit = RootCircuit::build(|circuit| {
-            /*
-            use dbsp::{circuit::trace::SchedulerEvent, profile::CPUProfiler};
-            use std::{collections::HashMap, fmt::Write};
-
-            let cpu_profiler = CPUProfiler::new();
-            cpu_profiler.attach(circuit, "cpu profiler");
-
-            monitor.attach(circuit, "monitor");
-
-            let mut metadata = HashMap::<_, String>::new();
-            let mut steps = 0;
-            let monitor_clone = monitor.clone();
-
-            circuit.register_scheduler_event_handler("metadata", move |event| match event {
-                SchedulerEvent::EvalEnd { node } => {
-                    let metadata_string = metadata.entry(node.global_id().clone()).or_default();
-                    metadata_string.clear();
-                    node.summary(metadata_string);
-                }
-
-                SchedulerEvent::StepEnd => {
-                    let graph = monitor_clone.visualize_circuit_annotate(|node_id| {
-                        let mut metadata_string =
-                            metadata.get(node_id).cloned().unwrap_or_default();
-
-                        if let Some(cpu_profile) = cpu_profiler.operator_profile(node_id) {
-                            writeln!(
-                                metadata_string,
-                                "invocations: {}\ntime: {:#?}",
-                                cpu_profile.invocations(),
-                                cpu_profile.total_time(),
-                            )
-                            .unwrap();
-                        };
-
-                        metadata_string
-                    });
-
-                    std::fs::write(format!("galen.{}.dot", steps), graph.to_dot()).unwrap();
-                    steps += 1;
-                }
-
-                _ => {}
-            });
-            */
-
             let p_source = csv_source::<Tup2<Number, Number>>("p.txt");
             let q_source = csv_source::<Tup3<Number, Number, Number>>("q.txt");
             let r_source = csv_source::<Tup3<Number, Number, Number>>("r.txt");
@@ -256,9 +207,6 @@ fn main() -> Result<()> {
         })
         .unwrap()
         .0;
-
-        let graph = monitor.visualize_circuit();
-        fs::write(GALEN_GRAPH, graph.to_dot()).unwrap();
 
         let start = Instant::now();
         circuit.transaction().unwrap();
