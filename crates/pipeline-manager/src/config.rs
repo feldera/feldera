@@ -135,7 +135,8 @@ fn default_auth_audience() -> String {
     "feldera-api".to_string()
 }
 
-/// Default largest JSON request body: 64 MiB, large enough for big generated SQL programs.
+/// Default of [`ApiServerConfig::max_json_body_bytes`]: 64 MiB, large enough for big generated
+/// SQL programs.
 fn default_max_json_body_bytes() -> usize {
     64 * 1024 * 1024
 }
@@ -1572,9 +1573,16 @@ pub struct ApiServerConfig {
     #[arg(long, action = clap::ArgAction::Set, env = "FELDERA_ENABLE_STORAGE_AUTOSCALING")]
     pub enable_storage_autoscaling: Option<bool>,
 
-    /// Largest JSON request body that the API accepts, in bytes. It limits the size of a
-    /// pipeline in `POST`, `PUT` and `PATCH` of `/v0/pipelines`, with its SQL program. The size
-    /// is counted after decompression. Lower it where memory is small, for example in a sandbox.
+    /// Largest JSON request body that the API accepts, in bytes, counted after decompression. A
+    /// larger request gets 413.
+    ///
+    /// The largest bodies are pipelines. In `POST`, `PUT` and `PATCH` of `/v0/pipelines`, the
+    /// body holds the pipeline's name, description, tags, SQL program (`program_code`), Rust
+    /// UDF code (`udf_rust` and `udf_toml`), and runtime, program and deployment configuration.
+    /// `POST /v0/pipelines/{name}/diff` and `POST /v0/validate_program` also send a SQL program.
+    ///
+    /// The API server holds each request body in memory while it reads and parses it, so this
+    /// limit also caps the memory that one request can use.
     #[serde(default = "default_max_json_body_bytes")]
     #[arg(long, default_value_t = default_max_json_body_bytes(), env = "FELDERA_MAX_JSON_BODY_BYTES")]
     pub max_json_body_bytes: usize,

@@ -216,7 +216,7 @@ making them eviction candidates. To raise their priority:
 
 **Error**: `413 Payload Too Large` when you create or update a pipeline, with `JSON payload (... bytes) is larger than allowed (limit: ... bytes)`
 
-**Solution**: The API server accepts JSON request bodies of up to 64 MiB by default, so a larger SQL program is refused. Raise the limit with `--max-json-body-bytes` or the `FELDERA_MAX_JSON_BODY_BYTES` environment variable. In the Helm chart, set it through `controlPlane.env`. An ingress or proxy in front of the API server can apply its own limit, so raise that one too.
+**Solution**: The API server accepts JSON request bodies of up to 64 MiB by default. The body of a pipeline holds its SQL program, Rust UDF code, configuration, name, description and tags. Raise the limit with `--max-json-body-bytes` or the `FELDERA_MAX_JSON_BODY_BYTES` environment variable. In the Helm chart, set it through `controlPlane.env`. An ingress or proxy in front of the API server can apply its own limit, so raise that one too.
 
 ## Uncommon Problems
 
