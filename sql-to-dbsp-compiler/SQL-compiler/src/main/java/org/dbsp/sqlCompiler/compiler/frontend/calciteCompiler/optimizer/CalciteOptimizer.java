@@ -337,6 +337,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.AGGREGATE_INSTANCE,
                 PruneEmptyRules.JOIN_LEFT_INSTANCE,
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
+                PruneEmptyRules.CORRELATE_LEFT_INSTANCE,
+                PruneEmptyRules.CORRELATE_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
         this.addStep(new CalciteOptimizerStep() {

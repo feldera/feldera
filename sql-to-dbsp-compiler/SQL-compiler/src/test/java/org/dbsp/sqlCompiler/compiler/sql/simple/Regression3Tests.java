@@ -1343,4 +1343,30 @@ public class Regression3Tests extends SqlIoTest {
                 NULL   | true  | true  | 0 | 0 | 0    | 0
                  false |NULL   | false | 0 | 0 | 0    | 0""");
     }
+
+    /** Nested EXISTS over an empty relation: the decorrelated plan has a LEFT correlate
+     * whose right input is empty */
+    @Test
+    public void existsOverEmptyRelation() {
+        // Validated on Postgres, with ARRAY_CONTAINS(b.arr, e.x) written as e.x = ANY(b.arr)
+        var ccs = this.getCCS("""
+                CREATE TABLE a(id BIGINT);
+                CREATE TABLE b(id BIGINT, arr BIGINT ARRAY);
+                CREATE VIEW v AS
+                SELECT a.id, EXISTS(
+                    SELECT 1 FROM (
+                        SELECT b.id, EXISTS(
+                            SELECT 1 FROM (SELECT CAST(NULL AS BIGINT) AS x FROM (VALUES (1)) AS one(c) WHERE FALSE) AS e
+                            WHERE COALESCE(ARRAY_CONTAINS(b.arr, e.x), FALSE)) AS ok
+                        FROM b) AS r
+                    WHERE r.id = a.id AND r.ok) AS out0
+                FROM a;""");
+        ccs.stepWeightOne("""
+                INSERT INTO a VALUES (1), (2);
+                INSERT INTO b VALUES (1, ARRAY[5]);""", """
+                 id | out0
+                -----------
+                 1  | false
+                 2  | false""");
+    }
 }
