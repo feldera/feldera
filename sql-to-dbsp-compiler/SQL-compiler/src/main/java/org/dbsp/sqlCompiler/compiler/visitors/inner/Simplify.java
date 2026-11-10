@@ -221,6 +221,29 @@ public class Simplify extends ExpressionTranslator {
         return null;
     }
 
+    /** True if {@code type} is the type of {@code lit} or its nullable version. */
+    static boolean onlyAddsNullability(DBSPLiteral lit, DBSPType type) {
+        DBSPType litType = lit.getType();
+        // Casting to VARCHAR may change a string even if the source is the same type
+        return !litType.mayBeNull && type.sameTypeIgnoringNullability(litType) && !type.is(DBSPTypeString.class);
+    }
+
+    /** Converts {@code result} to {@code type}.  A NULL becomes a NULL literal of
+     * {@code type}, and a result that only becomes nullable is wrapped in Some,
+     * instead of a SQL cast. */
+    static DBSPExpression castResult(CalciteObject node, DBSPExpression result, DBSPType type) {
+        DBSPType resultType = result.getType();
+        if (resultType.sameType(type))
+            return result;
+        if (type.mayBeNull && result.isNone())
+            return DBSPLiteral.none(type);
+        boolean onlyBecomesNullable = type.mayBeNull && !resultType.mayBeNull &&
+                type.sameTypeIgnoringNullability(resultType);
+        if (onlyBecomesNullable)
+            return result.applyCloneIfNeeded().some(node);
+        return result.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+    }
+
     @Override
     public void postorder(DBSPCastExpression expression) {
         DBSPExpression source = this.getE(expression.source);
@@ -242,10 +265,7 @@ public class Simplify extends ExpressionTranslator {
         }
         DBSPLiteral lit = source.as(DBSPLiteral.class);
         if (lit != null) {
-            DBSPType litType = lit.getType();
-            if (type.withMayBeNull(false).sameType(litType) &&
-                    !type.is(DBSPTypeString.class)) {
-                // Casting to VARCHAR may change a string even if the source is the same type
+            if (onlyAddsNullability(lit, type)) {
                 // Cast from type to Option<type>
                 result = lit.getWithNullable(type.mayBeNull);
             } else if (lit.isNull()) {
@@ -624,7 +644,7 @@ public class Simplify extends ExpressionTranslator {
                 result = this.pushIntoConditional(source, expression, result);
             }
         }
-        this.map(expression, result.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe));
+        this.map(expression, castResult(expression.getNode(), result, expression.getType()));
     }
 
     @Override
@@ -753,7 +773,7 @@ public class Simplify extends ExpressionTranslator {
                     IsNumericType iLeftType = leftType.to(IsNumericType.class);
                     if (iLeftType.isOne(leftLit)) {
                         // This works even for null
-                        result = right.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
+                        result = castResult(expression.getNode(), right, expression.getType());
                     } else if (iLeftType.isZero(leftLit) && !rightMayBeNull && !leftType.is(DBSPTypeFP.class)) {
                         // Not true for null values; for floats 0 * Infinity is NaN
                         result = left;
@@ -872,7 +892,7 @@ public class Simplify extends ExpressionTranslator {
         } catch (ArithmeticException unused) {
             // ignore, defer to runtime
         }
-        this.map(expression, result.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe));
+        this.map(expression, castResult(expression.getNode(), result, expression.getType()));
     }
 
     @Override
