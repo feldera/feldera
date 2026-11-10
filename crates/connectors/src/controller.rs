@@ -6817,6 +6817,7 @@ impl ControllerInit {
             dev_tweaks,
             exchange_tls: None,
             exchange_uuid: Uuid::nil(),
+            exchange_listener: None,
         })
     }
 
