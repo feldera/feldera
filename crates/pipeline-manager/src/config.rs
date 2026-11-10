@@ -135,9 +135,9 @@ fn default_auth_audience() -> String {
     "feldera-api".to_string()
 }
 
-/// Default largest JSON request body: 2 MiB, the actix-web default.
+/// Default largest JSON request body: 64 MiB, large enough for big generated SQL programs.
 fn default_max_json_body_bytes() -> usize {
-    2 * 1024 * 1024
+    64 * 1024 * 1024
 }
 
 /// Default role for an authenticated user with no explicit tenant membership.
@@ -1574,7 +1574,7 @@ pub struct ApiServerConfig {
 
     /// Largest JSON request body that the API accepts, in bytes. It limits the size of a
     /// pipeline in `POST`, `PUT` and `PATCH` of `/v0/pipelines`, with its SQL program. The size
-    /// is counted after decompression.
+    /// is counted after decompression. Lower it where memory is small, for example in a sandbox.
     #[serde(default = "default_max_json_body_bytes")]
     #[arg(long, default_value_t = default_max_json_body_bytes(), env = "FELDERA_MAX_JSON_BODY_BYTES")]
     pub max_json_body_bytes: usize,
