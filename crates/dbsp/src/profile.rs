@@ -22,13 +22,10 @@ use size_of::HumanBytes;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
-    fmt::Write,
-    fs::{self, create_dir_all},
     io::{Error as IoError, Write as IoWrite},
-    path::{Path, PathBuf},
     time::Duration,
 };
-use zip::{ZipWriter, result::ZipResult, write::SimpleFileOptions};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 mod cpu;
 pub use cpu::{BlockingFor, CPUProfiler, ParkReason, ParkingFor, RuntimeIdle};
@@ -37,8 +34,7 @@ pub(crate) use cpu::{current_park_reason, current_runtime_idle};
 
 /// Rudimentary circuit profiler.
 ///
-/// Records circuit topology, operator metadata, and optionally CPU usage, and
-/// dumps them in graphviz (dot) format.
+/// Records circuit topology, operator metadata, and optionally CPU usage.
 pub struct Profiler {
     cpu_profiler: CPUProfiler,
     monitor: TraceMonitor,
@@ -145,74 +141,6 @@ impl WorkerProfile {
 
     pub fn get_node_profile(&self, global_node_id: &GlobalNodeId) -> Option<&OperatorMeta> {
         self.metadata.get(global_node_id)
-    }
-}
-
-/// Profile in graphviz format collected from all DBSP worker threads.
-#[derive(Debug)]
-pub struct GraphProfile {
-    pub elapsed_time: Duration,
-
-    /// Worker number of the first worker in `worker_graphs`.
-    ///
-    /// This will be 0 in single-host profiles.
-    pub worker_offset: usize,
-    pub worker_graphs: Vec<Graph>,
-}
-
-impl GraphProfile {
-    const MAKEFILE: &'static str = r#"# Run `make` to easily convert the `.dot` files into PDF files for viewing.
-# Run as, e.g. `make FORMATS='pdf svg png'` to convert into additional
-# formats supported by `dot`.
-
-DOTS = $(wildcard *.dot)
-FORMATS = pdf
-
-all: $(FORMATS)
-
-define format_template
-$(1): $(DOTS:.dot=.$(1))
-%.$(1): %.dot
-	dot -T$(1) $$< -o$$@
-clean:
-	rm -f $(DOTS:.dot=.$$(1))
-endef
-
-$(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
-
-.PHONY: all clean $(FORMATS)
-"#;
-    /// Writes the profile as `.dot` files under `dir_path`.
-    pub fn dump<P: AsRef<Path>>(&self, dir_path: P) -> Result<PathBuf, IoError> {
-        let dir_path = dir_path
-            .as_ref()
-            .join(self.elapsed_time.as_micros().to_string());
-        create_dir_all(&dir_path)?;
-        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
-            fs::write(dir_path.join(format!("{worker}.dot")), graph.to_dot())?;
-            fs::write(dir_path.join(format!("{worker}.txt")), graph.to_string())?;
-        }
-        fs::write(dir_path.join("Makefile"), Self::MAKEFILE)?;
-        Ok(dir_path)
-    }
-
-    /// Writes a Zip archive containing all the profile `.dot` and `.txt` files
-    /// to `writer`.
-    ///
-    /// Each worker's text is rendered and compressed one worker at a time, so
-    /// the full archive is never held in memory.
-    pub fn write_zip<W: IoWrite>(&self, writer: W) -> ZipResult<W> {
-        let mut zip = ZipWriter::new_stream(writer);
-        for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
-            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())?;
-            zip.write_all(graph.to_dot().as_bytes())?;
-
-            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())?;
-            zip.write_all(graph.to_string().as_bytes())?;
-        }
-        zip.start_file("Makefile", SimpleFileOptions::default())?;
-        zip.write_all(Self::MAKEFILE.as_bytes())?;
-        Ok(zip.finish()?.into_inner())
     }
 }
 
@@ -499,46 +427,6 @@ impl Profiler {
     pub fn dump_graph(&self) -> Graph {
         self.monitor.get_circuit()
     }
-
-    /// Dump profile in graphviz format.
-    pub fn dump_profile(&self, runtime_elapsed: Duration) -> Graph {
-        let profile = self.profile(runtime_elapsed);
-
-        self.monitor.visualize_circuit_annotate(|node_id| {
-            let mut output = String::with_capacity(1024);
-            let meta = profile.metadata.get(node_id).cloned().unwrap_or_default();
-
-            let mut importance = 0f64;
-            for ((metric_id, labels), item) in meta.iter() {
-                let label = if labels.is_empty() {
-                    "".to_string()
-                } else {
-                    format!(
-                        "[{}]",
-                        labels
-                            .iter()
-                            .map(|(key, value)| format!("{key}={value}"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                };
-                write!(output, "{metric_id}{label}: ",).unwrap();
-                item.format(&mut output).unwrap();
-                if metric_id == &RUNTIME_PERCENT
-                    && let MetaItem::Percent {
-                        numerator,
-                        denominator,
-                    } = item
-                    && *denominator != 0
-                {
-                    importance = *numerator as f64 / *denominator as f64;
-                };
-                output.push_str("\\l");
-            }
-
-            (output, importance)
-        })
-    }
 }
 
 #[cfg(test)]
@@ -555,7 +443,6 @@ mod tests {
         utils::Tup2,
     };
     use feldera_types::size::ConfigSize;
-    use std::io::Read;
 
     /// Runs a circuit that keeps an integral spine busy and returns its profile.
     ///
@@ -811,29 +698,5 @@ mod tests {
             let streamed = json.finish(&profile.graph).unwrap();
             assert_eq!(String::from_utf8(streamed).unwrap(), expected);
         }
-    }
-
-    /// The streamed archive is a valid zip naming one `.dot` and one `.txt`
-    /// per worker, plus the Makefile.
-    #[test]
-    fn write_zip_lists_every_worker() {
-        let profile = GraphProfile {
-            elapsed_time: Duration::from_secs(1),
-            worker_offset: 4,
-            worker_graphs: vec![Graph::default(); 2],
-        };
-        let streamed = profile.write_zip(Vec::new()).unwrap();
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(streamed)).unwrap();
-        let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
-            .collect();
-        assert_eq!(names, ["4.dot", "4.txt", "5.dot", "5.txt", "Makefile"]);
-        let mut makefile = String::new();
-        archive
-            .by_name("Makefile")
-            .unwrap()
-            .read_to_string(&mut makefile)
-            .unwrap();
-        assert_eq!(makefile, GraphProfile::MAKEFILE);
     }
 }

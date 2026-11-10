@@ -269,7 +269,7 @@ pub fn circuit_thread_panic_is_reported(engine: &dyn PipelineTestEngine) {
     // `resume_unwind` skips the panic hook.  With `RUST_BACKTRACE=1`, the hook
     // resolves a backtrace under a process-wide lock that other panicking
     // tests share, which can delay the report past the timeout below.
-    controller.start_graph_profile(Box::new(|_| {
+    controller.start_json_profile(Box::new(|_| {
         resume_unwind(Box::new("injected circuit thread panic"))
     }));
 
