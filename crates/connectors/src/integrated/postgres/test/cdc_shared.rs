@@ -7,8 +7,9 @@ use crate::{
         cdc::{ETL_STARTS, RESTART_GRACE_MS},
         test::{
             cdc_tests::{
-                CdcTestTable, cdc_connector_url, cdc_relation, drop_slots_of_pipeline_id,
-                read_output_json,
+                CdcTestTable, assert_all_types_null_row, assert_all_types_row,
+                cdc_all_types_relation, cdc_connector_url, cdc_relation, drop_slots_of_pipeline_id,
+                insert_all_types_row, read_output_json,
             },
             postgres_url, unique_pg_name,
         },
@@ -20,13 +21,9 @@ use crate::{
 };
 use crossbeam::channel::Receiver;
 use feldera_adapterlib::test::wait;
+use feldera_types::program_schema::Relation;
 use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    path::Path,
-    sync::atomic::Ordering,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, path::Path, sync::atomic::Ordering, time::Duration};
 use tempfile::NamedTempFile;
 
 const WAIT_MS: u64 = 60_000;
@@ -43,15 +40,21 @@ struct TwoTables {
 
 impl TwoTables {
     fn new(prefix: &str) -> Self {
+        Self::with(prefix, CdcTestTable::new_simple)
+    }
+
+    /// Two tables made by `make`, from a table name, a publication name and
+    /// the database URL.
+    fn with(prefix: &str, make: fn(&str, &str, &str) -> CdcTestTable) -> Self {
         // Tests assert on restarts, so none waits for the grace.
         RESTART_GRACE_MS.store(0, Ordering::Relaxed);
         let url = postgres_url();
-        let a = CdcTestTable::new_simple(
+        let a = make(
             &unique_pg_name(&format!("{prefix}_a")),
             &unique_pg_name(&format!("{prefix}_pub")),
             &url,
         );
-        let mut b = CdcTestTable::new_simple(
+        let mut b = make(
             &unique_pg_name(&format!("{prefix}_b")),
             &unique_pg_name(&format!("{prefix}_pub_b")),
             &url,
@@ -169,11 +172,22 @@ fn start(
     engine: &dyn PipelineTestEngine,
     config: Value,
 ) -> Result<(Controller, Receiver<String>), ControllerError> {
+    start_with(engine, config, &cdc_relation(), &[])
+}
+
+/// Like [`start`], with tables and views of `relation`, and the input
+/// endpoints named in `paused` paused before the pipeline starts.
+fn start_with(
+    engine: &dyn PipelineTestEngine,
+    config: Value,
+    relation: &Relation,
+    paused: &[&str],
+) -> Result<(Controller, Receiver<String>), ControllerError> {
     let config = serde_json::from_value(config).unwrap();
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
     let controller = engine.controller(
         &TestCircuit::Identity {
-            relation: cdc_relation(),
+            relation: relation.clone(),
             persistent_output_ids: vec![None, None],
             input_properties: Vec::new(),
             materialized: true,
@@ -186,8 +200,17 @@ fn start(
             let _ = err_sender.send(format!("{e}"));
         }),
     )?;
+    for endpoint in paused {
+        controller.pause_input_endpoint(endpoint)?;
+    }
     controller.start();
     Ok((controller, err_receiver))
+}
+
+/// Time for rows that must not arrive to arrive wrongly. A check after it
+/// can miss a regression but cannot fail a correct pipeline.
+fn settle() {
+    std::thread::sleep(Duration::from_secs(2));
 }
 
 /// Bulk insert ids `from..=to` in one statement.
@@ -424,50 +447,50 @@ fn shared_etl_state(tables: &mut TwoTables, table: &str) -> Option<String> {
         .map(|r| r.get(0))
 }
 
-/// Bulk insert ids `from..=to` with a `pad_bytes` long string, so the copy
-/// of the table takes several writes and some time.
-fn insert_padded_rows(table: &mut CdcTestTable, from: i64, to: i64, pad_bytes: usize) {
-    table.execute(&format!(
-        "INSERT INTO {} SELECT g, g % 2 = 0, g * 10, repeat('x', {pad_bytes}) \
-         FROM generate_series({from}, {to}) g",
-        table.table_name
-    ));
-}
-
 /// A disconnected connector leaves the publication; etl starts again once
 /// for the other connector, which streams on with every row exactly once.
 ///
-/// The disconnect lands while etl is still copying the other table, with
-/// some of its rows already in the circuit. etl copies a table whose copy
-/// was under way again from scratch when it starts, so the restart has to
-/// wait for the copy.
+/// The disconnect lands while etl copies the other table. Connector `a`
+/// starts paused, so the first write of its copy waits and the copy stays
+/// open as long as the test wants. etl copies a table whose copy was under
+/// way again from the start when it starts, so the restart must wait for
+/// the copy: etl starts again only once `a` runs and its copy completes.
 #[engine_test(serial, services(Postgres))]
 pub fn a_disconnected_member_leaves_the_others_streaming(engine: &dyn PipelineTestEngine) {
-    const ROWS: i64 = 400;
+    const ROWS: i64 = 50;
     let mut tables = TwoTables::new("cdc_shared_leave");
-    insert_padded_rows(&mut tables.a, 1, ROWS, 50_000);
+    insert_range(&mut tables.a, 1, ROWS);
     insert_range(&mut tables.b, 101, 103);
     let out_a = NamedTempFile::new().unwrap();
     let out_b = NamedTempFile::new().unwrap();
 
-    let (controller, errors) = start(
+    let (controller, errors) = start_with(
         engine,
         tables.pipeline(true, Some(json!({})), out_a.path(), out_b.path()),
+        &cdc_relation(),
+        &["cdc_a"],
     )
     .unwrap();
     let a_name = tables.a.table_name.clone();
     wait(
-        || {
-            !inserted_ids(out_a.path()).is_empty()
-                && shared_etl_state(&mut tables, &a_name).as_deref() == Some("data_sync")
-        },
+        || shared_etl_state(&mut tables, &a_name).as_deref() == Some("data_sync"),
         WAIT_MS,
     )
-    .expect("rows of a reach the circuit while etl still copies a");
+    .expect("etl starts the copy of a, whose first write waits for the paused connector");
 
     let id_b = controller.input_endpoint_id_by_name("cdc_b").unwrap();
     controller.disconnect_input(&id_b);
-    wait(|| tables.etl_starts() == 2, WAIT_MS).expect("etl starts again for the member that stays");
+    settle();
+    assert_eq!(
+        tables.etl_starts(),
+        1,
+        "no restart while the copy of a is open"
+    );
+
+    controller.start_input_endpoint("cdc_a").unwrap();
+    wait(|| tables.etl_starts() == 2, WAIT_MS)
+        .expect("etl starts again once the copy of a completed");
+    wait_for_inserts(out_a.path(), ROWS as usize, &errors, "the copy of a");
 
     insert_range(&mut tables.a, ROWS + 1, ROWS + 3);
     insert_range(&mut tables.b, 104, 106);
@@ -475,18 +498,16 @@ pub fn a_disconnected_member_leaves_the_others_streaming(engine: &dyn PipelineTe
         out_a.path(),
         ROWS as usize + 3,
         &errors,
-        "the copy and the streamed rows of a after the leave",
+        "the streamed rows of a after the leave",
     );
 
-    // Rows of `b` reach no Feldera table any more: give them time to arrive
-    // wrongly, then check that they did not.
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    // The copy of `b` waited behind the paused `a` and `b` left before `a`
+    // ran, so no row of `b` may reach its Feldera table.
+    settle();
     assert!(
-        inserted_ids(out_b.path()).len() <= 3,
-        "b got nothing past its snapshot"
+        inserted_ids(out_b.path()).is_empty(),
+        "b got rows: {:?}",
+        inserted_ids(out_b.path())
     );
     assert_eq!(tables.etl_starts(), 2, "one restart for the leave");
 
@@ -498,6 +519,60 @@ pub fn a_disconnected_member_leaves_the_others_streaming(engine: &dyn PipelineTe
         (1..=ROWS + 3).collect::<Vec<_>>(),
         "table a arrives exactly once"
     );
+}
+
+/// Every column type crosses the shared pipeline: the copy and the stream
+/// of two all-types tables reach their Feldera tables with the values the
+/// per-table pipeline delivers.
+#[engine_test(serial, services(Postgres))]
+pub fn every_column_type_crosses_the_shared_pipeline(engine: &dyn PipelineTestEngine) {
+    let mut tables = TwoTables::with("cdc_shared_types", CdcTestTable::new_all_types);
+    insert_all_types_row(&mut tables.a, 1, "copied a", 1_000_000_000_001);
+    tables.a.execute(&format!(
+        "INSERT INTO {} (id) VALUES (2)",
+        tables.a.table_name
+    ));
+    insert_all_types_row(&mut tables.b, 101, "copied b", 1_000_000_000_101);
+    let out_a = NamedTempFile::new().unwrap();
+    let out_b = NamedTempFile::new().unwrap();
+
+    let (controller, errors) = start_with(
+        engine,
+        tables.pipeline(true, Some(json!({})), out_a.path(), out_b.path()),
+        &cdc_all_types_relation(),
+        &[],
+    )
+    .unwrap();
+    wait_for_inserts(out_a.path(), 2, &errors, "snapshot of a");
+    wait_for_inserts(out_b.path(), 1, &errors, "snapshot of b");
+
+    insert_all_types_row(&mut tables.a, 3, "streamed a", 3_000_000_000_003);
+    insert_all_types_row(&mut tables.b, 102, "streamed b", 3_000_000_000_102);
+    tables.b.execute(&format!(
+        "INSERT INTO {} (id) VALUES (103)",
+        tables.b.table_name
+    ));
+    wait_for_inserts(out_a.path(), 3, &errors, "streamed row of a");
+    wait_for_inserts(out_b.path(), 3, &errors, "streamed rows of b");
+    controller.stop().unwrap();
+
+    let rows_by_id = |path: &Path| -> BTreeMap<i64, Value> {
+        read_output_json(path)
+            .into_iter()
+            .filter_map(|r| r.get("insert").cloned())
+            .map(|r| (r["id"].as_i64().unwrap(), r))
+            .collect()
+    };
+    let a = rows_by_id(out_a.path());
+    let b = rows_by_id(out_b.path());
+    assert_eq!(a.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert_eq!(b.keys().copied().collect::<Vec<_>>(), vec![101, 102, 103]);
+    assert_all_types_row(&a[&1], "copied a", 1_000_000_000_001);
+    assert_all_types_null_row(&a[&2]);
+    assert_all_types_row(&a[&3], "streamed a", 3_000_000_000_003);
+    assert_all_types_row(&b[&101], "copied b", 1_000_000_000_101);
+    assert_all_types_row(&b[&102], "streamed b", 3_000_000_000_102);
+    assert_all_types_null_row(&b[&103]);
 }
 
 /// `n` tables in one publication, each read by a connector `cdc_<i>` into

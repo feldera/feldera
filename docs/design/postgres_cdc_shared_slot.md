@@ -304,8 +304,9 @@ Branch `issue-7413`, on top of the plan commits. Each commit passes the CDC suit
 | 5 | `dee6b524b` restart on membership change | Leave, late join and a member's table error all restart etl for the members that remain, after the restart grace (`RESTART_GRACE_MS`, 0 in tests). Per-member high-water mark. `ETL_STARTS` counts starts for tests. Two findings while implementing, see the rows "Replay after a restart" and "Restart waits for open copies". Slot budget: `copy_worker_budget` sizes the copy workers from `max_replication_slots` and the slots that are not this pipeline's; the acceptance test runs 6 tables on the 4 slots of the CI image. |
 | 6 | not needed | The per-member monitors run under the shared worker; a monitor that speaks makes its member leave. |
 | 7 | not needed | A late join restarts etl; the `Ready -> Init` path stays an upstream option. |
-| 8 | next commit | Connector page section, changelog, rustdoc of the setting. |
-| open | | Legacy slot cleanup when the setting is turned on (the docs tell the user to drop the old slots). The FT two-member checkpoint test, the pause test, the two-Feldera-pipelines test, the journal replay test and the all-types member test of section 5 are not written yet. |
+| 8 | `9bbb2f9f8` docs | Connector page section, changelog, rustdoc of the setting. |
+| R2 | `387081c87`, `0f77e1d5f`, tests commit | Review round 2, see 9.2: `PipelineContext` for the endpoint factory; log line for the copies a restart waits for; all-types member test; the leave test holds the copy open with a paused member instead of racing a large copy. |
+| open | | Legacy slot cleanup when the setting is turned on (the docs tell the user to drop the old slots). The FT two-member checkpoint test, the pause test, the two-Feldera-pipelines test and the journal replay test of section 5 are not written yet. |
 
 ## 5. Tests
 
@@ -318,7 +319,7 @@ Integration tests use `#[engine_test(serial, services(Postgres))]` in `test.rs`,
 | two tables, one of them with the full type schema (`cdc_all_types_relation`, used by `all_types_replayed_after_restart` at `test/cdc_scenarios.rs:1005`) | every type arrives through the dispatching destination |
 | FT, two members, checkpoint and resume | the slot advances only past checkpoints that hold the rows of both members; the resume reads nothing again |
 | pause one member | the other stops too; start resumes both |
-| disconnect one member while a fan-in is open (the pipeline is paused with rows for both members queued) | etl starts again once for the other member; the other member, a table without a primary key, has every row exactly once; one slot again |
+| disconnect one member while the other's copy is open (the other starts paused, so its first copy write waits) | etl does not start again while the copy is open; once the member runs and its copy completes, etl starts again once and the member has every row exactly once; the leaver gets no row |
 | stop a pipeline with N members | the etl start counter shows no start after `shutdown()`; the slot is released once |
 | unnamed pipeline (`PipelineConfig.name = None`), flag on | `open` fails with the error of section 10.6 |
 | slots filled after start, then a late join | the new member's table is `Errored`, its connector reports the actionable slot message, the other members keep streaming; free the slots and reconnect, and the copy completes |
@@ -417,6 +418,16 @@ Items that stay open: the length of the membership-stable grace, and whether etl
 | Late join while a member is paused | Documented in the Late join and Pause rows; test |
 | Section 7 named a repository outside this one | Item 4 names no repository |
 
+## 9.2 Review round 2 (PR 7872, implementation)
+
+| Finding | Change |
+| --- | --- |
+| No all-types rows cross the shared path | `every_column_type_crosses_the_shared_pipeline`: two all-types tables, copy and stream, values checked by helpers shared with `all_types_replayed_after_restart` |
+| The leave test raced a 20 MB copy to catch etl in `data_sync` | Member `a` starts paused, so its first copy write waits and the copy stays open until the test unpauses it; the test asserts no restart while the copy is open, which the restart-at-once mutant fails |
+| A late connector's connect call waits for another member's first copy, silently | The worker logs the connectors it waits for once per restart; the connector page says so |
+| Fixed 2 s negative wait for the leaver's rows | Kept, as `settle()`: it can miss a regression but cannot fail a correct pipeline; the leaver's output is now asserted empty |
+| The endpoint factory took 8 parameters under a clippy allowance | `PipelineContext { config, layout, registry }` |
+
 ## 10. PR gates
 
 The `/feldera-pr-checks` gates applied to the plan, so that the PRs pass them.
@@ -444,7 +455,7 @@ The `/feldera-pr-checks` gates applied to the plan, so that the PRs pass them.
 
 ### 10.3 SQL type coverage
 
-The dispatching destination changes how rows reach each table, so one member of the two-table test uses `cdc_all_types_relation`. Type conversion (`row_to_json`, `cell_to_json`) does not change.
+The dispatching destination changes how rows reach each table, so `every_column_type_crosses_the_shared_pipeline` reads two tables with `cdc_all_types_relation` through it, copy and stream. Type conversion (`row_to_json`, `cell_to_json`) does not change.
 
 ### 10.4 Breaking changes
 

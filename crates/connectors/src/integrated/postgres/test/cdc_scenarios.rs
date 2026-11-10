@@ -31,10 +31,10 @@ use crate::{
     Controller,
     integrated::postgres::test::{
         cdc_tests::{
-            CdcTestTable, CircuitShape, ETL_SYNC_COMPLETED_STATES, cdc_all_types_relation,
-            cdc_connector_url, cdc_ft_test_circuit, cdc_ft_test_circuit_for, cdc_relation,
-            etl_table_states, read_output_json, wait_for_etl_copy_in_progress,
-            wait_for_etl_sync_completed,
+            CdcTestTable, CircuitShape, ETL_SYNC_COMPLETED_STATES, assert_all_types_null_row,
+            assert_all_types_row, cdc_all_types_relation, cdc_connector_url, cdc_ft_test_circuit,
+            cdc_ft_test_circuit_for, cdc_relation, etl_table_states, insert_all_types_row,
+            read_output_json, wait_for_etl_copy_in_progress, wait_for_etl_sync_completed,
         },
         pg::pg_connect,
         postgres_url, unique_pg_name,
@@ -1009,32 +1009,14 @@ pub fn all_types_replayed_after_restart(engine: &dyn PipelineTestEngine) {
         &unique_pg_name("cdc_pub"),
         &url,
     );
-    let insert_full_row = |table: &mut CdcTestTable, id: i64, text: &str, big: i64| {
-        table.execute(&format!(
-            r#"INSERT INTO {} (
-                id, col_text, col_integer, col_bigint, col_boolean,
-                col_real, col_double, col_date, col_time, col_timetz, col_timetz_array,
-                col_timestamp, col_timestamptz, col_uuid, col_jsonb,
-                col_bytea, col_numeric, col_smallint, col_int_array
-            ) VALUES (
-                {id}, '{text}', 42, {big}, true,
-                3.5, 2.25, '2024-06-15', '14:30:00',
-                '14:30:00+02', ARRAY['08:30:00-05'::timetz, NULL],
-                '2024-01-01 12:00:00', '2024-01-01 12:00:00+00', '550e8400-e29b-41d4-a716-446655440000',
-                '{{"key": "value", "nested": {{"a": 1}}}}',
-                E'\\xDEADBEEF', 12345.67, 7, ARRAY[1, 2, 3]
-            )"#,
-            table.table_name
-        ));
-    };
-    insert_full_row(&mut table, 1, "hello world", 9876543210);
+    insert_all_types_row(&mut table, 1, "hello world", 9876543210);
     let storage = TempDir::new().unwrap();
     let schema = cdc_all_types_relation();
 
     let run1 = Run::start_with(engine, &table, storage.path(), &schema, 1);
     run1.wait_for_inserts(1, "run 1 snapshot");
     checkpoint_after_snapshot(&run1, &mut table);
-    insert_full_row(&mut table, 2, "streamed", 1234567890123);
+    insert_all_types_row(&mut table, 2, "streamed", 1234567890123);
     table.execute(&format!("INSERT INTO {} (id) VALUES (3)", table.table_name));
     run1.wait_for_inserts(3, "run 1 streamed rows");
     run1.stop();
@@ -1054,58 +1036,12 @@ pub fn all_types_replayed_after_restart(engine: &dyn PipelineTestEngine) {
         .into_iter()
         .filter_map(|r| r.get("insert").cloned())
         .collect();
-    let null_row = rows.iter().find(|r| r["id"] == json!(3)).unwrap();
-    for (column, value) in null_row.as_object().unwrap() {
-        if column != "id" {
-            assert!(value.is_null(), "{column} must replay as NULL, got {value}");
-        }
-    }
-    let row = rows.into_iter().find(|r| r["id"] == json!(2)).unwrap();
-    assert_eq!(row["col_text"], json!("streamed"));
-    assert_eq!(row["col_integer"], json!(42));
-    assert_eq!(row["col_bigint"], json!(1234567890123i64));
-    assert_eq!(row["col_boolean"], json!(true));
-    // REAL travels as f32; 1e-6 is a few f32 rounding steps at 3.5, the
-    // tolerance test_cdc_all_data_types uses for the same column.
-    assert!((row["col_real"].as_f64().unwrap() - 3.5).abs() < 1e-6);
-    assert!((row["col_double"].as_f64().unwrap() - 2.25).abs() < 1e-9);
-    assert_eq!(row["col_date"], json!("2024-06-15"));
-    assert_eq!(
-        row["col_uuid"],
-        json!("550e8400-e29b-41d4-a716-446655440000")
+    assert_all_types_null_row(rows.iter().find(|r| r["id"] == json!(3)).unwrap());
+    assert_all_types_row(
+        rows.iter().find(|r| r["id"] == json!(2)).unwrap(),
+        "streamed",
+        1234567890123,
     );
-    assert_eq!(row["col_jsonb"]["key"], json!("value"));
-    assert_eq!(row["col_jsonb"]["nested"]["a"], json!(1));
-    assert_eq!(row["col_numeric"], json!("12345.67"));
-    assert_eq!(row["col_smallint"], json!(7));
-    assert_eq!(row["col_int_array"], json!([1, 2, 3]));
-    assert!(
-        row["col_time"].as_str().unwrap().starts_with("14:30:00"),
-        "col_time = {}",
-        row["col_time"]
-    );
-    // TIMETZ replays with the offset it was inserted with; the WAL carries
-    // the offset next to the time, so no session zone can rewrite it.
-    assert_eq!(row["col_timetz"], json!("14:30:00+02"));
-    assert_eq!(row["col_timetz_array"], json!(["08:30:00-05", null]));
-    assert!(
-        row["col_timestamp"]
-            .as_str()
-            .unwrap()
-            .starts_with("2024-01-01"),
-        "col_timestamp = {}",
-        row["col_timestamp"]
-    );
-    assert!(
-        row["col_timestamptz"]
-            .as_str()
-            .unwrap()
-            .starts_with("2024-01-01"),
-        "col_timestamptz = {}",
-        row["col_timestamptz"]
-    );
-    // BYTEA is encoded as a JSON byte array, as in `test_cdc_all_data_types`.
-    assert_eq!(row["col_bytea"], json!([0xde, 0xad, 0xbe, 0xef]));
 }
 
 // ---------------------------------------------------------------------------
