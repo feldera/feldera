@@ -638,7 +638,7 @@ class TestCheckpointSync(SharedTestPipeline):
             self._restart_from_checkpoint("latest", auth_err=True, strict=False)
 
     @enterprise_only
-    def test_bucket_owner_lock_rejects_other_pipeline(self):
+    def test_bucket_owner_lock_rejects_other(self):
         # Two different pipelines intentionally point at the same remote bucket.
         # The first one claims ownership when it syncs a checkpoint; the second
         # must fail before writing anything to that bucket.
