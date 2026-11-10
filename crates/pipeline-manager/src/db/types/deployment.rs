@@ -121,11 +121,7 @@ pub fn patch_deployment_config(
     let mut patched = stored.global.clone();
     patched.resources = resources;
     // As at startup, the DataFusion pool must leave memory for the circuit.
-    if let (Some(budget), Some(datafusion)) = (
-        patched.effective_memory(),
-        patched.resolved_datafusion_memory(),
-    ) && datafusion >= budget
-    {
+    if let Some((datafusion, budget)) = patched.datafusion_memory_exceeding_budget() {
         return Err(DBError::InvalidDeploymentPatch {
             reason: format!(
                 "the memory budget ({budget}) must exceed datafusion_memory ({datafusion})"

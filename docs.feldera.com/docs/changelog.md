@@ -21,6 +21,14 @@ Source edition can be found on github.
   fetches CodeArtifact tokens for private Cargo registries.  See
   [Private Cargo registry](/get-started/enterprise/private-cargo-registry).
 
+- Incompatible change: if both `max_rss` and `resources.memory_max` are
+  set, the pipeline's memory budget is the smaller of the two.  Before, it
+  was `max_rss`.  A pipeline whose `datafusion_memory` is not less than
+  `resources.memory_max` now fails to start with a
+  `DatafusionMemoryExceedsBudget` error.  To start it, make
+  `datafusion_memory` smaller.  A resize of `memory_max` now changes the
+  budget of a running pipeline also when `max_rss` is set.
+
 ## v0.380.0
 
 - Incompatible change (SQL): the compiler no longer supports the `INTERNED`

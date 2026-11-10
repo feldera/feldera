@@ -9,9 +9,10 @@ it. This behavior is controlled by the `max_rss` setting in the pipeline [Runtim
 When configured, the pipeline dynamically applies *backpressure* to the storage layer, flushing
 in-memory state to disk more aggressively as memory usage approaches the limit.
 
-If `max_rss` is not set but `memory_max` is configured in the `resources` section of
-[Runtime configuration], the latter is used as the effective memory cap. We **strongly recommend**
-setting at least one of these parameters to prevent out-of-memory failures.
+If `memory_max` is also set in the `resources` section of [Runtime configuration], the
+pipeline uses the smaller of the two as its memory cap. If only `memory_max` is set, the
+pipeline uses it. We **strongly recommend** setting at least one of these parameters to
+prevent out-of-memory failures.
 
 On single-host deployments (for example, in Docker), if neither
 parameter is set, `resources.memory_max` is set to the smaller
@@ -27,8 +28,8 @@ so if the container's memory limit changes while the pipeline runs,
 the pipeline adjusts its limit to match.
 
 When [a running pipeline is resized](/pipelines/configuration#resizing-a-running-pipeline),
-the new `resources.memory_max` also becomes its memory limit,
-unless `max_rss` is set.
+its memory limit becomes the smaller of `max_rss` and the new
+`resources.memory_max`.
 
 The pipeline reports its current memory pressure level (`low`,
 `moderate`, `high`, or `critical`) via the
@@ -233,9 +234,9 @@ This behavior is controlled via the `max_rss` setting in the pipeline [Runtime c
 the pipeline dynamically applies *backpressure* to the storage layer, flushing in-memory batches to disk more
 aggressively as memory usage approaches the configured limit.
 
-If `max_rss` is not specified but `resources.memory_max`
-is set, the latter is used as the effective
-memory cap for the pipeline. We **strongly recommend** configuring at least one of these settings to avoid
+If `resources.memory_max` is also set, the pipeline uses the
+smaller of the two as its memory cap. If only `resources.memory_max`
+is set, the pipeline uses it. We **strongly recommend** configuring at least one of these settings to avoid
 out-of-memory failures.
 
 Note that the backpressure mechanism described here only applies to memory used by state indexes and in-flight

@@ -427,9 +427,9 @@ impl EngineRuntime for StaticRuntime {
         })
     }
 
-    fn set_max_rss_bytes(&self, max_rss: Option<u64>) {
+    fn set_memory_limit(&self, max_rss: Option<u64>, container_limit: Option<u64>) {
         if let Some(runtime) = self.runtime.upgrade() {
-            runtime.set_max_rss_bytes(max_rss);
+            runtime.set_memory_limit(max_rss, container_limit);
         }
     }
 
