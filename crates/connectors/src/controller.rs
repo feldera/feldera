@@ -177,7 +177,9 @@ use crate::format::{
     MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
 };
 use crate::format::{get_input_format, get_output_format};
-use crate::integrated::{ConnectorRegistry, DistributedInput, create_integrated_input_endpoint};
+use crate::integrated::{
+    ConnectorRegistry, DistributedInput, PipelineContext, create_integrated_input_endpoint,
+};
 pub use checkpoint::{Checkpoint, CheckpointOffsets};
 pub use error::{ConfigError, ControllerError};
 pub use feldera_types::config::{
@@ -8732,10 +8734,12 @@ impl ControllerInner {
                 let endpoint = create_integrated_input_endpoint(
                     endpoint_name,
                     &resolved_connector_config,
-                    &self.status.pipeline_config,
-                    &self.layout,
+                    &PipelineContext {
+                        config: &self.status.pipeline_config,
+                        layout: &self.layout,
+                        registry: self.connector_registry.clone(),
+                    },
                     self.datafusion_runtime_env.clone(),
-                    self.connector_registry.clone(),
                     probe,
                     distributed,
                 )?;

@@ -1871,9 +1871,11 @@ fn a_uri_that_does_not_parse_fails_the_endpoint_at_creation() {
     let error = PostgresCdcInputEndpoint::new(
         "cdc_in",
         &config,
-        &test_pipeline_config(),
-        &feldera_types::circuit::Layout::new_solo(1),
-        Arc::default(),
+        &PipelineContext {
+            config: &test_pipeline_config(),
+            layout: &feldera_types::circuit::Layout::new_solo(1),
+            registry: Arc::default(),
+        },
         Box::new(MockInputConsumer::new()),
     )
     .err()

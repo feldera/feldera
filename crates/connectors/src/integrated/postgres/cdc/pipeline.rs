@@ -105,15 +105,13 @@ pub struct PostgresCdcInputEndpoint {
 }
 
 impl PostgresCdcInputEndpoint {
-    /// `pipeline_config` and `layout` identify the Feldera pipeline and the
-    /// host, which a replication slot shared by several connectors is named
-    /// after; see [`PublicationKey`].
+    /// `pipeline` identifies the Feldera pipeline and the host, which a
+    /// replication slot shared by several connectors is named after; see
+    /// [`PublicationKey`].
     pub fn new(
         endpoint_name: &str,
         config: &PostgresCdcReaderConfig,
-        pipeline_config: &feldera_types::config::PipelineConfig,
-        layout: &feldera_types::circuit::Layout,
-        registry: Arc<ConnectorRegistry>,
+        pipeline: &PipelineContext,
         consumer: Box<dyn InputConsumer>,
     ) -> Result<Self, ControllerError> {
         config
@@ -127,13 +125,14 @@ impl PostgresCdcInputEndpoint {
                 &format!("failed to parse Postgres URI: {e}"),
             )
         })?;
-        let key = if pipeline_config.global.dev_tweaks.shared_cdc_slot() {
-            PublicationKey::per_publication(config, pipeline_config, layout).map_err(|e| {
-                ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
-            })?
+        let key = if pipeline.config.global.dev_tweaks.shared_cdc_slot() {
+            PublicationKey::per_publication(config, pipeline.config, pipeline.layout).map_err(
+                |e| ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string()),
+            )?
         } else {
             PublicationKey::per_table(config)
         };
+        let registry = &pipeline.registry;
         let shared = registry.get_or_create(&format!("postgres_cdc/{}", key.pipeline_id()), || {
             SharedCdcPipeline::new(key.clone(), registry.clone())
         });

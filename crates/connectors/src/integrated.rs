@@ -116,18 +116,23 @@ pub fn create_integrated_output_endpoint(
     Ok(ep)
 }
 
+/// The pipeline an integrated input connector runs in.
+pub struct PipelineContext<'a> {
+    pub config: &'a PipelineConfig,
+    /// Which host of a multihost pipeline this is.
+    pub layout: &'a Layout,
+    /// What the connectors of the pipeline share.
+    pub registry: Arc<ConnectorRegistry>,
+}
+
 /// Creates an integrated input endpoint.  `distributed` is `Some` only for a
 /// distributed connector, whose transport must support distribution.
-/// `registry` holds what the connectors of the pipeline share, and `layout`
-/// says which host of a multihost pipeline this is.
-#[allow(unused_variables, clippy::too_many_arguments)]
+#[allow(unused_variables)]
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
     config: &ConnectorConfig,
-    pipeline_config: &PipelineConfig,
-    layout: &Layout,
+    pipeline: &PipelineContext,
     runtime_env: Arc<RuntimeEnv>,
-    registry: Arc<ConnectorRegistry>,
     consumer: Box<dyn InputConsumer>,
     distributed: Option<DistributedInput>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
@@ -143,7 +148,7 @@ pub fn create_integrated_input_endpoint(
             Box::new(delta_table::DeltaTableInputEndpoint::new(
                 endpoint_name,
                 config,
-                pipeline_config,
+                pipeline.config,
                 runtime_env,
                 consumer,
                 distributed,
@@ -154,7 +159,7 @@ pub fn create_integrated_input_endpoint(
             Box::new(feldera_iceberg::IcebergInputEndpoint::new(
                 endpoint_name,
                 config,
-                pipeline_config,
+                pipeline.config,
                 runtime_env,
                 consumer,
                 distributed,
@@ -167,9 +172,7 @@ pub fn create_integrated_input_endpoint(
         TransportConfig::PostgresCdcInput(config) => Box::new(PostgresCdcInputEndpoint::new(
             endpoint_name,
             config,
-            pipeline_config,
-            layout,
-            registry,
+            pipeline,
             consumer,
         )?),
         transport => {

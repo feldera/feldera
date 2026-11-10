@@ -63,7 +63,7 @@ use url::Url;
 use xxhash_rust::xxh3::xxh3_64;
 
 use super::tls::{make_etl_tls_config, make_tls_connector};
-use crate::integrated::ConnectorRegistry;
+use crate::integrated::PipelineContext;
 use destination::*;
 use key::*;
 use member::*;
