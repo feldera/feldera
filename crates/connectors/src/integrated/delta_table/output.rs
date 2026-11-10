@@ -76,6 +76,7 @@ pub fn delta_output_serde_config(variant_encoding: DeltaVariantEncoding) -> SqlS
         },
         binary_format: BinaryFormat::Array,
         uuid_format: UuidFormat::String,
+        positional_fields: false,
     }
 }
 
