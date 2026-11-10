@@ -2016,21 +2016,34 @@ mod tests {
         let db = Arc::new(Mutex::new(db));
         // A 3 MiB program: over a 2 MiB limit (the actix-web default), under the default limit.
         let body = serde_json::json!({"name": "p", "program_code": "x".repeat(3 * 1024 * 1024)});
-        for (limit, expected_status) in [(Some(2 * 1024 * 1024), 413), (None, 201)] {
+        // (limit, body streamed without `Content-Length`, expected status)
+        let cases = [
+            (Some(2 * 1024 * 1024), false, 413),
+            (Some(2 * 1024 * 1024), true, 413),
+            (None, false, 201),
+        ];
+        for (limit, streamed, expected_status) in cases {
             let mut cfg = ApiServerConfig::test_config();
             if let Some(limit) = limit {
                 cfg.max_json_body_bytes = limit;
             }
             let state = WebData::new(ServerState::test_state(db.clone()).await);
             let app = test::init_service(build_app(&cfg, &None).app_data(state)).await;
-            let req = test::TestRequest::put()
+            let mut req = test::TestRequest::put()
                 .uri("/v0/pipelines/p")
                 .set_json(&body)
                 .to_request();
+            if streamed {
+                // Without the length, the limit is found while the body streams in.
+                req.headers_mut().remove(header::CONTENT_LENGTH);
+            }
             let resp = test::call_service(&app, req).await;
             let status = resp.status();
             let text = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
-            assert_eq!(status, expected_status, "limit {limit:?}: {text}");
+            assert_eq!(
+                status, expected_status,
+                "limit {limit:?}, streamed {streamed}: {text}"
+            );
             if expected_status == 413 {
                 assert!(text.contains("FELDERA_MAX_JSON_BODY_BYTES"), "{text}");
             }
