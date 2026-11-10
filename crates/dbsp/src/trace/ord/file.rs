@@ -51,10 +51,14 @@ likely happen again, so it is not recommended to automatically restart the
 pipeline.  To avoid repeating the crash, take some remedial action first, such
 as one of the following:
 
- * Reconfigure the container to use a larger, initially empty storage volume.
-   If the pipeline had a checkpoint synchronized to object storage (such as S3),
-   consider setting `storage.backend.config.sync.start_from_checkpoint` in the
-   runtime configuration to restart from the checkpoint.
+ * Reconfigure the container to use a larger storage volume by increasing
+   `resources.storage_max` (combine it with `resources.storage_min` for
+   autoscaling: then `min` is the reserved baseline, and `max` the autoscaling
+   limit); see https://docs.feldera.com/pipelines/configuration#resizing-a-running-pipeline.
+   If this requires clearing storage, and the pipeline had a checkpoint
+   synchronized to object storage (such as S3), consider setting
+   `storage.backend.config.sync.start_from_checkpoint` in the runtime
+   configuration to restart from the checkpoint.
 
  * Tune your SQL program to use fewer resources.  (Editing the SQL
    program requires clearing storage, which deletes checkpoints.)
