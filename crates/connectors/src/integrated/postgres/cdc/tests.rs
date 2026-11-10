@@ -1852,6 +1852,7 @@ fn test_pipeline_config() -> feldera_types::config::PipelineConfig {
     }
 }
 
+#[cfg(test)]
 fn cdc_config() -> PostgresCdcReaderConfig {
     PostgresCdcReaderConfig {
         uri: "postgres://user@localhost:5432/db".to_string(),
