@@ -159,16 +159,29 @@ public class CalciteOptimizer implements IWritesLogs {
             return this.builder.build();
         }
 
+        void logRule(RelOptRule rule) {
+            Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 3)
+                    .appendSupplier(this::getName)
+                    .append(" adding rule: ")
+                    .appendSupplier(rule::toString)
+                    .newline();
+        }
+
+        /** Add rules that the planner applies one after the other, each until it no longer matches */
         void addRules(int level, RelOptRule... rules) {
             if (this.level > level) return;
             for (RelOptRule rule: rules) {
-                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 3)
-                        .appendSupplier(this::getName)
-                        .append(" adding rule: ")
-                        .appendSupplier(rule::toString)
-                        .newline();
+                this.logRule(rule);
                 this.builder.addRuleInstance(rule);
             }
+        }
+
+        /** Add rules that the planner applies together, until none of them matches */
+        void addRuleCollection(int level, RelOptRule... rules) {
+            if (this.level > level) return;
+            for (RelOptRule rule: rules)
+                this.logRule(rule);
+            this.builder.addRuleCollection(List.of(rules));
         }
 
         @Override
@@ -261,11 +274,14 @@ public class CalciteOptimizer implements IWritesLogs {
 
         // Must be the first step: with expand=false the converter leaves
         // RexSubQuery nodes, and every later step expects Correlate/Join nodes.
-        this.addStep(new SimpleOptimizerStep("Remove sub-queries", 0,
+        BaseOptimizerStep removeSubqueries = new BaseOptimizerStep("Remove sub-queries", 0);
+        // A collection: removing a subquery can expose a nested subquery that another rule removes
+        removeSubqueries.addRuleCollection(0,
                 CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
                 CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE,
-                CoreRules.JOIN_SUB_QUERY_TO_CORRELATE,
-                CoreRules.AGGREGATE_REMOVE_LITERAL_AGG).setAbortOnError());
+                CoreRules.JOIN_SUB_QUERY_TO_CORRELATE);
+        removeSubqueries.addRules(0, CoreRules.AGGREGATE_REMOVE_LITERAL_AGG);
+        this.addStep(removeSubqueries.setAbortOnError());
         // Must run right after "Remove sub-queries": later steps rewrite the constructs
         // that RejectUnsupportedPlans checks, such as ROWS frames and DISTINCT aggregates.
         this.addStep(new CalciteOptimizerStep() {

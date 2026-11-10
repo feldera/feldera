@@ -1208,4 +1208,95 @@ public class Regression3Tests extends SqlIoTest {
                  false | true  |NULL                     |NULL                 | false
                  true  | false | 2020-01-01 08:00:00 UTC | 2020-01-01 07:00:00 | false""");
     }
+
+    /** IN subqueries in a Filter, inside subqueries in the SELECT list. Validated on Postgres */
+    @Test
+    public void filterSubqueryInProjectSubquery() {
+        var ccs = this.getCCS("""
+                CREATE TABLE s(x INT, ok BOOLEAN);
+                CREATE TABLE t(y INT);
+                CREATE VIEW V AS SELECT x,
+                  EXISTS(SELECT 1 FROM s WHERE x IN (SELECT y FROM t)) AS e,
+                  (SELECT COUNT(*) FROM s WHERE x IN (SELECT y FROM t)) AS c,
+                  EXISTS(SELECT 1 FROM s WHERE x IN (SELECT y FROM t) AND ok) AS eo,
+                  EXISTS(SELECT 1 FROM s JOIN t ON s.x IN (SELECT y FROM t WHERE y > 2)) AS ej,
+                  EXISTS(SELECT 1 FROM s WHERE x IN (SELECT y FROM t WHERE y IN (SELECT x FROM s WHERE ok))) AS e3,
+                  (SELECT COUNT(*) FROM (SELECT x FROM s GROUP BY x HAVING x IN (SELECT y FROM t)) AS g) AS ch
+                FROM s;""");
+        ccs.stepWeightOne("""
+                INSERT INTO s VALUES (1, true), (2, false);
+                INSERT INTO t VALUES (2), (3);""", """
+                 x | e    | c | eo    | ej    | e3    | ch
+                ------------------------------------------------
+                 1 | true | 1 | false | false | false | 1
+                 2 | true | 1 | false | false | false | 1""");
+    }
+
+    /** Subqueries in a Filter, inside correlated subqueries in the SELECT list. Validated on Postgres */
+    @Test
+    public void filterSubqueryInCorrelatedProjectSubquery() {
+        var ccs = this.getCCS("""
+                CREATE TABLE s(x INT);
+                CREATE TABLE t(y INT);
+                CREATE VIEW V AS SELECT x,
+                  EXISTS(SELECT 1 FROM s AS s1 WHERE s1.x = s.x AND s1.x IN (SELECT y FROM t)) AS ec,
+                  EXISTS(SELECT 1 FROM t WHERE t.y = s.x AND EXISTS(SELECT 1 FROM t AS t2 WHERE t2.y = s.x + 1)) AS ec2
+                FROM s;""");
+        ccs.stepWeightOne("""
+                INSERT INTO s VALUES (1), (2), (3);
+                INSERT INTO t VALUES (2), (3);""", """
+                 x | ec    | ec2
+                -------------------
+                 1 | false | false
+                 2 | true  | true
+                 3 | true  | false""");
+    }
+
+    /** An IN subquery on a BOOLEAN column, inside a subquery in the SELECT list. Validated on Postgres */
+    @Test
+    public void issue7918() {
+        var ccs = this.getCCS("""
+                CREATE TABLE s(x BOOLEAN);
+                CREATE TABLE t(y BOOLEAN);
+                CREATE VIEW V AS SELECT x, EXISTS(SELECT 1 FROM s WHERE x IN (SELECT y FROM t)) AS e FROM s;""");
+        ccs.stepWeightOne("""
+                INSERT INTO s VALUES (true);
+                INSERT INTO t VALUES (false);""", """
+                 x    | e
+                -------------
+                 true | false""");
+    }
+
+    /** Filter and Project subqueries, inside subqueries in a join condition. Validated on Postgres */
+    @Test
+    public void subqueriesInJoinConditionSubquery() {
+        var ccs = this.getCCS("""
+                CREATE TABLE s(x INT);
+                CREATE TABLE t(y INT);
+                CREATE VIEW V AS SELECT s.x FROM s JOIN t ON s.x = t.y
+                  AND EXISTS(SELECT 1 FROM s WHERE x IN (SELECT y FROM t))
+                  AND 2 IN (SELECT (SELECT COUNT(*) FROM t) FROM s);""");
+        ccs.stepWeightOne("""
+                INSERT INTO s VALUES (1), (2);
+                INSERT INTO t VALUES (2), (3);""", """
+                 x
+                ---
+                 2""");
+    }
+
+    /** An IN subquery in a Filter, inside an EXISTS subquery in a WHERE clause. Validated on Postgres */
+    @Test
+    public void filterSubqueryInFilterSubquery() {
+        var ccs = this.getCCS("""
+                CREATE TABLE s(x INT);
+                CREATE TABLE t(y INT);
+                CREATE VIEW V AS SELECT x FROM s WHERE EXISTS(SELECT 1 FROM s WHERE x IN (SELECT y FROM t));""");
+        ccs.stepWeightOne("""
+                INSERT INTO s VALUES (1), (2);
+                INSERT INTO t VALUES (2), (3);""", """
+                 x
+                ---
+                 1
+                 2""");
+    }
 }

@@ -35,6 +35,7 @@ import org.apache.calcite.rex.RexLambda;
 import org.apache.calcite.rex.RexLambdaRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
@@ -292,6 +293,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (this.inputRow == null)
             throw new InternalCompilerError("Correlation variable referenced without a row context", node);
         return this.inputRow.deref();
+    }
+
+    /** The Calcite optimizer must remove all subqueries */
+    @Override
+    public DBSPExpression visitSubQuery(RexSubQuery subQuery) {
+        CalciteObject node = CalciteObject.create(this.context, subQuery);
+        throw new InternalCompilerError("Subquery was not removed by the optimizer", node);
     }
 
     @Override
