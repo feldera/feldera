@@ -1,18 +1,18 @@
 //! Endpoint to retrieve a support bundles for pipeline.
 
 use std::fmt::Write as _;
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::pin::pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zip::write::{SimpleFileOptions, StreamWriter};
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
 use crate::api::support_data_collector::{
-    CollectionSummary, SupportBundleData, SupportBundleParameters,
+    CollectionSummary, GzipMember, SupportBundleData, SupportBundleParameters, ZipContent,
 };
 use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
 use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
@@ -88,6 +88,61 @@ fn unique_directory(candidate: &str, used: &mut HashSet<String>) -> String {
         }
         suffix += 1;
     }
+}
+
+/// A ZIP archive whose one entry, `name`, holds `member`'s deflate stream, so
+/// that `ZipWriter::raw_copy_file` can copy the stream without inflating it.
+fn deflated_entry_archive(name: &str, member: &GzipMember<'_>) -> Result<Vec<u8>, String> {
+    let name = name.as_bytes();
+    let name_length = u16::try_from(name.len()).map_err(|_| "file name too long")?;
+    let compressed_size = u32::try_from(member.deflate.len()).map_err(|_| "file too large")?;
+    let time = zip::DateTime::default_for_write();
+    // The fields that the local and the central header share: version needed,
+    // flags, method (deflate), time, date, CRC-32, compressed and uncompressed
+    // size, name length, extra field length.
+    let mut shared = Vec::with_capacity(26);
+    for value in [20u16, 0, 8, time.timepart(), time.datepart()] {
+        shared.extend(value.to_le_bytes());
+    }
+    for value in [member.crc32, compressed_size, member.size] {
+        shared.extend(value.to_le_bytes());
+    }
+    for value in [name_length, 0] {
+        shared.extend(value.to_le_bytes());
+    }
+
+    let mut archive = Vec::with_capacity(member.deflate.len() + 2 * name.len() + 100);
+    archive.extend(0x0403_4b50u32.to_le_bytes());
+    archive.extend(&shared);
+    archive.extend(name);
+    archive.extend(member.deflate);
+    let directory_offset = u32::try_from(archive.len()).map_err(|_| "file too large")?;
+    archive.extend(0x0201_4b50u32.to_le_bytes());
+    // Made by Unix, version 2.0, as the other bundle files.
+    archive.extend(((3u16 << 8) | 20).to_le_bytes());
+    archive.extend(&shared);
+    // Comment length, disk number, internal attributes.
+    for value in [0u16, 0, 0] {
+        archive.extend(value.to_le_bytes());
+    }
+    // External attributes (a regular file with mode 0644, as the other bundle
+    // files), offset of the local header.
+    for value in [0o100644u32 << 16, 0] {
+        archive.extend(value.to_le_bytes());
+    }
+    archive.extend(name);
+    let directory_size = archive.len() as u32 - directory_offset;
+    archive.extend(0x0605_4b50u32.to_le_bytes());
+    // Disk number, disk of the directory, entries on this disk, entries.
+    for value in [0u16, 0, 1, 1] {
+        archive.extend(value.to_le_bytes());
+    }
+    for value in [directory_size, directory_offset] {
+        archive.extend(value.to_le_bytes());
+    }
+    // Comment length.
+    archive.extend(0u16.to_le_bytes());
+    Ok(archive)
 }
 
 /// Bytes that the ZIP writer wrote and the response did not send yet.
@@ -169,16 +224,22 @@ impl SupportBundleZip {
     ) -> Result<(), ManagerError> {
         let directory = unique_directory(&timestamp_dir(&data.time), &mut self.used_dirs);
         let zip = &mut self.zip;
-        // Already-compressed items (gzip, zip) are stored verbatim
-        let mut add_to_zip = |filename: &str,
-                              content: &[u8],
-                              method: CompressionMethod|
-         -> Result<(), Box<dyn std::error::Error>> {
-            let path = format!("{directory}/{filename}");
-            zip.start_file(&path, Self::options().compression_method(method))?;
-            zip.write_all(content)?;
-            Ok(())
-        };
+        let mut add_to_zip =
+            |filename: &str, content: ZipContent<'_>| -> Result<(), Box<dyn std::error::Error>> {
+                let path = format!("{directory}/{filename}");
+                match content {
+                    ZipContent::Bytes(bytes, method) => {
+                        zip.start_file(&path, Self::options().compression_method(method))?;
+                        zip.write_all(bytes)?;
+                    }
+                    ZipContent::Gzip(member) => {
+                        let archive = deflated_entry_archive(&path, &member)?;
+                        let mut archive = ZipArchive::new(Cursor::new(archive))?;
+                        zip.raw_copy_file(archive.by_index_raw(0)?)?;
+                    }
+                }
+                Ok(())
+            };
         let summary = data
             .push_to_zip(&mut add_to_zip, params)
             .await
@@ -607,6 +668,46 @@ mod tests {
                     .any(|f| f == "pipeline_events.json")
             );
         }
+    }
+
+    /// The bundle carries the stored deflate stream of the pipeline config
+    /// unchanged, and the file reads back as the original JSON.
+    #[tokio::test]
+    async fn pipeline_config_is_copied_without_recompressing() {
+        let json = serde_json::to_vec_pretty(&serde_json::json!({
+            "name": "p",
+            "program_code": "SELECT 1;\n".repeat(100),
+        }))
+        .unwrap();
+        // Without compression, so that a recompressed file would be much smaller.
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+        encoder.write_all(&json).unwrap();
+        let gz = encoder.finish().unwrap();
+        let mut data = SupportBundleData::test_data();
+        data.pipeline_config = Ok(gz.clone());
+
+        let bundle = SupportBundleZip::create(
+            &fake_pipeline("p"),
+            vec![data],
+            &SupportBundleParameters::default(),
+        )
+        .await
+        .unwrap();
+        let mut archive = read_zip(&bundle);
+        let name = archive
+            .file_names()
+            .map(|name| name.unwrap().to_string())
+            .find(|name| name.ends_with("/pipeline_config.json"))
+            .unwrap();
+        let mut config = archive.by_name(&name).unwrap();
+        assert_eq!(config.compression(), CompressionMethod::Deflated);
+        assert_eq!(config.unix_mode(), Some(0o100644));
+        // The gzip member without its 10-byte header and 8-byte trailer.
+        assert_eq!(config.compressed_size(), gz.len() as u64 - 18);
+        let mut read = Vec::new();
+        // Reading to the end checks the CRC-32.
+        config.read_to_end(&mut read).unwrap();
+        assert_eq!(read, json);
     }
 
     #[tokio::test]
