@@ -40,12 +40,30 @@ def _variants(function: ast.FunctionDef) -> list[str]:
     return variants
 
 
+def _suffixes(function: ast.FunctionDef) -> list[str]:
+    """The literal suffixes `function` passes to
+    `SharedTestPipeline.new_pipeline_with_suffix`."""
+    suffixes = []
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "new_pipeline_with_suffix"
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            suffixes.append(node.args[0].value)
+    return suffixes
+
+
 def _pipeline_names() -> list[tuple[str, str]]:
     """Every (source file, pipeline name) pair a test names statically.
 
     The name a test runs under is `unique_pipeline_name(<test name>)`, so it is
     the test's own name behind the tag, plus a variant where the test creates
-    more than one pipeline.
+    more than one pipeline. A `SharedTestPipeline` test names its extra
+    pipelines `<test name>_<suffix>`.
     """
     names = []
     for path in sorted(TESTS_DIR.rglob("*.py")):
@@ -55,6 +73,8 @@ def _pipeline_names() -> list[tuple[str, str]]:
                 continue
             if not node.name.startswith("test_"):
                 continue
+            for suffix in _suffixes(node):
+                names.append((str(path), f"{node.name}_{suffix}"))
             if "pipeline_name" not in (arg.arg for arg in node.args.args):
                 continue
             names.append((str(path), node.name))
