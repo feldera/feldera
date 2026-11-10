@@ -1172,8 +1172,9 @@ pub struct RuntimeConfig {
     /// running out of memory. The setting should not exceed the memory limit of the pipeline
     /// instance.
     ///
-    /// When `max_rss` is not specified but `resources.memory_max` is set, the
-    /// latter is used as the effective memory cap for the pipeline.
+    /// If `resources.memory_max` is also set, the pipeline uses the smaller of
+    /// the two as its memory cap. If only `resources.memory_max` is set, the
+    /// pipeline uses it.
     ///
     /// The pipeline caps this limit at the memory available to it, which is the
     /// host's memory or the container's memory limit, whichever is smaller. It
@@ -1571,10 +1572,13 @@ impl RuntimeConfig {
         self.clock_resolution.unwrap_or(DEFAULT_CLOCK_RESOLUTION)
     }
 
-    /// Pipeline's effective memory budget: `max_rss`, falling back to
-    /// `resources.memory_max` (the k8s pod limit).
+    /// Pipeline's effective memory budget: the smaller of `max_rss` and
+    /// `resources.memory_max` (the k8s pod limit), or whichever is set.
     pub fn effective_memory(&self) -> Option<ConfigSize> {
-        self.max_rss.or(self.resources.memory_max)
+        self.max_rss
+            .into_iter()
+            .chain(self.resources.memory_max)
+            .min()
     }
 
     /// Resolved DataFusion pool size: explicit `datafusion_memory` if set,
@@ -1590,6 +1594,14 @@ impl RuntimeConfig {
         let fraction = u128::from(effective) * u128::from(DEFAULT_DATAFUSION_MEMORY_PERCENT) / 100;
         let fraction = u64::try_from(fraction).unwrap_or(u64::MAX);
         Some(ConfigSize::from_bytes(fraction).min(DEFAULT_DATAFUSION_MEMORY_CEILING))
+    }
+
+    /// Returns the DataFusion pool and the memory budget if the pool leaves no
+    /// memory for the circuit.
+    pub fn datafusion_memory_exceeding_budget(&self) -> Option<(ConfigSize, ConfigSize)> {
+        let budget = self.effective_memory()?;
+        let datafusion = self.resolved_datafusion_memory()?;
+        (datafusion >= budget).then_some((datafusion, budget))
     }
 }
 
@@ -2315,6 +2327,32 @@ mod test {
             config.resolved_datafusion_memory(),
             Some(ConfigSize::from_mb(1_500))
         );
+    }
+
+    #[test]
+    fn effective_memory_is_the_smaller_budget() {
+        let mb = |mb: Option<u64>| mb.map(ConfigSize::from_mb);
+        for (max_rss, memory_max, expected) in [
+            (None, None, None),
+            (Some(8_000), None, Some(8_000)),
+            (None, Some(4_000), Some(4_000)),
+            (Some(8_000), Some(4_000), Some(4_000)),
+            (Some(2_000), Some(4_000), Some(2_000)),
+        ] {
+            let config = RuntimeConfig {
+                max_rss: mb(max_rss),
+                resources: ResourceConfig {
+                    memory_max: mb(memory_max),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            assert_eq!(
+                config.effective_memory(),
+                mb(expected),
+                "{max_rss:?}, {memory_max:?}"
+            );
+        }
     }
 
     #[test]

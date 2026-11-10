@@ -4432,8 +4432,9 @@ export type PipelineConfig = {
    * running out of memory. The setting should not exceed the memory limit of the pipeline
    * instance.
    *
-   * When `max_rss` is not specified but `resources.memory_max` is set, the
-   * latter is used as the effective memory cap for the pipeline.
+   * If `resources.memory_max` is also set, the pipeline uses the smaller of
+   * the two as its memory cap. If only `resources.memory_max` is set, the
+   * pipeline uses it.
    *
    * The pipeline caps this limit at the memory available to it, which is the
    * host's memory or the container's memory limit, whichever is smaller. It
@@ -5960,8 +5961,9 @@ export type RuntimeConfig = {
    * running out of memory. The setting should not exceed the memory limit of the pipeline
    * instance.
    *
-   * When `max_rss` is not specified but `resources.memory_max` is set, the
-   * latter is used as the effective memory cap for the pipeline.
+   * If `resources.memory_max` is also set, the pipeline uses the smaller of
+   * the two as its memory cap. If only `resources.memory_max` is set, the
+   * pipeline uses it.
    *
    * The pipeline caps this limit at the memory available to it, which is the
    * host's memory or the container's memory limit, whichever is smaller. It

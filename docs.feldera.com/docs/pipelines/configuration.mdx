@@ -174,9 +174,12 @@ curl -X PATCH "http://localhost:8080/v0/pipelines/example" \
   cleared, or until CPU and memory, or the volume attributes class, are changed in the runtime
   configuration. Storage can only be changed in the runtime configuration after storage is
   cleared, which also resets a resize.
-- A change to `memory_max` also changes the pipeline's memory limit, unless `max_rss` is set. A
-  smaller limit applies at once, so the pipeline moves state to storage before the pod shrinks. A
-  larger limit applies when the pod has grown.
+- A change to `memory_max` also changes the pipeline's memory limit. If `max_rss` is set, the
+  limit is the smaller of the two. A smaller limit applies at once, so the pipeline moves state to
+  storage before the pod shrinks. A larger limit applies when the pod has grown.
+- Kubernetes lowers a pod's memory limit only when the pod's memory use, page cache included, is
+  below the new limit. To get there, the pipeline drops its storage files from the page cache,
+  for at most 30 minutes.
 - Requires Kubernetes 1.34 or later and
   `kubernetesRunner.enablePipelineResize` in the [Helm chart](/get-started/enterprise/helm-chart-reference#kubernetes-runner).
 

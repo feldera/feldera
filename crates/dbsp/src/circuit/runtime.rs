@@ -19,6 +19,7 @@ use crate::{
         backend::StorageError,
         buffer_cache::{BufferCache, build_buffer_caches},
         dirlock::LockedDirectory,
+        page_cache,
     },
 };
 use core_affinity::{CoreId, get_core_ids};
@@ -26,6 +27,7 @@ use crossbeam::channel::{Receiver, Sender, TryRecvError, bounded};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
+use feldera_observability::system::Cgroup;
 use feldera_samply::{LongSpanBuilder, Span};
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
@@ -357,13 +359,17 @@ fn format_size(bytes: Option<u64>) -> String {
 /// The memory budget and the circuit's memory limit, in bytes.
 struct MemoryLimit {
     /// The process memory budget from the config, if any: the circuit config
-    /// at startup, then each resize through [`Runtime::set_max_rss_bytes`].
+    /// at startup, then each resize through [`Runtime::set_memory_limit`].
     configured: Option<u64>,
 
     /// The circuit's memory limit, if any: `configured` capped by the memory
     /// available to the process, minus the reserved memory. It changes when
     /// either of them changes. See [`circuit_max_rss`].
     limit: Option<u64>,
+
+    /// The container memory limit that a resize waits for. See
+    /// [`Runtime::set_memory_limit`].
+    page_cache: Option<page_cache::Target>,
 }
 
 struct RuntimeInner {
@@ -724,6 +730,7 @@ impl RuntimeInner {
             memory_limit: Mutex::new(MemoryLimit {
                 configured: config.max_rss_bytes,
                 limit: circuit_max_rss(config.max_rss_bytes, config.reserved_memory_bytes),
+                page_cache: None,
             }),
             reserved_memory: config.reserved_memory_bytes,
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
@@ -792,6 +799,17 @@ impl RuntimeInner {
 
     fn max_rss(&self) -> Option<u64> {
         self.memory_limit().limit
+    }
+
+    /// Drops page cache of the files under `dir` if a resize waits for a lower
+    /// memory limit in `cgroup`.
+    fn check_page_cache(&self, cgroup: &Cgroup, dir: &Path) {
+        page_cache::check(
+            &self.memory_limit,
+            |memory_limit| &mut memory_limit.page_cache,
+            cgroup,
+            dir,
+        );
     }
 
     /// Recomputes the circuit's memory limit from `available_memory`, and
@@ -999,8 +1017,13 @@ impl Runtime {
             .unwrap()
             .replace(tokio_merger_runtime);
 
-        // Monitor process RSS and update memory pressure.
-        runtime.spawn_aux_thread("rss-monitor", Parker::new(), |parker| {
+        // Monitor process RSS and update memory pressure. Also drop page cache
+        // when a resize waits for a lower container memory limit.
+        let storage_cgroup = runtime
+            .storage_path()
+            .map(Path::to_path_buf)
+            .zip(Cgroup::own());
+        runtime.spawn_aux_thread("rss-monitor", Parker::new(), move |parker| {
             let runtime = Runtime::runtime().unwrap();
 
             let mut pressure_span = None;
@@ -1061,6 +1084,9 @@ impl Runtime {
                         .memory_pressure_epoch
                         .fetch_add(1, Ordering::Relaxed);
                     runtime.inner().memory_pressure_notify.notify_waiters();
+                }
+                if let Some((dir, cgroup)) = &storage_cgroup {
+                    runtime.inner().check_page_cache(cgroup, dir);
                 }
                 parker.park_timeout(Duration::from_secs(1));
             }
@@ -1456,11 +1482,22 @@ impl Runtime {
         self.inner().max_rss()
     }
 
-    /// Changes the memory budget while the circuit runs. The limit changes at
-    /// once; the memory pressure follows on the RSS monitor's next tick.
-    pub fn set_max_rss_bytes(&self, max_rss: Option<u64>) {
+    /// Changes the memory budget to `max_rss` while the circuit runs. The limit
+    /// changes at once; the memory pressure follows on the RSS monitor's next
+    /// tick.
+    ///
+    /// With `container_limit`, also drops storage files from the page cache
+    /// until the container's memory limit is at most `container_limit`.
+    /// Kubernetes lowers a running container's limit only when its memory use,
+    /// page cache included, is below the new limit.
+    pub fn set_memory_limit(&self, max_rss: Option<u64>, container_limit: Option<u64>) {
         let inner = self.inner();
-        inner.memory_limit().configured = max_rss;
+        let mut memory_limit = inner.memory_limit();
+        memory_limit.configured = max_rss;
+        if let Some(bytes) = container_limit {
+            memory_limit.page_cache = Some(page_cache::Target::new(bytes));
+        }
+        drop(memory_limit);
         inner.update_max_rss(available_memory_bytes());
     }
 
@@ -2892,7 +2929,7 @@ pub(crate) mod tests {
 
         // The same holds for a configured budget below the reservation.
         set_mock_available_memory_bytes(Some(20 * GIB));
-        runtime.set_max_rss_bytes(Some(GIB));
+        runtime.set_memory_limit(Some(GIB), None);
         assert_eq!(runtime.max_rss_bytes(), Some(GIB / 2));
     }
 
@@ -2913,21 +2950,64 @@ pub(crate) mod tests {
         let runtime = circuit.runtime();
         wait_for_max_rss(runtime, Some(6 * GIB), MemoryPressure::Low);
 
-        // A smaller budget changes the limit before `set_max_rss_bytes`
+        // A smaller budget changes the limit before `set_memory_limit`
         // returns. 1 GiB of 1.1 GiB is high pressure.
-        runtime.set_max_rss_bytes(Some(GIB + GIB / 10));
+        runtime.set_memory_limit(Some(GIB + GIB / 10), None);
         assert_eq!(runtime.max_rss_bytes(), Some(GIB + GIB / 10));
         wait_for_max_rss(runtime, Some(GIB + GIB / 10), MemoryPressure::High);
 
         // A budget larger than the container waits until the container grows.
-        runtime.set_max_rss_bytes(Some(12 * GIB));
+        runtime.set_memory_limit(Some(12 * GIB), None);
         wait_for_max_rss(runtime, Some(8 * GIB), MemoryPressure::Low);
         set_mock_available_memory_bytes(Some(16 * GIB));
         wait_for_max_rss(runtime, Some(12 * GIB), MemoryPressure::Low);
 
         // Without a budget, the available memory is the limit.
-        runtime.set_max_rss_bytes(None);
+        runtime.set_memory_limit(None, None);
         wait_for_max_rss(runtime, Some(16 * GIB), MemoryPressure::Low);
+    }
+
+    /// A container limit given to `set_memory_limit` waits in the RSS monitor's
+    /// page cache check until the cgroup's limit is at most that limit.
+    #[test]
+    fn page_cache_check_waits_for_the_container_limit() {
+        use crate::storage::page_cache::tests::write_cgroup;
+        use feldera_observability::system::Cgroup;
+
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(GIB);
+        set_mock_available_memory_bytes(Some(8 * GIB));
+
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(CircuitConfig::with_workers(1), |circuit| {
+                Ok(circuit.add_input_zset::<u64>().1)
+            })
+            .unwrap();
+        let inner = circuit.runtime().inner();
+        let cgroup_dir = tempfile::tempdir().unwrap();
+        let storage = tempfile::tempdir().unwrap();
+        let cgroup = Cgroup::at(cgroup_dir.path().to_path_buf());
+        let waiting = || inner.memory_limit().page_cache.is_some();
+
+        // A resize down waits while the cgroup keeps the old limit.
+        circuit.runtime().set_memory_limit(None, Some(4 * GIB));
+        write_cgroup(cgroup_dir.path(), 8 * GIB, GIB, 0);
+        inner.check_page_cache(&cgroup, storage.path());
+        assert!(waiting());
+
+        // The kubelet applied the limit.
+        write_cgroup(cgroup_dir.path(), 4 * GIB, GIB, 0);
+        inner.check_page_cache(&cgroup, storage.path());
+        assert!(!waiting());
+
+        // A resize up has nothing to wait for.
+        circuit.runtime().set_memory_limit(None, Some(16 * GIB));
+        assert!(waiting());
+        inner.check_page_cache(&cgroup, storage.path());
+        assert!(!waiting());
     }
 
     /// Test the memory pressure thresholds and how merger threads behave

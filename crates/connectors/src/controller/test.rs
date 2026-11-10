@@ -284,9 +284,9 @@ pub fn circuit_thread_panic_is_reported(engine: &dyn PipelineTestEngine) {
     assert_eq!(stop_error.error_code(), "ControllerPanic");
 }
 
-/// A resize changes the memory budget, unless `max_rss` sets it. The pipeline
-/// reports only the last `memory_max` it got; an update without one changes
-/// nothing.
+/// A resize changes the memory budget, or caps it when `max_rss` sets it. The
+/// pipeline reports only the last `memory_max` it got; an update without one
+/// changes nothing.
 #[engine_test]
 pub fn resize_sets_memory_budget(engine: &dyn PipelineTestEngine) {
     init_test_logger();
@@ -303,8 +303,9 @@ pub fn resize_sets_memory_budget(engine: &dyn PipelineTestEngine) {
     // 600 MB leaves 550 MB. The test machine has more memory than that.
     for (max_rss_mb, memory_mb, update, expected_mb) in [
         (None, Some(1_000), resize(None, Some(600)), 550),
-        // `max_rss` sets the budget.
-        (Some(1_000), None, resize(None, Some(600)), 950),
+        // `max_rss` sets the budget, and `memory_max` caps it.
+        (Some(1_000), None, resize(None, Some(600)), 550),
+        (Some(1_000), None, resize(None, Some(2_000)), 950),
         // DataFusion reserved 50 MB, but keeps at most half of 40 MB.
         (None, Some(1_000), resize(None, Some(40)), 20),
         // No `memory_max`: CPU only.

@@ -5783,6 +5783,7 @@ dependencies = [
  "memory-stats",
  "serde_json",
  "sysinfo 0.39.6",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]

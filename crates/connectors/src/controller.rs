@@ -2513,17 +2513,18 @@ impl Controller {
         Ok(())
     }
 
-    /// Applies a resize. The new `memory_max` becomes the memory budget, unless
-    /// `max_rss` sets the budget. Without `memory_max`, nothing changes.
+    /// Applies a resize. The new `memory_max` becomes the memory budget, or
+    /// caps it when `max_rss` sets it. Without `memory_max`, nothing changes.
     pub fn apply_dynamic_config(&self, config: DynamicConfig) {
         let Some(memory_max) = config.resources.memory_max else {
             return;
         };
-        if self.inner.status.pipeline_config.global.max_rss.is_none() {
-            self.inner
-                .runtime
-                .set_max_rss_bytes(Some(memory_max.as_bytes()));
-        }
+        let mut global = self.inner.status.pipeline_config.global.clone();
+        global.resources.memory_max = Some(memory_max);
+        self.inner.runtime.set_memory_limit(
+            global.effective_memory().map(ConfigSize::as_bytes),
+            Some(memory_max.as_bytes()),
+        );
         *self.inner.memory_max.lock().unwrap() = Some(memory_max);
     }
 
@@ -6623,17 +6624,8 @@ impl ControllerInit {
                 config_error: Box::new(ConfigError::InvalidDevTweaks { error }),
             })?;
 
-        let mut max_rss = pipeline_config.global.max_rss;
-
-        if max_rss.is_none()
-            && let Some(memory_max) = &pipeline_config.global.resources.memory_max
-        {
-            info!(
-                "RSS memory limit ('max_rss') is not set; using 'resources.memory_max' \
-({memory_max}) as the RSS memory limit."
-            );
-            max_rss = Some(*memory_max);
-        } else if max_rss.is_none() && pipeline_config.global.resources.memory_max.is_none() {
+        let max_rss = pipeline_config.global.effective_memory();
+        if max_rss.is_none() {
             warn!(
                 "RSS memory limit ('max_rss') is not set, and no deployment memory limit \
 ('resources.memory_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
@@ -6645,16 +6637,18 @@ impl ControllerInit {
         // DBSP circuit reserve it, so the circuit only uses the remainder.
         // Without this, the circuit and DataFusion would each independently
         // grow to the full budget, which would double-book RAM.
+        if let Some((datafusion_memory, max_rss)) =
+            pipeline_config.global.datafusion_memory_exceeding_budget()
+        {
+            return Err(ControllerError::Config {
+                config_error: Box::new(ConfigError::DatafusionMemoryExceedsBudget {
+                    datafusion_memory,
+                    max_rss,
+                }),
+            });
+        }
         let datafusion_memory = pipeline_config.global.resolved_datafusion_memory();
         if let (Some(rss), Some(df)) = (max_rss, datafusion_memory) {
-            if df >= rss {
-                return Err(ControllerError::Config {
-                    config_error: Box::new(ConfigError::DatafusionMemoryExceedsBudget {
-                        datafusion_memory: df,
-                        max_rss: rss,
-                    }),
-                });
-            }
             info!(
                 "memory budget split: circuit RSS {}, datafusion {df} (total {rss})",
                 rss.saturating_sub(df)
@@ -11202,7 +11196,9 @@ mod controller_init_tests {
     use super::{ControllerBuilder, ControllerInit};
     use crate::ControllerError;
     use feldera_adapterlib::errors::controller::ConfigError;
-    use feldera_types::config::{DevTweaks, InputEndpointConfig, PipelineConfig, RuntimeConfig};
+    use feldera_types::config::{
+        DevTweaks, InputEndpointConfig, PipelineConfig, ResourceConfig, RuntimeConfig,
+    };
     use feldera_types::pipeline_diff::PipelineDiff;
     use feldera_types::size::ConfigSize;
     use serde_json::json;
@@ -11381,6 +11377,32 @@ mod controller_init_tests {
                 if matches!(
                     *config_error,
                     ConfigError::DatafusionMemoryExceedsBudget { .. },
+            ),
+        ));
+    }
+
+    /// The budget is the smaller of `max_rss` and `memory_max`, so a
+    /// `datafusion_memory` below `max_rss` but not below `memory_max` fails.
+    #[test]
+    fn circuit_config_checks_datafusion_memory_against_memory_max() {
+        let config = pipeline_config(RuntimeConfig {
+            workers: 1,
+            max_rss: Some(ConfigSize::from_mb(10_000)),
+            resources: ResourceConfig {
+                memory_max: Some(ConfigSize::from_mb(8_000)),
+                ..Default::default()
+            },
+            datafusion_memory: Some(ConfigSize::from_mb(9_000)),
+            ..Default::default()
+        });
+        let result = ControllerInit::circuit_params(None, &config, None);
+        assert!(matches!(
+            result,
+            Err(ControllerError::Config { config_error })
+                if matches!(
+                    *config_error,
+                    ConfigError::DatafusionMemoryExceedsBudget { max_rss, .. }
+                        if max_rss == ConfigSize::from_mb(8_000),
             ),
         ));
     }
