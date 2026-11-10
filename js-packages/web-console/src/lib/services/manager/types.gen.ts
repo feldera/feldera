@@ -1420,11 +1420,12 @@ export type DeltaTableReaderConfig = {
   max_retries?: number | null
   mode: DeltaTableIngestMode
   /**
-   * The number of parallel parsing tasks the connector uses to process data read from the
-   * table. Increasing this value can enhance performance by allowing more concurrent processing.
-   * Recommended range: 1–10. The default is 4.
+   * The number of record batches the connector parses at the same time. Parsing runs on a
+   * pool with one thread per CPU core, which all connectors share, so a larger value only
+   * helps while the pool has idle threads. Each batch in flight holds memory.
+   * The default is the number of CPU cores available to the pipeline, at most 16.
    */
-  num_parsers?: number
+  num_parsers?: number | null
   /**
    * Number of data files the connector decodes concurrently.
    *
@@ -1556,6 +1557,7 @@ export type DeltaTableReaderConfig = {
     | null
     | DeltaTableIngestMode
     | number
+    | null
     | number
     | null
     | boolean
@@ -1564,6 +1566,7 @@ export type DeltaTableReaderConfig = {
     | string
     | null
     | DeltaTableTransactionMode
+    | number
     | number
     | null
     | undefined
@@ -3001,11 +3004,15 @@ export type IcebergReaderConfig = GlueCatalogConfig &
     metadata_location?: string | null
     mode: IcebergIngestMode
     /**
-     * The number of parallel parsing tasks the connector uses to process data read from the
-     * table. Increasing this value can enhance performance by allowing more concurrent processing.
-     * Recommended range: 1-10. The default is 4.
+     * The number of record batches the connector parses at the same time. Parsing runs on a
+     * pool with one thread per CPU core, which all connectors share, so a larger value only
+     * helps while the pool has idle threads. Each batch in flight holds memory.
+     * The default is the number of CPU cores available to the pipeline, at most 16.
+     *
+     * When set, this is also the number of files the connector reads at the same time,
+     * which is 4 otherwise.
      */
-    num_parsers?: number
+    num_parsers?: number | null
     /**
      * Optional row filter.
      *
@@ -3080,6 +3087,7 @@ export type IcebergReaderConfig = GlueCatalogConfig &
       | null
       | IcebergIngestMode
       | number
+      | null
       | string
       | null
       | number
