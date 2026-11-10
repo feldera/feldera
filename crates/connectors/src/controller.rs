@@ -875,6 +875,30 @@ where
     reply.unwrap_or_else(|_| Err(E::from(ControllerError::ControllerExit)))
 }
 
+/// Returns a warning if `new` has a [StepRequest::seq] that does not follow
+/// the one in `last`, the previous numbered request.
+///
+/// The coordinator increments the number for each new numbered request, so a
+/// smaller number, or the same number on a different request, is a protocol
+/// error.  The same request with the same number is a retry, which is OK.
+/// The host only reports the number back, so this is only a diagnostic.
+fn unexpected_step_request_seq(last: Option<&StepRequest>, new: &StepRequest) -> Option<String> {
+    let last = last?;
+    let (last_seq, new_seq) = (last.seq?, new.seq?);
+    if new_seq < last_seq {
+        Some(format!(
+            "coordinator sent step request seq {new_seq} after seq {last_seq}: {new:?}"
+        ))
+    } else if new_seq == last_seq && new != last {
+        Some(format!(
+            "coordinator sent step request seq {new_seq} again with a different request \
+             (was {last:?}, now {new:?})"
+        ))
+    } else {
+        None
+    }
+}
+
 impl Controller {
     /// Returns a controller that runs the circuit of `circuit_factory` with `config`, and
     /// reports errors to `error_cb`, as an engine's tests build one.
@@ -2532,6 +2556,14 @@ impl Controller {
     }
 
     pub fn set_coordination_request(&self, coordination_request: StepRequest) {
+        if coordination_request.seq.is_some() {
+            let mut last = self.inner.last_numbered_step_request.lock().unwrap();
+            if let Some(warning) = unexpected_step_request_seq(last.as_ref(), &coordination_request)
+            {
+                warn!("{warning}");
+            }
+            *last = Some(coordination_request.clone());
+        }
         self.inner
             .transaction_info
             .lock()
@@ -3017,6 +3049,10 @@ struct CircuitThread {
     ///
     /// This is updated to match `step` whenever it changes.
     step_sender: tokio::sync::watch::Sender<StepStatus>,
+
+    /// [StepRequest::seq] of the latest coordination request that the main
+    /// loop saw.  Reported in [StepStatus::request_seq].
+    step_request_seq: Option<u64>,
 
     /// Used to notify watchers of checkpoint status for coordination.
     checkpoint_sender: tokio::sync::watch::Sender<Option<CheckpointCoordination>>,
@@ -3557,6 +3593,7 @@ impl CircuitThread {
             sync_checkpoint_requests: Vec::new(),
             step,
             step_sender,
+            step_request_seq: None,
             checkpoint_sender,
             input_metadata: input_metadata.unwrap_or_default(),
             commit_updates: None,
@@ -3688,14 +3725,27 @@ impl CircuitThread {
                         );
                     }
                 });
+                // We are not deciding from an older request while stalled,
+                // so we can report the latest request as seen.
+                let seq = self
+                    .controller
+                    .coordination_request
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|request| request.seq);
+                self.publish_step_request_seq(seq);
                 self.parker.park_deadline(warning.next_warning());
                 continue;
             }
             output_backpressure_warning = None;
 
             let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
+            self.step_request_seq = coordination_request
+                .as_ref()
+                .and_then(|request| request.seq);
             let step_selection = self.next_step_selection(coordination_request.as_ref());
-            match trigger.trigger(
+            let action = trigger.trigger(
                 self.last_checkpoint(),
                 self.last_checkpoint_sync(),
                 // `replay_finalize` keeps forcing steps after the journal is
@@ -3715,7 +3765,14 @@ impl CircuitThread {
                 &step_selection,
                 coordination_request,
                 self.step,
-            ) {
+            );
+
+            // Tell the coordinator that we saw its request.  If we start a
+            // step, `step()` reports it instead.
+            if action != Action::Step || self.concurrent_phase == ConcurrentPhase::Synchronize {
+                self.publish_step_request_seq(self.step_request_seq);
+            }
+            match action {
                 Action::Step => {
                     // During the synchronize (cutover) window the main circuit
                     // must not step: inputs are paused and the engine rejects
@@ -3957,13 +4014,16 @@ impl CircuitThread {
             .total_initiated_steps
             .store(self.step + 1, Ordering::Release);
 
-        self.step_sender.send_replace(StepStatus::new(
-            self.step,
-            StepAction::Step,
-            self.controller
-                .get_transaction_state()
-                .into_coordination_status(),
-        ));
+        self.step_sender.send_replace(
+            StepStatus::new(
+                self.step,
+                StepAction::Step,
+                self.controller
+                    .get_transaction_state()
+                    .into_coordination_status(),
+            )
+            .with_request_seq(self.step_request_seq),
+        );
         let total_consumed = match Span::new("input")
             .with_category("Step")
             .with_tooltip(|| format!("supply input before step {}", self.step + 1))
@@ -4085,7 +4145,8 @@ impl CircuitThread {
                     .status
                     .committed()
                     .total_processed_input_records,
-            ),
+            )
+            .with_request_seq(self.step_request_seq),
         );
 
         if let Some(ft) = self.ft.as_mut() {
@@ -4324,6 +4385,18 @@ impl CircuitThread {
                 .and_then(|c| c.circuit.as_ref())
                 .map(|c| c.uuid),
         };
+    }
+
+    /// Reports in the step status that the main loop saw the coordination
+    /// request numbered `seq`, so that it will not start a step from an older
+    /// request.  Sends nothing if the status already says so.
+    fn publish_step_request_seq(&mut self, seq: Option<u64>) {
+        self.step_request_seq = seq;
+        self.step_sender.send_if_modified(|status| {
+            let changed = status.request_seq != seq;
+            status.request_seq = seq;
+            changed
+        });
     }
 
     /// Sets the value in `self.checkpoint_sender` to `checkpoint_coordination`,
@@ -7977,6 +8050,9 @@ pub struct ControllerInner {
     checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
     transaction_receiver: tokio::sync::watch::Receiver<TransactionCoordination>,
     coordination_request: Mutex<Option<StepRequest>>,
+    /// The latest [StepRequest] that had a [StepRequest::seq], to log a
+    /// sequence number that does not increase.
+    last_numbered_step_request: Mutex<Option<StepRequest>>,
     coordination_prepare_checkpoint: AtomicBool,
     input_completion_notify: Arc<Notify>,
     // The mutex is acquired from async context by actix and
@@ -8153,6 +8229,7 @@ impl ControllerInner {
                 checkpoint_receiver,
                 transaction_receiver,
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
+                last_numbered_step_request: Mutex::new(None),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
                 input_completion_notify,
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
