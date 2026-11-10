@@ -21,6 +21,8 @@ use feldera_adapterlib::{
         InputQueueEntry, InputReader, InputReaderCommand, IntegratedInputEndpoint, Resume,
         Watermark,
     },
+    utils::arrow_layout::order_columns,
+    utils::arrow_timestamps::{check_timestamp_columns, timestamps_to_micros},
     utils::backoff::calculate_backoff_delay,
     utils::datafusion::{
         array_to_string, columns_referenced_by_expression, create_session_context_with,
@@ -75,7 +77,7 @@ use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -1152,7 +1154,7 @@ impl IcebergInputReader {
             .validate_catalog_config()
             .map_err(|e| anyhow!(e))?;
 
-        if endpoint.config.num_parsers == 0 {
+        if endpoint.config.num_parsers == Some(0) {
             bail!("invalid Iceberg connector configuration: 'num_parsers' must be greater than 0");
         }
 
@@ -1350,6 +1352,8 @@ impl Drop for IcebergInputReader {
 struct IcebergInputEndpointInner {
     endpoint_name: String,
     config: IcebergReaderConfig,
+    /// The columns of the SQL table, set when the worker task starts.
+    sql_fields: OnceLock<Arc<Vec<Field>>>,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
     queue: Arc<InputQueue<QueueEntry, StagedInputBuffer>>,
@@ -1420,6 +1424,7 @@ impl IcebergInputEndpointInner {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
+            sql_fields: OnceLock::new(),
             consumer,
             datafusion,
             queue,
@@ -1432,6 +1437,11 @@ impl IcebergInputEndpointInner {
             startup_choice: Mutex::new(None),
             started_snapshot_transaction: Mutex::new(None),
         }
+    }
+
+    /// The columns of the SQL table, or none before the worker task starts.
+    fn sql_fields(&self) -> Arc<Vec<Field>> {
+        self.sql_fields.get().cloned().unwrap_or_default()
     }
 
     /// Returns true if this host follows the table after the snapshot.
@@ -2117,7 +2127,7 @@ impl IcebergInputEndpointInner {
         // One DELETE can touch thousands of files, so read them concurrently.
         let new_deletes: Vec<Option<FileRead>> = stream::iter(new_deletes)
             .map(|new_deletes| self.new_deletes_read(table.file_io(), new_deletes))
-            .buffer_unordered(self.config.num_parsers as usize)
+            .buffer_unordered(self.config.read_concurrency())
             .try_collect()
             .await?;
         deletes.extend(new_deletes.into_iter().flatten());
@@ -2204,7 +2214,7 @@ impl IcebergInputEndpointInner {
                 let manifest = self.read_manifest(table, manifest_file).await?;
                 Ok::<_, AnyError>((manifest_file, manifest))
             })
-            .buffer_unordered(self.config.num_parsers as usize);
+            .buffer_unordered(self.config.read_concurrency());
         while let Some((manifest_file, manifest)) = manifests.try_next().await? {
             let mut summary = DeleteManifestSummary::default();
             for entry in manifest.entries().iter().filter(|entry| entry.is_alive()) {
@@ -2248,7 +2258,7 @@ impl IcebergInputEndpointInner {
             .filter(|manifest_file| may_hold_files_for(manifest_file, newest_dv));
         let mut manifests = stream::iter(manifests)
             .map(|manifest_file| self.read_manifest(table, manifest_file))
-            .buffer_unordered(self.config.num_parsers as usize);
+            .buffer_unordered(self.config.read_concurrency());
         let mut live = HashSet::new();
         while let Some(manifest) = manifests.try_next().await? {
             live.extend(live_paths(manifest.entries(), data_files));
@@ -2473,7 +2483,7 @@ impl IcebergInputEndpointInner {
         let runtime = Runtime::try_current()
             .map_err(|e| anyhow!("no tokio runtime available for the Iceberg reader: {e}"))?;
         let reader = ArrowReaderBuilder::new(table.file_io().clone(), runtime)
-            .with_data_file_concurrency_limit(self.config.num_parsers as usize)
+            .with_data_file_concurrency_limit(self.config.read_concurrency())
             .build();
 
         let data_columns: Vec<usize> = (0..field_ids.len()).collect();
@@ -2759,6 +2769,7 @@ impl IcebergInputEndpointInner {
         mut receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
+        let _ = self.sql_fields.set(Arc::new(schema.fields.clone()));
         let table = match self.open_table_with_retries().await {
             Err(e) => {
                 let _ = init_status_sender.send(Err(e)).await;
@@ -3348,6 +3359,12 @@ impl IcebergInputEndpointInner {
             )
         })?;
 
+        // `iceberg_input_serde_config` reads a TIMESTAMP column as microseconds,
+        // so it must be an Arrow timestamp, not an integer.
+        check_timestamp_columns(&schema.fields, provider.schema().as_ref()).map_err(|e| {
+            ControllerError::invalid_transport_configuration(&self.endpoint_name, &e)
+        })?;
+
         let used_columns = used_columns(provider.schema().as_ref(), schema, &self.config);
         if used_columns.is_empty() {
             return Err(ControllerError::invalid_transport_configuration(
@@ -3627,7 +3644,7 @@ impl IcebergInputEndpointInner {
 
     /// A single attempt of the `execute_df` retry loop.
     ///
-    /// Record batches are parsed by a pool of `num_parsers` tasks. Parsing runs
+    /// Record batches are parsed by `num_parsers` jobs at a time. Parsing runs
     /// concurrently, but [`JobQueue`] preserves ordering, so parsed buffers reach
     /// the input queue in the same order the batches were read.
     async fn execute_df_inner(
@@ -3661,7 +3678,7 @@ impl IcebergInputEndpointInner {
             .await
     }
 
-    /// Parse a record-batch stream on a pool of `num_parsers` tasks and push the
+    /// Parse a record-batch stream with `num_parsers` jobs at a time and push the
     /// resulting buffers to the input queue in enqueue order.
     ///
     /// Shared by the snapshot read path ([`execute_df_inner`]) and the follow
@@ -3679,9 +3696,10 @@ impl IcebergInputEndpointInner {
         let mut total_records = 0usize;
 
         let queue = self.queue.clone();
-        let num_parsers = self.config.num_parsers as usize;
+        let num_parsers = self.config.num_parsers() as usize;
+        let fields = self.sql_fields();
 
-        // Job queue that parses record batches on a pool of tasks and pushes the
+        // Job queue that parses record batches on the parser pool and pushes the
         // resulting buffers to the input queue in enqueue order.
         let job_queue = JobQueue::<
             (FileBatch, DateTime<Utc>),
@@ -3693,33 +3711,23 @@ impl IcebergInputEndpointInner {
             ),
         >::new(
             num_parsers,
-            // Both the worker closure and each per-job future need an owned
-            // (`'static`) stream, so each level forks once:
-            //   - the outer fork gives every worker its own stream, since the
-            //     closure can't capture the borrowed `&mut input_stream`;
-            //   - the inner fork produces a fresh stream to move into each job's
-            //     future, since an `FnMut` can't move its captured stream out
-            //     more than once.
+            // Each worker forks its own stream, since the closure can't capture
+            // the borrowed `&mut input_stream`.
             move || {
-                let input_stream = input_stream.fork();
+                let fields = fields.clone();
+                let mut input_stream = input_stream.fork();
                 Box::new(move |((batch, file), timestamp): (FileBatch, _)| {
-                    Box::pin({
-                        let mut input_stream = input_stream.fork();
-                        async move {
-                            let rows = file.map(|file| (file, batch.num_rows() as u64));
-                            let (buffer, errors) =
-                                Self::parse_record_batch(batch, polarity, input_stream.as_mut())
-                                    .await;
-                            // Stage the parsed buffer so the flush cost is paid
-                            // here, ahead of circuit demand, rather than when the
-                            // controller drains the queue.
-                            let staged_buffer = buffer.map(|buffer| {
-                                let len = buffer.len();
-                                StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
-                            });
-                            (staged_buffer, errors, timestamp, rows)
-                        }
-                    })
+                    let rows = file.map(|file| (file, batch.num_rows() as u64));
+                    let (buffer, errors) =
+                        Self::parse_record_batch(batch, polarity, &fields, input_stream.as_mut());
+                    // Stage the parsed buffer so the flush cost is paid here,
+                    // ahead of circuit demand, rather than when the controller
+                    // drains the queue.
+                    let staged_buffer = buffer.map(|buffer| {
+                        let len = buffer.len();
+                        StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
+                    });
+                    (staged_buffer, errors, timestamp, rows)
                 })
             },
             move |(buffer, errors, timestamp, rows)| {
@@ -3768,11 +3776,27 @@ impl IcebergInputEndpointInner {
     }
 
     /// Parse a single record batch into an input buffer.
-    async fn parse_record_batch(
+    fn parse_record_batch(
         batch: RecordBatch,
         polarity: bool,
+        fields: &[Field],
         input_stream: &mut dyn ArrowStream,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        // `iceberg_input_serde_config` reads timestamps as microseconds.
+        let batch = match timestamps_to_micros(batch) {
+            Ok(batch) => batch,
+            Err(e) => {
+                return (
+                    None,
+                    vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
+                );
+            }
+        };
+        // Columns in declaration order are read by position, which is faster.
+        let (batch, by_name) = order_columns(batch, fields);
+        if let Some(reason) = by_name {
+            debug!("reading the records of a batch by field name: {reason}");
+        }
         let result = if polarity {
             input_stream.insert(&batch, &None)
         } else {

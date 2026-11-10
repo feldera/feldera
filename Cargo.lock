@@ -5938,6 +5938,7 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tracing",
+ "typeid",
  "utoipa",
  "uuid",
 ]
@@ -12754,6 +12755,7 @@ dependencies = [
  "serial_test",
  "static-connectors",
  "tempfile",
+ "tikv-jemallocator",
  "tokio",
  "tokio-util",
  "tracing",

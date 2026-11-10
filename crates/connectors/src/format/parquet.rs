@@ -51,6 +51,7 @@ pub const fn default_arrow_serde_config() -> &'static SqlSerdeConfig {
         variant_format: VariantFormat::JsonString,
         binary_format: BinaryFormat::Array,
         uuid_format: UuidFormat::String,
+        positional_fields: false,
     }
 }
 

@@ -61,6 +61,8 @@ use deltalake::{DeltaTable, DeltaTableBuilder, DeltaTableError, Path, datafusion
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
+use feldera_adapterlib::utils::arrow_layout::order_columns;
+use feldera_adapterlib::utils::arrow_timestamps::{check_timestamp_columns, timestamps_to_micros};
 use feldera_adapterlib::utils::backoff::calculate_backoff_delay;
 use feldera_adapterlib::utils::datafusion::{
     ColumnNameSet, array_to_string, columns_referenced_by_expression,
@@ -989,7 +991,7 @@ impl DeltaTableInputReader {
 
         config.validate().map_err(|e| anyhow!("{e}"))?;
 
-        if config.num_parsers == 0 {
+        if config.num_parsers == Some(0) {
             bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
         }
 
@@ -2795,6 +2797,11 @@ impl DeltaTableInputEndpointInner {
             return;
         }
 
+        if let Err(e) = self.validate_timestamp_columns() {
+            let _ = init_status_sender.send(Err(e)).await;
+            return;
+        }
+
         if let Err(e) = self.prepare_snapshot_query(&table).await {
             let _ = init_status_sender.send(Err(e)).await;
             return;
@@ -3495,6 +3502,17 @@ impl DeltaTableInputEndpointInner {
     ///
     /// `change_feed = require` fails unless the table has `delta.enableChangeDataFeed` set.
     /// `auto` accepts either.
+    /// Rejects a TIMESTAMP column that the table stores as anything but an
+    /// Arrow timestamp, which `delta_input_serde_config` would read as
+    /// microseconds.
+    fn validate_timestamp_columns(&self) -> Result<(), ControllerError> {
+        let invalid = |message: String| {
+            ControllerError::invalid_transport_configuration(&self.endpoint_name, &message)
+        };
+        let schema = self.logical_schema().map_err(|e| invalid(e.to_string()))?;
+        check_timestamp_columns(&self.schema.fields, &schema).map_err(invalid)
+    }
+
     fn validate_change_data_feed(&self, table: &DeltaTable) -> Result<(), ControllerError> {
         if !self.config.reads_change_feed() {
             return Ok(());
@@ -3802,7 +3820,8 @@ impl DeltaTableInputEndpointInner {
 
         let queue = self.queue.clone();
 
-        let num_parsers = self.config.num_parsers as usize;
+        let num_parsers = self.config.num_parsers() as usize;
+        let fields = Arc::new(self.schema.fields.clone());
 
         // Create a job queue to efficiently parse record batches retrieved by the query.
         let job_queue = JobQueue::<
@@ -3812,24 +3831,17 @@ impl DeltaTableInputEndpointInner {
             num_parsers,
             move || {
                 let polarity = polarity.clone();
-                let input_stream = input_stream.fork();
+                let fields = fields.clone();
+                let mut input_stream = input_stream.fork();
 
                 Box::new(move |(batch, timestamp)| {
-                    Box::pin({
-                        let polarity = polarity.clone();
-                        let mut input_stream = input_stream.fork();
-
-                        async move {
-                            let (parsed_buffer, errors) =
-                                Self::parse_record_batch(batch, &polarity, input_stream.as_mut())
-                                    .await;
-                            let staged_buffer = parsed_buffer.map(|buffer| {
-                                let len = buffer.len();
-                                StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
-                            });
-                            (staged_buffer, errors, timestamp)
-                        }
-                    })
+                    let (parsed_buffer, errors) =
+                        Self::parse_record_batch(batch, &polarity, &fields, input_stream.as_mut());
+                    let staged_buffer = parsed_buffer.map(|buffer| {
+                        let len = buffer.len();
+                        StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
+                    });
+                    (staged_buffer, errors, timestamp)
                 })
             },
             move |(buffer, errors, timestamp)| {
@@ -3894,9 +3906,10 @@ impl DeltaTableInputEndpointInner {
         Ok(total_records)
     }
 
-    async fn parse_record_batch(
+    fn parse_record_batch(
         batch: RecordBatch,
         polarity: &Polarity,
+        fields: &[Field],
         input_stream: &mut dyn ArrowStream,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         // `ChangeType` takes its polarities out of the batch, so resolve the
@@ -3922,6 +3935,22 @@ impl DeltaTableInputEndpointInner {
                 }
             },
         };
+
+        // `delta_input_serde_config` reads timestamps as microseconds.
+        let batch = match timestamps_to_micros(batch) {
+            Ok(batch) => batch,
+            Err(e) => {
+                return (
+                    None,
+                    vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
+                );
+            }
+        };
+        // Columns in declaration order are read by position, which is faster.
+        let (batch, by_name) = order_columns(batch, fields);
+        if let Some(reason) = by_name {
+            debug!("reading the records of a batch by field name: {reason}");
+        }
 
         let result = match (polarity, &polarities) {
             (_, Some(polarities)) => input_stream.insert_with_polarities(&batch, polarities, &None),

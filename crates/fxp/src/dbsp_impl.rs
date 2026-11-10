@@ -9,6 +9,7 @@ use serde::{Deserializer, Serialize, Serializer};
 use smallstr::SmallString;
 use std::fmt::Write;
 
+use crate::serde_impl::SignificandVisitor;
 use crate::{DynamicDecimal, Fixed, FixedInteger};
 
 impl<const P: usize, const S: usize> NumEntries for Fixed<P, S> {
@@ -148,15 +149,23 @@ impl SerializeWithContext<SqlSerdeConfig> for DynamicDecimal {
     }
 }
 
-impl<'de, C, AUX, const P: usize, const S: usize> DeserializeWithContext<'de, C, AUX>
+impl<'de, AUX, const P: usize, const S: usize> DeserializeWithContext<'de, SqlSerdeConfig, AUX>
     for Fixed<P, S>
 {
     #[inline(never)]
-    fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
+    fn deserialize_with_context<D>(
+        deserializer: D,
+        context: &'de SqlSerdeConfig,
+    ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        serde::Deserialize::deserialize(deserializer)
+        match context.decimal_format {
+            DecimalFormat::I128 => deserializer.deserialize_any(SignificandVisitor),
+            DecimalFormat::Numeric | DecimalFormat::String => {
+                serde::Deserialize::deserialize(deserializer)
+            }
+        }
     }
 }
 
@@ -180,6 +189,63 @@ mod test {
     };
 
     use crate::Fixed;
+
+    /// `DecimalFormat::I128` reads a significand, as an integer or as bytes,
+    /// and the other decimal forms. The other formats reject bytes.
+    #[test]
+    fn deserialize_significand() {
+        use feldera_types::serde_with_context::{
+            DeserializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
+        };
+        use serde::de::value::{BytesDeserializer, Error, I128Deserializer, StrDeserializer};
+
+        type D = Fixed<10, 2>;
+        let i128_config = SqlSerdeConfig::default().with_decimal_format(DecimalFormat::I128);
+        let string_config = SqlSerdeConfig::default().with_decimal_format(DecimalFormat::String);
+        let expected: D = "123.45".parse().unwrap();
+        let bytes = 12345_i128.to_ne_bytes();
+        let from_bytes = |bytes, config| -> Result<D, Error> {
+            DeserializeWithContext::<_, ()>::deserialize_with_context(
+                BytesDeserializer::new(bytes),
+                config,
+            )
+        };
+
+        assert_eq!(from_bytes(&bytes, &i128_config), Ok(expected));
+        assert_eq!(
+            DeserializeWithContext::<_, ()>::deserialize_with_context(
+                I128Deserializer::<Error>::new(12345),
+                &i128_config
+            ),
+            Ok(expected)
+        );
+        assert_eq!(
+            DeserializeWithContext::<_, ()>::deserialize_with_context(
+                StrDeserializer::<Error>::new("123.45"),
+                &i128_config
+            ),
+            Ok(expected)
+        );
+
+        // 11 digits do not fit in DECIMAL(10, 2).
+        let too_large = 12_345_678_901_i128.to_ne_bytes();
+        // The message shows the number, not its significand.
+        assert_eq!(
+            from_bytes(&too_large, &i128_config)
+                .unwrap_err()
+                .to_string(),
+            "decimal number 123456789.01 is outside the value range -99999999.99 to 99999999.99 (inclusive)"
+        );
+        let too_small = (-12_345_678_905_i128).to_ne_bytes();
+        assert!(
+            from_bytes(&too_small, &i128_config)
+                .unwrap_err()
+                .to_string()
+                .starts_with("decimal number -123456789.05 ")
+        );
+        assert!(from_bytes(&bytes[..8], &i128_config).is_err());
+        assert!(from_bytes(&bytes, &string_config).is_err());
+    }
 
     // This is copied from `crates/dbsp/src/operator/dynamic/aggregate.rs`
     // with the value type changed from `i64` to `Fixed<10,0>`.
