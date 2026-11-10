@@ -1,5 +1,6 @@
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
+import { OIDC_CALLBACK_PATH } from '#lib/services/auth.ts'
 import { getAuthConfig } from '#lib/services/pipelineManager.ts'
 
 // import { decode } from '@auth/core/jwt'
@@ -219,8 +220,7 @@ export type OidcConfig = {
 
 type AuthConfig = { oidc: OidcConfig; logoutExtras?: Record<string, string> }
 
-const redirectUri =
-  'window' in globalThis ? window.location.origin + resolve(`/auth/callback/`) : ''
+const redirectUri = 'window' in globalThis ? window.location.origin + OIDC_CALLBACK_PATH : ''
 
 export const loadAuthConfig = async () => {
   const authConfig = await getAuthConfig()

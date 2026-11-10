@@ -4,9 +4,17 @@ import type { load } from './+layout'
 
 // The fake PostHog drops events sent before `init`, the same as the real SDK.
 const m = vi.hoisted(() => {
-  const state = { posthogReady: false, sent: [] as string[] }
+  const state = {
+    posthogReady: false,
+    sent: [] as string[],
+    // Each full-page navigation, with the URL it leaves (the next page's `document.referrer`).
+    navigations: [] as { from: string; to: string }[]
+  }
   return {
     state,
+    initConceptualHq: vi.fn(),
+    initProductFruits: vi.fn(),
+    loginCallbackAsync: vi.fn(async () => {}),
     posthog: {
       init: () => {
         state.posthogReady = true
@@ -26,12 +34,12 @@ const m = vi.hoisted(() => {
 
 vi.mock('posthog-js', () => ({ default: m.posthog }))
 vi.mock('#lib/services/conceptualHq.ts', () => ({
-  initConceptualHq: () => {},
+  initConceptualHq: m.initConceptualHq,
   isConceptualHqInitialized: () => false,
   trackConceptualHq: () => {},
   trackConceptualHqSignup: () => {}
 }))
-vi.mock('#lib/services/productFruits.ts', () => ({ initProductFruits: () => {} }))
+vi.mock('#lib/services/productFruits.ts', () => ({ initProductFruits: m.initProductFruits }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), refreshAll: vi.fn() }))
 vi.mock('#lib/compositions/auth.ts', () => ({
   loadAuthConfig: async () => ({ oidc: { redirect_uri: 'http://console/auth/callback' } })
@@ -42,6 +50,7 @@ vi.mock('@axa-fr/oidc-client', () => ({
   OidcClient: {
     getOrCreate: () => () => ({
       tryKeepExistingSessionAsync: async () => {},
+      loginCallbackAsync: m.loginCallbackAsync,
       tokens: { idTokenPayload: { auth_time: 1000 }, accessToken: 'token' },
       userInfoAsync: async () => ({ sub: 'user-1', email: 'a@b.com' })
 })
@@ -70,12 +79,28 @@ const memoryStorage = () => {
 // A page load, by default in a new browser with no stored state. The layout,
 // analytics and PostHog modules keep state in module variables, so each load
 // imports new instances.
-const pageLoad = async (localStorage = memoryStorage()) => {
+const pageLoad = async (localStorage = memoryStorage(), href = 'http://console/') => {
   m.state.posthogReady = false
   m.state.sent = []
+  m.state.navigations = []
+  vi.clearAllMocks()
   vi.stubGlobal('localStorage', localStorage)
+  const location = {
+    href,
+    get pathname() {
+      return new URL(location.href).pathname
+    },
+    replace: (to: string) => {
+      m.state.navigations.push({ from: location.href, to })
+    }
+  }
   vi.stubGlobal('window', {
-    location: { href: 'http://console/' },
+    location,
+    history: {
+      replaceState: (_data: unknown, _unused: string, url: string) => {
+        location.href = new URL(url, location.href).href
+      }
+    },
     localStorage,
     sessionStorage: memoryStorage()
   })
@@ -156,5 +181,46 @@ describe('root layout load', () => {
     m.fetchConfigs.mockResolvedValue({ config: config('key'), sessionConfig: undefined })
     await (await import('./+layout')).load({} as Parameters<typeof load>[0])
     expect(m.state.sent).toEqual(['signin'])
+  })
+})
+
+describe('root layout load on the OIDC callback page', () => {
+  const callbackUrl = 'http://console/auth/callback/?code=secret-code&state=secret-state'
+
+  const loadCallbackPage = () => {
+    m.getCachedConfigsForRender.mockReturnValue({})
+    m.fetchConfigs.mockResolvedValue({ config: config('key'), sessionConfig: undefined })
+    return pageLoad(memoryStorage(), callbackUrl)
+  }
+
+  it('goes to the app root with the code and state removed from the URL', async () => {
+    await loadCallbackPage()
+
+    await vi.waitFor(() =>
+      expect(m.state.navigations).toEqual([{ from: 'http://console/auth/callback/', to: '/' }])
+    )
+  })
+
+  // The fake OIDC client has tokens, as with a session that is still valid
+  // when the user opens the callback URL again.
+  it('starts no analytics while the URL holds the code and state', async () => {
+    // The code exchange does not finish, so the URL keeps the code and state.
+    m.loginCallbackAsync.mockReturnValueOnce(new Promise(() => {}))
+
+    await loadCallbackPage()
+
+    expect(m.state.posthogReady).toBe(false)
+    expect(m.initConceptualHq).not.toHaveBeenCalled()
+    expect(m.state.sent).toEqual([])
+  })
+
+  it('still starts the analytics on the app root', async () => {
+    m.getCachedConfigsForRender.mockReturnValue({})
+    m.fetchConfigs.mockResolvedValue({ config: config('key'), sessionConfig: undefined })
+
+    await pageLoad()
+
+    expect(m.state.posthogReady).toBe(true)
+    expect(m.initConceptualHq).toHaveBeenCalledOnce()
   })
 })

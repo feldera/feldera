@@ -110,3 +110,6 @@ js-packages/support-bundle-triage/
 .envrc
 .direnv
 .env
+
+# Local scratch files
+/.tmp/
