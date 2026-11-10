@@ -2014,9 +2014,9 @@ mod tests {
         crate::ensure_default_crypto_provider();
         let (db, _temp) = setup_pg().await;
         let db = Arc::new(Mutex::new(db));
-        // A 3 MiB program: over the 2 MiB default, under a 4 MiB limit.
+        // A 3 MiB program: over a 2 MiB limit (the actix-web default), under the default limit.
         let body = serde_json::json!({"name": "p", "program_code": "x".repeat(3 * 1024 * 1024)});
-        for (limit, expected_status) in [(None, 413), (Some(4 * 1024 * 1024), 201)] {
+        for (limit, expected_status) in [(Some(2 * 1024 * 1024), 413), (None, 201)] {
             let mut cfg = ApiServerConfig::test_config();
             if let Some(limit) = limit {
                 cfg.max_json_body_bytes = limit;

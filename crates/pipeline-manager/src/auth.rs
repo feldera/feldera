@@ -1988,7 +1988,7 @@ mod test {
             upper_limit_storage_megabyte: None,
             upper_limit_memory_megabyte: None,
             enable_storage_autoscaling: None,
-            max_json_body_bytes: 2 * 1024 * 1024,
+            max_json_body_bytes: 64 * 1024 * 1024,
         }
     }
 
