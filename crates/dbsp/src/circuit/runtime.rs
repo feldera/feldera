@@ -22,6 +22,7 @@ use crate::{
         page_cache,
     },
 };
+use atomic::Atomic;
 use core_affinity::{CoreId, get_core_ids};
 use crossbeam::channel::{Receiver, Sender, TryRecvError, bounded};
 use crossbeam::sync::{Parker, Unparker};
@@ -47,7 +48,7 @@ use std::mem::replace;
 use std::net::TcpListener;
 use std::ops::{Index, Range};
 use std::path::Path;
-use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::{
@@ -391,7 +392,7 @@ struct RuntimeInner {
 
     /// Current memory pressure updated every second as a function of process_rss, max_rss,
     /// and previous memory pressure.
-    memory_pressure: AtomicU8,
+    memory_pressure: Atomic<MemoryPressure>,
 
     /// Monotonic counter incremented whenever memory pressure transitions to high/critical.
     memory_pressure_epoch: AtomicU64,
@@ -734,7 +735,7 @@ impl RuntimeInner {
             }),
             reserved_memory: config.reserved_memory_bytes,
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
-            memory_pressure: AtomicU8::new(MemoryPressure::Low as u8),
+            memory_pressure: Atomic::new(MemoryPressure::Low),
             memory_pressure_epoch: AtomicU64::new(0),
             memory_pressure_notify: Arc::new(Notify::new()),
             storage,
@@ -788,7 +789,7 @@ impl RuntimeInner {
     }
 
     fn memory_pressure(&self) -> MemoryPressure {
-        MemoryPressure::try_from(self.memory_pressure.load(Ordering::Relaxed)).unwrap()
+        self.memory_pressure.load(Ordering::Relaxed)
     }
 
     fn memory_limit(&self) -> MutexGuard<'_, MemoryLimit> {
@@ -1073,7 +1074,7 @@ impl Runtime {
                 runtime
                     .inner()
                     .memory_pressure
-                    .store(new_memory_pressure as u8, Ordering::Relaxed);
+                    .store(new_memory_pressure, Ordering::Relaxed);
 
                 // At high and critical levels, wakeup merger threads to push all in-memory batches to disk.
                 if previous_pressure < MemoryPressure::High

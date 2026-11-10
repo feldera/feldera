@@ -35,6 +35,7 @@ heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
 testing = []
 
 [dependencies]
+atomic = { workspace = true }
 num = { workspace = true }
 anyhow = { workspace = true }
 petgraph = { workspace = true }
