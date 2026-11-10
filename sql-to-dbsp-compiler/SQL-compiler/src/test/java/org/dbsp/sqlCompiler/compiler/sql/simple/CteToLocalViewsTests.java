@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CteToLocalViews;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -11,7 +10,6 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.util.HashMap;
 import java.util.List;
 
 /** Tests for the conversion of common table expressions into local views. */
@@ -133,24 +131,19 @@ public class CteToLocalViewsTests extends SqlIoTest {
                  2  | 30 | 1""");
     }
 
-    /** A correlated subquery reads a CTE that contains a correlated EXISTS.
-     * Calcite cannot decorrelate the view with the CTE inlined, but it can
-     * decorrelate the view with the CTE as a local view. */
-    static final String CORRELATED_CTE_PROGRAM = """
-            CREATE TABLE t(id INT, arr INT ARRAY);
-            CREATE TABLE t2(v INT);
-            CREATE VIEW v AS
-            WITH e AS (SELECT t.id, u.v FROM t, UNNEST(t.arr) AS u(v)
-                       WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.v = u.v))
-            SELECT e.id, e.v,
-                   (SELECT COUNT(*) FROM e AS e2 WHERE e2.id = e.id) AS cnt
-            FROM e;""";
-
     @Test
-    public void testAutomaticFallback() {
-        // The compiler retries with the CTE as a local view.
+    public void testCorrelatedCte() {
+        // A correlated subquery reads a CTE that contains a correlated EXISTS.
         // Expected output validated on Postgres.
-        var ccs = this.getCCS(CORRELATED_CTE_PROGRAM);
+        var ccs = this.getCCS("""
+                CREATE TABLE t(id INT, arr INT ARRAY);
+                CREATE TABLE t2(v INT);
+                CREATE VIEW v AS
+                WITH e AS (SELECT t.id, u.v FROM t, UNNEST(t.arr) AS u(v)
+                           WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.v = u.v))
+                SELECT e.id, e.v,
+                       (SELECT COUNT(*) FROM e AS e2 WHERE e2.id = e.id) AS cnt
+                FROM e;""");
         ccs.stepWeightOne("""
                 INSERT INTO t VALUES(1, ARRAY[10, 20, 30]), (2, ARRAY[30, 40]);
                 INSERT INTO t2 VALUES(10), (30);""", """
@@ -159,20 +152,6 @@ public class CteToLocalViewsTests extends SqlIoTest {
                  1  | 10 | 2
                  1  | 30 | 2
                  2  | 30 | 1""");
-    }
-
-    @Test
-    public void testRetryRequested() throws SqlParseException {
-        // compileCreateView must request the CTE rewrite.
-        DBSPCompiler compiler = this.testCompiler();
-        SqlToRelCompiler sqlToRel = compiler.sqlToRelCompiler;
-        List<ParsedStatement> statements = sqlToRel.parseStatements(CORRELATED_CTE_PROGRAM);
-        sqlToRel.compile(statements.get(0), compiler.sources);
-        sqlToRel.compile(statements.get(1), compiler.sources);
-        try {
-            sqlToRel.compileCreateView(statements.get(2), new HashMap<>(), compiler.sources, true);
-            Assert.fail("Expected a CTE rewrite request");
-        } catch (CteToLocalViews.Retry ignored) {}
     }
 
     @Test
