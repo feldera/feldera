@@ -149,7 +149,7 @@ Contains:
     try {
       // Fetch both datasets in parallel
       const [profile, dataflow] = await Promise.all([
-        fetch(`/v0/pipelines/${pipelineId}/circuit_profile`).then((r) => r.json()),
+        fetch(`/v0/pipelines/${pipelineId}/circuit_json_profile`).then((r) => r.json()),
         fetch(`/dataflow/${pipelineId}.json`).then((r) => r.json())
       ])
 

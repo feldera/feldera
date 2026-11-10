@@ -20,6 +20,13 @@ Source edition can be found on github.
   the same location as `bucket`, if `read_bucket` and `bucket` are in
   different object stores, or if the deprecated `standby` field is `true`. See
   [Configuration checks at start](/pipelines/checkpoint-sync#configuration-checks-at-start).
+- Incompatible change (REST API, fda): the endpoint
+  `GET /v0/pipelines/{pipeline_name}/circuit_profile`, which returned the
+  circuit profile as graphviz `.dot` files in a zip archive, is removed, and so
+  is the `fda circuit-profile` command.  A support bundle no longer contains
+  `circuit_profile.zip`.  To get the circuit profile, use
+  `GET /v0/pipelines/{pipeline_name}/circuit_json_profile`, which returns it as
+  JSON, or open a support bundle in the profile viewer of the Web Console.
 
 ## v0.382.0
 

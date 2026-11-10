@@ -79,49 +79,6 @@ impl Region {
     }
 
     /// Output region as a cluster in a visual graph.
-    ///
-    /// # Arguments
-    ///
-    /// * `annotation` - annotation to attach to the region.
-    /// * `annotate` - function used to annotate nodes inside the region.
-    ///   Returns a label and an "importance" (between 0 and 1) for the node.
-    fn visualize(
-        &self,
-        scope: &Node,
-        annotation: &str,
-        annotate: &dyn Fn(&GlobalNodeId) -> (String, f64),
-    ) -> ClusterNode {
-        let mut nodes = Vec::new();
-        for nodeid in self.nodes.iter() {
-            if let Some(vnode) = scope
-                .children()
-                .unwrap()
-                .get(nodeid)
-                .unwrap()
-                .visualize(annotate)
-            {
-                nodes.push(vnode)
-            }
-        }
-
-        for child in self.children.iter() {
-            nodes.push(VisNode::Cluster(child.visualize(scope, "", annotate)));
-        }
-
-        ClusterNode::new(
-            Self::region_identifier(&scope.id, &self.id),
-            format!(
-                "{}{}{}",
-                label(&self.name, self.location),
-                if annotation.is_empty() { "" } else { "\\l" },
-                annotation
-            ),
-            nodes,
-        )
-    }
-
-    /// Output region as a cluster in a visual graph.
-    /// Similar to 'visualize', but does not merge halves of strict operators.
     fn get_graph(&self, scope: &Node) -> ClusterNode {
         let mut nodes = Vec::new();
         for nodeid in self.nodes.iter() {
@@ -338,48 +295,11 @@ impl Node {
     }
 
     /// Output circuit node as a node in a visual graph.
-    fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> (String, f64)) -> Option<VisNode> {
-        let (annotation, importance) = annotate(&self.id);
-
-        match &self.kind {
-            NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id).to_string(),
-                format!(
-                    "{}{}{}",
-                    label(&self.name, self.location),
-                    if annotation.is_empty() { "" } else { "\\l" },
-                    annotation
-                ),
-                importance,
-            ))),
-
-            NodeKind::Circuit { region, .. } => Some(VisNode::Cluster(region.visualize(
-                self,
-                &annotation,
-                annotate,
-            ))),
-
-            NodeKind::StrictInput { output } => Some(VisNode::Simple(SimpleNode::new(
-                Self::node_identifier(&self.id.parent_id().unwrap().child(*output)).to_string(),
-                format!(
-                    "{}{}{}",
-                    label(&self.name, self.location),
-                    if annotation.is_empty() { "" } else { "\\l" },
-                    annotation
-                ),
-                importance,
-            ))),
-            NodeKind::StrictOutput => None,
-        }
-    }
-
-    /// Output circuit node as a node in a visual graph, without merging the two halves of strict operators.
     fn get_graph(&self) -> Option<VisNode> {
         match &self.kind {
             NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
                 Self::node_identifier(&self.id).to_string(),
                 label(&self.name, self.location),
-                0f64,
             ))),
 
             NodeKind::Circuit { region, .. } => Some(VisNode::Cluster(region.get_graph(self))),
@@ -387,12 +307,10 @@ impl Node {
             NodeKind::StrictInput { .. } => Some(VisNode::Simple(SimpleNode::new(
                 Self::node_identifier(&self.id).to_string(),
                 label(&self.name, self.location),
-                0f64,
             ))),
             NodeKind::StrictOutput => Some(VisNode::Simple(SimpleNode::new(
                 Self::node_identifier(&self.id).to_string(),
                 format!("{}{}", label(&self.name, self.location), " (output)"),
-                0f64,
             ))),
         }
     }
@@ -465,38 +383,7 @@ impl CircuitGraph {
         }
     }
 
-    /// Output circuit graph as visual graph.
-    pub(super) fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> (String, f64)) -> VisGraph {
-        let cluster = self.nodes.visualize(annotate).unwrap().cluster().unwrap();
-
-        let mut edges = Vec::new();
-
-        for (from_id, to) in self.edges.iter() {
-            let from_node = self.node_ref(from_id).unwrap();
-
-            for (to_id, _kind) in to.iter() {
-                let to_node = self.node_ref(to_id).unwrap();
-                let to_id = match to_node.kind {
-                    NodeKind::StrictInput { output } => to_id.parent_id().unwrap().child(output),
-                    _ => to_id.clone(),
-                };
-
-                // Don't draw self-loops on strict operators.
-                if from_id != &to_id {
-                    edges.push(VisEdge::new(
-                        Node::node_identifier(from_id).to_string(),
-                        from_node.is_circuit(),
-                        Node::node_identifier(&to_id).to_string(),
-                        to_node.is_circuit(),
-                    ));
-                }
-            }
-        }
-
-        VisGraph::new(cluster, edges)
-    }
-
-    /// Similar to 'visualize' without any annotations, but it does not merge the two halves of strict operators.
+    /// Output circuit graph as a visual graph.
     pub(super) fn get_graph(&self) -> VisGraph {
         let cluster = self.nodes.get_graph().unwrap().cluster().unwrap();
 
@@ -526,7 +413,7 @@ fn label(name: &str, location: OperatorLocation) -> String {
             .file()
             // Strip the crate's path from any of its operators
             .trim_start_matches(env!("CARGO_MANIFEST_DIR"))
-            // Windows uses "\" for paths which dot interprets as an escape char
+            // Normalize Windows separators for the split below
             .replace('\\', "/");
 
         // Abbreviate the file name to the first letter of each directory

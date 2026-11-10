@@ -58,7 +58,6 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("GET", "/v0/pipelines/{pipeline_name}/checkpoints", Role::Read), // get_checkpoints
     ("GET", "/v0/pipelines/{pipeline_name}/checkpoints/remote", Role::Read), // get_remote_checkpoints
     ("GET", "/v0/pipelines/{pipeline_name}/circuit_json_profile", Role::Read), // get_pipeline_circuit_json_profile
-    ("GET", "/v0/pipelines/{pipeline_name}/circuit_profile", Role::Read), // get_pipeline_circuit_profile
     ("POST", "/v0/pipelines/{pipeline_name}/clear", Role::Write), // post_pipeline_clear
     ("POST", "/v0/pipelines/{pipeline_name}/clock/advance", Role::Write), // clock_advance
     ("POST", "/v0/pipelines/{pipeline_name}/commit_transaction", Role::Write), // commit_transaction

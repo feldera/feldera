@@ -879,6 +879,6 @@ mod tests {
             let output = output_handle.concat().consolidate();
             assert_eq!(output, expected_output);
         }
-        dbsp.dump_profile(std::env::temp_dir().join("q16")).unwrap();
+        dbsp.retrieve_profile().unwrap();
     }
 }

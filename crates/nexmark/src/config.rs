@@ -29,10 +29,6 @@ pub struct Config {
     #[clap(long, default_value = "2", env = "NEXMARK_CPU_CORES")]
     pub cpu_cores: usize,
 
-    /// Dump DBSP profiles for all executed queries to the specified directory.
-    #[clap(long, env = "NEXMARK_PROFILE_PATH")]
-    pub profile_path: Option<String>,
-
     /// Queries to run, all by default.
     #[clap(long, env = "NEXMARK_QUERIES", value_enum)]
     pub query: Vec<Query>,
@@ -145,7 +141,6 @@ impl Default for Config {
             __bench: true,
             generator_options: GeneratorOptions::default(),
             cpu_cores: 2,
-            profile_path: None,
             query: Vec::new(),
             input_batch_size: 40_000,
             output_csv: None,
