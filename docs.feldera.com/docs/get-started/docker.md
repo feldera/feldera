@@ -94,10 +94,12 @@ proxy rule is needed.
 
 ## Request body limit
 
-The API server accepts JSON request bodies of up to 64 MiB, so it refuses a
-pipeline with a larger SQL program with `413 Payload Too Large`. Set
-`FELDERA_MAX_JSON_BODY_BYTES` (or the `--max-json-body-bytes` flag) to change
-the limit, in bytes. For example, to raise it to 256 MiB:
+The API server accepts JSON request bodies of up to 64 MiB. When you create or
+update a pipeline, the body holds its name, description, tags, SQL program, Rust
+UDF code, and runtime, program and deployment configuration. A larger body gets
+`413 Payload Too Large`. Set `FELDERA_MAX_JSON_BODY_BYTES` (or the
+`--max-json-body-bytes` flag) to change the limit, in bytes. For example, to
+raise it to 256 MiB:
 
 ```
 docker run -p 8080:8080 -e FELDERA_MAX_JSON_BODY_BYTES=268435456 \

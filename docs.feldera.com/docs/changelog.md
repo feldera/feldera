@@ -13,12 +13,14 @@ Source edition can be found on github.
 - Incompatible change (support bundles): in new collections,
   `pipeline_config.json` no longer has `program_info.dataflow`, which was a
   copy of `dataflow_graph.json`.
-- The API server now accepts JSON request bodies, such as a pipeline with its
-  SQL program, of up to 64 MiB. Before, the limit was 2 MiB. Change it, in
-  bytes, with `--max-json-body-bytes` or `FELDERA_MAX_JSON_BODY_BYTES` (in the
-  Helm chart, through `controlPlane.env`), for example to lower it in a
-  sandbox. A request over the limit gets `413 Payload Too Large`, and the
-  message now names the setting.
+- The API server now accepts JSON request bodies of up to 64 MiB. Before, the
+  limit was 2 MiB. When you create or update a pipeline, the body holds its SQL
+  program, Rust UDF code, configuration, name, description and tags. Change the
+  limit, in bytes, with `--max-json-body-bytes` or
+  `FELDERA_MAX_JSON_BODY_BYTES` (in the Helm chart, through
+  `controlPlane.env`). The server holds each body in memory while it parses
+  it, so a lower limit caps the memory one request can use. A request over the
+  limit gets `413 Payload Too Large`, and the message now names the setting.
 - Delta Lake: applying a deletion vector no longer fails on Parquet files that
   Databricks Photon writes with 256-value `DELTA_BINARY_PACKED` miniblocks, as
   it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the
