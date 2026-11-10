@@ -1369,4 +1369,16 @@ public class Regression3Tests extends SqlIoTest {
                  1  | false
                  2  | false""");
     }
+
+    /** A LEFT correlate that is not over UNNEST is reported as a decorrelation failure */
+    @Test
+    public void leftCorrelateWithoutUnnest() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE t(id BIGINT, arr BIGINT ARRAY);
+                CREATE VIEW v AS SELECT t.id, (SELECT EXISTS(
+                    SELECT 1 FROM (SELECT CAST(NULL AS BIGINT) AS x FROM (VALUES (1)) AS one(c) WHERE FALSE) AS e
+                    WHERE COALESCE(ARRAY_CONTAINS(t.arr, e.x), FALSE))) AS b
+                FROM t;""",
+                "Not yet implemented: It looks like the compiler could not decorrelate this query.");
+    }
 }

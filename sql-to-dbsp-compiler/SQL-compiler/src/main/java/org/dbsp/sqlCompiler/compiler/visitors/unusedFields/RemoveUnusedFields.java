@@ -457,7 +457,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPFlatmap replacement = new DBSPFlatmap(flatmap.getNode(),
                 Objects.requireNonNull(map.compressedType(1)).to(DBSPTypeTuple.class),
                 collectionExpression, indexes, flatmap.postProcess, flatmap.ordinalityIndexType,
-                flatmap.shuffle);
+                flatmap.isOuter, flatmap.shuffle);
 
         DBSPSimpleOperator result = new DBSPFlatMapOperator(
                 operator.getRelNode(), replacement, operator.getOutputZSetType(), adjust.outputPort());

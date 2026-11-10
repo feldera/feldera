@@ -44,6 +44,24 @@ public class SerializationTests extends StreamingTestBase {
     }
 
     @Test
+    public void testLeftJoinUnnest() {
+        String sql = """
+                CREATE TABLE data(id INT NOT NULL, arr INT ARRAY);
+                CREATE VIEW V AS SELECT d.id, m.x, m.o
+                FROM data d LEFT JOIN UNNEST(d.arr) WITH ORDINALITY AS m(x, o) ON TRUE;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).setRoundTripThroughJson();
+        // Expected output validated with Postgres
+        ccs.stepWeightOne("""
+                INSERT INTO data VALUES (1, ARRAY[10, 20]), (2, ARRAY()), (3, NULL);""", """
+                 id | x   | o
+                ----------------
+                 1  | 10  | 1
+                 1  | 20  | 2
+                 2  |NULL |NULL
+                 3  |NULL |NULL""");
+    }
+
+    @Test
     public void testLargeProgram() {
         String sql = """
                 CREATE TABLE customers(

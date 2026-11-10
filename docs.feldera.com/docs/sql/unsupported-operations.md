@@ -107,15 +107,23 @@ subqueries. In these cases, we recommend users refactor the query.
 
 See [#2555](https://github.com/feldera/feldera/issues/2555).
 
-## `LEFT JOIN UNNEST`
+## `LEFT JOIN UNNEST` with a join condition
 
-`LEFT JOIN UNNEST(...)` and `OUTER APPLY (...)`, are not yet supported:
+`LEFT JOIN UNNEST(...)` is supported only with the join condition `ON
+TRUE`.  A condition on the unnested values, and a `LEFT JOIN LATERAL`
+of a subquery over `UNNEST`, are not yet supported:
 
 ```sql
--- NOT supported: LEFT JOIN UNNEST
+-- NOT supported: LEFT JOIN UNNEST with a join condition
 SELECT s.id, mention_id
 FROM spreadsheet s
-LEFT JOIN UNNEST(s.mentions) AS m(mention_id) ON TRUE;
+LEFT JOIN UNNEST(s.mentions) AS m(mention_id) ON mention_id > 0;
+
+-- NOT supported: LEFT JOIN LATERAL of a subquery over UNNEST
+SELECT s.id, t.next_id
+FROM spreadsheet s
+LEFT JOIN LATERAL (SELECT mention_id + 1 AS next_id
+                   FROM UNNEST(s.mentions) AS m(mention_id)) AS t ON TRUE;
 ```
 
 ## Map functions

@@ -44,6 +44,10 @@ import java.util.stream.IntStream;
  *  Tup::new(data.field1, data.field2, ..., e.1, cast(e.0+1))
  * } ) }
  *
+ * If 'isOuter' is true, an empty or NULL collection produces one output row
+ * whose element columns and ordinality are NULL (LEFT JOIN UNNEST);
+ * an outer flatmap has no postProcess.
+ *
  * <p>This is used within a flatmap operation.
  * - data is a "row"
  * - indexType is null if there is no ordinality, and is the
@@ -78,6 +82,9 @@ public final class DBSPFlatmap extends DBSPExpression {
      * output last if there are no postProces functions. */
     @Nullable
     public final DBSPType ordinalityIndexType;
+    /** If true, an empty or NULL collection produces one row whose element columns
+     * and ordinality are NULL; if false, it produces no rows. */
+    public final boolean isOuter;
     /** Shuffle to apply to elements in the produced tuple */
     public final Shuffle shuffle;
     public final DBSPTypeCode collectionKind;
@@ -89,14 +96,16 @@ public final class DBSPFlatmap extends DBSPExpression {
                        @Nullable
                        List<DBSPClosureExpression> postProcess,
                        @Nullable DBSPType ordinalityIndexType,
+                       boolean isOuter,
                        Shuffle shuffle) {
         super(node, computeFunctionType(inputRowType, collectionExpression, passthroughIndexes,
-                postProcess, ordinalityIndexType, shuffle));
+                postProcess, ordinalityIndexType, isOuter, shuffle));
         this.inputRowType = inputRowType;
         this.postProcess = postProcess;
         this.collectionExpression = collectionExpression;
         this.collectionKind = collectionExpression.getResultType().code;
         this.passthroughIndexes = passthroughIndexes;
+        this.isOuter = isOuter;
         Utilities.enforce(this.collectionKind == DBSPTypeCode.ARRAY ||
                 this.collectionKind == DBSPTypeCode.MAP);
         if (ordinalityIndexType != null && this.collectionKind == DBSPTypeCode.MAP) {
@@ -113,6 +122,9 @@ public final class DBSPFlatmap extends DBSPExpression {
         this.ordinalityIndexType = ordinalityIndexType;
         Utilities.enforce(this.ordinalityIndexType == null ||
                 this.ordinalityIndexType.is(DBSPTypeBaseType.class));
+        Utilities.enforce(!isOuter || this.ordinalityIndexType == null || this.ordinalityIndexType.mayBeNull,
+                () -> "Outer flatmap with non-nullable ordinality " + this.ordinalityIndexType);
+        Utilities.enforce(!isOuter || postProcess == null, () -> "Outer flatmap with postProcess");
         this.shuffle = shuffle;
     }
 
@@ -149,7 +161,7 @@ public final class DBSPFlatmap extends DBSPExpression {
         // Compute the new shuffle which does not use the removed input fields
         var shuffle1 = shuffle.compress(removeFromShuffle);
         return new DBSPFlatmap(this.getNode(), this.inputRowType, this.collectionExpression,
-                passthroughIndexes, postProcess, this.ordinalityIndexType, shuffle1);
+                passthroughIndexes, postProcess, this.ordinalityIndexType, this.isOuter, shuffle1);
     }
 
     /** Types of the output columns before the shuffle: the passthrough fields,
@@ -157,7 +169,7 @@ public final class DBSPFlatmap extends DBSPExpression {
     static List<DBSPType> unshuffledColumnTypes(
             DBSPTypeTuple inputRowType, DBSPClosureExpression collectionExpression,
             List<Integer> passthroughIndexes, @Nullable List<DBSPClosureExpression> postProcess,
-            @Nullable DBSPType ordinalityIndexType) {
+            @Nullable DBSPType ordinalityIndexType, boolean isOuter) {
         // Follows the structure in LowerCircuitVisitor.rewriteFlatmap
         DBSPType iterable = collectionExpression.getResultType();
         DBSPType collectionElementType = iterable.to(ICollectionType.class).getElementType();
@@ -172,12 +184,16 @@ public final class DBSPFlatmap extends DBSPExpression {
                 resultColumns.add(clo.getResultType());
             }
         } else {
+            List<DBSPType> elementColumns = new ArrayList<>();
             if (tuple != null) {
                 for (int i = 0; i < tuple.size(); i++)
-                    resultColumns.add(tuple.getFieldExpressionType(i));
+                    elementColumns.add(tuple.getFieldExpressionType(i));
             } else {
-                resultColumns.add(collectionElementType);
+                elementColumns.add(collectionElementType);
             }
+            if (isOuter)
+                elementColumns = Linq.map(elementColumns, t -> t.withMayBeNull(true));
+            resultColumns.addAll(elementColumns);
             if (ordinalityIndexType != null) {
                 resultColumns.add(ordinalityIndexType);
             }
@@ -188,16 +204,16 @@ public final class DBSPFlatmap extends DBSPExpression {
     /** Types of the output columns before the shuffle. */
     public List<DBSPType> unshuffledColumnTypes() {
         return unshuffledColumnTypes(this.inputRowType, this.collectionExpression, this.passthroughIndexes,
-                this.postProcess, this.ordinalityIndexType);
+                this.postProcess, this.ordinalityIndexType, this.isOuter);
     }
 
     /** Given the constructor arguments, compute the type of the Flatmap as a function */
     static DBSPTypeFunction computeFunctionType(
             DBSPTypeTuple inputRowType, DBSPClosureExpression collectionExpression,
             List<Integer> passthroughIndexes, @Nullable List<DBSPClosureExpression> postProcess,
-            @Nullable DBSPType ordinalityIndexType, Shuffle shuffle) {
+            @Nullable DBSPType ordinalityIndexType, boolean isOuter, Shuffle shuffle) {
         List<DBSPType> resultColumns = unshuffledColumnTypes(inputRowType, collectionExpression,
-                passthroughIndexes, postProcess, ordinalityIndexType);
+                passthroughIndexes, postProcess, ordinalityIndexType, isOuter);
         resultColumns = shuffle.shuffle(resultColumns);
         return new DBSPTypeFunction(new DBSPTypeTuple(resultColumns), inputRowType.ref());
     }
@@ -207,7 +223,7 @@ public final class DBSPFlatmap extends DBSPExpression {
         return new DBSPFlatmap(this.getNode(),
                 this.inputRowType, this.collectionExpression,
                 this.passthroughIndexes, this.postProcess,
-                this.ordinalityIndexType, this.shuffle);
+                this.ordinalityIndexType, this.isOuter, this.shuffle);
     }
 
     @Override
@@ -217,6 +233,7 @@ public final class DBSPFlatmap extends DBSPExpression {
             return false;
         return context.equivalent(this.collectionExpression, otherExpression.collectionExpression) &&
                 Linq.same(this.passthroughIndexes, otherExpression.passthroughIndexes) &&
+                this.isOuter == otherExpression.isOuter &&
                 this.shuffle.equals(otherExpression.shuffle) &&
                 this.type.sameType(other.getType()) &&
                 new EquivalenceContext().equivalent(this.postProcess, otherExpression.postProcess);
@@ -267,6 +284,7 @@ public final class DBSPFlatmap extends DBSPExpression {
                 Linq.same(this.passthroughIndexes, o.passthroughIndexes) &&
                 Linq.same(this.postProcess, o.postProcess) &&
                 this.ordinalityIndexType == o.ordinalityIndexType &&
+                this.isOuter == o.isOuter &&
                 this.shuffle == o.shuffle;
     }
 
@@ -339,12 +357,15 @@ public final class DBSPFlatmap extends DBSPExpression {
             }
         }
         expressions = this.shuffle.shuffle(expressions);
-        return builder.append("map(|e| { ")
+        builder.append("map(|e| { ")
                 .append(DBSPTypeCode.TUPLE.rustName)
                 .append(expressions.size())
                 .append("::new(")
                 .join(", ", expressions)
-                .append(")} )}");
+                .append(")} )");
+        if (this.isOuter)
+            builder.append(".or_null_row()");
+        return builder.append("}");
     }
 
     @SuppressWarnings("unused")
@@ -361,8 +382,10 @@ public final class DBSPFlatmap extends DBSPExpression {
         List<DBSPClosureExpression> postProcess = null;
         if (node.has("postProcess"))
             postProcess = fromJsonInnerList(node, "postProcess", decoder, DBSPClosureExpression.class);
+        // Written only when true
+        boolean isOuter = node.has("isOuter") && Utilities.getBooleanProperty(node, "isOuter");
         Shuffle shuffle = Shuffle.fromJson(Utilities.getProperty(node, "shuffle"));
         return new DBSPFlatmap(CalciteObject.EMPTY, inputRowType,
-                collectionExpression, passthroughIndexes, postProcess, ordinalityIndexType, shuffle);
+                collectionExpression, passthroughIndexes, postProcess, ordinalityIndexType, isOuter, shuffle);
     }
 }

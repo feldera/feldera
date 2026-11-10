@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -65,6 +66,21 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         this.keepAggregateLists = compiler.options.ioOptions.gen2;
     }
 
+    /** The row that an outer flatmap produces for an empty collection:
+     * the passthrough fields, and NULL for every element column and the ordinality.
+     * @param flatmap          Outer flatmap.
+     * @param passthroughVars  Variables holding the passthrough fields. */
+    private static DBSPTupleExpression nullRow(DBSPFlatmap flatmap, List<DBSPVariablePath> passthroughVars) {
+        Utilities.enforce(flatmap.postProcess == null);
+        List<DBSPExpression> columns = new ArrayList<>();
+        for (DBSPVariablePath var: passthroughVars)
+            columns.add(var.applyCloneIfNeeded());
+        List<DBSPType> types = flatmap.unshuffledColumnTypes();
+        for (int i = passthroughVars.size(); i < types.size(); i++)
+            columns.add(types.get(i).none());
+        return new DBSPTupleExpression(flatmap.shuffle.shuffle(columns), false);
+    }
+
     /** Rewrite a flatmap operation into a Rust method call.
      * @param flatmap  Flatmap operation to rewrite. */
     public static DBSPExpression rewriteFlatmap(
@@ -83,6 +99,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPType collectionElementType = eType;
         List<DBSPStatement> statements = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
+        List<DBSPVariablePath> passthroughVars = new ArrayList<>();
         for (int i = 0; i < flatmap.passthroughIndexes.size(); i++) {
             int index = flatmap.passthroughIndexes.get(i);
             // let x0: Vec<i32> = x.0.clone();
@@ -93,6 +110,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
                 statements.add(stat);
             }
+            passthroughVars.add(fieldClone);
             resultColumns.add(fieldClone.applyCloneIfNeeded());
         }
 
@@ -162,6 +180,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             if (flatmap.ordinalityIndexType != null) {
                 resultColumns.add(e0plus1);
             }
+            if (flatmap.isOuter) {
+                for (int i = flatmap.passthroughIndexes.size(); i < resultColumns.size(); i++)
+                    resultColumns.set(i, resultColumns.get(i).someIfNeeded());
+            }
         }
         resultColumns = flatmap.shuffle.shuffle(resultColumns);
 
@@ -202,6 +224,17 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         }
         statement = new DBSPLetStatement("collection_clone", collectionExpression);
         statements.add(statement);
+        DBSPLetStatement nullRowStatement = null;
+        if (flatmap.isOuter) {
+            // let null_row = if collection_clone.is_empty() { Some(Tup::new(x0.clone(), None, ...)) } else { None };
+            DBSPExpression row = nullRow(flatmap, passthroughVars);
+            DBSPExpression isEmpty = new DBSPApplyMethodExpression(flatmap.getNode(), "is_empty",
+                    DBSPTypeBool.create(false), statement.getVarReference());
+            DBSPExpression someRow = new DBSPIfExpression(flatmap.getNode(), isEmpty,
+                    row.some(), row.getType().withMayBeNull(true).none());
+            nullRowStatement = new DBSPLetStatement("null_row", someRow);
+            statements.add(nullRowStatement);
+        }
 
         // move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
         //   Tuple3::new(x0.clone(), x1.clone(), e)
@@ -218,6 +251,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression function = new DBSPApplyMethodExpression(flatmap.getNode(),
                 "map", DBSPTypeAny.getDefault(),
                 iter, toTuple);
+        if (nullRowStatement != null)
+            function = new DBSPApplyMethodExpression(flatmap.getNode(),
+                    "chain", DBSPTypeAny.getDefault(),
+                    function, nullRowStatement.getVarReference());
         DBSPExpression block = new DBSPBlockExpression(statements, function);
         return block.closure(rowVar);
     }

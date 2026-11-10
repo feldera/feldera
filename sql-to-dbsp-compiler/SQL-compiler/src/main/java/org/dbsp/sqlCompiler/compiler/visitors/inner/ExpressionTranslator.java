@@ -333,7 +333,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> imple
                 node.getNode(),
                 closure.parameters[0].type.deref().to(DBSPTypeTuple.class),
                 closure, node.passthroughIndexes,
-                postProcess, node.ordinalityIndexType, node.shuffle));
+                postProcess, node.ordinalityIndexType, node.isOuter, node.shuffle));
     }
 
     @Override
