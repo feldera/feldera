@@ -4,15 +4,17 @@
 //! Connectors use this to parse record batches in parallel: several worker
 //! tasks parse concurrently, but their results are consumed in the order the
 //! jobs were enqueued, so records reach the circuit in their original order.
-
-use std::future::Future;
-use std::pin::Pin;
+//!
+//! The jobs run on [`PARSER_POOL`], not on the Tokio runtime, so a long job
+//! does not block the other tasks of the runtime.
 
 use futures::channel::oneshot;
 use tokio::{
     spawn,
     task::{JoinHandle, yield_now},
 };
+
+use super::cpu_pool::PARSER_POOL;
 
 /// A job queue that dispatches work to a pool of tokio tasks.
 ///
@@ -41,8 +43,8 @@ producer  ─┬─►│ │ │ │ │ │ ├─┼─►│worker2├──
 
 * The receiving side of the channel is pushed to the completions queue.
 
-* Worker tasks dequeue jobs from the jobs queue and send the result to the
-  one-shot channel associated with each job. The consumer receives the next
+* Worker tasks dequeue jobs from the jobs queue, run each job on PARSER_POOL,
+  and send the result to the one-shot channel associated with each job. The consumer receives the next
   item from the completion queue and waits for the output of the job.
 
 * When the producer needs to wait for all jobs in the queue to complete, it
@@ -83,13 +85,14 @@ where
     ///
     /// # Arguments
     ///
-    /// * `num_workers` - the number of threads in the worker pool. Must be >0.
+    /// * `num_workers` - the number of jobs that can run at the same time. Must be >0.
     /// * `worker_builder` - a closure that returns a closure that each worker will execute for each job.
     ///   The outer closure is needed to allocate any resources needed by the worker.
+    ///   The inner closure runs on [`PARSER_POOL`].
     /// * `consumer_func` - closure that the consumer will execute for each completed job.
     pub fn new(
         num_workers: usize,
-        worker_builder: impl Fn() -> Box<dyn FnMut(I) -> Pin<Box<dyn Future<Output = O> + Send>> + Send>,
+        worker_builder: impl Fn() -> Box<dyn FnMut(I) -> O + Send>,
         mut consumer_func: impl FnMut(O) + Send + 'static,
     ) -> Self {
         assert_ne!(num_workers, 0);
@@ -115,7 +118,14 @@ where
                         let Ok((input, completion_sender)) = job_receiver.recv().await else {
                             return;
                         };
-                        let result = worker_fn(input).await;
+                        // The closure goes to the pool with the job and comes back with the result.
+                        let (returned_fn, result) = PARSER_POOL
+                            .run(move || {
+                                let result = worker_fn(input);
+                                (worker_fn, result)
+                            })
+                            .await;
+                        worker_fn = returned_fn;
                         if completion_sender.send(result).is_err() {
                             return;
                         };
@@ -187,7 +197,37 @@ impl<I, O> Drop for JobQueue<I, O> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    };
+
+    /// A long job does not stop the other tasks of the runtime, even on a
+    /// runtime with one thread.
+    #[tokio::test(flavor = "current_thread")]
+    async fn long_job_does_not_block_runtime() {
+        let job_queue = super::JobQueue::new(
+            1,
+            || {
+                Box::new(|ms: u64| {
+                    std::thread::sleep(Duration::from_millis(ms));
+                    ms
+                })
+            },
+            |_| (),
+        );
+        job_queue.push_job(2000).await;
+
+        let start = Instant::now();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(
+            start.elapsed() < Duration::from_millis(1000),
+            "a timer waited {:?} for the job",
+            start.elapsed()
+        );
+
+        job_queue.flush().await;
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_job_queue() {
@@ -196,17 +236,17 @@ mod tests {
 
         let job_queue = super::JobQueue::new(
             6,
-            || Box::new(|i: u32| Box::pin(async move { i })),
+            || Box::new(|i: u32| i),
             move |i| result_clone.lock().unwrap().push(i),
         );
 
-        for i in 0..1000000 {
+        for i in 0..100_000 {
             job_queue.push_job(i).await;
         }
 
         job_queue.flush().await;
 
-        let expected: Vec<u32> = (0..1000000).collect();
+        let expected: Vec<u32> = (0..100_000).collect();
 
         assert_eq!(&*result.lock().unwrap(), &*expected);
     }

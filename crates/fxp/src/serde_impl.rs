@@ -58,14 +58,107 @@ impl<'de, const P: usize, const S: usize> serde::Deserialize<'de> for Fixed<P, S
     where
         D: serde::de::Deserializer<'de>,
     {
-        let decimal = DynamicDecimal::deserialize(deserializer)?;
-        decimal.try_into().map_err(|_| {
-            D::Error::custom(format!(
-                "decimal number {decimal} is outside the value range {} to {} (inclusive)",
+        fixed_from_decimal(DynamicDecimal::deserialize(deserializer)?)
+    }
+}
+
+fn fixed_from_decimal<E, const P: usize, const S: usize>(
+    decimal: DynamicDecimal,
+) -> Result<Fixed<P, S>, E>
+where
+    E: Error,
+{
+    decimal.try_into().map_err(|_| {
+        E::custom(format!(
+            "decimal number {decimal} is outside the value range {} to {} (inclusive)",
+            Fixed::<P, S>::MIN,
+            Fixed::<P, S>::MAX
+        ))
+    })
+}
+
+/// Reads a `Fixed` from its significand, as a 128-bit integer or as the 16
+/// bytes of one in native byte order, which is the form of a value in an Arrow
+/// `Decimal128` buffer. The significand must have the scale `S`.
+///
+/// Also reads every form that [`DynamicDecimal`] reads.
+#[cfg(feature = "dbsp")]
+pub(crate) struct SignificandVisitor<const P: usize, const S: usize>;
+
+#[cfg(feature = "dbsp")]
+impl<const P: usize, const S: usize> SignificandVisitor<P, S> {
+    fn significand<E>(value: i128) -> Result<Fixed<P, S>, E>
+    where
+        E: Error,
+    {
+        Fixed::new(value, S as i32).ok_or_else(|| {
+            E::custom(format!(
+                "decimal significand {value} with scale {S} is outside the value range {} to {} (inclusive)",
                 Fixed::<P, S>::MIN,
                 Fixed::<P, S>::MAX
             ))
         })
+    }
+}
+
+#[cfg(feature = "dbsp")]
+impl<'de, const P: usize, const S: usize> serde::de::Visitor<'de> for SignificandVisitor<P, S> {
+    type Value = Fixed<P, S>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a decimal number or its 128-bit significand")
+    }
+
+    fn visit_i128<E>(self, value: i128) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Self::significand(value)
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        match <[u8; 16]>::try_from(value) {
+            Ok(bytes) => Self::significand(i128::from_ne_bytes(bytes)),
+            Err(_) => Err(E::invalid_length(value.len(), &"16 bytes")),
+        }
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        fixed_from_decimal(DecimalVisitor.visit_i64(value)?)
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        fixed_from_decimal(DecimalVisitor.visit_u64(value)?)
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        fixed_from_decimal(DecimalVisitor.visit_f64(value)?)
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        fixed_from_decimal(DecimalVisitor.visit_str(value)?)
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        fixed_from_decimal(DecimalVisitor.visit_map(map)?)
     }
 }
 

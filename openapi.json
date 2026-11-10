@@ -10550,7 +10550,8 @@
           "num_parsers": {
             "type": "integer",
             "format": "int32",
-            "description": "The number of parallel parsing tasks the connector uses to process data read from the\ntable. Increasing this value can enhance performance by allowing more concurrent processing.\nRecommended range: 1–10. The default is 4.",
+            "description": "The number of record batches the connector parses at the same time. Parsing runs on a\npool with one thread per CPU core, which all connectors share, so a larger value only\nhelps while the pool has idle threads. Each batch in flight holds memory.\nThe default is the number of CPU cores available to the pipeline, at most 16.",
+            "nullable": true,
             "minimum": 0
           },
           "scan_parallelism": {
@@ -11988,7 +11989,8 @@
               "num_parsers": {
                 "type": "integer",
                 "format": "int32",
-                "description": "The number of parallel parsing tasks the connector uses to process data read from the\ntable. Increasing this value can enhance performance by allowing more concurrent processing.\nRecommended range: 1-10. The default is 4.",
+                "description": "The number of record batches the connector parses at the same time. Parsing runs on a\npool with one thread per CPU core, which all connectors share, so a larger value only\nhelps while the pool has idle threads. Each batch in flight holds memory.\nThe default is the number of CPU cores available to the pipeline, at most 16.\n\nWhen set, this is also the number of files the connector reads at the same time,\nwhich is 4 otherwise.",
+                "nullable": true,
                 "minimum": 1
               },
               "snapshot_filter": {
