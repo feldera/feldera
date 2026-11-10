@@ -5,14 +5,17 @@
 //! signature of the connector repeatedly recreating consumers on a struggling
 //! cluster.
 
+use atomic::Atomic;
+use bytemuck::NoUninit;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Retry state reported by [`NatsInputMetrics::retry_state`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u64)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, NoUninit)]
+#[repr(u8)]
 pub(super) enum RetryState {
     /// Reading, paused, or not started: no retry in progress.
+    #[default]
     Healthy = 0,
     /// Waiting for the next retry attempt.
     Retrying = 1,
@@ -27,7 +30,7 @@ pub(super) struct NatsInputMetrics {
     consumer_delete_failures: AtomicU64,
     retries: AtomicU64,
     consecutive_failures: AtomicU64,
-    retry_state: AtomicU64,
+    retry_state: Atomic<RetryState>,
 }
 
 impl NatsInputMetrics {
@@ -55,7 +58,7 @@ impl NatsInputMetrics {
     }
 
     pub(super) fn set_retry_state(&self, state: RetryState) {
-        self.retry_state.store(state as u64, Ordering::Relaxed);
+        self.retry_state.store(state, Ordering::Relaxed);
         if state == RetryState::Healthy {
             self.consecutive_failures.store(0, Ordering::Relaxed);
         }
@@ -82,7 +85,7 @@ pub(super) struct NatsInputMetricsSnapshot {
     pub consumer_delete_failures: u64,
     pub retries: u64,
     pub consecutive_failures: u64,
-    pub retry_state: u64,
+    pub retry_state: RetryState,
 }
 
 impl ConnectorMetrics for NatsInputMetrics {
@@ -122,7 +125,7 @@ impl ConnectorMetrics for NatsInputMetrics {
                 "input_connector_nats_retry_state",
                 "Retry state: 0=healthy/paused, 1=retrying, 2=stopped after a fatal error.",
                 ValueType::Gauge,
-                self.retry_state.load(Ordering::Relaxed) as f64,
+                self.retry_state.load(Ordering::Relaxed) as u8 as f64,
             ),
         ]
     }
@@ -149,12 +152,12 @@ mod tests {
         assert_eq!(snapshot.consumer_delete_failures, 1);
         assert_eq!(snapshot.retries, 1);
         assert_eq!(snapshot.consecutive_failures, 3);
-        assert_eq!(snapshot.retry_state, RetryState::Retrying as u64);
+        assert_eq!(snapshot.retry_state, RetryState::Retrying);
 
         metrics.set_retry_state(RetryState::Healthy);
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.consecutive_failures, 0);
-        assert_eq!(snapshot.retry_state, RetryState::Healthy as u64);
+        assert_eq!(snapshot.retry_state, RetryState::Healthy);
     }
 
     #[test]
