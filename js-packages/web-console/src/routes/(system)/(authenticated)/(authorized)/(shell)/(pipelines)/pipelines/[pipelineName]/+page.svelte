@@ -94,6 +94,10 @@
   })
 </script>
 
+<svelte:head>
+  <title>{pipelineName} | Feldera</title>
+</svelte:head>
+
 {#if pipelineThumb !== 'invalid_pipeline'}
   <PipelineEditLayout {pipelineName} {pipelineList} {pipelineThumb} {pipeline} {deleted}
   ></PipelineEditLayout>

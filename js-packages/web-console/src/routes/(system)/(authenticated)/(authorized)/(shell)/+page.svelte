@@ -82,6 +82,10 @@
   const globalDialog = useGlobalDialog()
 </script>
 
+<svelte:head>
+  <title>Feldera</title>
+</svelte:head>
+
 {#snippet supportBundleDialog()}
   <OpenSupportBundleDialog></OpenSupportBundleDialog>
 {/snippet}

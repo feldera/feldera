@@ -202,6 +202,28 @@ describe('profile viewer — uploaded bundles', () => {
     expect(receiveUploadedBundle).not.toHaveBeenCalled()
   })
 
+  it('names the pipeline from the URL in the tab title', async () => {
+    renderViewer({ pipelineName: 'nb-blp' })
+
+    await expect.poll(() => document.title).toBe('nb-blp | Profile Viewer')
+  })
+
+  it('names the pipeline from a bundle the URL does not name in the tab title', async () => {
+    resolveStoredBundle.mockResolvedValue(historyEntry())
+
+    renderViewer({ source: 'upload', bundle: BUNDLE.id })
+
+    await expect.poll(() => document.title).toBe('checkout | Profile Viewer')
+  })
+
+  it('names no pipeline in the tab title before a bundle opens', async () => {
+    document.title = 'stale'
+
+    renderViewer({ source: 'upload', channel: 'channel-1' })
+
+    await expect.poll(() => document.title).toBe('Profile Viewer')
+  })
+
   it('waits for the handoff when the link carries no bundle', async () => {
     renderViewer({ source: 'upload', channel: 'channel-1' })
 

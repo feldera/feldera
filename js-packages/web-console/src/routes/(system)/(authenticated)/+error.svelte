@@ -3,6 +3,10 @@
   import { page } from '$app/state'
 </script>
 
+<svelte:head>
+  <title>Error | Feldera</title>
+</svelte:head>
+
 <AppHeader></AppHeader>
 
 <div class="pt:16 flex flex-col gap-4 p-8 text-center sm:pt-32">
