@@ -2234,6 +2234,99 @@ pub fn multihost_api_transaction_committed_before_it_starts(engine: &dyn Pipelin
     controller.stop().unwrap();
 }
 
+/// In a multihost pipeline, the step status reports the number of the latest
+/// step request that the circuit thread saw, whether or not it started a step.
+/// The coordinator relies on this to tell when a host saw a cancellation.
+#[engine_test]
+pub fn multihost_step_status_reports_request_seq(engine: &dyn PipelineTestEngine) {
+    use feldera_types::coordination::{StepAction, StepInputs, StepRequest};
+
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "clock_resolution_usecs": null,
+        "multihost": { "hosts": 1 },
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &TestCircuit::identity(relation()),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    let watcher = controller.step_watcher();
+    let status = || *watcher.borrow();
+    let wait_for = |what: &str, condition: &dyn Fn() -> bool| {
+        wait(condition, 10_000)
+            .unwrap_or_else(|_| panic!("{what}; last step status: {:?}", status()));
+    };
+
+    // No numbered request yet.
+    assert_eq!(status().request_seq, None);
+    let step = status().step;
+
+    // The host reports a numbered `Idle` request and starts no step.
+    controller.set_coordination_request(StepRequest::new_idle(step).with_seq(1));
+    wait_for("seq 1 never reported", &|| status().request_seq == Some(1));
+    assert_eq!((status().step, status().action), (step, StepAction::Idle));
+
+    // The host reports a `Trigger` request even without a reason to step, and
+    // can still start the step from it later.
+    controller.set_coordination_request(
+        StepRequest::new(step, StepAction::Trigger, StepInputs::All).with_seq(2),
+    );
+    wait_for("seq 2 never reported", &|| status().request_seq == Some(2));
+    assert_eq!((status().step, status().action), (step, StepAction::Idle));
+    controller.request_step();
+    wait_for("the triggered step never ran", &|| {
+        status().step > step && status().action == StepAction::Idle
+    });
+    assert_eq!(status().request_seq, Some(2));
+
+    // After a `Step` request, the host reports its number with the step.
+    let step = status().step;
+    controller.set_coordination_request(
+        StepRequest::new(step, StepAction::Step, StepInputs::None).with_seq(3),
+    );
+    wait_for("the requested step never ran", &|| {
+        status().step > step && status().action == StepAction::Idle
+    });
+    assert_eq!(status().request_seq, Some(3));
+
+    // An `Idle` request for an older step starts no step.
+    let after = status().step;
+    controller.set_coordination_request(StepRequest::new_idle(step).with_seq(4));
+    wait_for("seq 4 never reported", &|| status().request_seq == Some(4));
+    assert_eq!((status().step, status().action), (after, StepAction::Idle));
+
+    controller.stop().unwrap();
+}
+
+/// A numbered step request that does not follow the previous one is logged.
+#[test]
+fn unexpected_step_request_seq() {
+    use super::unexpected_step_request_seq as check;
+    use feldera_types::coordination::{StepAction, StepInputs, StepRequest};
+
+    let idle = |seq| StepRequest::new_idle(5).with_seq(seq);
+    let step = |seq| StepRequest::new(5, StepAction::Step, StepInputs::None).with_seq(seq);
+
+    // Nothing to compare with.
+    assert_eq!(check(None, &idle(1)), None);
+    assert_eq!(check(Some(&StepRequest::new_idle(5)), &idle(1)), None);
+
+    // A larger number, or a retry of the same request.
+    assert_eq!(check(Some(&idle(1)), &idle(2)), None);
+    assert_eq!(check(Some(&idle(2)), &idle(2)), None);
+
+    // A smaller number, or the same number on another request.
+    assert!(check(Some(&idle(2)), &idle(1)).is_some());
+    assert!(check(Some(&idle(2)), &step(2)).is_some());
+}
+
 /// An API transaction that is started and committed while another
 /// transaction commits keeps the records queued for it, in one transaction.
 #[engine_test(requires(ChunkedCommit))]

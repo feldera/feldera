@@ -197,6 +197,13 @@ pub struct CoordinationCapabilities {
     /// [CoordinationActivate::input_choices].
     #[serde(default)]
     pub input_choices: bool,
+
+    /// The pipeline reports [StepStatus::request_seq].
+    ///
+    /// Without this capability, the coordinator cannot tell whether the
+    /// pipeline acted on a step request.
+    #[serde(default)]
+    pub step_request_seq: bool,
 }
 
 impl CoordinationCapabilities {
@@ -205,6 +212,7 @@ impl CoordinationCapabilities {
         Self {
             distributed_inputs: true,
             input_choices: true,
+            step_request_seq: true,
         }
     }
 }
@@ -389,8 +397,10 @@ pub enum StepAction {
 pub struct StepStatus {
     /// The step that is running or will run next.
     pub step: Step,
+
     /// Current action.
     pub action: StepAction,
+
     /// Whether a transaction is open:
     ///
     /// - `None`: No transaction open or committing.
@@ -401,6 +411,7 @@ pub struct StepStatus {
     ///   execute at least one more step to commit it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_status: Option<bool>,
+
     /// If `action` is [StepAction::Idle], the number of input records that
     /// this host committed in the steps before `step`; otherwise, `None`.
     ///
@@ -414,6 +425,24 @@ pub struct StepStatus {
     /// the status that it sends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_committed_records: Option<u64>,
+
+    /// The [StepRequest::seq] of the latest step request that the pipeline
+    /// saw.  Once the pipeline reports a request's number, it does not start a
+    /// step from an older request.
+    ///
+    /// This does not mean that the pipeline decided to stay idle for that
+    /// request.  After the pipeline reports the number of a
+    /// [StepAction::Trigger] request, it can still start the step from it, for
+    /// example when input arrives.  Only a [StepAction::Idle] request keeps the
+    /// pipeline from starting the step.  Thus, to cancel a step, the coordinator
+    /// sends an [StepAction::Idle] request with a new number, then waits for
+    /// the pipeline to report either that number or the step.
+    ///
+    /// `None` if the pipeline has not seen a request with a sequence
+    /// number.  A pipeline without [CoordinationCapabilities::step_request_seq]
+    /// always reports `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_seq: Option<u64>,
 }
 
 impl StepStatus {
@@ -423,6 +452,15 @@ impl StepStatus {
             action,
             transaction_status,
             total_committed_records: None,
+            request_seq: None,
+        }
+    }
+
+    /// Returns this status with `request_seq` set to `seq`.
+    pub fn with_request_seq(self, seq: Option<u64>) -> Self {
+        Self {
+            request_seq: seq,
+            ..self
         }
     }
 
@@ -490,6 +528,14 @@ pub struct StepRequest {
     /// earlier transaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transaction_id: Option<TransactionId>,
+
+    /// A number that the coordinator changes with each round of step
+    /// requests.  The pipeline reports the number of the latest request that it
+    /// saw in [StepStatus::request_seq].
+    ///
+    /// `None` means that the coordinator predates this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 impl StepRequest {
@@ -500,6 +546,15 @@ impl StepRequest {
             inputs,
             transaction_members: None,
             transaction_id: None,
+            seq: None,
+        }
+    }
+
+    /// Returns this request with `seq` set to `seq`.
+    pub fn with_seq(self, seq: u64) -> Self {
+        Self {
+            seq: Some(seq),
+            ..self
         }
     }
 
@@ -704,7 +759,7 @@ mod tests {
 
     use super::{
         CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputDistribution,
-        InputShard,
+        InputShard, StepAction, StepRequest, StepStatus,
     };
 
     fn shards(n_hosts: usize, home: usize) -> Vec<InputShard> {
@@ -743,6 +798,53 @@ mod tests {
                 prop_assert_eq!(shard.owner(unit), (home + unit as usize) % n_hosts);
             }
         }
+    }
+
+    /// Messages from a version without step request numbers have none, and
+    /// messages without numbers leave out the fields, so that an older version
+    /// can read them.
+    #[test]
+    fn step_request_seq_is_optional() {
+        let request: StepRequest = serde_json::from_value(serde_json::json!({
+            "action": "trigger",
+            "step": 5,
+            "inputs": "All",
+        }))
+        .unwrap();
+        assert_eq!(request.seq, None);
+        let status: StepStatus = serde_json::from_value(serde_json::json!({
+            "step": 5,
+            "action": "idle",
+        }))
+        .unwrap();
+        assert_eq!(status.request_seq, None);
+        let capabilities: CoordinationCapabilities =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!capabilities.step_request_seq);
+        assert!(CoordinationCapabilities::current().step_request_seq);
+
+        let request = serde_json::to_value(StepRequest::new_idle(5)).unwrap();
+        assert!(request.get("seq").is_none(), "{request}");
+        let status = serde_json::to_value(StepStatus::new(5, StepAction::Idle, None)).unwrap();
+        assert!(status.get("request_seq").is_none(), "{status}");
+    }
+
+    /// Step request numbers survive a round trip.
+    #[test]
+    fn step_request_seq_round_trips() {
+        let request = StepRequest::new_idle(5).with_seq(7);
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["seq"], 7);
+        assert_eq!(
+            serde_json::from_value::<StepRequest>(json).unwrap(),
+            request
+        );
+
+        let status = StepStatus::new(5, StepAction::Idle, None).with_request_seq(Some(7));
+        let json = serde_json::to_value(status).unwrap();
+        assert_eq!(json["request_seq"], 7);
+        let back: StepStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(back.request_seq, Some(7));
     }
 
     #[test]
