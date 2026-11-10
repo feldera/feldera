@@ -6,6 +6,10 @@
   const { data }: { data: PageData } = $props()
 </script>
 
+<svelte:head>
+  <title>Select tenant | Feldera</title>
+</svelte:head>
+
 <!-- Only the header and the picker: no acting tenant means no pipelines, health
      or banners to show, and the header's tenant-scoped items hide themselves
      when the session reports no tenant, leaving the logo, the theme switch and

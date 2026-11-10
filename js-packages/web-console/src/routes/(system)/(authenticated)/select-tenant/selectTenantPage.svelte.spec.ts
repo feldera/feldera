@@ -64,6 +64,14 @@ describe('/select-tenant page', () => {
     expect(document.body.textContent).not.toContain('Book a demo')
   })
 
+  it('replaces a stale tab title with its own', async () => {
+    document.title = 'nb-unihost-2 | Feldera'
+
+    await render(SelectTenantPage, { data })
+
+    await expect.poll(() => document.title).toBe('Select tenant | Feldera')
+  })
+
   it('offers the theme switch and sign-out, but nothing tenant-scoped', async () => {
     await render(SelectTenantPage, { data })
     profileTrigger()!.click()

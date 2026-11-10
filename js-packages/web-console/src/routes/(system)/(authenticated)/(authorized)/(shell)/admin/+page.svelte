@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-  <title>Administration — Feldera</title>
+  <title>Administration | Feldera</title>
 </svelte:head>
 
 <div class="flex h-screen flex-col overflow-hidden">

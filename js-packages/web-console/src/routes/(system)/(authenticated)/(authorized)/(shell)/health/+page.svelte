@@ -231,6 +231,10 @@
   }
 </script>
 
+<svelte:head>
+  <title>Health | Feldera</title>
+</svelte:head>
+
 <AppHeader>
   {#snippet afterStart()}
     <PipelineBreadcrumbs {breadcrumbs}></PipelineBreadcrumbs>

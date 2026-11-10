@@ -322,7 +322,7 @@
 </script>
 
 <svelte:head>
-  <title>{displayPipelineName ? `${displayPipelineName} — ` : ''}Profile Viewer</title>
+  <title>{displayPipelineName ? `${displayPipelineName} | ` : ''}Profile Viewer</title>
 </svelte:head>
 
 <input

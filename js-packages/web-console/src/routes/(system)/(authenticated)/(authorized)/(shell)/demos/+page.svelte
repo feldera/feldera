@@ -57,6 +57,10 @@
   )
 </script>
 
+<svelte:head>
+  <title>Demos | Feldera</title>
+</svelte:head>
+
 <AppHeader>
   {#snippet afterStart()}
     <PipelineBreadcrumbs {breadcrumbs}></PipelineBreadcrumbs>

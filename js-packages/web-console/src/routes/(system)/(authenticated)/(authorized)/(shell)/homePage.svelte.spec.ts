@@ -384,3 +384,13 @@ describe('/ (home) header', () => {
     useGlobalDialog().dialog = null
   })
 })
+
+describe('/ (home) title', () => {
+  it('replaces a stale tab title with the product name', async () => {
+    document.title = 'nb-unihost-2 | Feldera'
+
+    render(HomePage)
+
+    await expect.poll(() => document.title).toBe('Feldera')
+  })
+})
