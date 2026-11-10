@@ -2011,30 +2011,55 @@ mod tests {
         use std::sync::Arc;
         use tokio::sync::Mutex;
 
+        use flate2::{Compression, write::GzEncoder};
+        use std::io::Write;
+
+        /// How the test sends the body.
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum Sent {
+            /// With `Content-Length`.
+            Sized,
+            /// Without `Content-Length`: the limit is found while the body streams in.
+            Streamed,
+            /// Gzip-compressed and small on the wire: the limit applies after decompression.
+            Gzip,
+        }
+
         crate::ensure_default_crypto_provider();
         let (db, _temp) = setup_pg().await;
         let db = Arc::new(Mutex::new(db));
         // A 3 MiB program: over a 2 MiB limit (the actix-web default), under the default limit.
         let body = serde_json::json!({"name": "p", "program_code": "x".repeat(3 * 1024 * 1024)});
-        // (limit, body streamed without `Content-Length`, expected status)
+        let json = serde_json::to_vec(&body).unwrap();
         let cases = [
-            (Some(2 * 1024 * 1024), false, 413),
-            (Some(2 * 1024 * 1024), true, 413),
-            (None, false, 201),
+            (Some(2 * 1024 * 1024), Sent::Sized, 413),
+            (Some(2 * 1024 * 1024), Sent::Streamed, 413),
+            (Some(2 * 1024 * 1024), Sent::Gzip, 413),
+            (None, Sent::Sized, 201),
         ];
-        for (limit, streamed, expected_status) in cases {
+        for (limit, sent, expected_status) in cases {
             let mut cfg = ApiServerConfig::test_config();
             if let Some(limit) = limit {
                 cfg.max_json_body_bytes = limit;
             }
             let state = WebData::new(ServerState::test_state(db.clone()).await);
             let app = test::init_service(build_app(&cfg, &None).app_data(state)).await;
+            let payload = if sent == Sent::Gzip {
+                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                encoder.write_all(&json).unwrap();
+                encoder.finish().unwrap()
+            } else {
+                json.clone()
+            };
             let mut req = test::TestRequest::put()
                 .uri("/v0/pipelines/p")
-                .set_json(&body)
-                .to_request();
-            if streamed {
-                // Without the length, the limit is found while the body streams in.
+                .insert_header(header::ContentType::json())
+                .set_payload(payload);
+            if sent == Sent::Gzip {
+                req = req.insert_header((header::CONTENT_ENCODING, "gzip"));
+            }
+            let mut req = req.to_request();
+            if sent == Sent::Streamed {
                 req.headers_mut().remove(header::CONTENT_LENGTH);
             }
             let resp = test::call_service(&app, req).await;
@@ -2042,7 +2067,7 @@ mod tests {
             let text = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
             assert_eq!(
                 status, expected_status,
-                "limit {limit:?}, streamed {streamed}: {text}"
+                "limit {limit:?}, sent {sent:?}: {text}"
             );
             if expected_status == 413 {
                 assert!(text.contains("FELDERA_MAX_JSON_BODY_BYTES"), "{text}");

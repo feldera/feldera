@@ -1573,8 +1573,8 @@ pub struct ApiServerConfig {
     #[arg(long, action = clap::ArgAction::Set, env = "FELDERA_ENABLE_STORAGE_AUTOSCALING")]
     pub enable_storage_autoscaling: Option<bool>,
 
-    /// Largest JSON request body that the API accepts, in bytes, counted after decompression. A
-    /// larger request gets 413.
+    /// Largest JSON request body that the API accepts, in bytes, counted after decompression. It
+    /// applies to every endpoint that takes a JSON body. A larger request gets 413.
     ///
     /// The largest bodies are pipelines. In `POST`, `PUT` and `PATCH` of `/v0/pipelines`, the
     /// body holds the pipeline's name, description, tags, SQL program (`program_code`), Rust
@@ -2839,6 +2839,21 @@ mod tests {
         .unwrap();
         assert_eq!(config.upper_limit_memory_megabyte, Some(32000.0));
         assert_eq!(config.enable_storage_autoscaling, Some(false));
+    }
+
+    /// `--max-json-body-bytes` defaults to 64 MiB and takes a plain number of bytes.
+    #[test]
+    fn max_json_body_bytes_parses() {
+        let unset = ApiServerConfig::try_parse_from(["api-server"]).unwrap();
+        assert_eq!(unset.max_json_body_bytes, 64 * 1024 * 1024);
+        let config =
+            ApiServerConfig::try_parse_from(["api-server", "--max-json-body-bytes=1048576"])
+                .unwrap();
+        assert_eq!(config.max_json_body_bytes, 1048576);
+        for value in ["64MiB", "-1"] {
+            let arg = format!("--max-json-body-bytes={value}");
+            assert!(ApiServerConfig::try_parse_from(["api-server", &arg]).is_err());
+        }
     }
 
     /// The platform version suffix matches the edition of the build.
