@@ -193,15 +193,10 @@ fn used_column_list(columns: &[String]) -> String {
 }
 
 /// Current phase of an Iceberg table input connector.
-// repr(u64) so the phase can live in an `Atomic<IcebergPhase>` gauge and read
-// out as an f64 metric.
 #[derive(Copy, Clone, NoUninit)]
-#[repr(u64)]
+#[repr(u8)]
 enum IcebergPhase {
     LoadingSnapshot = 0,
-    // Reserved so the gauge encoding stays stable when follow mode adds a
-    // streaming phase; see #6165.
-    #[allow(dead_code)]
     Follow = 1,
     Completed = 2,
 }
@@ -296,9 +291,9 @@ impl ConnectorMetrics for IcebergMetrics {
         vec![
             (
                 "input_connector_iceberg_phase",
-                "Current phase: 0=loading_snapshot, 2=completed (1 reserved for follow mode).",
+                "Current phase: 0=loading_snapshot, 1=follow, 2=completed.",
                 ValueType::Gauge,
-                self.phase.load(Ordering::Relaxed) as u64 as f64,
+                self.phase.load(Ordering::Relaxed) as u8 as f64,
             ),
             (
                 "input_connector_iceberg_snapshot_completed_seconds",
