@@ -1032,6 +1032,9 @@ pub enum PipelineAction {
         /// Skip pipeline configuration collection.
         #[arg(long)]
         no_pipeline_config: bool,
+        /// Remove the program source code from the pipeline configuration.
+        #[arg(long)]
+        no_source_code: bool,
         /// Skip system configuration collection.
         #[arg(long)]
         no_system_config: bool,

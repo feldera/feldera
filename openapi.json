@@ -6547,6 +6547,15 @@
             }
           },
           {
+            "name": "source_code",
+            "in": "query",
+            "description": "Whether the pipeline configuration includes the program source code\n(default: true). When false, the bundle removes from the pipeline\nconfiguration the SQL program, the UDF code, the generated Rust code,\nand the code excerpts in the compiler messages. The dataflow graph is a\nseparate item, controlled by `dataflow_graph`.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "system_config",
             "in": "query",
             "description": "Whether to collect system configuration data (default: true)",

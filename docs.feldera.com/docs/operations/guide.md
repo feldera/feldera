@@ -64,6 +64,12 @@ The support bundle has the following content:
 1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
 
 2. **Pipeline Configuration**: the [pipeline configuration](/api/get-pipeline), including the SQL code and connector settings.
+   To remove the source code from it, use `fda support-bundle --no-source-code`,
+   `source_code=False` in the Python SDK, `source_code=false` in the REST API, or
+   clear **Source code** in the web console. The configuration then has no SQL
+   program, UDF code, generated Rust code, or code excerpts in compiler
+   messages. The dataflow graph is a separate item of the bundle: to leave it
+   out, use `fda support-bundle --no-dataflow-graph` or `dataflow_graph=false`.
 
 3. **Pipeline Metrics**: from the [pipeline metrics](/api/get-pipeline-metrics) endpoint.
 

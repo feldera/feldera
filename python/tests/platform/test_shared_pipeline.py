@@ -930,6 +930,21 @@ class TestPipeline(SharedTestPipeline):
             assert "metadata.txt" in file_list
             assert "metadata.json" in file_list
 
+        # Without the source code, each pipeline configuration keeps the rest
+        # of the configuration.
+        support_bundle_bytes = self.pipeline.support_bundle(source_code=False)
+        with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
+            configs = [
+                name
+                for name in zip_file.namelist()
+                if name.endswith("/pipeline_config.json")
+            ]
+            assert configs
+            for name in configs:
+                config = json.loads(zip_file.read(name))
+                assert "program_code" not in config
+                assert config["name"] == self.pipeline.name
+
     def test_support_bundle_limit(self):
         # limit=1 together with collect=True should yield exactly one
         # collection directory in the resulting bundle.

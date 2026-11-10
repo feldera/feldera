@@ -2566,6 +2566,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_logs,
             no_stats,
             no_pipeline_config,
+            no_source_code,
             no_system_config,
             no_dataflow_graph,
             no_pipeline_events,
@@ -2596,6 +2597,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
             if no_pipeline_config {
                 request = request.pipeline_config(false);
+            }
+            if no_source_code {
+                request = request.source_code(false);
             }
             if no_system_config {
                 request = request.system_config(false);
