@@ -217,6 +217,15 @@ pub fn crypto_provider() -> Arc<CryptoProvider> {
         .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
 }
 
+/// Panics unless the TLS of the process runs on a FIPS validated cryptographic module.
+/// Feldera binaries call it when they start with `--fips`.
+pub fn assert_fips_crypto_provider() {
+    assert!(
+        crypto_provider().fips(),
+        "--fips requires the FIPS cryptographic module, but the process TLS provider is not in FIPS mode"
+    );
+}
+
 /// Builds a client certificate verifier that trusts only the first certificate of `ca_chain`,
 /// the private CA that issues client certificates, so a client may send its leaf certificate
 /// without the chain. The rest of the chain is not trusted, because other CAs under the same

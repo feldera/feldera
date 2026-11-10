@@ -1376,6 +1376,9 @@ impl PipelineExecutor for LocalRunner {
                 }
             }
 
+            if self.common_config.fips {
+                command.arg("--fips");
+            }
             if let Some((https_tls_cert_path, https_tls_key_path)) =
                 self.common_config.https_config()
             {
