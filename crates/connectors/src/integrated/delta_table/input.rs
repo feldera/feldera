@@ -17,6 +17,8 @@ use arrow::compute::{filter_record_batch, is_null, not, prep_null_mask_filter};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
 };
+use atomic::Atomic;
+use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
@@ -1106,7 +1108,7 @@ impl DeltaTableInputReader {
             endpoint
                 .metrics
                 .phase
-                .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
+                .store(DeltaPhase::Completed, Ordering::Relaxed);
             endpoint.consumer.eoi();
         } else {
             let endpoint_clone = endpoint.clone();
@@ -1326,8 +1328,8 @@ impl DeltaResumeInfo {
 }
 
 /// Current phase of a delta table input connector.
-// Using repr u64 as we using AtomicU64 to store the phase in metrics
-#[repr(u64)]
+#[derive(Copy, Clone, NoUninit)]
+#[repr(u8)]
 enum DeltaPhase {
     LoadingSnapshot = 0,
     Follow = 1,
@@ -1336,7 +1338,7 @@ enum DeltaPhase {
 
 struct DeltaTableMetrics {
     /// Current phase of the connector (see [DeltaPhase]).
-    phase: AtomicU64,
+    phase: Atomic<DeltaPhase>,
     /// Unix epoch seconds when this run finished reading the snapshot; 0 if
     /// it has not, including after a resume past the snapshot.
     snapshot_completed_ts: AtomicU64,
@@ -1366,7 +1368,7 @@ const VERSION_METRIC_UNSET: u64 = u64::MAX;
 impl DeltaTableMetrics {
     fn new() -> Self {
         Self {
-            phase: AtomicU64::new(DeltaPhase::LoadingSnapshot as u64),
+            phase: Atomic::new(DeltaPhase::LoadingSnapshot),
             snapshot_completed_ts: AtomicU64::new(0),
             snapshot_records_total: AtomicU64::new(0),
             follow_transaction_starts: AtomicU64::new(0),
@@ -1418,7 +1420,7 @@ impl ConnectorMetrics for DeltaTableMetrics {
                 "input_connector_delta_phase",
                 "Current phase: 0=loading_snapshot, 1=follow/streaming, 2=completed.",
                 ValueType::Gauge,
-                self.phase.load(Ordering::Relaxed) as f64,
+                self.phase.load(Ordering::Relaxed) as u8 as f64,
             ),
             (
                 "input_connector_delta_snapshot_completed_seconds",
@@ -2874,7 +2876,7 @@ impl DeltaTableInputEndpointInner {
                     .store(now_unix_secs(), Ordering::Relaxed);
                 self.metrics
                     .phase
-                    .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
+                    .store(DeltaPhase::Follow, Ordering::Relaxed);
                 info!(
                     "delta_table {}: snapshot phase completed, switching to '{}' mode (records: {}, version: {})",
                     &self.endpoint_name, self.config.mode, snapshot_record_count, version
@@ -2883,7 +2885,7 @@ impl DeltaTableInputEndpointInner {
                 // Following the log without an initial snapshot.
                 self.metrics
                     .phase
-                    .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
+                    .store(DeltaPhase::Follow, Ordering::Relaxed);
                 info!(
                     "delta_table {}: '{}' mode started (from version: {})",
                     &self.endpoint_name, self.config.mode, version
@@ -2892,7 +2894,7 @@ impl DeltaTableInputEndpointInner {
                 // Resumed from a checkpoint taken after the snapshot completed.
                 self.metrics
                     .phase
-                    .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
+                    .store(DeltaPhase::Follow, Ordering::Relaxed);
             }
 
             // If we haven't previously read a snapshot of the table, report initial frontier.
@@ -3027,7 +3029,7 @@ impl DeltaTableInputEndpointInner {
                             );
                             self.metrics
                                 .phase
-                                .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
+                                .store(DeltaPhase::Completed, Ordering::Relaxed);
                             self.consumer.eoi();
                             break;
                         }
@@ -3040,7 +3042,7 @@ impl DeltaTableInputEndpointInner {
                         );
                         self.metrics
                             .phase
-                            .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
+                            .store(DeltaPhase::Completed, Ordering::Relaxed);
                         self.consumer.eoi();
 
                         // Empty buffer to indicate eoi.
@@ -3063,7 +3065,7 @@ impl DeltaTableInputEndpointInner {
             }
             self.metrics
                 .phase
-                .store(DeltaPhase::Completed as u64, Ordering::Relaxed);
+                .store(DeltaPhase::Completed, Ordering::Relaxed);
             self.consumer.eoi();
         }
     }

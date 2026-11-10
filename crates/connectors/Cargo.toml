@@ -215,6 +215,7 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1",
 ] }
 url = { workspace = true }
 atomic = { workspace = true }
+bytemuck = { workspace = true }
 once_cell = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }

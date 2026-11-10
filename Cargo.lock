@@ -4415,6 +4415,7 @@ dependencies = [
  "backtrace",
  "base64 0.22.1",
  "buoyant_kernel",
+ "bytemuck",
  "bytes",
  "bytestring",
  "chrono",
