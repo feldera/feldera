@@ -6,7 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@axa-fr/oidc-client', () => ({ OidcClient: { get: vi.fn() } }))
 
-import { getSelectedTenant, setSelectedTenant, setSelectedTenantUser } from './auth'
+import {
+  getSelectedTenant,
+  isOidcCallbackPage,
+  leaveOidcCallback,
+  setSelectedTenant,
+  setSelectedTenantUser
+} from './auth'
 
 class MemoryStorage {
   private store = new Map<string, string>()
@@ -77,5 +83,57 @@ describe('per-user tenant selection', () => {
     setSelectedTenantUser('user-a')
     expect(storage.getItem('session/selected_tenant')).toBeNull()
     expect(getSelectedTenant()).toBeUndefined()
+  })
+})
+
+// A browser with only the `location` and `history` parts that the OIDC
+// callback helpers use. Records each navigation with the URL it leaves, which
+// the next page gets as `document.referrer`.
+const stubBrowserAt = (href: string) => {
+  const navigations: { from: string; to: string }[] = []
+  const location = {
+    href,
+    get pathname() {
+      return new URL(location.href).pathname
+    },
+    replace: (to: string) => {
+      navigations.push({ from: location.href, to })
+    }
+  }
+  const history = {
+    replaceState: (_data: unknown, _unused: string, url: string) => {
+      location.href = new URL(url, location.href).href
+    }
+  }
+  vi.stubGlobal('window', { location, history })
+  return navigations
+}
+
+describe('leaveOidcCallback', () => {
+  it.each([
+    ['code and state', '?code=secret-code&state=secret-state'],
+    ['code, state and session_state', '?code=c&state=s&session_state=ss'],
+    ['an access token in the fragment', '#access_token=secret-token'],
+    ['a query and a fragment', '?code=c&state=s#access_token=t'],
+    ['nothing', '']
+  ])('leaves a callback URL with %s without the query and fragment', (_, suffix) => {
+    const navigations = stubBrowserAt(`https://console.example.com/auth/callback/${suffix}`)
+
+    leaveOidcCallback()
+
+    expect(navigations).toEqual([{ from: 'https://console.example.com/auth/callback/', to: '/' }])
+  })
+})
+
+describe('isOidcCallbackPage', () => {
+  it.each([
+    ['https://console.example.com/auth/callback/?code=c&state=s', true],
+    ['https://console.example.com/auth/callback/', true],
+    ['https://console.example.com/', false],
+    ['https://console.example.com/auth/callback/extra/', false],
+    ['https://console.example.com/pipelines/?next=/auth/callback/', false]
+  ])('on %s is %s', (href, expected) => {
+    stubBrowserAt(href)
+    expect(isOidcCallbackPage()).toBe(expected)
   })
 })

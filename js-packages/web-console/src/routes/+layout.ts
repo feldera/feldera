@@ -27,6 +27,8 @@ import {
   authRequestMiddleware,
   authResponseMiddleware,
   errorResponseMiddleware,
+  isOidcCallbackPage,
+  leaveOidcCallback,
   setSelectedTenantUser,
   triggerOidcLogin
 } from '#lib/services/auth.ts'
@@ -497,7 +499,10 @@ function trackLogin(auth: AuthDetails, sessionConfig: SessionInfo | undefined) {
  * which only runs against freshly-fetched data.
  */
 function initializeConfigDependencies(auth: AuthDetails, config: Configuration) {
-  if (typeof auth === 'object' && 'logout' in auth) {
+  // Do not start the analytics scripts on the OIDC callback page. Its URL holds
+  // the `code` and `state`, and the scripts send the URL to third parties.
+  // `leaveOidcCallback` goes to the app root, which starts the scripts.
+  if (typeof auth === 'object' && 'logout' in auth && !isOidcCallbackPage()) {
     initPosthog(config, auth.profile)
     initProductFruits(config, auth.profile)
     initConceptualHq(config, auth.profile)
@@ -538,9 +543,7 @@ const axaOidcAuth = async (params: {
     .tryKeepExistingSessionAsync()
     .then(async () => {
       if (href.includes(params.oidcConfig.redirect_uri)) {
-        oidcClient.loginCallbackAsync().then(() => {
-          window.location.href = resolve(`/`)
-        })
+        oidcClient.loginCallbackAsync().then(leaveOidcCallback)
         // loading...
       }
 

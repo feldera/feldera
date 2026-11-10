@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Send only the origin as the referrer, also on navigation inside this app.
+         The analytics scripts send `document.referrer` to third parties, and a URL
+         of this app can hold the OIDC `code` and `state`. -->
+    <meta name="referrer" content="strict-origin" />
     %sveltekit.head%
   </head>
 

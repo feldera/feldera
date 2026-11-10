@@ -5,6 +5,25 @@ import { stashRedirectTarget } from '#lib/services/redirectTarget.ts'
 
 const { OidcClient } = AxaOidc
 
+/** The page that the identity provider redirects to with `code` and `state` after login. */
+export const OIDC_CALLBACK_PATH = resolve('/auth/callback/')
+
+export const isOidcCallbackPage = () => window.location.pathname === OIDC_CALLBACK_PATH
+
+/**
+ * Go from the OIDC callback page to the app root. Call this function after the
+ * code exchange, because the OIDC client reads `code` and `state` from the URL.
+ *
+ * The next page gets the current URL as `document.referrer`, and the analytics
+ * scripts send the referrer to third parties. So first remove the query and the
+ * fragment from the URL. `replace` also keeps the used callback URL out of the
+ * history.
+ */
+export const leaveOidcCallback = () => {
+  window.history.replaceState(null, '', OIDC_CALLBACK_PATH)
+  window.location.replace(resolve('/'))
+}
+
 // The tenant selection is stored per user ('session/selected_tenant/<sub>') so
 // two people sharing a browser never inherit each other's selection. Until
 // `setSelectedTenantUser` names the logged-in user, no selection is readable
