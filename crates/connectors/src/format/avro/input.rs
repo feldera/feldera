@@ -54,6 +54,7 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
         // other formats use byte array encoding. If we have to support those, this
         // will need to be made configurable.
         uuid_format: UuidFormat::String,
+        positional_fields: false,
     }
 }
 

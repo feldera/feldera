@@ -211,8 +211,9 @@ pub struct S3TablesCatalogConfig {
     pub region: Option<String>,
 }
 
+/// The number of CPU cores, at most 16. Each parsing task holds a record batch.
 fn default_num_parsers() -> u32 {
-    4
+    std::thread::available_parallelism().map_or(4, |n| n.get().min(16) as u32)
 }
 
 /// Iceberg input connector configuration.
@@ -321,12 +322,16 @@ pub struct IcebergReaderConfig {
     /// exclusive with `metadata_location`.
     pub catalog_type: Option<IcebergCatalogType>,
 
-    /// The number of parallel parsing tasks the connector uses to process data read from the
-    /// table. Increasing this value can enhance performance by allowing more concurrent processing.
-    /// Recommended range: 1-10. The default is 4.
-    #[serde(default = "default_num_parsers")]
+    /// The number of record batches the connector parses at the same time. Parsing runs on a
+    /// pool with one thread per CPU core, which all connectors share, so a larger value only
+    /// helps while the pool has idle threads. Each batch in flight holds memory.
+    /// The default is the number of CPU cores available to the pipeline, at most 16.
+    ///
+    /// When set, this is also the number of files the connector reads at the same time,
+    /// which is 4 otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(minimum = 1)]
-    pub num_parsers: u32,
+    pub num_parsers: Option<u32>,
 
     /// Maximum number of retries for reading the table snapshot.
     ///
@@ -507,6 +512,21 @@ impl IcebergReaderConfig {
         self.max_retries.unwrap_or(u32::MAX)
     }
 
+    /// The number of record batches to parse at the same time.
+    ///
+    /// The default depends on the host, so the pipeline computes it, not the
+    /// service that stores the configuration.
+    pub fn num_parsers(&self) -> u32 {
+        self.num_parsers.unwrap_or_else(default_num_parsers)
+    }
+
+    /// The number of data files, delete files, and manifests to read at the
+    /// same time: `num_parsers` when set, otherwise 4. Each read holds decoded
+    /// data, so this does not follow the CPU count.
+    pub fn read_concurrency(&self) -> usize {
+        self.num_parsers.unwrap_or(4) as usize
+    }
+
     /// `true` if the configuration requires taking an initial snapshot of the table.
     pub fn snapshot(&self) -> bool {
         matches!(
@@ -607,12 +627,19 @@ mod test {
 
     #[test]
     fn num_parsers_and_max_retries_defaults() {
-        // With neither field set, num_parsers defaults to 4 and retries are unlimited.
+        // With neither field set, num_parsers takes its default and retries are unlimited.
         let config: IcebergReaderConfig = serde_json::from_str(
             r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json"}"#,
         )
         .unwrap();
-        assert_eq!(config.num_parsers, 4);
+        assert_eq!(config.num_parsers(), default_num_parsers());
+        assert_eq!(config.read_concurrency(), 4);
+        // An unset `num_parsers` stays unset: the pipeline computes the default.
+        assert!(
+            !serde_json::to_string(&config)
+                .unwrap()
+                .contains("num_parsers")
+        );
         assert_eq!(config.max_retries, None);
         assert_eq!(config.max_retries(), u32::MAX);
     }
@@ -623,7 +650,8 @@ mod test {
             r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json","num_parsers":8,"max_retries":0}"#,
         )
         .unwrap();
-        assert_eq!(config.num_parsers, 8);
+        assert_eq!(config.num_parsers(), 8);
+        assert_eq!(config.read_concurrency(), 8);
         assert_eq!(config.max_retries, Some(0));
         // 0 disables retries: the first attempt is the last.
         assert_eq!(config.max_retries(), 0);
@@ -656,6 +684,6 @@ mod test {
         let serialized = serde_json::to_string(&config).unwrap();
         let reparsed: IcebergReaderConfig = serde_json::from_str(&serialized).unwrap();
         assert_eq!(config, reparsed);
-        assert_eq!(reparsed.num_parsers, 2);
+        assert_eq!(reparsed.num_parsers(), 2);
     }
 }
