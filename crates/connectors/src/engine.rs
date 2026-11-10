@@ -77,6 +77,11 @@ pub struct CircuitParams {
     /// Identifies this run of a multihost pipeline to its hosts (see
     /// `dbsp::circuit::CircuitConfig::exchange_uuid`).
     pub exchange_uuid: Uuid,
+
+    /// A socket already bound to this host's exchange address, for the circuit to listen on
+    /// instead of binding the address itself.  Tests that run several hosts in one process use
+    /// it, so that no other test can take the address between choosing and binding it.
+    pub exchange_listener: Option<Arc<std::net::TcpListener>>,
 }
 
 /// What the circuit factory returns.

@@ -102,6 +102,9 @@ impl Engine for StaticEngine {
     }
 }
 
+/// Lets [static_circuit_factory] build only one circuit at a time; see there.
+static CIRCUIT_BUILD: Mutex<()> = Mutex::new(());
+
 /// Returns the circuit factory that builds the circuit of `circuit` with dbsp.
 ///
 /// The factory configures dbsp from the controller's parameters, as a persistent circuit that
@@ -129,6 +132,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
             dev_tweaks,
             exchange_tls,
             exchange_uuid,
+            exchange_listener,
         } = params;
         let storage = storage.as_deref().map(|storage| {
             storage
@@ -136,6 +140,12 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
                 .downcast_ref::<StaticStorage>()
                 .expect("the static engine runs only on the storage that it opens")
         });
+        // The catalog reads this global while `circuit` builds the circuit, so hold
+        // `CIRCUIT_BUILD` until then: a process that builds several circuits at once, as
+        // tests do, must not build one with another's settings.
+        let _build = CIRCUIT_BUILD
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         *OUTPUT_MAPPING.lock().unwrap() = output_assignment;
         let config = CircuitConfig::from(layout)
             .with_max_rss_bytes(max_rss_bytes)
@@ -152,6 +162,14 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
                 client: tls.client,
                 server: tls.server,
             }));
+        let config = match exchange_listener {
+            Some(listener) => {
+                config.with_exchange_listener(listener.try_clone().map_err(|error| {
+                    ControllerError::io_error("cloning the exchange socket", error)
+                })?)
+            }
+            None => config,
+        };
         let (handle, catalog) = circuit(config)?;
         let inputs = InputOperators::new(catalog.as_ref());
         let runtime = Arc::new(StaticRuntime::new(handle.runtime()));
