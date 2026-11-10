@@ -91,6 +91,7 @@ use feldera_types::coordination::{
     StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
+use feldera_types::memory_pressure::MemoryPressure;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::runtime_status::BootstrapPolicy;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
@@ -6866,9 +6867,47 @@ impl Drop for BackpressureThread {
     }
 }
 
+/// Time with no step before [IdleStepTimer] requests a step.
+const IDLE_STEP_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Timer for a step of an idle circuit.
+struct IdleStepTimer {
+    /// `total_initiated_steps` at the last check.
+    steps: Step,
+
+    /// When `steps` changed or the timer expired.
+    since: Instant,
+}
+
+impl IdleStepTimer {
+    fn new(now: Instant) -> Self {
+        Self {
+            steps: 0,
+            since: now,
+        }
+    }
+
+    /// True if `steps` did not change for [IDLE_STEP_INTERVAL]. Then restarts,
+    /// so at most once in each interval.
+    fn due(&mut self, now: Instant, steps: Step) -> bool {
+        if steps != self.steps {
+            self.steps = steps;
+            self.since = now;
+            false
+        } else if now.duration_since(self.since) >= IDLE_STEP_INTERVAL {
+            self.since = now;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// Statistics thread.
 ///
-/// This wakes up once a second to update time series and storage statistics.
+/// This wakes up once a second to update time series and storage statistics,
+/// and to run checks that no event triggers: paused transactions, preprocessor
+/// stalls, and idle steps.
 struct StatisticsThread {
     exit: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<()>>,
@@ -6905,10 +6944,25 @@ impl StatisticsThread {
         let mut memory_use_reporter = MemoryUseReporter::new("RSS", 512 * 1024 * 1024);
         let mut paused_transaction_warning = None;
         let mut preprocessor_stalls = PreprocessorStalls::default();
+        let mut idle_step_timer = IdleStepTimer::new(Instant::now());
         while !exit.load(Ordering::Acquire) {
             if let Some(controller) = controller.upgrade() {
                 Self::warn_about_paused_transaction(&controller, &mut paused_transaction_warning);
                 preprocessor_stalls.check(&controller);
+
+                // The ad-hoc snapshot keeps the last step's batches in memory,
+                // even after a merge or a spill replaces them. Under memory
+                // pressure, step an idle circuit to update the snapshot. Idle
+                // means that no step runs and no transaction is open.
+                let metrics = &controller.status.global_metrics;
+                let initiated_steps = metrics.total_initiated_steps();
+                if let Some((pressure, _)) = controller.runtime.memory_pressure()
+                    && pressure >= MemoryPressure::High
+                    && metrics.total_committed_steps() == initiated_steps
+                    && idle_step_timer.due(Instant::now(), initiated_steps)
+                {
+                    controller.request_step();
+                }
             }
 
             let storage_bytes = if let Some(usage_bytes) =

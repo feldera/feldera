@@ -1,8 +1,9 @@
-#[cfg(test)]
-use super::OutputEndpointControl;
 use super::{
-    FtState, OutputEndpointDescr, TransactionState, journal::StepMetadata, stats::CompletionToken,
+    FtState, IDLE_STEP_INTERVAL, OutputEndpointDescr, TransactionState, journal::StepMetadata,
+    stats::CompletionToken,
 };
+#[cfg(test)]
+use super::{IdleStepTimer, OutputEndpointControl};
 #[cfg(test)]
 use crate::controller::{ControllerStatusContext, TransactionInfo};
 use crate::{
@@ -37,7 +38,6 @@ use feldera_adapterlib::{
     test::{Updates, default_timeout_ms, wait},
 };
 use feldera_storage::tokio::TOKIO;
-#[cfg(test)]
 use feldera_types::memory_pressure::MemoryPressure;
 use feldera_types::size::ConfigSize;
 use feldera_types::{
@@ -7364,6 +7364,114 @@ pub fn input_batch_wakes_the_circuit_thread(engine: &dyn PipelineTestEngine) {
         start.elapsed() < Duration::from_secs(1),
         "buffering input did not wake the circuit thread"
     );
+}
+
+/// The idle step timer fires after [IDLE_STEP_INTERVAL] with no step, and then
+/// at most once in each interval.
+#[test]
+fn idle_step_timer() {
+    let start = Instant::now();
+    let at = |secs: u64| start + Duration::from_secs(secs);
+    let mut timer = IdleStepTimer::new(start);
+
+    assert!(!timer.due(at(0), 0));
+    assert!(!timer.due(at(4), 0));
+    assert!(timer.due(at(5), 0));
+    // Rate limit: not again in the same interval.
+    assert!(!timer.due(at(6), 0));
+    assert!(timer.due(at(10), 0));
+
+    // A step restarts the timer.
+    assert!(!timer.due(at(11), 1));
+    assert!(!timer.due(at(15), 1));
+    assert!(timer.due(at(16), 1));
+}
+
+/// Waits until `controller` takes no step for 1 s, so that the steps after
+/// `start()` are done, and returns the step count.
+fn wait_for_idle(controller: &Controller) -> u64 {
+    let steps = || controller.status().global_metrics.total_initiated_steps();
+    loop {
+        let before = steps();
+        sleep(Duration::from_secs(1));
+        if steps() == before {
+            return before;
+        }
+    }
+}
+
+/// An idle pipeline under high memory pressure takes a step, so that the ad-hoc
+/// snapshot releases batches that merges or spills replaced.
+#[engine_test]
+pub fn idle_pipeline_steps_under_memory_pressure(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    // A 1 MB budget keeps the memory pressure critical.
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "max_rss": ConfigSize::from_mb(1),
+        "clock_resolution_usecs": null,
+        "inputs": {}
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    let steps = || controller.status().global_metrics.total_initiated_steps();
+    let before = wait_for_idle(&controller);
+    let timeout = IDLE_STEP_INTERVAL + Duration::from_secs(10);
+    wait(|| steps() > before, timeout.as_millis() as u64)
+        .expect("an idle pipeline under memory pressure did not step");
+
+    controller.stop().unwrap();
+}
+
+/// Without memory pressure, an idle pipeline takes no step.
+#[engine_test]
+pub fn idle_pipeline_does_not_step_without_memory_pressure(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "clock_resolution_usecs": null,
+        "inputs": {}
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    // The limit comes from the host's available memory, so a host that is
+    // short of memory can have high pressure. This test checks nothing then.
+    let pressure = controller.inner.runtime.memory_pressure();
+    if pressure.is_some_and(|(pressure, _)| pressure >= MemoryPressure::High) {
+        info!("skipping the test: memory pressure is {pressure:?}");
+        controller.stop().unwrap();
+        return;
+    }
+
+    let steps = || controller.status().global_metrics.total_initiated_steps();
+    let before = wait_for_idle(&controller);
+    let timeout = IDLE_STEP_INTERVAL + Duration::from_secs(3);
+    assert!(
+        wait(|| steps() > before, timeout.as_millis() as u64).is_err(),
+        "an idle pipeline without memory pressure stepped"
+    );
+
+    controller.stop().unwrap();
 }
 
 /// Starts a pipeline with one file input and one file output per entry of `barriers`, each
