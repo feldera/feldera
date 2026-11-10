@@ -16,6 +16,7 @@ use actix_http::body::BoxBody;
 use actix_web::Scope;
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
+use actix_web::error::JsonPayloadError;
 use actix_web::http::{Method, header};
 use actix_web::{
     App, HttpResponse, HttpServer, middleware,
@@ -808,6 +809,21 @@ async fn add_cache_headers(
     Ok(res)
 }
 
+/// JSON body settings of the API. A body over `limit` bytes gets 413, and the response names the
+/// setting that raises the limit.
+fn json_config(limit: usize) -> web::JsonConfig {
+    web::JsonConfig::default()
+        .limit(limit)
+        .error_handler(|err, _req| match err {
+            JsonPayloadError::OverflowKnownLength { .. } | JsonPayloadError::Overflow { .. } => {
+                actix_web::error::ErrorPayloadTooLarge(format!(
+                    "{err} Raise the limit with --max-json-body-bytes or FELDERA_MAX_JSON_BODY_BYTES."
+                ))
+            }
+            err => err.into(),
+        })
+}
+
 /// Build the App that `run()` serves. Extracted as a free function so tests
 /// can drive the exact same wrap/service composition that ships in production
 /// rather than a hand-rolled stand-in. The caller chains `.app_data(...)` for
@@ -840,6 +856,7 @@ fn build_app(
         // because the consumers sit behind `HttpAuthentication`, which hands
         // its validator nothing but the request.
         .app_data(BasePath(base_path.clone()))
+        .app_data(json_config(api_config.max_json_body_bytes))
         .wrap_fn(|req, srv| {
             let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
                 Level::TRACE
@@ -1984,5 +2001,39 @@ mod tests {
             StatusCode::FORBIDDEN,
             "RBAC denied a base-path API request; the route table matches root-relative paths",
         );
+    }
+
+    /// `--max-json-body-bytes` sets the largest pipeline that `PUT /v0/pipelines/{name}`
+    /// accepts, and the 413 response names the setting.
+    #[actix_web::test]
+    async fn max_json_body_bytes_limits_pipeline_put() {
+        use crate::db::test::setup_pg;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp) = setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+        // A 3 MiB program: over the 2 MiB default, under a 4 MiB limit.
+        let body = serde_json::json!({"name": "p", "program_code": "x".repeat(3 * 1024 * 1024)});
+        for (limit, expected_status) in [(None, 413), (Some(4 * 1024 * 1024), 201)] {
+            let mut cfg = ApiServerConfig::test_config();
+            if let Some(limit) = limit {
+                cfg.max_json_body_bytes = limit;
+            }
+            let state = WebData::new(ServerState::test_state(db.clone()).await);
+            let app = test::init_service(build_app(&cfg, &None).app_data(state)).await;
+            let req = test::TestRequest::put()
+                .uri("/v0/pipelines/p")
+                .set_json(&body)
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            let status = resp.status();
+            let text = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
+            assert_eq!(status, expected_status, "limit {limit:?}: {text}");
+            if expected_status == 413 {
+                assert!(text.contains("FELDERA_MAX_JSON_BODY_BYTES"), "{text}");
+            }
+        }
     }
 }

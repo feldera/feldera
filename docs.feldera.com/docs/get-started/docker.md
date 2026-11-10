@@ -92,6 +92,18 @@ under the prefix, which is the only path a proxy forwarding `<base path>/*`
 can reach. Point a proxied health check at `<base path>/healthz`; no extra
 proxy rule is needed.
 
+## Programs larger than 2 MiB
+
+The API server accepts JSON request bodies of up to 2 MiB, so it refuses a
+pipeline with a larger SQL program with `413 Payload Too Large`. Set
+`FELDERA_MAX_JSON_BODY_BYTES` (or the `--max-json-body-bytes` flag) to raise
+the limit, in bytes:
+
+```
+docker run -p 8080:8080 -e FELDERA_MAX_JSON_BODY_BYTES=67108864 \
+  images.feldera.com/feldera/pipeline-manager:latest
+```
+
 ## Installing Docker
 
 If you don't already have Docker or Docker Compose installed, follow one of these steps first:

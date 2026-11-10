@@ -135,6 +135,11 @@ fn default_auth_audience() -> String {
     "feldera-api".to_string()
 }
 
+/// Default largest JSON request body: 2 MiB, the actix-web default.
+fn default_max_json_body_bytes() -> usize {
+    2 * 1024 * 1024
+}
+
 /// Default role for an authenticated user with no explicit tenant membership.
 fn default_default_role() -> Role {
     Role::Read
@@ -1566,6 +1571,13 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long, action = clap::ArgAction::Set, env = "FELDERA_ENABLE_STORAGE_AUTOSCALING")]
     pub enable_storage_autoscaling: Option<bool>,
+
+    /// Largest JSON request body that the API accepts, in bytes. It limits the size of a
+    /// pipeline in `POST`, `PUT` and `PATCH` of `/v0/pipelines`, with its SQL program. The size
+    /// is counted after decompression.
+    #[serde(default = "default_max_json_body_bytes")]
+    #[arg(long, default_value_t = default_max_json_body_bytes(), env = "FELDERA_MAX_JSON_BODY_BYTES")]
+    pub max_json_body_bytes: usize,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1840,6 +1852,7 @@ impl ApiServerConfig {
             upper_limit_storage_megabyte: None,
             upper_limit_memory_megabyte: None,
             enable_storage_autoscaling: None,
+            max_json_body_bytes: default_max_json_body_bytes(),
         }
     }
 }
