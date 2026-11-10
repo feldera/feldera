@@ -1013,18 +1013,22 @@ impl SupportBundleData {
         Ok(summary)
     }
 
-    /// Get pipeline configuration from local database
+    /// Get pipeline configuration from local database, without the dataflow
+    /// graph, which the bundle has as `dataflow_graph.json`.
     async fn get_pipeline_configuration(
         state: &ServerState,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<Vec<u8>, ManagerError> {
-        let pipeline = state
+        let mut pipeline = state
             .db
             .lock()
             .await
             .get_pipeline(tenant_id, pipeline_name)
             .await?;
+        if let Some(serde_json::Value::Object(program_info)) = &mut pipeline.program_info {
+            program_info.shift_remove("dataflow");
+        }
 
         serde_json::to_vec_pretty(&pipeline).map_err(|e| {
             ManagerError::from(ApiError::UnableToCreateSupportBundle {
@@ -2707,6 +2711,15 @@ mod tests {
         // Pipeline config and system config should succeed
         assert!(bundle.pipeline_config.is_ok());
         assert!(bundle.system_config.is_ok());
+
+        // The pipeline config has no copy of the dataflow graph
+        let config = gz_decompress(bundle.pipeline_config.as_ref().unwrap()).unwrap();
+        let config: serde_json::Value = serde_json::from_slice(&config).unwrap();
+        assert!(
+            config["program_info"].get("dataflow").is_none(),
+            "{config:#}"
+        );
+        assert_eq!(config["program_info"]["main_rust"], "fn main() {}");
 
         // Dataflow graph should succeed with default params
         assert!(bundle.dataflow_graph.is_ok());
