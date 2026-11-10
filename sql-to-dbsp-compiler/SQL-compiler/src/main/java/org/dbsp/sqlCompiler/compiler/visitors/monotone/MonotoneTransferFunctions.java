@@ -171,26 +171,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             outputFields.add(field);
         }
 
-        // If collection element is a tuple type, all fields are inlined.
-        DBSPTypeTupleBase elementTupleType = expression.getCollectionElementType().as(DBSPTypeTupleBase.class);
-        if (expression.ordinalityIndexType != null) {
-            outputFields.add(new NoExpression(expression.ordinalityIndexType));
-        } else {
-            if (expression.postProcess != null) {
-                for (DBSPClosureExpression clo : expression.postProcess) {
-                    // TODO: this is very conservative
-                    outputFields.add(new NoExpression(clo.getResultType()));
-                }
-            } else if (elementTupleType != null) {
-                for (DBSPType elem : elementTupleType.tupFields) {
-                    outputFields.add(new NoExpression(elem));
-                }
-            } else {
-                outputFields.add(new NoExpression(expression.getCollectionElementType()));
-            }
-        }
-        if (expression.ordinalityIndexType != null)
-            outputFields.add(new NoExpression(expression.ordinalityIndexType));
+        // The columns produced from the collection elements are not monotone.
+        // TODO: this is very conservative for postProcess results
+        List<DBSPType> columnTypes = expression.unshuffledColumnTypes();
+        for (int i = expression.passthroughIndexes.size(); i < columnTypes.size(); i++)
+            outputFields.add(new NoExpression(columnTypes.get(i)));
         outputFields = expression.shuffle.shuffle(outputFields);
         DBSPExpression tuple = new DBSPTupleExpression(outputFields, false);
         DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
