@@ -768,6 +768,7 @@ impl SharedCdcPipeline {
         // copy as closed.
         let mut membership_changed = false;
         let mut monitor_done = false;
+        let mut copy_wait_logged = false;
         let reason = loop {
             select! {
                 result = &mut pipeline_wait => break EndReason::Etl(result),
@@ -788,13 +789,23 @@ impl SharedCdcPipeline {
                     membership_changed = true;
                 }
                 _ = tokio::time::sleep(Duration::from_millis(50)), if membership_changed => {
-                    let copies_open = running
+                    let copying: Vec<&str> = running
                         .iter()
                         .filter(|member| !member.leaves())
                         .filter(|member| member.inner.copy.copy_open())
-                        .count();
-                    if copies_open == 0 {
+                        .map(|member| member.inner.endpoint_name.as_str())
+                        .collect();
+                    if copying.is_empty() {
                         break EndReason::MembershipChanged;
+                    }
+                    if !copy_wait_logged {
+                        copy_wait_logged = true;
+                        info!(
+                            "postgres_cdc {label}: the members change; etl starts again once the \
+                             copy of the tables of connectors {} completes, since etl reads an \
+                             interrupted copy again from the start",
+                            copying.join(", ")
+                        );
                     }
                 }
             }
