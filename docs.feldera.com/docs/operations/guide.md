@@ -212,6 +212,12 @@ making them eviction candidates. To raise their priority:
 
 **Solution**: Ensure the compiler-server has sufficient disk space (20Gib by default, configured via the `compilerPvcStorageSize` value in the Helm chart).
 
+### Request Body Too Large
+
+**Error**: `413 Payload Too Large` when you create or update a pipeline, with `JSON payload (... bytes) is larger than allowed (limit: 2097152 bytes)`
+
+**Solution**: The API server accepts JSON request bodies of up to 2 MiB by default, so a larger SQL program is refused. Raise the limit with `--max-json-body-bytes` or the `FELDERA_MAX_JSON_BODY_BYTES` environment variable. In the Helm chart, set it through `controlPlane.env`. An ingress or proxy in front of the API server can apply its own limit, so raise that one too.
+
 ## Uncommon Problems
 
 ### Lost or accidentally deleted the Feldera Control-Plane PostgreSQL database
