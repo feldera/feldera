@@ -2833,6 +2833,9 @@ pub mod cdc_scenarios;
 pub mod cdc_privileges;
 
 #[cfg(feature = "with-postgres-cdc")]
+pub mod cdc_shared;
+
+#[cfg(feature = "with-postgres-cdc")]
 pub mod cdc_tests {
     use crate::{
         Controller,
@@ -3059,13 +3062,18 @@ col_int_array   INTEGER[]
         source_table: &str,
     ) {
         let connector_url = cdc_connector_url(url);
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &connector_url,
             publication,
             source_table,
         )
         .to_string();
+        drop_slots_of_pipeline_id(client, &pipeline_id);
+    }
 
+    /// Drop the replication slots etl created for the pipeline with id
+    /// `pipeline_id`.
+    pub(super) fn drop_slots_of_pipeline_id(client: &mut postgres::Client, pipeline_id: &str) {
         // The pipeline ID appears as a `_`-delimited token in every slot
         // name etl creates, so an exact-token match avoids dropping an
         // unrelated slot whose ID merely shares these digits.
@@ -3343,6 +3351,85 @@ col_int_array   INTEGER[]
         )
     }
 
+    /// Insert row `id` of an all-types table with a value in every column.
+    pub(super) fn insert_all_types_row(table: &mut CdcTestTable, id: i64, text: &str, big: i64) {
+        table.execute(&format!(
+            r#"INSERT INTO {} (
+                id, col_text, col_integer, col_bigint, col_boolean,
+                col_real, col_double, col_date, col_time, col_timetz, col_timetz_array,
+                col_timestamp, col_timestamptz, col_uuid, col_jsonb,
+                col_bytea, col_numeric, col_smallint, col_int_array
+            ) VALUES (
+                {id}, '{text}', 42, {big}, true,
+                3.5, 2.25, '2024-06-15', '14:30:00',
+                '14:30:00+02', ARRAY['08:30:00-05'::timetz, NULL],
+                '2024-01-01 12:00:00', '2024-01-01 12:00:00+00', '550e8400-e29b-41d4-a716-446655440000',
+                '{{"key": "value", "nested": {{"a": 1}}}}',
+                E'\\xDEADBEEF', 12345.67, 7, ARRAY[1, 2, 3]
+            )"#,
+            table.table_name
+        ));
+    }
+
+    /// Check that `row`, an output row of an all-types table, holds what
+    /// [`insert_all_types_row`] wrote with `text` and `big`.
+    pub(super) fn assert_all_types_row(row: &serde_json::Value, text: &str, big: i64) {
+        assert_eq!(row["col_text"], json!(text));
+        assert_eq!(row["col_integer"], json!(42));
+        assert_eq!(row["col_bigint"], json!(big));
+        assert_eq!(row["col_boolean"], json!(true));
+        // REAL travels as f32; 1e-6 is a few f32 rounding steps at 3.5, the
+        // tolerance test_cdc_all_data_types uses for the same column.
+        assert!((row["col_real"].as_f64().unwrap() - 3.5).abs() < 1e-6);
+        assert!((row["col_double"].as_f64().unwrap() - 2.25).abs() < 1e-9);
+        assert_eq!(row["col_date"], json!("2024-06-15"));
+        assert_eq!(
+            row["col_uuid"],
+            json!("550e8400-e29b-41d4-a716-446655440000")
+        );
+        assert_eq!(row["col_jsonb"]["key"], json!("value"));
+        assert_eq!(row["col_jsonb"]["nested"]["a"], json!(1));
+        assert_eq!(row["col_numeric"], json!("12345.67"));
+        assert_eq!(row["col_smallint"], json!(7));
+        assert_eq!(row["col_int_array"], json!([1, 2, 3]));
+        assert!(
+            row["col_time"].as_str().unwrap().starts_with("14:30:00"),
+            "col_time = {}",
+            row["col_time"]
+        );
+        // TIMETZ keeps the offset it was inserted with; the WAL carries the
+        // offset next to the time, so no session zone can rewrite it.
+        assert_eq!(row["col_timetz"], json!("14:30:00+02"));
+        assert_eq!(row["col_timetz_array"], json!(["08:30:00-05", null]));
+        assert!(
+            row["col_timestamp"]
+                .as_str()
+                .unwrap()
+                .starts_with("2024-01-01"),
+            "col_timestamp = {}",
+            row["col_timestamp"]
+        );
+        assert!(
+            row["col_timestamptz"]
+                .as_str()
+                .unwrap()
+                .starts_with("2024-01-01"),
+            "col_timestamptz = {}",
+            row["col_timestamptz"]
+        );
+        // BYTEA is encoded as a JSON byte array, as in `test_cdc_all_data_types`.
+        assert_eq!(row["col_bytea"], json!([0xde, 0xad, 0xbe, 0xef]));
+    }
+
+    /// Check that every column of `row` but `id` is NULL.
+    pub(super) fn assert_all_types_null_row(row: &serde_json::Value) {
+        for (column, value) in row.as_object().unwrap() {
+            if column != "id" {
+                assert!(value.is_null(), "{column} must arrive as NULL, got {value}");
+            }
+        }
+    }
+
     fn cdc_all_types_test_circuit(
         engine: &dyn PipelineTestEngine,
         url: &str,
@@ -3607,7 +3694,7 @@ col_int_array   INTEGER[]
     /// here is a timing race: the walsender releases the slot some time after
     /// the controller has stopped.
     pub(super) fn wait_for_slots_released(table: &mut CdcTestTable) {
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &cdc_connector_url(&table.url),
             &table.publication_name,
             &format!("public.{}", table.table_name),
@@ -3640,7 +3727,7 @@ col_int_array   INTEGER[]
     /// A failed query panics rather than reading as "no tables", which would let
     /// the `errored`-state assertions pass vacuously.
     pub(super) fn etl_table_states(table: &mut CdcTestTable) -> Vec<String> {
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &cdc_connector_url(&table.url),
             &table.publication_name,
             &format!("public.{}", table.table_name),
@@ -4381,7 +4468,7 @@ col_int_array   INTEGER[]
     /// release is prompt only when etl stopped on its own.
     #[engine_test(serial, services(Postgres))]
     pub fn stop_with_buffered_rows_releases_slots_promptly(engine: &dyn PipelineTestEngine) {
-        use crate::integrated::postgres::cdc_input::{
+        use crate::integrated::postgres::cdc::{
             ETL_STOP_GRACE, RUNTIME_SHUTDOWN_TIMEOUT, STOPPED_PAST_GRACE, WATCHER_SHUTDOWN_TIMEOUT,
             pipeline_id,
         };
@@ -4481,7 +4568,7 @@ col_int_array   INTEGER[]
             tokio::task::yield_now().await;
             pid
         });
-        runtime.shutdown_timeout(crate::integrated::postgres::cdc_input::RUNTIME_SHUTDOWN_TIMEOUT);
+        runtime.shutdown_timeout(crate::integrated::postgres::cdc::RUNTIME_SHUTDOWN_TIMEOUT);
 
         let mut observer = pg_connect(&url, &None);
         wait(
@@ -4741,7 +4828,7 @@ col_int_array   INTEGER[]
             tls: TlsConfig::disabled(),
             keepalive: TcpKeepaliveConfig::default(),
         };
-        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+        let pipeline_id = crate::integrated::postgres::cdc::pipeline_id(
             &connector_url,
             &table.publication_name,
             &format!("public.{}", table.table_name),

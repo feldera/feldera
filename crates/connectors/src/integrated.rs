@@ -4,6 +4,7 @@ use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
 use datafusion::execution::runtime_env::RuntimeEnv;
 pub use feldera_adapterlib::transport::DistributedInput;
 use feldera_adapterlib::utils::datafusion::with_private_object_store_registry;
+use feldera_types::circuit::Layout;
 use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
@@ -14,6 +15,9 @@ pub mod delta_table;
 #[cfg(feature = "with-dynamodb")]
 pub(crate) mod dynamodb;
 pub(crate) mod postgres;
+pub mod registry;
+
+pub use registry::{ConnectorRegistry, SharedConnectorState};
 
 #[cfg(feature = "with-dynamodb")]
 pub use crate::integrated::dynamodb::DynamoDBOutputEndpoint;
@@ -112,13 +116,22 @@ pub fn create_integrated_output_endpoint(
     Ok(ep)
 }
 
+/// The pipeline an integrated input connector runs in.
+pub struct PipelineContext<'a> {
+    pub config: &'a PipelineConfig,
+    /// Which host of a multihost pipeline this is.
+    pub layout: &'a Layout,
+    /// What the connectors of the pipeline share.
+    pub registry: Arc<ConnectorRegistry>,
+}
+
 /// Creates an integrated input endpoint.  `distributed` is `Some` only for a
 /// distributed connector, whose transport must support distribution.
 #[allow(unused_variables)]
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
     config: &ConnectorConfig,
-    pipeline_config: &PipelineConfig,
+    pipeline: &PipelineContext,
     runtime_env: Arc<RuntimeEnv>,
     consumer: Box<dyn InputConsumer>,
     distributed: Option<DistributedInput>,
@@ -135,7 +148,7 @@ pub fn create_integrated_input_endpoint(
             Box::new(delta_table::DeltaTableInputEndpoint::new(
                 endpoint_name,
                 config,
-                pipeline_config,
+                pipeline.config,
                 runtime_env,
                 consumer,
                 distributed,
@@ -146,7 +159,7 @@ pub fn create_integrated_input_endpoint(
             Box::new(feldera_iceberg::IcebergInputEndpoint::new(
                 endpoint_name,
                 config,
-                pipeline_config,
+                pipeline.config,
                 runtime_env,
                 consumer,
                 distributed,
@@ -159,6 +172,7 @@ pub fn create_integrated_input_endpoint(
         TransportConfig::PostgresCdcInput(config) => Box::new(PostgresCdcInputEndpoint::new(
             endpoint_name,
             config,
+            pipeline,
             consumer,
         )?),
         transport => {

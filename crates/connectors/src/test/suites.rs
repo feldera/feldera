@@ -24,7 +24,7 @@ pub use crate::integrated::delta_table::test as delta_table;
 #[cfg(feature = "with-dynamodb")]
 pub use crate::integrated::dynamodb::test as dynamodb;
 #[cfg(feature = "with-postgres-cdc")]
-pub use crate::integrated::postgres::cdc_input::tests as postgres_cdc_destination;
+pub use crate::integrated::postgres::cdc::tests as postgres_cdc_destination;
 pub use crate::integrated::postgres::output::tests as postgres_output;
 pub use crate::integrated::postgres::test as postgres;
 #[cfg(feature = "with-postgres-cdc")]

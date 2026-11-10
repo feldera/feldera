@@ -6,7 +6,7 @@ mod prepared_statements;
 mod tls;
 
 #[cfg(feature = "with-postgres-cdc")]
-pub(crate) mod cdc_input;
+pub(crate) mod cdc;
 
 #[cfg(any(test, feature = "testing"))]
 pub mod test;
@@ -15,4 +15,4 @@ pub use input::PostgresInputEndpoint;
 pub use output::PostgresOutputEndpoint;
 
 #[cfg(feature = "with-postgres-cdc")]
-pub use cdc_input::PostgresCdcInputEndpoint;
+pub use cdc::PostgresCdcInputEndpoint;

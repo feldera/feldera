@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- PostgreSQL CDC: with `dev_tweaks.shared_cdc_slot: true`, the connectors of
+  a pipeline that read the same publication share one replication slot
+  instead of one slot per table, so a publication with more tables than
+  `max_replication_slots` can be read. The connectors of one publication must
+  use the same connection user, TLS, `run_source_migrations`, `batch` and
+  `memory_backpressure` settings. The setting is off by default (#7413).
+
 - Delta Lake: applying a deletion vector no longer fails on Parquet files that
   Databricks Photon writes with 256-value `DELTA_BINARY_PACKED` miniblocks, as
   it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the

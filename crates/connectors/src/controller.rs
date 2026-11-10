@@ -177,7 +177,9 @@ use crate::format::{
     MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
 };
 use crate::format::{get_input_format, get_output_format};
-use crate::integrated::{DistributedInput, create_integrated_input_endpoint};
+use crate::integrated::{
+    ConnectorRegistry, DistributedInput, PipelineContext, create_integrated_input_endpoint,
+};
 pub use checkpoint::{Checkpoint, CheckpointOffsets};
 pub use error::{ConfigError, ControllerError};
 pub use feldera_types::config::{
@@ -8018,6 +8020,8 @@ pub struct ControllerInner {
     /// `FairSpillPool` and spill-to-disk path so that every `SessionContext`
     /// (ad-hoc + integrated connectors) draws from a single bounded budget.
     datafusion_runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
+    /// What the integrated input connectors of this pipeline share.
+    connector_registry: Arc<ConnectorRegistry>,
     adhoc_tables: HashMap<SqlIdentifier, Arc<AdHocTable>>,
     fault_tolerance: Option<FtModel>,
     step_receiver: tokio::sync::watch::Receiver<StepStatus>,
@@ -8193,6 +8197,7 @@ impl ControllerInner {
                 error_cb,
                 session_ctxt,
                 datafusion_runtime_env,
+                connector_registry: Arc::default(),
                 adhoc_tables,
                 fault_tolerance: config.global.fault_tolerance.model,
                 transaction_info: Mutex::new(TransactionInfo::new(
@@ -8297,6 +8302,8 @@ impl ControllerInner {
             pool_size as usize,
             source_tasks.chain(sink_tasks),
         )
+        // Connectors that share state start it only once all of them are open.
+        .and_then(|()| controller.connector_registry.initial_connect_done())
         .inspect_err(|_e| {
             // Set the state to terminated to make sure that when we later unpark auxiliary threads, they will exit.
             controller.set_terminated();
@@ -8727,7 +8734,11 @@ impl ControllerInner {
                 let endpoint = create_integrated_input_endpoint(
                     endpoint_name,
                     &resolved_connector_config,
-                    &self.status.pipeline_config,
+                    &PipelineContext {
+                        config: &self.status.pipeline_config,
+                        layout: &self.layout,
+                        registry: self.connector_registry.clone(),
+                    },
                     self.datafusion_runtime_env.clone(),
                     probe,
                     distributed,
@@ -9554,6 +9565,9 @@ impl ControllerInner {
         // Mark pipeline as terminated before removing endpoints, so endpoint removal doesn't
         // end up getting recorded in the journal.
         self.set_terminated();
+
+        // Shared connector state stops once, not once per disconnected input.
+        self.connector_registry.shutdown();
 
         // Prevent nested panic when stopping the pipeline in response to a panic.
         let mut inputs = self.status.inputs.write();
