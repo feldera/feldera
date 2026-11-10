@@ -4295,6 +4295,7 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "async-stream",
+ "atomic",
  "binrw",
  "chrono",
  "clap",

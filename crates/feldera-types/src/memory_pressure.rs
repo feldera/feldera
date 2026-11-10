@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use bytemuck::NoUninit;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -20,7 +21,18 @@ pub const CRITICAL_MEMORY_PRESSURE_THRESHOLD: f64 = 0.95;
 /// - `High`: between 90% and 95% of the user-configured memory limit has been allocated.
 /// - `Critical`: more than 95% of the user-configured memory limit has been allocated.
 #[derive(
-    Debug, Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, ToSchema,
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    NoUninit,
 )]
 #[repr(u8)]
 #[serde(rename_all = "snake_case")]
