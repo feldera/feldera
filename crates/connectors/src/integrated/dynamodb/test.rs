@@ -18,7 +18,7 @@ use crate::{
     controller::EndpointId,
     format::Encoder,
     test::{
-        engine_test,
+        engine_test, init_test_logger,
         pipeline::{PipelineTestEngine, TestCircuit},
         published_schema, read, relations,
     },
@@ -263,6 +263,16 @@ pub(super) fn dynamodb_metric(metrics: &DynamoDBOutputMetrics, name: &str) -> f6
         .into_iter()
         .find_map(|(metric_name, _, _, value)| (metric_name == name).then_some(value))
         .unwrap_or_else(|| panic!("missing DynamoDB metric {name}"))
+}
+
+/// Fails the test if the connector dropped an item. The endpoints of these tests have no
+/// controller, so `batch_end` reports a failed write nowhere else.
+fn assert_no_failed_items(metrics: &DynamoDBOutputMetrics) {
+    assert_eq!(
+        dynamodb_metric(metrics, "dynamodb_output_failed_items_total"),
+        0.0,
+        "the connector dropped items, see the logs of the test"
+    );
 }
 
 /// Returns `rows` of `relation`, each with its weight, as an output batch of the index `key`.
@@ -1075,6 +1085,8 @@ pub(super) fn dynamodb_client(endpoint_url: Option<&str>) -> Client {
 }
 
 pub(super) fn wait_for_dynamodb(client: &Client) {
+    // Every test of the service starts here. The logs show why a write was retried or dropped.
+    init_test_logger();
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     loop {
         if TOKIO
@@ -1174,7 +1186,8 @@ impl Drop for TempDynamoTable {
 
 fn scan_table(client: &Client, table: &str) -> Vec<HashMap<String, AttributeValue>> {
     let mut rows = TOKIO
-        .block_on(client.scan().table_name(table).send())
+        // A default scan is eventually consistent, also on DynamoDB Local.
+        .block_on(client.scan().table_name(table).consistent_read(true).send())
         .unwrap()
         .items()
         .to_vec();
@@ -1473,6 +1486,7 @@ pub fn dynamodb_conditional_put_skips_existing_row(engine: &dyn ConnectorTestEng
         ),
     );
 
+    assert_no_failed_items(&metrics);
     let rows = scan_table(&client, &table);
     assert_eq!(rows.len(), 2);
     // The existing row was left untouched.
@@ -1518,6 +1532,7 @@ pub fn dynamodb_conditional_put_writes_all_new_rows(engine: &dyn ConnectorTestEn
         ),
     );
 
+    assert_no_failed_items(&metrics);
     let rows = scan_table(&client, &table);
     assert_eq!(rows.len(), 2);
     assert_eq!(attr_s(&rows[0], "s"), "one");
@@ -1561,6 +1576,7 @@ pub fn dynamodb_conditional_delete_skips_absent_row(engine: &dyn ConnectorTestEn
         ),
     );
 
+    assert_no_failed_items(&metrics);
     assert!(scan_table(&client, &table).is_empty());
     assert_eq!(
         dynamodb_metric(&metrics, "dynamodb_output_condition_check_failures_total"),

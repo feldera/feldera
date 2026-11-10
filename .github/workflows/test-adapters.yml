@@ -58,7 +58,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       dynamodb:
-        image: amazon/dynamodb-local:latest
+        image: amazon/dynamodb-local:3.3.2@sha256:6ada631ec7aa5fc83446855eb17233e3dad184fec47477e8140c6c569cfe0c86
       iceberg-rest:
         image: apache/iceberg-rest-fixture:1.9.1@sha256:1cd0b86579b423cf260508bc8bdbb0220268f2447b86ddef71482baf74aca1d7
         env:
