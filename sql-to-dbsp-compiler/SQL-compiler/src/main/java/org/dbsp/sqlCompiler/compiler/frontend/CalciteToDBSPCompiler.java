@@ -422,8 +422,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 node.getPositionRange(), correlate.getRowType(), false).to(DBSPTypeTuple.class);
 
         if (!isImplementableCorrelate(correlate)) {
-            if (correlate.getJoinType() != JoinRelType.INNER)
-                throw new UnimplementedException("LEFT JOIN UNNEST");
+            // The node under the Project and Filter nodes of the right input
+            RelNode rightBase = correlate.getRight();
+            while (rightBase instanceof Project || rightBase instanceof Filter)
+                rightBase = rightBase.getInput(0);
+            if (correlate.getJoinType() != JoinRelType.INNER && rightBase instanceof Uncollect)
+                // CORRELATE_UNCOLLECT_MERGE turns a LEFT correlate directly over UNNEST into an
+                // outer Uncollect; a filter or projection between them must run before the NULL padding.
+                throw new UnimplementedException(
+                        "LEFT JOIN UNNEST with a join condition other than TRUE, " +
+                        "or LEFT JOIN with a subquery over UNNEST", node);
             throw this.decorrelateError(node);
         }
         this.visit(correlate.getLeft(), 0, correlate);
@@ -503,7 +511,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFlatmap flatmap = new DBSPFlatmap(node,
                 leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
-                rightProjections, ordinalityIndexType, new IdShuffle(shuffleSize));
+                rightProjections, ordinalityIndexType, uncollect.isOuter, new IdShuffle(shuffleSize));
 
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         Utilities.enforce(flatmap.getType().sameType(functionType),
@@ -697,8 +705,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = CalciteObject.create(uncollect);
         DBSPTypeTuple type = this.convertType(
                 node.getPositionRange(), uncollect.getRowType(), false).to(DBSPTypeTuple.class);
-        if (uncollect.isOuter)
-            throw new UnimplementedException("LEFT JOIN UNNEST", node);
         if (uncollect.getCollectionFieldIndices().cardinality() != 1)
             throw new UnimplementedException("UNNEST of multiple collections", node);
         int collectionField = uncollect.getCollectionFieldIndices().stream().iterator().next();
@@ -743,7 +749,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFlatmap flatmap = new DBSPFlatmap(node,
                 inputRowType, arrayExpression,
                 Linq.list(uncollect.getPassthroughFieldIndices()),
-                null, ordinalityIndexType, new IdShuffle(shuffleSize));
+                null, ordinalityIndexType, uncollect.isOuter, new IdShuffle(shuffleSize));
 
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
         Utilities.enforce(flatmap.getType().sameType(functionType),

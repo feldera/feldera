@@ -843,7 +843,7 @@ public abstract class InnerRewriteVisitor
         this.pop(expression);
         DBSPExpression result = new DBSPFlatmap(expression.getNode(),
                 inputElementType, collectionExpression,
-                expression.passthroughIndexes, postProcess, indexType, expression.shuffle);
+                expression.passthroughIndexes, postProcess, indexType, expression.isOuter, expression.shuffle);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

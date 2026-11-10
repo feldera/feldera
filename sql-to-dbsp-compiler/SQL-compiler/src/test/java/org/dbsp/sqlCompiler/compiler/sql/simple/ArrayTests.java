@@ -43,6 +43,7 @@ import org.dbsp.util.Linq;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import java.util.Map;
 import java.util.Objects;
 
 public class ArrayTests extends BaseSQLTests {
@@ -343,6 +344,111 @@ public class ArrayTests extends BaseSQLTests {
                  1  | 5 | 1
                  1  | 6 | 2
                  2  | 7 | 1""");
+    }
+
+    @Test
+    public void testLeftJoinUnnest() {
+        // Validated on Postgres, with OUTER APPLY written as LEFT JOIN LATERAL
+        var ccs = this.getCCS("""
+                CREATE TABLE data(id INT NOT NULL, arr INT ARRAY);
+                CREATE VIEW v AS SELECT d.id, m.x FROM data d LEFT JOIN UNNEST(d.arr) AS m(x) ON TRUE;
+                CREATE VIEW vo AS SELECT d.id, m.x, m.o
+                FROM data d LEFT JOIN UNNEST(d.arr) WITH ORDINALITY AS m(x, o) ON TRUE;
+                CREATE VIEW va AS SELECT d.id, x FROM data d OUTER APPLY UNNEST(d.arr) AS x;
+                CREATE VIEW ve AS SELECT m.x FROM data d LEFT JOIN UNNEST(d.arr) AS m(x) ON TRUE;""");
+        String idX = """
+                 id | x   | weight
+                -------------------
+                 1  | 10  | 1
+                 1  | 20  | 1
+                 2  |NULL | 1
+                 3  |NULL | 1
+                 4  |NULL | 1
+                 4  | 40  | 1""";
+        ccs.stepMultiView("""
+                INSERT INTO data VALUES (1, ARRAY[10, 20]), (2, ARRAY()), (3, NULL), (4, ARRAY[NULL, 40]);""",
+                Map.of("v", idX, "va", idX,
+                        "vo", """
+                         id | x   | o    | weight
+                        --------------------------
+                         1  | 10  | 1    | 1
+                         1  | 20  | 2    | 1
+                         2  |NULL |NULL  | 1
+                         3  |NULL |NULL  | 1
+                         4  |NULL | 1    | 1
+                         4  | 40  | 2    | 1""",
+                        "ve", """
+                         x   | weight
+                        --------------
+                         10  | 1
+                         20  | 1
+                        NULL | 3
+                         40  | 1"""));
+        // An array that becomes NULL produces a NULL row; an array that becomes non-empty retracts it
+        String idXDelta = """
+                 id | x   | weight
+                -------------------
+                 1  | 10  | -1
+                 1  | 20  | -1
+                 1  |NULL | 1
+                 2  |NULL | -1
+                 2  | 5   | 1""";
+        ccs.stepMultiView("""
+                REMOVE FROM data VALUES (1, ARRAY[10, 20]), (2, ARRAY());
+                INSERT INTO data VALUES (1, NULL), (2, ARRAY[5]);""",
+                Map.of("v", idXDelta, "va", idXDelta,
+                        "vo", """
+                         id | x   | o    | weight
+                        --------------------------
+                         1  | 10  | 1    | -1
+                         1  | 20  | 2    | -1
+                         1  |NULL |NULL  | 1
+                         2  |NULL |NULL  | -1
+                         2  | 5   | 1    | 1""",
+                        "ve", """
+                         x   | weight
+                        --------------
+                         10  | -1
+                         20  | -1
+                         5   | 1"""));
+    }
+
+    @Test
+    public void testLeftJoinUnnestRowMap() {
+        var ccs = this.getCCS("""
+                CREATE TYPE elem AS (a INT, b VARCHAR);
+                CREATE TABLE data(id INT NOT NULL, rarr elem ARRAY, m MAP<VARCHAR, INT>);
+                CREATE VIEW r AS SELECT d.id, e.a, e.b FROM data d LEFT JOIN UNNEST(d.rarr) AS e(a, b) ON TRUE;
+                CREATE VIEW mv AS SELECT d.id, p.k, p.v FROM data d LEFT JOIN UNNEST(d.m) AS p(k, v) ON TRUE;""")
+                .withStringTrim();
+        ccs.stepMultiView("""
+                INSERT INTO data VALUES
+                  (1, ARRAY[ROW(1, 'a'), NULL], MAP['k', 1, 'n', NULL]),
+                  (2, ARRAY(), NULL),
+                  (3, NULL, NULL);""",
+                Map.of("r", """
+                         id | a   | b    | weight
+                        --------------------------
+                         1  | 1   | a    | 1
+                         1  |NULL |NULL  | 1
+                         2  |NULL |NULL  | 1
+                         3  |NULL |NULL  | 1""",
+                        "mv", """
+                         id | k    | v    | weight
+                        ---------------------------
+                         1  | k    | 1    | 1
+                         1  | n    |NULL  | 1
+                         2  |NULL  |NULL  | 1
+                         3  |NULL  |NULL  | 1"""));
+    }
+
+    @Test
+    public void testLeftJoinUnnestCondition() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE data(id INT NOT NULL, arr INT ARRAY);
+                CREATE VIEW v AS SELECT d.id, m.x FROM data d LEFT JOIN UNNEST(d.arr) AS m(x) ON m.x > 1;""",
+                "Not yet implemented: LEFT JOIN UNNEST with a join condition other than TRUE, " +
+                        "or LEFT JOIN with a subquery over UNNEST");
     }
 
     @Test

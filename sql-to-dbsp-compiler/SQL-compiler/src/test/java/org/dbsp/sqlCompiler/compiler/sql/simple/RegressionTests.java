@@ -2032,7 +2032,8 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue2736b() {
-        this.statementsFailingInCompilation("""
+        // Validated on Postgres
+        var ccs = this.getCCS("""
                 create table latest_cells(
                   id integer,
                   mentioned_cell_ids integer array
@@ -2054,8 +2055,14 @@ public class RegressionTests extends SqlIoTest {
                     latest_cells s
                 join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
                 
-                create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""",
-                "Not yet implemented: LEFT JOIN UNNEST");
+                create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""");
+        // The rows of l that l1 lacks: the NULL and the empty arrays
+        ccs.stepWeightOne("""
+                INSERT INTO latest_cells VALUES (1, ARRAY[1, 2]), (2, ARRAY()), (3, NULL), (4, ARRAY[NULL]);""", """
+                 id | mentioned_id
+                -------------------
+                 2  |NULL
+                 3  |NULL""");
     }
 
     @Test

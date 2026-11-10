@@ -62,18 +62,22 @@ FROM data CROSS apply UNNEST(data.cities) AS city;
 
 `UNNEST` applied to a `NULL` value returns an empty table.  As a
 consequence, the queries above drop the rows of `data` where `cities`
-is `NULL` or empty.  The join forms that instead keep such rows,
-`LEFT JOIN UNNEST(...) ON TRUE` and `OUTER APPLY UNNEST(...)`, are not
-yet supported; see [unsupported
-operations](unsupported-operations.md#left-join-unnest).  To keep the
-rows where the array is `NULL`, substitute a one-element array in the
-`UNNEST` argument:
+is `NULL` or empty.  `LEFT JOIN UNNEST(...) ON TRUE` and `OUTER APPLY
+UNNEST(...)` keep such rows: each one produces a single row where all
+the columns produced by `UNNEST`, including the `ORDINALITY` column,
+are `NULL`:
 
 ```sql
--- A row with a NULL cities array produces one row with a NULL city
-CREATE VIEW v AS SELECT city, country
-FROM data, UNNEST(COALESCE(cities, ARRAY[NULL])) AS t (city);
+-- A row with a NULL or empty cities array produces one row with a NULL city
+CREATE VIEW v AS SELECT city, data.country
+FROM data LEFT JOIN UNNEST(data.cities) AS city ON TRUE;
+
+CREATE VIEW w AS SELECT city, data.country
+FROM data OUTER APPLY UNNEST(data.cities) AS city;
 ```
+
+The join condition of `LEFT JOIN UNNEST` must be `ON TRUE`; see
+[unsupported operations](unsupported-operations.md#left-join-unnest-with-a-join-condition).
 
 Note that applying `UNNEST` to an `ARRAY` of structure-typed objects
 will produce a collection whose columns are the fields of the

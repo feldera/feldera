@@ -248,6 +248,11 @@ public class ToJsonInnerVisitor extends InnerVisitor {
             this.stream.append(i);
         }
         this.endArrayProperty("passthroughIndexes");
+        if (node.isOuter) {
+            // Omitted when false, so the JSON of other flatmaps is unchanged
+            this.property("isOuter");
+            this.stream.append(true);
+        }
         this.property("shuffle");
         node.shuffle.asJson(this.stream);
         super.postorder(node);
