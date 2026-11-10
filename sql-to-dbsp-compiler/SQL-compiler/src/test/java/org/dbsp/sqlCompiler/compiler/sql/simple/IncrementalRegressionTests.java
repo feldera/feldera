@@ -1558,6 +1558,20 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void unnestOrdinalityLateness() {
+        // Monotonicity analysis of UNNEST WITH ORDINALITY whose element type differs from the ordinality type
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, arr VARCHAR ARRAY);
+                CREATE VIEW V AS SELECT T.ts, x.s, x.o FROM T, UNNEST(T.arr) WITH ORDINALITY AS x(s, o);""")
+                .withStringTrim();
+        ccs.stepWeightOne("INSERT INTO T VALUES ('2024-01-01 10:00:00', ARRAY['a', 'b']);", """
+                 ts                  | s | o
+                -------------------------------
+                 2024-01-01 10:00:00 | a | 1
+                 2024-01-01 10:00:00 | b | 2""");
+    }
+
+    @Test
     public void outerJoin() {
         // Validated on postgres
         var ccs = this.getCCS("""

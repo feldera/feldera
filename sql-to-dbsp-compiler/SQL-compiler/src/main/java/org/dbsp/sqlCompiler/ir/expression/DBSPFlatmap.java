@@ -152,18 +152,19 @@ public final class DBSPFlatmap extends DBSPExpression {
                 passthroughIndexes, postProcess, this.ordinalityIndexType, shuffle1);
     }
 
-    /** Given the constructor arguments, compute the type of the Flatmap as a function */
-    static DBSPTypeFunction computeFunctionType(
+    /** Types of the output columns before the shuffle: the passthrough fields,
+     * followed by the postProcess results, or else by the element fields and the ordinality. */
+    static List<DBSPType> unshuffledColumnTypes(
             DBSPTypeTuple inputRowType, DBSPClosureExpression collectionExpression,
-            List<Integer> passthroguhIndexes, @Nullable List<DBSPClosureExpression> postProcess,
-            @Nullable DBSPType ordinalityIndexType, Shuffle shuffle) {
+            List<Integer> passthroughIndexes, @Nullable List<DBSPClosureExpression> postProcess,
+            @Nullable DBSPType ordinalityIndexType) {
         // Follows the structure in LowerCircuitVisitor.rewriteFlatmap
         DBSPType iterable = collectionExpression.getResultType();
         DBSPType collectionElementType = iterable.to(ICollectionType.class).getElementType();
         DBSPTypeTupleBase tuple = collectionElementType.as(DBSPTypeTupleBase.class);
 
         List<DBSPType> resultColumns = new ArrayList<>();
-        for (int i: passthroguhIndexes)
+        for (int i: passthroughIndexes)
             resultColumns.add(inputRowType.getFieldType(i));
 
         if (postProcess != null) {
@@ -171,14 +172,7 @@ public final class DBSPFlatmap extends DBSPExpression {
                 resultColumns.add(clo.getResultType());
             }
         } else {
-            if (ordinalityIndexType != null) {
-                if (tuple != null) {
-                    for (int i = 0; i < tuple.size(); i++)
-                        resultColumns.add(tuple.getFieldExpressionType(i));
-                } else {
-                    resultColumns.add(collectionElementType);
-                }
-            } else if (tuple != null) {
+            if (tuple != null) {
                 for (int i = 0; i < tuple.size(); i++)
                     resultColumns.add(tuple.getFieldExpressionType(i));
             } else {
@@ -188,6 +182,22 @@ public final class DBSPFlatmap extends DBSPExpression {
                 resultColumns.add(ordinalityIndexType);
             }
         }
+        return resultColumns;
+    }
+
+    /** Types of the output columns before the shuffle. */
+    public List<DBSPType> unshuffledColumnTypes() {
+        return unshuffledColumnTypes(this.inputRowType, this.collectionExpression, this.passthroughIndexes,
+                this.postProcess, this.ordinalityIndexType);
+    }
+
+    /** Given the constructor arguments, compute the type of the Flatmap as a function */
+    static DBSPTypeFunction computeFunctionType(
+            DBSPTypeTuple inputRowType, DBSPClosureExpression collectionExpression,
+            List<Integer> passthroughIndexes, @Nullable List<DBSPClosureExpression> postProcess,
+            @Nullable DBSPType ordinalityIndexType, Shuffle shuffle) {
+        List<DBSPType> resultColumns = unshuffledColumnTypes(inputRowType, collectionExpression,
+                passthroughIndexes, postProcess, ordinalityIndexType);
         resultColumns = shuffle.shuffle(resultColumns);
         return new DBSPTypeFunction(new DBSPTypeTuple(resultColumns), inputRowType.ref());
     }
