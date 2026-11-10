@@ -10,6 +10,14 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (REST API, fda): the endpoint
+  `GET /v0/pipelines/{pipeline_name}/circuit_profile`, which returned the
+  circuit profile as graphviz `.dot` files in a zip archive, is removed, and so
+  is the `fda circuit-profile` command.  A support bundle no longer contains
+  `circuit_profile.zip`.  To get the circuit profile, use
+  `GET /v0/pipelines/{pipeline_name}/circuit_json_profile`, which returns it as
+  JSON, or open a support bundle in the profile viewer of the Web Console.
+
 - Delta Lake: applying a deletion vector no longer fails on Parquet files that
   Databricks Photon writes with 256-value `DELTA_BINARY_PACKED` miniblocks, as
   it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the

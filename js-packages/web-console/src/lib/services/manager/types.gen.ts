@@ -8263,42 +8263,6 @@ export type GetPipelineCircuitJsonProfileResponses = {
 export type GetPipelineCircuitJsonProfileResponse =
   GetPipelineCircuitJsonProfileResponses[keyof GetPipelineCircuitJsonProfileResponses]
 
-export type GetPipelineCircuitProfileData = {
-  body?: never
-  path: {
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-  query?: never
-  url: '/v0/pipelines/{pipeline_name}/circuit_profile'
-}
-
-export type GetPipelineCircuitProfileErrors = {
-  /**
-   * Pipeline with that name does not exist
-   */
-  404: ErrorResponse
-  500: ErrorResponse
-  503: ErrorResponse
-}
-
-export type GetPipelineCircuitProfileError =
-  GetPipelineCircuitProfileErrors[keyof GetPipelineCircuitProfileErrors]
-
-export type GetPipelineCircuitProfileResponses = {
-  /**
-   * Circuit performance profile
-   */
-  200: {
-    [key: string]: unknown
-  }
-}
-
-export type GetPipelineCircuitProfileResponse =
-  GetPipelineCircuitProfileResponses[keyof GetPipelineCircuitProfileResponses]
-
 export type PostPipelineClearData = {
   body?: never
   path: {

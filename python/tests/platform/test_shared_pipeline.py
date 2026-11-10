@@ -853,7 +853,6 @@ class TestPipeline(SharedTestPipeline):
                     with gzip.GzipFile(fileobj=member) as gz:
                         profile = json.load(gz)
                 assert "worker_profiles" in profile
-                assert any(item.endswith("/circuit_profile.zip") for item in file_list)
                 assert "metadata.txt" in file_list
                 assert "metadata.json" in file_list
         except zipfile.BadZipFile:
@@ -1052,41 +1051,6 @@ class TestPipeline(SharedTestPipeline):
                 assert len(chunk) > 0
         except OSError:
             self.fail("Samply profile is not a valid GZIP file")
-
-    # Verify /circuit_profile returns a valid ZIP via the streaming proxy
-    # (Transfer-Encoding: chunked, Content-Encoding: identity since ZIP
-    # is already compressed).
-    def test_circuit_profile_streaming(self):
-        self.pipeline.start()
-        wait_for_pipeline_reachable(self.pipeline.name)
-
-        resp = http_request(
-            "GET",
-            f"{API_PREFIX}/pipelines/{self.pipeline.name}/circuit_profile",
-            timeout=120,
-        )
-        assert resp.status_code == 200, (
-            f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
-        )
-
-        # Response must be a valid ZIP archive
-        try:
-            with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
-                assert len(zf.namelist()) > 0, "ZIP is empty"
-        except zipfile.BadZipFile:
-            self.fail("circuit_profile did not return a valid ZIP")
-
-        # ZIP is already compressed; Content-Encoding should be identity
-        ce = resp.headers.get("content-encoding", "identity")
-        assert ce == "identity", (
-            f"Expected Content-Encoding: identity for ZIP, got {ce}"
-        )
-
-        # Confirm the streaming proxy is used (not the buffered path, which
-        # would set Content-Length instead of Transfer-Encoding: chunked).
-        assert resp.headers.get("transfer-encoding") == "chunked", (
-            "Expected Transfer-Encoding: chunked (streaming proxy)"
-        )
 
     # Verify /circuit_json_profile streams valid JSON via the streaming proxy
     # (Transfer-Encoding: chunked) and that the gzip compression round-trip

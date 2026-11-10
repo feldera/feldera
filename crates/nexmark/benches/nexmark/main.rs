@@ -50,28 +50,16 @@ struct InputStats {
 }
 
 fn spawn_dbsp_consumer(
-    query: &str,
-    profile_path: Option<&str>,
     mut dbsp: DBSPHandle,
     step_do_rx: mpsc::Receiver<()>,
     step_done_tx: mpsc::SyncSender<()>,
 ) -> JoinHandle<()> {
-    let query = query.to_string();
-    let profile_path = profile_path.map(ToString::to_string);
-
     thread::Builder::new()
         .name("benchmark_consumer".into())
         .spawn(move || {
-            if profile_path.is_some() {
-                dbsp.enable_cpu_profiler().unwrap();
-            }
             while let Ok(()) = step_do_rx.recv() {
                 dbsp.transaction().unwrap();
                 step_done_tx.send(()).unwrap();
-            }
-            if let Some(profile_path) = profile_path {
-                dbsp.dump_profile(<String as AsRef<Path>>::as_ref(&profile_path).join(query))
-                    .unwrap();
             }
         })
         .unwrap()
@@ -269,13 +257,7 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     // so. The DBSP processing happens in its own thread where the resource usage
     // calculation can also happen.
     let (dbsp_step_tx, dbsp_step_rx) = mpsc::sync_channel(1);
-    let dbsp_join_handle = spawn_dbsp_consumer(
-        &name,
-        config.profile_path.as_deref(),
-        dbsp,
-        dbsp_step_rx,
-        dbsp_step_done_tx,
-    );
+    let dbsp_join_handle = spawn_dbsp_consumer(dbsp, dbsp_step_rx, dbsp_step_done_tx);
 
     // Start the generator inputting the specified number of batches to the circuit
     // whenever it receives a message.

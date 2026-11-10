@@ -76,11 +76,10 @@ A DBSP profile is a graph of the pipeline's circuit where each node represents a
 operator and each edge represents a data flow between operators. The profile includes
 information about how much CPU time or memory each operator consumes.
 
-The API endpoint `/v0/<pipeline_name>/circuit_profile` can be used to download the DBSP
-profile of a running pipeline. It returns a zip file containing multiple profiles (one
-for each worker) as `.dot` files, and a `Makefile` to transform the `.dot` files into
-`.pdf` files.
+The API endpoint [`/v0/pipelines/<pipeline_name>/circuit_json_profile`](/api/performance-profile-json)
+returns the DBSP profile of a running or paused pipeline as JSON. A
+[support bundle](/operations/guide.md#diagnosing-performance-issues) also contains
+this profile.
 
-Alternatively, profile data can be [browsed
-iteractively](/operations/visualizing-profiles.md) using the WEB
-UI.
+You can [browse profile data interactively](/operations/visualizing-profiles.md) in
+the Web UI.

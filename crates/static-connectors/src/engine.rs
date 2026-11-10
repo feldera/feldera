@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 use std::io;
 use std::mem::take;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,7 +15,7 @@ use dbsp::circuit::metrics::{
 };
 use dbsp::circuit::{CircuitConfig, Mode};
 use dbsp::operator::communication::ExchangeTls;
-use dbsp::profile::{DbspProfile, GraphProfile, ProfileJsonWriter, WorkerProfile};
+use dbsp::profile::{DbspProfile, ProfileJsonWriter, WorkerProfile};
 use dbsp::{DBSPHandle, Runtime, WeakRuntime};
 use feldera_adapterlib::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_adapterlib::catalog::CircuitCatalog;
@@ -37,8 +36,8 @@ use crate::storage::{StaticStorage, publish_with_state};
 use dbsp::Error as DbspError;
 use dbsp_connectors::engine::{
     Checkpoint, CheckpointCommitter, CheckpointPublisher, CircuitDriver, CircuitFactory,
-    CircuitParams, Engine, EngineCircuit, EngineGraphProfile, EngineMetrics, EngineRuntime,
-    JsonProfileChunks, OpenStorageFn, PipelineStorage, ProgramLoader, RuntimeGauges,
+    CircuitParams, Engine, EngineCircuit, EngineMetrics, EngineRuntime, JsonProfileChunks,
+    OpenStorageFn, PipelineStorage, ProgramLoader, RuntimeGauges,
 };
 
 /// Builds the circuit of a pipeline that the SQL compiler compiled, from dbsp's configuration,
@@ -299,14 +298,6 @@ impl CircuitDriver for StaticCircuitDriver {
         self.handle.lir().map_err(ControllerError::dbsp_error)
     }
 
-    fn graph_profile(&mut self) -> Result<Box<dyn EngineGraphProfile>, ControllerError> {
-        let profile = self
-            .handle
-            .graph_profile()
-            .map_err(ControllerError::dbsp_error)?;
-        Ok(Box::new(StaticGraphProfile(profile)))
-    }
-
     fn json_profile(&mut self) -> Result<JsonProfileChunks, ControllerError> {
         let profile = self
             .handle
@@ -459,19 +450,6 @@ impl EngineRuntime for StaticRuntime {
                 }
             }),
         }
-    }
-}
-
-/// dbsp's profile of the circuit graph.
-struct StaticGraphProfile(GraphProfile);
-
-impl EngineGraphProfile for StaticGraphProfile {
-    fn dump(&self, dir: &Path) -> io::Result<PathBuf> {
-        self.0.dump(dir)
-    }
-
-    fn write_zip(&self, out: &mut dyn io::Write) -> io::Result<()> {
-        self.0.write_zip(out).map(|_| ()).map_err(io::Error::other)
     }
 }
 

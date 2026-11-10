@@ -287,8 +287,11 @@ const config: Config = {
             to: "/api/get-checkpoint-status",
           },
           {
-            from: "/api/retrieve-the-circuit-performance-profile-of-a-running-or-paused-pipeline",
-            to: "/api/get-performance-profile",
+            from: [
+              "/api/retrieve-the-circuit-performance-profile-of-a-running-or-paused-pipeline",
+              "/api/get-performance-profile",
+            ],
+            to: "/api/performance-profile-json",
           },
           {
             from: "/api/commit-the-current-transaction",

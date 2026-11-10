@@ -80,9 +80,6 @@ import type {
   GetPipelineCircuitJsonProfileData,
   GetPipelineCircuitJsonProfileErrors,
   GetPipelineCircuitJsonProfileResponses,
-  GetPipelineCircuitProfileData,
-  GetPipelineCircuitProfileErrors,
-  GetPipelineCircuitProfileResponses,
   GetPipelineData,
   GetPipelineDataflowGraphData,
   GetPipelineDataflowGraphErrors,
@@ -1000,33 +997,6 @@ export const getPipelineCircuitJsonProfile = <ThrowOnError extends boolean = tru
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/circuit_json_profile',
-    ...options
-  })
-
-/**
- * Get Performance Profile
- *
- * Required role: `read` or higher.
- *
- * Retrieve the circuit performance profile of a running or paused pipeline.
- */
-export const getPipelineCircuitProfile = <ThrowOnError extends boolean = true>(
-  options: Options<GetPipelineCircuitProfileData, ThrowOnError>
-): RequestResult<
-  GetPipelineCircuitProfileResponses,
-  GetPipelineCircuitProfileErrors,
-  ThrowOnError,
-  'data'
-> =>
-  (options.client ?? client).get<
-    GetPipelineCircuitProfileResponses,
-    GetPipelineCircuitProfileErrors,
-    ThrowOnError,
-    'data'
-  >({
-    responseStyle: 'data',
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/v0/pipelines/{pipeline_name}/circuit_profile',
     ...options
   })
 

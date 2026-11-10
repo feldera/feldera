@@ -31,8 +31,7 @@ use crate::controller::sync::{
 };
 use crate::engine::{
     CheckpointCommitter, CircuitDriver, CircuitFactory, CircuitParams, EngineCircuit,
-    EngineGraphProfile, EngineRuntime, JournalMode, JsonProfileChunks, OpenStorageFn,
-    PipelineStorage, StepJournal,
+    EngineRuntime, JournalMode, JsonProfileChunks, OpenStorageFn, PipelineStorage, StepJournal,
 };
 use crate::panic::N_PANICS;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
@@ -631,10 +630,6 @@ pub struct Controller {
     circuit_thread_handle: Arc<Mutex<Option<JoinHandle<Result<(), ControllerError>>>>>,
 }
 
-/// Type of the callback argument to [`Controller::start_graph_profile`].
-pub type GraphProfileCallbackFn =
-    Box<dyn FnOnce(Result<Box<dyn EngineGraphProfile>, ControllerError>) + Send>;
-
 /// Type of the callback argument to [`Controller::start_json_profile`].
 pub type JsonProfileCallbackFn = Box<dyn FnOnce(Result<JsonProfileChunks, ControllerError>) + Send>;
 
@@ -657,7 +652,6 @@ pub type StartCompactionCallbackFn = Box<dyn FnOnce(Result<(), ControllerError>)
 /// There is no type for a command reply.  Instead, the command implementation
 /// uses a callback embedded in the command to reply.
 enum Command {
-    GraphProfile(GraphProfileCallbackFn),
     JsonProfile(JsonProfileCallbackFn),
     Checkpoint(CheckpointCallbackFn),
     Suspend(SuspendCallbackFn),
@@ -834,7 +828,6 @@ fn soft_delete_input_handle(
 impl Command {
     pub fn flush(self) {
         match self {
-            Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
             Command::JsonProfile(callback) => callback(Err(ControllerError::ControllerExit)),
             Command::Checkpoint(callback) => {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
@@ -1306,33 +1299,6 @@ impl Controller {
         &self.inner.catalog
     }
 
-    /// Triggers a dump of the circuit's performance profile to the file system.
-    /// The profile will be written asynchronously, probably after this function
-    /// returns.
-    pub fn dump_profile(&self) {
-        debug!("Generating DBSP profile dump");
-        self.start_graph_profile(Box::new(|profile| {
-            match profile.map(|profile| {
-                profile
-                    .dump(Path::new("profile"))
-                    .map_err(|e| ControllerError::io_error("dumping profile", e))
-            }) {
-                Ok(Ok(path)) => info!("Dumped DBSP profile to {}", path.display()),
-                Ok(Err(e)) | Err(e) => error!("Failed to write circuit profile: {e}"),
-            }
-        }));
-    }
-
-    /// Triggers a profiling operation in the running pipeline. `cb` will be
-    /// called with the profile when it is ready, probably after this function
-    /// returns.
-    ///
-    /// The callback-based nature of this function makes it useful in
-    /// asynchronous contexts.
-    pub fn start_graph_profile(&self, cb: GraphProfileCallbackFn) {
-        self.inner.send_command(Command::GraphProfile(cb));
-    }
-
     /// Triggers a profiling operation in the running pipeline. `cb` will be
     /// called with the profile (in JSON format) when it is ready, probably after this
     /// function returns.
@@ -1419,18 +1385,6 @@ impl Controller {
         self.start_checkpoint(Box::new(move |profile| {
             if sender.send(profile).is_err() {
                 error!("checkpoint result could not be sent");
-            }
-        }));
-        reply_or_controller_exit(receiver.await)
-    }
-
-    pub async fn async_graph_profile(
-        &self,
-    ) -> Result<Box<dyn EngineGraphProfile>, ControllerError> {
-        let (sender, receiver) = oneshot::channel();
-        self.start_graph_profile(Box::new(move |profile| {
-            if sender.send(profile).is_err() {
-                error!("`/dump_profile` result could not be sent");
             }
         }));
         reply_or_controller_exit(receiver.await)
@@ -4558,9 +4512,6 @@ impl CircuitThread {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
                 Command::JsonProfile(reply_callback) => reply_callback(self.circuit.json_profile()),
-                Command::GraphProfile(reply_callback) => {
-                    reply_callback(self.circuit.graph_profile())
-                }
                 Command::Checkpoint(reply_callback) => {
                     self.checkpoint_requests
                         .push(CheckpointRequest::CheckpointCommand(reply_callback));

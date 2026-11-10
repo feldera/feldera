@@ -412,7 +412,9 @@ pub struct SupportBundleData {
     #[serde(default = "SupportBundleData::current_version")]
     pub version: u32,
     pub time: DateTime<Utc>,
-    pub circuit_profile: BundleResult<Vec<u8>>,
+    /// Formerly the graphviz circuit profile; always `Err(SKIPPED_BY_USER)` now.
+    /// The field keeps its slot because stored bundles encode fields by position.
+    pub legacy_dot_profile: BundleResult<Vec<u8>>,
     pub json_circuit_profile: BundleResult<Vec<u8>>,
     pub heap_profile: BundleResult<Vec<u8>>,
     pub metrics: BundleResult<Vec<u8>>,
@@ -435,7 +437,7 @@ impl SupportBundleData {
         Self {
             version: Self::current_version(),
             time: chrono::Utc::now(),
-            circuit_profile: Ok(vec![1, 2, 3]),
+            legacy_dot_profile: Err(SKIPPED_BY_USER.to_string()),
             json_circuit_profile: Ok(vec![1, 2, 3]),
             heap_profile: Ok(vec![4, 5, 6]),
             metrics: Ok(vec![7, 8, 9]),
@@ -465,7 +467,7 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
             version: u32,
             time: DateTime<Utc>,
             #[serde(default)]
-            circuit_profile: Option<BundleResult<Vec<u8>>>,
+            legacy_dot_profile: Option<BundleResult<Vec<u8>>>,
             #[serde(default)]
             json_circuit_profile: Option<BundleResult<Vec<u8>>>,
             #[serde(default)]
@@ -491,7 +493,9 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
         Ok(SupportBundleData {
             version: helper.version,
             time: helper.time,
-            circuit_profile: helper.circuit_profile.unwrap_or_else(missing_field_error),
+            legacy_dot_profile: helper
+                .legacy_dot_profile
+                .unwrap_or_else(missing_field_error),
             json_circuit_profile: helper
                 .json_circuit_profile
                 .unwrap_or_else(missing_field_error),
@@ -521,7 +525,7 @@ impl SupportBundleData {
         }
 
         let (
-            (circuit_profile, json_circuit_profile, heap_profile),
+            (json_circuit_profile, heap_profile),
             metrics,
             logs,
             stats,
@@ -533,11 +537,6 @@ impl SupportBundleData {
             // Profiles can be very large: fetching them one after another keeps the
             // pipeline memory bounded.
             async {
-                let circuit_profile = if params.circuit_profile {
-                    Self::collect_circuit_profile(state, client, tenant_id, pipeline_name).await
-                } else {
-                    skipped()
-                };
                 let json_circuit_profile = if params.circuit_profile {
                     Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name)
                         .await
@@ -549,7 +548,7 @@ impl SupportBundleData {
                 } else {
                     skipped()
                 };
-                (circuit_profile, json_circuit_profile, heap_profile)
+                (json_circuit_profile, heap_profile)
             },
             async {
                 if params.metrics {
@@ -605,7 +604,7 @@ impl SupportBundleData {
         Ok(SupportBundleData {
             version: Self::current_version(),
             time: chrono::Utc::now(),
-            circuit_profile,
+            legacy_dot_profile: skipped(),
             json_circuit_profile,
             heap_profile,
             metrics,
@@ -616,30 +615,6 @@ impl SupportBundleData {
             dataflow_graph,
             pipeline_events,
         })
-    }
-
-    async fn collect_circuit_profile(
-        state: &ServerState,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> BundleResult<Vec<u8>> {
-        let response = fetch_pipeline_data(
-            state,
-            client,
-            tenant_id,
-            pipeline_name,
-            "dump_profile",
-            "",
-            Some(EXTENDED_RESPONSE_SIZE_LIMIT),
-            Some("gzip"),
-        )
-        .await;
-
-        response_to_bundle_result_with_transform(response, |body, _, encoding| {
-            decode_transport_encoding(body, encoding)
-        })
-        .await
     }
 
     async fn collect_json_circuit_profile(
@@ -810,17 +785,6 @@ impl SupportBundleData {
 
         // Add circuit profile
         if params.circuit_profile {
-            match &self.circuit_profile {
-                Ok(content) => {
-                    let _ = add_to_zip("circuit_profile.zip", content, Stored);
-                    summary.collected("circuit_profile.zip");
-                }
-                Err(e) => {
-                    if e != SKIPPED_BY_USER {
-                        summary.failed("circuit_profile.zip", e.clone());
-                    }
-                }
-            };
             match &self.json_circuit_profile {
                 // Since data version 4 the profile is stored as gzip-compressed JSON,
                 // which the bundle carries unchanged: a large profile is never
@@ -846,7 +810,6 @@ impl SupportBundleData {
                 }
             }
         } else {
-            summary.skipped("circuit_profile.zip");
             summary.skipped("circuit_profile.json.gz");
         }
 
@@ -1446,7 +1409,7 @@ mod tests {
         let original = SupportBundleData {
             version: SupportBundleData::current_version(),
             time: chrono::Utc::now(),
-            circuit_profile: Ok(vec![1, 2, 3]),
+            legacy_dot_profile: Err(SKIPPED_BY_USER.to_string()),
             json_circuit_profile: Ok(vec![1, 2, 3]),
             heap_profile: Err("test error".to_string()),
             metrics: Ok(vec![4, 5, 6]),
@@ -1479,7 +1442,7 @@ mod tests {
 
         assert_eq!(deserialized.version, 0);
         assert_eq!(
-            deserialized.circuit_profile,
+            deserialized.legacy_dot_profile,
             Err("Missing from data source (field was added in newer version)".to_string())
         );
         assert_eq!(
@@ -1560,7 +1523,7 @@ mod tests {
 
         assert_eq!(parsed.version, 4);
         assert_eq!(parsed.time, when);
-        assert_eq!(parsed.circuit_profile, Ok(vec![1, 2, 3]));
+        assert_eq!(parsed.legacy_dot_profile, Ok(vec![1, 2, 3]));
         assert_eq!(parsed.heap_profile, Err("nope".to_string()));
         assert_eq!(parsed.logs, Ok("hi".to_string()));
         assert_eq!(
@@ -1770,7 +1733,7 @@ mod tests {
         let bundle_data = SupportBundleData {
             version: SupportBundleData::current_version(),
             time: chrono::Utc::now(),
-            circuit_profile: Ok(vec![1, 2, 3]),
+            legacy_dot_profile: Err(SKIPPED_BY_USER.to_string()),
             json_circuit_profile: Ok(vec![
                 31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 171, 174, 5, 0, 67, 191, 166, 163, 2, 0, 0, 0,
             ]),
@@ -1801,10 +1764,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(summary.collected.len(), 10);
+        assert_eq!(summary.collected.len(), 9);
         assert_eq!(summary.failed.len(), 0);
         assert_eq!(summary.skipped.len(), 0);
-        assert_eq!(zip_entries.len(), 10);
+        assert_eq!(zip_entries.len(), 9);
 
         // The gzip-compressed JSON profile goes into the bundle as is,
         // stored rather than deflated.
@@ -1848,8 +1811,7 @@ mod tests {
 
         assert_eq!(summary.collected.len(), 4);
         assert_eq!(summary.failed.len(), 0);
-        // circuit_profile counts as two entries (.zip + .json) when skipped
-        assert_eq!(summary.skipped.len(), 6);
+        assert_eq!(summary.skipped.len(), 5);
         assert_eq!(zip_entries.len(), 4);
     }
 
@@ -2772,7 +2734,7 @@ mod tests {
 
         // All others should be skipped
         assert_eq!(
-            bundle.circuit_profile.unwrap_err(),
+            bundle.legacy_dot_profile.unwrap_err(),
             SKIPPED_BY_USER.to_string()
         );
         assert_eq!(

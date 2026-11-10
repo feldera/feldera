@@ -142,10 +142,8 @@ impl TraceMonitor {
 
     /// Attach trace monitor to a circuit.  The monitor will register for
     /// `CircuitEvent`s only.  It will validate the circuit construction process
-    /// and can be used to visualize the circuit (see
-    /// [`Self::visualize_circuit`] and [`Self::visualize_circuit_annotate`],
-    /// but it will not validate scheduler events, nor incur the associated
-    /// overheads.
+    /// and can return the circuit graph (see [`Self::get_circuit`]), but it will
+    /// not validate scheduler events, nor incur the associated overheads.
     pub fn attach_circuit_events(&self, circuit: &RootCircuit, handler_name: &str) {
         TraceMonitorInternal::attach(self.0.clone(), circuit, false, handler_name);
     }
@@ -167,21 +165,9 @@ impl TraceMonitor {
         )))
     }
 
-    pub fn visualize_circuit(&self) -> VisGraph {
-        self.visualize_circuit_annotate(|_| ("".to_string(), 0f64))
-    }
-
-    /// This is almost like visualize_circuit, but it does not merge
-    /// the two halves of strict operators.
+    /// Returns the circuit graph.
     pub fn get_circuit(&self) -> VisGraph {
         self.0.borrow().circuit.get_graph()
-    }
-
-    pub fn visualize_circuit_annotate<F>(&self, annotate: F) -> VisGraph
-    where
-        F: Fn(&GlobalNodeId) -> (String, f64),
-    {
-        self.0.borrow().circuit.visualize(&annotate)
     }
 
     /// Returns the number of operator nodes in the region identified by
