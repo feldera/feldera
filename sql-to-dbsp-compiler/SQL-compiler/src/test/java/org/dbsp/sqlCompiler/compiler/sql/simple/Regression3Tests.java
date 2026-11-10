@@ -1299,4 +1299,48 @@ public class Regression3Tests extends SqlIoTest {
                  1
                  2""");
     }
+
+    @Test
+    public void issue7925() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(a BOOLEAN, b BOOLEAN, c BOOLEAN NOT NULL, i INT NOT NULL,
+                               d DECIMAL(10, 2) NOT NULL, e DECIMAL(5, 1) NOT NULL, arr INT ARRAY NOT NULL);
+                CREATE VIEW V AS SELECT
+                  CASE WHEN CARDINALITY(arr) > 0 THEN a
+                       ELSE CASE WHEN CARDINALITY(arr) > 0 THEN a ELSE b END
+                  END AS x,
+                  CASE WHEN CARDINALITY(arr) > 0 THEN a
+                       ELSE CASE WHEN CARDINALITY(arr) > 0 THEN b ELSE a END
+                  END AS y,
+                  CASE WHEN CARDINALITY(arr) > 0 THEN a
+                       ELSE CASE WHEN CARDINALITY(arr) > 0 THEN a ELSE c END
+                  END AS z,
+                  CASE WHEN CARDINALITY(arr) > 0
+                       THEN (CASE WHEN CARDINALITY(arr) > 0 THEN 1 ELSE NULL END) * i
+                       ELSE 0
+                  END AS m,
+                  CASE WHEN CARDINALITY(arr) > 0
+                       THEN (CASE WHEN CARDINALITY(arr) > 0 THEN 0 ELSE NULL END) + i
+                       ELSE 0
+                  END AS s,
+                  CASE WHEN CARDINALITY(arr) > 0
+                       THEN (CASE WHEN CARDINALITY(arr) > 0 THEN NULL ELSE d END) * e
+                       ELSE 0
+                  END AS dm,
+                  CASE WHEN CARDINALITY(arr) > 0
+                       THEN (CASE WHEN CARDINALITY(arr) > 0 THEN NULL ELSE d END) + e
+                       ELSE 0
+                  END AS da
+                FROM T;""");
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES
+                (TRUE, FALSE, FALSE, 7, 1.5, 2.5, ARRAY[1]),
+                (TRUE, NULL, TRUE, 7, 1.5, 2.5, ARRAY()),
+                (NULL, FALSE, FALSE, 7, 1.5, 2.5, ARRAY());""", """
+                 x     | y     | z     | m | s | dm   | da
+                ------------------------------------------
+                 true  | true  | true  | 7 | 7 |NULL  |NULL
+                NULL   | true  | true  | 0 | 0 | 0    | 0
+                 false |NULL   | false | 0 | 0 | 0    | 0""");
+    }
 }
