@@ -89,6 +89,14 @@ pub struct SupportBundleParameters {
     #[serde(default = "collect")]
     pub pipeline_config: bool,
 
+    /// Whether the pipeline configuration includes the program source code
+    /// (default: true). When false, the bundle removes from the pipeline
+    /// configuration the SQL program, the UDF code, the generated Rust code,
+    /// and the code excerpts in the compiler messages. The dataflow graph is a
+    /// separate item, controlled by `dataflow_graph`.
+    #[serde(default = "collect")]
+    pub source_code: bool,
+
     /// Whether to collect system configuration data (default: true)
     #[serde(default = "collect")]
     pub system_config: bool,
@@ -116,6 +124,7 @@ impl Default for SupportBundleParameters {
             logs: true,
             stats: true,
             pipeline_config: true,
+            source_code: true,
             system_config: true,
             dataflow_graph: true,
             pipeline_events: true,
@@ -333,6 +342,49 @@ fn stored_json_profile(
         }
         TransportEncoding::Identity => gz_compress(body),
     }
+}
+
+/// Removes `fields` from `value` if `value` is a JSON object.
+fn remove_fields(value: Option<&mut serde_json::Value>, fields: &[&str]) {
+    if let Some(serde_json::Value::Object(object)) = value {
+        for field in fields {
+            object.shift_remove(*field);
+        }
+    }
+}
+
+/// Removes the program source code from `config`, a pipeline configuration in
+/// JSON: the SQL program, the UDF code, the generated Rust code, the circuit
+/// IR, the copy of the dataflow graph that older collections hold, and the
+/// code excerpts in the compiler messages.
+fn strip_source_code(config: &[u8]) -> BundleResult<Vec<u8>> {
+    let mut config: serde_json::Value = serde_json::from_slice(config)
+        .map_err(|e| format!("Failed to parse the configuration to remove the source code: {e}"))?;
+    if !config.is_object() {
+        return Err(
+            "Failed to remove the source code: the configuration is not a JSON object".into(),
+        );
+    }
+    remove_fields(Some(&mut config), &["program_code", "udf_rust", "udf_toml"]);
+    remove_fields(
+        config.pointer_mut("/program_info"),
+        &["main_rust", "udf_stubs", "circuit_ir", "dataflow"],
+    );
+    remove_fields(
+        config.pointer_mut("/program_error/rust_compilation"),
+        &["stdout", "stderr"],
+    );
+    for (messages, excerpt) in [
+        ("/program_error/sql_compilation/messages", "snippet"),
+        ("/program_error/rust_compilation/messages", "rendered"),
+    ] {
+        if let Some(serde_json::Value::Array(messages)) = config.pointer_mut(messages) {
+            for message in messages {
+                remove_fields(Some(message), &[excerpt]);
+            }
+        }
+    }
+    serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())
 }
 
 /// Extract a specific file from a ZIP archive
@@ -958,25 +1010,40 @@ impl SupportBundleData {
             match &self.pipeline_config {
                 // The field holds gzip-compressed JSON, which version 0 bundles
                 // carry as it is.
-                Ok(content) if self.version == 0 => {
+                Ok(content) if self.version == 0 && params.source_code => {
                     let _ = add_to_zip("pipeline_config.json.gz", Bytes(content, Stored));
                     summary.collected("pipeline_config.json.gz");
                 }
-                // Later versions carry the JSON: the stored deflate stream when
-                // possible, else the decompressed JSON, deflated again.
+                // Later versions carry the JSON: the stored deflate stream when it
+                // keeps the source code, else the decompressed JSON, without the
+                // source code if requested, deflated again.
                 Ok(content) => match gzip_member(content) {
-                    Some(member) => {
+                    Some(member) if params.source_code => {
                         let _ = add_to_zip("pipeline_config.json", Gzip(member));
                         summary.collected("pipeline_config.json");
                     }
-                    None => match gz_decompress(content) {
-                        Ok(config) => {
-                            let _ = add_to_zip("pipeline_config.json", Bytes(&config, Deflated));
-                            summary.collected("pipeline_config.json");
+                    _ => {
+                        let config = gz_decompress(content)
+                            .map_err(|e| format!("Failed to decompress: {e}"))
+                            .and_then(|config| {
+                                if params.source_code {
+                                    Ok(config)
+                                } else {
+                                    strip_source_code(&config)
+                                }
+                            });
+                        match config {
+                            Ok(config) => {
+                                let _ =
+                                    add_to_zip("pipeline_config.json", Bytes(&config, Deflated));
+                                summary.collected("pipeline_config.json");
+                                if !params.source_code {
+                                    summary.skipped("source code in pipeline_config.json");
+                                }
+                            }
+                            Err(reason) => summary.failed("pipeline_config.json", reason),
                         }
-                        Err(e) => summary
-                            .failed("pipeline_config.json", format!("Failed to decompress: {e}")),
-                    },
+                    }
                 },
                 Err(e) => {
                     if e != SKIPPED_BY_USER {
@@ -1884,6 +1951,7 @@ mod tests {
             logs: true,
             stats: false,
             pipeline_config: true,
+            source_code: true,
             system_config: false,
             dataflow_graph: true,
             pipeline_events: false,
@@ -1910,6 +1978,98 @@ mod tests {
         // circuit_profile counts as two entries (.zip + .json) when skipped
         assert_eq!(summary.skipped.len(), 6);
         assert_eq!(zip_entries.len(), 4);
+    }
+
+    /// Without the source code, `pipeline_config.json` keeps the rest of the
+    /// configuration, for the current and the version 0 data format, and for a
+    /// collection that holds a copy of the dataflow graph. A configuration that
+    /// is not a JSON object is left out.
+    #[tokio::test]
+    async fn push_to_zip_strips_source_code() {
+        let code = "SOURCE_CODE";
+        let config = json!({
+            "name": "p",
+            "runtime_config": { "workers": 4 },
+            "program_code": code,
+            "udf_rust": code,
+            "udf_toml": code,
+            "program_info": {
+                "schema": { "inputs": [], "outputs": [] },
+                "main_rust": code,
+                "udf_stubs": code,
+                "dataflow": { "calcite_plan": { "v": { "rels": [{ "condition": code }] } } },
+                "circuit_ir": [code],
+            },
+            "program_error": {
+                "sql_compilation": {
+                    "exit_code": 1,
+                    "messages": [{ "message": "m", "snippet": code }],
+                },
+                "rust_compilation": {
+                    "exit_code": 1,
+                    "stdout": code,
+                    "stderr": code,
+                    "messages": [{ "message": "m", "rendered": code }],
+                },
+                "system_error": null,
+            },
+        });
+        let params = SupportBundleParameters {
+            source_code: false,
+            ..SupportBundleParameters::default()
+        };
+        let mut entries = Vec::new();
+        let mut add = |name: &str, content: ZipContent<'_>| {
+            entries.push((name.to_string(), entry_data(content).0));
+            Ok(())
+        };
+
+        let mut data = SupportBundleData::test_data();
+        data.pipeline_config = gz_compress(serde_json::to_vec(&config).unwrap());
+        let summary = data.push_to_zip(&mut add, &params).await.unwrap();
+        let mut version_0 = SupportBundleData::test_data();
+        version_0.version = 0;
+        version_0.pipeline_config = gz_compress(serde_json::to_vec(&config).unwrap());
+        version_0.push_to_zip(&mut add, &params).await.unwrap();
+        let mut not_object = SupportBundleData::test_data();
+        not_object.pipeline_config = gz_compress(serde_json::to_vec(&json!([code])).unwrap());
+        let rejected = not_object.push_to_zip(&mut add, &params).await.unwrap();
+
+        assert!(
+            entries
+                .iter()
+                .all(|(name, _)| name != "pipeline_config.json.gz")
+        );
+        let configs: Vec<_> = entries
+            .iter()
+            .filter(|(name, _)| name == "pipeline_config.json")
+            .collect();
+        assert_eq!(configs.len(), 2);
+        for (_, config_bytes) in configs {
+            let stripped: serde_json::Value = serde_json::from_slice(config_bytes).unwrap();
+            assert!(!stripped.to_string().contains(code), "{stripped:#}");
+            assert_eq!(stripped["runtime_config"], config["runtime_config"]);
+            assert_eq!(
+                stripped["program_info"]["schema"],
+                config["program_info"]["schema"]
+            );
+            assert_eq!(
+                stripped["program_error"]["rust_compilation"]["messages"][0]["message"],
+                "m"
+            );
+        }
+        assert!(
+            summary
+                .skipped
+                .iter()
+                .any(|entry| entry == "source code in pipeline_config.json")
+        );
+        assert!(
+            rejected
+                .failed
+                .iter()
+                .any(|failure| failure.file == "pipeline_config.json")
+        );
     }
 
     #[tokio::test]
@@ -2819,6 +2979,7 @@ mod tests {
             logs: false,
             stats: false,
             pipeline_config: true,
+            source_code: true,
             system_config: false,
             dataflow_graph: true,
             pipeline_events: false,

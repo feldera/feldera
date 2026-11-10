@@ -2180,6 +2180,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         logs: bool = True,
         stats: bool = True,
         pipeline_config: bool = True,
+        source_code: bool = True,
         system_config: bool = True,
         dataflow_graph: bool = True,
         pipeline_events: bool = True,
@@ -2202,6 +2203,12 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         :param logs: Whether to collect logs data (default: True)
         :param stats: Whether to collect stats data (default: True)
         :param pipeline_config: Whether to collect pipeline configuration data (default: True)
+        :param source_code: Whether the pipeline configuration includes the program
+            source code (default: True). When False, the bundle removes the SQL
+            program, the UDF code, the generated Rust code, and the code
+            excerpts in the compiler messages from the pipeline configuration.
+            The dataflow graph is a separate item, controlled by
+            ``dataflow_graph``.
         :param system_config: Whether to collect system configuration data (default: True)
         :param dataflow_graph: Whether to collect dataflow graph (default: True)
         :param pipeline_events: Whether to collect pipeline monitor events (default: True)
@@ -2227,6 +2234,8 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             params["stats"] = "false"
         if not pipeline_config:
             params["pipeline_config"] = "false"
+        if not source_code:
+            params["source_code"] = "false"
         if not system_config:
             params["system_config"] = "false"
         if not dataflow_graph:

@@ -9391,6 +9391,14 @@ export type GetPipelineSupportBundleData = {
      */
     pipeline_config?: boolean
     /**
+     * Whether the pipeline configuration includes the program source code
+     * (default: true). When false, the bundle removes from the pipeline
+     * configuration the SQL program, the UDF code, the generated Rust code,
+     * and the code excerpts in the compiler messages. The dataflow graph is a
+     * separate item, controlled by `dataflow_graph`.
+     */
+    source_code?: boolean
+    /**
      * Whether to collect system configuration data (default: true)
      */
     system_config?: boolean
