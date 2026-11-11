@@ -886,29 +886,16 @@ export class CytographRendering {
     // Note that the node can be a parent, in this case we compute the
     // edges reachable from ALL its children.
     reachableFrom(id: NodeId, forward: boolean): EdgeCollection {
-        // If a node is complex, get the list of children
-        let nodes = this.currentGraph!.getSimpleNodes(id);
-        let result = this.cy!.collection();
-        for (const node of nodes) {
-            if (forward) {
-                let reachable = this.graph.reachableFrom(node, e => !e.back);
-                for (let e of reachable) {
-                    let edgeId = this.getActualEdgeId(e);
-                    let edge = this.cy!.getElementById(edgeId);
-                    if (edge !== undefined)
-                        result = result.union(edge);
-                }
-            } else {
-                let reverseReachable = this.graph.canReach(node, e => !e.back);
-                for (let e of reverseReachable) {
-                    let edgeId = this.getActualEdgeId(e);
-                    let edge = this.cy!.getElementById(edgeId);
-                    if (edge !== undefined)
-                        result = result.union(edge);
-                }
+        // `merge` adds to this collection in place. `union` makes a copy for each edge.
+        const result = this.cy.collection();
+        for (const node of this.currentGraph!.getSimpleNodes(id)) {
+            const reachable = forward
+                ? this.graph.reachableFrom(node, e => !e.back)
+                : this.graph.canReach(node, e => !e.back);
+            for (const e of reachable) {
+                result.merge(this.cy.getElementById(this.getActualEdgeId(e)));
             }
         }
-
         return result;
     }
 
