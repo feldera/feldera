@@ -19,21 +19,21 @@ export interface PerfReport {
 
 declare module 'vitest' {
   interface ProvidedContext {
-    /** The size of the synthetic circuit, see `syntheticCircuit`. */
+    /** The `topLevelItems` option of `syntheticCircuit` for the diagram measurements. */
     perfTopLevelItems: number
   }
 }
 
 declare module 'vitest/browser' {
   interface BrowserCommands {
-    /** Print the results as a table, and write the report as JSON to `$PROFILER_PERF_OUT` when it
-     *  is set. */
+    /** Prints the results as a table. Writes the report as JSON to `$PROFILER_PERF_OUT` if that
+     *  variable is set. */
     savePerfResults: (report: PerfReport) => Promise<void>
   }
 }
 
-/** Run the garbage collector when Chromium exposes it (`--js-flags=--expose-gc`), so that a
- *  collection left over from the previous run does not land in the next measurement. */
+/** Runs the garbage collector if Chromium exposes it (`--js-flags=--expose-gc`), so that the next
+ *  measurement does not include a collection of the garbage from the previous run. */
 const collectGarbage = () => (globalThis as { gc?: () => void }).gc?.()
 
 export interface MeasureOptions {
@@ -47,7 +47,7 @@ export interface MeasureOptions {
   teardown?: () => Promise<void> | void
 }
 
-/** Time one action, after a garbage collection and a paint, so that neither lands in the time. */
+/** Times one action. A garbage collection and a paint come first, so the time includes neither of them. */
 export async function timeAction(action: () => Promise<void> | void): Promise<number> {
   collectGarbage()
   await afterNextPaint()
@@ -56,7 +56,7 @@ export async function timeAction(action: () => Promise<void> | void): Promise<nu
   return performance.now() - start
 }
 
-/** Time `run` `warmups + runs` times, and give the statistics of the last `runs`. */
+/** Times `run` `warmups + runs` times, and returns the statistics of the last `runs` samples. */
 export async function measure(name: string, options: MeasureOptions): Promise<PerfResult> {
   const samplesMs: number[] = []
   for (let i = 0; i < options.warmups + options.runs; i++) {
@@ -77,8 +77,9 @@ export interface MeasureFramesOptions {
   change: () => void
 }
 
-/** Time the frame that `change` causes, from the start of that frame until it is painted. The time
- *  does not include the wait for the frame to start, which depends on when the browser starts it. */
+/** Times the frame that `change` causes, from the start of that frame until the browser paints it.
+ *  The time does not include the wait for the frame to start, because the browser decides when a
+ *  frame starts. */
 export async function measureFrames(
   name: string,
   options: MeasureFramesOptions
@@ -89,7 +90,7 @@ export async function measureFrames(
     await afterNextPaint()
     options.change()
     // All animation frame callbacks of one frame get the start time of that frame. Cytoscape draws
-    // in a callback that it requested before this one.
+    // in a callback that it requested before this callback, so the time includes the draw.
     const elapsed = await new Promise<number>((resolve) =>
       requestAnimationFrame((frameStart) =>
         setTimeout(() => resolve(performance.now() - frameStart), 0)

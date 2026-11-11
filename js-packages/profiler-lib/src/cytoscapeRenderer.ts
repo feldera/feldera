@@ -10,7 +10,7 @@
 //
 //   drawNodeOverlay       paint above the node body and its chips (`nodeText.ts`)
 //
-//   requestedFrame        stop the frames while a layout runs (`cytograph.ts`)
+//   requestedFrame        pause the frames while a layout runs (`cytograph.ts`)
 
 import type { Core, NodeSingular } from 'cytoscape';
 
@@ -114,6 +114,7 @@ export function paintNodeLayer(
  *  layouts in a batch, the nodes do not get the positions that ELK gives without the batch. */
 export function pauseFrames(cy: Core): () => void {
     const renderer = canvasRenderer(cy);
+    // A headless cytoscape instance has no `redraw`.
     if (typeof renderer.redraw !== 'function') {
         return () => { };
     }
@@ -129,7 +130,7 @@ export function pauseFrames(cy: Core): () => void {
         }
     });
     return () => {
-        // Remove the accessor, and put back a plain property with the kept request.
+        // Replaces the accessor with a plain property that holds the kept request.
         delete renderer.requestedFrame;
         renderer.requestedFrame = isFrameRequested;
     };

@@ -242,7 +242,7 @@ export async function mountDiagram(
     }
   } as unknown as ProfilerCallbacks
 
-  /** A new model of `profile`, the way the application builds one for each load. */
+  /** Builds a new model of `profile`, as the application does for each load. */
   const buildModel = () => buildCircuitProfile(profile as never, dataflow as never, undefined)
   const props = {
     profile: buildModel(),
@@ -263,7 +263,7 @@ export async function mountDiagram(
     // biome-ignore lint/suspicious/noExplicitAny: the registry cytoscape leaves on its container
     _cyreg: { cy: any }
   }
-  const cy = container._cyreg.cy
+  let cy = container._cyreg.cy
   mountedCy = cy
   await settle()
   if (!keepOpeningView) {
@@ -489,9 +489,20 @@ export async function mountDiagram(
     pointer,
     click,
     diagram: component,
-    /** Remove the diagram from the page, but keep the component mounted. */
+    /** Loads a copy of the profile into the same component, as the application loads a new bundle
+     *  or snapshot. The diagram reuses its container. Returns the new cytoscape instance. */
+    reload: async () => {
+      layout = new Promise<void>((resolve) => (laidOut = resolve))
+      await rendered.rerender({ ...props, profile: buildModel() })
+      await layout
+      cy = container._cyreg.cy
+      mountedCy = cy
+      await settle()
+      return cy
+    },
+    /** Removes the diagram from the page, but keeps the component mounted. */
     cleanup: () => wrapper.remove(),
-    /** Unmount the component, which disposes the diagram, and remove it from the page. */
+    /** Unmounts the component, which disposes the diagram, and removes the diagram from the page. */
     unmount: () => {
       rendered.unmount()
       wrapper.remove()
