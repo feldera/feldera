@@ -201,7 +201,7 @@ public class CteToLocalViews {
         // emitted below must look brand-new to the main validator.
         SqlToRelCompiler probe = new SqlToRelCompiler(this.compiler);
         SqlValidator validator = probe.getValidator();
-        SqlNode validated = validator.validate(query);
+        SqlNode validated = probe.validate(query);
         if (!(validated instanceof SqlWith with))
             // Cannot happen
             return null;

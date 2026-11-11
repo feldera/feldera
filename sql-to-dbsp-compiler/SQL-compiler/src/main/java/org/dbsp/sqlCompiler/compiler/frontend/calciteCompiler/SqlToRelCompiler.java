@@ -885,6 +885,8 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
+        // Must run first: the other visitors recurse once per level of a set operation chain
+        node = Objects.requireNonNull(new BalanceSetOperations().visitNode(node));
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
             RemoveUnaryNoop remove = new RemoveUnaryNoop();
@@ -2120,6 +2122,16 @@ public class SqlToRelCompiler implements IWritesLogs {
         return new CreateFunctionStatement(node, function);
     }
 
+    /** Validates 'query'.  A set operation chain with mixed column types is validated
+     * in the left-deep form, since its casts depend on the grouping. */
+    public SqlNode validate(SqlNode query) {
+        try {
+            return this.getValidator().validate(query);
+        } catch (BalanceSetOperations.MixedTypes ex) {
+            return this.getValidator().validate(BalanceSetOperations.leftDeep(query));
+        }
+    }
+
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
         // Wrap the string literals with characters above U+FFFF in calls to a
@@ -2129,7 +2141,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 node.accept(new NonBmpLiterals(this.sourcePositionRemap)));
         // Phase names with a "Calcite." prefix measure parts of the "Calcite" phase
         SqlNode validated = DBSPCompiler.timed("Calcite.validate",
-                () -> this.getValidator().validate(wrappedStringLiterals));
+                () -> this.validate(wrappedStringLiterals));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
         return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));

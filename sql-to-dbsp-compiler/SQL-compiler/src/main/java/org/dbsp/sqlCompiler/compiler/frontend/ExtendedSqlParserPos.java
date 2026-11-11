@@ -1,6 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParserPos;
+
+import java.util.List;
 
 /** A SqlParserPos extended with additional information. */
 // Perhaps some day we'll support multi-file projects, and then this should also contain the source file name.
@@ -11,5 +14,13 @@ public class ExtendedSqlParserPos extends SqlParserPos {
     public ExtendedSqlParserPos(SqlParserPos pos, boolean internal) {
         super(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
         this.internal = internal;
+    }
+
+    /** The position that covers 'left' and 'right', internal if the position of 'left' is */
+    public static SqlParserPos span(SqlNode left, SqlNode right) {
+        SqlParserPos sum = SqlParserPos.sum(List.of(left, right));
+        if (left.getParserPosition() instanceof ExtendedSqlParserPos extended)
+            return new ExtendedSqlParserPos(sum, extended.internal);
+        return sum;
     }
 }
