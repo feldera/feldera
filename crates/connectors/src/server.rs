@@ -72,8 +72,9 @@ use feldera_types::config::{
     DynamicConfig, PipelineIdentity, SyncConfig, ignored::ignored_settings,
 };
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
-    Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, CheckpointOutputAssignment, CheckpointOutputAssignmentQuery, CoordinationActivate,
+    CoordinationCapabilities, CoordinationStatus, InputChoices, Labels, RestartArgs, Step,
+    StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -1840,6 +1841,7 @@ where
         .service(coordination_adhoc_scan)
         .service(coordination_labels_incomplete)
         .service(coordination_input_choices)
+        .service(coordination_checkpoint_output_assignment)
         .service(coordination_restart)
         .service(clock_advance);
     if program_load_enabled {
@@ -2913,8 +2915,28 @@ pub mod test_http_helpers {
             storage_dirs: &[std::path::PathBuf],
             checkpoints: Option<&[Uuid]>,
         ) -> Result<Self, String> {
-            use feldera_types::coordination::CoordinationActivate;
+            Self::serve(
+                engine,
+                n_hosts,
+                workers_per_host,
+                config,
+                output_assignment,
+                storage_dirs,
+            )
+            .activate(checkpoints)
+            .await
+        }
 
+        /// The first half of [Self::start_with_storage]: starts the hosts, but does not activate
+        /// them, so that a test can query them first, as the coordinator does.
+        pub(crate) fn serve(
+            engine: &dyn PipelineTestEngine,
+            n_hosts: usize,
+            workers_per_host: usize,
+            config: &serde_json::Value,
+            output_assignment: &[(&str, usize)],
+            storage_dirs: &[std::path::PathBuf],
+        ) -> MultihostTestHosts {
             let mut config = config.clone();
             let view_persistent_id = config
                 .pointer("/program_ir/mir/1/persistent_id")
@@ -2989,6 +3011,42 @@ pub mod test_http_helpers {
                 states.push(state);
             }
 
+            MultihostTestHosts {
+                servers,
+                states,
+                exchanges,
+                pipeline_config,
+                output_assignment,
+            }
+        }
+    }
+
+    /// The hosts of a [MultihostTestPipeline] that are running but not activated yet (see
+    /// [MultihostTestPipeline::serve]).
+    pub(crate) struct MultihostTestHosts {
+        pub(crate) servers: Vec<TestServer>,
+        states: Vec<WebData<ServerState>>,
+        exchanges: Vec<(std::net::SocketAddr, usize)>,
+        pipeline_config: feldera_types::config::PipelineConfig,
+        output_assignment: BTreeMap<String, usize>,
+    }
+
+    impl MultihostTestHosts {
+        /// The second half of [MultihostTestPipeline::start_with_storage]: activates the hosts,
+        /// each from its entry of `checkpoints`, if that is given, and waits for them to start.
+        pub(crate) async fn activate(
+            self,
+            checkpoints: Option<&[Uuid]>,
+        ) -> Result<MultihostTestPipeline, String> {
+            use feldera_types::coordination::CoordinationActivate;
+
+            let Self {
+                servers,
+                states,
+                exchanges,
+                pipeline_config,
+                output_assignment,
+            } = self;
             for (host, server) in servers.iter().enumerate() {
                 let outputs = pipeline_config
                     .outputs
@@ -3045,7 +3103,7 @@ pub mod test_http_helpers {
                 started?;
             }
 
-            let mut pipeline = Self {
+            let mut pipeline = MultihostTestPipeline {
                 servers,
                 states,
                 step: 0,
@@ -3053,7 +3111,9 @@ pub mod test_http_helpers {
             pipeline.step = pipeline.step_status(0).await.step;
             Ok(pipeline)
         }
+    }
 
+    impl MultihostTestPipeline {
         /// Returns the first line of `host`'s stream at `path`, as JSON.
         async fn first_line<T: serde::de::DeserializeOwned>(&self, host: usize, path: &str) -> T {
             let mut response = self.servers[host].get(path).send().await.unwrap();
@@ -5833,6 +5893,46 @@ async fn coordination_input_choices(
     Ok(HttpResponse::Ok().json(InputChoices { choices }))
 }
 
+/// Returns the output assignment that the checkpoint named in the query
+/// recorded.  The host need not be activated.
+///
+/// The reply has no assignment if the checkpoint recorded none.  It is an
+/// error if the host cannot find the checkpoint or cannot read its record.
+#[get("/coordination/checkpoint/output_assignment")]
+async fn coordination_checkpoint_output_assignment(
+    state: WebData<ServerState>,
+    args: web::Query<CheckpointOutputAssignmentQuery>,
+) -> Result<HttpResponse, PipelineError> {
+    let uuid = args.checkpoint;
+    let unknown = || PipelineError::InvalidParam {
+        error: format!("this host cannot find checkpoint {uuid}"),
+    };
+    let Some(storage) = state.storage.clone() else {
+        return Err(unknown());
+    };
+    let output_assignment = spawn_blocking(move || {
+        if !storage
+            .checkpoints()?
+            .iter()
+            .any(|listed| listed.uuid == uuid)
+        {
+            return Ok(None);
+        }
+        storage
+            .checkpoint(uuid)
+            .map(|record| Some(record.output_assignment))
+    })
+    .await
+    .map_err(|e| PipelineError::ControllerError {
+        error: Arc::new(ControllerError::checkpoint_fetch_error(format!("{e}"))),
+    })?
+    .map_err(|error| PipelineError::ControllerError {
+        error: Arc::new(error),
+    })?
+    .ok_or_else(unknown)?;
+    Ok(HttpResponse::Ok().json(CheckpointOutputAssignment { output_assignment }))
+}
+
 /// Stream the set of incomplete labels.
 #[get("/coordination/labels/incomplete")]
 async fn coordination_labels_incomplete(
@@ -6383,6 +6483,7 @@ pub mod test_http {
         checkpoint::{CheckpointResponse, CheckpointStatus},
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         config::{PipelineConfig, ProgramIr},
+        coordination::CheckpointOutputAssignment,
         program_schema::Relation,
         runtime_status::{
             BootstrapConfig, BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus,
@@ -9049,6 +9150,47 @@ pub mod test_http {
         })
     }
 
+    /// Asks `server` for the output assignment that `checkpoint` recorded.  Returns the
+    /// assignment, or the status of an error.
+    async fn recorded_output_assignment(
+        server: &TestServer,
+        checkpoint: Uuid,
+    ) -> Result<Option<BTreeMap<String, usize>>, StatusCode> {
+        let mut response = server
+            .get(format!(
+                "/coordination/checkpoint/output_assignment?checkpoint={checkpoint}"
+            ))
+            .send()
+            .await
+            .unwrap();
+        if response.status().is_success() {
+            Ok(response
+                .json::<CheckpointOutputAssignment>()
+                .await
+                .unwrap()
+                .output_assignment)
+        } else {
+            Err(response.status())
+        }
+    }
+
+    /// A host without storage has no checkpoints, so it reports an error for any checkpoint.
+    #[engine_test]
+    pub fn checkpoint_output_assignment_without_storage(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let config = json!({"name": "test", "inputs": {}, "outputs": {}});
+            let hosts =
+                MultihostTestPipeline::serve(engine, 2, 2, &config, &[("test_output1", 1)], &[]);
+            assert_eq!(
+                recorded_output_assignment(&hosts.servers[0], Uuid::new_v4()).await,
+                Err(StatusCode::BAD_REQUEST)
+            );
+            let pipeline = hosts.activate(None).await.unwrap();
+            pipeline.stop(engine, &[]).await;
+        });
+    }
+
     /// A 2-host pipeline restarts from its checkpoint with its state: each
     /// host's checkpoint records the output assignment, and the view's snapshot
     /// after the restart has every row from before it.
@@ -9093,17 +9235,17 @@ pub mod test_http {
                 assert_eq!(record["output_assignment"], json!({"test_output1": 1}));
             }
 
-            let mut pipeline = MultihostTestPipeline::start_with_storage(
-                engine,
-                2,
-                2,
-                &config,
-                &assignment,
-                &dirs,
-                Some(&checkpoints),
-            )
-            .await
-            .unwrap();
+            // Before the coordinator activates them, as it does, each host reports the
+            // assignment that its checkpoint recorded.
+            let hosts = MultihostTestPipeline::serve(engine, 2, 2, &config, &assignment, &dirs);
+            let recorded_assignment = Ok(Some(BTreeMap::from([("test_output1".to_string(), 1)])));
+            for (host, &checkpoint) in checkpoints.iter().enumerate() {
+                assert_eq!(
+                    recorded_output_assignment(&hosts.servers[host], checkpoint).await,
+                    recorded_assignment
+                );
+            }
+            let mut pipeline = hosts.activate(Some(&checkpoints)).await.unwrap();
             let mut response = pipeline.servers[1]
                 .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
                 .send()
@@ -9120,6 +9262,36 @@ pub mod test_http {
             .await
             .expect("timed out waiting for the snapshot");
             assert_eq!(records, batches_zset(&data));
+
+            // A running host reports the same.  It reports none for a checkpoint whose state
+            // file has no record, and an error for a checkpoint that it cannot find or whose
+            // state file it cannot read.
+            let recorded = |host: usize, checkpoint| {
+                recorded_output_assignment(&pipeline.servers[host], checkpoint)
+            };
+            for (host, &checkpoint) in checkpoints.iter().enumerate() {
+                assert_eq!(recorded(host, checkpoint).await, recorded_assignment);
+                assert_eq!(
+                    recorded(host, Uuid::new_v4()).await,
+                    Err(StatusCode::BAD_REQUEST)
+                );
+            }
+            let state = dirs[0].join(checkpoints[0].to_string()).join("state.json");
+            let mut record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+            record.as_object_mut().unwrap().remove("output_assignment");
+            std::fs::write(&state, serde_json::to_vec(&record).unwrap()).unwrap();
+            assert_eq!(recorded(0, checkpoints[0]).await, Ok(None));
+            std::fs::write(&state, b"{").unwrap();
+            assert_eq!(
+                recorded(0, checkpoints[0]).await,
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            );
+            std::fs::remove_file(&state).unwrap();
+            assert_eq!(
+                recorded(0, checkpoints[0]).await,
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            );
             pipeline.stop(engine, &dirs).await;
         });
     }

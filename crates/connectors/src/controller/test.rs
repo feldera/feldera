@@ -12194,6 +12194,29 @@ pub fn single_host_keeps_one_checkpoint(engine: &dyn PipelineTestEngine) {
     controller.stop().unwrap();
 }
 
+/// A single-host pipeline has no output assignment, so its checkpoint records none, and its
+/// `state.json` has no `output_assignment` key.
+#[engine_test(requires(Storage))]
+pub fn single_host_checkpoint_records_no_output_assignment(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let config = retention_config(tempdir.path(), false);
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    let uuid = take_checkpoint(&controller);
+    controller.stop().unwrap();
+
+    let state = tempdir.path().join(uuid.to_string()).join("state.json");
+    let record: serde_json::Value = serde_json::from_slice(&std::fs::read(state).unwrap()).unwrap();
+    assert!(record.get("output_assignment").is_none(), "{record}");
+}
+
 /// A host of a multihost pipeline keeps its two newest checkpoints, until the
 /// coordinator says that every host has the newest one.
 #[engine_test(requires(Storage))]
