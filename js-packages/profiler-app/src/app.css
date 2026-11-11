@@ -12,6 +12,12 @@
 @import "@skeletonlabs/skeleton-svelte";
 
 @import "feldera-theme/feldera-modern.css";
+@import "feldera-theme/scrollbar.css";
+@import "feldera-theme/fd.css";
+
+@plugin "tailwind-scrollbar" {
+  nocompatible: true;
+}
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -32,7 +38,7 @@ body {
   background-color: #ffffff;
 }
 
-body.dark {
+.dark body {
   background-color: var(--color-dark);
 }
 
