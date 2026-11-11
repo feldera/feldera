@@ -191,8 +191,7 @@ reported; a join on other columns reports them too.  The join columns
 must have the type of the key columns, or a lossless widening of it: a
 `VARCHAR` event column matched against a `VARCHAR(255)` key, or a
 `BIGINT` column against an `INT` key, is recognized, while a key of
-type `CHAR(n)`, whose comparison ignores trailing spaces, or a join
-column narrower than the key is not.  Declare the expected size of
+type `CHAR(n)` or a join column narrower than the key is not.  Declare the expected size of
 each dimension table:
 
 ```sql
