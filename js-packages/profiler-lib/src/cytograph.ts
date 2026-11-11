@@ -691,8 +691,11 @@ export class CytographRendering {
         // totals, so all three describe the same population.
         const scales = profile.displayScales(this.drawnNodes(),
             values => selection.workersVisible.getSelectedElements(values));
-        this.computeImportance(profile, selection, scales);
-        this.computeAttributes(profile, selection, scales);
+        // One batch restyles each changed node once, after all writes.
+        this.cy.batch(() => {
+            this.computeImportance(profile, selection, scales);
+            this.computeAttributes(profile, selection, scales);
+        });
         this.cy.style().update();
 
         // Refresh the tooltip if there's a node currently displayed

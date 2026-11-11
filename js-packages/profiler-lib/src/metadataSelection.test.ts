@@ -82,3 +82,17 @@ describe('optionLabel', () => {
         expect(optionLabel('runtime_percent')).toBe('Runtime percent')
     })
 })
+
+describe('MetadataSelector.selectMetric', () => {
+    it('does not report a change when the metric is already selected', () => {
+        const selector = new MetadataSelector(profile, { onMetricsChanged: () => {} } as unknown as ProfilerCallbacks)
+        selector.initialize()
+        let changes = 0
+        selector.setOnChange(() => changes++)
+        const current = selector.getSelection().metric
+        selector.selectMetric(current)
+        expect(changes).toBe(0)
+        selector.selectMetric('spine_storage_size_bytes')
+        expect(changes).toBe(1)
+    })
+})
