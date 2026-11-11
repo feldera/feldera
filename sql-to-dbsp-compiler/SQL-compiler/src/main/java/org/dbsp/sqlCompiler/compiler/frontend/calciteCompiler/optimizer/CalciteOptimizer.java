@@ -277,6 +277,8 @@ public class CalciteOptimizer implements IWritesLogs {
         BaseOptimizerStep removeSubqueries = new BaseOptimizerStep("Remove sub-queries", 0);
         // A collection: removing a subquery can expose a nested subquery that another rule removes
         removeSubqueries.addRuleCollection(0,
+                // First: the rules below would turn the IN sub-query into a join
+                new InUnnestToInListRule(),
                 CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
                 CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE,
                 CoreRules.JOIN_SUB_QUERY_TO_CORRELATE);
