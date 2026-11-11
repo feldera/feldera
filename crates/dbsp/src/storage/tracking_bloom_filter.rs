@@ -1,7 +1,8 @@
-use crate::storage::file::{FilterStats, TrackingFilterStats};
-use feldera_modular_bloom::{
-    ModularBloomFilter, ModularBloomFilterBuilder, ModuleDensity, ModuleLayout,
-};
+use std::sync::Arc;
+
+use crate::storage::file::{FilterStats, TrackingFilterStats, resident_modules};
+use arc_swap::ArcSwap;
+use feldera_modular_bloom::{ModularBloomFilter, ModularBloomFilterBuilder, ModuleLayout};
 
 /// A filter is accumulating keys or answering queries, never both.
 ///
@@ -12,7 +13,9 @@ use feldera_modular_bloom::{
 #[derive(Debug)]
 enum State {
     Building(ModularBloomFilterBuilder),
-    Built(ModularBloomFilter),
+    /// Behind an [`ArcSwap`] so that modules can be dropped while lookups run
+    /// on other threads.
+    Built(ArcSwap<ModularBloomFilter>),
 }
 
 /// Modular Bloom filter which tracks the number of hits and misses when lookups
@@ -25,32 +28,32 @@ enum State {
 pub struct TrackingBloomFilter {
     state: State,
     layout: ModuleLayout,
+    /// Hits and misses. The size is read live in [`Self::stats`].
     tracking: TrackingFilterStats,
 }
 
 impl TrackingBloomFilter {
     /// Starts a filter that will accept keys.
     pub fn building(layout: ModuleLayout) -> Self {
-        Self {
-            state: State::Building(ModularBloomFilterBuilder::new(layout)),
+        Self::new(
+            State::Building(ModularBloomFilterBuilder::new(layout)),
             layout,
-            tracking: TrackingFilterStats::new(Self::size_byte(layout.total_bytes())),
-        }
+        )
     }
 
     /// Wraps a filter read back from storage, which may hold only a prefix of
     /// the modules the layout describes.
     pub fn loaded(filter: ModularBloomFilter) -> Self {
         let layout = *filter.layout();
-        Self {
-            tracking: TrackingFilterStats::new(Self::size_byte(filter.resident_bytes())),
-            state: State::Built(filter),
-            layout,
-        }
+        Self::new(State::Built(ArcSwap::from_pointee(filter)), layout)
     }
 
-    fn size_byte(bits_bytes: usize) -> usize {
-        size_of::<Self>() + bits_bytes
+    fn new(state: State, layout: ModuleLayout) -> Self {
+        Self {
+            state,
+            layout,
+            tracking: TrackingFilterStats::new(0),
+        }
     }
 
     /// Shape the filter was written with, whatever is resident.
@@ -58,13 +61,13 @@ impl TrackingBloomFilter {
         &self.layout
     }
 
-    /// Bits set per module, for the writer to record alongside the words.
+    /// The filter as it is now, for the writer to serialize.
     ///
-    /// Panics before [`Self::finalize`], which is when the counts settle.
-    pub fn density(&self) -> &ModuleDensity {
+    /// Panics before [`Self::finalize`].
+    pub fn built(&self) -> Arc<ModularBloomFilter> {
         match &self.state {
-            State::Building(_) => panic!("Bloom filter must be finalized before its density"),
-            State::Built(filter) => filter.density(),
+            State::Building(_) => panic!("Bloom filter must be finalized before serialization"),
+            State::Built(filter) => filter.load_full(),
         }
     }
 
@@ -72,20 +75,67 @@ impl TrackingBloomFilter {
     pub fn resident_modules(&self) -> u32 {
         match &self.state {
             State::Building(_) => self.layout.total_modules(),
-            State::Built(filter) => filter.resident_modules(),
+            State::Built(filter) => filter.load().resident_modules(),
+        }
+    }
+
+    /// Bytes the modules held in memory occupy.
+    pub fn resident_bytes(&self) -> usize {
+        match &self.state {
+            State::Building(_) => self.layout.total_bytes(),
+            State::Built(filter) => filter.load().resident_bytes(),
         }
     }
 
     /// Retrieves statistics.
+    ///
+    /// The size is read live, because modules can be dropped at any time.
     pub fn stats(&self) -> FilterStats {
-        self.tracking.stats()
+        let mut stats = self.tracking.stats();
+        stats.size_byte = size_of::<Self>() + self.resident_bytes();
+        stats
+    }
+
+    /// Keeps at most `modules` modules.
+    ///
+    /// Safe while lookups run on other threads. The kept modules are shared
+    /// with the old filter, not copied, and the dropped ones are freed when the
+    /// last lookup that still holds the old filter finishes. Does nothing while
+    /// the filter is still building.
+    ///
+    /// Call this only once the filter is written to storage, since the file
+    /// must hold every module.
+    pub fn evict_to(&self, modules: u32) {
+        if let State::Built(filter) = &self.state {
+            filter.rcu(|current| {
+                if current.resident_modules() > modules {
+                    let mut kept = (**current).clone();
+                    kept.truncate(modules);
+                    Arc::new(kept)
+                } else {
+                    current.clone()
+                }
+            });
+        }
+    }
+
+    /// Modules this filter should hold to meet `rate`.
+    ///
+    /// This is what loading the filter from storage at `rate` would keep, so a
+    /// filter that measures more accurate than nominal holds fewer modules,
+    /// exactly as it would after a restart.
+    pub(crate) fn target_modules(&self, rate: f64) -> u32 {
+        match &self.state {
+            State::Building(_) => self.layout.total_modules(),
+            State::Built(filter) => resident_modules(&self.layout, filter.load().density(), rate),
+        }
     }
 
     /// Stops accepting keys, so the filter can be queried and serialized.
     pub fn finalize(&mut self) {
         if let State::Building(builder) = &mut self.state {
             let builder = std::mem::replace(builder, ModularBloomFilterBuilder::new(self.layout));
-            self.state = State::Built(builder.finish());
+            self.state = State::Built(ArcSwap::from_pointee(builder.finish()));
         }
     }
 
@@ -97,19 +147,11 @@ impl TrackingBloomFilter {
         }
     }
 
-    /// Words of each resident module, in order, for serialization.
-    pub fn module_words(&self) -> Vec<&[u64]> {
-        match &self.state {
-            State::Building(_) => panic!("Bloom filter must be finalized before serialization"),
-            State::Built(filter) => filter.modules(),
-        }
-    }
-
     /// Returns whether `hash` might have been inserted, counting the outcome.
     pub fn contains_hash(&self, hash: u64) -> bool {
         let is_hit = match &self.state {
             State::Building(_) => true,
-            State::Built(filter) => filter.contains_hash(hash),
+            State::Built(filter) => filter.load().contains_hash(hash),
         };
         self.tracking.record(is_hit);
         is_hit
@@ -152,7 +194,7 @@ mod tests {
             builder.insert_hash(i.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         }
         builder.finalize();
-        let words: Vec<u64> = builder.module_words().concat();
+        let words: Vec<u64> = builder.built().modules().concat();
 
         let per = layout.words_per_module() as usize;
         let half =

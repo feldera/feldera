@@ -116,7 +116,7 @@ pub use filter::BatchKeyFilter;
 pub use filter::FilterPlan;
 pub use filter::TrackingRoaringBitmap;
 pub use filter::{FilterKind, FilterStats, TrackingFilterStats};
-pub(crate) use filter::{TouchedWindowCounter, collect_roaring_metadata};
+pub(crate) use filter::{TouchedWindowCounter, collect_roaring_metadata, resident_modules};
 pub use format::TouchedWindowCount;
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
