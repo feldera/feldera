@@ -204,6 +204,11 @@ pub struct CoordinationCapabilities {
     /// pipeline acted on a step request.
     #[serde(default)]
     pub step_request_seq: bool,
+
+    /// The pipeline reports the output assignment that a checkpoint recorded
+    /// at `/coordination/checkpoint/output_assignment`.
+    #[serde(default)]
+    pub has_checkpoint_output_assignment: bool,
 }
 
 impl CoordinationCapabilities {
@@ -213,6 +218,7 @@ impl CoordinationCapabilities {
             distributed_inputs: true,
             input_choices: true,
             step_request_seq: true,
+            has_checkpoint_output_assignment: true,
         }
     }
 }
@@ -274,6 +280,23 @@ pub struct CoordinationActivate {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct InputChoices {
     pub choices: BTreeMap<String, JsonValue>,
+}
+
+/// `/coordination/checkpoint/output_assignment` query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CheckpointOutputAssignmentQuery {
+    /// The checkpoint, by its UUID.
+    pub checkpoint: Uuid,
+}
+
+/// `/coordination/checkpoint/output_assignment` reply.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CheckpointOutputAssignment {
+    /// The host that the checkpoint's activation assigned each output stream
+    /// to (see [CoordinationActivate::output_assignment]), or `None` if the
+    /// checkpoint recorded none, because it predates the record or the
+    /// pipeline was not multihost.
+    pub output_assignment: Option<BTreeMap<String, usize>>,
 }
 
 /// How the coordinator divides the input of a distributed input connector
