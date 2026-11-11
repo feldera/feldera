@@ -752,6 +752,38 @@ Here is an example:
 SELECT ARRAY_EXISTS(ARRAY[1, -12, 3], x -> x > 0)
 ```
 
+The body of a lambda expression can refer to its parameters, to the
+parameters of the lambda expressions that contain it, and to the
+columns of the queries that contain it:
+
+```sql
+SELECT TRANSFORM(T.a, e -> e + T.x) FROM T
+```
+
+A lambda expression in a subquery can refer to the columns of the
+enclosing queries:
+
+```sql
+SELECT T.x, (SELECT COUNT(*) FROM S WHERE ARRAY_EXISTS(S.b, e -> e = T.x)) FROM T
+```
+
+A lambda parameter hides a column with the same name.  To refer to
+the column, use a qualified name, such as `T.x` in `x -> x * T.x`.
+
+The body of a lambda expression cannot contain:
+
+- a subquery
+- an aggregate function, such as `SUM`
+- a [grouping function](#grouping-functions), such as `GROUPING`
+- a window aggregate, which uses `OVER`
+
+An aggregate function can compute an argument of a higher-order
+function, as in `TRANSFORM(ARRAY_AGG(x), e -> e * 2)`.
+
+In an `ORDER BY` clause, the body of a lambda expression can refer
+only to lambda parameters.  To use a column, give it as an argument
+of the higher-order function, as in `ORDER BY ARRAY_EXISTS(T.a, e -> e = 2)`.
+
 ## Setting options
 
 ```

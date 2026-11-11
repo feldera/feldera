@@ -69,13 +69,12 @@ import static org.dbsp.util.Maybe.*;
  * (ResolveReferences).  A parameter of a nested closure never shadows a
  * declaration of an enclosing scope.
  *
- * <li>The closures that the frontend generates for SQL lambdas are pure: 
- * their bodies reference only their own parameters,
- * never variables from enclosing scopes.  Before LowerCircuitVisitor these are
- * the only nested closures, and the analyses that run earlier rely on their
- * purity.  Lowering DBSPFlatmap generates nested
- * closures that CAPTURE variables of the enclosing closure, so passes that run
- * after lowering (InnerCSE, CanonicalForm) may not assume purity.
+ * <li>Nested closures can CAPTURE variables of enclosing closures: the
+ * closures that the frontend generates for SQL lambdas can reference the
+ * parameters of enclosing lambdas and the row of the enclosing operator,
+ * and lowering DBSPFlatmap generates closures that reference the parameters
+ * of the enclosing closure.  Analyses of the parameters of a closure must
+ * visit the bodies of the nested closures.
  * </ul> */
 public final class DBSPClosureExpression extends DBSPExpression {
     public final DBSPExpression body;

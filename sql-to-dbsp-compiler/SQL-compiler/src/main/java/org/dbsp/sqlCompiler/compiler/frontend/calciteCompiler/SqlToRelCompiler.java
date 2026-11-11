@@ -713,7 +713,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         @Override
         public boolean allowLambdaClosure() {
-            return false;
+            return true;
         }
     }
 

@@ -58,6 +58,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.NonBmpLiterals;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Scopes;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
@@ -173,6 +174,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     /** Context in which the rex nodes are defined */
     @Nullable
     protected final RelNode context;
+    /** Variables of the enclosing lambdas, keyed by the SQL name of the lambda parameter */
+    private final Scopes<String, DBSPVariablePath> lambdaParameters;
 
     public ExpressionCompiler(@Nullable RelNode context,
                               @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
@@ -201,6 +204,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         this.rexBuilder = compiler.sqlToRelCompiler.getRexBuilder();
         this.compiler = compiler;
         this.typeCompiler = compiler.getTypeCompiler();
+        this.lambdaParameters = new Scopes<>();
         if (inputRow != null &&
                 !inputRow.getType().is(DBSPTypeRef.class))
             throw new InternalCompilerError("Expected a reference type for row", inputRow.getNode());
@@ -2564,9 +2568,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     @Override
     public DBSPExpression visitLambdaRef(RexLambdaRef variable) {
-        CalciteObject node = CalciteObject.create(this.context, variable);
-        DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), variable.getType(), false);
-        return new DBSPVariablePath(variable.getName(), type.ref()).deref().applyCloneIfNeeded();
+        DBSPVariablePath var = this.lambdaParameters.get(variable.getName());
+        Utilities.enforce(var != null, () -> "Unbound lambda parameter " + variable.getName());
+        return var.deref().applyCloneIfNeeded();
     }
 
     @Override
@@ -2575,12 +2579,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         var params = lambda.getParameters();
         DBSPParameter[] converted = new DBSPParameter[params.size()];
         int index = 0;
+        // Fresh names: a lambda parameter may have the name of a variable of an enclosing scope
+        this.lambdaParameters.newContext();
         for (var param: params) {
             DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), param.getType(), false);
-            DBSPParameter var = new DBSPParameter(param.getName(), type.ref());
-            converted[index++] = var;
+            DBSPVariablePath var = type.ref().var(node);
+            this.lambdaParameters.substitute(param.getName(), var);
+            converted[index++] = var.asParameter();
         }
         DBSPExpression body = lambda.getExpression().accept(this);
+        this.lambdaParameters.popContext();
         return body.closure(converted);
     }
 
