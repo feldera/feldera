@@ -92,10 +92,10 @@ export class MetadataSelector {
     }
 
     /**
-     * Select a metric by ID
+     * Select a metric by ID. Selecting the current metric changes nothing.
      */
     selectMetric(metricId: string): void {
-        if (this.allMetrics.has(metricId)) {
+        if (metricId !== this.selectedMetric && this.allMetrics.has(metricId)) {
             this.selectedMetric = metricId;
             this.onChange();
         }
