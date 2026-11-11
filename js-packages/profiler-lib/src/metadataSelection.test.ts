@@ -96,3 +96,17 @@ describe('MetadataSelector.selectMetric', () => {
         expect(changes).toBe(1)
     })
 })
+
+describe('MetadataSelector initial metric', () => {
+    const callbacks = { onMetricsChanged: () => {} } as unknown as ProfilerCallbacks
+    const initialMetric = (metric?: string) => new MetadataSelector(profile, callbacks, metric).getSelection().metric
+
+    it('starts on the metric the caller gives', () => {
+        expect(initialMetric('spine_storage_size_bytes')).toBe('spine_storage_size_bytes')
+    })
+
+    it('starts on runtime_percent without one, or when the profile does not have it', () => {
+        expect(initialMetric()).toBe('runtime_percent')
+        expect(initialMetric('runtime_seconds')).toBe('runtime_percent')
+    })
+})

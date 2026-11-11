@@ -38,7 +38,7 @@
   import type { TriageResults } from 'triage-types'
   import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import { createLookupCoordinator, type SearchProgress } from '../functions/lookup'
-  import { levelMetrics, metricToSelect } from '../functions/metricLevel'
+  import { levelMetrics, metricToSelect, PREFERRED_METRIC } from '../functions/metricLevel'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import type { SourceFile } from '../functions/processZipBundle'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
@@ -780,6 +780,7 @@
       {programCode}
       {callbacks}
       {theme}
+      initialMetric={PREFERRED_METRIC}
     />
   </PersistentContent>
 {/if}

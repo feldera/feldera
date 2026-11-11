@@ -22,6 +22,9 @@
     callbacks: ProfilerCallbacks
     /** Palette the diagram is drawn with; follows the application theme */
     theme?: DiagramTheme
+    /** The metric that colors the diagram when a profile loads, if the profile has it. See
+     *  `VisualizerConfig.initialMetric`. A change applies to the next profile only. */
+    initialMetric?: string
     /** Optional class for styling the container */
     class?: string
   }
@@ -32,6 +35,7 @@
     programCode,
     callbacks,
     theme = 'light',
+    initialMetric,
     class: className
   }: Props = $props()
 
@@ -93,7 +97,8 @@
           graphContainer: graphContainer!,
           navigatorContainer: navigatorContainer!,
           callbacks,
-          theme
+          theme,
+          initialMetric
         }
 
         // Create and render visualizer
