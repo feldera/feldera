@@ -10,7 +10,7 @@ import { Sources } from './dataflow.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
-import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
+import { buildGraphStyle, type DiagramTheme, labelWidth, RAISED_EDGE_CLASS } from './diagramTheme.js';
 import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
 import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
@@ -425,6 +425,12 @@ export class CytographRendering {
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
+    /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
+    private tracedEdges: EdgeCollection;
+    /** The edges that have `RAISED_EDGE_CLASS`. `raiseTracedEdges` makes them equal to `tracedEdges`. */
+    private raisedEdges: EdgeCollection;
+    /** The animation frame request of `scheduleRaise`, or null if no request is pending. */
+    private raiseFrame: number | null = null;
 
     constructor(
         graphContainer: HTMLElement,
@@ -448,6 +454,8 @@ export class CytographRendering {
             container: graphContainer,
             elements: [],
         });
+        this.tracedEdges = this.cy.collection();
+        this.raisedEdges = this.cy.collection();
         installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
@@ -886,29 +894,16 @@ export class CytographRendering {
     // Note that the node can be a parent, in this case we compute the
     // edges reachable from ALL its children.
     reachableFrom(id: NodeId, forward: boolean): EdgeCollection {
-        // If a node is complex, get the list of children
-        let nodes = this.currentGraph!.getSimpleNodes(id);
-        let result = this.cy!.collection();
-        for (const node of nodes) {
-            if (forward) {
-                let reachable = this.graph.reachableFrom(node, e => !e.back);
-                for (let e of reachable) {
-                    let edgeId = this.getActualEdgeId(e);
-                    let edge = this.cy!.getElementById(edgeId);
-                    if (edge !== undefined)
-                        result = result.union(edge);
-                }
-            } else {
-                let reverseReachable = this.graph.canReach(node, e => !e.back);
-                for (let e of reverseReachable) {
-                    let edgeId = this.getActualEdgeId(e);
-                    let edge = this.cy!.getElementById(edgeId);
-                    if (edge !== undefined)
-                        result = result.union(edge);
-                }
+        // `merge` adds to this collection in place. `union` makes a copy for each edge.
+        const result = this.cy.collection();
+        for (const node of this.currentGraph!.getSimpleNodes(id)) {
+            const reachable = forward
+                ? this.graph.reachableFrom(node, e => !e.back)
+                : this.graph.canReach(node, e => !e.back);
+            for (const e of reachable) {
+                result.merge(this.cy.getElementById(this.getActualEdgeId(e)));
             }
         }
-
         return result;
     }
 
@@ -968,13 +963,38 @@ export class CytographRendering {
         // The edges that connect directly to the node get their own colors.
         forward.intersection(node.outgoers('edge')).addClass('highlight-forward-adjacent');
         backward.intersection(node.incomers('edge')).addClass('highlight-backward-adjacent');
+        this.tracedEdges = forward.union(backward);
+        this.scheduleRaise();
     }
 
     /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
     private clearTrace() {
         this.markSelected(null);
-        this.cy.edges().removeClass(
+        this.tracedEdges.removeClass(
             'highlight-forward highlight-backward highlight-forward-adjacent highlight-backward-adjacent');
+        this.tracedEdges = this.cy.collection();
+        this.scheduleRaise();
+    }
+
+    /** Call `raiseTracedEdges` in the next animation frame. A change of `z-index` makes cytoscape sort
+     *  all elements again before it draws. With this delay, the frame that shows a new trace, or
+     *  removes one, does not pay for the sort. If the trace changes again before the frame, only the
+     *  last trace gets raised. */
+    private scheduleRaise() {
+        if (this.raiseFrame !== null) {
+            return;
+        }
+        this.raiseFrame = requestAnimationFrame(() => {
+            this.raiseFrame = null;
+            this.raiseTracedEdges();
+        });
+    }
+
+    /** Draw the traced edges over the other edges, and the edges of an older trace in the usual order. */
+    private raiseTracedEdges() {
+        this.raisedEdges.difference(this.tracedEdges).removeClass(RAISED_EDGE_CLASS);
+        this.tracedEdges.difference(this.raisedEdges).addClass(RAISED_EDGE_CLASS);
+        this.raisedEdges = this.tracedEdges;
     }
 
     displayNodeAttributes(node: NodeSingular) {
@@ -1104,6 +1124,10 @@ export class CytographRendering {
             this.callbacks.onRenderingChange?.(false);
         }
         notifyObservers(this.observers, (observer) => observer.dispose?.());
+        if (this.raiseFrame !== null) {
+            cancelAnimationFrame(this.raiseFrame);
+            this.raiseFrame = null;
+        }
 
         // Destroy the Cytoscape instance
         if (this.cy) {

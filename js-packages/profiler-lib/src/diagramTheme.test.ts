@@ -25,6 +25,7 @@ import {
     NODE_CORNER_RADIUS,
     NODE_OUTER_HEIGHT,
     NODE_PADDING_X,
+    RAISED_EDGE_CLASS,
     REGION_CORNER_RADIUS,
     REGION_OPACITY,
     REGION_PADDING
@@ -175,16 +176,24 @@ describe('draw order', () => {
         expect(lastEdge).toBeLessThan(firstNode)
     })
 
-    it('draws a traced edge over the plain ones, and still under every node', () => {
+    it('draws a raised edge over the plain ones, and still under every node', () => {
         // A gray edge crossing a colored one would otherwise cut it in two, and the trace is what the
         // eye is following. `e` is the older of the two edges, so it only comes last by its own doing.
+        const cy = graph('light')
+        cy.$id('e').addClass(RAISED_EDGE_CLASS)
+        expect(cy.edges().sortByZIndex().map((edge) => edge.id())).toEqual(['inner', 'e'])
+        const order = cy.elements().sortByZIndex().map((ele) => ele.isEdge())
+        expect(order.lastIndexOf(true)).toBeLessThan(order.indexOf(false))
+    })
+
+    it('does not change the draw order with the trace colors alone', () => {
+        // A change of `z-index` makes cytoscape sort all elements before the next draw. The rendering
+        // adds the colors first and `RAISED_EDGE_CLASS` one frame later, so the colors paint sooner.
         const cy = graph('light')
         for (const highlight of ['highlight-forward', 'highlight-backward']) {
             cy.$id('e').addClass(highlight)
             expect(cy.edges().sortByZIndex().map((edge) => edge.id()), highlight)
-                .toEqual(['inner', 'e'])
-            const order = cy.elements().sortByZIndex().map((ele) => ele.isEdge())
-            expect(order.lastIndexOf(true), highlight).toBeLessThan(order.indexOf(false))
+                .toEqual(['e', 'inner'])
             cy.$id('e').removeClass(highlight)
         }
     })
