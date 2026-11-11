@@ -13,8 +13,10 @@
 
 import { DIAGRAM_PALETTES, type Color, type DiagramTheme } from './diagramTheme.js';
 
-/** Marks a chip slot as empty; cytoscape skips the slot without loading anything. */
-export const CHIP_NONE = 'none';
+/** Marks a chip slot as empty: a transparent image. Cytoscape also accepts `none` for an empty
+ *  slot, but then it restyles the node and its parents in each frame that draws the node. */
+export const CHIP_NONE = `data:image/svg+xml;utf8,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')}`;
 
 /** Same size as the node label. */
 export const CHIP_FONT_SIZE = 12;
