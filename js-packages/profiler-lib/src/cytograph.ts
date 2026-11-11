@@ -20,6 +20,10 @@ import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
 
+// Register the extensions once for the module. Cytoscape warns when an extension is registered again.
+cytoscape.use(elk);
+cytoscape.use(dblclick);
+
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
  * over the raw number (via `.getNumericValue()`). */
@@ -427,6 +431,8 @@ export class CytographRendering {
     private renderingInFlight = false;
     /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
     private tracedEdges: EdgeCollection;
+    /** `setEvents` adds this listener to the document, and `dispose` removes it. */
+    private readonly onDocumentKeyup = (event: KeyboardEvent) => this.keyup(event);
 
     constructor(
         graphContainer: HTMLElement,
@@ -440,9 +446,6 @@ export class CytographRendering {
         private clearMessage: () => void,
         private onTooltipContextChanged: () => void,
         private theme: DiagramTheme = 'light') {
-        cytoscape.use(elk);
-        cytoscape.use(dblclick);
-
         this.currentGraph = null;
         this.stickyInformation = false;
         // Start with an empty graph
@@ -802,7 +805,7 @@ export class CytographRendering {
         onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined,
         onShowSource?: ((node: NodeId) => void) | undefined
     }) {
-        document.addEventListener('keyup', (e) => this.keyup(e));
+        document.addEventListener('keyup', this.onDocumentKeyup);
         // Called here rather than in the constructor because this is where the chips' actions arrive;
         // `setEvents` runs once per instance.
         installChipButtons(this.cy, () => this.theme, {
@@ -1096,6 +1099,7 @@ export class CytographRendering {
             this.callbacks.onRenderingChange?.(false);
         }
         notifyObservers(this.observers, (observer) => observer.dispose?.());
+        document.removeEventListener('keyup', this.onDocumentKeyup);
 
         // Destroy the Cytoscape instance
         if (this.cy) {

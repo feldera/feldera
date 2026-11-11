@@ -474,6 +474,12 @@ export async function mountDiagram(
     pointer,
     click,
     diagram: component,
-    cleanup: () => wrapper.remove()
+    /** Remove the diagram from the page, but keep the component mounted. */
+    cleanup: () => wrapper.remove(),
+    /** Unmount the component, which disposes the diagram, and remove it from the page. */
+    unmount: () => {
+      rendered.unmount()
+      wrapper.remove()
+    }
   }
 }
