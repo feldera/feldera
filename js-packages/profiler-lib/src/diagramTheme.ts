@@ -86,6 +86,11 @@ export function labelWidth(text: string): number {
  *  over every plain one. */
 const TRACED_EDGE_Z_INDEX = 1;
 
+/** Class that gives a traced edge `TRACED_EDGE_Z_INDEX`. It is separate from the color classes,
+ *  because a change of `z-index` makes cytoscape sort all elements again before the next draw.
+ *  The rendering adds this class one frame after the color, so the color paints without this cost. */
+export const RAISED_EDGE_CLASS = 'raised-edge';
+
 /** Heat above which a node's text switches to `textOnHeat`: past here the fill is a deep red that
  *  dark text sinks into. */
 export const HEAT_TEXT_FLIP = 60;
@@ -293,8 +298,7 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeBackward,
                 'target-arrow-color': p.edgeBackward,
-                'width': 3,
-                'z-index': TRACED_EDGE_Z_INDEX
+                'width': 3
             }
         },
         {
@@ -302,7 +306,12 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeForward,
                 'target-arrow-color': p.edgeForward,
-                'width': 3,
+                'width': 3
+            }
+        },
+        {
+            selector: `edge.${RAISED_EDGE_CLASS}`,
+            style: {
                 'z-index': TRACED_EDGE_Z_INDEX
             }
         },
