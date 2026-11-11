@@ -199,6 +199,9 @@ export async function mountDiagram(
     doubleClicks: [] as Array<{ nodeId: string, type: 'group' | 'leaf' }>,
     /** One entry per `displayNodeAttributes`, the node it carried or `null` for a dismissal. */
     attributes: [] as Array<{ nodeId: string | null, isSticky: boolean }>,
+    /** What the last node report showed: its worker columns, and the metric of the row marked as
+     *  the current metric. */
+    lastReport: { columns: [] as string[], currentMetric: undefined as string | undefined },
     /** One entry per `displayMessage`, the message or `null` when it is cleared. */
     messages: [] as Array<string | null>
   }
@@ -207,6 +210,15 @@ export async function mountDiagram(
       reported.attributes.push({
         nodeId: data.match({ some: (v) => v.nodeId, none: () => null }),
         isSticky
+      })
+      data.match({
+        some: (v) => {
+          reported.lastReport = {
+            columns: v.columns,
+            currentMetric: v.rows.find((row) => row.isCurrentMetric)?.metric
+          }
+        },
+        none: () => {}
       })
     },
     displayTopNodes: () => {},
@@ -241,6 +253,8 @@ export async function mountDiagram(
     search(query: string): void
     setTheme(theme: 'light' | 'dark'): void
     showGlobalMetrics(isSticky?: boolean): void
+    selectMetric(metricId: string): void
+    toggleWorker(workerId: string): void
   }
   await layout
 

@@ -420,6 +420,12 @@ export class CytographRendering {
     stickyInformation: boolean;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
+    // The profile and the scales of the last `updateMetadata`, for `computeAttributes`.
+    private metadataProfile: CircuitProfile | null = null;
+    private displayScales: DisplayScales = new Map();
+    // What `displayScales` was computed for: the graph and a mask of the visible workers.
+    private scalesGraph: Cytograph | null = null;
+    private scalesWorkerMask = "";
     /** Where the view is. */
     private readonly viewport: Viewport;
     /** Everything that reacts to the diagram's lifecycle rather than driving it.
@@ -583,72 +589,78 @@ export class CytographRendering {
         return new SerializedMeasurement(m, percentile);
     }
 
-    /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
-    computeAttributes(profile: CircuitProfile, selection: MetadataSelection,
-        scales: DisplayScales) {
+    /** Compute the attributes that the report of `node` shows, for the current metadata selection. */
+    private computeAttributes(node: GraphNode): Attributes {
+        const profile = this.metadataProfile!;
+        const selection = this.metadataSelection;
+        const scales = this.displayScales;
         let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
         // One column per visible worker. Aggregates such as min/max are not produced here:
         // consumers that want them compute them from the per-worker values themselves.
         let columnNames = workers.map(w => w.toString());
-        for (const node of this.currentGraph!.nodes) {
-            let profileNode = profile.getNode(node.getId()).unwrap();
-            let data = new Map<string, Array<SerializedMeasurement>>();
-            // Totals over the same workers the cells show, so they match what is displayed.
-            let values = new Map<string, PropertyValue>();
-            // Select just the visible metrics
-            // Compute per-worker attributes
-            for (let metric of profileNode.measurements.getMetrics()) {
-                let range = scales.get(metric)?.range ?? NumericRange.empty();
-                let metrics = profileNode.getMeasurements(metric);
-                let selected = selection.workersVisible.getSelectedElements(metrics);
-                let measurements: Array<SerializedMeasurement> = [];
-                for (const m of selected) {
-                    measurements.push(CytographRendering.toMeasurement(m, range));
-                }
-                data.set(metric, measurements);
-                let total = profileNode.totalOf(metric, selected);
-                if (total.isSome()) {
-                    values.set(metric, total.unwrap());
-                }
+        let profileNode = profile.getNode(node.getId()).unwrap();
+        let data = new Map<string, Array<SerializedMeasurement>>();
+        // Totals over the same workers the cells show, so they match what is displayed.
+        let values = new Map<string, PropertyValue>();
+        // Select just the visible metrics
+        // Compute per-worker attributes
+        for (let metric of profileNode.measurements.getMetrics()) {
+            let range = scales.get(metric)?.range ?? NumericRange.empty();
+            let metrics = profileNode.getMeasurements(metric);
+            let selected = selection.workersVisible.getSelectedElements(metrics);
+            let measurements: Array<SerializedMeasurement> = [];
+            for (const m of selected) {
+                measurements.push(CytographRendering.toMeasurement(m, range));
             }
-            // The toplevel node stands for the whole circuit, so it holds the largest total of
-            // every metric and has to be shaded against the metrics beside it instead.
-            const overview = node.getId() === this.rootNodeId;
-            const shares = overview ? PropertyValue.categoryShares(values) : undefined;
-            let totals = new Map<string, SerializedMeasurement>();
-            for (const [metric, total] of values) {
-                const share = overview
-                    ? shares!.get(metric) ?? 0
-                    : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
-                totals.set(metric, new SerializedMeasurement(total, share));
+            data.set(metric, measurements);
+            let total = profileNode.totalOf(metric, selected);
+            if (total.isSome()) {
+                values.set(metric, total.unwrap());
             }
-            // additional key-value per node attributes
-            let kv = new Map();
-            kv.set("id", node.id);
-            if (node.persistentId.isSome()) {
-                kv.set("persistentId", node.persistentId.unwrap());
-            }
-            kv.set("operation", node.getLabel());
-            kv.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
-            if (!profile.isTop(node.getId())) {
-                // Not shown for the toplevel node
-                kv.set("consumers", profile.consumerCount(node.getId()).toString());
-            }
+        }
+        // The toplevel node stands for the whole circuit, so it holds the largest total of
+        // every metric and has to be shaded against the metrics beside it instead.
+        const overview = node.getId() === this.rootNodeId;
+        const shares = overview ? PropertyValue.categoryShares(values) : undefined;
+        let totals = new Map<string, SerializedMeasurement>();
+        for (const [metric, total] of values) {
+            const share = overview
+                ? shares!.get(metric) ?? 0
+                : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
+            totals.set(metric, new SerializedMeasurement(total, share));
+        }
+        // additional key-value per node attributes
+        let kv = new Map();
+        kv.set("id", node.id);
+        if (node.persistentId.isSome()) {
+            kv.set("persistentId", node.persistentId.unwrap());
+        }
+        kv.set("operation", node.getLabel());
+        kv.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
+        if (!profile.isTop(node.getId())) {
+            // Not shown for the toplevel node
+            kv.set("consumers", profile.consumerCount(node.getId()).toString());
+        }
 
-            let parent = profile.parents.get(node.id);
-            if (parent.isSome()) {
-                const p = parent.unwrap();
-                kv.set("parent", p);
-            }
-            let matrix = new MeasurementMatrix(
-                columnNames, [...profileNode.measurements.getMetrics()], data, totals);
-            let attributes = new Attributes(matrix, kv);
+        let parent = profile.parents.get(node.id);
+        if (parent.isSome()) {
+            const p = parent.unwrap();
+            kv.set("parent", p);
+        }
+        let matrix = new MeasurementMatrix(
+            columnNames, [...profileNode.measurements.getMetrics()], data, totals);
+        return new Attributes(matrix, kv);
+    }
+
+    /** Write the node fields that change with the graph. A write restyles the node, so write only
+     * the changed ones. */
+    private updateNodeFlags() {
+        for (const node of this.currentGraph!.nodes) {
             let rendered = this.getRenderedNode(node.getId());
-            rendered.data("expanded", node.expanded);
-            rendered.data("has_children", node.hasChildren);
-            // attach the attributes to the node
-            rendered.data("attributes", attributes);
-            if (node.getId() === this.rootNodeId) {
+            if (rendered.data("expanded") !== node.expanded) {
+                rendered.data("expanded", node.expanded);
+            }
+            if (node.getId() === this.rootNodeId && rendered.data("invisible") !== true) {
                 rendered.data("invisible", true);
             }
         }
@@ -669,7 +681,10 @@ export class CytographRendering {
                 percents = range.percents(max);
             }
             let rendered = this.getRenderedNode(node.getId());
-            rendered.data("value", percents);
+            // A write restyles the node, also when the value is the same.
+            if (rendered.data("value") !== percents) {
+                rendered.data("value", percents);
+            }
         }
     }
 
@@ -686,17 +701,24 @@ export class CytographRendering {
     updateMetadata(profile: CircuitProfile, selection: MetadataSelection) {
         if (this.currentGraph === null)
             return;
+        this.metadataProfile = profile;
         this.metadataSelection = selection;
-        // One pass over the drawn nodes feeds the node highlighting, the per-worker bars and the
-        // totals, so all three describe the same population.
-        const scales = profile.displayScales(this.drawnNodes(),
-            values => selection.workersVisible.getSelectedElements(values));
+        // The scales depend on the drawn nodes and the visible workers, not on the metric.
+        const workerMask = profile.getWorkerNames()
+            .map((_, index) => selection.workersVisible.contains(index) ? "1" : "0").join("");
+        if (this.scalesGraph !== this.currentGraph || this.scalesWorkerMask !== workerMask) {
+            // One pass over the drawn nodes feeds the node highlighting, the per-worker bars and the
+            // totals, so all three describe the same population.
+            this.displayScales = profile.displayScales(this.drawnNodes(),
+                values => selection.workersVisible.getSelectedElements(values));
+            this.scalesGraph = this.currentGraph;
+            this.scalesWorkerMask = workerMask;
+        }
         // One batch restyles each changed node once, after all writes.
         this.cy.batch(() => {
-            this.computeImportance(profile, selection, scales);
-            this.computeAttributes(profile, selection, scales);
+            this.computeImportance(profile, selection, this.displayScales);
+            this.updateNodeFlags();
         });
-        this.cy.style().update();
 
         // Refresh the tooltip if there's a node currently displayed
         if (this.currentTooltipNode !== null) {
@@ -977,11 +999,12 @@ export class CytographRendering {
 
     displayNodeAttributes(node: NodeSingular) {
         const nodeId = node.id();
-        const attributes: Attributes = node.data().attributes;
-        const sources = node.data("sources")
-        if (this.cy === null) {
+        const graphNode = this.currentGraph?.nodes.find((n) => n.getId() === nodeId);
+        if (this.cy === null || graphNode === undefined || this.metadataProfile === null) {
             return;
         }
+        const attributes = this.computeAttributes(graphNode);
+        const sources = node.data("sources")
 
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;

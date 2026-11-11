@@ -22,7 +22,13 @@
   let switched = $state<DiagramTheme | undefined>()
   const theme = $derived(switched ?? props.theme)
   let diagram = $state<
-    { search(query: string): void, showGlobalMetrics(isSticky?: boolean): void } | undefined
+    | {
+        search(query: string): void
+        showGlobalMetrics(isSticky?: boolean): void
+        selectMetric(metricId: string): void
+        toggleWorker(workerId: string): void
+      }
+    | undefined
   >()
 
   export const setTheme = (next: DiagramTheme) => {
@@ -30,6 +36,8 @@
   }
   export const search = (query: string) => diagram?.search(query)
   export const showGlobalMetrics = (isSticky?: boolean) => diagram?.showGlobalMetrics(isSticky)
+  export const selectMetric = (metricId: string) => diagram?.selectMetric(metricId)
+  export const toggleWorker = (workerId: string) => diagram?.toggleWorker(workerId)
 </script>
 
 <ProfilerDiagram
