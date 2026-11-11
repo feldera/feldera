@@ -75,6 +75,16 @@ pub struct Checkpoint {
     /// a coordinator and in checkpoints that predate distributed connectors.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// The host that the coordinator assigned each output stream of a
+    /// multihost pipeline to (see `CoordinationActivate::output_assignment`).
+    ///
+    /// The state of a materialized view or index is on the workers of its
+    /// host, so a restart must keep the assignment.  The coordinator reads it
+    /// from here to do that.  This is `None` for a pipeline that is not
+    /// multihost and in checkpoints that predate this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_assignment: Option<BTreeMap<String, usize>>,
 }
 
 impl Checkpoint {
