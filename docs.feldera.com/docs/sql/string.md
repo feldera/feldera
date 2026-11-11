@@ -170,6 +170,11 @@ example.
     <td><code>lower('TOM')</code> => <code>tom</code></td>
   </tr>
   <tr>
+    <td><a id="lpad"></a><code>LPAD ( string, length [, fill ] )</code></td>
+    <td>Adds copies of <code>fill</code> to the left of <code>string</code> until it has <code>length</code> characters; the last copy can be partial.  If <code>string</code> has more than <code>length</code> characters, returns its first <code>length</code> characters.  The default <code>fill</code> is a space.  An empty <code>fill</code> adds no characters.  The result is an empty string for a negative or 0 <code>length</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
+    <td><code>lpad('hi', 5, 'xy')</code> => <code>xyxhi</code></td>
+  </tr>
+  <tr>
     <td><a id="md5"></a><code>MD5</code>(string)</td>
     <td>
         Calculates an MD5 128-bit checksum of <code>string</code> and returns it as a hex <code>VARCHAR</code> value.
@@ -220,6 +225,11 @@ example.
     <td><a id="rlike-function"></a><code>RLIKE(string, pattern)</code></td>
     <td>A function equivalent to the <code>RLIKE</code> operator above.</td>
     <td><code>RLIKE('string', 's..i.*')</code> => <code>TRUE</code></td>
+  </tr>
+  <tr>
+    <td><a id="rpad"></a><code>RPAD ( string, length [, fill ] )</code></td>
+    <td>Adds copies of <code>fill</code> to the right of <code>string</code> until it has <code>length</code> characters; the last copy can be partial.  If <code>string</code> has more than <code>length</code> characters, returns its first <code>length</code> characters.  The default <code>fill</code> is a space.  An empty <code>fill</code> adds no characters.  The result is an empty string for a negative or 0 <code>length</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
+    <td><code>rpad('hi', 5, 'xy')</code> => <code>hixyx</code></td>
   </tr>
   <tr>
     <td><a id="split"></a><code>SPLIT(string [, delimiter])</code></td>
