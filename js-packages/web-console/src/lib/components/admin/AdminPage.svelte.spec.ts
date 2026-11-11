@@ -20,6 +20,14 @@ type Role = 'read' | 'write' | 'admin' | 'owner'
 const roleState = vi.hoisted(() => ({ current: 'owner' as Role }))
 const current = vi.hoisted(() => ({ id: '', name: 'acme-tenant' }))
 const tenantsState = vi.hoisted(() => ({ list: [] as { id: string; name: string }[] }))
+const ownersState = vi.hoisted(() => ({
+  configured: undefined as
+    | {
+        owners: string[]
+        owner_trusts: { issuer: string; subject: string; audience?: string | null }[]
+      }
+    | undefined
+}))
 
 vi.mock('$app/state', () => ({
   page: {
@@ -40,7 +48,7 @@ vi.mock('#lib/components/admin/UserRoleTable.svelte', () => ({ default: () => {}
 vi.mock('#lib/components/admin/TenantList.svelte', () => ({ default: () => {} }))
 vi.mock('#lib/services/pipelineManager.ts', () => ({
   getTenants: vi.fn(async () => tenantsState.list),
-  getConfiguredOwners: vi.fn(async () => undefined)
+  getConfiguredOwners: vi.fn(async () => ownersState.configured)
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
@@ -66,7 +74,7 @@ const triggerButton = () =>
     b.textContent?.includes(current.name)
   )
 
-describe('AdminPage — write:tenant header picker', () => {
+describe('AdminPage - write:tenant header picker', () => {
   afterEach(async () => {
     await mounted?.unmount()
     mounted = undefined
@@ -76,6 +84,7 @@ describe('AdminPage — write:tenant header picker', () => {
     current.id = ''
     current.name = 'acme-tenant'
     tenantsState.list = []
+    ownersState.configured = undefined
     vi.clearAllMocks()
   })
 
@@ -142,5 +151,43 @@ describe('AdminPage — write:tenant header picker', () => {
     // Header now reflects the new tenant, and the list is gone (auto-closed).
     await expect.poll(usersHeading).toContain('beta')
     await expect.poll(optionLabels).toEqual([])
+  })
+})
+
+describe('AdminPage - platform owners', () => {
+  afterEach(async () => {
+    await mounted?.unmount()
+    mounted = undefined
+    mountTarget?.remove()
+    mountTarget = undefined
+    ownersState.configured = undefined
+    vi.clearAllMocks()
+  })
+
+  const ownersSectionText = () =>
+    Array.from(document.querySelectorAll('section')).find((s) =>
+      s.querySelector('h2')?.textContent?.includes('Platform owners')
+    )?.textContent ?? ''
+
+  it('renders trusts that differ only by audience, and repeated entries once', async () => {
+    const trust = (audience: string) => ({
+      issuer: 'https://token.actions.githubusercontent.com',
+      subject: 'repo:feldera/feldera:*',
+      audience
+    })
+    ownersState.configured = {
+      owners: ['ops@acme.test', 'ops@acme.test'],
+      owner_trusts: [
+        trust('https://github.com/feldera'),
+        trust('cleanup-job'),
+        trust('cleanup-job')
+      ]
+    }
+    mountPage('owner')
+    await expect.poll(ownersSectionText).toContain('cleanup-job')
+    const text = ownersSectionText()
+    expect(text).toContain('https://github.com/feldera')
+    expect(text.split('ops@acme.test').length - 1).toBe(1)
+    expect(text.split('cleanup-job').length - 1).toBe(1)
   })
 })
