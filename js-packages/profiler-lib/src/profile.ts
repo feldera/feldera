@@ -1276,13 +1276,12 @@ class Measurements {
         if (m.property === "persistent_id") {
             return;
         }
-        this.aggregations.set(m.property, m.aggregation);
         let meas = this.measurements.get(m.property);
         let arr: Array<PropertyValue>;
         if (meas.isNone()) {
-            arr = [];
-            for (let i = 0; i < this.worker_count; i++)
-                arr[i] = new MissingValue();
+            // The aggregation mode depends only on the metric, so the first reading sets it.
+            this.aggregations.set(m.property, m.aggregation);
+            arr = new Array(this.worker_count).fill(MissingValue.INSTANCE);
             this.measurements.set(m.property, arr);
         } else {
             arr = meas.unwrap();
