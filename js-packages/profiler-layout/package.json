@@ -13,9 +13,17 @@
     "test-watch": "bun run deps && vitest",
     "test-unit": "bun run deps && vitest --run --project unit --project component --project browser",
     "test-component": "bun run deps && vitest --run --project component",
+    "test-perf": "bun run deps && vitest --run --config vitest.perf.config.ts",
+    "compare-perf": "bun test/comparePerf.ts",
     "format": "biome check --write ."
   },
-  "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.spec.*", "!dist/test-support/**"],
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.spec.*",
+    "!dist/**/*.perf.*",
+    "!dist/test-support/**"
+  ],
   "sideEffects": ["**/*.css"],
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
