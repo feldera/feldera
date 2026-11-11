@@ -14,7 +14,8 @@ from .helper import gen_pipeline_name, wait_for_condition
 # processes a record.
 STEP_SECS = 45
 
-# A bundle that starts later than this waited for the step.
+# Limit on the time to the bundle's first byte. The bundle sends bytes while
+# it collects data, so its first byte must not wait for the step.
 FIRST_BYTE_SECS = 15
 
 
@@ -60,6 +61,10 @@ pub fn slow(x: i64) -> Result<i64, Box<dyn std::error::Error>> {{
         timeout_s=60,
         poll_interval_s=0.5,
     )
+    # The record is received, but the step that processes it may not have
+    # started yet. A bundle requested before that step does not wait for it,
+    # so the test would check nothing. The `total_secs` check below detects
+    # that case; this sleep makes it unlikely.
     time.sleep(2)
 
     start = time.monotonic()
@@ -78,6 +83,12 @@ pub fn slow(x: i64) -> Result<i64, Box<dyn std::error::Error>> {{
     )
 
     bundle = first + b"".join(chunks)
+    # The circuit profile waits for the end of the step, so a bundle that
+    # started during the step cannot finish before the step does.
+    total_secs = time.monotonic() - start
+    assert total_secs > STEP_SECS / 2, (
+        f"bundle complete after {total_secs:.1f} s, so it did not wait for the step"
+    )
     with zipfile.ZipFile(io.BytesIO(bundle)) as zip_file:
         names = zip_file.namelist()
         profiles = [n for n in names if n.endswith("/circuit_profile.json.gz")]
