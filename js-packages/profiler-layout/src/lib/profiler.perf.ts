@@ -63,10 +63,16 @@ function mountProfiler(circuit: SyntheticCircuit) {
   document.body.appendChild(wrapper)
 
   let onLayoutDone: (() => void) | undefined
-  const reported = { hoveredNodes: [] as Array<string | null>, errors: [] as string[] }
+  const reported = {
+    hoveredNodes: [] as Array<string | null>,
+    /** The worker columns of the last report. */
+    workerColumns: [] as string[],
+    errors: [] as string[]
+  }
   const callbacks: ProfilerCallbacks = {
     displayNodeAttributes: (data) => {
       reported.hoveredNodes.push(data.match({ some: (v) => v.nodeId, none: () => null }))
+      reported.workerColumns = data.match({ some: (v) => v.columns, none: () => [] })
     },
     displayTopNodes: () => {},
     onMetricsChanged: () => {},
@@ -132,6 +138,7 @@ function mountProfiler(circuit: SyntheticCircuit) {
     cy: () => container._cyreg!.cy as any,
     diagram: screen.component as unknown as {
       selectMetric(metricId: string): void
+      toggleWorker(workerId: string): void
       search(query: string): void
     },
     unmount: () => {
@@ -163,6 +170,57 @@ async function measureHover(mounted: ReturnType<typeof mountProfiler>, name: str
       await afterNextPaint()
     }
   })
+}
+
+/** Time switches between two metrics, until the new shading is painted. */
+async function measureMetricSwitch(mounted: ReturnType<typeof mountProfiler>, name: string) {
+  const metrics = ['runtime_percent', 'used_memory_bytes']
+  const shading = () =>
+    mounted
+      .cy()
+      .nodes()
+      .map((n: { data(key: string): unknown }) => n.data('value'))
+  let switches = 0
+  const result = await measure(name, {
+    warmups: 3,
+    runs: 15,
+    run: async () => {
+      switches++
+      mounted.diagram.selectMetric(metrics[switches % 2]!)
+      await afterNextPaint()
+    }
+  })
+  // The node shades follow the metric, so a switch that took effect changes them.
+  const before = JSON.stringify(shading())
+  mounted.diagram.selectMetric(metrics[(switches + 1) % 2]!)
+  expect(JSON.stringify(shading())).not.toBe(before)
+  return result
+}
+
+/** Time the toggle of the first worker, until the new shading and the pinned node report are
+ *  painted. The runs hide and show the worker in turn. */
+async function measureWorkerToggle(mounted: ReturnType<typeof mountProfiler>, name: string) {
+  mounted.cy().$id(CIRCUIT.sourceOperatorId).emit('click')
+  await afterNextPaint()
+  const columnsBefore = mounted.reported.workerColumns.length
+  expect(columnsBefore).toBe(WORKERS)
+  let toggles = 0
+  const result = await measure(name, {
+    warmups: 2,
+    runs: 16,
+    run: async () => {
+      toggles++
+      mounted.diagram.toggleWorker('0')
+      await afterNextPaint()
+    }
+  })
+  // An even number of toggles shows the worker again.
+  expect(toggles % 2).toBe(0)
+  expect(mounted.reported.workerColumns.length).toBe(columnsBefore)
+  mounted.diagram.toggleWorker('0')
+  expect(mounted.reported.workerColumns.length).toBe(columnsBefore - 1)
+  mounted.diagram.toggleWorker('0')
+  return result
 }
 
 describe('profiler performance', () => {
@@ -313,6 +371,14 @@ describe('profiler performance', () => {
       await measureHover(
         mounted,
         `hover node, ${EXPANDED_REGIONS} regions expanded (mousemove until highlight is painted)`
+      ),
+      await measureMetricSwitch(
+        mounted,
+        `switch metric, ${EXPANDED_REGIONS} regions expanded (selectMetric until repaint)`
+      ),
+      await measureWorkerToggle(
+        mounted,
+        `toggle worker, ${EXPANDED_REGIONS} regions expanded (toggleWorker until repaint)`
       )
     )
     expect(mounted.reported.errors).toEqual([])
@@ -322,28 +388,7 @@ describe('profiler performance', () => {
   it('measures switching the selected metric', async () => {
     const mounted = mountProfiler(CIRCUIT)
     await mounted.loaded
-    const metrics = ['runtime_percent', 'used_memory_bytes']
-    const shading = () =>
-      mounted
-        .cy()
-        .nodes()
-        .map((n: { data(key: string): unknown }) => n.data('value'))
-    let switches = 0
-    results.push(
-      await measure('switch metric (selectMetric until repaint)', {
-        warmups: 3,
-        runs: 15,
-        run: async () => {
-          switches++
-          mounted.diagram.selectMetric(metrics[switches % 2]!)
-          await afterNextPaint()
-        }
-      })
-    )
-    // The node shades follow the metric, so a switch that took effect changes them.
-    const before = JSON.stringify(shading())
-    mounted.diagram.selectMetric(metrics[(switches + 1) % 2]!)
-    expect(JSON.stringify(shading())).not.toBe(before)
+    results.push(await measureMetricSwitch(mounted, 'switch metric (selectMetric until repaint)'))
     mounted.unmount()
   })
 })
