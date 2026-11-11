@@ -10829,6 +10829,12 @@
             "default": null,
             "nullable": true
           },
+          "evict_bloom_filter": {
+            "type": "boolean",
+            "description": "Experimental: drop Bloom filter modules at runtime under memory\npressure, and read them back from storage when pressure is low again.\n\nApplies to filters of 64 KiB or more. Such a filter never keeps more\nmodules than loading it from storage would keep, even at low pressure.\nAt high memory pressure, these filters keep one module less, at most one\nstep every 10 seconds, down to no filter. After each 60 seconds of low\npressure, they may keep one module more, and read it back from storage,\nat most 16 MiB a second and never past the moderate pressure threshold.\nFiles on storage always keep every module.\n\nThe default is `false`.",
+            "default": null,
+            "nullable": true
+          },
           "exchange_channel_capacity": {
             "type": "string",
             "description": "Maximum size of the queued but unacknowledged exchange messages per\npair of remote host and message type.\n\nA sender that pushes past this budget waits for the receiver to\nacknowledge earlier messages before it queues more.  There are three\nmessage types, so a host buffers up to three times this many bytes for\neach of the other hosts, plus any single message that exceeds the\nbudget on its own.\n\nThe default is `\"10M\"`. Before release 0.367.0 this setting was\n`exchange_channel_capacity_bytes`, a number of bytes.",

@@ -284,6 +284,21 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_roaring: Option<bool>,
 
+    /// Experimental: drop Bloom filter modules at runtime under memory
+    /// pressure, and read them back from storage when pressure is low again.
+    ///
+    /// Applies to filters of 64 KiB or more. Such a filter never keeps more
+    /// modules than loading it from storage would keep, even at low pressure.
+    /// At high memory pressure, these filters keep one module less, at most one
+    /// step every 10 seconds, down to no filter. After each 60 seconds of low
+    /// pressure, they may keep one module more, and read it back from storage,
+    /// at most 16 MiB a second and never past the moderate pressure threshold.
+    /// Files on storage always keep every module.
+    ///
+    /// The default is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evict_bloom_filter: Option<bool>,
+
     /// Maximum batch size in records for level 0 merges.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_level0_batch_size_records: Option<u16>,
@@ -484,6 +499,9 @@ impl DevTweaks {
         // Roaring is enabled by default, but `enable_roaring = false` remains
         // available as a kill switch while the feature is still being tuned.
         self.enable_roaring.unwrap_or(true)
+    }
+    pub fn evict_bloom_filter(&self) -> bool {
+        self.evict_bloom_filter.unwrap_or(false)
     }
 
     /// Rejects settings outside their valid range, naming the field, the

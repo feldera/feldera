@@ -1930,6 +1930,21 @@ export type DevTweaks = {
    */
   enable_roaring?: boolean | null
   /**
+   * Experimental: drop Bloom filter modules at runtime under memory
+   * pressure, and read them back from storage when pressure is low again.
+   *
+   * Applies to filters of 64 KiB or more. Such a filter never keeps more
+   * modules than loading it from storage would keep, even at low pressure.
+   * At high memory pressure, these filters keep one module less, at most one
+   * step every 10 seconds, down to no filter. After each 60 seconds of low
+   * pressure, they may keep one module more, and read it back from storage,
+   * at most 16 MiB a second and never past the moderate pressure threshold.
+   * Files on storage always keep every module.
+   *
+   * The default is `false`.
+   */
+  evict_bloom_filter?: boolean | null
+  /**
    * Maximum size of the queued but unacknowledged exchange messages per
    * pair of remote host and message type.
    *
