@@ -41,6 +41,7 @@ use tokio::{
     sync::Mutex,
     time::{Duration, sleep},
 };
+use toml_edit::DocumentMut;
 use tracing::{debug, error, info, trace, warn};
 
 /// The frequency at which the compiler polls the database for new Rust compilation requests.
@@ -1493,6 +1494,21 @@ pub async fn resolve_runtime_sha(
     }
 }
 
+/// The workspace manifest with the `[patch]` tables of the feldera manifest added, so the
+/// copied Cargo.lock resolves the same sources. A feldera manifest without patches leaves it
+/// unchanged.
+fn with_patch_tables(
+    workspace_manifest: &str,
+    feldera_manifest: &str,
+) -> Result<String, toml_edit::TomlError> {
+    let Some(patches) = feldera_manifest.parse::<DocumentMut>()?.remove("patch") else {
+        return Ok(workspace_manifest.to_string());
+    };
+    let mut workspace = workspace_manifest.parse::<DocumentMut>()?;
+    workspace["patch"] = patches;
+    Ok(workspace.to_string())
+}
+
 /// Prepare the workspace for compilation of the specific pipeline.
 /// This involves extracting the results of the prior SQL compilation and
 /// configuring the workspace itself (e.g., its Cargo.toml and Cargo.lock).
@@ -1693,6 +1709,30 @@ async fn prepare_workspace(
     let cargo_toml_source_path = extract_dir.join("Cargo.toml");
     let cargo_toml_target_path = workspace_dir.join("Cargo.toml");
     copy_file(&cargo_toml_source_path, &cargo_toml_target_path).await?;
+    // The lock copied below resolves the sources that the feldera workspace patches, so the
+    // pipeline workspace needs the same overrides or cargo re-resolves them against crates.io.
+    let feldera_manifest_path =
+        if requested_runtime_version.is_platform() || requested_runtime_version.is_gen2() {
+            Some(PathBuf::from(&config.dbsp_override_path).join("Cargo.toml"))
+        } else if has_unstable_feature("runtime_version") {
+            Some(PathBuf::from(&runtime_sources).join("Cargo.toml"))
+        } else {
+            None
+        };
+    if let Some(feldera_manifest_path) = feldera_manifest_path {
+        let feldera_manifest = read_file_content(&feldera_manifest_path).await?;
+        let workspace_manifest = read_file_content(&cargo_toml_target_path).await?;
+        let patched = with_patch_tables(&workspace_manifest, &feldera_manifest).map_err(|e| {
+            UtilError::InvalidContent(format!(
+                "manifest '{}' or '{}': {e}",
+                feldera_manifest_path.display(),
+                cargo_toml_target_path.display()
+            ))
+        })?;
+        if patched != workspace_manifest {
+            write_file(patched.as_bytes(), &cargo_toml_target_path).await?;
+        }
+    }
 
     // Workspace: Cargo.lock
     // ---------------------
@@ -1864,6 +1904,12 @@ pub(super) fn cargo_command_with_minimal_env() -> Result<Command, RustCompilatio
     // Preserve CARGO_INCREMENTAL if set, to allow sccache to work properly.
     if let Some(cargo_incremental) = std::env::var_os("CARGO_INCREMENTAL") {
         command.env("CARGO_INCREMENTAL", cargo_incremental);
+    }
+
+    // aws-lc-fips-sys reads this to build the FIPS module as a shared object, the form the
+    // pipeline executor ships; without it the module is linked statically.
+    if let Some(fips_module_static) = std::env::var_os("AWS_LC_FIPS_SYS_STATIC") {
+        command.env("AWS_LC_FIPS_SYS_STATIC", fips_module_static);
     }
 
     // Preserve AWS_PROFILE if set, to allow sccache to use
@@ -2746,6 +2792,22 @@ mod test {
     use std::collections::HashSet;
 
     /// A pipeline with Rust UDFs fails to compile when the instance does not allow them.
+    #[test]
+    fn with_patch_tables_adds_the_feldera_overrides() {
+        let workspace = "[workspace]\nmembers = [\n  \"crates/x\"\n]\n";
+        let feldera = "[workspace]\nmembers = []\n\n# why\n[patch.crates-io]\nrustls = { git = \"https://example.com/rustls\", rev = \"abc\" }\n\n[profile.release]\nlto = true\n";
+        let patched = super::with_patch_tables(workspace, feldera).unwrap();
+        assert!(patched.starts_with(workspace));
+        assert!(patched.contains(
+            "[patch.crates-io]\nrustls = { git = \"https://example.com/rustls\", rev = \"abc\" }\n"
+        ));
+        assert!(!patched.contains("[profile.release]"));
+        assert_eq!(
+            super::with_patch_tables(workspace, "[workspace]\nmembers = []\n").unwrap(),
+            workspace
+        );
+    }
+
     #[tokio::test]
     async fn rust_udfs_refused_when_not_allowed() {
         let mut test = CompilerTest::new().await;
@@ -3048,11 +3110,34 @@ mod test {
         // Workspace-wide Cargo.toml
         let workspace_toml_file = test.rust_workdir.join("Cargo.toml");
         assert!(workspace_toml_file.is_file());
+        let workspace_toml = read_file_content(&workspace_toml_file).await.unwrap();
         assert!(
-            read_file_content(&workspace_toml_file)
-                .await
-                .unwrap()
-                .contains(&format!("members = [\n  \"crates/{main_crate_name}\"\n]"))
+            workspace_toml.contains(&format!("members = [\n  \"crates/{main_crate_name}\"\n]"))
+        );
+        // The feldera workspace's dependency overrides, when it has any, are in it too.
+        let feldera_toml = read_file_content(
+            &std::path::Path::new(&test.compiler_config.dbsp_override_path).join("Cargo.toml"),
+        )
+        .await
+        .unwrap();
+        let crates_io_patches = |manifest: &str| -> Vec<(String, String)> {
+            let doc = manifest.parse::<toml_edit::DocumentMut>().unwrap();
+            doc.get("patch")
+                .and_then(|patch| patch.get("crates-io"))
+                .and_then(|crates_io| crates_io.as_table_like())
+                .map(|table| {
+                    table
+                        .iter()
+                        .map(|(name, source)| {
+                            (name.to_string(), source.to_string().trim().to_string())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            crates_io_patches(&workspace_toml),
+            crates_io_patches(&feldera_toml)
         );
     }
 

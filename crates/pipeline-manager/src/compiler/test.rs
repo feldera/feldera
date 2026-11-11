@@ -45,6 +45,7 @@ impl CompilerTest {
             platform_version: platform_version.to_string(),
             http_workers: 1,
             unstable_features: None,
+            fips: false,
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,

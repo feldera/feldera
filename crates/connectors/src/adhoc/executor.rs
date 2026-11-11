@@ -6,6 +6,7 @@ use arrow::util::pretty::pretty_format_batches;
 use arrow_json::WriterBuilder;
 use arrow_json::writer::LineDelimited;
 use async_stream::{stream, try_stream};
+use aws_lc_rs::digest::{Context, SHA256};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use datafusion::common::hash_utils::{RandomState as DfRandomState, create_hashes};
@@ -20,7 +21,6 @@ use parquet::arrow::AsyncArrowWriter;
 use parquet::arrow::async_writer::AsyncFileWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
-use sha2::{Digest, Sha256};
 use std::convert::Infallible;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::{mpsc, oneshot};
@@ -168,16 +168,16 @@ impl BatchHasher {
     /// Produces the final hex-encoded SHA-256 digest over schema, row count,
     /// and the two accumulated hashes.
     fn finalize(self, schema: &arrow::datatypes::Schema) -> String {
-        let mut hasher = Sha256::new();
+        let mut hasher = Context::new(&SHA256);
         let schema_bytes = IpcSchemaEncoder::new()
             .schema_to_fb(schema)
             .finished_data()
             .to_vec();
         hasher.update(&schema_bytes);
-        hasher.update(self.row_count.to_le_bytes());
-        hasher.update(self.acc1.to_le_bytes());
-        hasher.update(self.acc2.to_le_bytes());
-        format!("{:X}", hasher.finalize())
+        hasher.update(&self.row_count.to_le_bytes());
+        hasher.update(&self.acc1.to_le_bytes());
+        hasher.update(&self.acc2.to_le_bytes());
+        hex::encode_upper(hasher.finish())
     }
 }
 

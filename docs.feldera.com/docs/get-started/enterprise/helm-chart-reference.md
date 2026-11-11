@@ -384,6 +384,14 @@ Configure HTTPS for all Feldera components. See the [HTTPS guide](./https.md) fo
 | `mtls.enabled` | `false` | Callers of the compiler, runner, pipeline and coordinator servers present client certificates. A pipeline may only download its own binary and program info, and may not call the runner or another pipeline. The hosts of a multihost pipeline exchange data over TLS and admit only hosts of the same pipeline. Requires `httpsSecretRef`, `caSecretRef` and [cert-manager](https://cert-manager.io). See [client certificates](./https.md#client-certificates). |
 | `mtls.extraClientUris` | `[]` | URI SANs of external clients, such as sidecars, that pipelines and their coordinators admit like the control plane. Each must match exactly and lie outside `urn:feldera:`. Requires `mtls.enabled`. See [external clients](./https.md#external-clients). |
 
+### FIPS
+
+See [FIPS 140-3](./fips.md) for the cryptographic modules and for what the setting covers.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `fips.enabled` | `false` | FIPS mode. The chart requires `httpsSecretRef` and refuses the `runtime_version` unstable feature, `parallelCompilation.sccache.enabled` and `pipeline.allowProfiling`, every Feldera component exits unless its TLS runs on the FIPS module, and a pipeline that uses a connector outside the [FIPS list](./fips.md#connectors) fails to start. |
+
 ---
 
 ## Networking

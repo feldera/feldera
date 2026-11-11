@@ -87,7 +87,8 @@ pubsub-emulator-test = []
 # Google Cloud Application Default Credentials (ADC) must be configured. See
 # `src/transport/pubsub/gcp_tests.rs`.
 pubsub-gcp-test = []
-feldera-enterprise = []
+# The Enterprise edition runs its cryptography on the validated AWS-LC FIPS module.
+feldera-enterprise = ["fips"]
 iceberg-tests-fs = []
 iceberg-tests-glue = []
 iceberg-tests-rest = []
@@ -223,7 +224,7 @@ tokio-util = { workspace = true, features = ["io", "rt"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }
-sha2 = { workspace = true }
+hex = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
 serde_bytes = { workspace = true }

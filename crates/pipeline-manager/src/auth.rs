@@ -63,11 +63,8 @@ use actix_web_httpauth::extractors::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, DecodingKey, TokenData, Validation, decode, decode_header};
-use rand::rngs::ThreadRng;
-use rand::{Rng, distributions::Alphanumeric};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use static_assertions::assert_impl_any;
 use tracing::{debug, error, warn};
 use url::Url;
 use utoipa::ToSchema;
@@ -1847,15 +1844,30 @@ pub const API_KEY_PREFIX: &str = "apikey:";
 /// HTTP header name for tenant selection in multi-tenant deployments
 pub const TENANT_HEADER: &str = "feldera-tenant";
 
-/// Generates a random 128 character API key
+/// Generates a random 128 character API key, use aws-lc for FIPS compliance.
 pub fn generate_api_key() -> String {
-    assert_impl_any!(ThreadRng: rand::CryptoRng);
-    let key: String = rand::thread_rng()
-        .sample_iter(Alphanumeric)
-        .take(API_KEY_LENGTH)
-        .map(char::from)
-        .collect();
-    format!("{API_KEY_PREFIX}{key}") // the prefix is part of the public API.
+    const ALPHABET: &[u8; 62] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let key_end = API_KEY_PREFIX.len() + API_KEY_LENGTH;
+    let mut key = String::with_capacity(key_end);
+    key.push_str(API_KEY_PREFIX); // the prefix is part of the public API.
+    // The low six bits of a byte index the alphabet and the two values past its
+    // end are dropped, so every character is equally likely. One fill covers
+    // the key with a wide margin; the second guards the improbable shortfall.
+    let mut random_bytes = [0u8; 2 * API_KEY_LENGTH];
+    for _ in 0..2 {
+        aws_lc_rs::rand::fill(&mut random_bytes)
+            .expect("the cryptographic module could not produce random bytes");
+        let characters = random_bytes
+            .iter()
+            .filter_map(|byte| ALPHABET.get(usize::from(byte & 0x3f)))
+            .map(|&c| char::from(c));
+        key.extend(characters.take(key_end - key.len()));
+        if key.len() == key_end {
+            break;
+        }
+    }
+    assert_eq!(key.len(), key_end, "too few usable random bytes");
+    key
 }
 
 #[cfg(test)]
@@ -2104,6 +2116,7 @@ mod test {
             platform_version: "v0".to_string(),
             http_workers: 1,
             unstable_features: None,
+            fips: false,
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
@@ -2953,5 +2966,14 @@ mod test {
 
         assert!(Arc::ptr_eq(&first, &second));
         assert!(!Arc::ptr_eq(&first, &other));
+    }
+
+    #[tokio::test]
+    async fn generated_api_keys_are_alphanumeric_and_unique() {
+        let key = super::generate_api_key();
+        let secret = key.strip_prefix(super::API_KEY_PREFIX).unwrap();
+        assert_eq!(secret.len(), 128);
+        assert!(secret.chars().all(|c| c.is_ascii_alphanumeric()));
+        assert_ne!(key, super::generate_api_key());
     }
 }

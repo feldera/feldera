@@ -8,7 +8,6 @@ use nix::NixPath;
 use nix::libc::pid_t;
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
-use sha2::{Digest, Sha256};
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -172,7 +171,7 @@ pub async fn checksum_file(path: &Path) -> Result<(usize, String), UtilError> {
     let mut file = File::open(path)
         .await
         .map_err(|e| UtilError::IoError(format!("open file '{}'", path.display()), e))?;
-    let mut hasher = Sha256::new();
+    let mut hasher = digest::Context::new(&digest::SHA256);
     let mut buffer = vec![0; 128 * 1024];
     let mut total_bytes = 0;
 
@@ -188,15 +187,12 @@ pub async fn checksum_file(path: &Path) -> Result<(usize, String), UtilError> {
         hasher.update(&buffer[..n]);
     }
 
-    Ok((total_bytes, hex::encode(hasher.finalize())))
+    Ok((total_bytes, hex::encode(hasher.finish())))
 }
 
 /// Returns the SHA256 checksum of the buffer.
 pub async fn checksum_buffer(buffer: &[u8]) -> Result<String, UtilError> {
-    let mut hasher = Sha256::new();
-    hasher.update(buffer);
-
-    Ok(hex::encode(hasher.finalize()))
+    Ok(hex::encode(sha256(buffer)))
 }
 
 /// Copies source file to target file, overwriting it.
@@ -353,12 +349,12 @@ pub fn checksum_encoded_dir_contents(
             )));
         }
     }
-    let mut hasher = Sha256::new();
+    let mut hasher = digest::Context::new(&digest::SHA256);
     for (path, content) in &files {
-        hasher.update(sha256(path.as_bytes()));
-        hasher.update(sha256(content.as_bytes()));
+        hasher.update(&sha256(path.as_bytes()));
+        hasher.update(&sha256(content.as_bytes()));
     }
-    Ok(hex::encode(hasher.finalize()))
+    Ok(hex::encode(hasher.finish()))
 }
 
 /// Decodes the base64-encoded gzipped tar archive into a directory.
@@ -797,10 +793,11 @@ impl DiskSpace {
 #[cfg(test)]
 mod test {
     use crate::compiler::util::{
-        CleanupDecision, DirectoryContent, cleanup_specific_directories, cleanup_specific_files,
-        copy_file, copy_file_if_checksum_differs, crate_name_pipeline_base,
-        crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
-        create_new_file, create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
+        CleanupDecision, DirectoryContent, checksum_buffer, checksum_file,
+        cleanup_specific_directories, cleanup_specific_files, copy_file,
+        copy_file_if_checksum_differs, crate_name_pipeline_base, crate_name_pipeline_globals,
+        crate_name_pipeline_main, create_dir_if_not_exists, create_new_file,
+        create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
         pipeline_binary_filename, read_file_content, read_file_content_bytes, recreate_dir,
         recreate_file_with_content, sha256, truncate_sha256_checksum, validate_is_sha256_checksum,
     };
@@ -1243,6 +1240,20 @@ mod test {
         // Check that the ignored ones are still there
         assert!(ignored_dir.is_dir());
         assert!(ignored_file.is_file());
+    }
+
+    #[tokio::test]
+    async fn checksums_are_sha256() {
+        // SHA-256("abc") from FIPS 180-4.
+        let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(checksum_buffer(b"abc").await.unwrap(), expected);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("abc");
+        std::fs::write(&path, b"abc").unwrap();
+        assert_eq!(
+            checksum_file(&path).await.unwrap(),
+            (3, expected.to_string())
+        );
     }
 
     #[test]

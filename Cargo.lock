@@ -1132,8 +1132,7 @@ dependencies = [
 [[package]]
 name = "async-nats"
 version = "0.51.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4f92759f418774b78c36ef07885849150ce950c67d9bcdeff8a9c253f57d9a1"
+source = "git+https://github.com/feldera/nats.rs?rev=c8a646aba25c2e56b4bae35d58d20521332bc0f3#c8a646aba25c2e56b4bae35d58d20521332bc0f3"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -1386,24 +1385,23 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-fips-sys"
-version = "0.14.1"
+version = "0.13.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "118303cd75f63d1933a90c2ceb7e697281ac6acbdbcc490b46419f25a527ab90"
+checksum = "df6ea8e07e2df15b9f09f2ac5ee2977369b06d116f0c4eb5fa4ad443b73c7f53"
 dependencies = [
  "bindgen 0.72.1",
  "cc",
  "cmake",
  "dunce",
  "fs_extra",
- "pkg-config",
  "regex",
 ]
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.18.0"
+version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce2b2dcc879c3bae0d371e77c99f2238400ef24ec001394befa67b6e543add9e"
+checksum = "4342d8937fc7e5dd9b1c60292261c0670c882a2cd1719cfc11b1af41731e32ad"
 dependencies = [
  "aws-lc-fips-sys",
  "aws-lc-sys",
@@ -1413,9 +1411,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.44.0"
+version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f09fae7be8bb3174e05c6afdb34199e6dc0c7c04ba9fa237b1967adfbde27483"
+checksum = "6d9ceb1da931507a12f4fccea479dccd00da1943e1b4ae72d8e502d707361444"
 dependencies = [
  "cc",
  "cmake",
@@ -2021,7 +2019,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -2039,7 +2037,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease 0.2.32",
  "proc-macro2",
@@ -4459,6 +4457,7 @@ dependencies = [
  "gcloud-metadata",
  "gcloud-pubsub",
  "governor",
+ "hex",
  "home",
  "inventory",
  "itertools 0.14.0",
@@ -4503,7 +4502,6 @@ dependencies = [
  "serde_json_path_to_error",
  "serde_urlencoded",
  "serial_test",
- "sha2 0.10.9",
  "signal-hook",
  "smallvec",
  "tempfile",
@@ -9391,9 +9389,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
- "sha2 0.10.9",
  "static-files",
- "static_assertions",
  "sysinfo 0.39.6",
  "tar",
  "tempfile",
@@ -9406,6 +9402,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "tokio-stream",
  "toml",
+ "toml_edit",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -11383,8 +11380,7 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
+source = "git+https://github.com/feldera/rustls?rev=b55214c7c1fdf140d3f80d2dd5d46b855f4de044#b55214c7c1fdf140d3f80d2dd5d46b855f4de044"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -11469,9 +11465,8 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+version = "0.103.16"
+source = "git+https://github.com/feldera/webpki?rev=8e91ec885b585ae8c217dfa13ed424d140d11126#8e91ec885b585ae8c217dfa13ed424d140d11126"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -13606,6 +13601,7 @@ checksum = "310068873db2c5b3e7659d2cc35d21855dbafa50d1ce336397c666e3cb08137e"
 dependencies = [
  "indexmap 2.14.2",
  "toml_datetime 0.6.9",
+ "toml_write",
  "winnow 0.7.10",
 ]
 
@@ -13617,6 +13613,12 @@ checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
  "winnow 1.0.5",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"

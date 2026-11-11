@@ -137,6 +137,10 @@ authorization token. It also accepts `--duration-seconds`, `--endpoint-url`,
 `--ca-bundle`, `--cli-connect-timeout`, `--cli-read-timeout` and
 `--no-verify-ssl`; run `codeartifact-token --help` for details.
 
+In [FIPS mode](fips.md), add `--fips` to the command. `codeartifact-token` then exits
+unless its HTTPS connections run on the FIPS module, and it refuses `--no-verify-ssl`.
+The chart requires the option when `fips.enabled` is set.
+
 Upgrade the release, then check that the compiler server pod picked up the credentials by running:
 
 ```bash

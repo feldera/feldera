@@ -702,6 +702,11 @@ pub struct ServerArgs {
     #[arg(short = 'p', long)]
     default_port: Option<u16>,
 
+    /// FIPS mode: exit unless the TLS of the pipeline runs on a FIPS validated cryptographic
+    /// module, which a build with the `fips` feature provides.
+    #[arg(long, default_value_t = false)]
+    pub fips: bool,
+
     /// Whether to enable TLS on the HTTP server.
     /// Iff true, is it allowed and required to set `https_tls_cert_path` and `https_tls_key_path`.
     #[arg(long, default_value_t = false)]
@@ -868,6 +873,9 @@ pub fn run_server(
     let mut deferred_logging = DeferredLogging::default();
     check_program_load_flag(&args, program_loader.is_some())?;
     ensure_default_crypto_provider();
+    if args.fips {
+        feldera_mtls::assert_fips_crypto_provider();
+    }
     enable_counting_panics();
 
     let bind_address = args.bind_address.clone();
@@ -1258,6 +1266,10 @@ pub fn run_server(
             .with_single_cert(cert_chain, key_der)
             .expect("server configuration should be built");
         observability::fips::log_rustls_fips_status("HTTPS server config", server_config.fips());
+        assert!(
+            !args.fips || server_config.fips(),
+            "--fips: the HTTPS server config is not FIPS compliant"
+        );
 
         server
             .listen_rustls_0_23(listener, server_config)
@@ -1740,6 +1752,10 @@ fn pipeline_peer_tls(args: &ServerArgs) -> PipelinePeerTls {
         });
     observability::fips::log_rustls_fips_status("exchange TLS server config", tls.server.fips());
     observability::fips::log_rustls_fips_status("exchange TLS client config", tls.client.fips());
+    assert!(
+        !args.fips || (tls.server.fips() && tls.client.fips()),
+        "--fips: the exchange TLS config is not FIPS compliant"
+    );
     tls
 }
 
@@ -3057,6 +3073,7 @@ pub mod test_http_helpers {
             bind_address: "127.0.0.1".to_string(),
             default_port: None,
             storage_location: None,
+            fips: false,
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
@@ -5997,6 +6014,7 @@ mod test_program_load {
             bind_address: "127.0.0.1".to_string(),
             default_port: None,
             storage_location: None,
+            fips: false,
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
@@ -8421,6 +8439,7 @@ pub mod test_http {
                 bind_address: "127.0.0.1".to_string(),
                 default_port: None,
                 storage_location: None,
+                fips: false,
                 enable_https: false,
                 https_tls_cert_path: None,
                 https_tls_key_path: None,

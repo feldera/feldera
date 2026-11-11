@@ -338,6 +338,11 @@ pub struct CommonConfig {
     #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
     pub unstable_features: Option<String>,
 
+    /// FIPS mode: exit unless the TLS of the process runs on a FIPS validated cryptographic
+    /// module, which a build with the `fips` feature provides.
+    #[arg(long, default_value_t = false)]
+    pub fips: bool,
+
     /// Whether to enable TLS on the HTTP servers (API server, compiler, runner, pipelines).
     /// Iff true, is it allowed and required to set `https_tls_cert_path` and `https_tls_key_path`.
     #[arg(long, default_value_t = false, env = "FELDERA_ENABLE_HTTPS")]
@@ -497,6 +502,9 @@ impl CommonConfig {
 
     /// Converts all paths in the `self` to absolute paths.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
+        if self.fips {
+            feldera_mtls::assert_fips_crypto_provider();
+        }
         self.ensure_testing_https_cert_key()?;
         let _ = self.https_config();
         if let Some(https_tls_cert_path) = self.https_tls_cert_path {
@@ -726,6 +734,10 @@ impl CommonConfig {
             "HTTPS server config",
             server_config.fips(),
         );
+        assert!(
+            !self.fips || server_config.fips(),
+            "--fips: the HTTPS server config is not FIPS compliant"
+        );
 
         Some(server_config)
     }
@@ -790,6 +802,10 @@ impl CommonConfig {
             _ => builder.with_no_client_auth(),
         };
         feldera_observability::fips::log_rustls_fips_status("HTTPS client config", config.fips());
+        assert!(
+            !self.fips || config.fips(),
+            "--fips: the HTTPS client config is not FIPS compliant"
+        );
         config
     }
 
@@ -878,6 +894,7 @@ impl CommonConfig {
             platform_version: "v0".to_string(),
             http_workers: 1,
             unstable_features: None,
+            fips: false,
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,

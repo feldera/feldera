@@ -32,7 +32,6 @@ feldera-observability = { workspace = true }
 # Error handling and asserts
 anyhow = { workspace = true, features = ["backtrace"] }
 thiserror = { workspace = true }
-static_assertions = { workspace = true }
 
 # Asynchronous runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "fs", "macros", "process", "io-util", "io-std", "signal"] }
@@ -42,7 +41,6 @@ async-trait = { workspace = true }
 futures-util = { workspace = true }
 
 # Encoding, decoding and formatting
-rand = { workspace = true }
 uuid = { workspace = true, features = ["v7", "std", "serde"] }
 chrono = { workspace = true, features = ["clock", "serde"] }
 serde = { workspace = true, features = ["derive"] }
@@ -127,12 +125,12 @@ fdlimit = { workspace = true }  # For: raising file descriptor limit
 fs_extra = { workspace = true }  # For: determine directory size
 nix = { workspace = true, features = ["signal"] }  # For: terminating process group
 tempfile = { workspace = true }
+toml_edit = { workspace = true }  # For: the patch tables of generated pipeline workspaces
 # Not used
 # These dependencies are not used by this crate, but by the generated pipeline crates.
 # They are provided such that they are included in the workspace `Cargo.lock`.
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
 compare = { workspace = true }
-sha2 = { workspace = true }
 sysinfo = { workspace = true }  # For: disk space usage
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
@@ -140,7 +138,8 @@ tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_mal
 
 [features]
 default = ["postgresql_embedded"]
-feldera-enterprise = []
+# The Enterprise edition runs its cryptography on the validated AWS-LC FIPS module.
+feldera-enterprise = ["fips"]
 feldera-enterprise-dev = ["feldera-enterprise"]
 runtime-version = []
 fips = ["rustls/fips", "aws-lc-rs/fips", "rcgen/fips"]
@@ -152,6 +151,7 @@ vergen-gitcl = { workspace = true, features = ["build", "cargo", "rustc", "si"] 
 
 [dev-dependencies]
 rsa = { workspace = true }
+rand = { workspace = true }
 proptest = { workspace = true }
 proptest-derive = { workspace = true }
 pg-client-config = { workspace = true }

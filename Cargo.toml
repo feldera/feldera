@@ -106,7 +106,7 @@ aws-runtime = "1.7.2"
 aws-smithy-runtime-api = "1.12.3"
 aws-smithy-types = "1.5.0"
 backoff = "0.4.0"
-aws-lc-rs = "1.18.0"
+aws-lc-rs = "1.17.1"
 rsa = { version = "0.9.10", features = ["std"] }
 rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs"] }
@@ -332,7 +332,7 @@ s2-sdk = "0.31.10"
 # See the `ensure_default_crypto_provider` function.
 rustls = "0.23.12"
 rustls-pemfile = "2.2.0"
-rustls-webpki = { version = "0.103.15", default-features = false }
+rustls-webpki = { version = "0.103.16", default-features = false }
 rustls-native-certs = "0.7.3"
 rustversion = "1.0"
 rustyline = "15.0"
@@ -350,7 +350,6 @@ serde_urlencoded = "0.7.1"
 serde_with = "3.0.0"
 serde_yaml = "0.9.34"
 serial_test = "3"
-sha2 = "0.10.8"
 signal-hook = "0.3.18"
 size-of = { version = "0.1.7", features = [
     "time-std",
@@ -362,7 +361,6 @@ smallstr = "0.3.0"
 snap = "1.1.1"
 lz4_flex = { version = "0.13.1", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
 static-files = "0.2.3"
-static_assertions = "1.1.0"
 syn = "2.0.77"
 sysinfo = "0.39.6"
 tabled = "0.22"
@@ -383,6 +381,7 @@ tokio-postgres = "0.7"
 tokio-rustls = { version = "0.26.2", default-features = false }
 tokio-stream = "0.1.18"
 tokio-util = "0.7.11"
+toml_edit = "0.22"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.20"
 tracing-log = "0.2.0"
@@ -421,3 +420,11 @@ debug = true
 
 [profile.release]
 debug = "line-tables-only"
+
+# AWS-LC FIPS 3.1.0 is the validated module (NIST #5314 static, #5298 dynamic); aws-lc-rs 1.18
+# needs AWS-LC 4, which has no certificate yet. These forks accept 1.17.1, whose FIPS crate
+# bundles 3.1.0, by gating ML-DSA behind a feature that stays off.
+[patch.crates-io]
+rustls = { git = "https://github.com/feldera/rustls", rev = "b55214c7c1fdf140d3f80d2dd5d46b855f4de044" }
+rustls-webpki = { git = "https://github.com/feldera/webpki", rev = "8e91ec885b585ae8c217dfa13ed424d140d11126" }
+async-nats = { git = "https://github.com/feldera/nats.rs", rev = "c8a646aba25c2e56b4bae35d58d20521332bc0f3" }
