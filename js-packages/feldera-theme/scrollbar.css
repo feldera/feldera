@@ -20,7 +20,7 @@
   }
 }
 
-/* The editor's sliders are drawn by Monaco; round them so they match. */
+/* Monaco draws its own scroll sliders. Round them to match the other scrollbars. */
 .monaco-scrollable-element > .scrollbar > .slider {
   border-radius: 9999px;
 }

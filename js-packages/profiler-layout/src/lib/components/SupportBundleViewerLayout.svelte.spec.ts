@@ -345,24 +345,16 @@ describe('SupportBundleViewerLayout code panel', () => {
     expect(capture.programCode).toBeUndefined()
   })
 
-  it('says that the source code is not in the bundle when it has no source files', async () => {
-    render(SupportBundleViewerLayout, baseProps())
-    await expect.poll(() => document.body.textContent).toContain('Profile does not contain the source code')
-    expect(document.querySelector('[role="tab"]')).toBeNull()
-  })
-
   it('opens the first file when the bundle has no SQL program', async () => {
     render(SupportBundleViewerLayout, { ...baseProps(), sourceFiles: [udf] })
     await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
     await expect.poll(selectedTab).toBe('udf.rs')
-    expect(document.body.textContent).not.toContain('Profile does not contain the source code')
   })
 
   it('shows the files when a bundle with source files follows one without', async () => {
     const { rerender } = render(SupportBundleViewerLayout, baseProps())
     await rerender({ sourceFiles: [program, udf] })
     await expect.poll(() => capture.sourceTab?.file).toEqual(program)
-    expect(document.body.textContent).not.toContain('Profile does not contain the source code')
   })
 
   it('selects node ranges only in the SQL program', async () => {
@@ -519,5 +511,150 @@ describe('SupportBundleViewerLayout Connectors tab', () => {
     await expect.element(page.getByTestId('btn-icon-input-errors').first()).toBeInTheDocument()
     ;(page.getByTestId('btn-icon-input-errors').first().element() as HTMLElement).click()
     await expect.element(page.getByText('bad row one').first()).toBeInTheDocument()
+  })
+})
+
+describe('SupportBundleViewerLayout without parts of the bundle', () => {
+  const program = { name: 'program.sql', language: 'sql', code: 'select 1' } as const
+  const emptyProgram = { name: 'program.sql', language: 'sql', code: ' \n' } as const
+  // `stats.json` with one known global metric.
+  const someGlobalMetrics = { state: 'Running' }
+
+  // Only the code panel has `role="tab"`. The analysis tabs are radios.
+  const fileTabCount = () => document.querySelectorAll('[role="tab"]').length
+  const codePaneResizer = (container: HTMLElement) =>
+    container.querySelector('.pane-divider-vertical[data-pane-resizer]')
+  const analysisTab = (container: HTMLElement, id: string) => {
+    const tab = container.querySelector<HTMLInputElement>(`input[value="${id}"]`)
+    if (!tab) {
+      throw new Error(`${id} tab not found`)
+    }
+    return tab
+  }
+  const selectedAnalysisTab = (container: HTMLElement) =>
+    container.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value
+  // All header notices start like this, so a count above one means two notices were joined.
+  const noticeCount = () => (document.body.textContent ?? '').split('This bundle has').length - 1
+
+  describe('code panel', () => {
+    it.each([
+      ['the normal layout', false],
+      ['the SQL full-height layout', true]
+    ])('is not shown in %s when the bundle has no source files', async (_, sqlPanelFullHeight) => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profileData: someProfile,
+        sqlPanelFullHeight
+      })
+      // Throws if the layout did not render the analysis tabs.
+      analysisTab(container, 'Logs')
+      expect(fileTabCount()).toBe(0)
+      expect(codePaneResizer(container)).toBeNull()
+    })
+
+    it('is not shown when all source files are empty', async () => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        sourceFiles: [emptyProgram]
+      })
+      analysisTab(container, 'Logs')
+      expect(fileTabCount()).toBe(0)
+      expect(codePaneResizer(container)).toBeNull()
+    })
+
+    it('is shown with a resizer when the bundle has code', async () => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        sourceFiles: [emptyProgram, { ...program, name: 'udf.rs', language: 'rust' }]
+      })
+      await expect.poll(fileTabCount).toBe(2)
+      expect(codePaneResizer(container)).not.toBeNull()
+    })
+
+    it('appears when a bundle with code follows one without', async () => {
+      const { container, rerender } = render(SupportBundleViewerLayout, baseProps())
+      expect(codePaneResizer(container)).toBeNull()
+      await rerender({ sourceFiles: [program] })
+      await expect.poll(fileTabCount).toBe(1)
+      expect(codePaneResizer(container)).not.toBeNull()
+    })
+  })
+
+  describe('Metrics tab', () => {
+    it('is disabled when the bundle has no profile and no global metrics', () => {
+      const { container } = render(SupportBundleViewerLayout, baseProps())
+      expect(analysisTab(container, 'Metrics').disabled).toBe(true)
+    })
+
+    it.each([
+      ['a profile', { profileData: someProfile }],
+      ['only global metrics', { globalMetrics: someGlobalMetrics }]
+    ])('is enabled when the bundle has %s', (_, props) => {
+      const { container } = render(SupportBundleViewerLayout, { ...baseProps(), ...props })
+      expect(analysisTab(container, 'Metrics').disabled).toBe(false)
+    })
+
+    it('is not selected when disabled, the first enabled tab is', async () => {
+      // Connectors, Health and Config have no data either, so Logs is the first enabled tab.
+      const { container } = render(SupportBundleViewerLayout, baseProps())
+      await expect.poll(() => selectedAnalysisTab(container)).toBe('Logs')
+    })
+
+    it('is selected by default when it is enabled', async () => {
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profileData: someProfile
+      })
+      await expect.poll(() => selectedAnalysisTab(container)).toBe('Metrics')
+    })
+  })
+
+  describe('header notice', () => {
+    it.each([
+      [
+        'no profile, no metrics, no code',
+        {},
+        'This bundle has no circuit profile and no pipeline code, so the dataflow graph, metrics and code are unavailable.'
+      ],
+      [
+        'no profile, no code, but global metrics',
+        { globalMetrics: someGlobalMetrics },
+        'This bundle has no circuit profile and no pipeline code, so the dataflow graph and code are unavailable.'
+      ],
+      [
+        'no profile, no metrics, but code',
+        { sourceFiles: [program] },
+        'This bundle has no circuit profile, so the dataflow graph and metrics are unavailable.'
+      ],
+      [
+        'no profile, but global metrics and code',
+        { globalMetrics: someGlobalMetrics, sourceFiles: [program] },
+        'This bundle has no circuit profile, so the dataflow graph is unavailable.'
+      ],
+      [
+        'a profile, but no code',
+        { profileData: someProfile },
+        'This bundle has no pipeline code, so the code panel is unavailable.'
+      ],
+      [
+        'a profile and only empty code',
+        { profileData: someProfile, sourceFiles: [emptyProgram] },
+        'This bundle has no pipeline code, so the code panel is unavailable.'
+      ]
+    ])('for a bundle with %s is a single message', async (_, props, notice) => {
+      render(SupportBundleViewerLayout, { ...baseProps(), ...props })
+      await expect.element(page.getByText(notice, { exact: true })).toBeInTheDocument()
+      expect(noticeCount()).toBe(1)
+    })
+
+    it('is not shown when the bundle has a profile and code', async () => {
+      render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profileData: someProfile,
+        sourceFiles: [program]
+      })
+      await expect.poll(fileTabCount).toBe(1)
+      expect(noticeCount()).toBe(0)
+    })
   })
 })

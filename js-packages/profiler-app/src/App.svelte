@@ -142,8 +142,8 @@
 {/snippet}
 
 <div class="flex h-full w-full flex-col font-dm-sans relative" data-theme="feldera-modern-theme">
-  <!-- Thin bar at the top of the page while a bundle loads or the diagram is drawn, as in the
-       web-console profile viewer. It stays mounted, so that it does not shift the layout. -->
+  <!-- Thin bar at the top of the page while a bundle loads or the diagram computes its layout,
+       as in the web-console profile viewer. -->
   <div
     class="pointer-events-none absolute inset-x-0 top-0 z-50 px-4 transition-opacity {isLoading ||
     isRendering

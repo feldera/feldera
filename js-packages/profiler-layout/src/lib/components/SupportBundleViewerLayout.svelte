@@ -124,9 +124,9 @@
   const hasProfile = $derived(profileData !== undefined)
   // Without a profile, the Metrics tab can only show the global stats from `stats.json`.
   const hasMetrics = $derived(hasProfile || buildGlobalMetrics(globalMetrics).length > 0)
-  // An empty `program.sql` still gets a tab, but a panel with only empty files shows nothing.
+  // `processProfileFiles` gives an empty `program.sql` a tab. Only empty files count as no code.
   const hasSourceCode = $derived(sourceFiles.some((f) => f.code.trim() !== ''))
-  // The header notice about the missing parts of the bundle. The first row that matches wins.
+  // The header notice about the missing parts of the bundle. The first matching row gives the text.
   const missingDataNotice = $derived(
     [
       {
@@ -157,7 +157,7 @@
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
-  // The resizers cannot hide the code panel completely.
+  // In percent. The resizers cannot hide the code panel completely.
   const codePaneMinSize = 15
   const belowGraphPaneDefaultSize = 100 - graphPaneDefaultSize
 
@@ -700,7 +700,7 @@
 {/snippet}
 
 <!-- ══ Layout: normal (graph top, SQL + tabs bottom) ══════════════════════
-     Without code, the SQL full-height layout has nothing to show at full height. -->
+     A bundle without code also uses this layout when sqlPanelFullHeight is set. -->
 {#if !sqlPanelFullHeight || !hasSourceCode}
   <PaneGroup direction="vertical" class="!overflow-visible h-full">
     {#if hasProfile}
