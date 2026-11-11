@@ -1268,6 +1268,8 @@ class Measurements {
     readonly measurements: OMap<string, Array<PropertyValue>> = new OMap();
     // How each metric folds over the nodes of a region; see `append`.
     private readonly aggregations: OMap<string, AggregationMode> = new OMap();
+    // The result of `getMetrics`. Null when a metric was added after the last call.
+    private sortedMetrics: Array<string> | null = null;
 
     constructor(private worker_count: number) { }
 
@@ -1284,20 +1286,24 @@ class Measurements {
             for (let i = 0; i < this.worker_count; i++)
                 arr[i] = new MissingValue();
             this.measurements.set(m.property, arr);
+            this.sortedMetrics = null;
         } else {
             arr = meas.unwrap();
         }
         arr[worker] = m.value.unwrap();
     }
 
-    getMetrics(): Iterable<string> {
-        let result = this.measurements.keys();
-        if (MetricDescriptions.known()) {
-            let data = [...result];
-            data.sort((c1, c2) => MetricDescriptions.getMetricIndex(c1) - MetricDescriptions.getMetricIndex(c2));
-            return data;
+    /** The metrics in the order of the metric descriptions, or in insertion order when there are
+     * no descriptions. The descriptions must not change after the first call. */
+    getMetrics(): ReadonlyArray<string> {
+        if (this.sortedMetrics === null) {
+            const metrics = [...this.measurements.keys()];
+            if (MetricDescriptions.known()) {
+                metrics.sort((c1, c2) => MetricDescriptions.getMetricIndex(c1) - MetricDescriptions.getMetricIndex(c2));
+            }
+            this.sortedMetrics = metrics;
         }
-        return result;
+        return this.sortedMetrics;
     }
 
     /** How the metric named `key` is aggregated, if this set holds a reading for it. */
@@ -1324,6 +1330,7 @@ class Measurements {
             if (existing.isNone()) {
                 this.measurements.set(key, [...values]);
                 this.aggregations.set(key, other.aggregationOf(key));
+                this.sortedMetrics = null;
             } else {
                 let arr = existing.unwrap();
                 assert(arr.length === values.length, "Mismatched measurement lengths");
