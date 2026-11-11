@@ -193,6 +193,8 @@ export class Cytograph {
     readonly edges: Array<GraphEdge>;
     // Maps edges ids in the underlying graph to edges ids in the drawn graph
     readonly edgeMap: Map<string, string>;
+    // How many edges of `edges` go from a source to a target, by "source->target".
+    private readonly edgeCounts: Map<string, number> = new Map();
 
     constructor(readonly graph: Graph<NodeId>) {
         this.nodes = [];
@@ -203,6 +205,12 @@ export class Cytograph {
 
     addNode(node: GraphNode) {
         this.nodes.push(node);
+    }
+
+    addEdge(edge: GraphEdge) {
+        this.edges.push(edge);
+        const key = edge.source + "->" + edge.target;
+        this.edgeCounts.set(key, (this.edgeCounts.get(key) ?? 0) + 1);
     }
 
     /** Map an edge in the real underlying graph to an edge in the displayed graph. */
@@ -221,13 +229,8 @@ export class Cytograph {
     createEdge(source: string, target: string, back: boolean): GraphEdge {
         // Must generate a unique ID for each edge; source and target and not enough
         // to distinguish two edges, since this is in general a multigraph.
-        let identical_count = 0;
-        for (const e of this.edges) {
-            if (e.source === source && e.target === target) {
-                identical_count++;
-            }
-        }
         let id = source + "->" + target;
+        const identical_count = this.edgeCounts.get(id) ?? 0;
         if (identical_count > 0) {
             id += ":" + (identical_count + 1);
         }
@@ -378,7 +381,7 @@ export class Cytograph {
             }
 
             let realEdge = result.createEdge(sourceNode.id, targetNode.id, edge.back);
-            result.edges.push(realEdge);
+            result.addEdge(realEdge);
             result.mapEdge(originalEdge, realEdge);
         }
         return result;
