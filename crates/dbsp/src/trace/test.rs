@@ -3533,6 +3533,110 @@ fn file_val_batch_filter_follows_the_rate() {
     );
 }
 
+/// With the experimental `evict_bloom_filter` dev tweak on, high memory
+/// pressure drops one module from a large file batch's Bloom filter, and a
+/// batch built afterwards gets one module less from the start. Both batches
+/// find every key.
+///
+/// `rate` sets how many modules a filter has, `modules`: four at 1e-4, one at
+/// 0.1. With one, the batch built under pressure has no Bloom filter at all.
+/// `keys` must make the filter large enough to be enrolled.
+fn assert_bloom_evicts_and_builds_fewer(rate: f64, keys: u64, modules: u32) {
+    const GIB: u64 = 1 << 30;
+    let key = |i: u64| i * 7919;
+    let build = move |factories: &FileWSetFactories<DynData, DynZWeight>| {
+        let mut builder = <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+            factories,
+            keys as usize,
+            0,
+        );
+        for i in 0..keys {
+            let weight: ZWeight = 1;
+            builder.push_time_diff(&(), weight.erase());
+            builder.push_key(key(i).erase());
+        }
+        builder.done()
+    };
+    let assert_all_keys = move |batch: &FileWSet<DynData, DynZWeight>, when: &str| {
+        for i in (0..keys).step_by(997) {
+            let mut cursor = batch.cursor();
+            assert!(
+                cursor.seek_key_exact(key(i).erase(), None),
+                "lost key {} {when}",
+                key(i)
+            );
+        }
+    };
+
+    // 1 GiB of a 10 GiB limit is low pressure.
+    with_mock_process_rss(GIB, || {
+        let dir = tempdir().expect("temp dir");
+        let mut config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(dir.path())
+            .with_max_rss_bytes(Some(10 * GIB));
+        config.dev_tweaks.evict_bloom_filter = Some(true);
+        config.dev_tweaks.enable_roaring = Some(false);
+        set_false_positive_rate(&mut config, rate);
+        run_in_circuit_with_storage_config(config, move || {
+            let factories = <FileWSetFactories<DynData, DynZWeight>>::new::<u64, (), ZWeight>();
+            let before = build(&factories);
+            assert_eq!(before.membership_filter_kind(), FilterKind::Bloom);
+            let full = before.membership_filter_stats().size_byte;
+            assert!(
+                full >= crate::storage::bloom_filter_manager::MIN_EVICTABLE_BYTES,
+                "a filter of {full} bytes is too small to enroll"
+            );
+
+            // 9.2 GiB of 10 GiB is past the 90% where High starts.
+            crate::circuit::runtime::tests::set_mock_process_rss_bytes(92 * GIB / 10);
+            let runtime = Runtime::runtime().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while runtime.bloom_filter_module_max() == Some(modules) {
+                assert!(Instant::now() < deadline, "the module max never dropped");
+                sleep(Duration::from_millis(100));
+            }
+            assert_eq!(runtime.bloom_filter_module_max(), Some(modules - 1));
+            // Back to low pressure, so the module max stays where it is.
+            crate::circuit::runtime::tests::set_mock_process_rss_bytes(GIB);
+
+            let trimmed = before.membership_filter_stats().size_byte;
+            assert!(
+                trimmed < full,
+                "the filter kept {trimmed} bytes of {full} after the module max dropped"
+            );
+            assert_all_keys(&before, "after eviction");
+
+            let after = build(&factories);
+            if modules == 1 {
+                assert_eq!(
+                    after.membership_filter_kind(),
+                    FilterKind::None,
+                    "a batch built at a module max of 0 has a Bloom filter"
+                );
+            } else {
+                let built = after.membership_filter_stats().size_byte;
+                assert!(
+                    built < full,
+                    "a batch built under pressure has {built} bytes of filter, as many as the {full} before"
+                );
+            }
+            assert_all_keys(&after, "in a batch built under pressure");
+        });
+    });
+}
+
+#[test]
+fn bloom_filter_modules_evict_and_new_batches_build_fewer_at_1e_4() {
+    // About 1.4 MiB of filter at four modules.
+    assert_bloom_evicts_and_builds_fewer(1e-4, 600_000, 4);
+}
+
+#[test]
+fn bloom_filter_module_evicts_and_new_batches_build_none_at_0_1() {
+    // About 1.1 MiB of filter at one module.
+    assert_bloom_evicts_and_builds_fewer(1e-1, 1_900_000, 1);
+}
+
 /// Retention by `LastN`, `TopN` and `BottomN`: every value satisfying the filter
 /// survives, along with a bounded number that do not.
 ///

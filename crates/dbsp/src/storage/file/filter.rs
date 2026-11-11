@@ -18,7 +18,7 @@ pub(crate) use roaring::TouchedWindowCounter;
 pub use roaring::TrackingRoaringBitmap;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
 
-pub(crate) use bloom::{rate_can_evict, resident_modules};
+pub(crate) use bloom::{modules_for_rate, rate_can_evict, rate_for_modules, resident_modules};
 
 /// The configured false positive rate, which decides both how new filters are
 /// written and how many modules an existing filter keeps resident.
@@ -337,11 +337,15 @@ where
             }
         });
 
+        // The configured rate decides whether there are Bloom filters at all.
+        // Under memory pressure a new filter is built for a coarser rate, with
+        // fewer modules, or for none, but that never switches it to roaring.
+        let build_rate = Runtime::bloom_build_false_positive_rate();
         match (bloom_false_positive_rate, filter_plan) {
-            (Some(rate), Some(filter_plan)) => {
-                filter_plan.preferred_filter(estimated_keys, enable_roaring, rate)
+            (Some(_), Some(filter_plan)) => {
+                filter_plan.preferred_filter(estimated_keys, enable_roaring, build_rate)
             }
-            (Some(rate), None) => BatchKeyFilter::new_bloom(estimated_keys, rate),
+            (Some(_), None) => BatchKeyFilter::new_bloom(estimated_keys, build_rate),
             (None, Some(filter_plan)) if filter_plan.can_use_roaring(enable_roaring) => {
                 debug!("filter predictor: Bloom disabled, roaring available, using roaring bitmap",);
                 Some(BatchKeyFilter::new_roaring_u32(filter_plan.min.as_ref()))

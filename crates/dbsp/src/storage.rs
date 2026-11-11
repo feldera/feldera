@@ -4,6 +4,7 @@
 //! access to storage, a middle layer, [buffer_cache], that implements
 //! buffering, and an upper layer, [mod@file], that implements data access.
 pub mod backend;
+pub(crate) mod bloom_filter_manager;
 pub mod buffer_cache;
 pub mod dirlock;
 pub mod file;
