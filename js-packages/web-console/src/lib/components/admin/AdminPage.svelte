@@ -39,13 +39,21 @@
   // Owner comes from deploy-time configuration, so this list is read-only: the
   // way to change it is to change the deployment. Owner-only, like the endpoint
   // behind it.
+  type OwnerTrust = { issuer: string; subject: string; audience?: string | null }
   const configuredOwners = asyncReadable<
     | {
         owners: string[]
-        owner_trusts: { issuer: string; subject: string; audience?: string | null }[]
+        owner_trusts: OwnerTrust[]
       }
     | undefined
   >(undefined, getConfiguredOwners)
+  const trustKey = (trust: OwnerTrust) =>
+    JSON.stringify([trust.issuer, trust.subject, trust.audience ?? null])
+  // The lists come from deploy-time config without a duplicate check. Drop duplicates.
+  const owners = $derived([...new Set($configuredOwners?.owners ?? [])])
+  const ownerTrusts = $derived([
+    ...new Map(($configuredOwners?.owner_trusts ?? []).map((t) => [trustKey(t), t])).values()
+  ])
 </script>
 
 {#snippet section(title: string | Snippet, description: string, body: Snippet)}
@@ -124,7 +132,7 @@
       <div class="flex flex-col gap-3">
         <div class="flex flex-col gap-1">
           <div class="text-lg font-medium">Users</div>
-          {#each $configuredOwners?.owners ?? [] as owner (owner)}
+          {#each owners as owner (owner)}
             <div class=""><code>{owner}</code></div>
           {:else}
             <div class="">None configured</div>
@@ -132,7 +140,7 @@
         </div>
         <div class="flex flex-col gap-1">
           <div class="text-lg font-medium">Workloads (OIDC trust)</div>
-          {#each $configuredOwners?.owner_trusts ?? [] as trust (trust.issuer + trust.subject)}
+          {#each ownerTrusts as trust (trustKey(trust))}
             <div class="">
               <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
                 · aud=<code>{trust.audience}</code>{/if}
