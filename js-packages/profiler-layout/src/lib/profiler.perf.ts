@@ -141,6 +141,30 @@ function mountProfiler(circuit: SyntheticCircuit) {
   }
 }
 
+/** Time the hover highlight of the source operator, at the current zoom. The source operator is
+ *  upstream of most of the circuit, so its highlight colors the most edges. */
+async function measureHover(mounted: ReturnType<typeof mountProfiler>, name: string) {
+  mounted.diagram.search(CIRCUIT.sourceOperatorId)
+  await afterNextPaint()
+  const node = mounted.cy().$id(CIRCUIT.sourceOperatorId)
+  const { x, y } = node.renderedPosition()
+  return measure(name, {
+    warmups: 5,
+    runs: 25,
+    run: async () => {
+      mounted.moveMouse(x, y)
+      await afterNextPaint()
+    },
+    teardown: async () => {
+      // The search above already marked the node, so the report is what shows the hover.
+      expect(mounted.reported.hoveredNodes.at(-1)).toBe(CIRCUIT.sourceOperatorId)
+      // The bottom right corner is empty, and away from the minimap at the top left.
+      mounted.moveMouse(DIAGRAM_SIZE.width - 2, DIAGRAM_SIZE.height - 2)
+      await afterNextPaint()
+    }
+  })
+}
+
 describe('profiler performance', () => {
   it('measures the parsing of a support bundle', async () => {
     const bundle = await syntheticBundle(LARGE_CIRCUIT)
@@ -231,28 +255,7 @@ describe('profiler performance', () => {
   it('measures the hover highlight of a node', async () => {
     const mounted = mountProfiler(CIRCUIT)
     await mounted.loaded
-    // The source operator is upstream of most of the circuit, so its highlight colors the most edges.
-    mounted.diagram.search(CIRCUIT.sourceOperatorId)
-    await afterNextPaint()
-    const node = mounted.cy().$id(CIRCUIT.sourceOperatorId)
-    const { x, y } = node.renderedPosition()
-    results.push(
-      await measure('hover node (mousemove until highlight is painted)', {
-        warmups: 5,
-        runs: 25,
-        run: async () => {
-          mounted.moveMouse(x, y)
-          await afterNextPaint()
-        },
-        teardown: async () => {
-          // The search above already marked the node, so the report is what shows the hover.
-          expect(mounted.reported.hoveredNodes.at(-1)).toBe(CIRCUIT.sourceOperatorId)
-          // The bottom right corner is empty, and away from the minimap at the top left.
-          mounted.moveMouse(DIAGRAM_SIZE.width - 2, DIAGRAM_SIZE.height - 2)
-          await afterNextPaint()
-        }
-      })
-    )
+    results.push(await measureHover(mounted, 'hover node (mousemove until highlight is painted)'))
     mounted.unmount()
   })
 
@@ -260,6 +263,7 @@ describe('profiler performance', () => {
     const mounted = mountProfiler(CIRCUIT)
     await mounted.loaded
     const cy = mounted.cy()
+    const openZoom: number = cy.zoom()
     // At fit view, all nodes are on screen. A pan by one pixel makes cytoscape draw a frame. The
     // direction alternates, so the view stays in place.
     // When no element changed in the last 250 ms, cytoscape draws a frame from a cache of a few large
@@ -301,6 +305,14 @@ describe('profiler performance', () => {
     results.push(
       await measureFitViewFrame(
         `frame at fit view, ${EXPANDED_REGIONS} regions expanded (pan 1 px)`
+      )
+    )
+    // More edges are drawn than in the collapsed diagram, so the hover colors more edges.
+    cy.zoom(openZoom)
+    results.push(
+      await measureHover(
+        mounted,
+        `hover node, ${EXPANDED_REGIONS} regions expanded (mousemove until highlight is painted)`
       )
     )
     expect(mounted.reported.errors).toEqual([])
