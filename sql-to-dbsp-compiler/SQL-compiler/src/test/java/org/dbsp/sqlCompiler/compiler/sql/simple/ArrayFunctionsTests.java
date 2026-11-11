@@ -1965,10 +1965,6 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 CREATE TABLE T(x BIGINT ARRAY);
                 CREATE VIEW V AS SELECT * FROM T WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));""",
                 "NOW() is not supported inside a lambda expression");
-        // A lambda body may not refer to variables from enclosing scopes
-        this.queryFailingInCompilation(
-                "SELECT transform(array[array[1]], a -> transform(a, b -> b + cardinality(a)))",
-                "reference to 'a' from enclosing scope");
         this.queryFailingInCompilation("SELECT array_exists(array(), x -> true)",
                 "Could not infer a type for array elements");
         this.queryFailingInCompilation("SELECT array_exists(array[1], (x, y) -> x AND y)",

@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Utilities;
 
 /** Resolves the variable references by pointing each variable reference
  * to a declaration that introduced the variable. */
@@ -52,6 +53,9 @@ public class ResolveReferences extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPParameter parameter) {
+        IDBSPDeclaration previous = this.substitutionContext.get(parameter.name);
+        Utilities.enforce(previous == null,
+                () -> "Parameter " + parameter.name + " shadows a declaration of an enclosing scope");
         this.substitutionContext.substitute(parameter.name, parameter);
         return VisitDecision.CONTINUE;
     }

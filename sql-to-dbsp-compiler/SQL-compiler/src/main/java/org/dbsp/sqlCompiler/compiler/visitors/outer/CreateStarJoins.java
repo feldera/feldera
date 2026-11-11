@@ -202,7 +202,7 @@ public class CreateStarJoins extends Passes {
             DBSPClosureExpression project = var.deref().field(0).closure(var);
             DBSPClosureExpression keyPart = project.applyAfter(this.compiler, closure, Maybe.YES);
             // Substitute data fields with some "constants"
-            DBSPVariablePath keyVar = keyPart.parameters[0].asVariable();
+            DBSPVariablePath keyVar = keyPart.parameters[0].getType().var();
             DBSPExpression leftData = new NoExpression(keyPart.parameters[1].getType());
             DBSPExpression rightData = new NoExpression(keyPart.parameters[2].getType());
             DBSPClosureExpression keyToKeyFunction = keyPart
