@@ -235,9 +235,9 @@ export function installChipButtons(
     // pointer moves. Without this, the clicked region keeps its icon, which now shows the wrong action.
     cy.on('layoutstop', () => showCount());
 
-    // `hitTestChips` runs for each pointer move, and the boxes of all nodes take milliseconds to get.
-    // So keep them until one of them changes. Cytoscape emits `bounds` when the box of an element
-    // changes.
+    // `hitTestChips` runs on each pointer move, and a read of the boxes of all nodes takes
+    // milliseconds. So `chipAtPoint` keeps the boxes until a node is added or removed, or until the
+    // box of a node changes. Cytoscape emits `bounds` when the box of an element changes.
     let boxes: NodeWithBox[] | null = null;
     cy.on('add remove bounds', 'node', () => {
         boxes = null;

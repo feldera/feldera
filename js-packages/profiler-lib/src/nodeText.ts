@@ -125,7 +125,7 @@ export function paintTextRuns(
     context.restore();
 }
 
-/** The size on screen, in CSS pixels, of a `fontSize` font painted on `context`. The scale of the
+/** The size on screen, in CSS pixels, of a font of size `fontSize` painted on `context`. The scale of the
  *  context includes the zoom and the device pixel ratio. Cytoscape also paints nodes into cached
  *  layer images, at the scale of the image, so the scale comes from the context and not from the
  *  zoom. */

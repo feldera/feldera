@@ -6,9 +6,9 @@
  *
  * The graph pane is rendered inside `{#if hasProfile}`; the analysis pane below it is
  * unconditional. PaneForge orders panes by registration time unless each pane declares an
- * explicit `order`. When a profile loads *after* the layout has mounted (profile
+ * explicit `order`. When a profile loads after the layout has mounted (profile
  * undefined -> defined), the graph pane registers second and, without `order`, PaneForge
- * treats it as the *lower* pane. The resizer then drives the panes backwards, so moving the
+ * treats it as the lower pane. The resizer then drives the panes backwards, so moving the
  * divider down shrinks the top pane instead of growing it - the reversal the user reported.
  *
  * The test drives the actual resize behavior rather than an internal-order proxy: it presses
@@ -192,6 +192,55 @@ describe('SupportBundleViewerLayout source navigation', () => {
     click('operator')
     click('internal')
     expect(highlighted).toEqual([ranges.operator, []])
+  })
+})
+
+describe('SupportBundleViewerLayout diagram metric', () => {
+  const option = (id: string) => ({ id, label: id })
+  // runtime_percent is the diagram default and is not a basic metric.
+  const metrics = ['runtime_percent', 'runtime_seconds', 'spine_storage_size_bytes'].map(option)
+
+  const mount = async (selected: string) => {
+    capture.callbacks = undefined
+    capture.profile = { getSourceRanges: () => [] } as never
+    capture.selectedMetrics = []
+    const { container } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profile: someProfile
+    })
+    await expect.poll(() => capture.callbacks).toBeDefined()
+    capture.callbacks!.onMetricsChanged(metrics, selected)
+    const advanced = container.querySelector<HTMLInputElement>('input[name="showAdvancedMetrics"]')
+    if (!advanced) {
+      throw new Error('the "Show advanced" switch is not rendered')
+    }
+    const toggleAdvanced = async () => {
+      const before = advanced.checked
+      advanced.click()
+      await expect.poll(() => advanced.checked).toBe(!before)
+    }
+    const diagramMetric = () => capture.selectedMetrics.at(-1)
+    return { toggleAdvanced, diagramMetric }
+  }
+
+  it('keeps the diagram metric when the advanced metrics are shown and hidden', async () => {
+    const { toggleAdvanced, diagramMetric } = await mount('runtime_percent')
+    await expect.poll(diagramMetric).toBe('runtime_seconds')
+    capture.selectedMetrics = []
+    await toggleAdvanced()
+    await toggleAdvanced()
+    await toggleAdvanced()
+    // A toggle that changed the metric would restyle every node of the diagram.
+    expect(capture.selectedMetrics.filter((id) => id !== 'runtime_seconds')).toEqual([])
+  })
+
+  it('selects the runtime when the advanced metrics are hidden while one of them is selected', async () => {
+    const { toggleAdvanced, diagramMetric } = await mount('runtime_percent')
+    await toggleAdvanced()
+    capture.callbacks!.onMetricsChanged(metrics, 'runtime_percent')
+    await expect.poll(diagramMetric).toBe('runtime_percent')
+    await toggleAdvanced()
+    await expect.poll(diagramMetric).toBe('runtime_seconds')
   })
 })
 
@@ -516,7 +565,8 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
   }
   const selectedAnalysisTab = (container: HTMLElement) =>
     container.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value
-  // All header notices start like this, so a count above one means two notices were joined.
+  // All header notices start with "This bundle has", so a count above one means that the layout
+  // joined two notices.
   const noticeCount = () => (document.body.textContent ?? '').split('This bundle has').length - 1
 
   describe('code panel', () => {
@@ -577,7 +627,7 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
       expect(analysisTab(container, 'Metrics').disabled).toBe(false)
     })
 
-    it('is not selected when disabled, the first enabled tab is', async () => {
+    it('is not selected when disabled, and the first enabled tab is selected', async () => {
       // Connectors, Health and Config have no data either, so Logs is the first enabled tab.
       const { container } = render(SupportBundleViewerLayout, baseProps())
       await expect.poll(() => selectedAnalysisTab(container)).toBe('Logs')
@@ -628,6 +678,24 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
       render(SupportBundleViewerLayout, { ...baseProps(), ...props })
       await expect.element(page.getByText(notice, { exact: true })).toBeInTheDocument()
       expect(noticeCount()).toBe(1)
+    })
+
+    it('for an unreadable profile collapses the graph panel and gives the reason on hover', async () => {
+      const profileError = 'Failed to read the circuit profile: unknown version'
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profileError,
+        sourceFiles: [program]
+      })
+      const notice = page.getByText(
+        'This bundle has an unreadable circuit profile, so the dataflow graph and metrics are unavailable.',
+        { exact: true }
+      )
+      await expect.element(notice).toHaveAttribute('title', profileError)
+      expect(noticeCount()).toBe(1)
+      // Only a shown graph panel has the resizer above the analysis panel.
+      expect(container.querySelector('.pane-divider-horizontal')).toBeNull()
+      expect(document.body.textContent).not.toContain(profileError)
     })
 
     it('is not shown when the bundle has a profile and code', async () => {

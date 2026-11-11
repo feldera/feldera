@@ -170,7 +170,7 @@
     matchCursor = positiveMod(matchCursor, n)
     const target = ids[matchCursor]
     if (!showAttributesView) {
-      // The row of the hit is mounted only after the list scrolls to it.
+      // The list mounts the row of the hit only after it scrolls to that row.
       const rowIndex = searchTargets.findIndex((t) => t.id === target)
       topNodesTable?.scrollToRow(rowIndex)
       return { current: matchCursor + 1, total: n }

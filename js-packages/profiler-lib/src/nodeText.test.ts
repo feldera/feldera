@@ -11,8 +11,8 @@ import {
 import { installNodeText, nodeTextRuns, paintTextRuns, textCenter, type TextRun } from './nodeText.js'
 
 /** A context that records what it was asked to draw. Each character is one unit wide, and a run set
- *  in a heavier weight twice that, so run widths are readable in the assertions. */
-/** `scale` is the scale of the context, from graph coordinates to device pixels. */
+ *  in a heavier weight twice that, so run widths are readable in the assertions.
+ *  `scale` is the scale of the context, from graph coordinates to device pixels. */
 const fakeContext = (scale = 1) => ({
     font: '',
     fillStyle: '' as string,

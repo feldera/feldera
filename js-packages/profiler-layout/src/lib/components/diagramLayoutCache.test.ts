@@ -31,12 +31,12 @@ const DIAMOND = {
   }
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
+// biome-ignore lint/suspicious/noExplicitAny: the harness returns an untyped cytoscape instance
 const positions = (cy: any) => cy.nodes().map((node: any) => [node.id(), node.position()])
 
 /** True if ELK laid out the diagram. `cytoscape-elk` keeps its input for ELK in the scratch data of
  *  each node, and the preset layout of a cache hit does not. */
-// biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
+// biome-ignore lint/suspicious/noExplicitAny: the harness returns an untyped cytoscape instance
 const laidOutByElk = (cy: any) => cy.nodes()[0].scratch('elk') !== undefined
 
 describe('the layout cache', () => {
@@ -50,7 +50,7 @@ describe('the layout cache', () => {
     const second = await mountDiagram('light', DIAMOND)
     expect(laidOutByElk(second.cy)).toBe(false)
     expect(positions(second.cy)).toEqual(elkPositions)
-    // The progress message comes and goes as it does for an ELK layout.
+    // The diagram shows and removes the progress message as it does for an ELK layout.
     expect(second.reported.messages).toEqual(elkMessages)
     second.unmount()
   })
