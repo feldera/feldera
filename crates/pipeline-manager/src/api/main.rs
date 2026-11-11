@@ -1,5 +1,6 @@
 use crate::api::demo::{Demo, demos_without_rust_udfs, read_demos_from_directories};
 use crate::api::endpoints;
+use crate::api::error::ApiError;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::IssuerJwkCache;
 use crate::config::{ApiServerConfig, BasePath, CommonConfig};
@@ -816,9 +817,10 @@ fn json_config(limit: usize) -> web::JsonConfig {
         .limit(limit)
         .error_handler(|err, _req| match err {
             JsonPayloadError::OverflowKnownLength { .. } | JsonPayloadError::Overflow { .. } => {
-                actix_web::error::ErrorPayloadTooLarge(format!(
-                    "{err} Raise the limit with --max-json-body-bytes or FELDERA_MAX_JSON_BODY_BYTES."
-                ))
+                ApiError::JsonBodyTooLarge {
+                    error: err.to_string(),
+                }
+                .into()
             }
             err => err.into(),
         })
@@ -2070,7 +2072,11 @@ mod tests {
                 "limit {limit:?}, sent {sent:?}: {text}"
             );
             if expected_status == 413 {
-                assert!(text.contains("FELDERA_MAX_JSON_BODY_BYTES"), "{text}");
+                // The body is the `ErrorResponse` JSON that the clients read.
+                let error: serde_json::Value = serde_json::from_str(&text).expect(&text);
+                assert_eq!(error["error_code"], "JsonBodyTooLarge", "{text}");
+                let message = error["message"].as_str().unwrap();
+                assert!(message.contains("FELDERA_MAX_JSON_BODY_BYTES"), "{text}");
             }
         }
     }

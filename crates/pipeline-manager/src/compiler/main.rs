@@ -517,6 +517,13 @@ async fn upload_program_info(
     })))
 }
 
+/// JSON body settings of the compiler server. `/validate_program` gets the program from the API
+/// server, which already applied its own limit (`--max-json-body-bytes`), so there is no second
+/// limit here. The actix-web default of 2 MiB would reject programs that the API server accepts.
+fn json_config() -> web::JsonConfig {
+    web::JsonConfig::default().limit(usize::MAX)
+}
+
 /// Validates a SQL program by running the SQL compiler without persisting
 /// anything or building the Rust binary. Returns the derived schema and
 /// connectors, and, when `ir` is set in the request, the program IR.
@@ -1103,6 +1110,7 @@ async fn spawn_compiler_http_server(
             .app_data(config.clone())
             .app_data(common_config_data.clone())
             .app_data(probe.clone())
+            .app_data(json_config())
             .service(check_compilation_artifacts)
             .service(get_binary)
             .service(get_program_info)
@@ -1742,6 +1750,33 @@ mod test {
                 .service(upload_binary),
         )
         .await
+    }
+
+    /// `/validate_program` accepts a program over the actix-web default JSON limit of 2 MiB.
+    #[actix_web::test]
+    async fn validate_program_accepts_large_program() {
+        let (_tempdir, config) = create_test_config("validate_large");
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(config))
+                .app_data(web::Data::new(crate::config::CommonConfig::test_config()))
+                .app_data(super::json_config())
+                .service(super::validate_program_endpoint),
+        )
+        .await;
+        let body = serde_json::json!({
+            "program_config": {},
+            "program_code": "x".repeat(3 * 1024 * 1024),
+            "ir": false,
+        });
+        let req = actix_test::TestRequest::post()
+            .uri("/validate_program")
+            .set_json(&body)
+            .to_request();
+        let resp = actix_test::call_service(&app, req).await;
+        // The test config has no SQL compiler, so the response carries a compiler error. The
+        // status shows that the server read the body.
+        assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     }
 
     /// Creates test binary data of specified size with predictable pattern

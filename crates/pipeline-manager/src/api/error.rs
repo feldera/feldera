@@ -36,6 +36,7 @@ pub enum ApiError {
     NewProgramCompilationFailed { error: String },
     BootstrapNotAllowed { error: String },
     RustUdfsNotAllowed,
+    JsonBodyTooLarge { error: String },
 }
 
 impl DetailedError for ApiError {
@@ -66,6 +67,7 @@ impl DetailedError for ApiError {
             Self::NewProgramCompilationFailed { .. } => Cow::from("NewProgramCompilationFailed"),
             Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
             Self::RustUdfsNotAllowed => Cow::from("RustUdfsNotAllowed"),
+            Self::JsonBodyTooLarge { .. } => Cow::from("JsonBodyTooLarge"),
         }
     }
 }
@@ -162,6 +164,12 @@ impl Display for ApiError {
                 write!(f, "The requested change cannot be bootstrapped: {error}")
             }
             Self::RustUdfsNotAllowed => write!(f, "{RUST_UDFS_NOT_ALLOWED}"),
+            Self::JsonBodyTooLarge { error } => {
+                write!(
+                    f,
+                    "{error} Raise the limit with --max-json-body-bytes or FELDERA_MAX_JSON_BODY_BYTES."
+                )
+            }
         }
     }
 }
@@ -200,6 +208,7 @@ impl ResponseError for ApiError {
             Self::NewProgramCompilationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BootstrapNotAllowed { .. } => StatusCode::BAD_REQUEST,
             Self::RustUdfsNotAllowed => StatusCode::BAD_REQUEST,
+            Self::JsonBodyTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
         }
     }
 
