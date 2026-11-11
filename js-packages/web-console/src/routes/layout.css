@@ -12,6 +12,7 @@
 @import "@skeletonlabs/skeleton-svelte";
 
 @import "feldera-theme/feldera-modern.css";
+@import "feldera-theme/scrollbar.css";
 
 @plugin "tailwind-scrollbar" {
   nocompatible: true;
@@ -384,19 +385,6 @@ input:focus {
 }
 
 /* The end of Skeleton UI overrides */
-
-/* The editor's sliders are drawn by Monaco; round them so they match. */
-.monaco-scrollable-element > .scrollbar > .slider {
-  border-radius: 9999px;
-}
-.monaco-scrollable-element > .scrollbar.vertical > .slider {
-  width: 6px !important;
-  left: 2px !important;
-}
-.monaco-scrollable-element > .scrollbar.horizontal > .slider {
-  height: 6px !important;
-  top: 2px !important;
-}
 
 /* Log colours (ANSI escape codes in pipeline logs, drawn by `fancy-ansi`). Red, yellow and
    green use their own values, because the status palette's `-dot` colours are too faint

@@ -1,0 +1,34 @@
+/* Scrollbars of the Feldera apps.
+   The app must load the Tailwind plugin `tailwind-scrollbar` with `nocompatible: true`.
+   The plugin's `scrollbar` class reads the variables below, which it inherits from `<body>`. */
+
+@layer base {
+  body {
+    --scrollbar-width: 8px;
+    --scrollbar-height: 8px;
+    --scrollbar-thumb-radius: calc(infinity * 1px);
+    --scrollbar-thumb: rgb(0 0 0 / 0.18);
+  }
+  .dark body {
+    --scrollbar-thumb: rgb(255 255 255 / 0.18);
+  }
+  body .scrollbar::-webkit-scrollbar-thumb:hover {
+    --scrollbar-thumb: rgb(0 0 0 / 0.32);
+  }
+  .dark body .scrollbar::-webkit-scrollbar-thumb:hover {
+    --scrollbar-thumb: rgb(255 255 255 / 0.32);
+  }
+}
+
+/* The editor's sliders are drawn by Monaco; round them so they match. */
+.monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 9999px;
+}
+.monaco-scrollable-element > .scrollbar.vertical > .slider {
+  width: 6px !important;
+  left: 2px !important;
+}
+.monaco-scrollable-element > .scrollbar.horizontal > .slider {
+  height: 6px !important;
+  top: 2px !important;
+}
