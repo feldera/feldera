@@ -85,3 +85,26 @@ describe('node definitions', () => {
         }
     })
 })
+
+describe('collapsed regions', () => {
+    it('lists all the operators inside a collapsed region', () => {
+        // The hover trace of a collapsed region starts from these operators.
+        const p = CircuitProfile.fromJson({
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n',
+                    label: 'circuit',
+                    nodes: [cluster('region', 'region', [simple('n2', 'map'), simple('n3', 'filter')])]
+                },
+                edges: []
+            }
+        } as never).profile
+        const selection = new CircuitSelection(
+            new ExplicitSubSet(new Set(p.complexNodes.keys()), new Set())
+        )
+        const graph = Cytograph.fromProfile(p, selection)
+        expect([...graph.getSimpleNodes('region')].sort()).toEqual(['n2', 'n3'])
+    })
+})

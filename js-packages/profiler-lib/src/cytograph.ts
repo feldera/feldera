@@ -287,7 +287,7 @@ export class Cytograph {
                 if (set.isSome())
                     set.unwrap().add(nodeId);
                 else {
-                    result.nodeChildren.set(topParent, new Set(nodeId));
+                    result.nodeChildren.set(topParent, new Set([nodeId]));
                 }
             }
 
