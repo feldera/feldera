@@ -9052,7 +9052,9 @@ export type GetPipelineSamplyProfileData = {
      */
     ordinal?: number
     /**
-     * If true, returns 204 redirect with Retry-After header if profile collection is in progress.
+     * If true, returns 204 No Content when there is no profile to download yet:
+     * with a Retry-After header if profile collection is in progress, without one
+     * if no profile was collected.
      * If false or not provided, returns the last collected profile.
      */
     latest?: boolean
@@ -9078,7 +9080,7 @@ export type GetPipelineSamplyProfileError =
 
 export type GetPipelineSamplyProfileResponses = {
   /**
-   * Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.
+   * Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: if latest=true, may return 204 No Content: with Retry-After header if profiling is in progress, without it if no profile was collected.
    */
   200: Blob | File
 }

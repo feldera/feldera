@@ -73,7 +73,9 @@ impl Default for SamplyProfileParams {
 pub struct SamplyProfileGetParams {
     /// In a multihost pipeline, the ordinal of the pipeline to sample.
     pub ordinal: usize,
-    /// If true, returns 204 redirect with Retry-After header if profile collection is in progress.
+    /// If true, returns 204 No Content when there is no profile to download yet:
+    /// with a Retry-After header if profile collection is in progress, without one
+    /// if no profile was collected.
     /// If false or not provided, returns the last collected profile.
     pub latest: bool,
 }

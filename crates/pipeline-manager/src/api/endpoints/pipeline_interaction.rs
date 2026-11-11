@@ -1656,7 +1656,8 @@ pub(crate) async fn start_samply_profile(
 /// Get Samply Profile
 ///
 /// Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
-/// If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
+/// If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 204 with Retry-After header.
+/// If ?latest parameter is specified and no Samply profile was collected, returns HTTP 204 without Retry-After header.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1665,11 +1666,11 @@ pub(crate) async fn start_samply_profile(
         SamplyProfileGetParams,
     ),
     responses(
-        // Note: This endpoint may also return 204 No Content with Retry-After header
-        // when latest=true and profiling is in progress, but progenitor can only handle
+        // Note: This endpoint may also return 204 No Content when latest=true and
+        // there is no profile to download yet, but progenitor can only handle
         // one success response type, so it's not documented here.
         (status = OK
-            , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress."
+            , description = "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: if latest=true, may return 204 No Content: with Retry-After header if profiling is in progress, without it if no profile was collected."
             , content_type = "application/gzip"
             , body = Vec<u8>),
         (status = NOT_FOUND

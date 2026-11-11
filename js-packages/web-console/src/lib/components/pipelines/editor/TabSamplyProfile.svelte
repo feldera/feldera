@@ -164,6 +164,12 @@
         latest,
         downloadProgress.onProgress
       )
+      if (result === null) {
+        // There is no profile to download
+        globalDialog.dialog = null
+        hasAvailableProfile = false
+        return
+      }
       if ('expectedInSeconds' in result) {
         // Profile is still being collected, close the dialog and update countdown
         globalDialog.dialog = null
@@ -208,7 +214,10 @@
         undefined // No progress callback for status check
       )
 
-      if ('expectedInSeconds' in result) {
+      if (result === null) {
+        // No profile was collected yet
+        hasAvailableProfile = false
+      } else if ('expectedInSeconds' in result) {
         // Profile is currently being collected - set up countdown
         const now = Date.now()
         expectedCompletion = now + result.expectedInSeconds * 1000

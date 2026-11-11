@@ -165,7 +165,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
       onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
     ) => {
       const result = await getSamplyProfile(pipelineName, latest, onProgress)
-      if ('expectedInSeconds' in result) {
+      if (result === null || 'expectedInSeconds' in result) {
         return result
       }
       result.downloadPromise.then((download) =>
