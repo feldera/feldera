@@ -30,6 +30,10 @@ export interface SyntheticCircuit {
 
 /** The chance that an item is a region, for each nesting level. Deeper levels have fewer regions. */
 const REGION_CHANCE = [0.4, 0.3, 0.15]
+/** The chance that an operator has a persistent id, and so a position in the SQL program. In a real
+ *  circuit, most operators come from the runtime and have none. Then many regions also have none, and
+ *  show no code chip, which changes how cytoscape draws them. */
+const SOURCE_CHANCE = 0.15
 const MIN_REGION_ITEMS = 3
 const MAX_REGION_ITEMS = 10
 const WORKER_SKEW_MIN = 0.5
@@ -172,7 +176,7 @@ export function syntheticCircuit({
     operators.push({
       id,
       statement,
-      persistentId: random() < 0.5 ? `pid-${id}` : undefined,
+      persistentId: random() < SOURCE_CHANCE ? `pid-${id}` : undefined,
       isStateful: random() < 0.35,
       hasBatchStats: random() < 0.4,
       weight: Math.exp(random() * 8)

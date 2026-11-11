@@ -73,6 +73,38 @@ export async function measure(name: string, options: MeasureOptions): Promise<Pe
   return summarize(name, samplesMs)
 }
 
+export interface MeasureFramesOptions {
+  warmups: number
+  runs: number
+  /** Makes the diagram draw a new frame. */
+  change: () => void
+}
+
+/** Time the frame that `change` causes, from the start of that frame until it is painted. The time
+ *  does not include the wait for the frame to start, which depends on when the browser starts it. */
+export async function measureFrames(
+  name: string,
+  options: MeasureFramesOptions
+): Promise<PerfResult> {
+  const samplesMs: number[] = []
+  for (let i = 0; i < options.warmups + options.runs; i++) {
+    collectGarbage()
+    await afterNextPaint()
+    options.change()
+    // All animation frame callbacks of one frame get the start time of that frame. Cytoscape draws
+    // in a callback that it requested before this one.
+    const elapsed = await new Promise<number>((resolve) =>
+      requestAnimationFrame((frameStart) =>
+        setTimeout(() => resolve(performance.now() - frameStart), 0)
+      )
+    )
+    if (i >= options.warmups) {
+      samplesMs.push(elapsed)
+    }
+  }
+  return summarize(name, samplesMs)
+}
+
 export function summarize(name: string, samplesMs: number[]): PerfResult {
   const sorted = [...samplesMs].sort((a, b) => a - b)
   const middle = Math.floor(sorted.length / 2)

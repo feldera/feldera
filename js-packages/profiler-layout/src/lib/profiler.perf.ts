@@ -11,6 +11,7 @@ import { getSuitableProfiles, processProfileFiles } from './functions/processZip
 import {
   afterNextPaint,
   measure,
+  measureFrames,
   type PerfResult,
   summarize,
   timeAction
@@ -34,6 +35,9 @@ const DIAGRAM_SIZE = { width: 1200, height: 800 }
 const LAYOUT_TIMEOUT_MS = 60_000
 const REGION_WARMUPS = 1
 const REGION_RUNS = 9
+/** How many top-level regions the frame measurement expands. With the default circuit size, this
+ *  makes the diagram about five times as many nodes as when it is collapsed. */
+const EXPANDED_REGIONS = 10
 
 const describeCircuit = (circuit: SyntheticCircuit) => ({
   topLevelItems: circuit.profile.graph.nodes.nodes.length,
@@ -249,6 +253,57 @@ describe('profiler performance', () => {
         }
       })
     )
+    mounted.unmount()
+  })
+
+  it('measures one frame of the zoomed-out diagram', async () => {
+    const mounted = mountProfiler(CIRCUIT)
+    await mounted.loaded
+    const cy = mounted.cy()
+    // At fit view, all nodes are on screen. A pan by one pixel makes cytoscape draw a frame. The
+    // direction alternates, so the view stays in place.
+    // When no element changed in the last 250 ms, cytoscape draws a frame from a cache of a few large
+    // images. Any change, such as a hover, turns that cache off for 250 ms, and then each frame draws
+    // every node. This function turns the cache off, so that each frame measures the full draw. It
+    // uses the renderer of cytoscape 3.33, which is not in the cytoscape documentation.
+    const skipLayerCache = () => {
+      cy.renderer().data.lyrTxrCache.lastInvalidationTime = performance.now()
+    }
+    const measureFitViewFrame = async (name: string) => {
+      cy.fit()
+      await afterNextPaint()
+      let pans = 0
+      return measureFrames(name, {
+        warmups: 3,
+        runs: 21,
+        change: () => {
+          skipLayerCache()
+          cy.panBy({ x: pans++ % 2 ? 1 : -1, y: 0 })
+        }
+      })
+    }
+    results.push(await measureFitViewFrame('frame at fit view, collapsed (pan 1 px)'))
+
+    // Only top-level regions toggle, and the regions inside them expand with them. Each expansion
+    // runs a layout of the full diagram, so the test expands only some regions, to keep the suite
+    // short.
+    const regionsToExpand: string[] = cy
+      .nodes()
+      .filter((n: { data(key: string): unknown }) => n.data('has_children') && !n.data('expanded'))
+      .map((n: { id(): string }) => n.id())
+      .slice(0, EXPANDED_REGIONS)
+    for (const id of regionsToExpand) {
+      const painted = mounted.layoutPainted()
+      cy.$id(id).emit('dblclick')
+      await painted
+    }
+    expect(regionsToExpand.every((id) => cy.$id(id).data('expanded'))).toBe(true)
+    results.push(
+      await measureFitViewFrame(
+        `frame at fit view, ${EXPANDED_REGIONS} regions expanded (pan 1 px)`
+      )
+    )
+    expect(mounted.reported.errors).toEqual([])
     mounted.unmount()
   })
 
