@@ -11,7 +11,8 @@
   import { onDestroy } from 'svelte'
 
   interface Props {
-    /** Profile data from the pipeline manager */
+    /** Profile data from the pipeline manager. Do not pass a deep `$state` object: reads through
+     *  its proxies make `CircuitProfile.fromJson` much slower on a large profile. */
     profileData: JsonProfiles
     /** Dataflow graph data from the SQL compiler */
     dataflowData: Dataflow | undefined

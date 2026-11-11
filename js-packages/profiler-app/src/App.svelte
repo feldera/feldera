@@ -32,10 +32,12 @@
   // True while the diagram computes its layout.
   let isRendering = $state(false)
   let errorMessage = $state('')
-  let profileFiles: [Date, ZipItem[]][] = $state([])
+  // Raw state, as `profileData`. Assignments replace the whole value.
+  let profileFiles: [Date, ZipItem[]][] = $state.raw([])
   let selectedTimestamp: Date | null = $state(null)
   let sqlPanelFullHeight = $state(false)
 
+  // Raw state: a deep proxy over the parsed profile makes the diagram load much slower.
   let profileData: {
     profile: JsonProfiles | undefined
     dataflow: Dataflow | undefined
@@ -46,7 +48,7 @@
     runtimeConfig: unknown
     pipelineEvents: PipelineMonitorEvent[] | undefined
     sourceFiles: SourceFile[] | undefined
-  } | null = $state(null)
+  } | null = $state.raw(null)
 
   let fileInput: HTMLInputElement | null = $state(null)
 

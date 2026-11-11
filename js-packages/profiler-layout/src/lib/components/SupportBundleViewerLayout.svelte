@@ -59,7 +59,8 @@
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
-    /** Parsed circuit profile */
+    /** Parsed circuit profile. Do not pass a deep `$state` object: reads through its proxies make
+     *  the diagram load much slower on a large profile. */
     profileData?: JsonProfiles
     dataflowData: Dataflow | undefined
     logText?: string
