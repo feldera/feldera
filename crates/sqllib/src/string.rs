@@ -589,6 +589,47 @@ pub fn right_s_i32(value: SqlString, n_chars: i32) -> SqlString {
 
 some_polymorphic_function2!(right, s, SqlString, i32, i32, SqlString);
 
+/// `value` truncated to its first `length` characters, or padded to `length` characters with
+/// copies of `fill`, on the left if `left` is true.  An empty `fill` adds no padding.
+fn pad(value: SqlString, length: i32, fill: SqlString, left: bool) -> SqlString {
+    if length <= 0 {
+        return SqlString::new();
+    }
+    let chars = char_length_ref(value.str());
+    if chars >= length {
+        return left_s_i32(value, length);
+    }
+    if fill.str().is_empty() {
+        return value;
+    }
+    let padding: String = fill
+        .str()
+        .chars()
+        .cycle()
+        .take((length - chars) as usize)
+        .collect();
+    let parts = if left {
+        [padding.as_str(), value.str()]
+    } else {
+        [value.str(), padding.as_str()]
+    };
+    SqlString::from_concat_iterator(parts)
+}
+
+#[doc(hidden)]
+pub fn lpad___(value: SqlString, length: i32, fill: SqlString) -> SqlString {
+    pad(value, length, fill, true)
+}
+
+some_function3!(lpad, SqlString, i32, SqlString, SqlString);
+
+#[doc(hidden)]
+pub fn rpad___(value: SqlString, length: i32, fill: SqlString) -> SqlString {
+    pad(value, length, fill, false)
+}
+
+some_function3!(rpad, SqlString, i32, SqlString, SqlString);
+
 #[doc(hidden)]
 pub fn split2__(source: SqlString, separators: SqlString) -> Array<SqlString> {
     if separators.str().is_empty() {

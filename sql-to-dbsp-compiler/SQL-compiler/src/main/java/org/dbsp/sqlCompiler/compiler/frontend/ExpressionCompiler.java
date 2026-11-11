@@ -1517,6 +1517,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         this.ensureInteger(node, ops, 2);
                         return compileFunction(call, node, type, ops, 3);
                     }
+                    case "lpad":
+                    case "rpad": {
+                        validateArgCount(node, opName, ops.size(), 2, 3);
+                        if (ops.size() == 2)
+                            // The default fill is a space
+                            ops.add(new DBSPStringLiteral(" "));
+                        this.ensureString(ops, 0);
+                        this.ensureInteger(node, ops, 1);
+                        this.ensureString(ops, 2);
+                        return compileFunction(call, node, type, ops, 3);
+                    }
                     case "overlay": {
                         validateArgCount(node, opName, ops.size(), 3, 4);
                         String module_prefix = "";
