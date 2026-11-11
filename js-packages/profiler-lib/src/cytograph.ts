@@ -425,6 +425,8 @@ export class CytographRendering {
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
+    /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
+    private tracedEdges: EdgeCollection;
 
     constructor(
         graphContainer: HTMLElement,
@@ -448,6 +450,7 @@ export class CytographRendering {
             container: graphContainer,
             elements: [],
         });
+        this.tracedEdges = this.cy.collection();
         installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
@@ -955,13 +958,15 @@ export class CytographRendering {
         // The edges that connect directly to the node get their own colors.
         forward.intersection(node.outgoers('edge')).addClass('highlight-forward-adjacent');
         backward.intersection(node.incomers('edge')).addClass('highlight-backward-adjacent');
+        this.tracedEdges = forward.union(backward);
     }
 
     /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
     private clearTrace() {
         this.markSelected(null);
-        this.cy.edges().removeClass(
+        this.tracedEdges.removeClass(
             'highlight-forward highlight-backward highlight-forward-adjacent highlight-backward-adjacent');
+        this.tracedEdges = this.cy.collection();
     }
 
     displayNodeAttributes(node: NodeSingular) {
