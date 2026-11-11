@@ -69,13 +69,12 @@ import static org.dbsp.util.Maybe.*;
  * (ResolveReferences).  A parameter of a nested closure never shadows a
  * declaration of an enclosing scope.
  *
- * <li>The closures that the frontend generates for SQL lambdas are pure: 
- * their bodies reference only their own parameters,
- * never variables from enclosing scopes.  Before LowerCircuitVisitor these are
- * the only nested closures, and the analyses that run earlier rely on their
- * purity.  Lowering DBSPFlatmap generates nested
- * closures that CAPTURE variables of the enclosing closure, so passes that run
- * after lowering (InnerCSE, CanonicalForm) may not assume purity.
+ * <li>Nested closures can CAPTURE variables of enclosing closures: the
+ * closures that the frontend generates for SQL lambdas can reference the
+ * parameters of enclosing lambdas and the row of the enclosing operator,
+ * and lowering DBSPFlatmap generates closures that reference the parameters
+ * of the enclosing closure.  Analyses of the parameters of a closure must
+ * visit the bodies of the nested closures.
  * </ul> */
 public final class DBSPClosureExpression extends DBSPExpression {
     public final DBSPExpression body;
@@ -242,8 +241,16 @@ public final class DBSPClosureExpression extends DBSPExpression {
             shouldInline = inline.toBool();
 
         if (shouldInline) {
-            DBSPExpression apply = this.call(before.body.borrow());
-            DBSPClosureExpression closure = apply.closure(before.parameters);
+            DBSPClosureExpression first = before;
+            String name = this.parameters[0].name;
+            if (Linq.any(before.parameters, p -> p.name.equals(name))) {
+                // Rename the parameters of before, so that the parameter of this closure does not shadow them
+                DBSPVariablePath[] fresh = Linq.map(
+                        before.parameters, p -> p.getType().var(), DBSPVariablePath.class);
+                first = before.call(fresh).closure(fresh).reduce(compiler).to(DBSPClosureExpression.class);
+            }
+            DBSPExpression apply = this.call(first.body.borrow());
+            DBSPClosureExpression closure = apply.closure(first.parameters);
             DBSPExpression reduced = closure.reduce(compiler);
             return reduced.to(DBSPClosureExpression.class);
         } else {

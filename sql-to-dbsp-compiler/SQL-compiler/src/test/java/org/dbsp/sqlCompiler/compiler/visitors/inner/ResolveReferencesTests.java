@@ -83,7 +83,7 @@ public class ResolveReferencesTests extends BaseSQLTests {
         Assert.assertSame(inner, references.get(innerBinder));
     }
 
-    /** A lambda parameter shadows an outer variable with the same name */
+    /** A lambda parameter may not shadow an outer variable with the same name */
     @Test
     public void testLambdaShadowing() {
         DBSPVariablePath outerParam = b.i32().var();
@@ -94,9 +94,10 @@ public class ResolveReferencesTests extends BaseSQLTests {
         DBSPClosureExpression inner = b.call("h", innerUse).closure(innerParam);
         DBSPClosureExpression outer = b.call("m", outerUse, inner).closure(outerParam);
 
-        ReferenceMap references = this.resolve(outer, false);
-        Assert.assertSame(outer.parameters[0], references.get(outerUse));
-        Assert.assertSame(inner.parameters[0], references.get(innerUse));
+        InternalCompilerError e = Assert.assertThrows(InternalCompilerError.class,
+                () -> this.resolve(outer, false));
+        Assert.assertTrue(e.getMessage().contains(
+                "Parameter " + name + " shadows a declaration of an enclosing scope"));
     }
 
     /** A variable declared by a let statement resolves to the statement */
