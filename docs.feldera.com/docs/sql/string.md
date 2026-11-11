@@ -82,8 +82,7 @@ example.
   <tr>
     <td><a id="concat-operator"></a><code>||</code></td>
     <td>String concatenation (infix).  Note that concatenation does *not* strip trailing spaces
-        from CHAR(N) values, unlike other SQL dialects.  If such behavior is desired, an explicit
-        cast to `varchar` can be added.</td>
+        from CHAR(N) values, unlike other SQL dialects.</td>
     <td><code>'Post' || 'greSQL'</code> => <code>PostgreSQL</code></td>
   </tr>
   <tr>
