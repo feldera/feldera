@@ -6,8 +6,6 @@
    *  `profile`, then drives the layout through `callbacks` as the Visualizer would. */
   export const capture: {
     callbacks?: ProfilerCallbacks
-    /** The SQL lines the layout handed the diagram. */
-    programCode?: string[]
     profile: CircuitProfile | null
     /** The latest props of the code panel's tab, the only panel handed a `file`. */
     sourceTab?: { file: SourceFile; highlightRanges: SourcePositionRange[] }
@@ -21,7 +19,6 @@
   // calls stay harmless no-ops.
   const props: {
     callbacks?: ProfilerCallbacks
-    programCode?: string[]
     file?: SourceFile
     highlightRanges?: SourcePositionRange[]
   } = $props()
@@ -29,7 +26,6 @@
   $effect(() => {
     if (props.callbacks) {
       capture.callbacks = props.callbacks
-      capture.programCode = props.programCode
     }
   })
 

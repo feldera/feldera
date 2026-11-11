@@ -5,6 +5,7 @@
 
 import type { NodeAttributes, Option, ProfilerCallbacks } from 'profiler-lib'
 import { render } from 'vitest-browser-svelte'
+import { buildCircuitProfile } from '../functions/processZipBundle'
 import ThemedDiagram from './ThemedDiagram.svelte'
 
 const simple = (id: string, label: string) => ({ Simple: { id, label } })
@@ -229,10 +230,10 @@ export async function mountDiagram(
     }
   } as unknown as ProfilerCallbacks
 
+  /** A new model of `profile`, the way the application builds one for each load. */
+  const buildModel = () => buildCircuitProfile(profile as never, dataflow as never, undefined)
   const props = {
-    profileData: profile as never,
-    dataflowData: dataflow as never,
-    programCode: undefined,
+    profile: buildModel(),
     callbacks,
     theme
   }

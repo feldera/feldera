@@ -138,9 +138,17 @@ describe('processProfileFiles sourceFiles', () => {
   })
 })
 
-describe('processProfileFiles with a gzip-compressed circuit profile', () => {
-  const profile = { metrics: [], worker_profiles: [], graph: { nodes: [], edges: [] } }
+/** A circuit profile with one operator on two workers. */
+const profile = {
+  metrics: [],
+  worker_profiles: [{ metadata: {} }, { metadata: {} }],
+  graph: {
+    nodes: { id: 'n', label: 'circuit', nodes: [{ Simple: { id: 'n1', label: 'source' } }] },
+    edges: []
+  }
+}
 
+describe('processProfileFiles with a gzip-compressed circuit profile', () => {
   it('recognises circuit_profile.json.gz as a collection file', async () => {
     const collections = selectProfiles([
       binaryFile(`${TIMESTAMP}/circuit_profile.json.gz`, await gzip('{}'))
@@ -152,14 +160,31 @@ describe('processProfileFiles with a gzip-compressed circuit profile', () => {
     const result = await processProfileFiles([
       binaryFile(`${TIMESTAMP}/circuit_profile.json.gz`, await gzip(JSON.stringify(profile)))
     ])
-    expect(result.profile).toEqual(profile)
+    expect(result.profile?.worker_count).toBe(2)
   })
 
   it('still parses a plain circuit_profile.json', async () => {
     const result = await processProfileFiles([
       file(`${TIMESTAMP}/circuit_profile.json`, JSON.stringify(profile))
     ])
-    expect(result.profile).toEqual(profile)
+    expect(result.profile?.worker_count).toBe(2)
+  })
+})
+
+describe('processProfileFiles circuit profile model', () => {
+  it('gives the model the lines of program.sql', async () => {
+    const result = await processProfileFiles([
+      file(`${TIMESTAMP}/circuit_profile.json`, JSON.stringify(profile)),
+      pipelineConfig({ program_code: 'a\nb' })
+    ])
+    expect(result.profile?.sources.unwrap().lines).toEqual(['a', 'b'])
+  })
+
+  it('gives profileError, and keeps the other files, when the model cannot read the profile', async () => {
+    const result = await processProfileFiles([circuitProfile(), logs()])
+    expect(result.profile).toBeUndefined()
+    expect(result.profileError).toMatch(/^Failed to read the circuit profile: /)
+    expect(result.logText).toBe('starting up\n')
   })
 })
 
