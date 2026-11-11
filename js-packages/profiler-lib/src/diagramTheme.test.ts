@@ -9,6 +9,7 @@ import {
     BADGE_HEIGHT,
     CHIP_FONT_SIZE,
     CHIP_INSET,
+    CHIP_NONE,
     CODE_CHIP_HEIGHT,
     formatLeafCount,
     nodeChips
@@ -89,7 +90,7 @@ describe('chip styling', () => {
         expect(resolved).toContain(code)
         expect(resolved).toContain(badge)
         // An empty slot must still occupy its index, so slot 1 keeps its own geometry.
-        expect(cy.$id('plain').style('background-image')).toBe('none none')
+        expect(cy.$id('plain').style('background-image')).toBe(`${CHIP_NONE} ${CHIP_NONE}`)
     })
 
     it('anchors both slots to the top right corner', () => {
