@@ -766,6 +766,18 @@ fn bootstrapped_output_endpoints(
         .collect()
 }
 
+/// Returns each stream that is in both `recorded` and `assigned`, on different hosts, with its host
+/// in each.
+fn moved_output_streams<'a>(
+    recorded: &'a BTreeMap<String, usize>,
+    assigned: &'a BTreeMap<String, usize>,
+) -> impl Iterator<Item = (&'a str, usize, usize)> {
+    recorded.iter().filter_map(|(stream, &old)| {
+        let new = *assigned.get(stream)?;
+        (old != new).then_some((stream.as_str(), old, new))
+    })
+}
+
 fn local_file_uris_refused() -> bool {
     refused_by(std::env::var(feldera_types::config::REFUSE_LOCAL_FILE_URIS_ENV).ok())
 }
@@ -3324,6 +3336,7 @@ impl CircuitThread {
             incarnation_uuid,
             input_distribution,
             checkpointed_input_distribution: _,
+            checkpointed_output_assignment: _,
             input_choices,
         } = controller_init;
 
@@ -3343,6 +3356,9 @@ impl CircuitThread {
         }
 
         let layout = circuit_params.layout.clone();
+        let output_assignment = layout
+            .is_multihost()
+            .then(|| circuit_params.output_assignment.clone());
         let EngineCircuit {
             driver: mut circuit,
             runtime,
@@ -3532,6 +3548,7 @@ impl CircuitThread {
             checkpoint_receiver,
             incarnation_uuid,
             input_distribution,
+            output_assignment,
             input_choices,
             storage
                 .as_ref()
@@ -5615,6 +5632,7 @@ impl FtState {
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
             input_distribution: controller.input_distribution.clone(),
+            output_assignment: controller.output_assignment.clone(),
         };
         let journal = storage.open_journal(JournalMode::Create(&checkpoint))?;
 
@@ -6407,6 +6425,9 @@ pub struct ControllerInit {
     /// The input distribution recorded in the checkpoint, if one was read.
     checkpointed_input_distribution: BTreeMap<String, InputDistribution>,
 
+    /// The output assignment recorded in the checkpoint, if one was read and it has one.
+    checkpointed_output_assignment: Option<BTreeMap<String, usize>>,
+
     /// See [ControllerBuilder::input_choices].
     input_choices: BTreeMap<String, JsonValue>,
 }
@@ -6450,6 +6471,7 @@ impl ControllerInit {
             incarnation_uuid: Uuid::nil(),
             input_distribution: BTreeMap::new(),
             checkpointed_input_distribution: BTreeMap::new(),
+            checkpointed_output_assignment: None,
             input_choices: BTreeMap::new(),
         })
     }
@@ -6504,6 +6526,7 @@ impl ControllerInit {
             input_statistics,
             output_statistics,
             input_distribution: checkpointed_input_distribution,
+            output_assignment: checkpointed_output_assignment,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
@@ -6686,6 +6709,7 @@ impl ControllerInit {
             incarnation_uuid: Uuid::nil(),
             input_distribution: BTreeMap::new(),
             checkpointed_input_distribution,
+            checkpointed_output_assignment,
             input_choices: BTreeMap::new(),
         })
     }
@@ -6822,7 +6846,17 @@ impl ControllerInit {
     }
 
     /// Sets the host that writes each output relation of a multihost pipeline.
+    ///
+    /// Warns about each stream that the assignment moves away from the host that the checkpoint
+    /// recorded, because the restart then rebuilds that stream's state.
     fn with_output_assignment(mut self, output_assignment: BTreeMap<String, usize>) -> Self {
+        if let Some(recorded) = &self.checkpointed_output_assignment {
+            for (stream, old, new) in moved_output_streams(recorded, &output_assignment) {
+                warn!(
+                    "the coordinator moved output stream {stream:?} from host {old}, where the checkpoint has its state, to host {new}, so the pipeline rebuilds that state"
+                );
+            }
+        }
         self.circuit_params.output_assignment = output_assignment;
         self
     }
@@ -8249,6 +8283,11 @@ pub struct ControllerInner {
     /// [ControllerInner::connect_input]).
     input_distribution: BTreeMap<String, InputDistribution>,
 
+    /// The output assignment that a multihost host used at activation, which
+    /// each checkpoint records (see [Checkpoint::output_assignment]), or
+    /// `None` if the pipeline is not multihost.
+    output_assignment: Option<BTreeMap<String, usize>>,
+
     /// Current transaction number.
     ///
     /// This is not the same as transaction ID. We increment this counter
@@ -8359,6 +8398,7 @@ impl ControllerInner {
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
         input_distribution: BTreeMap<String, InputDistribution>,
+        output_assignment: Option<BTreeMap<String, usize>>,
         input_choices: BTreeMap<String, JsonValue>,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
@@ -8396,6 +8436,7 @@ impl ControllerInner {
                 next_output_id: Atomic::new(0),
                 layout,
                 input_distribution: input_distribution.clone(),
+                output_assignment,
                 shutdown: runtime.shutdown_token().child_token(),
                 runtime,
                 memory_max: Mutex::new(config.global.resources.memory_max),
@@ -11220,6 +11261,7 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
             input_distribution: circuit.controller.input_distribution.clone(),
+            output_assignment: circuit.controller.output_assignment.clone(),
         };
         Span::new("blocking")
             .with_category("Checkpoint")
@@ -11452,6 +11494,24 @@ mod controller_init_tests {
     use feldera_types::size::ConfigSize;
     use serde_json::json;
     use std::{borrow::Cow, collections::BTreeMap};
+
+    /// A stream moves if both maps have it, on different hosts.  A stream that only one of them
+    /// has, because it is new or gone, does not move.
+    #[test]
+    fn moved_output_streams() {
+        let recorded = BTreeMap::from([
+            ("same".to_string(), 0),
+            ("moved".to_string(), 0),
+            ("gone".to_string(), 1),
+        ]);
+        let assigned = BTreeMap::from([
+            ("same".to_string(), 0),
+            ("moved".to_string(), 1),
+            ("new".to_string(), 0),
+        ]);
+        let moved: Vec<_> = super::moved_output_streams(&recorded, &assigned).collect();
+        assert_eq!(moved, [("moved", 0, 1)]);
+    }
 
     fn pipeline_config(global: RuntimeConfig) -> PipelineConfig {
         PipelineConfig {

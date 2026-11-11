@@ -9049,8 +9049,9 @@ pub mod test_http {
         })
     }
 
-    /// A 2-host pipeline restarts from its checkpoint with its state: the
-    /// view's snapshot after the restart has every row from before it.
+    /// A 2-host pipeline restarts from its checkpoint with its state: each
+    /// host's checkpoint records the output assignment, and the view's snapshot
+    /// after the restart has every row from before it.
     #[engine_test(requires(Storage, Checkpoints))]
     pub fn multihost_restart_from_checkpoint(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
@@ -9084,6 +9085,13 @@ pub mod test_http {
             }
             let checkpoints = pipeline.checkpoint().await;
             pipeline.stop(engine, &dirs).await;
+            // Each host's checkpoint records the output assignment.
+            for (dir, checkpoint) in dirs.iter().zip(&checkpoints) {
+                let state = dir.join(checkpoint.to_string()).join("state.json");
+                let record: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(state).unwrap()).unwrap();
+                assert_eq!(record["output_assignment"], json!({"test_output1": 1}));
+            }
 
             let mut pipeline = MultihostTestPipeline::start_with_storage(
                 engine,

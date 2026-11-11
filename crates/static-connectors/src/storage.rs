@@ -547,6 +547,7 @@ mod tests {
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
             input_distribution: BTreeMap::new(),
+            output_assignment: None,
         }
     }
 
