@@ -273,6 +273,16 @@ public class Utilities {
         return "r" + hashes + "\"" + value + "\"" + hashes;
     }
 
+    /** Jackson quotes a bad token in full, and the token can be an inline credential */
+    static String withoutRejectedToken(String message) {
+        final String prefix = "Unrecognized token '";
+        final String suffix = "': was expecting";
+        int end = message.lastIndexOf(suffix);
+        if (!message.startsWith(prefix) || end < prefix.length())
+            return message;
+        return "Unrecognized token: was expecting" + message.substring(end + suffix.length());
+    }
+
     /** Parse and validate a JSON text string, returning either the parsed object or an error to show to the user */
     public static Result<JsonNode> validateJson(String body) {
         try {
@@ -287,13 +297,13 @@ public class Utilities {
                 int errorLineIdx = location.getLineNr() - 1; // getLineNr() is 1-based
                 if (errorLineIdx < 0 || errorLineIdx >= lines.length) {
                     // Check if the position is within the document.
-                    return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
+                    return Result.err(new ErrorWithPosition(withoutRejectedToken(e.getMessage()), SourcePositionRange.INVALID));
                 }
 
                 SourcePosition pos = new SourcePosition(location);
-                return Result.err(new ErrorWithPosition(e.getOriginalMessage(), pos.asRange()));
+                return Result.err(new ErrorWithPosition(withoutRejectedToken(e.getOriginalMessage()), pos.asRange()));
             } else {
-                return Result.err(new ErrorWithPosition(e.getMessage(), SourcePositionRange.INVALID));
+                return Result.err(new ErrorWithPosition(withoutRejectedToken(e.getMessage()), SourcePositionRange.INVALID));
             }
         }
     }
