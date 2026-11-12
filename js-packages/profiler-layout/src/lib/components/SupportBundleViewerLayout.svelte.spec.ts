@@ -195,6 +195,55 @@ describe('SupportBundleViewerLayout source navigation', () => {
   })
 })
 
+describe('SupportBundleViewerLayout diagram metric', () => {
+  const option = (id: string) => ({ id, label: id })
+  // runtime_percent is the diagram default and is not a basic metric.
+  const metrics = ['runtime_percent', 'runtime_seconds', 'spine_storage_size_bytes'].map(option)
+
+  const mount = async (selected: string) => {
+    capture.callbacks = undefined
+    capture.profile = { getSourceRanges: () => [] } as never
+    capture.selectedMetrics = []
+    const { container } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profile: someProfile
+    })
+    await expect.poll(() => capture.callbacks).toBeDefined()
+    capture.callbacks!.onMetricsChanged(metrics, selected)
+    const advanced = container.querySelector<HTMLInputElement>('input[name="showAdvancedMetrics"]')
+    if (!advanced) {
+      throw new Error('the "Show advanced" switch is not rendered')
+    }
+    const toggleAdvanced = async () => {
+      const before = advanced.checked
+      advanced.click()
+      await expect.poll(() => advanced.checked).toBe(!before)
+    }
+    const diagramMetric = () => capture.selectedMetrics.at(-1)
+    return { toggleAdvanced, diagramMetric }
+  }
+
+  it('keeps the diagram metric when the advanced metrics are shown and hidden', async () => {
+    const { toggleAdvanced, diagramMetric } = await mount('runtime_percent')
+    await expect.poll(diagramMetric).toBe('runtime_seconds')
+    capture.selectedMetrics = []
+    await toggleAdvanced()
+    await toggleAdvanced()
+    await toggleAdvanced()
+    // A toggle that changed the metric would restyle every node of the diagram.
+    expect(capture.selectedMetrics.filter((id) => id !== 'runtime_seconds')).toEqual([])
+  })
+
+  it('selects the runtime when the advanced metrics are hidden while one of them is selected', async () => {
+    const { toggleAdvanced, diagramMetric } = await mount('runtime_percent')
+    await toggleAdvanced()
+    capture.callbacks!.onMetricsChanged(metrics, 'runtime_percent')
+    await expect.poll(diagramMetric).toBe('runtime_percent')
+    await toggleAdvanced()
+    await expect.poll(diagramMetric).toBe('runtime_seconds')
+  })
+})
+
 describe('SupportBundleViewerLayout Connectors tab', () => {
   // The analysis tabs are a SegmentedControl; each item holds a hidden radio input.
   const connectorsTab = (container: HTMLElement) => {

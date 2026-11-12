@@ -7,9 +7,11 @@
   export const capture: {
     callbacks?: ProfilerCallbacks
     profile: CircuitProfile | null
+    /** The metrics that the layout selected in the diagram, in order. */
+    selectedMetrics: string[]
     /** The latest props of the code panel's tab, the only panel handed a `file`. */
     sourceTab?: { file: SourceFile; highlightRanges: SourcePositionRange[] }
-  } = { profile: null }
+  } = { profile: null, selectedMetrics: [] }
 </script>
 
 <script lang="ts">
@@ -38,7 +40,9 @@
   export function getProfile() {
     return capture.profile
   }
-  export function selectMetric(_metricId: string) {}
+  export function selectMetric(metricId: string) {
+    capture.selectedMetrics.push(metricId)
+  }
   export function search(_query: string) {}
   export function showGlobalMetrics(_isSticky?: boolean) {}
   export function showTopNodes(_isSticky?: boolean) {}

@@ -180,9 +180,6 @@
   let showAdvancedMetrics = $state(false)
   // The metric selector lists only the metrics that the tables show.
   const levelMetricOptions = $derived(levelMetrics(metrics, showAdvancedMetrics))
-  // The metric that colors the diagram: `selectedMetricId` when the selector lists it, or else a
-  // listed metric. The selector then never holds a metric that it does not list.
-  const shownMetricId = $derived(metricToSelect(selectedMetricId, levelMetricOptions))
   let issueSeverityFilter = $state<'all' | 'error' | 'warning' | 'info'>('all')
   let issueCategoryFilter = $state<string>('all')
   const issueCategories = $derived(uniqueCategories(triageResults.results))
@@ -263,7 +260,7 @@
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
-            header: `Nodes with highest values for "${MetricDescriptions.label(shownMetricId)}"`,
+            header: `Nodes with highest values for "${MetricDescriptions.label(selectedMetricId)}"`,
             columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
@@ -276,7 +273,12 @@
     },
     onMetricsChanged: (newMetrics, newSelectedMetricId) => {
       metrics = newMetrics
-      selectedMetricId = newSelectedMetricId
+      // The diagram can call this in an effect. `untrack` keeps that effect off the switch.
+      const listed = levelMetrics(
+        newMetrics,
+        untrack(() => showAdvancedMetrics)
+      )
+      selectedMetricId = metricToSelect(newSelectedMetricId, listed)
     },
     displayMessage: (msg) => {
       message = msg.unwrapOr('')
@@ -287,6 +289,14 @@
     onRenderingChange: (rendering) => {
       onRenderingChange?.(rendering)
     }
+  }
+
+  /** Show or hide the advanced metrics. A selected metric that the selector no longer lists
+   *  changes to a listed metric. The selected metric is always listed, so a later toggle keeps
+   *  the diagram metric. */
+  function setShowAdvancedMetrics(show: boolean) {
+    showAdvancedMetrics = show
+    selectedMetricId = metricToSelect(selectedMetricId, levelMetrics(metrics, show))
   }
 
   /** Show the SQL the node was compiled from, selected and scrolled into view in the code panel.
@@ -307,7 +317,7 @@
   // the current sticky tooltip via the callbacks above, but those only touch tooltipData — so
   // this does not feed back into any effect (no loop).
   $effect(() => {
-    profilerDiagram?.selectMetric(shownMetricId)
+    profilerDiagram?.selectMetric(selectedMetricId)
   })
 
   // Reset to the overview whenever the loaded bundle changes. `analysisView` is reset first so the
@@ -579,7 +589,7 @@
   <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
     {#if levelMetricOptions.length > 0}
       <MetricSelect
-        bind:value={() => shownMetricId, (id) => (selectedMetricId = id)}
+        bind:value={selectedMetricId}
         metrics={levelMetricOptions}
         class="w-42"
         title="Select metric"
@@ -662,7 +672,7 @@
     <Switch
       name="showAdvancedMetrics"
       checked={showAdvancedMetrics}
-      onCheckedChange={(e) => (showAdvancedMetrics = e.checked)}
+      onCheckedChange={(e) => setShowAdvancedMetrics(e.checked)}
     >
       <Switch.Control class="h-5 w-9">
         <Switch.Thumb />
