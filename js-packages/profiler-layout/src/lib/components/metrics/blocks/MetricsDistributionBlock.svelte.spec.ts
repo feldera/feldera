@@ -379,3 +379,34 @@ describe('MetricsDistributionBlock selected metric', () => {
     expect(getComputedStyle(only!).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   })
 })
+
+describe('MetricsDistributionBlock bar tooltip', () => {
+  const twoMetrics = [
+    entry('records', { cells: cells([10, 20, 30].map((n) => new CountValue(n))) }),
+    entry('batches', { cells: cells([1, 2, 3].map((n) => new CountValue(n))) })
+  ]
+  const openTooltips = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="tooltip"]'))
+      .filter((tooltip) => tooltip.matches(':popover-open'))
+      .map((tooltip) => tooltip.textContent?.trim())
+
+  it('shows the reading of the bar under the pointer or in focus', async () => {
+    const { container } = render(MetricsDistributionBlock, {
+      props: { id: 'b', title: 'State', entries: twoMetrics }
+    })
+    const [records, batches] = Array.from(container.querySelectorAll('.bar-chart')).map((chart) =>
+      Array.from(chart.querySelectorAll<HTMLElement>('[data-worker]'))
+    )
+
+    records![1]!.dispatchEvent(new MouseEvent('mouseenter'))
+    await expect.poll(openTooltips).toEqual(['Worker 1: 20'])
+    records![1]!.dispatchEvent(new MouseEvent('mouseleave'))
+    records![2]!.dispatchEvent(new MouseEvent('mouseenter'))
+    await expect.poll(openTooltips).toEqual(['Worker 2: 30'])
+    records![2]!.dispatchEvent(new MouseEvent('mouseleave'))
+    await expect.poll(openTooltips).toEqual([])
+
+    batches![0]!.focus()
+    await expect.poll(openTooltips).toEqual(['Worker 0: 1'])
+  })
+})
