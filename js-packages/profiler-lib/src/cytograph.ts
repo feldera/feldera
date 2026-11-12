@@ -417,6 +417,8 @@ export class CytographRendering {
     private raiseFrame: number | null = null;
     /** `setEvents` adds this listener to the document, and `dispose` removes it. */
     private readonly onDocumentKeyup = (event: KeyboardEvent) => this.keyup(event);
+    /** Aborts on `dispose`, to remove the chip button listeners from the graph container. */
+    private readonly chipButtonsLifetime = new AbortController();
 
     constructor(
         graphContainer: HTMLElement,
@@ -822,7 +824,7 @@ export class CytographRendering {
                 callbacks.onShowSource?.(id);
             },
             onToggle: (id) => this.toggleCircuitRegion(id, callbacks.onNodeDoubleClick)
-        });
+        }, this.chipButtonsLifetime.signal);
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
@@ -1133,6 +1135,7 @@ export class CytographRendering {
             this.raiseFrame = null;
         }
         document.removeEventListener('keyup', this.onDocumentKeyup);
+        this.chipButtonsLifetime.abort();
 
         // Destroy the Cytoscape instance
         if (this.cy) {

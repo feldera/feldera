@@ -262,7 +262,7 @@ export async function mountDiagram(
     // biome-ignore lint/suspicious/noExplicitAny: the registry cytoscape leaves on its container
     _cyreg: { cy: any }
   }
-  const cy = container._cyreg.cy
+  let cy = container._cyreg.cy
   mountedCy = cy
   await settle()
   if (!keepOpeningView) {
@@ -488,6 +488,17 @@ export async function mountDiagram(
     pointer,
     click,
     diagram: component,
+    /** Load a copy of the profile into the same component, the way the application loads a new
+     *  bundle or snapshot. The diagram reuses its container. Returns the new cytoscape instance. */
+    reload: async () => {
+      layout = new Promise<void>((resolve) => (laidOut = resolve))
+      await rendered.rerender({ ...props, profileData: structuredClone(profile) as never })
+      await layout
+      cy = container._cyreg.cy
+      mountedCy = cy
+      await settle()
+      return cy
+    },
     /** Remove the diagram from the page, but keep the component mounted. */
     cleanup: () => wrapper.remove(),
     /** Unmount the component, which disposes the diagram, and remove it from the page. */

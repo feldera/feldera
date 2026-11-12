@@ -366,7 +366,7 @@ describe('installChipButtons', () => {
     it('shows the pointer cursor only over a chip', () => {
         const cy = graph()
         const { core, container, fire } = harness(cy)
-        installChipButtons(core, () => 'light', actions())
+        installChipButtons(core, () => 'light', actions(), new AbortController().signal)
 
         fire('mousemove', at(cy, 'code', 'code'))
         expect(container.style.cursor).toBe('pointer')
@@ -382,7 +382,7 @@ describe('installChipButtons', () => {
         const cy = graph()
         const { core, mouse } = harness(cy)
         const handlers = actions()
-        installChipButtons(core, () => 'light', handlers)
+        installChipButtons(core, () => 'light', handlers, new AbortController().signal)
         const chip = at(cy, 'collapsed', 'code').position
 
         expect(mouse('mousedown', chip).stopped).toBe(true)
@@ -397,7 +397,7 @@ describe('installChipButtons', () => {
         const cy = graph()
         const { core, mouse } = harness(cy)
         const handlers = actions()
-        installChipButtons(core, () => 'light', handlers)
+        installChipButtons(core, () => 'light', handlers, new AbortController().signal)
         const elsewhere = { x: 10_000, y: 10_000 }
 
         expect(mouse('mousedown', elsewhere).stopped).toBe(false)
@@ -413,7 +413,7 @@ describe('installChipButtons', () => {
         const cy = graph()
         const { core, mouse } = harness(cy)
         const handlers = actions()
-        installChipButtons(core, () => 'light', handlers)
+        installChipButtons(core, () => 'light', handlers, new AbortController().signal)
 
         mouse('mousedown', at(cy, 'collapsed', 'code').position)
         mouse('mouseup', { x: 10_000, y: 10_000 })
@@ -430,7 +430,7 @@ describe('installChipButtons', () => {
         const cy = graph()
         const { core, fire } = harness(cy)
         const handlers = actions()
-        installChipButtons(core, () => 'light', handlers)
+        installChipButtons(core, () => 'light', handlers, new AbortController().signal)
 
         fire('tap', at(cy, 'collapsed', 'code'))
         expect(handlers.onSource).toHaveBeenCalledWith('collapsed')
@@ -448,7 +448,7 @@ describe('installChipButtons', () => {
     it('shows an icon instead of the count while the pointer is on the node', () => {
         const cy = graph()
         const { core, fire } = harness(cy)
-        installChipButtons(core, () => 'light', actions())
+        installChipButtons(core, () => 'light', actions(), new AbortController().signal)
         const node = cy.$id('collapsed')
 
         fire('mouseover', { target: node })
@@ -462,7 +462,7 @@ describe('installChipButtons', () => {
         // only when the pointer moves. So only the `layoutstop` listener can remove the old icon.
         const cy = graph()
         const { core, fire } = harness(cy)
-        installChipButtons(core, () => 'light', actions())
+        installChipButtons(core, () => 'light', actions(), new AbortController().signal)
         const node = cy.$id('collapsed')
 
         fire('mouseover', { target: node })
@@ -475,7 +475,7 @@ describe('installChipButtons', () => {
         const cy = nestedGraph()
         const { core, container, fire, mouse } = harness(cy)
         const handlers = actions()
-        installChipButtons(core, () => 'light', handlers)
+        installChipButtons(core, () => 'light', handlers, new AbortController().signal)
         const counter = at(cy, 'sub', 'counter').position
 
         expect(under(cy, counter.x, counter.y)).not.toBe('sub:counter')
@@ -504,7 +504,7 @@ describe('installChipButtons', () => {
                 bound.push((typeof a === 'string' ? b : a) as (e: unknown) => void)
             }
         } as unknown as Core
-        installChipButtons(core, () => 'light', actions())
+        installChipButtons(core, () => 'light', actions(), new AbortController().signal)
         expect(() => {
             for (const handler of bound) {
                 handler({ position: { x: 0, y: 0 }, target: cy.$id('collapsed') })

@@ -182,8 +182,15 @@ export function refreshChips(node: NodeSingular, theme: DiagramTheme, hovered = 
 /** The left mouse button. Chips ignore the other buttons. */
 const PRIMARY_BUTTON = 0;
 
-/** Make the chips on `cy` work as buttons. Call this one time for each cytoscape instance. */
-export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions: ChipActions): void {
+/** Make the chips on `cy` work as buttons. Call this one time for each cytoscape instance. The
+ *  listeners on the container stay until `signal` aborts. The cytoscape listeners stay until `cy` is
+ *  destroyed. */
+export function installChipButtons(
+    cy: Core,
+    theme: () => DiagramTheme,
+    actions: ChipActions,
+    signal: AbortSignal
+): void {
     const container = cy.container();
     const pointer = (over: boolean) => {
         if (container !== null) {
@@ -242,7 +249,9 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
     /** The chip under the pointer at `mousedown`, until `mouseup`. */
     let pressed: ChipHit | null = null;
     // Both listeners use the capture phase, so they run before the cytoscape listeners on the
-    // container.
+    // container. The application can reuse the container for a new diagram, so the listeners must
+    // not stay after this diagram is disposed.
+    const options = { capture: true, signal };
     container.addEventListener('mousedown', (event) => {
         pressed = event.button === PRIMARY_BUTTON ? chipAtMouse(event) : null;
         if (pressed === null) {
@@ -254,7 +263,7 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
         event.stopPropagation();
         // Do not select text on the page, as the cytoscape `mousedown` handler also does.
         event.preventDefault();
-    }, true);
+    }, options);
     container.addEventListener('mouseup', (event) => {
         const from = pressed;
         pressed = null;
@@ -266,5 +275,5 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
         if (to !== null && to.node.id() === from.node.id() && to.slot === from.slot) {
             dispatch(to);
         }
-    }, true);
+    }, options);
 }
