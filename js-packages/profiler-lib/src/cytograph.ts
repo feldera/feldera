@@ -191,10 +191,10 @@ export class Cytograph {
     readonly nodeChildren: OMap<NodeId, Set<NodeId>>;
     readonly nodes: Array<GraphNode>;
     readonly edges: Array<GraphEdge>;
-    // Maps edges ids in the underlying graph to edges ids in the drawn graph
+    // Maps the id of each edge in `graph` to the id of the drawn edge that stands for it.
     readonly edgeMap: Map<string, string>;
-    // How many edges of `edges` go from a source to a target, by "source->target".
-    private readonly edgeCounts: Map<string, number> = new Map();
+    // The drawn edges by id, so that parallel edges between two drawn nodes become one edge.
+    private readonly edgesById: Map<string, GraphEdge> = new Map();
 
     constructor(readonly graph: Graph<NodeId>) {
         this.nodes = [];
@@ -207,15 +207,18 @@ export class Cytograph {
         this.nodes.push(node);
     }
 
-    addEdge(edge: GraphEdge) {
-        this.edges.push(edge);
-        const key = edge.source + "->" + edge.target;
-        this.edgeCounts.set(key, (this.edgeCounts.get(key) ?? 0) + 1);
-    }
-
-    /** Map an edge in the real underlying graph to an edge in the displayed graph. */
-    mapEdge(original: GraphEdge, real: GraphEdge) {
-        this.edgeMap.set(original.getId(), real.getId());
+    /** Draw the edge `original` of `graph` from `source` to `target`. All edges of `graph` with the
+     *  same drawn nodes and the same `back` flag share one drawn edge. ELK then lays out one edge
+     *  per pair of nodes, which makes the layout faster. */
+    drawEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
+        // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
+        const id = source + "->" + target + (original.back ? ":back" : "");
+        if (!this.edgesById.has(id)) {
+            const drawn = new GraphEdge(source, target, id, original.back);
+            this.edgesById.set(id, drawn);
+            this.edges.push(drawn);
+        }
+        this.edgeMap.set(original.id, id);
     }
 
     /** Get all the simple nodes inside the specified node. */
@@ -223,18 +226,6 @@ export class Cytograph {
         if (this.nodeChildren.has(id))
             return this.nodeChildren.get(id).unwrap();
         return new Set([id]);
-    }
-
-    /** Create a graph edge, but do not add it to the graph. */
-    createEdge(source: string, target: string, back: boolean): GraphEdge {
-        // Must generate a unique ID for each edge; source and target and not enough
-        // to distinguish two edges, since this is in general a multigraph.
-        let id = source + "->" + target;
-        const identical_count = this.edgeCounts.get(id) ?? 0;
-        if (identical_count > 0) {
-            id += ":" + (identical_count + 1);
-        }
-        return new GraphEdge(source, target, id, back);
     }
 
     /** Used to convert nodes and edges to a representation understood by cytoscape. */
@@ -340,49 +331,23 @@ export class Cytograph {
             }
         }
 
-        // Keys are pairs (Simple node ID, target node ID), where target is simple or complex
-        // Used to avoid inserting the same edge twice between two complex nodes
-        // if the edge represents the same channel.
-        let insertedEdges: Set<string> = new Set();
-        for (const edge of profile.edges) {
-            let source = edge.source;
-            let target = edge.target;
-            let originalEdge = result.createEdge(source, target, edge.back);
-
+        for (const edge of g.edges) {
+            let source = edge.from;
+            let target = edge.to;
             let sourceParent = profile.getTopParent(source);
             let targetParent = profile.getTopParent(target);
-            let expandSource = selection.regionsExpanded.contains(sourceParent);
-            let expandTarget = selection.regionsExpanded.contains(targetParent);
-            if (profile.complexNodes.has(target))
-                // Do not add edges to complex nodes.
-                continue;
-
-            if (!expandSource)
+            if (!selection.regionsExpanded.contains(sourceParent))
                 source = sourceParent;
-            if (!expandTarget)
+            if (!selection.regionsExpanded.contains(targetParent))
                 target = targetParent;
 
             let sourceNode = inserted.get(source).expect(`Node ${source} not found in visible map`);
             let targetNode = inserted.get(target).expect(`Node ${target} not found in visible map`);
-
             if (sourceNode === targetNode) {
                 // Induced edges can be self-edges; do not add these
                 continue;
             }
-
-            // Detect whether an edge represents the same channel as a previous edge
-            // (only suppressed if the edge goes to a complex node)
-            if (!expandTarget) {
-                let pair = edge.source.toString() + "," + targetNode.id.toString();
-                if (insertedEdges.has(pair)) {
-                    continue;
-                }
-                insertedEdges.add(pair);
-            }
-
-            let realEdge = result.createEdge(sourceNode.id, targetNode.id, edge.back);
-            result.addEdge(realEdge);
-            result.mapEdge(originalEdge, realEdge);
+            result.drawEdge(edge, sourceNode.id, targetNode.id);
         }
         return result;
     }

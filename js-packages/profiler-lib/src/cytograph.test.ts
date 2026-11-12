@@ -108,3 +108,37 @@ describe('collapsed regions', () => {
         expect([...graph.getSimpleNodes('region')].sort()).toEqual(['n2', 'n3'])
     })
 })
+
+describe('drawn edges', () => {
+    it('draws one edge for the parallel edges between two drawn nodes', () => {
+        // Both operators in the collapsed region feed n1, so two edges of the circuit become one drawn
+        // edge. The hover trace finds the drawn edge from either operator edge.
+        const p = CircuitProfile.fromJson({
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n',
+                    label: 'circuit',
+                    nodes: [
+                        simple('n1', 'sink'),
+                        cluster('region', 'region', [simple('n2', 'map'), simple('n3', 'filter')])
+                    ]
+                },
+                edges: [
+                    { from_node: 'n2', to_node: 'n1' },
+                    { from_node: 'n3', to_node: 'n1' }
+                ]
+            }
+        } as never).profile
+        const selection = new CircuitSelection(
+            new ExplicitSubSet(new Set(p.complexNodes.keys()), new Set())
+        )
+        const graph = Cytograph.fromProfile(p, selection)
+        expect(graph.edges.map((e) => e.getId())).toEqual(['region->n1'])
+        expect([...graph.edgeMap.entries()].sort()).toEqual([
+            ['n2->n1', 'region->n1'],
+            ['n3->n1', 'region->n1']
+        ])
+    })
+})
