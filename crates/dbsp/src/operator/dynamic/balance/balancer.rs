@@ -1590,8 +1590,8 @@ mod tests {
 
     /// A rebalancing is judged by what it repartitions, not by its cluster.
     ///
-    /// The costs are the ones measured on the ADP work-assignment pipeline's
-    /// cluster of 25 streams: the csv14 join's left input costs 406,764,652 under
+    /// The costs are the ones measured on a cluster of 25 streams in a large
+    /// pipeline: the left input of a skewed join costs 406,764,652 under
     /// `shard` and 21,650,427 under `balance`, while the rest of the cluster,
     /// 2,076,650,693, cannot move because it is pinned by `broadcast` hints or has
     /// already flushed for this transaction.
