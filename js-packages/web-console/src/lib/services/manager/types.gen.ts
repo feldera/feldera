@@ -1444,6 +1444,7 @@ export type DeltaTableReaderConfig = {
    * The number of record batches the connector parses at the same time. Parsing runs on a
    * pool with one thread per CPU core, which all connectors share, so a larger value only
    * helps while the pool has idle threads. Each batch in flight holds memory.
+   * All connectors together keep at most two batches per CPU core in flight.
    * The default is the number of CPU cores available to the pipeline, at most 16.
    */
   num_parsers?: number | null
@@ -3097,6 +3098,7 @@ export type IcebergReaderConfig = GlueCatalogConfig &
      * The number of record batches the connector parses at the same time. Parsing runs on a
      * pool with one thread per CPU core, which all connectors share, so a larger value only
      * helps while the pool has idle threads. Each batch in flight holds memory.
+     * All connectors together keep at most two batches per CPU core in flight.
      * The default is the number of CPU cores available to the pipeline, at most 16.
      *
      * When set, this is also the number of files the connector reads at the same time,

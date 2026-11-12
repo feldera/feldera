@@ -3936,14 +3936,15 @@ impl DeltaTableInputEndpointInner {
             },
         };
 
-        // `delta_input_serde_config` reads timestamps as microseconds.
-        let batch = match timestamps_to_micros(batch) {
+        // `delta_input_serde_config` reads timestamps as microseconds. The startup
+        // check is not sufficient: the schema of the table can change later.
+        let batch = match check_timestamp_columns(fields, batch.schema_ref())
+            .map_err(|e| e.to_string())
+            .and_then(|()| timestamps_to_micros(batch).map_err(|e| e.to_string()))
+        {
             Ok(batch) => batch,
             Err(e) => {
-                return (
-                    None,
-                    vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
-                );
+                return (None, vec![ParseError::bin_envelope_error(e, &[], None)]);
             }
         };
         // Columns in declaration order are read by position, which is faster.
@@ -7931,5 +7932,136 @@ mod timestamp_bounds_tests {
                 Some(None)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod positional_path_tests {
+    use super::*;
+    use arrow::array::{Int64Array, StringArray};
+    use feldera_adapterlib::ConnectorMetadata;
+    use feldera_adapterlib::catalog::StagedBuffers;
+    use feldera_adapterlib::format::BufferSize;
+    use feldera_adapterlib::utils::arrow_layout::has_positional_fields;
+    use feldera_types::program_schema::{ColumnType, SqlIdentifier};
+    use std::sync::{Arc, Mutex};
+
+    /// Records, for each batch that it receives, whether the batch is marked
+    /// for a read by position.
+    #[derive(Clone, Default)]
+    struct Recorder(Arc<Mutex<Vec<bool>>>);
+
+    impl Recorder {
+        fn record(&self, batch: &RecordBatch) -> AnyResult<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .push(has_positional_fields(batch.schema_ref()));
+            Ok(())
+        }
+    }
+
+    impl InputBuffer for Recorder {
+        fn flush(&mut self) -> AnyResult<()> {
+            Ok(())
+        }
+        fn len(&self) -> BufferSize {
+            BufferSize::empty()
+        }
+        fn hash(&self, _hasher: &mut dyn std::hash::Hasher) {}
+        fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
+            None
+        }
+    }
+
+    impl ArrowStream for Recorder {
+        fn insert(&mut self, data: &RecordBatch, _: &Option<ConnectorMetadata>) -> AnyResult<()> {
+            self.record(data)
+        }
+        fn delete(&mut self, data: &RecordBatch, _: &Option<ConnectorMetadata>) -> AnyResult<()> {
+            self.record(data)
+        }
+        fn insert_with_polarities(
+            &mut self,
+            data: &RecordBatch,
+            _polarities: &[bool],
+            _: &Option<ConnectorMetadata>,
+        ) -> AnyResult<()> {
+            self.record(data)
+        }
+        fn fork(&self) -> Box<dyn ArrowStream> {
+            Box::new(self.clone())
+        }
+        fn stage(&self, _buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+            unreachable!()
+        }
+    }
+
+    fn fields() -> Vec<Field> {
+        vec![
+            Field::new(SqlIdentifier::new("id", false), ColumnType::bigint(false)),
+            Field::new(SqlIdentifier::new("name", false), ColumnType::varchar(true)),
+        ]
+    }
+
+    fn batch(columns: Vec<(&str, ArrayRef)>) -> RecordBatch {
+        RecordBatch::try_from_iter(columns).unwrap()
+    }
+
+    fn ids() -> ArrayRef {
+        Arc::new(Int64Array::from(vec![1, 2]))
+    }
+
+    fn strings(values: [&str; 2]) -> ArrayRef {
+        Arc::new(StringArray::from(values.to_vec()))
+    }
+
+    /// Whether `parse_record_batch` gives `batch` to the stream for a read by
+    /// position.
+    fn read_by_position(batch: RecordBatch, polarity: Polarity) -> bool {
+        let mut recorder = Recorder::default();
+        let (_, errors) = DeltaTableInputEndpointInner::parse_record_batch(
+            batch,
+            &polarity,
+            &fields(),
+            &mut recorder,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let recorded = recorder.0.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        recorded[0]
+    }
+
+    /// The connector reads a batch by position when the batch has all the
+    /// columns of the table: for inserts and deletes, with the columns in
+    /// another order and an extra column, and for a change data batch.
+    #[test]
+    fn complete_batches_are_read_by_position() {
+        let complete = || {
+            batch(vec![
+                ("extra", ids()),
+                ("name", strings(["a", "b"])),
+                ("ID", ids()),
+            ])
+        };
+        assert!(read_by_position(complete(), Polarity::Fixed(true)));
+        assert!(read_by_position(complete(), Polarity::Fixed(false)));
+
+        let change_data = batch(vec![
+            ("id", ids()),
+            ("name", strings(["a", "b"])),
+            (CHANGE_TYPE_COLUMN, strings(["insert", "delete"])),
+        ]);
+        assert!(read_by_position(change_data, Polarity::ChangeType));
+    }
+
+    /// A batch without a column of the table, which `skip_unused_columns`
+    /// produces, is read by name.
+    #[test]
+    fn a_batch_without_a_column_is_read_by_name() {
+        assert!(!read_by_position(
+            batch(vec![("id", ids())]),
+            Polarity::Fixed(true)
+        ));
     }
 }
