@@ -10,6 +10,17 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Delta Lake and Iceberg input connectors: the conversion of the data that
+  the connector reads to SQL records is faster. In a benchmark of this
+  conversion with rows of about 100 columns, it takes about 70% less time.
+  The conversion now runs on its own pool with one thread per CPU core, so it
+  no longer delays other work in the pipeline.
+- Delta Lake and Iceberg input connectors: when `num_parsers` is not set, it
+  is now the number of CPU cores available to the pipeline, at most 16.
+  Before, it was 4. All connectors of a pipeline together keep at most two
+  record batches per CPU core in the parsers, so many connectors, or a large
+  `num_parsers`, no longer add memory use for each connector. In the REST
+  API, `num_parsers` can now be `null`, which means that it is not set.
 - Incompatible change (support bundles): in new collections,
   `pipeline_config.json` no longer has `program_info.dataflow`, which was a
   copy of `dataflow_graph.json`.
