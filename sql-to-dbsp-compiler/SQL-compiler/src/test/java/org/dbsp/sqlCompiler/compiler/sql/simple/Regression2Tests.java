@@ -303,6 +303,16 @@ public class Regression2Tests extends SqlIoTest {
     }
 
     @Test
+    public void rejectedJsonTokenIsNotQuoted() {
+        // The token can be an inline credential; only the source excerpt shows it
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                    "password": hunter2
+                }]');
+                """, "'connectors' is not legal JSON: Unrecognized token: was expecting");
+    }
+
+    @Test
     public void testSet() {
         // Check that SET does not affect normal identifier resolution
         var ccs = this.getCCS("""
