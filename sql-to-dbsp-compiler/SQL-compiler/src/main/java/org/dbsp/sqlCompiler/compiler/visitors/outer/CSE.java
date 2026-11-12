@@ -33,7 +33,8 @@ public class CSE extends Repeat {
     /** One CSE pass:
      * - build circuit graph,
      * - find common subexpressions,
-     * - remove them. */
+     * - remove them,
+     * - merge the outputs of recursive circuits that become the same stream. */
     static class OneCSEPass extends Passes {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical = new HashMap<>();
@@ -44,6 +45,7 @@ public class CSE extends Repeat {
             this.add(graph);
             this.add(new FindCSE(compiler, graph.graphs, this.canonical));
             this.add(new RemoveCSE(compiler, this.canonical));
+            this.add(new MergeRecursiveOutputs(compiler));
         }
     }
 

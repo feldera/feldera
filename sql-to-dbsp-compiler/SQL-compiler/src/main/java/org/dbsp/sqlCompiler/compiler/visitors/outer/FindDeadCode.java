@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.ISplitInput;
@@ -42,10 +43,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 /** At the end of the visit the set 'keep' contains all
@@ -57,6 +62,9 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public final Set<DBSPOperator> toKeep = new HashSet<>();
     /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
+    /** Key: the end of an implicit back edge, a view declaration or the output half of a split
+     * operator; value: the port that feeds the key on the back edge. */
+    final Map<DBSPOperator, OutputPort> backEdges = new HashMap<>();
 
     /**
      * Run the dead code visitor.
@@ -79,7 +87,40 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public Token startVisit(IDBSPOuterNode node) {
         this.toKeep.clear();
         this.reachable.clear();
+        this.backEdges.clear();
         return super.startVisit(node);
+    }
+
+    void addBackEdge(DBSPOperator end, @Nullable OutputPort source) {
+        if (source != null)
+            Utilities.putNew(this.backEdges, end, source);
+    }
+
+    /** Records the back edge of the split operator whose input half is {@code operator}, if any. */
+    void addSplitBackEdge(DBSPOperator operator) {
+        ISplitInput split = operator.as(ISplitInput.class);
+        if (split != null)
+            this.addBackEdge(split.splitOutput().outputPort().node(),
+                    operator.to(DBSPSimpleOperator.class).outputPort());
+    }
+
+    /** Finds all back edges before any traversal starts. */
+    @Override
+    public VisitDecision preorder(DBSPCircuit circuit) {
+        for (DBSPOperator operator : circuit.getAllOperators()) {
+            this.addSplitBackEdge(operator);
+            DBSPNestedOperator nested = operator.as(DBSPNestedOperator.class);
+            if (nested == null)
+                continue;
+            for (DBSPOperator inner : nested.getAllOperators()) {
+                this.addSplitBackEdge(inner);
+                // In a nested circuit the internal output of a view feeds its declaration
+                DBSPViewDeclarationOperator innerDeclaration = inner.as(DBSPViewDeclarationOperator.class);
+                if (innerDeclaration != null)
+                    this.addBackEdge(innerDeclaration, nested.internalOutputForDeclaration(innerDeclaration));
+            }
+        }
+        return super.preorder(circuit);
     }
 
     @Override
@@ -111,6 +152,14 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
                 continue;
             this.keep(op.node());
             r.addAll(op.node().inputs);
+            OutputPort backEdge = this.backEdges.get(op.node());
+            // A declaration outside a recursive circuit has no readers
+            DBSPViewDeclarationOperator declaration = op.node().as(DBSPViewDeclarationOperator.class);
+            Utilities.enforce(declaration == null || backEdge != null,
+                    () -> "No output of a recursive circuit feeds the declaration of view " +
+                            declaration.originalViewName().singleQuote());
+            if (backEdge != null)
+                r.add(backEdge);
         }
         return VisitDecision.STOP;
     }
@@ -150,12 +199,6 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSimpleOperator operator) {
-        ISplitInput split = operator.as(ISplitInput.class);
-        if (split != null) {
-            // Conservatively, an input half and its output half are never dead
-            this.keep(split.splitOutput().outputPort().node());
-            return this.keepInverseReachable(operator.outputPort());
-        }
         return VisitDecision.STOP;
     }
 

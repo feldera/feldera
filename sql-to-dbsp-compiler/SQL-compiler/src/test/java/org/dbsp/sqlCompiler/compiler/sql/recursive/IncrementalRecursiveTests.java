@@ -7,6 +7,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.Map;
+
 /** Tests with recursive queries and incremental compilation */
 public class IncrementalRecursiveTests extends BaseSQLTests {
     @Override
@@ -607,5 +609,98 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
         ccs.step("", """
                  v | weight
                 ------------""");
+    }
+
+    @Test
+    public void issue7946LeftJoinEmpty() {
+        // Only a LEFT JOIN with an empty left side reads p1 and p2, so the
+        // recursive circuits become dead after PropagateEmptySources
+        String sql = """
+                CREATE TABLE t(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW p1(src BIGINT, dst BIGINT);
+                CREATE LOCAL VIEW p1 AS SELECT src, dst FROM t UNION SELECT p1.src, t.dst FROM p1 JOIN t ON t.src = p1.dst;
+                DECLARE RECURSIVE VIEW p2(src BIGINT, dst BIGINT);
+                CREATE LOCAL VIEW p2 AS SELECT src, dst FROM t UNION SELECT p2.src, t.dst FROM p2 JOIN t ON t.src = p2.dst;
+                CREATE LOCAL VIEW empty_left AS
+                SELECT CAST(NULL AS BIGINT) AS id FROM (VALUES (1)) AS one(x) WHERE FALSE;
+                CREATE MATERIALIZED VIEW o AS
+                SELECT l.id, r.dst FROM empty_left AS l LEFT JOIN p1 AS r ON l.id = r.src
+                UNION ALL
+                SELECT l.id, r.dst FROM empty_left AS l LEFT JOIN p2 AS r ON l.id = r.src
+                UNION ALL
+                SELECT src, dst FROM t;""";
+        var ccs = this.getCCS(sql);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPNestedOperator operator) {
+                Assert.fail("Unexpected recursive circuit " + operator);
+            }
+        });
+        // Results validated using postgres:
+        // WITH RECURSIVE t(src, dst) AS (VALUES (1, 2)),
+        //   p1(src, dst) AS (SELECT src, dst FROM t UNION SELECT p1.src, t.dst FROM p1 JOIN t ON t.src = p1.dst),
+        //   p2(src, dst) AS (SELECT src, dst FROM t UNION SELECT p2.src, t.dst FROM p2 JOIN t ON t.src = p2.dst),
+        //   empty_left(id) AS (SELECT CAST(NULL AS BIGINT) FROM (VALUES (1)) AS one(x) WHERE FALSE)
+        // SELECT l.id, r.dst FROM empty_left AS l LEFT JOIN p1 AS r ON l.id = r.src
+        // UNION ALL SELECT l.id, r.dst FROM empty_left AS l LEFT JOIN p2 AS r ON l.id = r.src
+        // UNION ALL SELECT src, dst FROM t;
+        ccs.stepWeightOne("INSERT INTO t VALUES(1, 2);", """
+                 id | dst
+                ----------
+                 1  | 2""");
+    }
+
+    @Test
+    public void localViewReadThroughBackEdge() {
+        // Only the declaration of b reads the LOCAL view b, so DeadCode must follow the back edge
+        String sql = """
+                CREATE TABLE t(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW a(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW b(src BIGINT, dst BIGINT);
+                CREATE LOCAL VIEW a AS SELECT src, dst FROM t UNION SELECT b.src, t.dst FROM b JOIN t ON t.src = b.dst;
+                CREATE LOCAL VIEW b AS SELECT src, dst FROM a;
+                CREATE MATERIALIZED VIEW o AS SELECT * FROM a;""";
+        var ccs = this.getCCS(sql);
+        // Results validated using postgres, with b written inline in a:
+        // WITH RECURSIVE t(src, dst) AS (VALUES (1, 2), (2, 3)),
+        //   a(src, dst) AS (SELECT src, dst FROM t
+        //     UNION SELECT b.src, t.dst FROM (SELECT src, dst FROM a) AS b JOIN t ON t.src = b.dst)
+        // SELECT * FROM a ORDER BY src, dst;
+        ccs.stepWeightOne("INSERT INTO t VALUES(1, 2), (2, 3)", """
+                 src | dst
+                -----------
+                 1   | 2
+                 2   | 3
+                 1   | 3""");
+    }
+
+    @Test
+    public void sharedRecursiveOutputs() {
+        // The outputs a and b of the recursive circuit become one stream, so CSE merges them
+        String sql = """
+                CREATE TABLE t(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW x(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW a(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW b(src BIGINT, dst BIGINT);
+                CREATE VIEW a AS SELECT src, dst FROM x;
+                CREATE VIEW b AS SELECT src, dst FROM x;
+                CREATE VIEW x AS SELECT src, dst FROM t
+                UNION SELECT a.src, t.dst FROM a JOIN t ON t.src = a.dst
+                UNION SELECT * FROM b;""";
+        var ccs = this.getCCS(sql);
+        // Results validated using DuckDB, with a and b written inline in x:
+        // WITH RECURSIVE t(src, dst) AS (VALUES (1, 2), (2, 3)),
+        //   x(src, dst) AS (SELECT src, dst FROM t
+        //     UNION (SELECT a.src, t.dst FROM (SELECT src, dst FROM x) AS a JOIN t ON t.src = a.dst
+        //            UNION SELECT * FROM (SELECT src, dst FROM x) AS b))
+        // SELECT src, dst, count(*) AS weight FROM x GROUP BY src, dst ORDER BY src, dst;
+        String closure = """
+                 src | dst | weight
+                --------------------
+                 1   | 2   | 1
+                 2   | 3   | 1
+                 1   | 3   | 1""";
+        ccs.stepMultiView("INSERT INTO t VALUES(1, 2), (2, 3)",
+                Map.of("a", closure, "b", closure, "x", closure));
     }
 }

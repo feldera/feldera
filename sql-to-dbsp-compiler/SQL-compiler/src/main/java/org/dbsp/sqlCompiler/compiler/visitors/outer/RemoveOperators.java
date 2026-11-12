@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.IMultiOutput;
@@ -68,6 +69,18 @@ public class RemoveOperators extends CircuitCloneVisitor {
                     .appendSupplier(node::toString)
                     .newline();
         }
+        return VisitDecision.STOP;
+    }
+
+    /** Removes a nested circuit with no reachable outputs, together with all its operators. */
+    @Override
+    public VisitDecision preorder(DBSPNestedOperator node) {
+        if (this.keep.contains(node))
+            return super.preorder(node);
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append("Removing ")
+                .appendSupplier(node::toString)
+                .newline();
         return VisitDecision.STOP;
     }
 

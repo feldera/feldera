@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.merkle;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.ISplitInput;
@@ -10,10 +11,13 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.HashString;
+import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** Check that the persistent ids of the operators are not empty and are unique.
  *
@@ -65,6 +69,19 @@ public class CheckPersistentIds extends CircuitVisitor {
         if (previous != null)
             throw new InternalCompilerError("Operators " + previous + " and " + operator +
                     " have the same persistent id " + id, operator);
+    }
+
+    @Override
+    public void postorder(DBSPNestedOperator operator) {
+        // An empty nested circuit hashes to the hash of the empty string
+        Utilities.enforce(operator.size() > 0,
+                () -> "Recursive circuit for views " + operator.outputViews + " has no operators");
+        // Outputs that are the same stream would give two feedback streams one persistent id
+        Set<OutputPort> outputs = new HashSet<>();
+        for (OutputPort port : operator.internalOutputs)
+            Utilities.enforce(port == null || outputs.add(port),
+                    () -> "Recursive circuit for views " + operator.outputViews + " has two outputs that are the same stream " + port);
+        super.postorder(operator);
     }
 
     @Override
