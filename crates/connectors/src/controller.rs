@@ -9407,6 +9407,15 @@ impl ControllerInner {
         ) {
             return Ok(None);
         }
+        // Every part needs the other hosts: the parts that are not the leader send their reports
+        // to the leader, and the leader waits for them, so a leader that started without them
+        // would wait forever.
+        let client = self.peer_client.clone().ok_or_else(|| {
+            ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "a distributed output connector with this transport commits through the part on one host, which needs the URL of each host from the coordinator, which this coordinator does not send",
+            )
+        })?;
         let host = self.layout.local_host_idx();
         let leader_host = self
             .output_assignment
@@ -9421,12 +9430,6 @@ impl ControllerInner {
                 .insert(endpoint_name.to_string(), leader.clone());
             OutputPartRole::Leader(leader)
         } else {
-            let client = self.peer_client.clone().ok_or_else(|| {
-                ControllerError::invalid_transport_configuration(
-                    endpoint_name,
-                    "a distributed output connector with this transport commits through the part on one host, which needs the URL of each host from the coordinator, which this coordinator does not send",
-                )
-            })?;
             OutputPartRole::Follower(client)
         };
         Ok(Some(OutputPart {
