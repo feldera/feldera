@@ -19,6 +19,8 @@ import { installChipButtons, isToggleable, refreshChips } from './chipButtons.js
 import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
+import { pauseFrames } from './cytoscapeRenderer.js';
+import { type ElkLayoutOptions, layoutCache, layoutCacheKey, leafPositions, runPresetLayout } from './layoutCache.js';
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
@@ -405,6 +407,13 @@ export class CytographRendering {
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
+    /** Starts the renderer frames again. Not null while a layout runs. A frame during the layout is
+     *  hidden (see `FrozenLayout`), but it costs a style update and a draw of the whole changed graph. */
+    private resumeFrames: (() => void) | null = null;
+    /** The `layoutCacheKey` of the last layout that started. */
+    private layoutKey: string | null = null;
+    /** The number of ELK layouts that did not finish yet. */
+    private elkLayoutsRunning = 0;
     /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
     private tracedEdges: EdgeCollection;
     /** The edges that have `RAISED_EDGE_CLASS`. `raiseTracedEdges` makes them equal to `tracedEdges`. */
@@ -719,18 +728,59 @@ export class CytographRendering {
         this.renderingInFlight = true;
         this.callbacks.onRenderingChange?.(true);
         this.message(CytographRendering.LAYOUT_MESSAGE);
+        this.resumeFrames ??= pauseFrames(this.cy);
         try {
-            this.cy
-                .layout(options)
-                .run();
+            this.runLayout(options);
         } catch (e) {
-            this.renderingInFlight = false;
-            this.callbacks.onRenderingChange?.(false);
-            // No `layoutstop` will arrive either, so whatever the observers put up to cover the change
-            // has to come down here or it never will.
-            notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
+            this.abandonLayout();
             throw e;
         }
+    }
+
+    /** Run ELK, or move the nodes to the positions of an earlier ELK layout of the same input. */
+    private runLayout(options: ElkLayoutOptions) {
+        const key = layoutCacheKey(this.cy, options);
+        this.layoutKey = key;
+        // An ELK layout that still runs moves the nodes when it finishes. If a cached layout finished
+        // before it, the older ELK layout would be the last one on screen.
+        const positions = this.elkLayoutsRunning === 0 ? layoutCache.get(key) : undefined;
+        if (positions === undefined) {
+            const layout = this.cy.layout(options as never);
+            layout.one('layoutstop', () => {
+                this.elkLayoutsRunning--;
+                // If the graph changed during the layout, a newer layout runs, and these positions are
+                // not the result for `key`.
+                if (this.layoutKey === key) {
+                    layoutCache.set(key, leafPositions(this.cy));
+                }
+            });
+            layout.run();
+            // Counted after `run`, because a `run` that throws emits no `layoutstop`.
+            this.elkLayoutsRunning++;
+            return;
+        }
+        // ELK gives its result after `updateGraph` returns. Do the same, so that the code after
+        // `updateGraph` runs before `layoutComplete` also for a cached layout.
+        queueMicrotask(() => {
+            if (this.cy.destroyed() || this.layoutKey !== key) {
+                return;
+            }
+            try {
+                runPresetLayout(this.cy, positions);
+            } catch (e) {
+                this.abandonLayout();
+                throw e;
+            }
+        });
+    }
+
+    /** Called when a layout throws. No `layoutstop` follows, so undo what `initiateLayout` started. */
+    private abandonLayout() {
+        this.endFramePause();
+        this.renderingInFlight = false;
+        this.callbacks.onRenderingChange?.(false);
+        // Whatever the observers put up to cover the change has to come down here or it never will.
+        notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
     }
 
     /** Modify the rendered graph incrementally by applying a diff. */
@@ -874,12 +924,18 @@ export class CytographRendering {
     }
 
     layoutComplete() {
+        this.endFramePause();
         this.clearMessage();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
         // In order: the viewport settles zoom and pan, then the picture held over the layout comes down
         // onto the finished one.
         notifyObservers(this.observers, (observer) => observer.layoutSettled?.());
+    }
+
+    private endFramePause() {
+        this.resumeFrames?.();
+        this.resumeFrames = null;
     }
 
     getActualEdgeId(e: Edge<NodeId>): string {
@@ -1124,6 +1180,7 @@ export class CytographRendering {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
         }
+        this.endFramePause();
         notifyObservers(this.observers, (observer) => observer.dispose?.());
         if (this.raiseFrame !== null) {
             cancelAnimationFrame(this.raiseFrame);
