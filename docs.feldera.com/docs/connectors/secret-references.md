@@ -23,6 +23,8 @@ configuration with their values. We currently only support a single secret provi
 When the pipeline initializes, it replaces all references in the connector configuration
 with their resolved values. Feldera resolves references when a pipeline starts, as well as
 each time it resumes. Feldera does not write resolved values to checkpoints or journals.
+Connector error messages are written to checkpoints; see [Diagnostics](#diagnostics)
+for how resolved values are kept out of them.
 
 Use environment variables for non-sensitive deployment configuration only.
 Storing secrets in environment variables is generally discouraged; use a dedicated secret manager or secret store instead.
@@ -39,6 +41,29 @@ pipeline therefore keeps resolved values out of what it reports:
 | Connector errors in `/stats` and in the support bundle | the reference, `${secret:...}`, for the value as resolved; `[REDACTED ${secret:...}]` for a derived form of it, such as a percent-encoded or escaped copy or the password of a URL value. This applies to a pipeline on a runtime with this fix |
 | Connection errors and debug log lines of the Postgres input, Delta Lake and Kafka connectors, and of the Avro format | the endpoint name and option names only, never the URI, option value, or configuration |
 | Format and connector configuration errors, and the pipeline startup summary | the error category, the expected values and field names from the schema, the endpoint, transport and format names; never a rejected value or a configuration dump |
+
+The API server does not resolve secret references, but an older runtime can
+send it an error containing a resolved value. The server replaces the
+password of a URL and the value of a `password=` parameter in stored
+deployment errors, returned status details, and exported diagnostics with
+`[REDACTED]` and keeps the text around them, including for quoted and
+escaped keyword passwords that span lines. Where the end of a credential
+cannot be established, such as a password with whitespace in it, a query
+value with nothing after it, or a percent-encoded parameter name, the
+diagnostic is cut off at the credential: the text before it stays. A URL
+that holds an `@` is taken as complete, so that an email address later in a
+log does not cut the log off. A password with both an unencoded `@` and
+whitespace is therefore replaced only up to its first `@`:
+`postgres://u:pa@ss word@host/db` shows as
+`postgres://u:[REDACTED]@ss word@host/db`. Percent-encode such a password
+(`pa%40ss%20word`), and it is replaced whole. This also
+covers failure reasons in support bundle metadata and collections stored
+before the fix. Error codes and endpoint identities in separate fields are
+preserved.
+
+Format configuration errors report a safe error category and a corrective
+action instead of quoting the rejected value, including for short secrets.
+JSON log fields are redacted before serialization adds JSON escaping.
 
 The following limits apply:
 

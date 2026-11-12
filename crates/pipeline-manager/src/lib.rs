@@ -12,6 +12,7 @@ pub mod common_error;
 pub mod compiler;
 pub mod config;
 pub mod db;
+pub mod diagnostic_redaction;
 pub mod error;
 pub mod events_cleaner;
 pub mod license;
