@@ -834,6 +834,12 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
     },
+    /// Retrieve the desired and current CPU, memory, and storage of each host of a pipeline.
+    Deployment {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Retrieve the pipeline metrics.
     ///
     /// Metrics are available in `json` and `prometheus` output formats.

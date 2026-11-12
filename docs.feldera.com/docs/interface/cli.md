@@ -318,6 +318,12 @@ Retrieve the stats for `p1`:
 fda stats p1
 ```
 
+Retrieve the desired and current CPU, memory, and storage of each host of `p1`:
+
+```bash
+fda deployment p1
+```
+
 Retrieve the latest log messages for `p1`:
 
 ```bash

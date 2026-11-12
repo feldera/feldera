@@ -123,6 +123,8 @@ fda dismiss-error p1
 fda start p1 --no-dismiss-error
 fda start p1
 fda --format json stats p1 | jq '.metrics'
+fda deployment p1
+fda --format json deployment p1 | jq '.spec'
 fda log p1
 fda logs p1
 fda connector p1 example c stats

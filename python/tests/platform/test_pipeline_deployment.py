@@ -1,6 +1,7 @@
 from http import HTTPStatus
 
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS
+from tests import TEST_CLIENT
 
 from .helper import (
     api_url,
@@ -27,14 +28,8 @@ RESOURCES = {"cpu_cores_min": 1, "memory_max": "2G", "storage_max": "1G"}
 STATES = {"Current", "InProgress", "Failed", "Terminating", "NotFound", "Unknown"}
 
 
-def _deployment(name: str) -> dict:
-    r = get(api_url(f"/pipelines/{name}/deployment"))
-    assert r.status_code == HTTPStatus.OK, r.text
-    return r.json()
-
-
 @gen_pipeline_name
-def test_pipeline_deployment(pipeline_name):
+def test_pipelineTEST_CLIENT.get_pipeline_deployment(pipeline_name):
     """
     GET /deployment returns the spec of the last deployment. Runners that observe
     their resources, such as the Kubernetes runner, also return a status per host.
@@ -42,7 +37,7 @@ def test_pipeline_deployment(pipeline_name):
     create_pipeline(pipeline_name, "")
 
     # Never started: there is no deployment config yet.
-    spec = _deployment(pipeline_name)["spec"]["resources"]
+    spec = TEST_CLIENT.get_pipeline_deployment(pipeline_name)["spec"]["resources"]
     assert all(spec[field] is None for field in RESOURCE_FIELDS), spec
 
     r = patch_json(
@@ -51,7 +46,7 @@ def test_pipeline_deployment(pipeline_name):
     )
     assert r.status_code == HTTPStatus.OK, r.text
     start_pipeline_as_paused(pipeline_name)
-    deployment = _deployment(pipeline_name)
+    deployment = TEST_CLIENT.get_pipeline_deployment(pipeline_name)
     for field in RESOURCE_FIELDS:
         assert deployment["spec"]["resources"][field] == RESOURCES.get(field), field
 
@@ -64,7 +59,7 @@ def test_pipeline_deployment(pipeline_name):
 
     # The spec stays after stop: it is what the next start reuses or replaces.
     stop_pipeline(pipeline_name)
-    assert _deployment(pipeline_name)["spec"] == deployment["spec"]
+    assert TEST_CLIENT.get_pipeline_deployment(pipeline_name)["spec"] == deployment["spec"]
 
 
 def test_pipeline_deployment_unknown_pipeline():
