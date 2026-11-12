@@ -19,6 +19,7 @@ import { installChipButtons, isToggleable, refreshChips } from './chipButtons.js
 import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
+import { pauseFrames } from './cytoscapeRenderer.js';
 
 // Register the extensions once for the module. Cytoscape warns when an extension is registered again.
 cytoscape.use(elk);
@@ -409,6 +410,9 @@ export class CytographRendering {
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
+    /** Starts the renderer frames again. Not null while a layout runs. A frame during the layout is
+     *  hidden (see `FrozenLayout`), but it costs a style update and a draw of the whole changed graph. */
+    private resumeFrames: (() => void) | null = null;
     /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
     private tracedEdges: EdgeCollection;
     /** The edges that have `RAISED_EDGE_CLASS`. `raiseTracedEdges` makes them equal to `tracedEdges`. */
@@ -724,11 +728,13 @@ export class CytographRendering {
         this.renderingInFlight = true;
         this.callbacks.onRenderingChange?.(true);
         this.message(CytographRendering.LAYOUT_MESSAGE);
+        this.resumeFrames ??= pauseFrames(this.cy);
         try {
             this.cy
                 .layout(options)
                 .run();
         } catch (e) {
+            this.endFramePause();
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
             // No `layoutstop` will arrive either, so whatever the observers put up to cover the change
@@ -879,12 +885,18 @@ export class CytographRendering {
     }
 
     layoutComplete() {
+        this.endFramePause();
         this.clearMessage();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
         // In order: the viewport settles zoom and pan, then the picture held over the layout comes down
         // onto the finished one.
         notifyObservers(this.observers, (observer) => observer.layoutSettled?.());
+    }
+
+    private endFramePause() {
+        this.resumeFrames?.();
+        this.resumeFrames = null;
     }
 
     getActualEdgeId(e: Edge<NodeId>): string {
@@ -1129,6 +1141,7 @@ export class CytographRendering {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
         }
+        this.endFramePause();
         notifyObservers(this.observers, (observer) => observer.dispose?.());
         if (this.raiseFrame !== null) {
             cancelAnimationFrame(this.raiseFrame);
