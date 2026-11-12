@@ -25,10 +25,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Result as AnyResult, anyhow};
-use arrow::array::{ArrayRef, RecordBatch};
+use arrow::array::{
+    Array, ArrayRef, AsArray, RecordBatch, TimestampMicrosecondArray, new_null_array,
+};
+use arrow::compute::concat;
+use arrow::datatypes::{DataType, TimeUnit, TimestampMicrosecondType};
 use delta_kernel::expressions::Scalar;
-use deltalake::kernel::LogicalFileView;
+use deltalake::datafusion::common::Column;
+use deltalake::datafusion::physical_optimizer::pruning::PruningStatistics;
+use deltalake::kernel::{LogDataHandler, LogicalFileView};
 use deltalake::logstore::ObjectStoreRef;
+use deltalake::table::state::DeltaTableState;
 use deltalake::{ObjectStore, Path};
 use futures::StreamExt;
 use futures::stream::{self, TryStreamExt};
@@ -72,73 +79,179 @@ pub struct Candidate {
     /// also a partition column is reconstructed from here. Its value is constant across the
     /// file, which also makes it an exact statistic for pruning.
     pub partition_keys: HashMap<String, Scalar>,
-    /// Minimum of each key column, in key declaration order. `None` for a column the log
-    /// carries no usable statistic for, which makes the file unprunable on that column.
-    min_values: Vec<Option<Scalar>>,
-    /// Maximum of each key column, as [`Self::min_values`].
-    max_values: Vec<Option<Scalar>>,
+    /// The key bounds of all files in the snapshot. All candidates share them.
+    bounds: Arc<LogBounds>,
+    /// The position of this file in `bounds`.
+    row: usize,
 }
 
 impl Candidate {
-    /// Build from a log entry. `with_stats` is false when the key's types make min/max
-    /// untrustworthy, in which case nothing reads the bounds and parsing them is wasted.
-    ///
-    /// Only the key columns' bounds are kept. The log's statistics cover every indexed
-    /// column and name each one, so holding them whole would cost one field name per column
-    /// per file -- gigabytes on a wide table with many files, to read two of them.
-    /// Takes the encoder rather than a column list, so the bounds cannot end up in a
-    /// different order from the one pruning indexes them by.
-    pub fn from_log(
-        file: &LogicalFileView,
-        partition_keys: HashMap<String, Scalar>,
-        encoder: &KeyEncoder,
-        with_stats: bool,
-    ) -> Self {
-        let key_columns = encoder.column_names();
-        let (min_values, max_values) = if with_stats {
-            (
-                key_bounds(file.min_values(), key_columns),
-                key_bounds(file.max_values(), key_columns),
-            )
-        } else {
-            (vec![None; key_columns.len()], vec![None; key_columns.len()])
-        };
-        Self {
-            path: file.path().to_string(),
-            size: u64::try_from(file.size()).ok().filter(|size| *size > 0),
-            partition_keys,
-            min_values,
-            max_values,
-        }
-    }
-
     /// One-element array of key column `index`'s minimum, or `None` without one.
     fn min_of(&self, index: usize) -> Option<ArrayRef> {
-        bound_array(self.min_values.get(index))
+        bound_at(self.bounds.mins.get(index), self.row)
     }
 
     fn max_of(&self, index: usize) -> Option<ArrayRef> {
-        bound_array(self.max_values.get(index))
+        bound_at(self.bounds.maxes.get(index), self.row)
     }
 }
 
-/// Pull each key column's bound out of a struct scalar of statistics, dropping the rest.
-fn key_bounds(stats: Option<Scalar>, key_columns: &[String]) -> Vec<Option<Scalar>> {
-    let Some(Scalar::Struct(data)) = stats else {
-        return vec![None; key_columns.len()];
-    };
-    key_columns
-        .iter()
-        .map(|name| {
-            let index = data.fields().iter().position(|f| f.name() == name)?;
-            let value = data.values().get(index)?;
-            (!value.is_null() && !contains_decimal(value)).then(|| value.clone())
+/// Make one candidate for each data file in the snapshot. If `with_stats` is false, the
+/// candidates have no key bounds.
+pub fn candidates_from_log(
+    snapshot: &DeltaTableState,
+    encoder: &KeyEncoder,
+    with_stats: bool,
+    mut partition_keys: impl FnMut(&LogicalFileView) -> HashMap<String, Scalar>,
+) -> Vec<Candidate> {
+    let log = snapshot.log_data();
+    let bounds = Arc::new(if with_stats {
+        LogBounds::read(&log, encoder, snapshot.metadata().partition_columns())
+    } else {
+        LogBounds::default()
+    });
+    log.iter()
+        .enumerate()
+        .map(|(row, file)| Candidate {
+            path: file.path().to_string(),
+            size: u64::try_from(file.size()).ok().filter(|size| *size > 0),
+            partition_keys: partition_keys(&file),
+            bounds: bounds.clone(),
+            row,
         })
         .collect()
 }
 
-/// delta-rs writes decimal statistics through `f64`, so a log bound can sit on the wrong side
-/// of a value with more than 15 digits. Row-group statistics stay exact and still prune.
+/// The min and max of each key column for all files, in `log_data()` order. One read for
+/// each column is fast. One read for each file took 1.6 s on 200k files.
+#[derive(Debug, Default)]
+struct LogBounds {
+    /// In key column order. `None` when the column has no usable bounds.
+    mins: Vec<Option<ArrayRef>>,
+    maxes: Vec<Option<ArrayRef>>,
+}
+
+impl LogBounds {
+    fn read(log: &LogDataHandler<'_>, encoder: &KeyEncoder, partition_columns: &[String]) -> Self {
+        let mut bounds = Self::default();
+        for (name, data_type) in encoder.column_names().iter().zip(encoder.column_types()) {
+            let (min, max) = if partition_columns.contains(name) {
+                // The log has no stats for a partition column. Pruning uses its value.
+                (None, None)
+            } else if let DataType::Struct(_) = data_type {
+                // For a struct column, delta-rs returns the first field, not the struct.
+                (
+                    struct_bounds(log, name, false),
+                    struct_bounds(log, name, true),
+                )
+            } else {
+                let column = Column::from_name(name);
+                let files = log.num_files();
+                (
+                    usable(log.min_values(&column), files),
+                    usable(log.max_values(&column), files).map(|max| round_up_ms(&max)),
+                )
+            };
+            bounds.mins.push(min);
+            bounds.maxes.push(max);
+        }
+        bounds
+    }
+}
+
+/// Return the bounds only when they are safe for pruning.
+fn usable(array: Option<ArrayRef>, files: usize) -> Option<ArrayRef> {
+    let array = array?;
+    // delta-rs writes decimal stats through f64, so a decimal bound can be wrong.
+    let decimal = matches!(
+        array.data_type(),
+        DataType::Decimal32(..)
+            | DataType::Decimal64(..)
+            | DataType::Decimal128(..)
+            | DataType::Decimal256(..)
+    );
+    // A different length can give a file the bound of a different file.
+    (array.len() == files && !decimal).then_some(array)
+}
+
+/// Raise each whole-millisecond timestamp max by 1 ms, as `LogicalFileView::max_values`
+/// does. The log can cut a timestamp to ms, so the true max can be higher.
+fn round_up_ms(array: &ArrayRef) -> ArrayRef {
+    if !matches!(
+        array.data_type(),
+        DataType::Timestamp(TimeUnit::Microsecond, _)
+    ) {
+        return array.clone();
+    }
+    let raised: TimestampMicrosecondArray =
+        array.as_primitive::<TimestampMicrosecondType>().unary(|v| {
+            if v % 1_000 == 0 {
+                v.saturating_add(1_000)
+            } else {
+                v
+            }
+        });
+    Arc::new(raised.with_data_type(array.data_type().clone()))
+}
+
+/// The min or max of a ROW column for all files, read file by file.
+fn struct_bounds(log: &LogDataHandler<'_>, name: &str, max: bool) -> Option<ArrayRef> {
+    // Join often: one small array for each file uses 2.6 times the memory of the old code.
+    const CHUNK: usize = 1024;
+    let (mut data_type, mut leading_nulls) = (None, 0);
+    let (mut parts, mut chunk) = (Vec::new(), Vec::with_capacity(CHUNK));
+    for file in log.iter() {
+        let stats = if max {
+            file.max_values()
+        } else {
+            file.min_values()
+        };
+        let bound = struct_bound(stats, name);
+        match (&data_type, &bound) {
+            (None, None) => leading_nulls += 1,
+            (None, Some(first)) => data_type = Some(first.data_type().clone()),
+            _ => {}
+        }
+        if data_type.is_some() {
+            chunk.push(bound);
+        }
+        if chunk.len() == CHUNK {
+            parts.push(join(&chunk, data_type.as_ref()?)?);
+            chunk.clear();
+        }
+    }
+    let data_type = data_type?;
+    // An empty chunk cannot be joined.
+    if !chunk.is_empty() {
+        parts.push(join(&chunk, &data_type)?);
+    }
+    parts.insert(0, new_null_array(&data_type, leading_nulls));
+    concat(&parts.iter().map(|a| a.as_ref()).collect::<Vec<_>>()).ok()
+}
+
+/// Join one-row bounds into one array. A file without a bound gets a null.
+fn join(bounds: &[Option<ArrayRef>], data_type: &DataType) -> Option<ArrayRef> {
+    let null = new_null_array(data_type, 1);
+    let arrays: Vec<&dyn Array> = bounds
+        .iter()
+        .map(|bound| bound.as_deref().unwrap_or(null.as_ref()))
+        .collect();
+    concat(&arrays).ok()
+}
+
+/// The bound of column `name` in one file, or `None` if it is missing, null or a decimal.
+fn struct_bound(stats: Option<Scalar>, name: &str) -> Option<ArrayRef> {
+    let Some(Scalar::Struct(data)) = stats else {
+        return None;
+    };
+    let index = data.fields().iter().position(|f| f.name() == name)?;
+    let value = data.values().get(index)?;
+    if value.is_null() || contains_decimal(value) {
+        return None;
+    }
+    value.to_array(1).ok()
+}
+
 fn contains_decimal(value: &Scalar) -> bool {
     match value {
         Scalar::Decimal(_) => true,
@@ -147,8 +260,10 @@ fn contains_decimal(value: &Scalar) -> bool {
     }
 }
 
-fn bound_array(bound: Option<&Option<Scalar>>) -> Option<ArrayRef> {
-    bound?.as_ref()?.to_array(1).ok()
+/// The bound of one file as a one-row array, or `None` if the file has no bound.
+fn bound_at(bounds: Option<&Option<ArrayRef>>, row: usize) -> Option<ArrayRef> {
+    let array = bounds?.as_ref()?;
+    (row < array.len() && !array.is_null(row)).then(|| array.slice(row, 1))
 }
 
 /// What one lookup pass did, for metrics and for the efficiency tests.
@@ -669,8 +784,383 @@ mod test {
     use arrow::datatypes::DataType;
     use arrow::row::{RowConverter, SortField};
     use deltalake::DeltaTable;
+    use deltalake::kernel::StructField;
     use deltalake::operations::create::CreateBuilder;
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
     use tempfile::TempDir;
+
+    /// The old bounds, read file by file. The tests compare the new bounds with these.
+    fn per_file_bound(stats: Option<Scalar>, name: &str) -> Option<ArrayRef> {
+        fn has_decimal(value: &Scalar) -> bool {
+            match value {
+                Scalar::Decimal(_) => true,
+                Scalar::Struct(data) => data.values().iter().any(has_decimal),
+                _ => false,
+            }
+        }
+        let Some(Scalar::Struct(data)) = stats else {
+            return None;
+        };
+        let index = data.fields().iter().position(|f| f.name() == name)?;
+        let value = data.values().get(index)?;
+        (!value.is_null() && !has_decimal(value)).then(|| value.to_array(1).ok())?
+    }
+
+    /// A partition key column gets no bound from the stats. Pruning uses its value.
+    #[tokio::test]
+    async fn a_partition_key_column_takes_no_log_bound() {
+        use crate::integrated::delta_table::merge::test::{
+            partitioned_fixture_table, partitioned_key_relation,
+        };
+
+        let dir = TempDir::new().unwrap();
+        let table = partitioned_fixture_table(&dir, &[(1, "a"), (2, "b")]).await;
+        let encoder = KeyEncoder::new(&partitioned_key_relation(), &arrow_schema()).unwrap();
+        let candidates = candidates_from_log(table.snapshot().unwrap(), &encoder, true, |_| {
+            HashMap::new()
+        });
+        assert_eq!(candidates.len(), 2);
+        let payload = encoder
+            .column_names()
+            .iter()
+            .position(|n| n == "payload")
+            .unwrap();
+        for candidate in &candidates {
+            assert!(candidate.min_of(payload).is_none() && candidate.max_of(payload).is_none());
+        }
+    }
+
+    /// ROW bounds stay with the correct file across many chunks. The first files have no stats.
+    #[tokio::test]
+    async fn row_bounds_stay_aligned_across_chunks() {
+        // 2048 files with stats fill the last chunk. 2497 files leave it part full.
+        for files in [2051, 2500] {
+            row_bounds_case(files).await;
+        }
+    }
+
+    async fn row_bounds_case(files: i64) {
+        use deltalake::kernel::{Action, Add, DataType as D, StructType};
+
+        let row = StructType::try_new([StructField::new("a", D::INTEGER, true)]).unwrap();
+        let dir = TempDir::new().unwrap();
+        let mut table = CreateBuilder::new()
+            .with_location(dir.path().to_str().unwrap())
+            .with_columns([
+                StructField::new("id", D::LONG, true),
+                StructField::new("row", D::Struct(Box::new(row)), true),
+            ])
+            .await
+            .unwrap();
+        // Only the log is read, so the data files do not have to exist.
+        let adds = (0..files)
+            .map(|f| {
+                let stats = (f >= 3).then(|| {
+                    serde_json::json!({
+                        "numRecords": 1,
+                        "minValues": {"id": f, "row": {"a": f}},
+                        "maxValues": {"id": f, "row": {"a": f}},
+                    })
+                    .to_string()
+                });
+                Action::Add(Add {
+                    path: format!("f{f}.parquet"),
+                    size: 1,
+                    data_change: true,
+                    stats,
+                    ..Default::default()
+                })
+            })
+            .collect();
+        crate::integrated::delta_table::merge::test::commit(&mut table, adds).await;
+
+        let names = ["id".to_string(), "row".to_string()];
+        let mut usable = std::collections::BTreeSet::new();
+        assert_bounds_match(&table, &names, &mut usable, &format!("{files} files"));
+        assert_eq!(usable, std::collections::BTreeSet::from(names));
+    }
+
+    /// One file with all key types. Even files have whole-ms timestamps. File 2 has a null string.
+    fn typed_batch(schema: &arrow::datatypes::SchemaRef, f: i64) -> RecordBatch {
+        use arrow::array::{
+            BinaryArray, BooleanArray, Date32Array, Decimal128Array, Int8Array, Int16Array,
+            Int32Array, ListArray, StructArray, TimestampMicrosecondArray,
+        };
+        use arrow::buffer::OffsetBuffer;
+
+        let v: Vec<i64> = (0..3).map(|r| f * 10 + r).collect();
+        // Some times are before 1970 to test the round-up of negative values.
+        let micros: Vec<i64> = v
+            .iter()
+            .map(|v| (v - 50) * 1_000_000 + if f % 2 == 0 { 0 } else { 123 })
+            .collect();
+        let int32 = || Arc::new(Int32Array::from_iter_values(v.iter().map(|v| *v as i32)));
+        let binary = || {
+            Arc::new(BinaryArray::from_iter_values(
+                v.iter().map(|v| vec![*v as u8]),
+            ))
+        };
+        let child_fields = |name: &str| match schema.field_with_name(name).unwrap().data_type() {
+            DataType::Struct(fields) => fields.clone(),
+            other => panic!("{name} is {other}"),
+        };
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(Int64Array::from(v.clone())),
+            int32(),
+            Arc::new(Int16Array::from_iter_values(v.iter().map(|v| *v as i16))),
+            Arc::new(Int8Array::from_iter_values(
+                v.iter().map(|v| (*v % 120) as i8),
+            )),
+            Arc::new(StringArray::from_iter(
+                v.iter().map(|v| (f != 2).then(|| format!("s{v:05}"))),
+            )),
+            Arc::new(Date32Array::from_iter_values(v.iter().map(|v| *v as i32))),
+            Arc::new(TimestampMicrosecondArray::from(micros.clone()).with_timezone("UTC")),
+            Arc::new(TimestampMicrosecondArray::from(micros.clone())),
+            Arc::new(BooleanArray::from_iter(v.iter().map(|v| Some(v % 2 == 0)))),
+            binary(),
+            Arc::new(
+                Decimal128Array::from_iter_values(v.iter().map(|v| *v as i128 * 1000 + 5))
+                    .with_precision_and_scale(10, 3)
+                    .unwrap(),
+            ),
+            Arc::new(StructArray::new(
+                child_fields("row"),
+                vec![
+                    int32(),
+                    Arc::new(StringArray::from_iter_values(
+                        v.iter().map(|v| format!("r{v}")),
+                    )),
+                    Arc::new(TimestampMicrosecondArray::from(micros.clone())),
+                ],
+                None,
+            )),
+            Arc::new(StructArray::new(
+                child_fields("rowbin"),
+                vec![int32(), binary()],
+                None,
+            )),
+            Arc::new(StructArray::new(
+                child_fields("rowdec"),
+                vec![
+                    int32(),
+                    Arc::new(
+                        Decimal128Array::from_iter_values(v.iter().map(|v| *v as i128))
+                            .with_precision_and_scale(10, 3)
+                            .unwrap(),
+                    ),
+                ],
+                None,
+            )),
+            {
+                let DataType::List(item) = schema.field_with_name("arr").unwrap().data_type()
+                else {
+                    panic!("arr is not a list")
+                };
+                Arc::new(ListArray::new(
+                    item.clone(),
+                    OffsetBuffer::from_lengths([1, 1, 1]),
+                    int32(),
+                    None,
+                ))
+            },
+            Arc::new(Int64Array::from(v.clone())),
+            Arc::new(Int64Array::from(v.clone())),
+        ];
+        RecordBatch::try_new(schema.clone(), columns).unwrap()
+    }
+
+    /// The new bounds equal the old bounds for each key type and file, after each table change.
+    #[tokio::test]
+    async fn log_bounds_match_the_per_file_view() {
+        use deltalake::kernel::{ArrayType, DataType as D, PrimitiveType as P, StructType};
+
+        let leaf = |name: &str, t: D| StructField::new(name, t, true);
+        let columns = vec![
+            leaf("id", D::LONG),
+            leaf("i", D::INTEGER),
+            leaf("sm", D::SHORT),
+            leaf("ti", D::BYTE),
+            leaf("str", D::STRING),
+            leaf("d", D::DATE),
+            leaf("ts", D::TIMESTAMP),
+            leaf("tsn", D::TIMESTAMP_NTZ),
+            leaf("b", D::BOOLEAN),
+            leaf("bin", D::BINARY),
+            leaf("dec", D::Primitive(P::decimal(10, 3).unwrap())),
+            leaf(
+                "row",
+                D::Struct(Box::new(
+                    StructType::try_new([
+                        leaf("a", D::INTEGER),
+                        leaf("s", D::STRING),
+                        leaf("t", D::TIMESTAMP_NTZ),
+                    ])
+                    .unwrap(),
+                )),
+            ),
+            leaf(
+                "rowbin",
+                D::Struct(Box::new(
+                    StructType::try_new([leaf("a", D::INTEGER), leaf("bin", D::BINARY)]).unwrap(),
+                )),
+            ),
+            leaf(
+                "rowdec",
+                D::Struct(Box::new(
+                    StructType::try_new([
+                        leaf("a", D::INTEGER),
+                        leaf("x", D::Primitive(P::decimal(10, 3).unwrap())),
+                    ])
+                    .unwrap(),
+                )),
+            ),
+            leaf("arr", D::Array(Box::new(ArrayType::new(D::INTEGER, true)))),
+            leaf("dot.ted", D::LONG),
+            leaf("far", D::LONG),
+        ];
+        let names: Vec<String> = columns.iter().map(|c| c.name().to_string()).collect();
+
+        let dir = TempDir::new().unwrap();
+        let mut table = CreateBuilder::new()
+            .with_location(dir.path().to_str().unwrap())
+            .with_columns(columns)
+            // The kernel counts `arr` as a column. So `far` gets no stats.
+            .with_configuration_property(
+                deltalake::TableProperty::DataSkippingNumIndexedCols,
+                Some("20"),
+            )
+            .await
+            .unwrap();
+        let schema = table.snapshot().unwrap().snapshot().arrow_schema();
+        for f in 0..8 {
+            if f == 5 {
+                deltalake::checkpoints::create_checkpoint(&table)
+                    .await
+                    .unwrap();
+            }
+            table = table.write(vec![typed_batch(&schema, f)]).await.unwrap();
+        }
+        let mut usable = std::collections::BTreeSet::<String>::new();
+        assert_bounds_match(&table, &names, &mut usable, "after the writes");
+        // Make sure that the test compares real bounds, not only `None`.
+        let expected = [
+            "b", "d", "dot.ted", "i", "id", "row", "rowbin", "sm", "str", "ti", "ts", "tsn",
+        ];
+        assert_eq!(
+            usable,
+            std::collections::BTreeSet::from(expected.map(String::from))
+        );
+
+        let reopen = |table: &DeltaTable| table.table_url().clone();
+        let table = deltalake::open_table(reopen(&table)).await.unwrap();
+        assert_bounds_match(&table, &names, &mut usable, "after a reopen");
+
+        // DELETE removes the file with the row and adds a new file.
+        let (table, _) = table.delete().with_predicate("id = 13").await.unwrap();
+        assert_bounds_match(&table, &names, &mut usable, "after a delete");
+
+        // Some writers add a file without stats.
+        let mut table = table;
+        let first = table.snapshot().unwrap().log_data().iter().next().unwrap();
+        std::fs::copy(
+            dir.path().join(first.path().as_ref()),
+            dir.path().join("no-stats.parquet"),
+        )
+        .unwrap();
+        let add = deltalake::kernel::Add {
+            path: "no-stats.parquet".into(),
+            size: first.size(),
+            modification_time: first.modification_time(),
+            data_change: true,
+            stats: None,
+            ..Default::default()
+        };
+        crate::integrated::delta_table::merge::test::commit(
+            &mut table,
+            vec![deltalake::kernel::Action::Add(add)],
+        )
+        .await;
+        assert_bounds_match(&table, &names, &mut usable, "after an add without stats");
+
+        let (mut table, metrics) = table.optimize().await.unwrap();
+        assert!(metrics.num_files_removed > 0, "OPTIMIZE rewrote nothing");
+        assert_bounds_match(&table, &names, &mut usable, "after OPTIMIZE");
+
+        for f in 8..10 {
+            table = table.write(vec![typed_batch(&schema, f)]).await.unwrap();
+        }
+        assert_bounds_match(&table, &names, &mut usable, "after writes past OPTIMIZE");
+
+        let (table, _) = crate::integrated::delta_table::merge::test::vacuum_everything(
+            table,
+            deltalake::operations::vacuum::VacuumMode::Full,
+        )
+        .await;
+        assert_bounds_match(&table, &names, &mut usable, "after VACUUM");
+        let table = deltalake::open_table(reopen(&table)).await.unwrap();
+        assert_bounds_match(&table, &names, &mut usable, "after the final reopen");
+    }
+
+    /// Make sure that the new and old bounds are equal. Record the columns that have bounds.
+    fn assert_bounds_match(
+        table: &DeltaTable,
+        names: &[String],
+        usable: &mut std::collections::BTreeSet<String>,
+        step: &str,
+    ) {
+        let snapshot = table.snapshot().unwrap();
+        let schema = snapshot.snapshot().arrow_schema();
+        let mut keys: Vec<Vec<String>> = names.iter().map(|n| vec![n.clone()]).collect();
+        keys.push(vec!["id".into(), "str".into(), "ts".into(), "row".into()]);
+        let files: Vec<LogicalFileView> = snapshot.log_data().iter().collect();
+        for key in keys {
+            let relation = Relation {
+                name: SqlIdentifier::new("k", false),
+                fields: key
+                    .iter()
+                    .map(|n| Field::new(n.as_str().into(), ColumnType::bigint(true)))
+                    .collect(),
+                materialized: false,
+                properties: Default::default(),
+                primary_key: None,
+            };
+            let Ok(encoder) = KeyEncoder::new(&relation, &schema) else {
+                continue;
+            };
+            let candidates = candidates_from_log(snapshot, &encoder, true, |_| HashMap::new());
+            assert_eq!(candidates.len(), files.len(), "{step}");
+            for (candidate, file) in candidates.iter().zip(&files) {
+                assert_eq!(candidate.path, file.path(), "{step}");
+                for (index, name) in key.iter().enumerate() {
+                    let old_min = per_file_bound(file.min_values(), name);
+                    let old_max = per_file_bound(file.max_values(), name);
+                    let new_min = candidate.min_of(index);
+                    let new_max = candidate.max_of(index);
+                    assert_eq!(
+                        new_min.as_deref().map(|a| a.to_data()),
+                        old_min.as_deref().map(|a| a.to_data()),
+                        "{step}: min of {name} in {}",
+                        file.path()
+                    );
+                    assert_eq!(
+                        new_max.as_deref().map(|a| a.to_data()),
+                        old_max.as_deref().map(|a| a.to_data()),
+                        "{step}: max of {name} in {}",
+                        file.path()
+                    );
+                    if new_min.is_some() && new_max.is_some() {
+                        usable.insert(name.clone());
+                    }
+                    if name == "id" {
+                        // Make sure that each file with stats gets a bound.
+                        let has_stats = file.num_records().is_some();
+                        assert_eq!(new_min.is_some(), has_stats, "{step}: id");
+                    }
+                }
+            }
+        }
+    }
 
     fn encode_keys(values: &[i64]) -> arrow::row::Rows {
         let converter = RowConverter::new(vec![SortField::new(DataType::Int64)]).unwrap();
@@ -744,16 +1234,10 @@ mod test {
     }
 
     fn candidates_of(table: &DeltaTable) -> Arc<Vec<Candidate>> {
-        let mut candidates: Vec<Candidate> = table
-            .snapshot()
-            .unwrap()
-            .log_data()
-            .into_iter()
-            .map(|f| {
-                let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
-                Candidate::from_log(&f, HashMap::new(), &encoder, true)
-            })
-            .collect();
+        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let mut candidates = candidates_from_log(table.snapshot().unwrap(), &encoder, true, |_| {
+            HashMap::new()
+        });
         candidates.sort_by(|a, b| a.path.cmp(&b.path));
         Arc::new(candidates)
     }
@@ -1227,13 +1711,10 @@ mod test {
             primary_key: None,
         };
         let encoder = Arc::new(KeyEncoder::new(&relation, &schema).unwrap());
-        let candidates: Arc<Vec<Candidate>> = table
-            .snapshot()
-            .unwrap()
-            .log_data()
-            .into_iter()
-            .map(|f| Candidate::from_log(&f, Default::default(), &encoder, true))
-            .collect::<Vec<_>>()
+        let candidates: Arc<Vec<Candidate>> =
+            candidates_from_log(table.snapshot().unwrap(), &encoder, true, |_| {
+                Default::default()
+            })
             .into();
         let mut chunk = LookupChunk::new(usize::MAX);
         chunk
