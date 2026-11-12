@@ -181,10 +181,12 @@ public class TypeCompiler implements ICompilerComponent {
                 stringComparison = stringComparisonType(left, anyNull);
             if (stringComparison != null)
                 return stringComparison;
+            // Like Calcite's leastRestrictive with shouldConvertRaggedUnionTypesToVarying:
+            // fixed-length types of different lengths combine into a varying type
             if (left.code == DBSPTypeCode.STRING && right.code == DBSPTypeCode.STRING) {
                 DBSPTypeString ls = left.to(DBSPTypeString.class);
                 DBSPTypeString rs = right.to(DBSPTypeString.class);
-                boolean fixed = ls.fixed && rs.fixed;
+                boolean fixed = ls.fixed && rs.fixed && ls.precision == rs.precision;
                 int precision = Math.max(ls.precision, rs.precision);
                 if (ls.precision == IHasPrecision.UNLIMITED_PRECISION ||
                         rs.precision == IHasPrecision.UNLIMITED_PRECISION)
@@ -194,7 +196,7 @@ public class TypeCompiler implements ICompilerComponent {
             if (left.code == DBSPTypeCode.BYTES && right.code == DBSPTypeCode.BYTES) {
                 DBSPTypeBinary ls = left.to(DBSPTypeBinary.class);
                 DBSPTypeBinary rs = right.to(DBSPTypeBinary.class);
-                boolean fixed = ls.fixed && rs.fixed;
+                boolean fixed = ls.fixed && rs.fixed && ls.precision == rs.precision;
                 int precision = Math.max(ls.precision, rs.precision);
                 if (ls.precision == IHasPrecision.UNLIMITED_PRECISION ||
                         rs.precision == IHasPrecision.UNLIMITED_PRECISION)
