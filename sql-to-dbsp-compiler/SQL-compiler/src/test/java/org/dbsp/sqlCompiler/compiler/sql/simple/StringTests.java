@@ -159,6 +159,42 @@ public class StringTests extends SqlIoTest {
                  [xxab  ] | [ab  xx] | [ab ]""");
     }
 
+    /** String and binary literals of different lengths combine as varying values: no padding,
+     * exact comparisons.  Validated on Postgres. */
+    @Test
+    public void testStringLiteralTyping() {
+        this.qst("""
+                SELECT '[' || CASE WHEN 1 < 2 THEN 'a' ELSE 'bcd' END || ']', '[' || COALESCE(NULLIF('a', 'x'), 'bcd') || ']',
+                       'a' = 'a ', 'a ' > 'a', 'a' IN ('a ', 'bc'), 'a' IN ('a', 'bc'), ARRAY_CONTAINS(ARRAY['a ', 'bc'], 'a'),
+                       '[' || ARRAY['a', 'bcd'][1] || ']';
+                 a   | b   | c     | d    | e     | f    | g     | h
+                --------------------------------------------------------
+                 [a] | [a] | false | true | false | true | false | [a]
+                (1 row)
+
+                SELECT '[' || s || ']' FROM (SELECT 'a' AS s UNION ALL SELECT 'bcd');
+                 s
+                -------
+                 [a]
+                 [bcd]
+                (2 rows)
+
+                SELECT ARRAY_CONTAINS(ARRAY[x'0100', x'0203'], x'01'), ARRAY_CONTAINS(ARRAY[x'0100', x'0203'], x'0100');
+                 a     | b
+                --------------
+                 false | true
+                (1 row)""");
+        var ccs = this.getCCS("""
+                CREATE TABLE T(v VARCHAR);
+                CREATE VIEW V AS SELECT v = 'a ' AS e, v IN ('a ', 'bc') AS i,
+                    '[' || CASE WHEN v = 'a' THEN 'x' ELSE 'yyy' END || ']' AS c FROM T;""")
+                .withStringTrim();
+        ccs.stepWeightOne("INSERT INTO T VALUES('a');", """
+                 e     | i     | c
+                -------------------
+                 false | false | [x]""");
+    }
+
     @Test
     public void testUnpairedSurrogate() {
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT U&'\\D83D';",
