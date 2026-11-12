@@ -451,6 +451,143 @@ mod tests {
         }
     }
 
+    /// Exercise both transport construction entry points, then the production
+    /// log/response sinks with a dependency diagnostic that repeats credentials.
+    #[cfg(feature = "with-kafka")]
+    #[test]
+    fn transport_registration_precedes_diagnostics() {
+        use crate::server::SecretLineRedactor;
+        use crate::transport::{
+            input_transport_config_to_endpoint, output_transport_config_to_endpoint,
+        };
+        use feldera_observability::json_logging::{JsonPipelineFormat, LogIdentity};
+        use feldera_observability::log_redaction::RedactingMakeWriter;
+        use feldera_types::config::TransportConfig;
+        use std::sync::{Arc, Mutex};
+        use tokio_util::sync::CancellationToken;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        #[derive(Clone, Default)]
+        struct Buffer(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buffer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl tracing_subscriber::fmt::MakeWriter<'_> for Buffer {
+            type Writer = Self;
+            fn make_writer(&self) -> Self {
+                self.clone()
+            }
+        }
+        for json_logs in [false, true] {
+            let secrets = tempfile::tempdir().unwrap();
+            let directory = secrets.path().join("kubernetes/registration");
+            std::fs::create_dir_all(&directory).unwrap();
+            let topic = format!("private-topic-registration-{json_logs}-2136");
+            let free_form = format!("freeform-registration-{json_logs}-2136");
+            let password = format!("inline-registration-{json_logs}-quote\"2136");
+            std::fs::write(directory.join("topic"), &topic).unwrap();
+            std::fs::write(directory.join("free"), &free_form).unwrap();
+            let buffer = Buffer::default();
+            let json_layer = json_logs.then(|| {
+                tracing_subscriber::fmt::layer()
+                    .event_format(
+                        JsonPipelineFormat::new(LogIdentity::Pipeline {
+                            pipeline_name: None,
+                            pipeline_id: None,
+                        })
+                        .with_redaction(SecretLineRedactor),
+                    )
+                    .with_writer(buffer.clone())
+            });
+            let text_layer = (!json_logs).then(|| {
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(RedactingMakeWriter::new(SecretLineRedactor, buffer.clone()))
+            });
+            let subscriber = tracing_subscriber::registry()
+                .with(json_layer)
+                .with(text_layer);
+            tracing::subscriber::with_default(subscriber, || {
+                for (name, field_password) in [
+                    ("kafka_input", format!("input-{password}")),
+                    ("kafka_output", password.clone()),
+                ] {
+                    let config: TransportConfig = serde_json::from_value(json!({"name":name,"config":{
+                        "topic":"${secret:kubernetes:registration/topic}", "sasl.password":field_password,
+                        "invalid.option":"${secret:kubernetes:registration/free}", "bootstrap.servers":"127.0.0.1:1"
+                    }})).unwrap();
+                    let original = config.clone();
+                    if name == "kafka_input" {
+                        // This constructor only validates/stores the config; it
+                        // does not contact Kafka until its reader is opened.
+                        assert!(
+                            input_transport_config_to_endpoint(
+                                &config,
+                                "registered",
+                                secrets.path(),
+                                None
+                            )
+                            .unwrap()
+                            .is_some()
+                        );
+                    } else {
+                        // An unknown librdkafka option fails before any I/O.
+                        let error = output_transport_config_to_endpoint(
+                            &config,
+                            "registered",
+                            false,
+                            secrets.path(),
+                            None,
+                            CancellationToken::new(),
+                        )
+                        .err()
+                        .expect("invalid option must fail");
+                        assert!(error.to_string().contains("invalid.option"), "{error}");
+                    }
+                    assert_eq!(config, original);
+                    let error = ConnectError {
+                        uri: format!("{field_password} {topic} {free_form}"),
+                    };
+                    let response = ErrorResponse::from_error_nolog(&error);
+                    let serialized = serde_json::to_string(&response).unwrap();
+                    assert!(!serialized.contains("inline-registration"), "{serialized}");
+                    assert!(
+                        !serialized.contains("private-topic-registration"),
+                        "{serialized}"
+                    );
+                    assert!(
+                        !serialized.contains("freeform-registration"),
+                        "{serialized}"
+                    );
+                    assert!(serialized.contains("${secret:kubernetes:registration/topic}"));
+                    assert!(serialized.contains("${secret:kubernetes:registration/free}"));
+                    assert!(serialized.contains("[REDACTED]"));
+                    tracing::error!("dependency diagnostic: {error}");
+                }
+            });
+            let output = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+            assert!(!output.contains("inline-registration"), "{output}");
+            assert!(!output.contains("private-topic-registration"), "{output}");
+            assert!(!output.contains("freeform-registration"), "{output}");
+            assert!(
+                output.contains("${secret:kubernetes:registration/topic}"),
+                "{output}"
+            );
+            assert!(output.contains("[REDACTED]"), "{output}");
+            if json_logs {
+                for line in output.lines() {
+                    serde_json::from_str::<serde_json::Value>(line).unwrap();
+                }
+            }
+        }
+    }
+
     #[derive(Debug, Serialize)]
     struct ConnectError {
         uri: String,

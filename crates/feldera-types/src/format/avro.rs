@@ -379,6 +379,51 @@ impl std::fmt::Debug for AvroSchemaRegistryConfig {
     }
 }
 
+/// The registry fields shared by input/output Avro configs, inspected before
+/// typed parsing so a failure cannot bypass credential registration.
+pub(crate) fn visit_sensitive_config(
+    config: &serde_json::Value,
+    visit: &mut dyn FnMut(&str, &str),
+) {
+    for name in ["registry_password", "registry_authorization_token"] {
+        crate::sensitive::visit_optional(
+            name,
+            config.get(name).and_then(serde_json::Value::as_str),
+            visit,
+        );
+    }
+    if let Some(urls) = config
+        .get("registry_urls")
+        .and_then(serde_json::Value::as_array)
+    {
+        for (index, url) in urls.iter().enumerate() {
+            if let Some(url) = url.as_str() {
+                crate::sensitive::visit_url(&format!("registry_urls.{index}"), url, visit);
+            }
+        }
+    }
+    if let Some(proxy) = config
+        .get("registry_proxy")
+        .and_then(serde_json::Value::as_str)
+    {
+        crate::sensitive::visit_url("registry_proxy", proxy, visit);
+    }
+    if let Some(headers) = config
+        .get("registry_headers")
+        .and_then(serde_json::Value::as_object)
+    {
+        for (name, value) in headers {
+            if crate::sensitive::credential_header(name) {
+                crate::sensitive::visit_optional(
+                    &format!("registry_headers.{}", name.to_ascii_lowercase()),
+                    value.as_str(),
+                    visit,
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

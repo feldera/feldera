@@ -21,6 +21,7 @@ pub mod runtime_status;
 pub mod secret_redaction;
 pub mod secret_ref;
 pub mod secret_resolver;
+pub mod sensitive;
 pub mod serde_with_context;
 pub mod size;
 pub mod suspend;
