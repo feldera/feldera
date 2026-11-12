@@ -629,11 +629,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
             // Check that back-edges still type-check
             if (node.is(DBSPViewDeclarationOperator.class)) {
                 var decl = node.to(DBSPViewDeclarationOperator.class);
+                OutputPort backEdge = operator.internalOutputForDeclaration(decl);
+                Utilities.enforce(backEdge != null, () ->
+                        "No output of the recursive circuit feeds the declaration of view " +
+                        decl.originalViewName().singleQuote());
                 DBSPSimpleOperator source = decl.getCorrespondingView(operator);
-                if (source == null) {
-                    int index = operator.outputViews.indexOf(decl.originalViewName());
-                    source = operator.internalOutputs.get(index).simpleNode();
-                }
+                if (source == null)
+                    source = backEdge.simpleNode();
                 Utilities.enforce(node.getOutput(0).outputType().sameType(source.outputType));
             }
         }

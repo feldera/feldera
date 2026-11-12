@@ -107,6 +107,15 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return new OutputPort(this, this.internalOutputs.size() - 1);
     }
 
+    /** The internal output that feeds this declaration on the back edge; null if it was removed. */
+    @Nullable
+    public OutputPort internalOutputForDeclaration(DBSPViewDeclarationOperator operator) {
+        int index = this.outputViews.indexOf(operator.originalViewName());
+        Utilities.enforce(index >= 0, () -> "Recursive view " + operator.originalViewName().singleQuote() +
+                " is not an output of its recursive circuit");
+        return this.internalOutputs.get(index);
+    }
+
     /** The output of the operator that corresponds to this declaration */
     @Nullable
     public OutputPort outputForDeclaration(DBSPViewDeclarationOperator operator) {
@@ -114,8 +123,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         if (source != null)
             return source.outputPort();
         // May happen after views have been deleted
-        int index = this.outputViews.indexOf(operator.originalViewName());
-        return this.internalOutputs.get(index);
+        return this.internalOutputForDeclaration(operator);
     }
 
     @Nullable

@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
 import org.junit.Test;
 
+
 /** Tests with recursive queries */
 public class RecursiveTests extends BaseSQLTests {
     @Test
@@ -512,6 +513,26 @@ public class RecursiveTests extends BaseSQLTests {
             }
         };
         ccs.visit(visitor);
+    }
+
+    @Test
+    public void issue7946() {
+        // No view reads p1 or p2, so DeadCode removes both recursive circuits
+        String sql = """
+                CREATE TABLE t(src BIGINT, dst BIGINT);
+                DECLARE RECURSIVE VIEW p1(src BIGINT, dst BIGINT);
+                CREATE LOCAL VIEW p1 AS SELECT src, dst FROM t UNION SELECT p1.src, t.dst FROM p1 JOIN t ON t.src = p1.dst;
+                DECLARE RECURSIVE VIEW p2(src BIGINT, dst BIGINT);
+                CREATE LOCAL VIEW p2 AS SELECT src, dst FROM t UNION SELECT p2.src, t.dst FROM p2 JOIN t ON t.src = p2.dst;
+                CREATE MATERIALIZED VIEW o AS SELECT src, dst FROM t;""";
+        var cc = this.getCC(sql);
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPNestedOperator operator) {
+                Assert.fail("Unexpected recursive circuit " + operator);
+            }
+        };
+        cc.visit(visitor);
     }
 
     @Test

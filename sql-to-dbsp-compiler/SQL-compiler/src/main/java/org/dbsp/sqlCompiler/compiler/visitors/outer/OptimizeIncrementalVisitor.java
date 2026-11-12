@@ -311,5 +311,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
                 this.map(nestedPort, integral.outputPort());
             }
         }
+        this.typecheckBackEdges(result);
+        Utilities.enforce(operator.outputCount() == result.outputCount());
     }
 }
