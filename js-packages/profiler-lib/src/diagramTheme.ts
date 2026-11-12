@@ -282,6 +282,9 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 // only sinks below nodes at its own depth, which leaves an edge between two operators
                 // over the region around them and over the region's chips.
                 'z-compound-depth': 'bottom',
+                // No code listens to edge events. Without this, cytoscape tests each edge and its
+                // label for each pointer move, and an edge hides the region under it from the pointer.
+                'events': 'no',
                 'curve-style': 'round-taxi',
                 'taxi-direction': 'vertical',
                 'taxi-turn': '50%',
