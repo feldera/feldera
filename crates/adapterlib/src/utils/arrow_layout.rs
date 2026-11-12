@@ -5,7 +5,8 @@
 //! The same pass gives each `DECIMAL` column as its 128-bit significands, so
 //! that the deserializer does not read each value through a formatted string.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, LazyLock};
 
 use arrow::array::{
     Array, ArrayRef, AsArray, FixedSizeBinaryArray, FixedSizeListArray, LargeListArray, ListArray,
@@ -17,12 +18,21 @@ use feldera_types::program_schema::{ColumnType, Field, SqlType};
 /// Schema metadata key of a batch whose columns `order_columns` put in order.
 pub const POSITIONAL_FIELDS: &str = "feldera.positional_fields";
 
-/// Tells whether `order_columns` put the columns of a batch in order.
+/// The value of [`POSITIONAL_FIELDS`]: a random number of this process.
+///
+/// Schema metadata also comes from outside: from a file, or from a client that
+/// sends Arrow data. A batch that only claims to be in order would be read into
+/// the wrong columns, so the mark is a value that only `order_columns` knows.
+static POSITIONAL_FIELDS_TOKEN: LazyLock<String> =
+    LazyLock::new(|| format!("{:032x}", rand::random::<u128>()));
+
+/// Tells whether `order_columns` of this process put the columns of a batch
+/// in order.
 pub fn has_positional_fields(schema: &Schema) -> bool {
     schema
         .metadata()
         .get(POSITIONAL_FIELDS)
-        .is_some_and(|value| value == "true")
+        .is_some_and(|value| *value == *POSITIONAL_FIELDS_TOKEN)
 }
 
 /// Puts the columns of `batch`, and of each nested `ROW`, in the order of
@@ -42,7 +52,10 @@ pub fn order_columns(batch: RecordBatch, fields: &[Field]) -> (RecordBatch, Opti
     let ordered = order_struct(batch.schema_ref().fields(), batch.columns(), fields).and_then(
         |(arrow_fields, columns)| {
             let mut metadata = batch.schema_ref().metadata().clone();
-            metadata.insert(POSITIONAL_FIELDS.to_string(), "true".to_string());
+            metadata.insert(
+                POSITIONAL_FIELDS.to_string(),
+                POSITIONAL_FIELDS_TOKEN.clone(),
+            );
             let schema = Arc::new(Schema::new_with_metadata(arrow_fields, metadata));
             let options = RecordBatchOptions::new().with_row_count(Some(len));
             RecordBatch::try_new_with_options(schema, columns, &options).map_err(|e| e.to_string())
@@ -61,8 +74,17 @@ fn order_struct(
 ) -> Result<(Fields, Vec<ArrayRef>), String> {
     let mut out_fields = Vec::with_capacity(fields.len());
     let mut out_columns = Vec::with_capacity(fields.len());
+    // Two SQL fields that differ only in case, such as `a` and `"A"`, can
+    // both match one source column. The by-name path resolves that.
+    let mut lowercase_names = HashSet::with_capacity(fields.len());
     for field in fields {
         let name = field.name.name();
+        if !lowercase_names.insert(name.to_lowercase()) {
+            return Err(format!(
+                "more than one column is named {} when case is ignored",
+                field.name.sql_name()
+            ));
+        }
         match find_column(arrow_fields, columns, &name, field.name.case_sensitive)? {
             Some((arrow_field, column)) => {
                 let column = order_array(column, &field.columntype)?;
@@ -77,8 +99,12 @@ fn order_struct(
     Ok((out_fields.into(), out_columns))
 }
 
-/// Finds the column named `name`, matching the spelling first and then the
-/// lowercase name, as the by-name deserializer does.
+/// Finds the one column named `name` when case is ignored. Its spelling must
+/// be `name` if the SQL name is case-sensitive.
+///
+/// The by-name deserializer matches the spelling first and then the lowercase
+/// name. With more than one candidate, such as `x` and `X`, its result depends
+/// on the order of the columns, so it must make that choice.
 fn find_column<'a>(
     arrow_fields: &'a Fields,
     columns: &'a [ArrayRef],
@@ -88,15 +114,18 @@ fn find_column<'a>(
     let lowercase = name.to_lowercase();
     let mut found = None;
     for (arrow_field, column) in arrow_fields.iter().zip(columns) {
-        if arrow_field.name() == name {
-            return Ok(Some((arrow_field, column)));
+        if arrow_field.name().to_lowercase() != lowercase {
+            continue;
         }
-        if found.is_none() && arrow_field.name().to_lowercase() == lowercase {
-            found = Some((arrow_field, column));
+        if found.is_some() {
+            return Err(format!(
+                "the source has more than one column named {name} when case is ignored"
+            ));
         }
+        found = Some((arrow_field, column));
     }
     match found {
-        Some((arrow_field, _)) if case_sensitive => Err(format!(
+        Some((arrow_field, _)) if case_sensitive && arrow_field.name() != name => Err(format!(
             "case-sensitive column {name} is spelled {} in the source",
             arrow_field.name()
         )),
@@ -261,7 +290,7 @@ mod test {
     use arrow::datatypes::{DataType, Field as ArrowField, Fields, Int64Type};
     use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
 
-    use super::{has_positional_fields, order_columns};
+    use super::{POSITIONAL_FIELDS, has_positional_fields, order_columns};
 
     fn ints(values: &[i64]) -> ArrayRef {
         Arc::new(Int64Array::from(values.to_vec()))
@@ -311,6 +340,104 @@ mod test {
         assert!(reason.unwrap().contains("absent"));
         assert!(!has_positional_fields(unchanged.schema_ref()));
         assert_eq!(unchanged.column(0).len(), 2);
+    }
+
+    /// A batch from outside that claims to be in order is not read by position.
+    #[test]
+    fn mark_from_outside() {
+        let marked = |columns| {
+            let batch = batch(columns);
+            let metadata = [(POSITIONAL_FIELDS.to_string(), "true".to_string())].into();
+            let schema = batch.schema().as_ref().clone().with_metadata(metadata);
+            batch.with_schema(Arc::new(schema)).unwrap()
+        };
+        let fields = [field("a", ColumnType::bigint(true))];
+
+        let in_order = marked(vec![("a", ints(&[1]))]);
+        assert!(!has_positional_fields(in_order.schema_ref()));
+
+        // The batch that cannot be put in order keeps its metadata.
+        let (unchanged, reason) = order_columns(marked(vec![("other", ints(&[1]))]), &fields);
+        assert!(reason.is_some());
+        assert!(!has_positional_fields(unchanged.schema_ref()));
+    }
+
+    /// A sliced batch, as DataFusion produces, keeps its offset.
+    #[test]
+    fn sliced_decimal_significands() {
+        let decimals: ArrayRef = Arc::new(
+            Decimal128Array::from(vec![Some(1), Some(2), None, Some(4)])
+                .with_precision_and_scale(10, 2)
+                .unwrap(),
+        );
+        let batch = batch(vec![("d", decimals)]).slice(1, 3);
+        let fields = [field("d", ColumnType::decimal(10, 2, true))];
+
+        let (ordered, reason) = order_columns(batch, &fields);
+
+        assert_eq!(reason, None);
+        let significands = ordered.column(0).as_fixed_size_binary();
+        assert_eq!(significands.len(), 3);
+        assert_eq!(significands.value(0), 2_i128.to_ne_bytes());
+        assert!(significands.is_null(1));
+        assert_eq!(significands.value(2), 4_i128.to_ne_bytes());
+    }
+
+    /// Names that differ only in case have more than one possible match, in
+    /// the SQL fields or in the source. The by-name path resolves them.
+    #[test]
+    fn names_that_differ_only_in_case() {
+        let sensitive =
+            |name: &str| Field::new(SqlIdentifier::new(name, true), ColumnType::bigint(true));
+        let both = [field("a", ColumnType::bigint(true)), sensitive("A")];
+
+        // `a` and `"A"`: one source column must not fill both.
+        let (_, reason) = order_columns(batch(vec![("A", ints(&[5]))]), &both);
+        assert!(reason.unwrap().contains("when case is ignored"));
+        let source = vec![("a", ints(&[10])), ("A", ints(&[20]))];
+        let (_, reason) = order_columns(batch(source.clone()), &both);
+        assert!(reason.unwrap().contains("when case is ignored"));
+
+        // One SQL column, two source columns `a` and `A`.
+        let (_, reason) = order_columns(batch(source), &[field("a", ColumnType::bigint(true))]);
+        assert!(reason.unwrap().contains("more than one column named a"));
+
+        // The same in a nested ROW, also inside a MAP value.
+        let row = ColumnType::structure(true, &both);
+        let nested = StructArray::from(vec![(
+            Arc::new(ArrowField::new("A", DataType::Int64, true)),
+            ints(&[5]),
+        )]);
+        let (_, reason) = order_columns(
+            batch(vec![("r", Arc::new(nested) as ArrayRef)]),
+            &[field("r", row)],
+        );
+        assert!(reason.unwrap().contains("when case is ignored"));
+    }
+
+    /// A ROW that the source does not store as a struct cannot be put in
+    /// order. A column without a ROW or a DECIMAL passes in any layout.
+    #[test]
+    fn unsupported_layout() {
+        let row = ColumnType::structure(true, &[field("x", ColumnType::bigint(true))]);
+        let (unchanged, reason) =
+            order_columns(batch(vec![("r", ints(&[1]))]), &[field("r", row.clone())]);
+        assert!(reason.unwrap().contains("stored as Arrow type Int64"));
+        assert!(!has_positional_fields(unchanged.schema_ref()));
+
+        let (_, reason) = order_columns(
+            batch(vec![("r", ints(&[1]))]),
+            &[field("r", ColumnType::array(true, row))],
+        );
+        assert!(reason.unwrap().contains("stored as Arrow type Int64"));
+
+        // The deserializer reports the type mismatch of a plain column.
+        let (ordered, reason) = order_columns(
+            batch(vec![("s", ints(&[1]))]),
+            &[field("s", ColumnType::varchar(true))],
+        );
+        assert_eq!(reason, None);
+        assert!(has_positional_fields(ordered.schema_ref()));
     }
 
     #[test]
