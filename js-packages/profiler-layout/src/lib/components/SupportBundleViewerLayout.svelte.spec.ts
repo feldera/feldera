@@ -679,6 +679,24 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
       expect(noticeCount()).toBe(1)
     })
 
+    it('for an unreadable profile collapses the graph panel and gives the reason on hover', async () => {
+      const profileError = 'Failed to read the circuit profile: unknown version'
+      const { container } = render(SupportBundleViewerLayout, {
+        ...baseProps(),
+        profileError,
+        sourceFiles: [program]
+      })
+      const notice = page.getByText(
+        'This bundle has an unreadable circuit profile, so the dataflow graph and metrics are unavailable.',
+        { exact: true }
+      )
+      await expect.element(notice).toHaveAttribute('title', profileError)
+      expect(noticeCount()).toBe(1)
+      // Only a shown graph panel has the resizer above the analysis panel.
+      expect(container.querySelector('.pane-divider-horizontal')).toBeNull()
+      expect(document.body.textContent).not.toContain(profileError)
+    })
+
     it('is not shown when the bundle has a profile and code', async () => {
       render(SupportBundleViewerLayout, {
         ...baseProps(),

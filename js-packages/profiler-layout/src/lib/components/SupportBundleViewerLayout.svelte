@@ -61,7 +61,7 @@
     /** The circuit profile to draw. Do not pass a deep `$state` object: reads through its proxies
      *  make the diagram much slower on a large profile. */
     profile?: CircuitProfile
-    /** Why the bundle's circuit profile could not be read. Shown over the diagram panel. */
+    /** Why the bundle's circuit profile could not be read. The header notice shows it on hover. */
     profileError?: string
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
@@ -122,29 +122,31 @@
     onRenderingChange
   }: Props = $props()
 
-  const hasProfile = $derived(profile !== undefined || profileError !== undefined)
+  const hasProfile = $derived(profile !== undefined)
   // Without a profile, the Metrics tab can only show the global stats from `stats.json`.
   const hasMetrics = $derived(hasProfile || buildGlobalMetrics(globalMetrics).length > 0)
   // `processProfileFiles` gives an empty `program.sql` a tab. Only empty files count as no code.
   const hasSourceCode = $derived(sourceFiles.some((f) => f.code.trim() !== ''))
+  // An unreadable profile collapses the graph panel like a missing one. The header says which.
+  const profileGap = $derived(profileError ? 'an unreadable circuit profile' : 'no circuit profile')
   // The header notice about the missing parts of the bundle. The first matching row gives the text.
   const missingDataNotice = $derived(
     [
       {
         matches: !hasProfile && !hasMetrics && !hasSourceCode,
-        text: 'This bundle has no circuit profile and no pipeline code, so the dataflow graph, metrics and code are unavailable.'
+        text: `This bundle has ${profileGap} and no pipeline code, so the dataflow graph, metrics and code are unavailable.`
       },
       {
         matches: !hasProfile && !hasSourceCode,
-        text: 'This bundle has no circuit profile and no pipeline code, so the dataflow graph and code are unavailable.'
+        text: `This bundle has ${profileGap} and no pipeline code, so the dataflow graph and code are unavailable.`
       },
       {
         matches: !hasProfile && !hasMetrics,
-        text: 'This bundle has no circuit profile, so the dataflow graph and metrics are unavailable.'
+        text: `This bundle has ${profileGap}, so the dataflow graph and metrics are unavailable.`
       },
       {
         matches: !hasProfile,
-        text: 'This bundle has no circuit profile, so the dataflow graph is unavailable.'
+        text: `This bundle has ${profileGap}, so the dataflow graph is unavailable.`
       },
       {
         matches: !hasSourceCode,
@@ -500,7 +502,7 @@
       {@render loadProfileControl?.()}
       <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
       {#if missingDataNotice}
-        <p class="text-surface-800-200">{missingDataNotice}</p>
+        <p class="text-surface-800-200" title={profileError}>{missingDataNotice}</p>
       {/if}
       {#if hasProfile}
         <div class="ml-auto">
@@ -533,11 +535,11 @@
          this div's bounding rect onto the shared handle. -->
     {#if hasProfile}
       <div use:diagramRect.placeholder class="relative min-h-0 flex-1 bg-white-dark">
-        {#if profileError || error}
+        {#if error}
           <div
             class="absolute inset-x-4 top-4 z-10 rounded border border-red-300 bg-white p-3 font-mono text-sm text-red-600 shadow"
           >
-            {profileError || error}
+            {error}
           </div>
         {/if}
       </div>
