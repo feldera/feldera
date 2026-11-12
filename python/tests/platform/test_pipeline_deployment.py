@@ -29,7 +29,7 @@ STATES = {"Current", "InProgress", "Failed", "Terminating", "NotFound", "Unknown
 
 
 @gen_pipeline_name
-def test_pipelineTEST_CLIENT.get_pipeline_deployment(pipeline_name):
+def test_pipeline_deployment(pipeline_name):
     """
     GET /deployment returns the spec of the last deployment. Runners that observe
     their resources, such as the Kubernetes runner, also return a status per host.
@@ -59,7 +59,9 @@ def test_pipelineTEST_CLIENT.get_pipeline_deployment(pipeline_name):
 
     # The spec stays after stop: it is what the next start reuses or replaces.
     stop_pipeline(pipeline_name)
-    assert TEST_CLIENT.get_pipeline_deployment(pipeline_name)["spec"] == deployment["spec"]
+    assert (
+        TEST_CLIENT.get_pipeline_deployment(pipeline_name)["spec"] == deployment["spec"]
+    )
 
 
 def test_pipeline_deployment_unknown_pipeline():
