@@ -3058,6 +3058,7 @@ pub mod test_http_helpers {
 
             MultihostTestHosts {
                 activated: vec![false; servers.len()],
+                send_host_urls: true,
                 servers,
                 states,
                 exchanges,
@@ -3078,6 +3079,10 @@ pub mod test_http_helpers {
 
         /// Whether each host has been activated.
         activated: Vec<bool>,
+
+        /// Whether the activations send each host's URL, as a coordinator that predates
+        /// `CoordinationActivate::host_urls` does not.
+        pub(crate) send_host_urls: bool,
     }
 
     impl MultihostTestHosts {
@@ -3087,8 +3092,11 @@ pub mod test_http_helpers {
         pub(crate) async fn activate_host(&mut self, host: usize, checkpoints: Option<&[Uuid]>) {
             use feldera_types::coordination::CoordinationActivate;
 
-            let host_urls: Vec<String> =
-                self.servers.iter().map(|server| server.url("/")).collect();
+            let host_urls: Vec<String> = if self.send_host_urls {
+                self.servers.iter().map(|server| server.url("/")).collect()
+            } else {
+                Vec::new()
+            };
             let outputs = self
                 .pipeline_config
                 .outputs
@@ -7694,6 +7702,36 @@ pub mod test_http {
             .await
             .expect("the table never got the rows");
             assert_eq!(ids, (0..300).collect::<Vec<i64>>());
+        });
+    }
+
+    /// Without the URL of each host, as from a coordinator that predates them, every part of a
+    /// distributed Delta Lake output refuses to start, the leader too, instead of waiting forever
+    /// for reports that the other parts cannot send.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_needs_host_urls(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let config = distributed_delta_config(&dir.path().join("table"), json!({}), json!({}));
+            let mut hosts =
+                MultihostTestPipeline::serve(engine, 2, 2, &config, &[("test_output1", 1)], &[]);
+            hosts.send_host_urls = false;
+            hosts.activate_host(0, None).await;
+            hosts.activate_host(1, None).await;
+            // Host 1 has the leader.
+            let error = timeout(Duration::from_secs(30), async {
+                loop {
+                    if let PipelinePhase::InitializationError(error) = hosts.states[1].phase() {
+                        return error.to_string();
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+            .expect("the leader's host did not refuse to start");
+            assert!(error.contains("URL of each host"), "{error}");
         });
     }
 
