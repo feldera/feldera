@@ -5,7 +5,7 @@
 //! The same pass gives each `DECIMAL` column as its 128-bit significands, so
 //! that the deserializer does not read each value through a formatted string.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use arrow::array::{
     Array, ArrayRef, AsArray, FixedSizeBinaryArray, FixedSizeListArray, LargeListArray, ListArray,
@@ -17,12 +17,21 @@ use feldera_types::program_schema::{ColumnType, Field, SqlType};
 /// Schema metadata key of a batch whose columns `order_columns` put in order.
 pub const POSITIONAL_FIELDS: &str = "feldera.positional_fields";
 
-/// Tells whether `order_columns` put the columns of a batch in order.
+/// The value of [`POSITIONAL_FIELDS`]: a random number of this process.
+///
+/// Schema metadata also comes from outside: from a file, or from a client that
+/// sends Arrow data. A batch that only claims to be in order would be read into
+/// the wrong columns, so the mark is a value that only `order_columns` knows.
+static POSITIONAL_FIELDS_TOKEN: LazyLock<String> =
+    LazyLock::new(|| format!("{:032x}", rand::random::<u128>()));
+
+/// Tells whether `order_columns` of this process put the columns of a batch
+/// in order.
 pub fn has_positional_fields(schema: &Schema) -> bool {
     schema
         .metadata()
         .get(POSITIONAL_FIELDS)
-        .is_some_and(|value| value == "true")
+        .is_some_and(|value| *value == *POSITIONAL_FIELDS_TOKEN)
 }
 
 /// Puts the columns of `batch`, and of each nested `ROW`, in the order of
@@ -42,7 +51,10 @@ pub fn order_columns(batch: RecordBatch, fields: &[Field]) -> (RecordBatch, Opti
     let ordered = order_struct(batch.schema_ref().fields(), batch.columns(), fields).and_then(
         |(arrow_fields, columns)| {
             let mut metadata = batch.schema_ref().metadata().clone();
-            metadata.insert(POSITIONAL_FIELDS.to_string(), "true".to_string());
+            metadata.insert(
+                POSITIONAL_FIELDS.to_string(),
+                POSITIONAL_FIELDS_TOKEN.clone(),
+            );
             let schema = Arc::new(Schema::new_with_metadata(arrow_fields, metadata));
             let options = RecordBatchOptions::new().with_row_count(Some(len));
             RecordBatch::try_new_with_options(schema, columns, &options).map_err(|e| e.to_string())
@@ -261,7 +273,7 @@ mod test {
     use arrow::datatypes::{DataType, Field as ArrowField, Fields, Int64Type};
     use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
 
-    use super::{has_positional_fields, order_columns};
+    use super::{POSITIONAL_FIELDS, has_positional_fields, order_columns};
 
     fn ints(values: &[i64]) -> ArrayRef {
         Arc::new(Int64Array::from(values.to_vec()))
@@ -311,6 +323,47 @@ mod test {
         assert!(reason.unwrap().contains("absent"));
         assert!(!has_positional_fields(unchanged.schema_ref()));
         assert_eq!(unchanged.column(0).len(), 2);
+    }
+
+    /// A batch from outside that claims to be in order is not read by position.
+    #[test]
+    fn mark_from_outside() {
+        let marked = |columns| {
+            let batch = batch(columns);
+            let metadata = [(POSITIONAL_FIELDS.to_string(), "true".to_string())].into();
+            let schema = batch.schema().as_ref().clone().with_metadata(metadata);
+            batch.with_schema(Arc::new(schema)).unwrap()
+        };
+        let fields = [field("a", ColumnType::bigint(true))];
+
+        let in_order = marked(vec![("a", ints(&[1]))]);
+        assert!(!has_positional_fields(in_order.schema_ref()));
+
+        // The batch that cannot be put in order keeps its metadata.
+        let (unchanged, reason) = order_columns(marked(vec![("other", ints(&[1]))]), &fields);
+        assert!(reason.is_some());
+        assert!(!has_positional_fields(unchanged.schema_ref()));
+    }
+
+    /// A sliced batch, as DataFusion produces, keeps its offset.
+    #[test]
+    fn sliced_decimal_significands() {
+        let decimals: ArrayRef = Arc::new(
+            Decimal128Array::from(vec![Some(1), Some(2), None, Some(4)])
+                .with_precision_and_scale(10, 2)
+                .unwrap(),
+        );
+        let batch = batch(vec![("d", decimals)]).slice(1, 3);
+        let fields = [field("d", ColumnType::decimal(10, 2, true))];
+
+        let (ordered, reason) = order_columns(batch, &fields);
+
+        assert_eq!(reason, None);
+        let significands = ordered.column(0).as_fixed_size_binary();
+        assert_eq!(significands.len(), 3);
+        assert_eq!(significands.value(0), 2_i128.to_ne_bytes());
+        assert!(significands.is_null(1));
+        assert_eq!(significands.value(2), 4_i128.to_ne_bytes());
     }
 
     #[test]

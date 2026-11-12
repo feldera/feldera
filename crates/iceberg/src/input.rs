@@ -4884,6 +4884,107 @@ mod variant_tests {
         assert!(super::is_local_location("t/m.json") && super::is_local_location("file:///t"));
     }
 
+    #[derive(Debug, PartialEq)]
+    struct TypedRecord {
+        id: i64,
+        uuid: feldera_sqllib::Uuid,
+        ts: Option<feldera_sqllib::Timestamp>,
+        dec: feldera_sqllib::SqlDecimal<10, 2>,
+    }
+
+    deserialize_table_record!(TypedRecord["TypedRecord", Variant, 4] {
+        (id, "id", false, i64, |_| None),
+        (uuid, "uuid", false, feldera_sqllib::Uuid, |_| None),
+        (ts, "ts", false, Option<feldera_sqllib::Timestamp>, |_| Some(None)),
+        (dec, "dec", false, feldera_sqllib::SqlDecimal<10, 2>, |_| None)
+    });
+
+    /// What `parse_record_batch` does before it reads the records, on columns
+    /// in another order: a binary UUID, a nanosecond timestamp and a decimal
+    /// are read by position.
+    #[test]
+    fn iceberg_config_reads_ordered_columns_by_position() {
+        use datafusion::arrow::array::{
+            Decimal128Array, FixedSizeBinaryArray, TimestampNanosecondArray,
+        };
+        use datafusion::arrow::datatypes::TimeUnit;
+        use feldera_adapterlib::utils::arrow_layout::{has_positional_fields, order_columns};
+        use feldera_adapterlib::utils::arrow_timestamps::{
+            check_timestamp_columns, timestamps_to_micros,
+        };
+        use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
+
+        let uuid: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "dec",
+                Arc::new(
+                    Decimal128Array::from(vec![12_345, -5])
+                        .with_precision_and_scale(10, 2)
+                        .unwrap(),
+                ) as ArrayRef,
+            ),
+            (
+                "ts",
+                Arc::new(TimestampNanosecondArray::from(vec![
+                    Some(1_704_103_200_000_001_999),
+                    None,
+                ])) as ArrayRef,
+            ),
+            (
+                "uuid",
+                Arc::new(FixedSizeBinaryArray::try_from_iter([uuid, uuid].iter()).unwrap())
+                    as ArrayRef,
+            ),
+            ("id", Arc::new(Int64Array::from(vec![1i64, 2])) as ArrayRef),
+        ])
+        .unwrap();
+        assert_eq!(
+            batch.schema().field(1).data_type(),
+            &ArrowDataType::Timestamp(TimeUnit::Nanosecond, None)
+        );
+
+        let field =
+            |name: &str, column_type| Field::new(SqlIdentifier::new(name, false), column_type);
+        let fields = [
+            field("id", ColumnType::bigint(false)),
+            field("uuid", ColumnType::uuid(false)),
+            field("ts", ColumnType::timestamp(true)),
+            field("dec", ColumnType::decimal(10, 2, false)),
+        ];
+        check_timestamp_columns(&fields, batch.schema_ref()).unwrap();
+        let batch = timestamps_to_micros(batch).unwrap();
+        let (batch, reason) = order_columns(batch, &fields);
+        assert_eq!(reason, None);
+        assert!(has_positional_fields(batch.schema_ref()));
+
+        let records = Vec::<TypedRecord>::deserialize_with_context(
+            serde_arrow::Deserializer::from_record_batch(&batch).unwrap(),
+            &iceberg_input_serde_config().with_positional_fields(true),
+        )
+        .unwrap();
+
+        assert_eq!(
+            records,
+            vec![
+                TypedRecord {
+                    id: 1,
+                    uuid: feldera_sqllib::Uuid::from_bytes(uuid),
+                    ts: Some(feldera_sqllib::Timestamp::from_microseconds(
+                        1_704_103_200_000_001
+                    )),
+                    dec: "123.45".parse().unwrap(),
+                },
+                TypedRecord {
+                    id: 2,
+                    uuid: feldera_sqllib::Uuid::from_bytes(uuid),
+                    ts: None,
+                    dec: "-0.05".parse().unwrap(),
+                },
+            ]
+        );
+    }
+
     /// A deserializer configuration is only as good as the settings around it:
     /// the Iceberg configuration reads UUIDs as bytes, and that must not
     /// disturb a VARIANT column in the same record.

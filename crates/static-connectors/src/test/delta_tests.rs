@@ -264,3 +264,217 @@ fn delta_string_column_is_read_as_timestamp() {
     assert!(!positional);
     assert_eq!(read, expected);
 }
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+struct InnerRow {
+    a: bool,
+    b: Option<i64>,
+}
+
+feldera_types::deserialize_table_record!(InnerRow["InnerRow", feldera_sqllib::SqlVariant, 2] {
+    (a, "a", false, bool, |_| None),
+    (b, "b", false, Option<i64>, |_| Some(None))
+});
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+struct OuterRow {
+    id: i64,
+    inner: Option<InnerRow>,
+    list: Vec<InnerRow>,
+}
+
+feldera_types::deserialize_table_record!(OuterRow["OuterRow", feldera_sqllib::SqlVariant, 3] {
+    (id, "id", false, i64, |_| None),
+    (inner, "inner", false, Option<InnerRow>, |_| Some(None)),
+    (list, "list", false, Vec<InnerRow>, |_| None)
+});
+
+/// A nullable nested ROW and a ROW in an ARRAY, with records as the SQL
+/// compiler generates them and fields in another order, are read by position.
+#[test]
+fn delta_nested_rows_are_read_by_position() {
+    use arrow::array::{ArrayRef, BooleanArray, Int64Array, ListArray, RecordBatch, StructArray};
+    use arrow::buffer::{NullBuffer, OffsetBuffer};
+    use arrow::datatypes::{DataType, Field as ArrowField, Fields};
+    use feldera_adapterlib::utils::arrow_layout::{has_positional_fields, order_columns};
+    use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
+    use std::sync::Arc;
+
+    // Stored as (b, A).
+    let inner_fields = Fields::from(vec![
+        ArrowField::new("b", DataType::Int64, true),
+        ArrowField::new("A", DataType::Boolean, false),
+    ]);
+    let inner_columns = |b: Vec<Option<i64>>, a: Vec<bool>| -> Vec<ArrayRef> {
+        vec![
+            Arc::new(Int64Array::from(b)),
+            Arc::new(BooleanArray::from(a)),
+        ]
+    };
+    let inner = StructArray::new(
+        inner_fields.clone(),
+        inner_columns(vec![Some(1), None, Some(3)], vec![true, false, true]),
+        Some(NullBuffer::from(vec![true, false, true])),
+    );
+    let items = StructArray::new(
+        inner_fields.clone(),
+        inner_columns(vec![Some(7), None], vec![false, true]),
+        None,
+    );
+    let list = ListArray::new(
+        Arc::new(ArrowField::new(
+            "item",
+            DataType::Struct(inner_fields),
+            false,
+        )),
+        OffsetBuffer::from_lengths([2, 0, 0]),
+        Arc::new(items),
+        None,
+    );
+    let batch = RecordBatch::try_from_iter(vec![
+        ("list", Arc::new(list) as ArrayRef),
+        ("inner", Arc::new(inner) as ArrayRef),
+        ("id", Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef),
+    ])
+    .unwrap();
+
+    let field = |name: &str, column_type| Field::new(SqlIdentifier::new(name, false), column_type);
+    let row = |nullable| {
+        ColumnType::structure(
+            nullable,
+            &[
+                field("a", ColumnType::boolean(false)),
+                field("b", ColumnType::bigint(true)),
+            ],
+        )
+    };
+    let fields = [
+        field("id", ColumnType::bigint(false)),
+        field("inner", row(true)),
+        field("list", ColumnType::array(false, row(false))),
+    ];
+    let (batch, reason) = order_columns(batch, &fields);
+    assert_eq!(reason, None);
+    assert!(has_positional_fields(batch.schema_ref()));
+
+    let read: Vec<OuterRow> = Vec::deserialize_with_context(
+        serde_arrow::Deserializer::from_record_batch(&batch).unwrap(),
+        &delta_input_serde_config().with_positional_fields(true),
+    )
+    .unwrap();
+    let inner = |a, b| InnerRow { a, b };
+    assert_eq!(
+        read,
+        vec![
+            OuterRow {
+                id: 1,
+                inner: Some(inner(true, Some(1))),
+                list: vec![inner(false, Some(7)), inner(true, None)],
+            },
+            OuterRow {
+                id: 2,
+                inner: None,
+                list: vec![],
+            },
+            OuterRow {
+                id: 3,
+                inner: Some(inner(true, Some(3))),
+                list: vec![],
+            },
+        ]
+    );
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+struct DecimalRow {
+    arr: Vec<Option<feldera_sqllib::SqlDecimal<10, 2>>>,
+    map: BTreeMap<String, feldera_sqllib::SqlDecimal<10, 2>>,
+}
+
+feldera_types::deserialize_table_record!(DecimalRow["DecimalRow", feldera_sqllib::SqlVariant, 2] {
+    (arr, "arr", false, Vec<Option<feldera_sqllib::SqlDecimal<10, 2>>>, |_| None),
+    (map, "map", false, BTreeMap<String, feldera_sqllib::SqlDecimal<10, 2>>, |_| None)
+});
+
+/// A DECIMAL in an ARRAY and in a MAP is read from its significand.
+#[test]
+fn delta_nested_decimals_are_read_from_significands() {
+    use arrow::array::{
+        Array, ArrayRef, Decimal128Array, ListArray, MapArray, RecordBatch, StringArray,
+        StructArray,
+    };
+    use arrow::buffer::OffsetBuffer;
+    use arrow::datatypes::{DataType, Field as ArrowField, Fields};
+    use feldera_adapterlib::utils::arrow_layout::order_columns;
+    use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
+    use std::sync::Arc;
+
+    let decimals = |values: Vec<Option<i128>>| {
+        Arc::new(
+            Decimal128Array::from(values)
+                .with_precision_and_scale(10, 2)
+                .unwrap(),
+        ) as ArrayRef
+    };
+    let arr = ListArray::new(
+        Arc::new(ArrowField::new("item", DataType::Decimal128(10, 2), true)),
+        OffsetBuffer::from_lengths([2]),
+        decimals(vec![Some(12345), None]),
+        None,
+    );
+    let entries = StructArray::new(
+        Fields::from(vec![
+            ArrowField::new("key", DataType::Utf8, false),
+            ArrowField::new("value", DataType::Decimal128(10, 2), false),
+        ]),
+        vec![
+            Arc::new(StringArray::from(vec!["k"])) as ArrayRef,
+            decimals(vec![Some(-5)]),
+        ],
+        None,
+    );
+    let map = MapArray::new(
+        Arc::new(ArrowField::new(
+            "entries",
+            entries.data_type().clone(),
+            false,
+        )),
+        OffsetBuffer::from_lengths([1]),
+        entries,
+        None,
+        false,
+    );
+    let batch = RecordBatch::try_from_iter(vec![
+        ("map", Arc::new(map) as ArrayRef),
+        ("arr", Arc::new(arr) as ArrayRef),
+    ])
+    .unwrap();
+
+    let field = |name: &str, column_type| Field::new(SqlIdentifier::new(name, false), column_type);
+    let fields = [
+        field(
+            "arr",
+            ColumnType::array(false, ColumnType::decimal(10, 2, true)),
+        ),
+        field(
+            "map",
+            ColumnType::map(
+                false,
+                ColumnType::varchar(false),
+                ColumnType::decimal(10, 2, false),
+            ),
+        ),
+    ];
+    let (batch, reason) = order_columns(batch, &fields);
+    assert_eq!(reason, None);
+    // The values are significands, not `Decimal128`, at both places.
+    assert!(!format!("{:?}", batch.schema()).contains("Decimal128"));
+
+    let read: Vec<DecimalRow> = Vec::deserialize_with_context(
+        serde_arrow::Deserializer::from_record_batch(&batch).unwrap(),
+        &delta_input_serde_config().with_positional_fields(true),
+    )
+    .unwrap();
+    assert_eq!(read[0].arr, vec![Some("123.45".parse().unwrap()), None]);
+    assert_eq!(read[0].map.get("k"), Some(&"-0.05".parse().unwrap()));
+}
