@@ -186,6 +186,16 @@ describe('processProfileFiles circuit profile model', () => {
     expect(result.profileError).toMatch(/^Failed to read the circuit profile: /)
     expect(result.logText).toBe('starting up\n')
   })
+
+  it('gives profileError, and keeps the other files, when the profile is not valid JSON', async () => {
+    const result = await processProfileFiles([
+      file(`${TIMESTAMP}/circuit_profile.json`, '{"metrics": [trunc'),
+      logs()
+    ])
+    expect(result.profile).toBeUndefined()
+    expect(result.profileError).toMatch(/^Failed to read the circuit profile: /)
+    expect(result.logText).toBe('starting up\n')
+  })
 })
 
 describe('processProfileFiles runtimeConfig', () => {

@@ -161,15 +161,16 @@ export function buildCircuitProfile(
 }
 
 /** Reads `circuit_profile.json` into its model. The parsed JSON is local to this function, so the
- *  garbage collector can free it when the function returns. If `CircuitProfile` cannot read the
- *  parsed JSON, the function returns `profileError` and does not throw. */
+ *  garbage collector can free it when the function returns. If the file cannot be unzipped or
+ *  parsed, or `CircuitProfile` cannot read the JSON, the function returns `profileError` and does
+ *  not throw. */
 async function readCircuitProfile(
   file: ZipItem,
   dataflow: Dataflow | undefined,
   programCode: string[] | undefined
 ): Promise<{ profile?: CircuitProfile; profileError?: string }> {
-  const json = JSON.parse(new TextDecoder().decode(await readZipItem(file))) as JsonProfiles
   try {
+    const json = JSON.parse(new TextDecoder().decode(await readZipItem(file))) as JsonProfiles
     return { profile: buildCircuitProfile(json, dataflow, programCode) }
   } catch (e) {
     return {
