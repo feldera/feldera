@@ -30,10 +30,7 @@ export class MetadataSelector {
     private onChange: () => void = () => { };
     private readonly callbacks: ProfilerCallbacks;
 
-    /** `initialMetric` colors the diagram first, if the circuit has it. Else `runtime_percent` does,
-     *  or else any metric of the circuit. */
-    constructor(private readonly circuit: CircuitProfile, callbacks: ProfilerCallbacks,
-        initialMetric: string = "runtime_percent") {
+    constructor(private readonly circuit: CircuitProfile, callbacks: ProfilerCallbacks) {
         this.callbacks = callbacks;
         this.workersVisible = Array.from({ length: circuit.getWorkerNames().length }, () => true);
         this.allMetrics = new Set<string>();
@@ -43,9 +40,12 @@ export class MetadataSelector {
             }
         }
 
-        this.selectedMetric = [initialMetric, "runtime_percent"].find(metric => this.allMetrics.has(metric))
-            ?? this.allMetrics.values().next().value
-            ?? "";
+        // Initial metric value
+        if (this.allMetrics.has("runtime_percent")) {
+            this.selectedMetric = "runtime_percent";
+        } else {
+            this.selectedMetric = this.allMetrics.values().next().value || "";
+        }
     }
 
     changed(): void {

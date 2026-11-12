@@ -106,11 +106,6 @@ export interface VisualizerConfig {
     /** Palette the diagram is drawn with; defaults to 'light'. Change it later with
      *  `setTheme()` rather than by re-creating the visualizer. */
     theme?: DiagramTheme;
-
-    /** The metric that colors the diagram after `render`, if the profile has it. Defaults to
-     *  `runtime_percent`. A caller that selects another metric at once gives it here, so that the
-     *  diagram is not colored twice. */
-    initialMetric?: string;
 }
 
 /**
@@ -178,7 +173,7 @@ export class Visualizer {
             // Create selectors
             this.profile = profile;
             this.circuitSelector = new CircuitSelector(profile);
-            this.metadataSelector = new MetadataSelector(profile, this.config.callbacks, this.config.initialMetric);
+            this.metadataSelector = new MetadataSelector(profile, this.config.callbacks);
 
             // Initialize metadata selector (will trigger callbacks for initial state)
             this.metadataSelector.initialize();

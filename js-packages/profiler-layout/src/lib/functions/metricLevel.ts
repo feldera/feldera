@@ -7,15 +7,12 @@ export function levelMetrics(metrics: MetricOption[], showAdvanced: boolean): Me
   return metrics.filter((metric) => MetricDescriptions.isShown(metric.id, showAdvanced))
 }
 
-/** The metric that the selector prefers. */
-export const PREFERRED_METRIC = 'runtime_seconds'
-
-/** The metric to select from `listed`: `selected` when it is listed, or else `PREFERRED_METRIC`,
- *  or else the first listed metric. With no listed metrics, `selected` stays. */
+/** The metric to select from `listed`: `selected` when it is listed, or else the runtime, or else
+ *  the first listed metric. With no listed metrics, `selected` stays. */
 export function metricToSelect(selected: string, listed: MetricOption[]): string {
   if (listed.length === 0 || listed.some((metric) => metric.id === selected)) {
     return selected
   }
-  const preferred = listed.find((metric) => metric.id === PREFERRED_METRIC)
-  return (preferred ?? listed[0]!).id
+  const runtime = listed.find((metric) => metric.id === 'runtime_seconds')
+  return (runtime ?? listed[0]!).id
 }
