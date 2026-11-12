@@ -87,7 +87,7 @@ class Attributes {
         // Matrix of measurements
         readonly matrix: MeasurementMatrix,
         // Key-value attributes
-        readonly kv: Map<string, string>,
+        readonly keyValues: Map<string, string>,
     ) { };
 }
 
@@ -214,7 +214,7 @@ export class Cytograph {
     /** Adds the drawn edge from `source` to `target` that stands for the edge `original` of `graph`.
      *  All edges of `graph` with the same drawn nodes and the same `back` flag share one drawn edge.
      *  ELK then lays out one edge for each pair of nodes, which makes the layout faster. */
-    drawEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
+    addDrawnEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
         // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
         const id = source + "->" + target + (original.back ? ":back" : "");
         if (!this.edgesById.has(id)) {
@@ -351,7 +351,7 @@ export class Cytograph {
                 // Induced edges can be self-edges; do not add these
                 continue;
             }
-            result.drawEdge(edge, sourceNode.id, targetNode.id);
+            result.addDrawnEdge(edge, sourceNode.id, targetNode.id);
         }
         return result;
     }
@@ -396,8 +396,8 @@ export class CytographRendering {
      * If true do not remove the node information from the screen on mouse leave
      */
     stickyInformation: boolean;
-    // Current node that has tooltip displayed (for refreshing on metadata changes)
-    private currentTooltipNode: NodeId | null = null;
+    // The node that the node report shows. A metadata change refreshes the report.
+    private reportedNode: NodeId | null = null;
     // The profile and the scales of the last `updateMetadata`, for `computeAttributes`.
     private metadataProfile: CircuitProfile | null = null;
     private displayScales: DisplayScales = new Map();
@@ -622,26 +622,26 @@ export class CytographRendering {
                 : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
             totals.set(metric, new SerializedMeasurement(total, share));
         }
-        let kv = new Map();
-        kv.set("id", node.id);
+        const keyValues = new Map<string, string>();
+        keyValues.set("id", node.id);
         if (node.persistentId.isSome()) {
-            kv.set("persistentId", node.persistentId.unwrap());
+            keyValues.set("persistentId", node.persistentId.unwrap());
         }
-        kv.set("operation", node.getLabel());
-        kv.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
+        keyValues.set("operation", node.getLabel());
+        keyValues.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
         if (!profile.isTop(node.getId())) {
             // Not shown for the toplevel node
-            kv.set("consumers", profile.consumerCount(node.getId()).toString());
+            keyValues.set("consumers", profile.consumerCount(node.getId()).toString());
         }
 
         let parent = profile.parents.get(node.id);
         if (parent.isSome()) {
             const p = parent.unwrap();
-            kv.set("parent", p);
+            keyValues.set("parent", p);
         }
         let matrix = new MeasurementMatrix(
             columnNames, [...profileNode.measurements.getMetrics()], data, totals);
-        return new Attributes(matrix, kv);
+        return new Attributes(matrix, keyValues);
     }
 
     /** Writes the `expanded` and `invisible` data fields of each node, which change with the graph.
@@ -713,8 +713,8 @@ export class CytographRendering {
         });
 
         // Refresh the tooltip if there's a node currently displayed
-        if (this.currentTooltipNode !== null) {
-            const node = this.getRenderedNode(this.currentTooltipNode);
+        if (this.reportedNode !== null) {
+            const node = this.getRenderedNode(this.reportedNode);
             if (node) {
                 this.displayNodeAttributes(node);
             }
@@ -995,10 +995,10 @@ export class CytographRendering {
      *
      *  This reads the class on the node, so the result always agrees with what is on screen. */
     private reportIsMarked(): boolean {
-        if (this.currentTooltipNode === null) {
+        if (this.reportedNode === null) {
             return false;
         }
-        return this.getRenderedNode(this.currentTooltipNode).hasClass(SELECTED_NODE_CLASS);
+        return this.getRenderedNode(this.reportedNode).hasClass(SELECTED_NODE_CLASS);
     }
 
     /** Give `node` the selection mark (`SELECTED_NODE_CLASS`), and remove the mark from all other
@@ -1069,8 +1069,8 @@ export class CytographRendering {
         const attributes = this.computeAttributes(graphNode);
         const sources = node.data("sources")
 
-        // Track the current tooltip node for refreshing on metadata changes
-        this.currentTooltipNode = nodeId;
+        // A metadata change refreshes the report of this node.
+        this.reportedNode = nodeId;
         this.onTooltipContextChanged()
         this.traceSelection(node);
 
@@ -1133,9 +1133,9 @@ export class CytographRendering {
         }
 
         // Add additional key-value attributes
-        if (attributes.kv.size !== 0) {
+        if (attributes.keyValues.size !== 0) {
             visible = true;
-            for (const [key, value] of attributes.kv.entries()) {
+            for (const [key, value] of attributes.keyValues.entries()) {
                 if (key == "id") {
                     tooltipData.title = value + tooltipData.title;
                 } else if (key == "operation") {
@@ -1170,7 +1170,7 @@ export class CytographRendering {
     }
 
     hideNodeInformation() {
-        this.currentTooltipNode = null;
+        this.reportedNode = null;
         this.clearTrace();
         this.onTooltipContextChanged()
         this.callbacks.displayNodeAttributes(Option.none(), false);
