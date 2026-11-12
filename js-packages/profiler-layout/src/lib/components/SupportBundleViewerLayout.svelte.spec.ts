@@ -6,7 +6,7 @@
  *
  * The graph pane is rendered inside `{#if hasProfile}`; the analysis pane below it is
  * unconditional. PaneForge orders panes by registration time unless each pane declares an
- * explicit `order`. When a profile loads *after* the layout has mounted (profileData
+ * explicit `order`. When a profile loads *after* the layout has mounted (profile
  * undefined -> defined), the graph pane registers second and, without `order`, PaneForge
  * treats it as the *lower* pane. The resizer then drives the panes backwards, so moving the
  * divider down shrinks the top pane instead of growing it - the reversal the user reported.
@@ -57,8 +57,7 @@ import { capture } from '../test-support/LayoutPanelStub.svelte'
 import SupportBundleViewerLayout from './SupportBundleViewerLayout.svelte'
 
 const baseProps = () => ({
-  profileData: undefined,
-  dataflowData: undefined,
+  profile: undefined,
   triageResults: new TriageResults(),
   profileFiles: [],
   selectedTimestamp: null,
@@ -115,7 +114,7 @@ describe('SupportBundleViewerLayout vertical pane order', () => {
     expect(container.querySelector('.pane-divider-horizontal')).toBeNull()
 
     // Profile arrives -> graph pane mounts and registers after the analysis pane.
-    await rerender({ profileData: someProfile })
+    await rerender({ profile: someProfile })
 
     await expectDividerDownGrowsTopPane(container)
   })
@@ -126,7 +125,7 @@ describe('SupportBundleViewerLayout vertical pane order', () => {
       sqlPanelFullHeight: true
     })
 
-    await rerender({ profileData: someProfile })
+    await rerender({ profile: someProfile })
 
     await expectDividerDownGrowsTopPane(container)
   })
@@ -157,7 +156,7 @@ describe('SupportBundleViewerLayout source navigation', () => {
     render(SupportBundleViewerLayout, {
       props: {
         ...baseProps(),
-        profileData: someProfile,
+        profile: someProfile,
         sourceFiles: [{ name: 'program.sql', language: 'sql', code: 'a\nb\nc' }],
         onHighlightSourceRanges: (r: SourcePositionRange[]) => highlighted.push(r)
       }
@@ -312,7 +311,6 @@ describe('SupportBundleViewerLayout code panel', () => {
     capture.callbacks = undefined
     capture.profile = { getSourceRanges: () => operatorRanges } as never
     capture.sourceTab = undefined
-    capture.programCode = undefined
   })
 
   it('has a tab for each source file and opens the SQL program', async () => {
@@ -330,21 +328,6 @@ describe('SupportBundleViewerLayout code panel', () => {
       .toEqual(['program.sql'])
   })
 
-  it('hands the diagram the lines of the SQL program', async () => {
-    render(SupportBundleViewerLayout, {
-      ...baseProps(),
-      profileData: someProfile,
-      sourceFiles: [udf, program]
-    })
-    await expect.poll(() => capture.programCode).toEqual(['a', 'b', 'c'])
-  })
-
-  it('hands the diagram no lines when the bundle has no source files', async () => {
-    render(SupportBundleViewerLayout, { ...baseProps(), profileData: someProfile })
-    await expect.poll(() => capture.callbacks).toBeDefined()
-    expect(capture.programCode).toBeUndefined()
-  })
-
   it('opens the first file when the bundle has no SQL program', async () => {
     render(SupportBundleViewerLayout, { ...baseProps(), sourceFiles: [udf] })
     await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
@@ -360,7 +343,7 @@ describe('SupportBundleViewerLayout code panel', () => {
   it('selects node ranges only in the SQL program', async () => {
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      profileData: someProfile,
+      profile: someProfile,
       sourceFiles: [program, udf]
     })
     capture.callbacks?.onNodeClick?.('operator')
@@ -374,7 +357,7 @@ describe('SupportBundleViewerLayout code panel', () => {
   it('goes back to the SQL program when a node with SQL is clicked', async () => {
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      profileData: someProfile,
+      profile: someProfile,
       sourceFiles: [program, udf]
     })
     await expect.poll(() => fileTab('udf.rs')).toBeDefined()
@@ -389,7 +372,7 @@ describe('SupportBundleViewerLayout code panel', () => {
     capture.profile = { getSourceRanges: () => [] } as never
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      profileData: someProfile,
+      profile: someProfile,
       sourceFiles: [program, udf]
     })
     await expect.poll(() => fileTab('udf.rs')).toBeDefined()
@@ -543,7 +526,7 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
     ])('is not shown in %s when the bundle has no source files', async (_, sqlPanelFullHeight) => {
       const { container } = render(SupportBundleViewerLayout, {
         ...baseProps(),
-        profileData: someProfile,
+        profile: someProfile,
         sqlPanelFullHeight
       })
       // Throws if the layout did not render the analysis tabs.
@@ -587,7 +570,7 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
     })
 
     it.each([
-      ['a profile', { profileData: someProfile }],
+      ['a profile', { profile: someProfile }],
       ['only global metrics', { globalMetrics: someGlobalMetrics }]
     ])('is enabled when the bundle has %s', (_, props) => {
       const { container } = render(SupportBundleViewerLayout, { ...baseProps(), ...props })
@@ -603,7 +586,7 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
     it('is selected by default when it is enabled', async () => {
       const { container } = render(SupportBundleViewerLayout, {
         ...baseProps(),
-        profileData: someProfile
+        profile: someProfile
       })
       await expect.poll(() => selectedAnalysisTab(container)).toBe('Metrics')
     })
@@ -633,12 +616,12 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
       ],
       [
         'a profile, but no code',
-        { profileData: someProfile },
+        { profile: someProfile },
         'This bundle has no pipeline code, so the code panel is unavailable.'
       ],
       [
         'a profile and only empty code',
-        { profileData: someProfile, sourceFiles: [emptyProgram] },
+        { profile: someProfile, sourceFiles: [emptyProgram] },
         'This bundle has no pipeline code, so the code panel is unavailable.'
       ]
     ])('for a bundle with %s is a single message', async (_, props, notice) => {
@@ -650,7 +633,7 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
     it('is not shown when the bundle has a profile and code', async () => {
       render(SupportBundleViewerLayout, {
         ...baseProps(),
-        profileData: someProfile,
+        profile: someProfile,
         sourceFiles: [program]
       })
       await expect.poll(fileTabCount).toBe(1)

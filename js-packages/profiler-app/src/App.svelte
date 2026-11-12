@@ -11,7 +11,7 @@
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
-  import type { Dataflow, JsonProfiles } from 'profiler-lib'
+  import type { CircuitProfile } from 'profiler-lib'
   import { MediaQuery } from 'svelte/reactivity'
   import { TriageResults } from 'triage-types'
   import faviconDataUrl from '$assets/favicon.svg?dataurl=enc'
@@ -37,10 +37,10 @@
   let selectedTimestamp: Date | null = $state(null)
   let sqlPanelFullHeight = $state(false)
 
-  // Raw state: a deep proxy over the parsed profile makes the diagram load much slower.
+  // Raw state: a deep proxy over the profile makes the diagram load much slower.
   let profileData: {
-    profile: JsonProfiles | undefined
-    dataflow: Dataflow | undefined
+    profile: CircuitProfile | undefined
+    profileError: string | undefined
     logText: string | undefined
     globalMetrics: GlobalMetrics | undefined
     connectorMetrics: ConnectorMetrics | undefined
@@ -67,7 +67,7 @@
     selectedTimestamp = timestamp
     profileData = {
       profile: data.profile,
-      dataflow: data.dataflow,
+      profileError: data.profileError,
       logText: data.logText,
       globalMetrics: data.globalMetrics,
       connectorMetrics: data.connectorMetrics,
@@ -160,8 +160,8 @@
   </div>
   {#if profileData}
     <SupportBundleViewerLayout
-      profileData={profileData.profile}
-      dataflowData={profileData.dataflow}
+      profile={profileData.profile}
+      profileError={profileData.profileError}
       logText={profileData.logText}
       globalMetrics={profileData.globalMetrics}
       connectorMetrics={profileData.connectorMetrics}

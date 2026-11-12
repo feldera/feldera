@@ -2,12 +2,16 @@
 // Each measurement times the real code path, from the user action until the result is painted.
 // The tests only check that each action completed. They do not check a time budget.
 
-import { CircuitProfile, clearLayoutCache, type ProfilerCallbacks } from 'profiler-lib'
+import { clearLayoutCache, type ProfilerCallbacks } from 'profiler-lib'
 import { afterAll, describe, expect, inject, it } from 'vitest'
 import { commands } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import ProfilerDiagram from './components/ProfilerDiagram.svelte'
-import { getSuitableProfiles, processProfileFiles } from './functions/processZipBundle'
+import {
+  buildCircuitProfile,
+  getSuitableProfiles,
+  processProfileFiles
+} from './functions/processZipBundle'
 import {
   afterNextPaint,
   measure,
@@ -108,9 +112,7 @@ function mountProfiler(circuit: SyntheticCircuit) {
   const screen = render(ProfilerDiagram, {
     target: wrapper,
     props: {
-      profileData: circuit.profile,
-      dataflowData: circuit.dataflow,
-      programCode: circuit.programCode,
+      profile: buildCircuitProfile(circuit.profile, circuit.dataflow, circuit.programCode),
       callbacks
     }
   })
@@ -234,7 +236,7 @@ describe('profiler performance', () => {
         run: async () => {
           const collections = getSuitableProfiles(bundle)
           const processed = await processProfileFiles(collections.at(-1)![1])
-          workers = processed.profile!.worker_profiles.length
+          workers = processed.profile!.worker_count
         }
       })
     )
@@ -248,9 +250,12 @@ describe('profiler performance', () => {
         warmups: 3,
         runs: 25,
         run: () => {
-          const circuit = CircuitProfile.fromJson(LARGE_CIRCUIT.profile)
-          circuit.profile.setDataflow(LARGE_CIRCUIT.dataflow, LARGE_CIRCUIT.programCode)
-          operators = circuit.profile.simpleNodes.size
+          const profile = buildCircuitProfile(
+            LARGE_CIRCUIT.profile,
+            LARGE_CIRCUIT.dataflow,
+            LARGE_CIRCUIT.programCode
+          )
+          operators = profile.simpleNodes.size
         }
       })
     )

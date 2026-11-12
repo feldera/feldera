@@ -6,13 +6,11 @@
   palette and all, which passes a repaint test without repainting anything.
 -->
 <script lang="ts">
-  import type { Dataflow, DiagramTheme, JsonProfiles, ProfilerCallbacks } from 'profiler-lib'
+  import type { CircuitProfile, DiagramTheme, ProfilerCallbacks } from 'profiler-lib'
   import ProfilerDiagram from '../components/ProfilerDiagram.svelte'
 
   interface Props {
-    profileData: JsonProfiles
-    dataflowData: Dataflow | undefined
-    programCode: string[] | undefined
+    profile: CircuitProfile
     callbacks: ProfilerCallbacks
     theme: DiagramTheme
   }
@@ -42,9 +40,7 @@
 
 <ProfilerDiagram
   bind:this={diagram}
-  profileData={props.profileData}
-  dataflowData={props.dataflowData}
-  programCode={props.programCode}
+  profile={props.profile}
   callbacks={props.callbacks}
   {theme}
 />

@@ -24,9 +24,8 @@
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type {
-    Dataflow,
+    CircuitProfile,
     DiagramTheme,
-    JsonProfiles,
     MetricOption,
     NodeAttributes,
     ProfilerCallbacks,
@@ -59,10 +58,11 @@
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
-    /** Parsed circuit profile. Do not pass a deep `$state` object: reads through its proxies make
-     *  the diagram load much slower on a large profile. */
-    profileData?: JsonProfiles
-    dataflowData: Dataflow | undefined
+    /** The circuit profile to draw. Do not pass a deep `$state` object: reads through its proxies
+     *  make the diagram much slower on a large profile. */
+    profile?: CircuitProfile
+    /** Why the bundle's circuit profile could not be read. Shown over the diagram panel. */
+    profileError?: string
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
     globalMetrics?: GlobalMetrics
@@ -101,8 +101,8 @@
   }
 
   let {
-    profileData,
-    dataflowData,
+    profile,
+    profileError,
     logText,
     globalMetrics,
     connectorMetrics,
@@ -122,7 +122,7 @@
     onRenderingChange
   }: Props = $props()
 
-  const hasProfile = $derived(profileData !== undefined)
+  const hasProfile = $derived(profile !== undefined || profileError !== undefined)
   // Without a profile, the Metrics tab can only show the global stats from `stats.json`.
   const hasMetrics = $derived(hasProfile || buildGlobalMetrics(globalMetrics).length > 0)
   // `processProfileFiles` gives an empty `program.sql` a tab. Only empty files count as no code.
@@ -315,7 +315,7 @@
   // that `showGlobalMetrics` triggers sees a non-node view and can't overwrite `lastNodeData`
   // with the overview payload.
   $effect(() => {
-    void profileData
+    void profile
     const diagram = profilerDiagram
     queueMicrotask(() => {
       analysisView = 'overview'
@@ -364,9 +364,6 @@
     lookupProgress = null
   })
 
-  // The lines of `program.sql`. `ProfilerDiagram` shows the SQL of each circuit node from these
-  // lines when the dataflow has no `sources`, as in a support bundle.
-  const programCode = $derived(sourceFiles.find((f) => f.name === 'program.sql')?.code.split('\n'))
   let sourceCurrentTab = $state('program.sql')
   // The file of the selected tab. It is `undefined` when the bundle has no source files.
   // It defaults to the first file of the bundle when the bundle does not have the selected file.
@@ -526,11 +523,11 @@
          this div's bounding rect onto the shared handle. -->
     {#if hasProfile}
       <div use:diagramRect.placeholder class="relative min-h-0 flex-1 bg-white-dark">
-        {#if error}
+        {#if profileError || error}
           <div
             class="absolute inset-x-4 top-4 z-10 rounded border border-red-300 bg-white p-3 font-mono text-sm text-red-600 shadow"
           >
-            {error}
+            {profileError || error}
           </div>
         {/if}
       </div>
@@ -770,14 +767,12 @@
 <!-- Persistent ProfilerDiagram overlay. Always mounted at root, sized to mirror the
      <PersistentPlaceholder> in graphPanel. Surviving the layout toggle (and any other
      conditional re-render of graphPanel) is what keeps the Visualizer's internal state intact
-     instead of being torn down and re-created from `profileData` each time. -->
-{#if profileData}
+     instead of being torn down and re-created from `profile` each time. -->
+{#if profile}
   <PersistentContent persistent={diagramRect} class="overflow-hidden bg-white-dark">
     <ProfilerDiagram
       bind:this={profilerDiagram}
-      {profileData}
-      {dataflowData}
-      {programCode}
+      {profile}
       {callbacks}
       {theme}
     />

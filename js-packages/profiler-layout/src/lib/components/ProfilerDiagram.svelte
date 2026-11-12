@@ -1,9 +1,7 @@
 <script lang="ts">
   import {
-    CircuitProfile,
-    type Dataflow,
+    type CircuitProfile,
     type DiagramTheme,
-    type JsonProfiles,
     type ProfilerCallbacks,
     Visualizer,
     type VisualizerConfig
@@ -11,13 +9,9 @@
   import { onDestroy } from 'svelte'
 
   interface Props {
-    /** Profile data from the pipeline manager. Do not pass a deep `$state` object: reads through
-     *  its proxies make `CircuitProfile.fromJson` much slower on a large profile. */
-    profileData: JsonProfiles
-    /** Dataflow graph data from the SQL compiler */
-    dataflowData: Dataflow | undefined
-    /** Lines of user SQL code */
-    programCode: string[] | undefined
+    /** The circuit profile to draw. Do not pass a deep `$state` object: reads through its proxies
+     *  make the diagram much slower on a large profile. */
+    profile: CircuitProfile
     /** Callbacks the hosting layout listens on */
     callbacks: ProfilerCallbacks
     /** Palette the diagram is drawn with; follows the application theme */
@@ -27,9 +21,7 @@
   }
 
   const {
-    profileData,
-    dataflowData,
-    programCode,
+    profile,
     callbacks,
     theme = 'light',
     class: className
@@ -72,7 +64,7 @@
     }
 
     // Wait for data to be available
-    if (!profileData) {
+    if (!profile) {
       return
     }
 
@@ -84,10 +76,6 @@
       }
 
       try {
-        // Parse the profile data
-        const circuit = CircuitProfile.fromJson(profileData)
-        circuit.profile.setDataflow(dataflowData, programCode)
-
         // Create visualizer configuration with callbacks
         const config: VisualizerConfig = {
           graphContainer: graphContainer!,
@@ -98,9 +86,9 @@
 
         // Create and render visualizer
         const visualizer = new Visualizer(config)
-        visualizer.render(circuit)
+        visualizer.render({ profile, rootNodeId: profile.rootNodeId })
 
-        instance = { visualizer, profile: circuit.profile }
+        instance = { visualizer, profile }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e)
         callbacks.onError(`Failed to initialize visualizer: ${errorMsg}`)
