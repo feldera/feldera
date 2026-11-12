@@ -1180,9 +1180,10 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
  * The pipeline's `deployment_status` is the lifecycle Feldera wants; this endpoint is what
  * exists in the runner's platform (for example Kubernetes) now.
  *
- * `state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,
- * `NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not
- * observe their resources return the spec only.
+ * `state` values follow Kubernetes
+ * [kstatus](https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/README.md):
+ * `Current`, `InProgress`, `Failed`, `Terminating`, `NotFound`, and `Unknown`. `status.state`
+ * summarizes `status.hosts`. Runners that do not observe their resources return the spec only.
  */
 export const getPipelineDeployment = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineDeploymentData, ThrowOnError>
