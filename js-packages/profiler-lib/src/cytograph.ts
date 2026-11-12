@@ -376,6 +376,12 @@ class GraphDiff {
     }
 }
 
+// ELK's crossing minimization keeps most of the input order at thoroughness 2, and the input
+// order groups the operators of one SQL statement. Higher values give a few fewer crossings, but
+// scatter a statement across the drawing. Do not add `considerModelOrder.strategy`, because its
+// sort pass takes 15 of the 18 s of the layout of a circuit with 1700 nodes.
+const ELK_THOROUGHNESS = 2;
+
 /** Handles updates and rendering for the displayed cytograph. */
 export class CytographRendering {
     /** The progress message while the graph changes and ELK lays it out. */
@@ -500,7 +506,7 @@ export class CytographRendering {
             'algorithm': 'layered',
             'elk.direction': 'DOWN',
             'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-            'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+            'elk.layered.thoroughness': ELK_THOROUGHNESS,
             'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF'
         }
     };
@@ -515,7 +521,8 @@ export class CytographRendering {
         elk: {
             'algorithm': 'layered',
             'elk.direction': 'DOWN',
-            'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
+            'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+            'elk.layered.thoroughness': ELK_THOROUGHNESS
         }
     };
 
