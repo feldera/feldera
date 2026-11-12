@@ -24,6 +24,7 @@ use feldera_adapterlib::transport::{
 };
 use feldera_types::{
     format::json::JsonFlavor,
+    library_error::LibraryError,
     program_schema::{Relation, SqlIdentifier},
     transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
 };
@@ -152,9 +153,11 @@ impl Drop for PostgresWorker {
 const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client, BackoffError> {
-    let pgcnf = postgres::Config::from_str(&config.uri).map_err(|e| {
-        BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
-    })?;
+    let pgcnf = postgres::Config::from_str(&config.uri)
+        .map_err(LibraryError::wrap)
+        .map_err(|e| {
+            BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
+        })?;
 
     let client = match make_tls_connector(&config.tls, endpoint_name) {
         Ok(Some(connector)) => {
@@ -593,7 +596,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         // commit with `ROLLBACK` and no error, which would report the rows this
         // transaction wrote as written when they were all discarded.
         if self.transaction_state == TransactionState::Rejected {
-            let rollback = match transaction.rollback() {
+            let rollback = match transaction.rollback().map_err(LibraryError::wrap) {
                 Ok(()) => String::new(),
                 Err(e) => format!(" Rolling the transaction back also failed: {e}."),
             };
@@ -2562,5 +2565,36 @@ pub mod tests {
             let got = query_all(&mut client);
             assert_eq!(got, records);
         }
+    }
+}
+
+#[cfg(test)]
+mod library_error_tests {
+    use feldera_types::transport::postgres::PostgresWriterConfig;
+    use serde_json::json;
+
+    /// The driver echoes an unknown option name, so a password pasted in
+    /// place of an option name shows in its message. The registered value
+    /// shows as its reference.
+    #[test]
+    fn a_password_the_driver_echoes_is_redacted() {
+        let value = "output-typo-pw-2136";
+        let reference = "${secret:kubernetes:pg/output-typo}";
+        feldera_types::secret_redaction::secret_redactor().register(reference, value);
+        let config: PostgresWriterConfig = serde_json::from_value(json!({
+            "uri": format!("postgresql://alice@/orders?host=/nonexistent-feldera-2136/pg&{value}=1"),
+            "table": "t",
+        }))
+        .unwrap();
+        let Err(error) = super::connect(&config, "pg_out") else {
+            panic!("the option is unknown");
+        };
+
+        let text = format!("{:#}", error.inner());
+        assert!(!text.contains(value), "password in error: {text}");
+        assert!(
+            text.contains("unknown option"),
+            "driver text missing: {text}"
+        );
     }
 }

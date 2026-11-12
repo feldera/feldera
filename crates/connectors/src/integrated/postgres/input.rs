@@ -8,6 +8,7 @@ use feldera_adapterlib::format::ParseError;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::config::FtModel;
 use feldera_types::format::json::JsonFlavor;
+use feldera_types::library_error::LibraryError;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::postgres::PostgresReaderConfig;
 
@@ -209,6 +210,7 @@ impl PostgresInputEndpointInner {
         let rows = match client
             .query(self.config.query.as_str(), &[])
             .await
+            .map_err(LibraryError::wrap)
             .map_err(|e| {
                 ControllerError::input_transport_error(
                     &self.endpoint_name,
@@ -469,19 +471,24 @@ async fn connect(
         )
     })?;
 
-    let make_conn_err = |e: tokio_postgres::Error| {
+    // The driver error is wrapped where it enters our code: whatever a
+    // message or a log line interpolates from it is already sanitized.
+    let make_conn_err = |e: LibraryError| {
         ControllerError::invalid_transport_configuration(
             endpoint_name,
             &format!("Unable to connect to postgres instance{target}: {e}"),
         )
     };
 
-    fn spawn_pg_connection_monitor(
+    fn spawn_pg_connection_monitor<E>(
         name: String,
-        conn: impl Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static,
-    ) {
+        conn: impl Future<Output = Result<(), E>> + Send + 'static,
+    ) where
+        E: std::error::Error + Send + Sync + 'static,
+    {
         tokio::spawn(async move {
             if let Err(e) = conn.await {
+                let e = LibraryError::wrap(e);
                 error!("postgres {name}: connection error: {e}");
             }
         });
@@ -491,6 +498,7 @@ async fn connect(
         debug!("postgres {endpoint_name}: CA certificate provided, connecting with TLS");
         let (client, connection) = tokio_postgres::connect(config.uri.as_str(), connector)
             .await
+            .map_err(LibraryError::wrap)
             .map_err(make_conn_err)?;
         spawn_pg_connection_monitor(endpoint_name.to_string(), connection);
         client
@@ -498,6 +506,7 @@ async fn connect(
         debug!("postgres {endpoint_name}: no CA certificates provided, connecting without TLS");
         let (client, connection) = tokio_postgres::connect(config.uri.as_str(), NoTls)
             .await
+            .map_err(LibraryError::wrap)
             .map_err(make_conn_err)?;
         spawn_pg_connection_monitor(endpoint_name.to_string(), connection);
         client
@@ -552,6 +561,28 @@ mod tests {
             assert!(text.contains("pg_in"), "endpoint missing: {text}");
             assert!(text.contains(NO_SOCKET_DIR), "host missing: {text}");
             assert!(text.contains("orders"), "database missing: {text}");
+        }
+    }
+
+    /// The driver echoes an unknown option name, so a password pasted in
+    /// place of an option name shows in its message. The registered value
+    /// shows as its reference.
+    #[test]
+    fn a_password_the_driver_echoes_is_redacted() {
+        let value = "input-typo-pw-2136";
+        let reference = "${secret:kubernetes:pg/input-typo}";
+        feldera_types::secret_redaction::secret_redactor().register(reference, value);
+        let uri = format!("postgresql://alice@/orders?host={NO_SOCKET_DIR}&{value}=1");
+        let error = TOKIO
+            .block_on(connect("pg_in", &config(&uri)))
+            .expect_err("the option is unknown");
+
+        for text in [error.to_string(), serde_json::to_string(&error).unwrap()] {
+            assert!(!text.contains(value), "password in error: {text}");
+            assert!(
+                text.contains("unknown option"),
+                "driver text missing: {text}"
+            );
         }
     }
 
