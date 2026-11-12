@@ -199,6 +199,26 @@ impl CircuitCatalog for Catalog {
 
 pub type OutputMapping = BTreeMap<String, usize>;
 
+/// Returns the names, any of which in [DISTRIBUTED_OUTPUT_STREAMS] gives a stream a distributed
+/// change stream (see [feldera_types::config::PipelineConfig::distributed_output_streams]).
+/// `name` is the stream's
+/// relation: for an index, that is its view, so an index goes by `key_schema_name`, its own
+/// name, instead.  A view that doubles as an index, `alias_as_index`, also goes by that name.
+fn distributed_names(
+    name: &SqlIdentifier,
+    index_of: Option<&SqlIdentifier>,
+    alias_as_index: Option<&SqlIdentifier>,
+    key_schema_name: &SqlIdentifier,
+) -> Vec<SqlIdentifier> {
+    if index_of.is_some() {
+        vec![key_schema_name.clone()]
+    } else {
+        std::iter::once(name.clone())
+            .chain(alias_as_index.cloned())
+            .collect()
+    }
+}
+
 /// Global mapping from the name of a stream to the ordinal of the host for its
 /// output connectors.
 ///
@@ -296,6 +316,7 @@ impl Catalog {
     fn gather_output_to_host<Z>(
         &self,
         name: &SqlIdentifier,
+        distributed_names: &[SqlIdentifier],
         stream: &Stream<RootCircuit, Z>,
         shard: bool,
         integrate: bool,
@@ -338,15 +359,17 @@ impl Catalog {
 
             // The same shards as the integral, so a materialized view's integral and its
             // distributed connectors share one exchange.
-            let distributed = DISTRIBUTED_OUTPUT_STREAMS
-                .lock()
-                .unwrap()
-                .contains(&name.name())
-                .then(|| {
-                    stream
-                        .shard_workers_accumulate(0..Runtime::num_workers())
-                        .into_parts()
-                });
+            let distributed = {
+                let distributed_streams = DISTRIBUTED_OUTPUT_STREAMS.lock().unwrap();
+                distributed_names
+                    .iter()
+                    .any(|name| distributed_streams.contains(&name.name()))
+            }
+            .then(|| {
+                stream
+                    .shard_workers_accumulate(0..Runtime::num_workers())
+                    .into_parts()
+            });
 
             (accumulated_stream, enabled_count, integral, distributed)
         } else if shard {
@@ -799,7 +822,7 @@ impl Catalog {
         let circuit = stream.circuit();
 
         let (stream, enable_count, _, distributed) =
-            self.gather_output_to_host(&name, &stream, false, false);
+            self.gather_output_to_host(&name, std::slice::from_ref(&name), &stream, false, false);
 
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = circuit.output_accumulated_stream_persistent_with_gid::<Z>(
@@ -926,8 +949,14 @@ impl Catalog {
         // same record with +1 and -1 weights in different workers.
         // To avoid this, we shard the stream, so that such records
         // get canceled out.
-        let (gathered_stream, enable_count, gathered_integral_stream, distributed) =
-            self.gather_output_to_host(&name, &stream, true, gather_integral);
+        let (gathered_stream, enable_count, gathered_integral_stream, distributed) = self
+            .gather_output_to_host(
+                &name,
+                std::slice::from_ref(&name),
+                &stream,
+                true,
+                gather_integral,
+            );
 
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = circuit.output_accumulated_stream_persistent_with_gid::<Z>(
@@ -1125,6 +1154,12 @@ impl Catalog {
         let (gathered_stream, enable_count, gathered_integral_stream, distributed) = self
             .gather_output_to_host(
                 &name,
+                &distributed_names(
+                    &name,
+                    index_of.as_ref(),
+                    alias_as_index.as_ref(),
+                    key_schema_name,
+                ),
                 &stream,
                 materialized && accumulate,
                 materialized && !is_input,
@@ -1555,6 +1590,25 @@ mod test {
     }
 
     /// One take reads a step's output whole and in parts, and leaves nothing for the next.
+    /// An index goes by its own name for its distributed change stream, not by its view's, and
+    /// a view that doubles as an index goes by both names.
+    #[test]
+    fn distributed_names_of_views_and_indexes() {
+        let id = |name: &str| feldera_types::program_schema::SqlIdentifier::from(name);
+        assert_eq!(
+            super::distributed_names(&id("v"), Some(&id("v")), None, &id("i")),
+            [id("i")]
+        );
+        assert_eq!(
+            super::distributed_names(&id("v"), None, None, &id("v.key")),
+            [id("v")]
+        );
+        assert_eq!(
+            super::distributed_names(&id("v"), None, Some(&id("a")), &id("v.key")),
+            [id("v"), id("a")]
+        );
+    }
+
     #[test]
     fn take_readers_reads_a_step_whole_and_in_parts() {
         let (mut circuit, catalog) = Runtime::init_circuit(4, |circuit| {

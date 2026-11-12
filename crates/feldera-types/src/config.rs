@@ -265,8 +265,9 @@ pub struct PipelineConfig {
 
 impl PipelineConfig {
     /// Returns the names, in canonical form, of the streams and indexes that output connectors
-    /// with [`ConnectorConfig::distributed`] read, if their transports support it.  A multihost
-    /// pipeline shards these over all of its workers for the connectors.
+    /// with [`ConnectorConfig::distributed`] read, if their transports support it: the index of
+    /// a connector that reads an index, and otherwise its stream.  A multihost pipeline shards
+    /// these over all of its workers for the connectors.
     pub fn distributed_output_streams(&self) -> BTreeSet<String> {
         self.outputs
             .values()
@@ -274,9 +275,12 @@ impl PipelineConfig {
                 let config = &output.connector_config;
                 config.distributed && config.transport.supports_output_distribution()
             })
-            .flat_map(|output| {
-                std::iter::once(output.stream.as_ref())
-                    .chain(output.connector_config.index.as_deref())
+            .map(|output| {
+                output
+                    .connector_config
+                    .index
+                    .as_deref()
+                    .unwrap_or(output.stream.as_ref())
             })
             .map(|name| SqlIdentifier::from(name).name())
             .collect()
@@ -2909,8 +2913,9 @@ mod test {
     }
 
     /// Only output connectors that set `distributed` on a transport that
-    /// supports it count, with their index, in canonical form.  `distributed`
-    /// on an input connector does not count.
+    /// supports it count, in canonical form, by their index if they read one,
+    /// and otherwise by their stream.  `distributed` on an input connector does
+    /// not count.
     #[test]
     fn distributed_output_streams() {
         let config: PipelineConfig = serde_json::from_value(serde_json::json!({
@@ -2934,7 +2939,7 @@ mod test {
         .unwrap();
         assert_eq!(
             config.distributed_output_streams(),
-            std::collections::BTreeSet::from(["a".into(), "b".into(), "b_idx".into()])
+            std::collections::BTreeSet::from(["a".into(), "b_idx".into()])
         );
     }
 
