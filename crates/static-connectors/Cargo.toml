@@ -171,3 +171,7 @@ harness = false
 [[bench]]
 name = "delta_parse"
 harness = false
+
+[[bench]]
+name = "delta_pipeline"
+harness = false
