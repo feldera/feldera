@@ -13,7 +13,7 @@
 //! | Others     | [PeerClient]      | Reports S to the leader and waits for the answer              |
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Condvar, Mutex},
     time::{Duration, Instant},
 };
@@ -80,8 +80,12 @@ impl OutputPart {
     ) -> AnyResult<()> {
         match &self.role {
             OutputPartRole::Leader(leader) => {
-                let Some(mut payloads) = leader.gather(step, shutdown, on_wait) else {
-                    return Err(anyhow!("the pipeline stopped before every part reported"));
+                let mut payloads = match leader.gather(step, shutdown, on_wait) {
+                    Ok(payloads) => payloads,
+                    Err(error) => {
+                        leader.finish(step, Err(error.clone()));
+                        return Err(anyhow!(error));
+                    }
                 };
                 payloads.insert(0, payload);
                 let result = commit(payloads);
@@ -206,8 +210,11 @@ impl CommitLeader {
         }
     }
 
-    /// Waits until every other part has reported `step`, and returns their payloads.  Returns
-    /// `None` if `shutdown` is cancelled, or the leader is closed (see [Self::close]), first.
+    /// Waits until every other part has reported `step`, and returns their payloads.  Returns an
+    /// error if `shutdown` is cancelled, or the leader is closed (see [Self::close]), first, or if
+    /// a part that has not reported `step` has reported a later step, so that it skipped `step`.
+    /// Such a part waits for the later step, so waiting for its report of `step` would never
+    /// end.
     ///
     /// After each warning interval of waiting, logs a warning and calls `on_wait` with how long it
     /// has waited and the hosts that have reported.
@@ -216,7 +223,7 @@ impl CommitLeader {
         step: Step,
         shutdown: &CancellationToken,
         on_wait: &mut dyn FnMut(Duration, &[usize]),
-    ) -> Option<Vec<JsonValue>> {
+    ) -> Result<Vec<JsonValue>, String> {
         let start = Instant::now();
         let mut next_warning = self.wait_warning;
         let mut state = self.state.lock().unwrap();
@@ -224,10 +231,22 @@ impl CommitLeader {
             let n_reports = state.pending.get(&step).map_or(0, |reports| reports.len());
             if n_reports >= self.n_followers {
                 let reports = state.pending.remove(&step).unwrap_or_default();
-                return Some(reports.into_values().collect());
+                return Ok(reports.into_values().collect());
             }
             if shutdown.is_cancelled() || state.closed {
-                return None;
+                return Err("the pipeline stopped before every part reported".into());
+            }
+            let reported = state.pending.get(&step);
+            let skipped: BTreeSet<usize> = state
+                .pending
+                .range(step + 1..)
+                .flat_map(|(_, reports)| reports.keys().copied())
+                .filter(|host| !reported.is_some_and(|reports| reports.contains_key(host)))
+                .collect();
+            if !skipped.is_empty() {
+                return Err(format!(
+                    "hosts {skipped:?} reported a later step without step {step}, so they skipped it"
+                ));
             }
             if start.elapsed() >= next_warning {
                 let reported: Vec<_> = state
@@ -399,8 +418,38 @@ mod tests {
                 shutdown.cancel();
             }
         });
-        assert!(gathered.is_none());
+        assert!(gathered.is_err());
         assert_eq!(waits, [vec![2], vec![2]]);
+    }
+
+    /// A part that reports a later step without the step that the leader waits for has skipped
+    /// it, so the leader fails that step instead of waiting for a report that cannot come while
+    /// the part waits for the later step.
+    #[test]
+    fn a_skipped_step_fails_instead_of_waiting() {
+        let leader = Arc::new(CommitLeader::new(2));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _report = runtime.spawn({
+            let leader = leader.clone();
+            async move { leader.report(1, 5, json!(1)).await }
+        });
+        let gather = std::thread::spawn({
+            let leader = leader.clone();
+            move || leader.gather(4, &CancellationToken::new(), &mut |_, _| {})
+        });
+        let start = std::time::Instant::now();
+        while !gather.is_finished() {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "the leader is still waiting for step 4"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let error = gather.join().unwrap().unwrap_err();
+        assert!(
+            error.contains("{1}") && error.contains("skipped"),
+            "{error}"
+        );
     }
 
     /// The leader stops waiting when its connector stops.
@@ -421,7 +470,7 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(gather.join().unwrap().is_none());
+        assert!(gather.join().unwrap().is_err());
     }
 
     /// The leader stops waiting when the pipeline stops.
@@ -430,6 +479,6 @@ mod tests {
         let leader = CommitLeader::new(2);
         let shutdown = CancellationToken::new();
         shutdown.cancel();
-        assert!(leader.gather(1, &shutdown, &mut |_, _| {}).is_none());
+        assert!(leader.gather(1, &shutdown, &mut |_, _| {}).is_err());
     }
 }
