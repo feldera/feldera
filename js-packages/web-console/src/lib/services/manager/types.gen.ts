@@ -2952,6 +2952,9 @@ export type HostMetrics = {
 
 export type HostStatus = {
   compute: HostCompute
+  /**
+   * Host index, from 0 to `hosts - 1`. Kubernetes names the pod `<statefulset>-<ordinal>`.
+   */
   ordinal: number
   storage?: HostStorage | null
 }
@@ -7113,13 +7116,13 @@ export type TransactionPhase = 'Started' | 'Committed'
 export type TransactionStatus = 'NoTransaction' | 'TransactionInProgress' | 'CommitInProgress'
 
 /**
- * State of one object and why it is in it.
+ * State of one Kubernetes object, with its cause.
  */
 export type Transition = {
   /**
    * When the platform last changed the condition behind `state` (Kubernetes
-   * `lastTransitionTime`, or `deletionTimestamp` for `Terminating`). Not when `state` itself
-   * changed: a reason change keeps the time.
+   * `lastTransitionTime`, or `deletionTimestamp` for `Terminating`). If only `reason` changes,
+   * for example from `ContainerCreating` to `CrashLoopBackOff`, the time stays.
    */
   last_transition_time?: string | null
   message?: string | null
