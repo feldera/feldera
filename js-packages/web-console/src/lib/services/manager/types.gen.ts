@@ -1819,8 +1819,8 @@ export type DeploymentSpecResources = {
 }
 
 /**
- * kstatus status of an object or of the whole deployment.
- * <https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go>
+ * Status of an object or of the whole deployment, from
+ * [kstatus](https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go).
  */
 export type DeploymentState =
   | 'Current'

@@ -10900,7 +10900,7 @@
       },
       "DeploymentState": {
         "type": "string",
-        "description": "kstatus status of an object or of the whole deployment.\n<https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go>",
+        "description": "Status of an object or of the whole deployment, from\n[kstatus](https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go).",
         "enum": [
           "Current",
           "InProgress",

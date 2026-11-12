@@ -50,8 +50,8 @@ impl From<&ResourceConfig> for DeploymentSpecResources {
     }
 }
 
-/// kstatus status of an object or of the whole deployment.
-/// <https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go>
+/// Status of an object or of the whole deployment, from
+/// [kstatus](https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum DeploymentState {
     /// Matches its desired state.
