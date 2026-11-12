@@ -25,6 +25,13 @@ def _spark():
         # Zero-retention vacuum is the most aggressive one a user can run, which
         # is what makes it the right question to ask about live vector files.
         .config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+        # One thread and six rows: Spark's cluster-sized task counts would turn
+        # each command into thousands of empty serial tasks. VACUUM splits its
+        # file listing by the first, every shuffle splits by the second, and
+        # Delta rebuilds table state by the third.
+        .config("spark.sql.sources.parallelPartitionDiscovery.parallelism", "1")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.databricks.delta.snapshotPartitions", "1")
     )
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
