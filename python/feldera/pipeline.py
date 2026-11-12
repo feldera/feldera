@@ -120,6 +120,11 @@ class Pipeline:
 
         return PipelineStatistics.from_dict(self.client.get_pipeline_stats(self.name))
 
+    def deployment(self) -> dict:
+        """Gets the desired and current CPU, memory, and storage of each host."""
+
+        return self.client.get_pipeline_deployment(self.name)
+
     def metrics(self, format: str = "prometheus"):
         """Gets the pipeline circuit metrics.
 

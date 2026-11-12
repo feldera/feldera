@@ -587,6 +587,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             idempotent=True,
         )
 
+    def get_pipeline_deployment(self, name: str) -> dict:
+        """
+        Get the desired and current CPU, memory, and storage of each host of the pipeline
+
+        :param name: The name of the pipeline
+        """
+
+        return self.http.get(
+            path=f"/pipelines/{name}/deployment",
+        )
+
     def get_pipeline_stats(self, name: str) -> dict:
         """
         Get the pipeline metrics and performance counters

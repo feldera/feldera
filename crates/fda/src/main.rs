@@ -2138,6 +2138,42 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::Deployment { name } => {
+            let response = client
+                .get_pipeline_deployment()
+                .pipeline_name(name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().to_string(),
+                    "Failed to get pipeline deployment",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    let value = serde_json::to_value(response.as_ref())
+                        .expect("Failed to serialize pipeline deployment");
+                    let table = json_to_table(&value)
+                        .collapse()
+                        .into_pool_table()
+                        .to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(response.as_ref())
+                            .expect("Failed to serialize pipeline deployment")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
         PipelineAction::Metrics { name } => {
             let format = match format {
                 OutputFormat::Json => MetricsFormat::Json,
