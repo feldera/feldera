@@ -67,6 +67,9 @@ pub enum TimestampFormat {
     MillisSinceEpoch,
     /// Time specified in microseconds since UNIX epoch.
     MicrosSinceEpoch,
+    /// Parsing: accepts microseconds since UNIX epoch, or a string in the
+    /// specified `chrono` format. Encoding: outputs microseconds.
+    MicrosSinceEpochOrString(&'static str),
     /// Time specified in the RFC 3339 format.
     Rfc3339,
 }

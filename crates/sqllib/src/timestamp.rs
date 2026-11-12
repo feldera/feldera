@@ -139,6 +139,45 @@ impl fmt::Display for Timestamp {
     }
 }
 
+/// Reads microseconds since the epoch from an integer, or from a string in a
+/// `chrono` format. The result is not checked against the timestamp range.
+struct MicrosOrStringVisitor(&'static str);
+
+impl serde::de::Visitor<'_> for MicrosOrStringVisitor {
+    type Value = i64;
+
+    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "microseconds since 1970-01-01 or a timestamp string in the format '{}'",
+            self.0
+        )
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, micros: i64) -> Result<i64, E> {
+        Ok(micros)
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, micros: u64) -> Result<i64, E> {
+        i64::try_from(micros).map_err(|_| {
+            E::custom(format!(
+                "{micros} microseconds since 1970-01-01 is not a valid timestamp"
+            ))
+        })
+    }
+
+    fn visit_str<E: serde::de::Error>(self, timestamp_str: &str) -> Result<i64, E> {
+        let format = self.0;
+        let timestamp =
+            NaiveDateTime::parse_from_str(timestamp_str.trim(), format).map_err(|e| {
+                E::custom(format!(
+                    "invalid timestamp string '{timestamp_str}': {e} (expected format: '{format}')"
+                ))
+            })?;
+        Ok(without_leap_second(timestamp).and_utc().timestamp_micros())
+    }
+}
+
 impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
     fn serialize_with_context<S>(
         &self,
@@ -183,7 +222,9 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
                 serializer.serialize_str(&datetime.format(format_string).to_string())
             }
             TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds()),
-            TimestampFormat::MicrosSinceEpoch => serializer.serialize_i64(self.microseconds),
+            TimestampFormat::MicrosSinceEpoch | TimestampFormat::MicrosSinceEpochOrString(_) => {
+                serializer.serialize_i64(self.microseconds)
+            }
         }
     }
 }
@@ -275,8 +316,13 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
                     )
                 })
             }
-            TimestampFormat::MicrosSinceEpoch => {
-                let micros: i64 = Deserialize::deserialize(deserializer)?;
+            TimestampFormat::MicrosSinceEpoch | TimestampFormat::MicrosSinceEpochOrString(_) => {
+                let micros: i64 = match config.timestamp_format {
+                    TimestampFormat::MicrosSinceEpochOrString(format) => {
+                        deserializer.deserialize_any(MicrosOrStringVisitor(format))?
+                    }
+                    _ => Deserialize::deserialize(deserializer)?,
+                };
                 Self::legal_from_microseconds(micros).ok_or_else(|| {
                     decoded_out_of_range(
                         "timestamp",
@@ -581,7 +627,9 @@ impl SerializeWithContext<SqlSerdeConfig> for TimestampTz {
                 serializer.serialize_str(&datetime()?.format(format_string).to_string())
             }
             TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds()),
-            TimestampFormat::MicrosSinceEpoch => serializer.serialize_i64(self.microseconds),
+            TimestampFormat::MicrosSinceEpoch | TimestampFormat::MicrosSinceEpochOrString(_) => {
+                serializer.serialize_i64(self.microseconds)
+            }
         }
     }
 }
@@ -646,8 +694,13 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for TimestampTz 
                         )
                     })
             }
-            TimestampFormat::MicrosSinceEpoch => {
-                let micros: i64 = Deserialize::deserialize(deserializer)?;
+            TimestampFormat::MicrosSinceEpoch | TimestampFormat::MicrosSinceEpochOrString(_) => {
+                let micros: i64 = match config.timestamp_tz_format {
+                    TimestampFormat::MicrosSinceEpochOrString(format) => {
+                        deserializer.deserialize_any(MicrosOrStringVisitor(format))?
+                    }
+                    _ => Deserialize::deserialize(deserializer)?,
+                };
                 Self::legal_from_microseconds(micros).ok_or_else(|| {
                     decoded_out_of_range(
                         "timestamp with time zone",
@@ -4985,6 +5038,38 @@ mod test {
         T::deserialize(BorrowedStrDeserializer::<ValueError>::new(text))
             .unwrap_err()
             .to_string()
+    }
+
+    #[test]
+    fn decode_micros_or_string() {
+        let config = SqlSerdeConfig::default()
+            .with_timestamp_format(TimestampFormat::MicrosSinceEpochOrString(
+                "%Y-%m-%dT%H:%M:%S%.f%Z",
+            ))
+            .with_timestamp_tz_format(TimestampFormat::MicrosSinceEpochOrString("%F %T"));
+        let micros = 1_704_103_200_000_000;
+
+        assert_eq!(
+            decode::<Timestamp>(micros, &config),
+            Timestamp::from_microseconds(micros)
+        );
+        assert_eq!(
+            decode::<Timestamp>("2024-01-01T10:00:00Z", &config),
+            Timestamp::from_microseconds(micros)
+        );
+        assert_eq!(
+            decode::<TimestampTz>(micros, &config),
+            TimestampTz::from_microseconds(micros)
+        );
+        assert_eq!(
+            decode::<TimestampTz>("2024-01-01 10:00:00", &config),
+            TimestampTz::from_microseconds(micros)
+        );
+        assert!(
+            decode_error::<Timestamp>("2024-01-01 10:00:00", &config)
+                .starts_with("invalid timestamp string '2024-01-01 10:00:00'")
+        );
+        assert!(decode_error::<Timestamp>(i64::MAX, &config).contains("outside the range"));
     }
 
     #[test]

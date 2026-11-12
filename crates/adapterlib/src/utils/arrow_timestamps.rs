@@ -1,11 +1,13 @@
 //! Arrow timestamps read as microseconds since the epoch.
 //!
 //! `serde_arrow` gives a timestamp as its raw integer, without its unit. An
-//! input connector that reads with `TimestampFormat::MicrosSinceEpoch`
+//! input connector that reads with `TimestampFormat::MicrosSinceEpochOrString`
 //! converts the timestamps of each batch to microseconds with
-//! [`timestamps_to_micros`], and at startup checks with
-//! [`check_timestamp_columns`] that no SQL `TIMESTAMP` column reads an Arrow
-//! integer, which the format would take for microseconds.
+//! [`timestamps_to_micros`], and checks with [`check_timestamp_columns`] that
+//! no SQL `TIMESTAMP` column reads an Arrow integer, which the format would
+//! take for microseconds. A string column passes the check: the format parses
+//! each value. The connector checks at startup, and again for each batch,
+//! because the schema of the source can change while the connector follows it.
 
 use std::sync::Arc;
 
@@ -212,7 +214,7 @@ fn convert<T: ArrowTimestampType>(
 }
 
 /// Checks that each SQL `TIMESTAMP` column in `fields`, at any depth, reads an
-/// Arrow timestamp from `schema`.
+/// Arrow timestamp or string from `schema`.
 ///
 /// Columns that `schema` does not have are not checked.
 pub fn check_timestamp_columns(fields: &[Field], schema: &Schema) -> Result<(), String> {
@@ -220,7 +222,8 @@ pub fn check_timestamp_columns(fields: &[Field], schema: &Schema) -> Result<(), 
 }
 
 fn check_fields(fields: &[Field], arrow_fields: &Fields, prefix: &str) -> Result<(), String> {
-    for field in fields {
+    // The check runs for each batch, so skip the columns it does not apply to.
+    for field in fields.iter().filter(|f| has_timestamp(&f.columntype)) {
         let name = field.name.name();
         let Some(arrow_field) = arrow_fields
             .iter()
@@ -237,6 +240,23 @@ fn check_fields(fields: &[Field], arrow_fields: &Fields, prefix: &str) -> Result
     Ok(())
 }
 
+/// Tells whether a value of this type holds a `TIMESTAMP` at any depth.
+fn has_timestamp(column_type: &ColumnType) -> bool {
+    match column_type.typ {
+        SqlType::Timestamp => true,
+        SqlType::Struct => column_type
+            .fields
+            .as_ref()
+            .is_some_and(|fields| fields.iter().any(|f| has_timestamp(&f.columntype))),
+        SqlType::Array => column_type.component.as_deref().is_some_and(has_timestamp),
+        SqlType::Map => {
+            column_type.key.as_deref().is_some_and(has_timestamp)
+                || column_type.value.as_deref().is_some_and(has_timestamp)
+        }
+        _ => false,
+    }
+}
+
 fn check_type(column_type: &ColumnType, data_type: &DataType, path: &str) -> Result<(), String> {
     let data_type = match data_type {
         DataType::Dictionary(_, value) => value.as_ref(),
@@ -244,10 +264,13 @@ fn check_type(column_type: &ColumnType, data_type: &DataType, path: &str) -> Res
         data_type => data_type,
     };
     match (&column_type.typ, data_type) {
-        (SqlType::Timestamp, DataType::Timestamp(_, _)) => Ok(()),
+        (
+            SqlType::Timestamp,
+            DataType::Timestamp(_, _) | DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View,
+        ) => Ok(()),
         (SqlType::Timestamp, data_type) => Err(format!(
             "column {path} has SQL type TIMESTAMP, but the source stores it as Arrow type {data_type}; \
-             a TIMESTAMP column must be an Arrow timestamp"
+             a TIMESTAMP column must be an Arrow timestamp or string"
         )),
         (SqlType::Struct, DataType::Struct(arrow_fields)) => match &column_type.fields {
             Some(fields) => check_fields(fields, arrow_fields, &format!("{path}.")),
@@ -443,6 +466,7 @@ mod test {
         };
 
         check_timestamp_columns(&fields, &schema(micros_type())).unwrap();
+        check_timestamp_columns(&fields, &schema(DataType::Utf8)).unwrap();
         let error = check_timestamp_columns(&fields, &schema(DataType::Int64)).unwrap_err();
         assert!(
             error.starts_with("column after.time has SQL type TIMESTAMP"),
