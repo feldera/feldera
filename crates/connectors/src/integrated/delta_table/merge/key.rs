@@ -171,6 +171,11 @@ impl KeyEncoder {
         &self.column_names
     }
 
+    /// Column types in the target table, in declaration order.
+    pub fn column_types(&self) -> &[ArrowDataType] {
+        &self.column_types
+    }
+
     /// Indices of the key columns within the table's arrow schema.
     pub fn column_indices(&self) -> &[usize] {
         &self.column_indices

@@ -50,7 +50,7 @@ use super::super::output::{TARGET_FILE_SIZE, bounded_writer_config};
 use super::chunk::LookupChunk;
 use super::key::{self, KeyEncoder};
 use super::probe::Pruning;
-use super::probe::{Candidate, ProbeMetrics, locate};
+use super::probe::{Candidate, ProbeMetrics, candidates_from_log, locate};
 use super::prune::PartitionFilter;
 use super::startup::{self, MergeSetup, Regime, StatsConfig};
 use super::tombstone::{DvWriteMetrics, Tombstones, write_deletion_vectors};
@@ -697,18 +697,12 @@ impl MergeWriter {
             WriteError::Deterministic(anyhow!("unable to read the Delta table snapshot: {e}"))
         })?;
 
-        Ok(snapshot
-            .log_data()
-            .into_iter()
-            .map(|file| {
-                Candidate::from_log(
-                    &file,
-                    self.partition_keys_of(&file),
-                    &self.key_encoder,
-                    self.prune_on_stats,
-                )
-            })
-            .collect())
+        Ok(candidates_from_log(
+            snapshot,
+            &self.key_encoder,
+            self.prune_on_stats,
+            |file| self.partition_keys_of(file),
+        ))
     }
 
     /// Values of the key columns this file keeps in the log rather than in its data.

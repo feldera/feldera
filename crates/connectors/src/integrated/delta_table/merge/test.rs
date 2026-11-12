@@ -14,7 +14,7 @@
 use super::{
     chunk::LookupChunk,
     key::KeyEncoder,
-    probe::{Candidate, Pruning, locate},
+    probe::{Candidate, Pruning, candidates_from_log, locate},
     prune::PartitionFilter,
     tombstone::{Tombstones, write_deletion_vectors},
 };
@@ -258,14 +258,10 @@ pub(super) async fn append_ids_in_row_groups(
 #[cfg(test)]
 pub(super) fn candidates(table: &DeltaTable) -> Arc<Vec<Candidate>> {
     let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
-    table
-        .snapshot()
-        .unwrap()
-        .log_data()
-        .into_iter()
-        .map(|f| Candidate::from_log(&f, Default::default(), &encoder, true))
-        .collect::<Vec<_>>()
-        .into()
+    candidates_from_log(table.snapshot().unwrap(), &encoder, true, |_| {
+        Default::default()
+    })
+    .into()
 }
 
 /// Ids a reader sees, in ascending order. Through DataFusion rather than reading the parquet
@@ -410,25 +406,19 @@ pub(super) async fn vacuum_everything(
 /// the data file.
 #[cfg(test)]
 fn partitioned_candidates(table: &DeltaTable, encoder: &KeyEncoder) -> Arc<Vec<Candidate>> {
-    table
-        .snapshot()
-        .unwrap()
-        .log_data()
-        .into_iter()
-        .map(|file| {
-            let mut partition_keys = std::collections::HashMap::new();
-            if let Some(values) = file.partition_values() {
-                let index = values
-                    .fields()
-                    .iter()
-                    .position(|f| f.name() == "payload")
-                    .unwrap();
-                partition_keys.insert("payload".to_string(), values.values()[index].clone());
-            }
-            Candidate::from_log(&file, partition_keys, encoder, true)
-        })
-        .collect::<Vec<_>>()
-        .into()
+    candidates_from_log(table.snapshot().unwrap(), encoder, true, |file| {
+        let mut partition_keys = std::collections::HashMap::new();
+        if let Some(values) = file.partition_values() {
+            let index = values
+                .fields()
+                .iter()
+                .position(|f| f.name() == "payload")
+                .unwrap();
+            partition_keys.insert("payload".to_string(), values.values()[index].clone());
+        }
+        partition_keys
+    })
+    .into()
 }
 
 /// A key column that is also a partition column must still be found: its value is in the log,
