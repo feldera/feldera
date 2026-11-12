@@ -3403,6 +3403,23 @@ impl CircuitThread {
             .as_ref()
             .map(|state| state.bootstrap_config().concurrent_bootstrap)
             .unwrap_or(false);
+        // A change of layout rebuilds the state of every materialized view, and a concurrent
+        // bootstrap leaves the views that it rebuilds out of the live circuit until cutover, so
+        // every view would read as empty until then.
+        if concurrent_bootstrap
+            && pipeline_diff
+                .as_ref()
+                .is_some_and(|diff| diff.view_integrals_moved())
+        {
+            return Err(ControllerError::BootstrapNotAllowed {
+                error: "the checkpoint keeps the state of materialized views in another layout \
+                        than the pipeline uses (see `dev_tweaks.view_integrals`), and rebuilding \
+                        it concurrently would leave every view empty until the rebuild ends. \
+                        Restart with `concurrent_bootstrap=false` for a stop-the-world \
+                        bootstrap."
+                    .into(),
+            });
+        }
         let concurrent_base = circuit_params.init_checkpoint;
         if concurrent_bootstrap && circuit_params.storage.is_some() {
             circuit_params.defer_restore = true;

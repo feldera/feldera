@@ -3071,7 +3071,7 @@ pub mod test_http_helpers {
     /// [MultihostTestPipeline::serve]).
     pub(crate) struct MultihostTestHosts {
         pub(crate) servers: Vec<TestServer>,
-        states: Vec<WebData<ServerState>>,
+        pub(crate) states: Vec<WebData<ServerState>>,
         exchanges: Vec<(std::net::SocketAddr, usize)>,
         pipeline_config: feldera_types::config::PipelineConfig,
         output_assignment: BTreeMap<String, usize>,
@@ -8391,6 +8391,76 @@ pub mod test_http {
         let twice: Vec<i64> = (0..300).flat_map(|id| [id, id]).collect();
         assert_eq!(tables[0], twice, "not distributed");
         assert_eq!(tables[1], twice, "distributed");
+    }
+
+    /// A restart that changes the layout of the views' state (`dev_tweaks.view_integrals`) refuses
+    /// a concurrent bootstrap.  The views' state would be rebuilt in the background, and until
+    /// cutover every view would read as empty.
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_layout_switch_refuses_concurrent_bootstrap(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            // The same program information both times, so that the restart changes nothing but
+            // the layout.
+            let config = |view_integrals: &str| {
+                json!({
+                    "name": "test",
+                    "program_ir": test_program_ir("v0"),
+                    "inputs": {},
+                    "outputs": {},
+                    "dev_tweaks": { "view_integrals": view_integrals },
+                })
+            };
+            let assignment = [("test_output1", 0)];
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config("one_host"),
+                &assignment,
+                &dirs,
+                None,
+            )
+            .await
+            .unwrap();
+            TestHttpSender::send_stream(
+                pipeline.servers[0].post("/ingress/test_input1"),
+                &[for_ids(0..300)],
+            )
+            .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+
+            let hosts = MultihostTestPipeline::serve(
+                engine,
+                2,
+                2,
+                &config("all_hosts"),
+                &assignment,
+                &dirs,
+            );
+            for state in &hosts.states {
+                state.set_bootstrap_config(
+                    BootstrapConfig::from(BootstrapPolicy::Allow).with_concurrent_bootstrap(true),
+                );
+            }
+            let error = match hosts.activate(Some(&checkpoints)).await {
+                Ok(_) => panic!("the hosts started a concurrent bootstrap of a layout switch"),
+                Err(error) => error,
+            };
+            assert!(error.contains("concurrent_bootstrap"), "{error}");
+        });
     }
 
     /// The configuration of a multihost test pipeline with no connectors.

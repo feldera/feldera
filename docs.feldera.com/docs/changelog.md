@@ -85,7 +85,7 @@ Source edition can be found on github.
   `one_host` keeps it on one host.  A change of layout rebuilds the state of
   the views, as a bootstrap, which by default waits for approval (see
   [Modifying a pipeline](/pipelines/modifying)) and needs the tables that the
-  views read to be materialized.
+  views read to be materialized.  It cannot be a concurrent bootstrap.
 
 ## v0.380.0
 
