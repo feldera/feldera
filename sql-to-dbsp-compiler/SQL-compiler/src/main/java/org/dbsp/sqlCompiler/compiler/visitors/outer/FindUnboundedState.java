@@ -46,6 +46,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
@@ -150,12 +151,16 @@ public class FindUnboundedState extends Passes {
         return super.apply(circuit);
     }
 
-    /** True if the integral of the stream is bounded */
-    boolean isBounded(OutputPort port) {
+    /** True if the integral of the stream is bounded without the help of a GC operator */
+    boolean isBoundedWithoutGC(OutputPort port) {
         // A waterline stream carries one scalar per step, whichever operator computes it,
         // so integrating it keeps a single value.
-        return port.kind() == StreamKind.WATERLINE
-                || this.bounded.contains(port) || this.gcedStreams.contains(port);
+        return port.kind() == StreamKind.WATERLINE || this.bounded.contains(port);
+    }
+
+    /** True if the integral of the stream is bounded */
+    boolean isBounded(OutputPort port) {
+        return this.isBoundedWithoutGC(port) || this.gcedStreams.contains(port);
     }
 
     /** True if some output stream of the operator has its stream pruned by a GC operator */
@@ -586,6 +591,34 @@ public class FindUnboundedState extends Passes {
         void markUnbounded(DBSPOperator operator, List<Integer> inputs) {
             var ub = new UnboundedOperator(operator, this.getParent(), inputs);
             FindUnboundedState.this.unbounded.add(ub);
+        }
+
+        /** The runtime LAG, top-k, rank and row-number operators keep their input and their output
+         * in traces of their own, which grow with their input, so the state of such an operator
+         * is bounded only when its input is bounded without GC. */
+        void ownTraces(DBSPUnaryOperator node) {
+            if (!FindUnboundedState.this.isBoundedWithoutGC(node.input()))
+                this.markUnbounded(node, List.of(0));
+        }
+
+        @Override
+        public void postorder(DBSPLagOperator node) {
+            this.ownTraces(node);
+        }
+
+        @Override
+        public void postorder(DBSPIndexedTopKOperator node) {
+            this.ownTraces(node);
+        }
+
+        @Override
+        public void postorder(DBSPRankOperator node) {
+            this.ownTraces(node);
+        }
+
+        @Override
+        public void postorder(DBSPRowNumberOperator node) {
+            this.ownTraces(node);
         }
 
         @Override

@@ -831,6 +831,32 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     }
 
     @Test
+    public void lagPartitionedByLatenessColumn() {
+        // The traces of a LAG grow with its input, whatever GC operators the compiler
+        // attaches to its input and output streams
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                CREATE VIEW V AS SELECT ts, x, LAG(x) OVER (PARTITION BY ts ORDER BY x) AS prev FROM T;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:1: warning: Unbounded state: The state of a window function in the code implementing view 'v' may grow without bound
+                    1|CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                    2|CREATE VIEW V AS SELECT ts, x, LAG(x) OVER (PARTITION BY ts ORDER BY x) AS prev FROM T;
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
+    }
+
+    @Test
+    public void lagOverTemporalFilter() {
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL, x INT);
+                CREATE VIEW V AS SELECT ts, x, LAG(x) OVER (PARTITION BY ts ORDER BY x) AS prev
+                FROM T WHERE ts >= NOW() - INTERVAL 1 HOUR;""");
+    }
+
+    @Test
     public void except() {
         // EXCEPT applies DISTINCT to both inputs; the two identical warnings are reported once
         this.assertUnboundedStateWarnings("""
