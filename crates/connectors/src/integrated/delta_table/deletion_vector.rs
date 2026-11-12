@@ -1050,7 +1050,7 @@ mod tests {
     fn project_to_logical_matches_by_field_id() {
         let file_after: ArrayRef = Arc::new(StructArray::from(vec![(
             Arc::new(with_id(
-                ArrowField::new("transaction__id", ArrowDataType::Utf8, true),
+                ArrowField::new("item_id", ArrowDataType::Utf8, true),
                 "PARQUET:field_id",
                 "2",
             )),

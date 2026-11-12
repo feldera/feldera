@@ -45,7 +45,7 @@ SCHEMA = os.environ.get("DELTA_TABLE_TEST_UNITY_SCHEMA", "default")
 #: Bump whenever the schema or the rows below change. The table outlives any one
 #: run, so a reader has no way to tell a stale table from a current one; a new
 #: version is a new table, and the old name simply stops being used.
-FIXTURE_VERSION = "v1"
+FIXTURE_VERSION = "v2"
 TABLE = f"uniform_iceberg_{FIXTURE_VERSION}"
 
 #: Rows per commit, and the tag their ``batch`` column carries.
@@ -67,10 +67,10 @@ FELDERA_COLUMNS = """
     batch VARCHAR,
     amount DECIMAL(10, 2),
     after ROW(
-        transaction__id VARCHAR,
-        transaction__merchant_id VARCHAR,
-        transaction__merchant_name VARCHAR,
-        transaction__status VARCHAR
+        item_id VARCHAR,
+        vendor_id VARCHAR,
+        vendor_name VARCHAR,
+        status VARCHAR
     ),
     history VARCHAR ARRAY,
     tags MAP<VARCHAR, VARCHAR>,
@@ -93,10 +93,10 @@ def statements(catalog: str) -> list[str]:
         " batch STRING,"
         " amount DECIMAL(10, 2),"
         " after STRUCT<"
-        "transaction__id: STRING,"
-        "transaction__merchant_id: STRING,"
-        "transaction__merchant_name: STRING,"
-        "transaction__status: STRING>,"
+        "item_id: STRING,"
+        "vendor_id: STRING,"
+        "vendor_name: STRING,"
+        "status: STRING>,"
         " history ARRAY<STRING>,"
         " tags MAP<STRING, STRING>,"
         " op STRING NOT NULL"
@@ -124,10 +124,10 @@ def _row_values(batch: str, n: int) -> str:
     return (
         f"('txn-{n:03d}', '{batch}', {n}.25,"
         f" named_struct("
-        f"'transaction__id', 'txn-{n:03d}',"
-        f"'transaction__merchant_id', 'm-{n:03d}',"
-        f"'transaction__merchant_name', 'Merchant {n}',"
-        f"'transaction__status', 'settled'),"
+        f"'item_id', 'txn-{n:03d}',"
+        f"'vendor_id', 'm-{n:03d}',"
+        f"'vendor_name', 'Merchant {n}',"
+        f"'status', 'settled'),"
         f" array('created', 'settled'),"
         f" map('channel', 'web', 'region', 'us'),"
         f" 'c')"
