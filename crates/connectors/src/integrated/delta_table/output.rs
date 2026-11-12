@@ -1677,28 +1677,32 @@ impl OutputConsumer for DeltaTableWriter {
                     if let Some(controller) = self.inner.controller.upgrade() {
                         controller.update_output_connector_health(
                             self.inner.endpoint_id,
-                            ConnectorHealth::unhealthy(&format!(
-                                "waited {waited:?} for the other parts of this connector to report step {count}; the hosts that reported are {reported:?}"
-                            )),
+                            waiting_health(waited, count, reported),
                         );
                     }
                 };
-                part.commit(count, payload, &self.inner.shutdown, &mut on_wait, |payloads| {
-                    let mut all = Vec::new();
-                    for payload in payloads {
-                        let adds = serde_json::from_value::<Vec<Add>>(payload)?;
-                        for add in &adds {
-                            check_part_file(&add.path)?;
+                part.commit(
+                    count,
+                    payload,
+                    &self.inner.shutdown,
+                    &mut on_wait,
+                    |payloads| {
+                        let mut all = Vec::new();
+                        for payload in payloads {
+                            let adds = serde_json::from_value::<Vec<Add>>(payload)?;
+                            for add in &adds {
+                                check_part_file(&add.path)?;
+                            }
+                            all.extend(adds);
                         }
-                        all.extend(adds);
-                    }
-                    if all.is_empty() {
-                        return Ok(());
-                    }
-                    // Panic safety: block_on() panics if called from a tokio async context.
-                    // steps_processed() is called from the dedicated output thread.
-                    TOKIO.block_on(self.task.commit_with_retry(&all))
-                })
+                        if all.is_empty() {
+                            return Ok(());
+                        }
+                        // Panic safety: block_on() panics if called from a tokio async context.
+                        // steps_processed() is called from the dedicated output thread.
+                        TOKIO.block_on(self.task.commit_with_retry(&all))
+                    },
+                )
             });
         self.inner.records_written.store(0, Ordering::Relaxed);
         match result {
@@ -1731,6 +1735,28 @@ impl OutputConsumer for DeltaTableWriter {
                     )
                 }
             }
+        }
+    }
+}
+
+/// How long the leader of a distributed connector can wait for the other parts to report a step
+/// before the connector reports itself unhealthy.  The parts report a step only once they have
+/// written all of it, so a large step can take minutes on a healthy connector.
+const UNHEALTHY_WAIT: Duration = Duration::from_secs(10 * 60);
+
+/// The health of a distributed connector whose leader has `waited` for the other parts to report
+/// step `step`, which the hosts in `reported` have.  It stays healthy, with a description of
+/// the wait, until [UNHEALTHY_WAIT].
+fn waiting_health(waited: Duration, step: Step, reported: &[usize]) -> ConnectorHealth {
+    let description = format!(
+        "waited {waited:?} for the other parts of this connector to report step {step}; the hosts that reported are {reported:?}"
+    );
+    if waited >= UNHEALTHY_WAIT {
+        ConnectorHealth::unhealthy(&description)
+    } else {
+        ConnectorHealth {
+            description: Some(description),
+            ..ConnectorHealth::healthy()
         }
     }
 }
@@ -2576,6 +2602,29 @@ pub mod parallel {
         TOKIO.block_on(follower.task.open_leaders_table()).unwrap();
         assert!(!follower.task.unopened);
         assert_eq!(follower.task.delta_table.version(), Some(0));
+    }
+
+    /// A leader that waits for the other parts to report a large step reports the wait, but the
+    /// connector stays healthy until the wait gets long.
+    #[test]
+    fn a_long_step_is_healthy_until_the_wait_gets_long() {
+        use feldera_types::adapter_stats::ConnectorHealthStatus;
+
+        let healthy = |waited| {
+            matches!(
+                super::waiting_health(waited, 4, &[1]).status,
+                ConnectorHealthStatus::Healthy
+            )
+        };
+        assert!(healthy(Duration::from_secs(60)));
+        assert!(healthy(Duration::from_secs(9 * 60)));
+        assert!(!healthy(Duration::from_secs(10 * 60)));
+        assert!(
+            super::waiting_health(Duration::from_secs(60), 4, &[1])
+                .description
+                .unwrap()
+                .contains("step 4")
+        );
     }
 
     /// Only merge mode caps part uploads. A shared cap halved cdc throughput against a store

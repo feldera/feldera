@@ -207,7 +207,7 @@ impl CommitLeader {
     }
 
     /// Waits until every other part has reported `step`, and returns their payloads.  Returns
-    /// `None` if `shutdown` is cancelled first.
+    /// `None` if `shutdown` is cancelled, or the leader is closed (see [Self::close]), first.
     ///
     /// After each warning interval of waiting, logs a warning and calls `on_wait` with how long it
     /// has waited and the hosts that have reported.
@@ -226,7 +226,7 @@ impl CommitLeader {
                 let reports = state.pending.remove(&step).unwrap_or_default();
                 return Some(reports.into_values().collect());
             }
-            if shutdown.is_cancelled() {
+            if shutdown.is_cancelled() || state.closed {
                 return None;
             }
             if start.elapsed() >= next_warning {
@@ -401,6 +401,27 @@ mod tests {
         });
         assert!(gathered.is_none());
         assert_eq!(waits, [vec![2], vec![2]]);
+    }
+
+    /// The leader stops waiting when its connector stops.
+    #[test]
+    fn gather_stops_on_close() {
+        let leader = Arc::new(CommitLeader::new(2));
+        let gather = std::thread::spawn({
+            let leader = leader.clone();
+            move || leader.gather(1, &CancellationToken::new(), &mut |_, _| {})
+        });
+        std::thread::sleep(Duration::from_millis(200));
+        leader.close();
+        let start = std::time::Instant::now();
+        while !gather.is_finished() {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "the leader is still waiting"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(gather.join().unwrap().is_none());
     }
 
     /// The leader stops waiting when the pipeline stops.
