@@ -668,8 +668,11 @@ def test_pipeline_storage_details_checkpoints(pipeline_name):
     assert pipeline.storage_status() == StorageStatus.INUSE
     time.sleep(20)
     details = pipeline.storage_status_details()
-    assert 1 <= len(details["checkpoints"]) <= 2
-    assert details["checkpoints"][-1] != first
+    # Show the full list, in order, if an assertion fails.
+    listing = f"first={first}\ncheckpoints={details['checkpoints']}"
+    print(listing)
+    assert 1 <= len(details["checkpoints"]) <= 2, listing
+    assert details["checkpoints"][-1] != first, listing
 
     # After stopping, the details should still be available
     pipeline.stop(force=True)
