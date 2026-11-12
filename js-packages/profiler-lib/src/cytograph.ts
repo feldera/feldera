@@ -20,6 +20,7 @@ import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
 import { pauseFrames } from './cytoscapeRenderer.js';
+import { type ElkLayoutOptions, layoutCache, layoutCacheKey, leafPositions, runPresetLayout } from './layoutCache.js';
 
 // Register the extensions once for the module. Cytoscape warns when an extension is registered again.
 cytoscape.use(elk);
@@ -413,6 +414,10 @@ export class CytographRendering {
     /** Starts the renderer frames again. Not null while a layout runs. A frame during the layout is
      *  hidden (see `FrozenLayout`), but it costs a style update and a draw of the whole changed graph. */
     private resumeFrames: (() => void) | null = null;
+    /** The `layoutCacheKey` of the last layout that started. */
+    private layoutKey: string | null = null;
+    /** The number of ELK layouts that did not finish yet. */
+    private elkLayoutsRunning = 0;
     /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
     private tracedEdges: EdgeCollection;
     /** The edges that have `RAISED_EDGE_CLASS`. `raiseTracedEdges` makes them equal to `tracedEdges`. */
@@ -730,18 +735,57 @@ export class CytographRendering {
         this.message(CytographRendering.LAYOUT_MESSAGE);
         this.resumeFrames ??= pauseFrames(this.cy);
         try {
-            this.cy
-                .layout(options)
-                .run();
+            this.runLayout(options);
         } catch (e) {
-            this.endFramePause();
-            this.renderingInFlight = false;
-            this.callbacks.onRenderingChange?.(false);
-            // No `layoutstop` will arrive either, so whatever the observers put up to cover the change
-            // has to come down here or it never will.
-            notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
+            this.abandonLayout();
             throw e;
         }
+    }
+
+    /** Run ELK, or move the nodes to the positions of an earlier ELK layout of the same input. */
+    private runLayout(options: ElkLayoutOptions) {
+        const key = layoutCacheKey(this.cy, options);
+        this.layoutKey = key;
+        // An ELK layout that still runs moves the nodes when it finishes. If a cached layout finished
+        // before it, the older ELK layout would be the last one on screen.
+        const positions = this.elkLayoutsRunning === 0 ? layoutCache.get(key) : undefined;
+        if (positions === undefined) {
+            const layout = this.cy.layout(options as never);
+            layout.one('layoutstop', () => {
+                this.elkLayoutsRunning--;
+                // If the graph changed during the layout, a newer layout runs, and these positions are
+                // not the result for `key`.
+                if (this.layoutKey === key) {
+                    layoutCache.set(key, leafPositions(this.cy));
+                }
+            });
+            layout.run();
+            // Counted after `run`, because a `run` that throws emits no `layoutstop`.
+            this.elkLayoutsRunning++;
+            return;
+        }
+        // ELK gives its result after `updateGraph` returns. Do the same, so that the code after
+        // `updateGraph` runs before `layoutComplete` also for a cached layout.
+        queueMicrotask(() => {
+            if (this.cy.destroyed() || this.layoutKey !== key) {
+                return;
+            }
+            try {
+                runPresetLayout(this.cy, positions);
+            } catch (e) {
+                this.abandonLayout();
+                throw e;
+            }
+        });
+    }
+
+    /** Called when a layout throws. No `layoutstop` follows, so undo what `initiateLayout` started. */
+    private abandonLayout() {
+        this.endFramePause();
+        this.renderingInFlight = false;
+        this.callbacks.onRenderingChange?.(false);
+        // Whatever the observers put up to cover the change has to come down here or it never will.
+        notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
     }
 
     /** Modify the rendered graph incrementally by applying a diff. */

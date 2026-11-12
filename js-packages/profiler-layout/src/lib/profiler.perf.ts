@@ -2,7 +2,7 @@
 // Each measurement times the real code path, from the user action until the result is painted.
 // The tests only check that each action completed. They do not check a time budget.
 
-import { CircuitProfile, type ProfilerCallbacks } from 'profiler-lib'
+import { CircuitProfile, clearLayoutCache, type ProfilerCallbacks } from 'profiler-lib'
 import { afterAll, describe, expect, inject, it } from 'vitest'
 import { commands } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
@@ -260,10 +260,15 @@ describe('profiler performance', () => {
   it('measures the first load of the diagram', async () => {
     let mounted: ReturnType<typeof mountProfiler> | undefined
     let nodeCount = 0
-    results.push(
-      await measure('load diagram (mount until first layout is painted)', {
+    const load = (name: string, isCached: boolean) =>
+      measure(name, {
         warmups: 1,
         runs: 5,
+        setup: () => {
+          if (!isCached) {
+            clearLayoutCache()
+          }
+        },
         run: async () => {
           mounted = mountProfiler(CIRCUIT)
           await mounted.loaded
@@ -274,6 +279,9 @@ describe('profiler performance', () => {
           mounted!.unmount()
         }
       })
+    results.push(
+      await load('load diagram (mount until first layout is painted)', false),
+      await load('load diagram, cached layout (mount until first layout is painted)', true)
     )
     expect(nodeCount).toBeGreaterThan(CIRCUIT.profile.graph.nodes.nodes.length)
   })
@@ -287,24 +295,42 @@ describe('profiler performance', () => {
       region().emit('dblclick')
       await painted
     }
-    // Each round expands the region and collapses it again, and times both.
-    const expandMs: number[] = []
-    const collapseMs: number[] = []
-    let childrenWhenExpanded = 0
-    for (let round = 0; round < REGION_WARMUPS + REGION_RUNS; round++) {
-      const expand = await timeAction(toggle)
-      childrenWhenExpanded = region().children().length
-      const collapse = await timeAction(toggle)
-      if (round >= REGION_WARMUPS) {
-        expandMs.push(expand)
-        collapseMs.push(collapse)
+    // Each round expands the region and collapses it again, and times both. The cache would give the
+    // layouts of the earlier rounds, so it is cleared before each toggle that must run ELK.
+    const toggleRounds = async (isCached: boolean) => {
+      const expandMs: number[] = []
+      const collapseMs: number[] = []
+      for (let round = 0; round < REGION_WARMUPS + REGION_RUNS; round++) {
+        if (!isCached) {
+          clearLayoutCache()
+        }
+        const expand = await timeAction(toggle)
+        expect(region().children().length).toBeGreaterThan(0)
+        if (!isCached) {
+          clearLayoutCache()
+        }
+        const collapse = await timeAction(toggle)
+        if (round >= REGION_WARMUPS) {
+          expandMs.push(expand)
+          collapseMs.push(collapse)
+        }
       }
+      return { expandMs, collapseMs }
     }
+    const elk = await toggleRounds(false)
+    const cached = await toggleRounds(true)
     results.push(
-      summarize('expand region (double click until layout is painted)', expandMs),
-      summarize('collapse region (double click until layout is painted)', collapseMs)
+      summarize('expand region (double click until layout is painted)', elk.expandMs),
+      summarize('collapse region (double click until layout is painted)', elk.collapseMs),
+      summarize(
+        'expand region, cached layout (double click until layout is painted)',
+        cached.expandMs
+      ),
+      summarize(
+        'collapse region, cached layout (double click until layout is painted)',
+        cached.collapseMs
+      )
     )
-    expect(childrenWhenExpanded).toBeGreaterThan(0)
     expect(region().children().length).toBe(0)
     expect(mounted.reported.errors).toEqual([])
     mounted.unmount()

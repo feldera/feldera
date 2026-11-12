@@ -4,7 +4,7 @@
 // the graph on screen takes, which is why they run over a graph too tall to fit.
 
 import { describe, expect, it } from 'vitest'
-import { CIRCUIT_REGION, MANY, mountDiagram, settle } from '../test-support/mountDiagram.js'
+import { CIRCUIT_REGION, MANY, mountDiagram, settle, WIDE_REGION } from '../test-support/mountDiagram.js'
 
 /** Rendered height of a node's own box. All operators have the same height and font size, so the same
  *  height on screen means the same text size on screen. */
@@ -92,7 +92,9 @@ describe('the view', () => {
   })
 
   it('holds the last layout on screen while the next one is computed', async () => {
-    const { cy, container, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
+    // No other test in this file expands this region. Otherwise the layout comes from the layout cache,
+    // and the copy goes away in the same task.
+    const { cy, container, cleanup } = await mountDiagram('light', WIDE_REGION)
     await settle()
     // Cytoscape's own canvases. The copy held over them is one more canvas alongside, so anything here
     // that is not one of these is the copy.
