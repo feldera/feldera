@@ -10,6 +10,7 @@ import {
     ELK_REGION_PADDING,
     elkNodeLayoutOptions,
     elkRegionMinimumSize,
+    REGION_CHIP_ROW_ROOM,
     regionMinWidth
 } from './regionSize.js'
 
@@ -118,7 +119,8 @@ describe('what the real ELK makes of the minimum', () => {
     })
 
     it('reserves the width, and only the width', async () => {
-        const natural = await laidOut({})
+        // A floor of zero leaves the width to the node inside, and keeps the other options the same.
+        const natural = await laidOut(elkNodeLayoutOptions({ isParent: () => true, data: () => 0 }))
         const floored = await laidOut(elkNodeLayoutOptions({ isParent: () => true, data: () => 300 }))
         expect(natural.width).toBeLessThan(300)
         expect(floored.width).toBeGreaterThanOrEqual(300 + 2 * REGION_PADDING)
@@ -126,6 +128,17 @@ describe('what the real ELK makes of the minimum', () => {
         // The extra width goes on the right, the side cytoscape's bias puts it on as well: the node
         // inside keeps its position, so both boxes keep the same left edge.
         expect(floored.inside.x).toBe(natural.inside.x)
+    })
+
+    it('leaves the room for the chip row of the region above the nodes inside it', async () => {
+        // Cytoscape draws the region that much taller at the top, so ELK has to reserve the same room
+        // there, or the region overlaps whatever ELK places above it.
+        const natural = await laidOut({})
+        const padded = await laidOut(elkNodeLayoutOptions({ isParent: () => true, data: () => 0 }))
+        expect(padded.inside.y).toBe(ELK_REGION_PADDING + REGION_CHIP_ROW_ROOM)
+        expect(padded.height).toBe(natural.height + REGION_CHIP_ROW_ROOM)
+        expect(padded.inside.x).toBe(natural.inside.x)
+        expect(padded.width).toBe(natural.width)
     })
 
     it('applies the minimum to the height instead when the layout runs sideways', async () => {

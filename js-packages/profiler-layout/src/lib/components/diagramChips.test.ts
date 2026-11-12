@@ -10,7 +10,13 @@
 // needs source positions, which arrive from a dataflow graph rather than from a profile.
 
 import { describe, expect, it } from 'vitest'
-import { CIRCUIT_REGION, mountDiagram, type Rgba, settle } from '../test-support/mountDiagram.js'
+import {
+  CIRCUIT_REGION,
+  mountDiagram,
+  type Rgba,
+  settle,
+  WITH_SOURCE
+} from '../test-support/mountDiagram.js'
 
 const WHITE: Rgba = { r: 255, g: 255, b: 255, a: 1 }
 
@@ -153,6 +159,28 @@ describe('chip buttons', () => {
     pointer('mousemove', 5, 5)
     await settle()
     expect(Math.abs(mass(counterInk(inkColumns)) - count)).toBeLessThan(count * 0.02)
+    cleanup()
+  })
+
+  it('keeps the code chips inside an expanded region below the chip row of the region', async () => {
+    // The counter chip and the name of an expanded region are drawn in a row along its top edge,
+    // 1 graph px inside it and 20 px tall. The code chip of a node is 16 px tall above the node.
+    const { cy, toggle, cleanup } = await mountDiagram(
+      'light',
+      WITH_SOURCE.profile,
+      false,
+      WITH_SOURCE.dataflow
+    )
+    await toggle('region')
+    const region = cy.$id('region')
+    expect(region.isParent()).toBe(true)
+
+    const top = (node: { position(): { y: number }, outerHeight(): number }) =>
+      node.position().y - node.outerHeight() / 2
+    const chipRowBottom = top(region) + 1 + 20
+    // biome-ignore lint/suspicious/noExplicitAny: the cytoscape nodes the harness hands back
+    const codeChipTops = region.children().map((child: any) => top(child) - 16)
+    expect(Math.min(...codeChipTops)).toBeGreaterThan(chipRowBottom)
     cleanup()
   })
 })

@@ -14,7 +14,7 @@ import { buildGraphStyle, type DiagramTheme, labelWidth, RAISED_EDGE_CLASS } fro
 import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
 import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
-import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
+import { elkNodeLayoutOptions, regionMinWidth, reserveRegionChipRows } from './regionSize.js';
 import { installChipButtons, isToggleable, refreshChips } from './chipButtons.js';
 import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
@@ -136,6 +136,8 @@ class GraphNode {
                 "text_width": labelWidth(label),
                 // For an expanded node its min width depends on the title and the chip button
                 "min_width": this.hasChildren ? regionMinWidth(label, this.leafCount) : 0,
+                // Set after each layout by `reserveRegionChipRows`.
+                "min_height": 0,
                 "operator": this.label,
                 "sources": this.sources,
                 "has_source": this.hasSourcePosition,
@@ -928,6 +930,7 @@ export class CytographRendering {
     }
 
     layoutComplete() {
+        reserveRegionChipRows(this.cy);
         this.endFramePause();
         this.clearMessage();
         this.renderingInFlight = false;

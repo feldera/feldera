@@ -30,7 +30,7 @@ import {
     REGION_OPACITY,
     REGION_PADDING
 } from './diagramTheme.js'
-import { regionMinWidth } from './regionSize.js'
+import { REGION_CHIP_ROW_ROOM, regionMinWidth, reserveRegionChipRows } from './regionSize.js'
 
 const graph = (theme: DiagramTheme) =>
     cytoscape({
@@ -339,6 +339,74 @@ describe('the width of an expanded region', () => {
         expect(inside.x1 - (node.position().x - node.width() / 2)).toBeCloseTo(0, 0)
         expect(node.position().x + node.width() / 2 - inside.x2)
             .toBeCloseTo(regionMinWidth(LONG, COUNT) - inside.w, 0)
+    })
+})
+
+describe('the top of an expanded region', () => {
+    /** Region `outer` holds an operator and region `inner`, which holds one more operator. Both
+     *  operators have a code chip. */
+    const nested = () => {
+        const cy = cytoscape({
+            headless: true,
+            styleEnabled: true,
+            style: buildGraphStyle('light'),
+            elements: {
+                nodes: [
+                    { data: { id: 'outer', label: 'outer', has_children: true, min_width: 0, min_height: 0, chips: nodeChips(false, 9, 'light') } },
+                    { data: { id: 'inner', label: 'inner', parent: 'outer', has_children: true, min_width: 0, min_height: 0, chips: nodeChips(false, 4, 'light') } },
+                    { data: { id: 'a', label: 'a', text_width: 200, parent: 'outer', has_source: true, chips: nodeChips(true, 0, 'light') } },
+                    { data: { id: 'b', label: 'b', text_width: 200, parent: 'inner', has_source: true, chips: nodeChips(true, 0, 'light') } }
+                ]
+            }
+        })
+        // `a` is the top node of `outer`, and `inner` is below it.
+        cy.$id('a').position({ x: 0, y: 0 })
+        cy.$id('b').position({ x: 0, y: 100 })
+        return cy
+    }
+    const box = (node: cytoscape.NodeSingular) => ({
+        top: node.position().y - node.outerHeight() / 2,
+        bottom: node.position().y + node.outerHeight() / 2,
+        left: node.position().x - node.outerWidth() / 2,
+        right: node.position().x + node.outerWidth() / 2
+    })
+    /** Bottom of the row along the top edge of a region that holds its counter chip and its name. */
+    const chipRowBottom = (region: cytoscape.NodeSingular) => box(region).top + CHIP_INSET + BADGE_HEIGHT
+    /** Top of the code chip above an operator. */
+    const codeChipTop = (node: cytoscape.NodeSingular) => box(node).top - CODE_CHIP_HEIGHT
+
+    it('keeps the code chip of the top node below the chip row of the region', () => {
+        const cy = nested()
+        // Without the extra room, the code chip reaches into the chip row.
+        expect(codeChipTop(cy.$id('a'))).toBeLessThan(chipRowBottom(cy.$id('outer')))
+        reserveRegionChipRows(cy)
+        expect(codeChipTop(cy.$id('a'))).toBeGreaterThanOrEqual(chipRowBottom(cy.$id('outer')) + CHIP_INSET)
+        expect(codeChipTop(cy.$id('b'))).toBeGreaterThanOrEqual(chipRowBottom(cy.$id('inner')) + CHIP_INSET)
+    })
+
+    it('adds the room at the top of each region, and nowhere else', () => {
+        const cy = nested()
+        const before = { outer: box(cy.$id('outer')), inner: box(cy.$id('inner')) }
+        reserveRegionChipRows(cy)
+        const inner = box(cy.$id('inner'))
+        expect(inner.top).toBeCloseTo(before.inner.top - REGION_CHIP_ROW_ROOM, 6)
+        expect(inner.bottom).toBeCloseTo(before.inner.bottom, 6)
+        expect(inner.left).toBeCloseTo(before.inner.left, 6)
+        expect(inner.right).toBeCloseTo(before.inner.right, 6)
+        const outer = box(cy.$id('outer'))
+        expect(outer.top).toBeCloseTo(before.outer.top - REGION_CHIP_ROW_ROOM, 6)
+        expect(outer.bottom).toBeCloseTo(before.outer.bottom, 6)
+        expect(outer.left).toBeCloseTo(before.outer.left, 6)
+        expect(outer.right).toBeCloseTo(before.outer.right, 6)
+    })
+
+    it('follows the nodes when a later layout moves them', () => {
+        const cy = nested()
+        reserveRegionChipRows(cy)
+        cy.$id('b').position({ x: 0, y: 300 })
+        reserveRegionChipRows(cy)
+        const outer = cy.$id('outer')
+        expect(outer.height()).toBeCloseTo(outer.children().boundingBox({ includeOverlays: false }).h + REGION_CHIP_ROW_ROOM, 6)
     })
 })
 

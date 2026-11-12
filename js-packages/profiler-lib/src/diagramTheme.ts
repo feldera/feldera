@@ -268,6 +268,11 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'min-width': 'data(min_width)',
                 'min-width-bias-left': '0%',
                 'min-width-bias-right': '100%',
+                // Room above the nodes inside for the chip row of the region: see `reserveRegionChipRows`.
+                'min-height': 'data(min_height)',
+                'min-height-bias-top': '100%',
+                // Missing from the cytoscape typings.
+                ...({ 'min-height-bias-bottom': '0%' } as Record<string, string>),
                 'background-color': p.region,
                 'background-opacity': REGION_OPACITY,
             }
