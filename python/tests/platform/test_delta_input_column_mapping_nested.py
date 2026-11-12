@@ -24,7 +24,7 @@ from tests.utils import DeltaTestLocation, ensure_delta_spark_fixture
 TABLE = "t"
 CONNECTOR = "delta_in"
 # Bump to invalidate cached copies when the fixture definition changes.
-FIXTURE_VERSION = "v1"
+FIXTURE_VERSION = "v2"
 
 _FIXTURE_BUILDER = Path(__file__).parent / "fixtures" / "column_mapping_nested.py"
 
@@ -48,7 +48,7 @@ def _build_sql(
     ).replace("'", "''")
     return (
         f"CREATE TABLE {TABLE} ("
-        "after ROW(transaction__id VARCHAR, transaction__amount VARCHAR),"
+        "after ROW(item_id VARCHAR, amount VARCHAR),"
         "op VARCHAR"
         f") WITH ('materialized' = 'true', 'connectors' = '{connectors}');"
     )
@@ -83,8 +83,8 @@ def test_delta_input_column_mapping_nested_follow(pipeline_name):
             (
                 {"id": r["id"], "amount": r["amount"], "op": r["op"]}
                 for r in pipeline.query(
-                    "SELECT after.transaction__id AS id,"
-                    f" after.transaction__amount AS amount, op FROM {TABLE}"
+                    "SELECT after.item_id AS id,"
+                    f" after.amount AS amount, op FROM {TABLE}"
                 )
             ),
             key=lambda r: r["id"],
@@ -92,8 +92,8 @@ def test_delta_input_column_mapping_nested_follow(pipeline_name):
         expected = sorted(
             (
                 {
-                    "id": r["after"]["transaction__id"],
-                    "amount": r["after"]["transaction__amount"],
+                    "id": r["after"]["item_id"],
+                    "amount": r["after"]["amount"],
                     "op": r["op"],
                 }
                 for r in EXPECTED_ROWS
@@ -128,7 +128,7 @@ def test_delta_input_column_mapping_nested_dist_filter(pipeline_name):
             pipeline_name,
             sql=_build_sql(
                 loc,
-                {"filter": "after.transaction__amount <> '20'"},
+                {"filter": "after.amount <> '20'"},
                 distributed=True,
             ),
             runtime_config=RuntimeConfig(
@@ -140,8 +140,7 @@ def test_delta_input_column_mapping_nested_dist_filter(pipeline_name):
         pipeline.wait_for_completion(force_stop=False, timeout_s=600)
 
         ids = sorted(
-            r["id"]
-            for r in pipeline.query(f"SELECT after.transaction__id AS id FROM {TABLE}")
+            r["id"] for r in pipeline.query(f"SELECT after.item_id AS id FROM {TABLE}")
         )
         assert ids == ["t1", "t3"], f"the nested filter must drop t2; got {ids}"
 

@@ -14,7 +14,7 @@ log commit by commit. The fixture's two commits let a replay starting at v0 see
 only the second one, which distinguishes a working follow path from one that
 quietly re-read the whole table.
 
-This reproduces the customer's ``cdc_raw`` failure on two fronts: the non-nullable
+This reproduces the reported failure on two fronts: the non-nullable
 top-level ``op`` (physical name ``col-102``) is missing from the physical schema
 under by-name resolution, and the nested ``after`` struct's six children are
 *themselves* mapped to ``col-<id>`` -- so a by-name struct cast finds no overlap
@@ -41,7 +41,7 @@ from tests.utils import DeltaTestLocation, ensure_delta_spark_fixture
 TABLE = "t"
 CONNECTOR = "delta_in"
 # Bump to invalidate cached MinIO/local copies when the fixture definition changes.
-FIXTURE_VERSION = "v2"
+FIXTURE_VERSION = "v3"
 
 # pyarrow builder that writes the logical-name Parquet + hand-written _delta_log.
 # It runs in a subprocess (see ensure_delta_spark_fixture) with only pyarrow.
@@ -75,7 +75,7 @@ def _build_sql(loc: DeltaTestLocation, extra_config: dict | None = None) -> str:
             }
         ]
     ).replace("'", "''")
-    # `op` is declared NOT NULL to match the customer; `after` is the customer's
+    # `op` is declared NOT NULL to match the failing table; `after` is its
     # six-field nested ROW whose children are column-mapped to diverging `col-<id>`
     # names. Pre-fix, the snapshot fails resolving `op`/`col-102` and casting the
     # `after` struct ("no field name overlap").
@@ -83,12 +83,12 @@ def _build_sql(loc: DeltaTestLocation, extra_config: dict | None = None) -> str:
         f"CREATE TABLE {TABLE} ("
         "id VARCHAR,"
         "after ROW("
-        "transaction__id VARCHAR,"
-        "transaction__merchant_id VARCHAR,"
-        "transaction__merchant_name VARCHAR,"
-        "transaction__time VARCHAR,"
-        "transaction__status VARCHAR,"
-        "transaction__amount VARCHAR"
+        "item_id VARCHAR,"
+        "vendor_id VARCHAR,"
+        "vendor_name VARCHAR,"
+        "event_time VARCHAR,"
+        "status VARCHAR,"
+        "amount VARCHAR"
         "),"
         "op VARCHAR NOT NULL"
         f") WITH ('materialized' = 'true', 'connectors' = '{connectors}');"
@@ -99,11 +99,9 @@ def _snapshot_rows(pipeline) -> list[dict]:
     # Project the two diverging top-level scalars plus a nested child of `after`.
     # The nested projection exercises field-id resolution *inside* the struct --
     # the case that fails the struct cast pre-fix, not just the top-level columns.
-    rows = pipeline.query(
-        f"SELECT id, op, after.transaction__merchant_name AS merchant FROM {TABLE}"
-    )
+    rows = pipeline.query(f"SELECT id, op, after.vendor_name AS vendor FROM {TABLE}")
     return sorted(
-        ({"id": r["id"], "op": r["op"], "merchant": r["merchant"]} for r in rows),
+        ({"id": r["id"], "op": r["op"], "vendor": r["vendor"]} for r in rows),
         key=lambda r: r["id"],
     )
 
@@ -154,7 +152,7 @@ def _run_uniform_test(
                 {
                     "id": r["id"],
                     "op": r["op"],
-                    "merchant": r["after"]["transaction__merchant_name"],
+                    "vendor": r["after"]["vendor_name"],
                 }
                 for r in expected_rows
             ),

@@ -9,15 +9,15 @@ carrying a Parquet ``field_id`` -- while the Delta log uses ``columnMapping.mode
 'id'``. We therefore emit the Parquet with pyarrow and hand-write the
 ``_delta_log``.
 
-The table mirrors the customer's ``cdc_raw`` shape:
+The table has the shape of a CDC table that failed to read:
 
 * ``id``     -- physical name ``col-100`` *diverges* from the on-disk ``id``
                (a nullable scalar resolved by field id).
 * ``after``  -- a six-field nested struct whose children *also* diverge: each is
                mapped to ``col-<id>`` while the file names them logically
-               (``transaction__id`` ...). Under by-name resolution the struct cast
+               (``item_id`` ...). Under by-name resolution the struct cast
                target (``col-104`` ...) shares no overlap with the file's logical
-               child names, the customer's "Cannot cast struct with 6 fields to 6
+               child names, the reported "Cannot cast struct with 6 fields to 6
                fields because there is no field name overlap".
 * ``op``     -- physical name ``col-102`` *diverges* and is **non-nullable**.
                This is the column that fails an unpatched read with
@@ -29,7 +29,7 @@ rather than NULL (or a hard error for ``op`` / the struct cast).
 
 The table has two commits, one data file each, so a follow or CDC read that
 starts at v0 has a later commit to apply: those modes plan their reads
-differently from ``snapshot`` and were the ones the customer hit.
+differently from ``snapshot`` and were the ones that failed.
 
 Bump ``FIXTURE_VERSION`` in ``test_delta_input_uniform_iceberg.py`` on any change
 here, since a cached fixture is reused based on its path alone.
@@ -45,12 +45,12 @@ import sys
 # (logical child name, field id) for the six-field ``after`` struct. Children are
 # mapped to diverging physical names ``col-<id>`` in the Delta log below.
 AFTER_CHILDREN = [
-    ("transaction__id", 104),
-    ("transaction__merchant_id", 105),
-    ("transaction__merchant_name", 106),
-    ("transaction__time", 107),
-    ("transaction__status", 108),
-    ("transaction__amount", 109),
+    ("item_id", 104),
+    ("vendor_id", 105),
+    ("vendor_name", 106),
+    ("event_time", 107),
+    ("status", 108),
+    ("amount", 109),
 ]
 
 
@@ -60,24 +60,24 @@ V0_ROWS = [
     {
         "id": "txn-001",
         "after": {
-            "transaction__id": "txn-001",
-            "transaction__merchant_id": "m-100",
-            "transaction__merchant_name": "Coffee Shop",
-            "transaction__time": "2026-01-01T00:00:00Z",
-            "transaction__status": "settled",
-            "transaction__amount": "12.50",
+            "item_id": "txn-001",
+            "vendor_id": "m-100",
+            "vendor_name": "Coffee Shop",
+            "event_time": "2026-01-01T00:00:00Z",
+            "status": "settled",
+            "amount": "12.50",
         },
         "op": "c",
     },
     {
         "id": "txn-002",
         "after": {
-            "transaction__id": "txn-002",
-            "transaction__merchant_id": "m-200",
-            "transaction__merchant_name": "Gas Station",
-            "transaction__time": "2026-01-02T00:00:00Z",
-            "transaction__status": "settled",
-            "transaction__amount": "40.00",
+            "item_id": "txn-002",
+            "vendor_id": "m-200",
+            "vendor_name": "Gas Station",
+            "event_time": "2026-01-02T00:00:00Z",
+            "status": "settled",
+            "amount": "40.00",
         },
         "op": "c",
     },
@@ -90,12 +90,12 @@ V1_ROWS = [
     {
         "id": "txn-003",
         "after": {
-            "transaction__id": "txn-003",
-            "transaction__merchant_id": "m-300",
-            "transaction__merchant_name": "Restaurant",
-            "transaction__time": "2026-01-03T00:00:00Z",
-            "transaction__status": "reversed",
-            "transaction__amount": "75.25",
+            "item_id": "txn-003",
+            "vendor_id": "m-300",
+            "vendor_name": "Restaurant",
+            "event_time": "2026-01-03T00:00:00Z",
+            "status": "reversed",
+            "amount": "75.25",
         },
         "op": "u",
     },

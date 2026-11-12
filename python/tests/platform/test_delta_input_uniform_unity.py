@@ -101,9 +101,9 @@ AGGREGATES: list[tuple[str, str, str]] = [
     # Reached through the struct: its children are mapped too, so this is zero
     # unless the pairing resolves by field id inside a struct as well.
     (
-        "n_merchant",
-        "COUNT(after.transaction__merchant_name)",
-        "count(after.transaction__merchant_name)",
+        "n_vendor",
+        "COUNT(after.vendor_name)",
+        "count(after.vendor_name)",
     ),
     ("n_history", "COUNT(CARDINALITY(history))", "count(size(history))"),
     ("n_tags", "COUNT(tags['channel'])", "count(tags['channel'])"),
@@ -115,7 +115,7 @@ AGGREGATES: list[tuple[str, str, str]] = [
     ),
     ("min_id", "MIN(id)", "min(id)"),
     ("max_id", "MAX(id)", "max(id)"),
-    ("min_after_id", "MIN(after.transaction__id)", "min(after.transaction__id)"),
+    ("min_after_id", "MIN(after.item_id)", "min(after.item_id)"),
     ("len_history", "SUM(CARDINALITY(history))", "sum(size(history))"),
     ("min_tag", "MIN(tags['region'])", "min(tags['region'])"),
 ]

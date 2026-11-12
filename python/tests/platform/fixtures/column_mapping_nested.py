@@ -19,9 +19,9 @@ import sys
 # Rows expected from a read of the whole table. Imported by the test so the two
 # never drift.
 EXPECTED_ROWS = [
-    {"after": {"transaction__id": "t1", "transaction__amount": "10"}, "op": "c"},
-    {"after": {"transaction__id": "t2", "transaction__amount": "20"}, "op": "c"},
-    {"after": {"transaction__id": "t3", "transaction__amount": "30"}, "op": "u"},
+    {"after": {"item_id": "t1", "amount": "10"}, "op": "c"},
+    {"after": {"item_id": "t2", "amount": "20"}, "op": "c"},
+    {"after": {"item_id": "t3", "amount": "30"}, "op": "u"},
 ]
 
 
@@ -50,18 +50,17 @@ def build(table_path: str) -> None:
         )
         spark.sql(
             f"CREATE TABLE {t} ("
-            "  after STRUCT<transaction__id: STRING, transaction__amount: STRING>,"
+            "  after STRUCT<item_id: STRING, amount: STRING>,"
             "  op STRING"
             f") USING delta {props}"
         )
         spark.sql(
             f"INSERT INTO {t} VALUES "
-            "(named_struct('transaction__id','t1','transaction__amount','10'),'c'),"
-            "(named_struct('transaction__id','t2','transaction__amount','20'),'c')"
+            "(named_struct('item_id','t1','amount','10'),'c'),"
+            "(named_struct('item_id','t2','amount','20'),'c')"
         )
         spark.sql(
-            f"INSERT INTO {t} VALUES "
-            "(named_struct('transaction__id','t3','transaction__amount','30'),'u')"
+            f"INSERT INTO {t} VALUES (named_struct('item_id','t3','amount','30'),'u')"
         )
     finally:
         spark.stop()
