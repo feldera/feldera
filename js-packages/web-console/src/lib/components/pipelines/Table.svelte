@@ -128,7 +128,8 @@
   // Each row draws the line above it, the first one under the header. The table's own
   // border closes off the last row.
   const td = 'h-10 text-base border-t-[0.5px] border-line'
-  const rowTd = td
+  // Each row cell holds a HTML link to its pipeline under its content (see `pipelineLink`).
+  const rowTd = `${td} relative`
 
   // Persist the active sort and restore it on the matching column. Each ThSort
   // owns the upstream `direction`/`onSort` API; the column identity lives here.
@@ -187,6 +188,18 @@
   // Header cells clip their label at the column's width and position its resize handle.
   const resizableTh = 'group/col relative h-10 overflow-hidden px-3'
 </script>
+
+<!-- Fills the cell under its content, so a click on empty space opens the pipeline as a
+     normal link. Content that must stay selectable or clickable is positioned to sit above it
+     and is only as wide as it needs to be. -->
+{#snippet pipelineLink(pipelineName: string)}
+  <a
+    class="absolute inset-0"
+    href={resolve(`/pipelines/${encodeURI(pipelineName)}/`)}
+    tabindex="-1"
+    aria-hidden="true"
+  ></a>
+{/snippet}
 
 {#snippet resizer(column: ResizableColumn, label: string)}
   <ColumnResizer
@@ -412,24 +425,20 @@
       </thead>
       <tbody>
         {#each rowsInDisplayOrder as pipeline}
-          <!-- A click anywhere on the row that isn't on a link or control toggles its
-               selection, like clicking its checkbox. -->
-          <tr
-            class="group cursor-pointer"
-            data-testid="box-row-{pipeline.name}"
-            onclick={(e) => {
-              if (
-                (e.target as HTMLElement).closest(
-                  'a, button, input, label, select, textarea, [role="button"], [role="dialog"], [role="tooltip"]'
-                )
-              ) {
-                return
-              }
-              table.select(pipeline.name)
-            }}
-            ><td class="{rowTd} px-3 group-hover:bg-row-hover">
-              <div class="flex h-full items-center">
-                <label class="-m-1 flex h-6 w-6 cursor-pointer items-center justify-center">
+          <tr class="group" data-testid="box-row-{pipeline.name}"
+            ><!-- A click on the checkbox cell around the checkbox toggles the row's selection. -->
+            <td
+              class="{rowTd} cursor-pointer px-3 group-hover:bg-row-hover"
+              onclick={(e) => {
+                if (e.target === e.currentTarget) {
+                  table.select(pipeline.name)
+                }
+              }}
+            >
+              <div class="pointer-events-none flex h-full items-center">
+                <label
+                  class="pointer-events-auto -m-1 flex h-6 w-6 cursor-pointer items-center justify-center"
+                >
                   <input
                     class="checkbox"
                     type="checkbox"
@@ -440,17 +449,18 @@
                 </label>
               </div>
             </td>
-            <td class="{rowTd} relative group-hover:bg-row-hover"
-              ><a
-                class=" absolute inset-x-3 top-2.5 overflow-hidden overflow-ellipsis whitespace-nowrap"
+            <td class="{rowTd} group-hover:bg-row-hover"
+              >{@render pipelineLink(pipeline.name)}<a
+                class="absolute top-2.5 left-3 max-w-[calc(100%-1.5rem)] overflow-hidden overflow-ellipsis whitespace-nowrap"
                 href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}>{pipeline.name}</a
               ></td
             >
-            <td class="{rowTd} relative px-3 group-hover:bg-row-hover">
+            <td class="{rowTd} px-3 group-hover:bg-row-hover">
+              {@render pipelineLink(pipeline.name)}
               <div
                 class="fd {pipeline.storageStatus === 'Cleared'
                   ? 'fd-database-off text-surface-500'
-                  : 'fd-database'} text-center text-[16px]"
+                  : 'fd-database'} relative mx-auto w-fit text-[16px]"
               ></div>
               <Tooltip
                 >{match(pipeline.storageStatus)
@@ -461,17 +471,19 @@
               >
             </td>
             <td class="px-3 {rowTd} text-left group-hover:bg-row-hover"
-              ><div class="overflow-hidden">
+              >{@render pipelineLink(pipeline.name)}
+              <div class="relative w-fit max-w-full overflow-hidden">
                 <PipelineStatus status={pipeline.status}></PipelineStatus>
               </div></td
             >
-            <td class="{rowTd} relative whitespace-pre-wrap group-hover:bg-row-hover">
+            <td class="{rowTd} whitespace-pre-wrap group-hover:bg-row-hover">
+              {@render pipelineLink(pipeline.name)}
               {#if pipeline.deploymentError}
                 {@const message = pipeline.deploymentError.message}
                 <!-- The Popover attaches to its preceding sibling, so hovering the icon or the
                      text opens the full message. -->
                 <span
-                  class="absolute inset-x-3 top-1/2 flex -translate-y-1/2 items-center gap-2 text-sm whitespace-nowrap"
+                  class="absolute top-1/2 left-3 flex max-w-[calc(100%-1.5rem)] -translate-y-1/2 items-center gap-2 text-sm whitespace-nowrap"
                 >
                   <span class="fd fd-circle-alert shrink-0 text-[16px] {errorTextClass}"></span>
                   <span class="truncate">
@@ -493,10 +505,16 @@
               {/if}
             </td>
             <td class="px-3 {rowTd} group-hover:bg-row-hover"
-              ><Tags pipelineName={pipeline.name} tags={pipeline.tags} {knownTags} {api}></Tags></td
+              >{@render pipelineLink(pipeline.name)}
+              <div class="relative w-fit max-w-full">
+                <Tags pipelineName={pipeline.name} tags={pipeline.tags} {knownTags} {api}></Tags>
+              </div></td
             >
-            <td class="{rowTd} relative px-3 group-hover:bg-row-hover">
-              <div class="flex w-full flex-nowrap items-center gap-2 overflow-hidden text-nowrap">
+            <td class="{rowTd} px-3 group-hover:bg-row-hover">
+              {@render pipelineLink(pipeline.name)}
+              <div
+                class="relative flex w-fit max-w-full flex-nowrap items-center gap-2 overflow-hidden text-nowrap"
+              >
                 <PipelineVersion
                   pipelineName={pipeline.name}
                   runtimeVersion={pipeline.platformVersion}
@@ -506,22 +524,28 @@
               </div>
             </td>
             <td class="{rowTd} px-3 group-hover:bg-row-hover">
-              <div class="truncate">
+              {@render pipelineLink(pipeline.name)}
+              <div class="relative w-fit max-w-full truncate">
                 {pipeline.connectors?.numErrors ?? '-'}
               </div>
             </td>
-            <td class="{rowTd} relative px-3 group-hover:bg-row-hover">
+            <td class="{rowTd} px-3 group-hover:bg-row-hover">
+              {@render pipelineLink(pipeline.name)}
               {#if !isNaN(pipeline.lastStatusSince.valueOf())}
-                <time class="block truncate" datetime={pipeline.lastStatusSince.toISOString()}>
+                <time
+                  class="relative block w-fit max-w-full truncate"
+                  datetime={pipeline.lastStatusSince.toISOString()}
+                >
                   {formatTimeAgo(pipeline.lastStatusSince)}
                 </time>
                 <Tooltip>{formatDateTime(pipeline.lastStatusSince)}</Tooltip>
               {:else}
-                —
+                <span class="relative">—</span>
               {/if}
             </td>
-            <td class="{rowTd} relative px-3 group-hover:bg-row-hover">
-              <div class="truncate">
+            <td class="{rowTd} px-3 group-hover:bg-row-hover">
+              {@render pipelineLink(pipeline.name)}
+              <div class="relative w-fit max-w-full truncate">
                 {pipeline.deploymentResourcesStatus === 'Provisioned'
                   ? formatDateTime(pipeline.deploymentResourcesStatusSince)
                   : ''}

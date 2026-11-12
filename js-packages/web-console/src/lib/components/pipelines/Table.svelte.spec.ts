@@ -631,3 +631,58 @@ describe('Table — search', () => {
     await expect.poll(rowOrder).toEqual(['prod-ingest', 'prod-export', 'beta', 'alpha'])
   })
 })
+
+describe('Table — row link', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  // Cells of the "alpha" row: 0 is the checkbox, 7 is Errors.
+  const cell = (index: number) =>
+    document.querySelectorAll<HTMLElement>('[data-testid="box-row-alpha"] > td')[index]
+  // Earlier tests can leave the page scrolled sideways, so bring the element on screen first.
+  const boxOf = (el: HTMLElement) => {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    return el.getBoundingClientRect()
+  }
+  // What a click at that point would land on. Hit-testing avoids navigating the test page.
+  const hitAt = (x: number, y: number) => document.elementFromPoint(x, y) as HTMLElement
+
+  it('links the empty space of a cell to the pipeline', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const box = boxOf(cell(7))
+
+    const hit = hitAt(box.right - 4, box.top + box.height / 2)
+
+    expect(hit.closest('a')?.getAttribute('href')).toMatch(/\/pipelines\/alpha\/$/)
+  })
+
+  it('keeps the cell text above the link, so the text stays selectable', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const text = cell(7).querySelector('div')!
+    const box = boxOf(text)
+
+    const hit = hitAt(box.left + box.width / 2, box.top + box.height / 2)
+
+    expect(hit).toBe(text)
+  })
+
+  it('toggles the selection on the empty space of the checkbox cell, with no link', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const box = boxOf(cell(0))
+
+    const hit = hitAt(box.left + 2, box.top + 2)
+    expect(hit).toBe(cell(0))
+    hit.click()
+
+    await expect.element(page.getByLabelText('Select alpha')).toBeChecked()
+  })
+})
