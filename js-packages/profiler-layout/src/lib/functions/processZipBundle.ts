@@ -219,7 +219,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     sourceFiles = [...programFiles, ...udfFiles]
   }
 
-  // The circuit profile is optional: a bundle without it still yields config, logs and stats.
+  // The circuit profile is optional. A bundle without it still gives the config, logs and stats.
   const profileFile = files.find((file) => circuitProfileRegex.test(file.filename))
   // The model shows the SQL of each circuit node from the lines of `program.sql` when the dataflow
   // has no `sources`, as in a support bundle.

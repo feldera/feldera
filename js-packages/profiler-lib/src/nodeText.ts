@@ -124,9 +124,9 @@ export function paintTextRuns(
     context.restore();
 }
 
-/** Text with a smaller font size on screen, in CSS pixels, is not painted. At 4 px a capital letter is
- *  about 3 px high, so the text cannot be read. But painting it costs as much as painting readable
- *  text, and when the diagram is zoomed out, most of the cost of a frame. */
+/** The diagram does not paint text with a smaller font size on screen, in CSS pixels. At 4 px a
+ *  capital letter is about 3 px high, so the text cannot be read. But the paint costs as much as
+ *  for readable text, and it is most of the cost of a frame when the diagram is zoomed out. */
 export const MIN_READABLE_FONT_PX = 4;
 
 /** The size on screen, in CSS pixels, of a `fontSize` font painted on `context`. The scale of the

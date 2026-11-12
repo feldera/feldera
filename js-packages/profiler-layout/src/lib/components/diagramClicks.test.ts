@@ -369,7 +369,7 @@ describe('a hover on an operator', () => {
 
   it('draws the traced edges on top one frame after it colors them', async () => {
     // The colors come first, so that they paint in the next frame. The change of draw order makes
-    // cytoscape sort all elements, so it waits one more frame.
+    // cytoscape sort all elements, so the diagram makes that change one frame later.
     const { cy, cleanup } = await mount()
     const node = cy.$id('n1')
     node.emit('mouseover')

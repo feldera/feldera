@@ -116,8 +116,8 @@
   // only the rows near the view. The rows are absolutely placed, so they cannot share the column
   // widths of a table. The node and value columns are as wide as their longest text.
   let topNodesList: VirtualizerHandle | undefined = $state()
-  // One line of `text-sm`, the `py-1` padding and the top border. The list measures a row that
-  // is higher, for example with a long operation on two lines.
+  // The estimated row height is one line of `text-sm`, the `py-1` padding and the top border.
+  // The list measures the real height of a higher row, for example a long operation on two lines.
   const topNodeRowHeightPx = 29
   const topNodesColumns = $derived.by(() => {
     const rows = genericTable?.rows ?? []

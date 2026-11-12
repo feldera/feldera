@@ -9,8 +9,8 @@
   import { onDestroy } from 'svelte'
 
   interface Props {
-    /** The circuit profile to draw. Do not pass a deep `$state` object: reads through its proxies
-     *  make the diagram much slower on a large profile. */
+    /** The circuit profile to draw. Do not pass a deep `$state` object, because reads through
+     *  its proxies make the diagram much slower on a large profile. */
     profile: CircuitProfile
     /** Callbacks the hosting layout listens on */
     callbacks: ProfilerCallbacks

@@ -1,6 +1,6 @@
 // Browser tests for the frames that cytoscape draws while a layout runs. The diagram stops the frames
-// until the layout is finished (see `pauseFrames` in profiler-lib). This depends on cytoscape renderer
-// internals, so these tests fail if a cytoscape update breaks it.
+// until the layout is finished (see `pauseFrames` in profiler-lib). `pauseFrames` depends on
+// internals of the cytoscape renderer, so these tests fail if a cytoscape update breaks it.
 
 import { describe, expect, it } from 'vitest'
 import { mountDiagram, settle } from '../test-support/mountDiagram.js'

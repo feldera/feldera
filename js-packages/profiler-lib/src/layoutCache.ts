@@ -69,7 +69,7 @@ export function runPresetLayout(cy: Core, positions: LeafPositions): void {
         .run();
 }
 
-/** The least recently used entry goes when the cache is full. */
+/** A cache of layouts that removes the least recently used entry when it is full. */
 export class LayoutCache {
     private readonly entries = new Map<string, LeafPositions>();
 

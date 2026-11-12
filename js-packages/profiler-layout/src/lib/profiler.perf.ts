@@ -31,8 +31,8 @@ const CIRCUIT = syntheticCircuit({
   topLevelItems: inject('perfTopLevelItems'),
   workers: WORKERS
 })
-/** For the parsing measurements, which do not lay out the circuit: about 2400 operators, the size
- *  of a large real circuit. */
+/** For the parsing measurements, which do not lay out the circuit. It has about 2400 operators,
+ *  the size of a large real circuit. */
 const LARGE_CIRCUIT = syntheticCircuit({ seed: 1, topLevelItems: 200, workers: WORKERS })
 const DIAGRAM_SIZE = { width: 1200, height: 800 }
 /** Fail an action whose layout never ends, instead of waiting for the test timeout. */
@@ -40,7 +40,7 @@ const LAYOUT_TIMEOUT_MS = 60_000
 const REGION_WARMUPS = 1
 const REGION_RUNS = 9
 /** How many top-level regions the frame measurement expands. With the default circuit size, this
- *  makes the diagram about five times as many nodes as when it is collapsed. */
+ *  gives the diagram about five times as many nodes as when it is collapsed. */
 const EXPANDED_REGIONS = 10
 
 const describeCircuit = (circuit: SyntheticCircuit) => ({
@@ -301,7 +301,7 @@ describe('profiler performance', () => {
       await painted
     }
     // Each round expands the region and collapses it again, and times both. The cache would give the
-    // layouts of the earlier rounds, so it is cleared before each toggle that must run ELK.
+    // layouts of the earlier rounds, so the rounds clear it before each toggle that must run ELK.
     const toggleRounds = async (isCached: boolean) => {
       const expandMs: number[] = []
       const collapseMs: number[] = []
@@ -356,9 +356,10 @@ describe('profiler performance', () => {
     // At fit view, all nodes are on screen. A pan by one pixel makes cytoscape draw a frame. The
     // direction alternates, so the view stays in place.
     // When no element changed in the last 250 ms, cytoscape draws a frame from a cache of a few large
-    // images. Any change, such as a hover, turns that cache off for 250 ms, and then each frame draws
-    // every node. This function turns the cache off, so that each frame measures the full draw. It
-    // uses the renderer of cytoscape 3.33, which is not in the cytoscape documentation.
+    // images. Any change, such as a hover, disables that cache for 250 ms, and then each frame
+    // draws every node. This function disables the cache, so that each frame measures the full
+    // draw. It uses internal data of the cytoscape 3.33 renderer, which the cytoscape
+    // documentation does not describe.
     const skipLayerCache = () => {
       cy.renderer().data.lyrTxrCache.lastInvalidationTime = performance.now()
     }

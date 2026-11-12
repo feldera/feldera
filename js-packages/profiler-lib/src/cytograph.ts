@@ -399,7 +399,7 @@ export class CytographRendering {
     // The profile and the scales of the last `updateMetadata`, for `computeAttributes`.
     private metadataProfile: CircuitProfile | null = null;
     private displayScales: DisplayScales = new Map();
-    // What `displayScales` was computed for: the graph and a mask of the visible workers.
+    // The graph and the mask of the visible workers that `displayScales` was computed for.
     private scalesGraph: Cytograph | null = null;
     private scalesWorkerMask = "";
     /** Where the view is. */
@@ -593,8 +593,7 @@ export class CytographRendering {
         let data = new Map<string, Array<SerializedMeasurement>>();
         // Totals over the same workers the cells show, so they match what is displayed.
         let values = new Map<string, PropertyValue>();
-        // Select just the visible metrics
-        // Compute per-worker attributes
+        // The readings of each metric on the visible workers
         for (let metric of profileNode.measurements.getMetrics()) {
             let range = scales.get(metric)?.range ?? NumericRange.empty();
             let metrics = profileNode.getMeasurements(metric);
@@ -620,7 +619,7 @@ export class CytographRendering {
                 : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
             totals.set(metric, new SerializedMeasurement(total, share));
         }
-        // additional key-value per node attributes
+        // The key-value attributes of the node
         let kv = new Map();
         kv.set("id", node.id);
         if (node.persistentId.isSome()) {
@@ -784,7 +783,7 @@ export class CytographRendering {
         this.endFramePause();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
-        // Whatever the observers put up to cover the change has to come down here or it never will.
+        // Let the observers remove what they show over the changing graph.
         notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
     }
 

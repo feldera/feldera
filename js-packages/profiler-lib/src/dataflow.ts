@@ -127,10 +127,10 @@ export class SourcePositionRanges {
         return this.positions;
     }
 
-    /** The keys of `positions`, made when the list gets long.  A region appends the ranges of
-     *  each node inside it, so a scan of a long list for each new range is quadratic.  A scan of a
-     *  short list is faster than the keys.  `sort` removes only duplicates, so it keeps this set
-     *  correct. */
+    /** The keys of `positions`, made when the list gets longer than `MAX_SCANNED`. A region appends
+     *  the ranges of each node inside it, so a scan of a long list for each new range is quadratic.
+     *  For a short list, a scan is faster than to build the keys. `sort` removes only duplicates,
+     *  so this set stays correct. */
     private keys: Set<string> | undefined;
     private static readonly MAX_SCANNED = 16;
 

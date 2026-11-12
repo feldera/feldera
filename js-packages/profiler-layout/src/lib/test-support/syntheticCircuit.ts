@@ -31,8 +31,8 @@ export interface SyntheticCircuit {
 /** The chance that an item is a region, for each nesting level. Deeper levels have fewer regions. */
 const REGION_CHANCE = [0.4, 0.3, 0.15]
 /** The chance that an operator has a persistent id, and so a position in the SQL program. In a real
- *  circuit, most operators come from the runtime and have none. Then many regions also have none, and
- *  show no code chip, which changes how cytoscape draws them. */
+ *  circuit, most operators come from the runtime and have no position. So many regions also have no
+ *  position and show no code chip, which changes how cytoscape draws them. */
 const SOURCE_CHANCE = 0.15
 const MIN_REGION_ITEMS = 3
 const MAX_REGION_ITEMS = 10
@@ -116,7 +116,7 @@ const METRICS: JsonProfiles['metrics'] = [
   }
 ] as unknown as JsonProfiles['metrics']
 
-/** mulberry32: a small seeded generator of numbers in [0, 1). */
+/** A small seeded generator of numbers in [0, 1), with the mulberry32 algorithm. */
 function seededRandom(seed: number) {
   let state = seed >>> 0
   return () => {
@@ -201,8 +201,8 @@ export function syntheticCircuit({
     }
   }
 
-  /** `count` items at `depth`, each an operator or a region. Regions are not created below the
-   *  deepest level that `REGION_CHANCE` gives. */
+  /** `count` items at `depth`, each an operator or a region. The function adds no regions
+   *  below the deepest level that `REGION_CHANCE` gives. */
   function addItems(statement: number, depth: number, count: number): JsonItem[] {
     const items: JsonItem[] = []
     let previous: string | undefined
@@ -262,8 +262,8 @@ function rootMetrics(skew: number) {
   ]
 }
 
-/** The metrics of one operator on one worker. Their mix follows a real profile: every operator has
- *  the time metrics, and part of them have state and batch statistics. */
+/** The metrics of one operator on one worker. Their mix follows a real profile. Every operator has
+ *  the time metrics, and some operators have state and batch statistics. */
 function operatorMetrics(op: Operator, skew: number) {
   const load = op.weight * skew
   const entries = [

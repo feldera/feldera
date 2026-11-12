@@ -58,8 +58,8 @@
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
-    /** The circuit profile to draw. Do not pass a deep `$state` object: reads through its proxies
-     *  make the diagram much slower on a large profile. */
+    /** The circuit profile to draw. Do not pass a deep `$state` object, because reads through
+     *  its proxies make the diagram much slower on a large profile. */
     profile?: CircuitProfile
     /** Why the bundle's circuit profile could not be read. The header notice shows it on hover. */
     profileError?: string
@@ -275,7 +275,8 @@
     },
     onMetricsChanged: (newMetrics, newSelectedMetricId) => {
       metrics = newMetrics
-      // The diagram can call this in an effect. `untrack` keeps that effect off the switch.
+      // The diagram can call this callback in an effect. `untrack` keeps `showAdvancedMetrics`
+      // out of the dependencies of that effect.
       const listed = levelMetrics(
         newMetrics,
         untrack(() => showAdvancedMetrics)

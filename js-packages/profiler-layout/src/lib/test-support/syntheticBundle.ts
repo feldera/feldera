@@ -54,7 +54,9 @@ function crc32(data: Uint8Array): number {
 const DEFLATE = 8
 const ZIP_VERSION = 20
 
-/** A zip archive with each file deflated. Only the fields that unzip tools read are filled in. */
+/** A zip archive with each file deflated. The function fills in only the fields that unzip tools
+ *  read. The header sizes (30, 46 and 22 bytes) and the field offsets come from the zip format
+ *  specification (PKWARE APPNOTE.TXT). */
 async function zip(files: Array<{ name: string; data: Uint8Array }>): Promise<Uint8Array> {
   const parts: Uint8Array[] = []
   const central: Uint8Array[] = []

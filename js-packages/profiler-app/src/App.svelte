@@ -32,12 +32,12 @@
   // True while the diagram computes its layout.
   let isRendering = $state(false)
   let errorMessage = $state('')
-  // Raw state, as `profileData`. Assignments replace the whole value.
+  // Raw state like `profileData`. Each assignment replaces the whole array.
   let profileFiles: [Date, ZipItem[]][] = $state.raw([])
   let selectedTimestamp: Date | null = $state(null)
   let sqlPanelFullHeight = $state(false)
 
-  // Raw state: a deep proxy over the profile makes the diagram load much slower.
+  // Raw state, because a deep proxy over the profile makes the diagram load much slower.
   let profileData: {
     profile: CircuitProfile | undefined
     profileError: string | undefined
