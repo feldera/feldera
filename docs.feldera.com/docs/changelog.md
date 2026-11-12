@@ -27,6 +27,12 @@ Source edition can be found on github.
   `circuit_profile.zip`.  To get the circuit profile, use
   `GET /v0/pipelines/{pipeline_name}/circuit_json_profile`, which returns it as
   JSON, or open a support bundle in the profile viewer of the Web Console.
+- HTTP ingress no longer stops at 100 tables. Before, the first push to a
+  table, for each format, took one of the pipeline's 100 API connection slots
+  and kept it until the pipeline stopped. The first push to the 101st table
+  then failed with `429 ApiConnectionLimit`, and so did each new `/egress`
+  request. The limit of 100 now applies only to concurrent `/egress`
+  connections.
 
 ## v0.382.0
 
