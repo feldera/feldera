@@ -49,6 +49,7 @@ use arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
 use feldera_types::error::DetailedError;
 use feldera_types::runtime_status::RuntimeDesiredStatus;
+use feldera_types::secret_redaction::secret_redactor;
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -90,7 +91,7 @@ where
 
 impl ErrorResponse {
     pub fn from_anyerror(error: &AnyError) -> Self {
-        let message = error.to_string();
+        let message = secret_redactor().redact(&error.to_string()).into_owned();
         let error_code = Cow::from("UnknownError");
 
         error!("[HTTP error response] {error_code}: {message}");
@@ -129,11 +130,14 @@ impl ErrorResponse {
     where
         E: DetailedError,
     {
-        let message = error.to_string();
+        // A resolved secret value that the error copied shows as its reference.
+        let redactor = secret_redactor();
+        let message = redactor.redact(&error.to_string()).into_owned();
         let error_code = error.error_code();
-        let details = serde_json::to_value(error).unwrap_or_else(|e| {
+        let mut details = serde_json::to_value(error).unwrap_or_else(|e| {
             JsonValue::String(format!("Failed to serialize error. Details: '{e}'"))
         });
+        redactor.redact_json(&mut details);
 
         Self {
             message,
@@ -377,5 +381,118 @@ impl PipelineError {
             num_errors: num_errors as u64,
             errors: errors.into_iter().cloned().collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ErrorResponse;
+    use feldera_types::error::DetailedError;
+    use feldera_types::secret_redaction::secret_redactor;
+    use serde::Serialize;
+    use serde_json::json;
+    use std::borrow::Cow;
+
+    /// Exercise the production JSON formatter with the real registry. Serde
+    /// escapes rejected strings, and JSON adds another escaping layer.
+    #[test]
+    fn json_logs_redact_escaped_secret_values() {
+        use crate::server::SecretLineRedactor;
+        use feldera_observability::json_logging::{JsonPipelineFormat, LogIdentity};
+        use feldera_types::format::avro::AvroEncoderConfig;
+        use std::sync::{Arc, Mutex};
+        use tracing_subscriber::layer::SubscriberExt;
+
+        #[derive(Clone, Default)]
+        struct Buffer(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buffer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl tracing_subscriber::fmt::MakeWriter<'_> for Buffer {
+            type Writer = Self;
+            fn make_writer(&self) -> Self {
+                self.clone()
+            }
+        }
+
+        for secret in ["json-log-quote\"secret2136", "json-log-back\\slash2136"] {
+            let reference = "${secret:kubernetes:logging/password}";
+            secret_redactor().register(reference, secret);
+            let cause =
+                serde_json::from_value::<AvroEncoderConfig>(json!({"registry_urls": secret}))
+                    .unwrap_err();
+            let buffer = Buffer::default();
+            let subscriber = tracing_subscriber::registry().with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(
+                        JsonPipelineFormat::new(LogIdentity::Pipeline {
+                            pipeline_name: None,
+                            pipeline_id: None,
+                        })
+                        .with_redaction(SecretLineRedactor),
+                    )
+                    .with_writer(buffer.clone()),
+            );
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::error!("Error initializing the pipeline: {cause}.");
+            });
+            let line = buffer.0.lock().unwrap();
+            let log: serde_json::Value = serde_json::from_slice(&line).unwrap();
+            let message = log["fields"]["message"].as_str().unwrap();
+            assert!(message.contains(reference), "{message}");
+            assert!(!message.contains("json-log-"), "{message}");
+            assert!(message.contains("expected a sequence"), "{message}");
+        }
+    }
+
+    #[derive(Debug, Serialize)]
+    struct ConnectError {
+        uri: String,
+    }
+
+    impl std::fmt::Display for ConnectError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "connection to {} refused", self.uri)
+        }
+    }
+
+    impl std::error::Error for ConnectError {}
+
+    impl DetailedError for ConnectError {
+        fn error_code(&self) -> Cow<'static, str> {
+            Cow::from("ConnectError")
+        }
+    }
+
+    /// `/status` builds this response type, not the shared one: it redacts
+    /// the same way.
+    #[test]
+    fn response_shows_the_secret_reference_not_the_value() {
+        let uri = "postgres://feldera:server-response-secret@db:5432/app";
+        secret_redactor().register("${secret:kubernetes:pg/uri}", uri);
+
+        let response = ErrorResponse::from_error_nolog(&ConnectError {
+            uri: uri.to_string(),
+        });
+        assert_eq!(
+            response.message,
+            "connection to ${secret:kubernetes:pg/uri} refused"
+        );
+        assert_eq!(
+            response.details,
+            json!({"uri": "${secret:kubernetes:pg/uri}"})
+        );
+
+        let error = anyhow::anyhow!("connect {uri} failed");
+        assert_eq!(
+            ErrorResponse::from_anyerror(&error).message,
+            "connect ${secret:kubernetes:pg/uri} failed"
+        );
     }
 }
