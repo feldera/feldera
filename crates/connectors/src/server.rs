@@ -5265,7 +5265,8 @@ async fn output_endpoint(
     // than racing the streaming body that drains it.
     let response_receiver = endpoint.connect_stream();
 
-    // Connect endpoint.
+    // Connect endpoint.  The slot is given back when this handler returns,
+    // not when the response stream closes.
     let _guard = controller.register_api_connection()?;
 
     let endpoint_id = controller.add_output_endpoint(

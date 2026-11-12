@@ -24,8 +24,7 @@ Source edition can be found on github.
   table, for each format, took one of the pipeline's 100 API connection slots
   and kept it until the pipeline stopped. The first push to the 101st table
   then failed with `429 ApiConnectionLimit`, and so did each new `/egress`
-  request. The limit of 100 now applies only to concurrent `/egress`
-  connections.
+  request. HTTP ingress now takes no slot.
 
 ## v0.382.0
 
