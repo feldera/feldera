@@ -11,6 +11,9 @@
 //! registered twice keeps its first reference; references take precedence over
 //! supplemental credential markers. Unit tests share it, so a
 //! test registers a value that no other message can contain.
+//!
+//! `docs/design/secret_redaction.md` shows how this layer fits with the
+//! others.
 
 use aho_corasick::{AhoCorasick, MatchKind};
 use serde_json::Value;
