@@ -242,7 +242,7 @@ export async function mountDiagram(
     }
   } as unknown as ProfilerCallbacks
 
-  /** A new model of `profile`, the way the application builds one for each load. */
+  /** Builds a new model of `profile`, as the application does for each load. */
   const buildModel = () => buildCircuitProfile(profile as never, dataflow as never, undefined)
   const props = {
     profile: buildModel(),
@@ -489,8 +489,8 @@ export async function mountDiagram(
     pointer,
     click,
     diagram: component,
-    /** Load a copy of the profile into the same component, the way the application loads a new
-     *  bundle or snapshot. The diagram reuses its container. Returns the new cytoscape instance. */
+    /** Loads a copy of the profile into the same component, as the application loads a new bundle
+     *  or snapshot. The diagram reuses its container. Returns the new cytoscape instance. */
     reload: async () => {
       layout = new Promise<void>((resolve) => (laidOut = resolve))
       await rendered.rerender({ ...props, profile: buildModel() })
@@ -500,9 +500,9 @@ export async function mountDiagram(
       await settle()
       return cy
     },
-    /** Remove the diagram from the page, but keep the component mounted. */
+    /** Removes the diagram from the page, but keeps the component mounted. */
     cleanup: () => wrapper.remove(),
-    /** Unmount the component, which disposes the diagram, and remove it from the page. */
+    /** Unmounts the component, which disposes the diagram, and removes the diagram from the page. */
     unmount: () => {
       rendered.unmount()
       wrapper.remove()

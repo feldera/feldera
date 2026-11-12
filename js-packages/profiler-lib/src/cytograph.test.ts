@@ -112,7 +112,7 @@ describe('collapsed regions', () => {
 describe('drawn edges', () => {
     it('draws one edge for the parallel edges between two drawn nodes', () => {
         // Both operators in the collapsed region feed n1, so two edges of the circuit become one drawn
-        // edge. The hover trace finds the drawn edge from either operator edge.
+        // edge. The hover trace finds the drawn edge from either edge of the circuit.
         const p = CircuitProfile.fromJson({
             metrics: [],
             worker_profiles: [{ metadata: {} }],

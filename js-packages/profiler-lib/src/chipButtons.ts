@@ -196,9 +196,9 @@ export function refreshChips(node: NodeSingular, theme: DiagramTheme, hovered = 
 /** The left mouse button. Chips ignore the other buttons. */
 const PRIMARY_BUTTON = 0;
 
-/** Make the chips on `cy` work as buttons. Call this one time for each cytoscape instance. The
- *  listeners on the container stay until `signal` aborts. The cytoscape listeners stay until `cy` is
- *  destroyed. */
+/** Makes the chips on `cy` work as buttons. The caller must install the buttons one time for each
+ *  cytoscape instance. The listeners on the container stay until `signal` aborts. The cytoscape
+ *  listeners stay until `cy` is destroyed. */
 export function installChipButtons(
     cy: Core,
     theme: () => DiagramTheme,
@@ -233,9 +233,9 @@ export function installChipButtons(
     // pointer moves. Without this, the clicked region keeps its icon, which now shows the wrong action.
     cy.on('layoutstop', () => showCount());
 
-    // `hitTestChips` runs for each pointer move, and to get the boxes of all nodes takes
-    // milliseconds. So the boxes stay until a node is added or removed, or the box of a node
-    // changes. Cytoscape emits `bounds` when the box of an element changes.
+    // `hitTestChips` runs on each pointer move, and a read of the boxes of all nodes takes
+    // milliseconds. So `chipAtPoint` keeps the boxes until a node is added or removed, or until the
+    // box of a node changes. Cytoscape emits `bounds` when the box of an element changes.
     let boxes: NodeBox[] | null = null;
     cy.on('add remove bounds', 'node', () => {
         boxes = null;

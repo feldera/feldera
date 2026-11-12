@@ -1,6 +1,6 @@
-// Unit tests for the layout cache: the key changes when the input of ELK changes, and the cache keeps
-// only the most recently used entries. The browser tests in profiler-layout check that a cache hit
-// gives the positions of the ELK layout.
+// Unit tests for the layout cache. They check that the key changes when the input of ELK changes, and
+// that the cache keeps only the most recently used entries. The browser tests in profiler-layout check
+// that a cache hit gives the positions of the ELK layout.
 
 import cytoscape, { type ElementDefinition } from 'cytoscape'
 import { describe, expect, it } from 'vitest'

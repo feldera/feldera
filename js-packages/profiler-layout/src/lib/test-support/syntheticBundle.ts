@@ -1,11 +1,11 @@
-// Packs a synthetic circuit into a support bundle zip, with the layout and compression of a real
-// bundle: one timestamp directory, a gzip-compressed circuit profile, and entries deflated by the zip.
+// Packs a synthetic circuit into a support bundle zip with the layout and compression of a real
+// bundle. The zip has one timestamp directory, a gzip-compressed circuit profile, and deflated entries.
 
 import type { SyntheticCircuit } from './syntheticCircuit'
 
 const COLLECTION_DIR = '2026-11-11T12-00-00.000Z'
 
-/** A support bundle with the profile, dataflow graph, program and logs of `circuit`. */
+/** Builds a support bundle with the profile, dataflow graph, program and logs of `circuit`. */
 export async function syntheticBundle(circuit: SyntheticCircuit): Promise<Uint8Array> {
   const encode = (text: string) => new TextEncoder().encode(text)
   const logs = Array.from({ length: 5000 }, (_, i) => `2026-11-11T12:00:${i % 60}Z INFO step ${i}`)
@@ -54,7 +54,7 @@ function crc32(data: Uint8Array): number {
 const DEFLATE = 8
 const ZIP_VERSION = 20
 
-/** A zip archive with each file deflated. The function fills in only the fields that unzip tools
+/** Builds a zip archive with each file deflated. The function sets only the fields that unzip tools
  *  read. The header sizes (30, 46 and 22 bytes) and the field offsets come from the zip format
  *  specification (PKWARE APPNOTE.TXT). */
 async function zip(files: Array<{ name: string; data: Uint8Array }>): Promise<Uint8Array> {

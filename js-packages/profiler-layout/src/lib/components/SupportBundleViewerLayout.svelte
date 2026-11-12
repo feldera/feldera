@@ -58,10 +58,11 @@
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
-    /** The circuit profile to draw. Do not pass a deep `$state` object, because reads through
+    /** The circuit profile to draw. It must not be a deep `$state` object, because reads through
      *  its proxies make the diagram much slower on a large profile. */
     profile?: CircuitProfile
-    /** Why the bundle's circuit profile could not be read. The header notice shows it on hover. */
+    /** The reason why `processProfileFiles` could not read the circuit profile of the bundle. The
+     *  header notice shows this reason on hover. */
     profileError?: string
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
@@ -125,9 +126,11 @@
   const hasProfile = $derived(profile !== undefined)
   // Without a profile, the Metrics tab can only show the global stats from `stats.json`.
   const hasMetrics = $derived(hasProfile || buildGlobalMetrics(globalMetrics).length > 0)
-  // `processProfileFiles` gives an empty `program.sql` a tab. Only empty files count as no code.
+  // `processProfileFiles` also gives a tab to an empty `program.sql`, so a bundle has code only if
+  // a source file has text.
   const hasSourceCode = $derived(sourceFiles.some((f) => f.code.trim() !== ''))
-  // An unreadable profile collapses the graph panel like a missing one. The header says which.
+  // An unreadable profile collapses the graph panel as a missing profile does. The header notice
+  // tells the two cases apart.
   const profileGap = $derived(profileError ? 'an unreadable circuit profile' : 'no circuit profile')
   // The header notice about the missing parts of the bundle. The first matching row gives the text.
   const missingDataNotice = $derived(
@@ -160,7 +163,7 @@
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
-  // In percent. The resizers cannot hide the code panel completely.
+  // In percent. This minimum keeps the resizers from hiding the code panel.
   const codePaneMinSize = 15
   const belowGraphPaneDefaultSize = 100 - graphPaneDefaultSize
 
@@ -294,9 +297,9 @@
     }
   }
 
-  /** Show or hide the advanced metrics. A selected metric that the selector no longer lists
-   *  changes to a listed metric. The selected metric is always listed, so a later toggle keeps
-   *  the diagram metric. */
+  /** Shows or hides the advanced metrics. If the metric selector does not list the selected metric
+   *  after the change, the function selects a listed metric. The selected metric is then always
+   *  listed, so the next toggle keeps the diagram metric. */
   function setShowAdvancedMetrics(show: boolean) {
     showAdvancedMetrics = show
     selectedMetricId = metricToSelect(selectedMetricId, levelMetrics(metrics, show))

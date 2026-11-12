@@ -119,9 +119,10 @@
   // Avg/min/max stay visible in both preview modes, expanded or collapsed.
   const showValues = true
 
-  // One tooltip serves all the bars of the chart. With advanced metrics, a node has about 80
-  // charts of one bar per worker, so a tooltip for each bar would mount thousands of components.
-  // The tooltip opens on hover and on focus of a bar, and shows the reading of that bar.
+  // One tooltip serves all the bars of the chart. With advanced metrics, the overview of a large
+  // support bundle has about 80 charts of one bar per worker. A tooltip for each bar would mount
+  // thousands of components. The tooltip opens on hover and on focus of a bar, and shows the reading
+  // of that bar.
   const barsId = $props.id()
   let tooltipWorker = $state(0)
   const tooltipCell = $derived(cells[tooltipWorker])
@@ -197,7 +198,7 @@
     ></div>
   {/each}
 </div>
-<!-- The tooltip finds its bars when it mounts, so it mounts again when the worker count changes. -->
+<!-- The tooltip finds its bars when it mounts, so the key block mounts it again when the worker count changes. -->
 {#key cells.length}
   <Tooltip
     class="whitespace-nowrap"

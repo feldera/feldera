@@ -73,7 +73,7 @@ export interface SourceFile {
 export interface ProcessedProfile {
   /** The model of `circuit_profile.json`, with the source positions from `dataflow_graph.json` */
   profile?: CircuitProfile
-  /** Why `circuit_profile.json` could not be read into `profile` */
+  /** The reason why `CircuitProfile` could not read `circuit_profile.json`. Set only when `profile` is not set. */
   profileError?: string
   logText?: string
   pipelineName?: string
@@ -149,7 +149,7 @@ async function readZipItem(file: ZipItem): Promise<Uint8Array> {
   return new Uint8Array(await new Response(inflated).arrayBuffer())
 }
 
-/** Build the model of a parsed circuit profile and add the source positions to it. */
+/** Builds the model of a parsed circuit profile and adds the source positions to it. */
 export function buildCircuitProfile(
   json: JsonProfiles,
   dataflow: Dataflow | undefined,
@@ -160,9 +160,9 @@ export function buildCircuitProfile(
   return profile
 }
 
-/** Read `circuit_profile.json` into its model. The parsed JSON is local to this function, so the
- *  garbage collector can free it when the function returns. A profile that the model cannot read
- *  gives `profileError` and does not fail the load. */
+/** Reads `circuit_profile.json` into its model. The parsed JSON is local to this function, so the
+ *  garbage collector can free it when the function returns. If `CircuitProfile` cannot read the
+ *  parsed JSON, the function returns `profileError` and does not throw. */
 async function readCircuitProfile(
   file: ZipItem,
   dataflow: Dataflow | undefined,

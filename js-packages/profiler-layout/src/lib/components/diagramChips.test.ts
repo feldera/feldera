@@ -163,8 +163,9 @@ describe('chip buttons', () => {
   })
 
   it('keeps the code chips inside an expanded region below the chip row of the region', async () => {
-    // The counter chip and the name of an expanded region are drawn in a row along its top edge,
-    // 1 graph px inside it and 20 px tall. The code chip of a node is 16 px tall above the node.
+    // The chip row of an expanded region holds its counter chip and its name. The row starts 1 graph
+    // px below the top edge of the region and is 20 px tall. The code chip of a node is 16 px tall and
+    // sits above the node.
     const { cy, toggle, cleanup } = await mountDiagram(
       'light',
       WITH_SOURCE.profile,
@@ -178,7 +179,7 @@ describe('chip buttons', () => {
     const top = (node: { position(): { y: number }, outerHeight(): number }) =>
       node.position().y - node.outerHeight() / 2
     const chipRowBottom = top(region) + 1 + 20
-    // biome-ignore lint/suspicious/noExplicitAny: the cytoscape nodes the harness hands back
+    // biome-ignore lint/suspicious/noExplicitAny: the harness returns untyped cytoscape nodes
     const codeChipTops = region.children().map((child: any) => top(child) - 16)
     expect(Math.min(...codeChipTops)).toBeGreaterThan(chipRowBottom)
     cleanup()

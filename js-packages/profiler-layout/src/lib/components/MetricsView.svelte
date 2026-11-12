@@ -117,7 +117,7 @@
   // widths of a table. The node and value columns are as wide as their longest text.
   let topNodesList: VirtualizerHandle | undefined = $state()
   // The estimated row height is one line of `text-sm`, the `py-1` padding and the top border.
-  // The list measures the real height of a higher row, for example a long operation on two lines.
+  // The list measures the real height of a taller row, for example a long operation on two lines.
   const topNodeRowHeightPx = 29
   const topNodesColumns = $derived.by(() => {
     const rows = genericTable?.rows ?? []
@@ -186,7 +186,7 @@
     matchCursor = positiveMod(matchCursor, n)
     const target = ids[matchCursor]
     if (!showAttributesView) {
-      // The row of the hit is mounted only after the list scrolls to it.
+      // The list mounts the row of the hit only after it scrolls to that row.
       const rowIndex = searchTargets.findIndex((t) => t.id === target)
       topNodesList?.scrollToIndex(rowIndex, { align: 'start', smooth: true })
       return { current: matchCursor + 1, total: n }

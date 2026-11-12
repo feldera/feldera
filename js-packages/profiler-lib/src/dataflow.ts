@@ -127,14 +127,14 @@ export class SourcePositionRanges {
         return this.positions;
     }
 
-    /** The keys of `positions`, made when the list gets longer than `MAX_SCANNED`. A region appends
-     *  the ranges of each node inside it, so a scan of a long list for each new range is quadratic.
-     *  For a short list, a scan is faster than to build the keys. `sort` removes only duplicates,
-     *  so this set stays correct. */
+    /** The keys of `positions`. `has` builds this set when the list has more than `MAX_SCANNED`
+     *  ranges. A region appends the ranges of each node inside it, so a scan of a long list for each
+     *  new range takes quadratic time. For a short list, a scan is faster than a build of the set.
+     *  `sort` removes only duplicates, so the set stays correct after a sort. */
     private keys: Set<string> | undefined;
     private static readonly MAX_SCANNED = 16;
 
-    /** Add the ranges of `other` that are not in this list yet, in their order. */
+    /** Adds the ranges of `other` that this list does not have, in their order. */
     append(other: SourcePositionRanges) {
         for (const position of other.positions) {
             if (!this.has(position)) {

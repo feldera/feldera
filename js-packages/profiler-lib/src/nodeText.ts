@@ -124,12 +124,13 @@ export function paintTextRuns(
     context.restore();
 }
 
-/** The diagram does not paint text with a smaller font size on screen, in CSS pixels. At 4 px a
- *  capital letter is about 3 px high, so the text cannot be read. But the paint costs as much as
- *  for readable text, and it is most of the cost of a frame when the diagram is zoomed out. */
+/** The smallest font size on screen, in CSS pixels, of the node text that the diagram paints. At 4 px
+ *  a capital letter is about 3 px high, so the text cannot be read. But the paint of this text costs
+ *  as much as the paint of readable text, and it is most of the cost of a frame when the diagram is
+ *  zoomed out. */
 export const MIN_READABLE_FONT_PX = 4;
 
-/** The size on screen, in CSS pixels, of a `fontSize` font painted on `context`. The scale of the
+/** The size on screen, in CSS pixels, of a font of size `fontSize` painted on `context`. The scale of the
  *  context includes the zoom and the device pixel ratio. Cytoscape also paints nodes into cached
  *  layer images, at the scale of the image, so the scale comes from the context and not from the
  *  zoom. */

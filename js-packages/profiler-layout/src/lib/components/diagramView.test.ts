@@ -92,8 +92,8 @@ describe('the view', () => {
   })
 
   it('holds the last layout on screen while the next one is computed', async () => {
-    // No other test in this file expands this region. Otherwise the layout comes from the layout cache,
-    // and the copy goes away in the same task.
+    // No other test in this file expands this region, so the layout cannot come from the layout cache.
+    // A cached layout finishes before the next task, and the copy would go away before the test sees it.
     const { cy, container, cleanup } = await mountDiagram('light', WIDE_REGION)
     await settle()
     // Cytoscape's own canvases. The copy held over them is one more canvas alongside, so anything here

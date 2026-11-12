@@ -131,8 +131,8 @@ describe('what the real ELK makes of the minimum', () => {
     })
 
     it('leaves the room for the chip row of the region above the nodes inside it', async () => {
-        // Cytoscape draws the region that much taller at the top, so ELK has to reserve the same room
-        // there, or the region overlaps whatever ELK places above it.
+        // Cytoscape draws the region `REGION_CHIP_ROW_ROOM` taller at the top, so ELK must leave the
+        // same room there. Otherwise the region overlaps the node that ELK places above it.
         const natural = await laidOut({})
         const padded = await laidOut(elkNodeLayoutOptions({ isParent: () => true, data: () => 0 }))
         expect(padded.inside.y).toBe(ELK_REGION_PADDING + REGION_CHIP_ROW_ROOM)

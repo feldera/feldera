@@ -1,6 +1,6 @@
-// The profiler performance suite. Run it with `bun run test-perf`, see `vitest.perf.config.ts`.
-// Each measurement times the real code path, from the user action until the result is painted.
-// The tests only check that each action completed. They do not check a time budget.
+// The profiler performance suite. `bun run test-perf` runs it with `vitest.perf.config.ts`.
+// Each measurement times the real code path, from the user action until the browser paints the
+// result. The tests check only that each action completed. They do not check a time budget.
 
 import { clearLayoutCache, type ProfilerCallbacks } from 'profiler-lib'
 import { afterAll, describe, expect, inject, it } from 'vitest'
@@ -24,23 +24,25 @@ import { syntheticBundle } from './test-support/syntheticBundle'
 import { type SyntheticCircuit, syntheticCircuit } from './test-support/syntheticCircuit'
 
 const WORKERS = 8
-/** For the diagram measurements. The ELK layout time grows fast with the number of nodes on screen,
- *  so this circuit is smaller than a large real one, to keep the suite at about half a minute. */
+/** The circuit of the diagram measurements. The ELK layout time grows fast with the number of nodes
+ *  on screen, so this circuit is smaller than a large real circuit. The smaller size keeps the suite
+ *  at about half a minute. */
 const CIRCUIT = syntheticCircuit({
   seed: 1,
   topLevelItems: inject('perfTopLevelItems'),
   workers: WORKERS
 })
-/** For the parsing measurements, which do not lay out the circuit. It has about 2400 operators,
- *  the size of a large real circuit. */
+/** The circuit of the parsing measurements, which do not lay out the circuit. This circuit has about
+ *  2400 operators, the size of a large real circuit. */
 const LARGE_CIRCUIT = syntheticCircuit({ seed: 1, topLevelItems: 200, workers: WORKERS })
 const DIAGRAM_SIZE = { width: 1200, height: 800 }
-/** Fail an action whose layout never ends, instead of waiting for the test timeout. */
+/** The time after which an action whose layout did not end fails, so the test does not wait for
+ *  the test timeout. */
 const LAYOUT_TIMEOUT_MS = 60_000
 const REGION_WARMUPS = 1
 const REGION_RUNS = 9
-/** How many top-level regions the frame measurement expands. With the default circuit size, this
- *  gives the diagram about five times as many nodes as when it is collapsed. */
+/** How many top-level regions the frame measurement expands. With the default circuit size, the
+ *  expanded diagram has about five times as many nodes as the collapsed diagram (314 and 61). */
 const EXPANDED_REGIONS = 10
 
 const describeCircuit = (circuit: SyntheticCircuit) => ({
@@ -59,8 +61,8 @@ afterAll(async () => {
   })
 })
 
-/** Mount the diagram over `circuit`, and give helpers that wait for the diagram to finish what a
- *  user action started. */
+/** Mounts the diagram of `circuit`. Returns helpers that wait until the diagram finishes the work
+ *  that a user action started. */
 function mountProfiler(circuit: SyntheticCircuit) {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = `position:relative;width:${DIAGRAM_SIZE.width}px;height:${DIAGRAM_SIZE.height}px`
@@ -69,7 +71,7 @@ function mountProfiler(circuit: SyntheticCircuit) {
   let onLayoutDone: (() => void) | undefined
   const reported = {
     hoveredNodes: [] as Array<string | null>,
-    /** The worker columns of the last report. */
+    /** The worker columns of the last node report. */
     workerColumns: [] as string[],
     errors: [] as string[]
   }
@@ -92,8 +94,8 @@ function mountProfiler(circuit: SyntheticCircuit) {
     }
   }
 
-  /** Resolve when the next layout ends and its result is painted. Call it before the action that
-   *  starts the layout. */
+  /** Resolves when the next layout ends and the browser paints its result. The caller must call
+   *  this function before the action that starts the layout. */
   const layoutPainted = async () => {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
@@ -117,12 +119,12 @@ function mountProfiler(circuit: SyntheticCircuit) {
     }
   })
   const container = wrapper.querySelector('.visualizer-graph') as HTMLElement & {
-    // biome-ignore lint/suspicious/noExplicitAny: the registry cytoscape leaves on its container
+    // biome-ignore lint/suspicious/noExplicitAny: cytoscape stores an untyped registry on its container
     _cyreg?: { cy: any }
   }
 
-  /** Move the mouse to a rendered position on the canvas, so that cytoscape finds the node there
-   *  itself, as for a real pointer. */
+  /** Moves the mouse to a rendered position on the canvas, so that cytoscape finds the node at that
+   *  position itself, as for a real pointer. */
   const moveMouse = (x: number, y: number) => {
     const rect = container.getBoundingClientRect()
     const surface = container.querySelector('canvas') ?? container
@@ -150,8 +152,8 @@ function mountProfiler(circuit: SyntheticCircuit) {
   }
 }
 
-/** Time the hover highlight of the source operator, at the current zoom. The source operator is
- *  upstream of most of the circuit, so its highlight colors the most edges. */
+/** Times the hover highlight of the source operator at the current zoom. The source operator is
+ *  upstream of most of the circuit, so its hover trace colors the most edges. */
 async function measureHover(mounted: ReturnType<typeof mountProfiler>, name: string) {
   mounted.diagram.search(CIRCUIT.sourceOperatorId)
   await afterNextPaint()
@@ -165,7 +167,7 @@ async function measureHover(mounted: ReturnType<typeof mountProfiler>, name: str
       await afterNextPaint()
     },
     teardown: async () => {
-      // The search above already marked the node, so the report is what shows the hover.
+      // The search above already marked the node, so only the node report shows the hover.
       expect(mounted.reported.hoveredNodes.at(-1)).toBe(CIRCUIT.sourceOperatorId)
       // The bottom right corner is empty, and away from the minimap at the top left.
       mounted.moveMouse(DIAGRAM_SIZE.width - 2, DIAGRAM_SIZE.height - 2)
@@ -174,7 +176,7 @@ async function measureHover(mounted: ReturnType<typeof mountProfiler>, name: str
   })
 }
 
-/** Time switches between two metrics, until the new shading is painted. */
+/** Times switches between two metrics, until the browser paints the new shading. */
 async function measureMetricSwitch(mounted: ReturnType<typeof mountProfiler>, name: string) {
   const metrics = ['runtime_percent', 'used_memory_bytes']
   const shading = () =>
@@ -192,15 +194,15 @@ async function measureMetricSwitch(mounted: ReturnType<typeof mountProfiler>, na
       await afterNextPaint()
     }
   })
-  // The node shades follow the metric, so a switch that took effect changes them.
+  // The node shading depends on the metric, so a switch that took effect changes the shading.
   const before = JSON.stringify(shading())
   mounted.diagram.selectMetric(metrics[(switches + 1) % 2]!)
   expect(JSON.stringify(shading())).not.toBe(before)
   return result
 }
 
-/** Time the toggle of the first worker, until the new shading and the pinned node report are
- *  painted. The runs hide and show the worker in turn. */
+/** Times the toggle of the first worker, until the browser paints the new shading and the pinned
+ *  node report. The runs hide and show the worker in turn. */
 async function measureWorkerToggle(mounted: ReturnType<typeof mountProfiler>, name: string) {
   mounted.cy().$id(CIRCUIT.sourceOperatorId).emit('click')
   await afterNextPaint()
@@ -300,8 +302,8 @@ describe('profiler performance', () => {
       region().emit('dblclick')
       await painted
     }
-    // Each round expands the region and collapses it again, and times both. The cache would give the
-    // layouts of the earlier rounds, so the rounds clear it before each toggle that must run ELK.
+    // Each round expands the region, collapses it again, and times both toggles. The layout cache
+    // holds the layouts of the earlier rounds, so the ELK rounds clear the cache before each toggle.
     const toggleRounds = async (isCached: boolean) => {
       const expandMs: number[] = []
       const collapseMs: number[] = []
@@ -357,9 +359,9 @@ describe('profiler performance', () => {
     // direction alternates, so the view stays in place.
     // When no element changed in the last 250 ms, cytoscape draws a frame from a cache of a few large
     // images. Any change, such as a hover, disables that cache for 250 ms, and then each frame
-    // draws every node. This function disables the cache, so that each frame measures the full
-    // draw. It uses internal data of the cytoscape 3.33 renderer, which the cytoscape
-    // documentation does not describe.
+    // draws every node. `skipLayerCache` disables the cache before each frame, so that each frame
+    // measures the full draw. `skipLayerCache` uses internal data of the cytoscape 3.33 renderer,
+    // which the cytoscape documentation does not describe.
     const skipLayerCache = () => {
       cy.renderer().data.lyrTxrCache.lastInvalidationTime = performance.now()
     }
@@ -378,9 +380,9 @@ describe('profiler performance', () => {
     }
     results.push(await measureFitViewFrame('frame at fit view, collapsed (pan 1 px)'))
 
-    // Only top-level regions toggle, and the regions inside them expand with them. Each expansion
-    // runs a layout of the full diagram, so the test expands only some regions, to keep the suite
-    // short.
+    // Only top-level regions toggle, and an expansion also expands the regions inside. Each
+    // expansion runs a layout of the full diagram, so the test expands only some regions to keep the
+    // suite short.
     const regionsToExpand: string[] = cy
       .nodes()
       .filter((n: { data(key: string): unknown }) => n.data('has_children') && !n.data('expanded'))
@@ -397,7 +399,8 @@ describe('profiler performance', () => {
         `frame at fit view, ${EXPANDED_REGIONS} regions expanded (pan 1 px)`
       )
     )
-    // More edges are drawn than in the collapsed diagram, so the hover colors more edges.
+    // The expanded diagram draws more edges than the collapsed diagram, so the hover trace colors
+    // more edges.
     cy.zoom(openZoom)
     results.push(
       await measureHover(

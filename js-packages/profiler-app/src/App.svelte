@@ -32,7 +32,7 @@
   // True while the diagram computes its layout.
   let isRendering = $state(false)
   let errorMessage = $state('')
-  // Raw state like `profileData`. Each assignment replaces the whole array.
+  // Raw state, because each assignment replaces the whole array.
   let profileFiles: [Date, ZipItem[]][] = $state.raw([])
   let selectedTimestamp: Date | null = $state(null)
   let sqlPanelFullHeight = $state(false)

@@ -22,7 +22,7 @@ import { FrozenLayout } from './frozenLayout.js';
 import { pauseFrames } from './cytoscapeRenderer.js';
 import { type ElkLayoutOptions, layoutCache, layoutCacheKey, leafPositions, runPresetLayout } from './layoutCache.js';
 
-// Register the extensions once for the module. Cytoscape warns when an extension is registered again.
+// The module registers each extension one time, because cytoscape warns when code registers it again.
 cytoscape.use(elk);
 cytoscape.use(dblclick);
 
@@ -136,7 +136,7 @@ class GraphNode {
                 "text_width": labelWidth(label),
                 // For an expanded node its min width depends on the title and the chip button
                 "min_width": this.hasChildren ? regionMinWidth(label, this.leafCount) : 0,
-                // Set after each layout by `reserveRegionChipRows`.
+                // `reserveRegionChipRows` sets this value after each layout.
                 "min_height": 0,
                 "operator": this.label,
                 "sources": this.sources,
@@ -211,9 +211,9 @@ export class Cytograph {
         this.nodes.push(node);
     }
 
-    /** Draw the edge `original` of `graph` from `source` to `target`. All edges of `graph` with the
-     *  same drawn nodes and the same `back` flag share one drawn edge. ELK then lays out one edge
-     *  per pair of nodes, which makes the layout faster. */
+    /** Adds the drawn edge from `source` to `target` that stands for the edge `original` of `graph`.
+     *  All edges of `graph` with the same drawn nodes and the same `back` flag share one drawn edge.
+     *  ELK then lays out one edge for each pair of nodes, which makes the layout faster. */
     drawEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
         // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
         const id = source + "->" + target + (original.back ? ":back" : "");
@@ -380,10 +380,10 @@ class GraphDiff {
     }
 }
 
-// ELK's crossing minimization keeps most of the input order at thoroughness 2, and the input
-// order groups the operators of one SQL statement. Higher values give a few fewer crossings, but
-// scatter a statement across the drawing. Do not add `considerModelOrder.strategy`, because its
-// sort pass takes 15 of the 18 s of the layout of a circuit with 1700 nodes.
+// The thoroughness of the crossing minimization of ELK. At 2, ELK keeps most of the input order,
+// and the input order groups the operators of one SQL statement. Higher values give a few fewer
+// crossings, but scatter a statement across the drawing. Do not add `considerModelOrder.strategy`,
+// because its sort pass takes about 15 of the 18 s of the layout of a circuit with 1707 nodes.
 const ELK_THOROUGHNESS = 2;
 
 /** Handles updates and rendering for the displayed cytograph. */
@@ -401,7 +401,7 @@ export class CytographRendering {
     // The profile and the scales of the last `updateMetadata`, for `computeAttributes`.
     private metadataProfile: CircuitProfile | null = null;
     private displayScales: DisplayScales = new Map();
-    // The graph and the mask of the visible workers that `displayScales` was computed for.
+    // The graph and the mask of the visible workers of the last computation of `displayScales`.
     private scalesGraph: Cytograph | null = null;
     private scalesWorkerMask = "";
     /** Where the view is. */
@@ -413,12 +413,13 @@ export class CytographRendering {
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
-    /** Starts the renderer frames again. Not null while a layout runs. A frame during the layout is
-     *  hidden (see `FrozenLayout`), but it costs a style update and a draw of the whole changed graph. */
+    /** Resumes the frames that `pauseFrames` paused. Not null while a layout runs. `FrozenLayout`
+     *  hides the frames during a layout, but each frame costs a style update and a draw of the whole
+     *  changed graph, so the diagram pauses them. */
     private resumeFrames: (() => void) | null = null;
     /** The `layoutCacheKey` of the last layout that started. */
     private layoutKey: string | null = null;
-    /** The number of ELK layouts that did not finish yet. */
+    /** The number of ELK layouts that are running. */
     private elkLayoutsRunning = 0;
     /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
     private tracedEdges: EdgeCollection;
@@ -428,7 +429,7 @@ export class CytographRendering {
     private raiseFrame: number | null = null;
     /** `setEvents` adds this listener to the document, and `dispose` removes it. */
     private readonly onDocumentKeyup = (event: KeyboardEvent) => this.keyup(event);
-    /** Aborts on `dispose`, to remove the chip button listeners from the graph container. */
+    /** `dispose` aborts this controller, which removes the chip button listeners from the graph container. */
     private readonly chipButtonsLifetime = new AbortController();
 
     constructor(
@@ -582,7 +583,7 @@ export class CytographRendering {
         return new SerializedMeasurement(m, percentile);
     }
 
-    /** Compute the attributes that the report of `node` shows, for the current metadata selection. */
+    /** Computes the attributes that the node report of `node` shows, for the current metadata selection. */
     private computeAttributes(node: GraphNode): Attributes {
         const profile = this.metadataProfile!;
         const selection = this.metadataSelection;
@@ -621,7 +622,6 @@ export class CytographRendering {
                 : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
             totals.set(metric, new SerializedMeasurement(total, share));
         }
-        // The key-value attributes of the node
         let kv = new Map();
         kv.set("id", node.id);
         if (node.persistentId.isSome()) {
@@ -644,8 +644,8 @@ export class CytographRendering {
         return new Attributes(matrix, kv);
     }
 
-    /** Write the node fields that change with the graph. A write restyles the node, so write only
-     * the changed ones. */
+    /** Writes the `expanded` and `invisible` data fields of each node, which change with the graph.
+     *  Writes only the changed values, because each write restyles the node. */
     private updateNodeFlags() {
         for (const node of this.currentGraph!.nodes) {
             let rendered = this.getRenderedNode(node.getId());
@@ -673,7 +673,7 @@ export class CytographRendering {
                 percents = range.percents(max);
             }
             let rendered = this.getRenderedNode(node.getId());
-            // A write restyles the node, also when the value is the same.
+            // Cytoscape restyles the node on each write, also when the value does not change.
             if (rendered.data("value") !== percents) {
                 rendered.data("value", percents);
             }
@@ -695,18 +695,18 @@ export class CytographRendering {
             return;
         this.metadataProfile = profile;
         this.metadataSelection = selection;
-        // The scales depend on the drawn nodes and the visible workers, not on the metric.
+        // The scales depend only on the drawn nodes and the visible workers, so a metric switch keeps them.
         const workerMask = profile.getWorkerNames()
             .map((_, index) => selection.workersVisible.contains(index) ? "1" : "0").join("");
         if (this.scalesGraph !== this.currentGraph || this.scalesWorkerMask !== workerMask) {
-            // One pass over the drawn nodes feeds the node highlighting, the per-worker bars and the
-            // totals, so all three describe the same population.
+            // One pass over the drawn nodes gives the scales of the node shading, the per-worker bars
+            // and the totals, so all three use the same set of nodes.
             this.displayScales = profile.displayScales(this.drawnNodes(),
                 values => selection.workersVisible.getSelectedElements(values));
             this.scalesGraph = this.currentGraph;
             this.scalesWorkerMask = workerMask;
         }
-        // One batch restyles each changed node once, after all writes.
+        // In a batch, cytoscape restyles each changed node one time, after all writes.
         this.cy.batch(() => {
             this.computeImportance(profile, selection, this.displayScales);
             this.updateNodeFlags();
@@ -743,30 +743,30 @@ export class CytographRendering {
         }
     }
 
-    /** Run ELK, or move the nodes to the positions of an earlier ELK layout of the same input. */
+    /** Runs ELK, or moves the nodes to the positions from an earlier ELK layout of the same input. */
     private runLayout(options: ElkLayoutOptions) {
         const key = layoutCacheKey(this.cy, options);
         this.layoutKey = key;
-        // An ELK layout that still runs moves the nodes when it finishes. If a cached layout finished
-        // before it, the older ELK layout would be the last one on screen.
+        // A running ELK layout moves the nodes when it finishes. A cached layout must not finish
+        // before it, because then the older ELK layout would be the last one on screen.
         const positions = this.elkLayoutsRunning === 0 ? layoutCache.get(key) : undefined;
         if (positions === undefined) {
             const layout = this.cy.layout(options as never);
             layout.one('layoutstop', () => {
                 this.elkLayoutsRunning--;
-                // If the graph changed during the layout, a newer layout runs, and these positions are
-                // not the result for `key`.
+                // If the graph changed during the layout, a newer layout runs, and these positions do
+                // not belong to `key`.
                 if (this.layoutKey === key) {
                     layoutCache.set(key, leafPositions(this.cy));
                 }
             });
             layout.run();
-            // Counted after `run`, because a `run` that throws emits no `layoutstop`.
+            // The count goes up after `run`, because a `run` that throws emits no `layoutstop`.
             this.elkLayoutsRunning++;
             return;
         }
-        // ELK gives its result after `updateGraph` returns. Do the same, so that the code after
-        // `updateGraph` runs before `layoutComplete` also for a cached layout.
+        // ELK gives its result after `updateGraph` returns. The cached layout also waits, so that the
+        // code after `updateGraph` always runs before `layoutComplete`.
         queueMicrotask(() => {
             if (this.cy.destroyed() || this.layoutKey !== key) {
                 return;
@@ -780,12 +780,12 @@ export class CytographRendering {
         });
     }
 
-    /** Called when a layout throws. No `layoutstop` follows, so undo what `initiateLayout` started. */
+    /** Undoes what `initiateLayout` started, after a layout throws. No `layoutstop` follows a throw. */
     private abandonLayout() {
         this.endFramePause();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
-        // Let the observers remove what they show over the changing graph.
+        // The observers remove what they show over the changing graph.
         notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
     }
 
@@ -957,7 +957,7 @@ export class CytographRendering {
     // Note that the node can be a parent, in this case we compute the
     // edges reachable from ALL its children.
     reachableFrom(id: NodeId, forward: boolean): EdgeCollection {
-        // `merge` adds to this collection in place. `union` makes a copy for each edge.
+        // `merge` adds to this collection in place. `union` would make a copy for each edge.
         const result = this.cy.collection();
         for (const node of this.currentGraph!.getSimpleNodes(id)) {
             const reachable = forward
@@ -1039,9 +1039,9 @@ export class CytographRendering {
         this.scheduleRaise();
     }
 
-    /** Call `raiseTracedEdges` in the next animation frame. A change of `z-index` makes cytoscape sort
-     *  all elements again before it draws. With this delay, the frame that shows a new trace, or
-     *  removes one, does not pay for the sort. If the trace changes again before the frame, only the
+    /** Calls `raiseTracedEdges` in the next animation frame. A change of `z-index` makes cytoscape
+     *  sort all elements again before it draws. Because of this delay, the frame that shows or removes
+     *  a trace does not include the sort. If the trace changes again before the next frame, only the
      *  last trace gets raised. */
     private scheduleRaise() {
         if (this.raiseFrame !== null) {
@@ -1053,7 +1053,7 @@ export class CytographRendering {
         });
     }
 
-    /** Draw the traced edges over the other edges, and the edges of an older trace in the usual order. */
+    /** Draws the traced edges over the other edges, and the edges of an older trace in the usual order. */
     private raiseTracedEdges() {
         this.raisedEdges.difference(this.tracedEdges).removeClass(RAISED_EDGE_CLASS);
         this.tracedEdges.difference(this.raisedEdges).addClass(RAISED_EDGE_CLASS);

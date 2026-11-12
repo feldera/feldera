@@ -35,7 +35,7 @@ describe('a reloaded diagram', () => {
     }
     window.addEventListener('error', onError)
     reported.doubleClicks.length = 0
-    // The code chip of `n0`.
+    // Clicks the code chip of `n0`, at the top right of the node.
     await click(x + node.renderedOuterWidth() / 2 - 15 * zoom, y - node.renderedOuterHeight() / 2 - 8 * zoom)
     window.removeEventListener('error', onError)
     expect(errors).toEqual([])

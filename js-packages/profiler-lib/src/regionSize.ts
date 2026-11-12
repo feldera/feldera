@@ -25,10 +25,11 @@ const NAME_CHIP_GAP = 6;
  *  actually leaves. */
 export const ELK_REGION_PADDING = 12;
 
-/** Room, in pixels, that an expanded region adds above the nodes inside it, on top of its padding.
- *  The region draws its counter chip and its name in a row `CHIP_INSET` px below its top edge and
- *  `BADGE_HEIGHT` px tall. The bounding box of a node inside starts at the top of its code chip, so
- *  this room keeps the code chip `CHIP_INSET` px below that row. */
+/** The extra height, in pixels, that an expanded region adds above the nodes inside it, on top of its
+ *  padding. The region draws its counter chip and its name in a row along its top edge, the chip row.
+ *  The chip row starts `CHIP_INSET` px below the top edge and is `BADGE_HEIGHT` px tall. The bounding
+ *  box of a node inside starts at the top of its code chip, so this extra height keeps the code chip
+ *  `CHIP_INSET` px below the chip row. */
 export const REGION_CHIP_ROW_ROOM = CHIP_INSET + BADGE_HEIGHT + CHIP_INSET - REGION_PADDING;
 
 /** Minimum width, in pixels, for the children of an expanded region. Cytoscape's `min-width` on
@@ -66,7 +67,8 @@ export function elkRegionMinimumSize(childrenMinWidth: number): string {
 /** Per-node options for the ELK layout, in the form `cytoscape-elk`'s `nodeLayoutOptions` asks for: a
  *  minimum size and the padding for an expanded region, and nothing for any other node. Only a minimum
  *  is set, so ELK still sizes a region from the nodes it holds whenever those are the wider of the two.
- *  The top padding holds `REGION_CHIP_ROW_ROOM`, the room that cytoscape adds above the nodes. */
+ *  The top padding also includes `REGION_CHIP_ROW_ROOM`, the extra height that cytoscape adds above
+ *  the nodes. */
 export function elkNodeLayoutOptions(node: {
     isParent(): boolean;
     data(name: string): unknown;
@@ -82,20 +84,21 @@ export function elkNodeLayoutOptions(node: {
     };
 }
 
-/** Set the `min_height` of each expanded region to the height of its children plus
- *  `REGION_CHIP_ROW_ROOM`. The `:parent` style puts all of that extra height at the top.
+/** Sets the `min_height` of each expanded region to the height of its children plus
+ *  `REGION_CHIP_ROW_ROOM`. The `:parent` style puts all of the extra height at the top.
  *
- *  Cytoscape has a single `padding` for all four sides of a parent, so `min-height` is the only way to
- *  add room on one side. `min-height` is compared with the box around the children, which changes with
- *  each layout, so call this after each layout. Inner regions go first, because the size of an inner
- *  region is part of the box around the children of the region that holds it. */
+ *  Cytoscape has one `padding` for all four sides of a parent, so `min-height` is the only way to add
+ *  room on one side. Cytoscape compares `min-height` with the box around the children, which changes
+ *  with each layout, so the caller must call this function after each layout. The function sets the
+ *  inner regions first, because the size of an inner region is part of the box around the children of
+ *  the region that holds it. */
 export function reserveRegionChipRows(cy: Core): void {
     const regions = cy.nodes(':parent').sort((a, b) => b.ancestors().length - a.ancestors().length);
     regions.forEach((region) => {
-        // The options that cytoscape uses to size a parent from its children.
+        // Cytoscape uses these bounding box options to size a parent from its children.
         const children = region.children().boundingBox({ includeLabels: true, includeOverlays: false });
         const minHeight = children.h + REGION_CHIP_ROW_ROOM;
-        // A data change restyles the region and all nodes in it, so skip a value that did not change.
+        // A data change restyles the region and all nodes in it, so the function skips an equal value.
         if (region.data('min_height') !== minHeight) {
             region.data('min_height', minHeight);
         }

@@ -6,9 +6,9 @@
  *
  * The graph pane is rendered inside `{#if hasProfile}`; the analysis pane below it is
  * unconditional. PaneForge orders panes by registration time unless each pane declares an
- * explicit `order`. When a profile loads *after* the layout has mounted (profile
+ * explicit `order`. When a profile loads after the layout has mounted (profile
  * undefined -> defined), the graph pane registers second and, without `order`, PaneForge
- * treats it as the *lower* pane. The resizer then drives the panes backwards, so moving the
+ * treats it as the lower pane. The resizer then drives the panes backwards, so moving the
  * divider down shrinks the top pane instead of growing it - the reversal the user reported.
  *
  * The test drives the actual resize behavior rather than an internal-order proxy: it presses
@@ -565,7 +565,8 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
   }
   const selectedAnalysisTab = (container: HTMLElement) =>
     container.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value
-  // All header notices start like this, so a count above one means two notices were joined.
+  // All header notices start with "This bundle has", so a count above one means that the layout
+  // joined two notices.
   const noticeCount = () => (document.body.textContent ?? '').split('This bundle has').length - 1
 
   describe('code panel', () => {
@@ -626,7 +627,7 @@ describe('SupportBundleViewerLayout without parts of the bundle', () => {
       expect(analysisTab(container, 'Metrics').disabled).toBe(false)
     })
 
-    it('is not selected when disabled, the first enabled tab is', async () => {
+    it('is not selected when disabled, and the first enabled tab is selected', async () => {
       // Connectors, Health and Config have no data either, so Logs is the first enabled tab.
       const { container } = render(SupportBundleViewerLayout, baseProps())
       await expect.poll(() => selectedAnalysisTab(container)).toBe('Logs')

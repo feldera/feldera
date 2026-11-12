@@ -1,4 +1,4 @@
-// Compare two reports of the performance suite by median:
+// Compares the medians of two reports of the performance suite. Usage:
 //   bun run compare-perf before.json after.json
 
 import { readFileSync } from 'node:fs'

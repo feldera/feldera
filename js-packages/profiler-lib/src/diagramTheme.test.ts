@@ -187,8 +187,9 @@ describe('draw order', () => {
     })
 
     it('does not change the draw order with the trace colors alone', () => {
-        // A change of `z-index` makes cytoscape sort all elements before the next draw. The rendering
-        // adds the colors first and `RAISED_EDGE_CLASS` one frame later, so the colors paint sooner.
+        // A change of `z-index` makes cytoscape sort all elements before the next draw.
+        // `CytographRendering` adds the color classes first and `RAISED_EDGE_CLASS` one frame later,
+        // so the colors paint one frame sooner.
         const cy = graph('light')
         for (const highlight of ['highlight-forward', 'highlight-backward']) {
             cy.$id('e').addClass(highlight)
@@ -370,14 +371,14 @@ describe('the top of an expanded region', () => {
         left: node.position().x - node.outerWidth() / 2,
         right: node.position().x + node.outerWidth() / 2
     })
-    /** Bottom of the row along the top edge of a region that holds its counter chip and its name. */
+    /** The bottom of the chip row of `region`, the row along its top edge with its counter chip and name. */
     const chipRowBottom = (region: cytoscape.NodeSingular) => box(region).top + CHIP_INSET + BADGE_HEIGHT
-    /** Top of the code chip above an operator. */
+    /** The top of the code chip of `node`. */
     const codeChipTop = (node: cytoscape.NodeSingular) => box(node).top - CODE_CHIP_HEIGHT
 
     it('keeps the code chip of the top node below the chip row of the region', () => {
         const cy = nested()
-        // Without the extra room, the code chip reaches into the chip row.
+        // Without `REGION_CHIP_ROW_ROOM`, the code chip of `a` reaches into the chip row of `outer`.
         expect(codeChipTop(cy.$id('a'))).toBeLessThan(chipRowBottom(cy.$id('outer')))
         reserveRegionChipRows(cy)
         expect(codeChipTop(cy.$id('a'))).toBeGreaterThanOrEqual(chipRowBottom(cy.$id('outer')) + CHIP_INSET)

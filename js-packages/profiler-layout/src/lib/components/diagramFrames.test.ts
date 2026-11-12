@@ -1,6 +1,6 @@
-// Browser tests for the frames that cytoscape draws while a layout runs. The diagram stops the frames
+// Browser tests for the frames that cytoscape draws while a layout runs. The diagram pauses the frames
 // until the layout is finished (see `pauseFrames` in profiler-lib). `pauseFrames` depends on
-// internals of the cytoscape renderer, so these tests fail if a cytoscape update breaks it.
+// internals of the cytoscape renderer, so these tests fail if a cytoscape update breaks `pauseFrames`.
 
 import { describe, expect, it } from 'vitest'
 import { mountDiagram, settle } from '../test-support/mountDiagram.js'
@@ -30,13 +30,13 @@ const LARGE_REGION = {
   }
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
+// biome-ignore lint/suspicious/noExplicitAny: the harness returns an untyped cytoscape instance
 type Cy = any
 
-/** Expand the region, call `during` after the graph changed and the layout started, and resolve when
- *  the layout is finished. Resolves with the number of frames that cytoscape drew during the layout.
- *  The toggle changes the graph in a later task, after the progress message is on screen. The same
- *  task adds the new nodes and starts the layout. */
+/** Expands the region and calls `during` after the graph changes and the layout starts. Resolves with
+ *  the number of frames that cytoscape drew during the layout, when the layout is finished. The toggle
+ *  changes the graph in a later task, after the progress message is on screen. That task adds the new
+ *  nodes and starts the layout, so `during` runs in a microtask after the `add` event. */
 const expandRegion = (cy: Cy, during: () => void = () => {}) =>
   new Promise<number>((resolve) => {
     let frames = 0
@@ -71,7 +71,7 @@ describe('a running layout', () => {
       diagram.setTheme('dark')
     })
     await settle()
-    // A node of the light theme is almost white.
+    // A node fill of the light theme is almost white, so a dark fill shows the dark theme.
     const { r, g, b, a } = nodeFill('n0')
     expect(a).toBe(1)
     expect(r + g + b).toBeLessThan(3 * 128)

@@ -86,9 +86,10 @@ export function labelWidth(text: string): number {
  *  over every plain one. */
 const TRACED_EDGE_Z_INDEX = 1;
 
-/** Class that gives a traced edge `TRACED_EDGE_Z_INDEX`. It is separate from the color classes,
+/** The class that gives a traced edge `TRACED_EDGE_Z_INDEX`. It is separate from the color classes,
  *  because a change of `z-index` makes cytoscape sort all elements again before the next draw.
- *  The rendering adds this class one frame after the color, so the color paints without this cost. */
+ *  `CytographRendering` adds this class one frame after the color classes, so the frame that shows
+ *  the colors does not include the sort. */
 export const RAISED_EDGE_CLASS = 'raised-edge';
 
 /** Heat above which a node's text switches to `textOnHeat`: past here the fill is a deep red that
@@ -268,10 +269,10 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'min-width': 'data(min_width)',
                 'min-width-bias-left': '0%',
                 'min-width-bias-right': '100%',
-                // Room above the nodes inside for the chip row of the region: see `reserveRegionChipRows`.
+                // `reserveRegionChipRows` sets this height to leave room for the chip row above the nodes.
                 'min-height': 'data(min_height)',
                 'min-height-bias-top': '100%',
-                // Missing from the cytoscape typings.
+                // The cytoscape typings do not have this property.
                 ...({ 'min-height-bias-bottom': '0%' } as Record<string, string>),
                 'background-color': p.region,
                 'background-opacity': REGION_OPACITY,
@@ -287,8 +288,8 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 // only sinks below nodes at its own depth, which leaves an edge between two operators
                 // over the region around them and over the region's chips.
                 'z-compound-depth': 'bottom',
-                // No code listens to edge events. Without this, cytoscape tests each edge and its
-                // label for each pointer move, and an edge hides the region under it from the pointer.
+                // No code listens to edge events. Without `events: no`, cytoscape tests each edge and
+                // its label on each pointer move, and an edge hides the region under it from the pointer.
                 'events': 'no',
                 'curve-style': 'round-taxi',
                 'taxi-direction': 'vertical',

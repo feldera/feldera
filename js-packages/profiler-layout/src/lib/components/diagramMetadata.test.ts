@@ -48,8 +48,8 @@ describe('a change of the metric or of the visible workers', () => {
     await settle()
     expect(reported.lastReport.currentMetric).toBe('used_bytes')
 
-    // The shade of `n1` sits between the readings of the visible workers, so it changes when the
-    // smallest reading is hidden.
+    // The shading scale comes from the readings on the visible workers, so the shade of `n1` changes
+    // when worker 0, with the smallest readings, is hidden.
     const shade = cy.$id('n1').data('value')
     diagram.toggleWorker('0')
     await settle()

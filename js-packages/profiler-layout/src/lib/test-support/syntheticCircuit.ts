@@ -1,15 +1,16 @@
 // A deterministic generator for a large circuit profile and its dataflow graph, for the performance
 // suite. The sample bundles hold about a hundred operators, and real circuits can hold thousands.
-// The shape follows a real profile: regions nested three levels deep, edges that chain the operators
-// of a region and join regions together, metrics on every worker, and source positions for part of
-// the operators.
+// The shape follows a real profile. It has regions nested three levels deep, edges that chain the
+// operators of a region and join regions together, metrics on every worker, and source positions for
+// part of the operators.
 
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 
 export interface SyntheticCircuitOptions {
   /** The same seed gives the same circuit. */
   seed: number
-  /** How many operators and regions the top level holds. The total grows about linearly with it. */
+  /** How many operators and regions the top level holds. The total number of operators and regions
+   *  grows about linearly with this number. */
   topLevelItems: number
   workers: number
 }
@@ -23,16 +24,16 @@ export interface SyntheticCircuit {
   regionCount: number
   /** The top-level region with the most direct children. */
   largestRegionId: string
-  /** The first operator. Most of the circuit is downstream of it, so a hover on it colors the most
-   *  edges. */
+  /** The first operator. Most of the circuit is downstream of this operator, so a hover on it colors
+   *  the most edges. */
   sourceOperatorId: string
 }
 
 /** The chance that an item is a region, for each nesting level. Deeper levels have fewer regions. */
 const REGION_CHANCE = [0.4, 0.3, 0.15]
 /** The chance that an operator has a persistent id, and so a position in the SQL program. In a real
- *  circuit, most operators come from the runtime and have no position. So many regions also have no
- *  position and show no code chip, which changes how cytoscape draws them. */
+ *  circuit, most operators come from the runtime and have no position. As a result, many regions have
+ *  no position and show no code chip, which changes how cytoscape draws these regions. */
 const SOURCE_CHANCE = 0.15
 const MIN_REGION_ITEMS = 3
 const MAX_REGION_ITEMS = 10
@@ -160,8 +161,9 @@ export function syntheticCircuit({
   const edge = (from: string, to: string) =>
     edges.push({ from_node: from, to_node: to, from_cluster: false, to_cluster: false } as never)
 
-  /** One operator. It takes input from the previous operator of its region, and sometimes also from
-   *  an earlier operator anywhere in the circuit, like a join. */
+  /** Adds one operator. Its input is usually the previous operator of its region, and otherwise a
+   *  random earlier operator. Sometimes the operator also has a second input from one of the 200
+   *  operators before it, as a join does. */
   const addOperator = (statement: number, previousInRegion: string | undefined): JsonItem => {
     const id = `nn${operators.length}`
     if (previousInRegion !== undefined && random() < 0.85) {
@@ -201,8 +203,8 @@ export function syntheticCircuit({
     }
   }
 
-  /** `count` items at `depth`, each an operator or a region. The function adds no regions
-   *  below the deepest level that `REGION_CHANCE` gives. */
+  /** Adds `count` items at `depth`. Each item is an operator or a region. The function adds no
+   *  regions below the deepest level in `REGION_CHANCE`. */
   function addItems(statement: number, depth: number, count: number): JsonItem[] {
     const items: JsonItem[] = []
     let previous: string | undefined
@@ -262,7 +264,7 @@ function rootMetrics(skew: number) {
   ]
 }
 
-/** The metrics of one operator on one worker. Their mix follows a real profile. Every operator has
+/** Returns the metrics of one operator on one worker. Their mix follows a real profile. Every operator has
  *  the time metrics, and some operators have state and batch statistics. */
 function operatorMetrics(op: Operator, skew: number) {
   const load = op.weight * skew
@@ -297,9 +299,9 @@ function operatorMetrics(op: Operator, skew: number) {
   return entries
 }
 
-/** A SQL program with one statement for each top-level item, and the dataflow graph that maps the
- *  operators with a persistent id to positions in it. The first operator of a statement also names
- *  its table or view, which search finds by name. */
+/** Builds a SQL program with one statement for each top-level item, and the dataflow graph that maps
+ *  the operators with a persistent id to positions in the program. The first operator of a statement
+ *  also names its table or view, so that a search finds the statement by name. */
 function sqlProgram(operators: Operator[], statements: number) {
   const LINES_PER_STATEMENT = 4
   const programCode: string[] = []

@@ -364,12 +364,12 @@ describe('the overview report a profile opens with', () => {
 })
 
 describe('a hover on an operator', () => {
-  // biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
+  // biome-ignore lint/suspicious/noExplicitAny: the harness returns an untyped cytoscape instance
   const raised = (cy: any) => cy.edges('.raised-edge').map((e: { id(): string }) => e.id())
 
   it('draws the traced edges on top one frame after it colors them', async () => {
-    // The colors come first, so that they paint in the next frame. The change of draw order makes
-    // cytoscape sort all elements, so the diagram makes that change one frame later.
+    // The diagram adds the trace colors first, so that they paint in the next frame. A change of the
+    // draw order makes cytoscape sort all elements, so the diagram raises the edges one frame later.
     const { cy, cleanup } = await mount()
     const node = cy.$id('n1')
     node.emit('mouseover')
