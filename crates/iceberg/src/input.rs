@@ -1439,9 +1439,12 @@ impl IcebergInputEndpointInner {
         }
     }
 
-    /// The columns of the SQL table, or none before the worker task starts.
+    /// The columns of the SQL table. The worker task sets them when it starts.
     fn sql_fields(&self) -> Arc<Vec<Field>> {
-        self.sql_fields.get().cloned().unwrap_or_default()
+        self.sql_fields
+            .get()
+            .cloned()
+            .expect("the worker task sets the SQL columns before it reads a batch")
     }
 
     /// Returns true if this host follows the table after the snapshot.
@@ -5298,6 +5301,8 @@ mod distributed_tests {
                 .unwrap();
                 let dataframe = ctx.sql("select 10 / id as id from zero").await.unwrap();
                 let (_sender, mut receiver) = channel(PipelineState::Running);
+                // The worker task, which this test does not start, sets the columns.
+                let _ = endpoint.sql_fields.set(Arc::new(Vec::new()));
                 assert!(endpoint
                     .execute_df(
                         dataframe,

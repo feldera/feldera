@@ -8,13 +8,31 @@
 //! The jobs run on [`PARSER_POOL`], not on the Tokio runtime, so a long job
 //! does not block the other tasks of the runtime.
 
+use std::{
+    sync::{Arc, LazyLock},
+    thread,
+};
+
 use futures::channel::oneshot;
 use tokio::{
     spawn,
+    sync::{OwnedSemaphorePermit, Semaphore},
     task::{JoinHandle, yield_now},
 };
 
 use super::cpu_pool::PARSER_POOL;
+
+/// The limit on the jobs of all queues that are waiting, running, or waiting
+/// for the consumer: two per core.
+///
+/// The pool runs one job per core, so more jobs do not parse faster, but each
+/// holds its input and its output in memory. One queue with a worker per core
+/// does not reach this limit. Many queues together do.
+static IN_FLIGHT: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
+    Arc::new(Semaphore::new(
+        2 * thread::available_parallelism().map_or(1, |n| n.get()),
+    ))
+});
 
 /// A job queue that dispatches work to a pool of tokio tasks.
 ///
@@ -58,6 +76,9 @@ pub struct JobQueue<I, O> {
     /// The producer side of the completions queue.
     completion_sender: async_channel::Sender<Completion<O>>,
 
+    /// Limits the jobs in flight; can be shared with other queues.
+    in_flight: Arc<Semaphore>,
+
     /// The receiving side of the sync channel.
     sync_receiver: async_channel::Receiver<()>,
 
@@ -72,7 +93,8 @@ pub struct JobQueue<I, O> {
 // oneshot channel that will contain the result of the completed job, or a special
 // Sync message.
 enum Completion<O> {
-    Completion(oneshot::Receiver<O>),
+    // The permit keeps the job in the in-flight count until it is consumed.
+    Completion(oneshot::Receiver<O>, Option<OwnedSemaphorePermit>),
     Sync,
 }
 
@@ -92,6 +114,22 @@ where
     /// * `consumer_func` - closure that the consumer will execute for each completed job.
     pub fn new(
         num_workers: usize,
+        worker_builder: impl Fn() -> Box<dyn FnMut(I) -> O + Send>,
+        consumer_func: impl FnMut(O) + Send + 'static,
+    ) -> Self {
+        Self::with_in_flight_limit(
+            num_workers,
+            IN_FLIGHT.clone(),
+            worker_builder,
+            consumer_func,
+        )
+    }
+
+    /// Create a job queue that takes one permit from `in_flight` for each job,
+    /// from `push_job` until the consumer has run.
+    fn with_in_flight_limit(
+        num_workers: usize,
+        in_flight: Arc<Semaphore>,
         worker_builder: impl Fn() -> Box<dyn FnMut(I) -> O + Send>,
         mut consumer_func: impl FnMut(O) + Send + 'static,
     ) -> Self {
@@ -145,7 +183,7 @@ where
                     Err(_) => {
                         return;
                     }
-                    Ok(Completion::Completion(receiver)) => {
+                    Ok(Completion::Completion(receiver, _permit)) => {
                         let Ok(v) = receiver.await else {
                             continue;
                         };
@@ -163,19 +201,23 @@ where
         Self {
             job_sender,
             completion_sender,
+            in_flight,
             sync_receiver,
             workers,
             consumer,
         }
     }
 
-    /// Push a new job to the queue. Blocks until there is space in the queue.
+    /// Push a new job to the queue. Blocks until there is space in the queue
+    /// and the number of jobs in flight is below the limit.
     pub async fn push_job(&self, job: I) {
+        // The semaphore is never closed.
+        let permit = self.in_flight.clone().acquire_owned().await.ok();
         let (completion_sender, completion_receiver) = oneshot::channel();
         let _ = self.job_sender.send((job, completion_sender)).await;
         let _ = self
             .completion_sender
-            .send(Completion::Completion(completion_receiver))
+            .send(Completion::Completion(completion_receiver, permit))
             .await;
     }
 
@@ -227,6 +269,52 @@ mod tests {
         );
 
         job_queue.flush().await;
+    }
+
+    /// Two queues that share a limit of 2 never have more than 2 jobs between
+    /// `push_job` and the consumer.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn in_flight_limit_is_shared() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let limit = Arc::new(tokio::sync::Semaphore::new(2));
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max = Arc::new(AtomicUsize::new(0));
+
+        let queue = || {
+            let (started, consumed, max) = (in_flight.clone(), in_flight.clone(), max.clone());
+            super::JobQueue::with_in_flight_limit(
+                4,
+                limit.clone(),
+                move || {
+                    let (started, max) = (started.clone(), max.clone());
+                    Box::new(move |_: u32| {
+                        let now = started.fetch_add(1, Ordering::SeqCst) + 1;
+                        max.fetch_max(now, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(2));
+                    })
+                },
+                move |()| {
+                    consumed.fetch_sub(1, Ordering::SeqCst);
+                },
+            )
+        };
+        let queues = [Arc::new(queue()), Arc::new(queue())];
+
+        let producers = queues.clone().map(|queue| {
+            tokio::spawn(async move {
+                for i in 0..50 {
+                    queue.push_job(i).await;
+                }
+                queue.flush().await;
+            })
+        });
+        for producer in producers {
+            producer.await.unwrap();
+        }
+
+        assert_eq!(in_flight.load(Ordering::SeqCst), 0);
+        assert!(max.load(Ordering::SeqCst) <= 2, "{max:?} jobs in flight");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

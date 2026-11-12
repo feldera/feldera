@@ -184,10 +184,13 @@ pub fn delta_input_serde_config() -> SqlSerdeConfig {
         // Delta specifies microseconds, but a Parquet file can also hold
         // nanoseconds, and `serde_arrow` gives the raw integer without its unit.
         // The connector converts each batch with `timestamps_to_micros` and
-        // checks at startup that every TIMESTAMP column is an Arrow timestamp.
-        // Formatting each value to a string and parsing it back, as before,
-        // cost a large part of the parse time.
-        .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
+        // checks at startup that every TIMESTAMP column is an Arrow timestamp
+        // or a string. Formatting each value to a string and parsing it back,
+        // as before, cost a large part of the parse time. A string column is
+        // parsed with the format that all columns went through before.
+        .with_timestamp_format(TimestampFormat::MicrosSinceEpochOrString(
+            "%Y-%m-%dT%H:%M:%S%.f%Z",
+        ))
         .with_date_format(DateFormat::DaysSinceEpoch)
         // `order_columns` gives a decimal as its significand when the scale
         // matches; otherwise `serde_arrow` gives it as a string.
