@@ -487,6 +487,16 @@ A distributed Delta Lake output connector has these limits:
   for it.  Use larger transactions, or compact the table, to keep the number
   of files low.
 - It does not support `send_snapshot`, because no multihost pipeline does.
+- Each host writes `__feldera_ts` from its own clock.  All the updates of
+  one key come from one host, so their order is right, but if the hosts'
+  clocks differ, a host can write rows with smaller timestamps than rows
+  of another host that were already merged.  Then the filter on
+  `MAX(__feldera_ts)` in the [`MERGE INTO` example](#cdc-mode) can skip
+  rows.  Leave a margin for clock differences in that filter, or keep
+  track of the table versions that you merged instead.
+- It needs a coordinator and pipeline hosts from the same Feldera release.
+  With an older coordinator, the connector does not start.  With an older
+  pipeline, every host writes the table on its own.
 - In a single-host pipeline, `distributed` has no effect.
 
 ## Example usage
