@@ -1389,10 +1389,15 @@ fn parse_config_with_deferred_logging(
 
     let path = config_file.as_ref();
     let string = read_config_file_as_string(path, deferred_logging)?;
+    // The rejected token can be a credential: keep the category and the
+    // position, not the value.
     let mut config: PipelineConfig = serde_json::from_str(&string).map_err(|e| {
         ControllerError::pipeline_config_parse_error(&format!(
-            "configuration file '{}' must be JSON (YAML is no longer read): {e}",
-            path.display()
+            "configuration file '{}' must be JSON (YAML is no longer read): {} (line {}, column {})",
+            path.display(),
+            feldera_types::config_diagnostics::deserialization_error(&e),
+            e.line(),
+            e.column()
         ))
     })?;
 
@@ -4728,7 +4733,7 @@ pub fn parser_config_from_http_request(
     Ok(FormatConfig {
         name: Cow::from(format_name.to_string()),
         config: serde_json::to_value(config)
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
     })
 }
 
@@ -4752,7 +4757,7 @@ pub fn encoder_config_from_http_request(
     Ok(FormatConfig {
         name: format.name(),
         config: serde_json::to_value(config)
-            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
     })
 }
 
@@ -5639,6 +5644,21 @@ mod test_status {
         let json_file = json_config_file(&json!({"name": "test"}));
         let config = parse_config(json_file.path()).unwrap();
         assert_eq!(config.name.as_deref(), Some("test"));
+    }
+
+    /// A credential in a wrong-shaped field is rejected before any
+    /// registration can run: the parse error must not quote it.
+    #[test]
+    fn parse_config_keeps_rejected_values_out_of_the_error() {
+        let file = json_config_file(&json!({"name":"test", "inputs":{"n":{"stream":"s",
+            "transport":{"name":"nats_input", "config":{
+                "connection_config":{"server_url":"nats://h", "auth":{"credentials":"creds-text-2136"}},
+                "stream_name":"s", "consumer_config":{"deliver_policy":"All"}}},
+            "format":{"name":"json", "config":{}}}}}));
+        let error = parse_config(file.path()).unwrap_err().to_string();
+        assert!(!error.contains("creds-text-2136"), "{error}");
+        assert!(error.contains("must be JSON"), "{error}");
+        assert!(error.contains("line "), "{error}");
     }
 
     /// A `Write` that tests can read back after a subscriber writes to it.

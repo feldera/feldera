@@ -27,6 +27,26 @@ each time it resumes. Feldera does not write resolved values to checkpoints or j
 Use environment variables for non-sensitive deployment configuration only.
 Storing secrets in environment variables is generally discouraged; use a dedicated secret manager or secret store instead.
 
+## Diagnostics
+
+A user who may reference a secret is not necessarily allowed to read it. The
+pipeline therefore keeps resolved values out of what it reports:
+
+| Output | What is shown instead of a resolved value |
+|---|---|
+| Connection errors and debug log lines of the Postgres input, Delta Lake and Kafka connectors, and of the Avro format | the endpoint name and option names only, never the URI, option value, or configuration |
+| Format and connector configuration errors, and the pipeline startup summary | the error category, the expected values and field names from the schema, the endpoint, transport and format names; never a rejected value or a configuration dump |
+
+The following limits apply:
+
+- A value that is part of SQL, UDF code, an endpoint name, or table data is
+  shown as written.
+- A value written inline in the `connectors` property is SQL text, not a
+  resolved value. It shows as written in the program and in compiler messages
+  and their SQL excerpts. The support bundle exports the pipeline
+  configuration as supplied, and its connector settings stay when the bundle
+  is collected without source code. Use a secret reference for a credential.
+
 ## Kubernetes
 
 ### Usage

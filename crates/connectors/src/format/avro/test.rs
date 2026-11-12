@@ -1380,6 +1380,31 @@ type Message = (
 /// What the consumer of an encoder collects: each message.
 type Output = Arc<Mutex<Vec<Message>>>;
 
+/// A hand-written schema that does not parse is reported with the parser's
+/// reason: the schema is no credential, and a large one cannot be debugged
+/// without it.
+#[test]
+fn invalid_schema_error_carries_the_parser_reason() {
+    let config = AvroEncoderConfig {
+        schema: Some(r#"{"type": "record", "name": "t", "fields": [{"name": "id"}]}"#.to_string()),
+        ..Default::default()
+    };
+    let error = AvroEncoder::create(
+        "avro_test_endpoint",
+        &None,
+        &id_relation(),
+        Box::new(MockOutputConsumer::new()),
+        config,
+        None,
+        false,
+    )
+    .err()
+    .expect("a field without a type is rejected");
+    let text = error.to_string();
+    assert!(text.contains("invalid Avro schema: "), "{text}");
+    assert!(text.contains("id"), "no parser reason: {text}");
+}
+
 /// Returns an encoder of `relation`, or of the index `key` on it, with `config`, and the
 /// messages that it writes.
 fn encoder(

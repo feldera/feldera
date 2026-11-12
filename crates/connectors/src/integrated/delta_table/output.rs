@@ -8,7 +8,7 @@ use crate::integrated::delta_table::merge::metrics::MergeMetrics;
 use crate::integrated::delta_table::merge::startup;
 use crate::integrated::delta_table::merge::transient;
 use crate::integrated::delta_table::merge::{PostCommitHook, checkpoint_due};
-use crate::integrated::delta_table::{WriteError, register_storage_handlers};
+use crate::integrated::delta_table::{WriteError, register_storage_handlers, table_error_text};
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
@@ -421,8 +421,12 @@ impl DeltaTableWriter {
                     endpoint_name,
                     true,
                     anyhow!(
-                        "error creating or opening delta table '{}': {e}",
-                        config.uri
+                        "{}",
+                        table_error_text(
+                            "error creating or opening delta table",
+                            &config.uri,
+                            &e.to_string()
+                        )
                     ),
                 )
             })?;
@@ -659,7 +663,7 @@ impl WriterTask {
             } else {
                 "opening or creating"
             },
-            &inner.config.uri,
+            inner.config.display_uri(),
         );
 
         let delta_table = open_with_retry(
@@ -721,7 +725,7 @@ impl WriterTask {
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
             &inner.endpoint_name,
-            &inner.config.uri,
+            inner.config.display_uri(),
             if let Some(version) = delta_table.version() {
                 version.to_string()
             } else {
@@ -1025,7 +1029,8 @@ where
                 return Err(anyhow!("failed after {retry_count} attempts: {error}"));
             }
             warn!(
-                "delta_table {endpoint_name}: error creating or opening delta table '{uri}' after {retry_count} attempts (retrying in {backoff:?}): {error}"
+                "delta_table {endpoint_name}: {} after {retry_count} attempts (retrying in {backoff:?})",
+                table_error_text("error creating or opening delta table", uri, &error),
             );
             sleep(backoff).await;
             backoff = min(backoff * 2, Duration::from_secs(10));
@@ -1226,7 +1231,7 @@ fn warn_about_table_property_discrepancies(
             This usually indicates the table was created with different settings or modified externally. \
             Conflicting connector properties not applied: {}",
             &inner.endpoint_name,
-            &inner.config.uri,
+            inner.config.display_uri(),
             discrepancies.join("; "),
         );
     }
@@ -1494,7 +1499,7 @@ impl OutputConsumer for DeltaTableWriter {
         let _span = info_span!(
             "delta_output",
             endpoint = &*self.inner.endpoint_name,
-            table = &*self.inner.config.uri,
+            table = %self.inner.config.display_uri(),
         )
         .entered();
 
@@ -1585,7 +1590,7 @@ impl DeltaTableWriter {
         let span = info_span!(
             "delta_output_merge",
             endpoint = &*inner.endpoint_name,
-            table = &*inner.config.uri,
+            table = %inner.config.display_uri(),
         );
         let format =
             RecordFormat::Parquet(delta_output_serde_config(inner.config.variant_encoding));
@@ -1721,7 +1726,7 @@ impl DeltaTableWriter {
                         metrics.table_live_rows,
                         metrics.table_superseded_rows,
                         &inner.endpoint_name,
-                        &inner.config.uri,
+                        &inner.config.display_uri(),
                     );
                     if let Some(controller) = inner.controller.upgrade() {
                         controller.update_output_connector_health(inner.endpoint_id, task.health());
@@ -1833,7 +1838,7 @@ impl Encoder for DeltaTableWriter {
         let span = info_span!(
             "delta_output",
             endpoint = &*self.inner.endpoint_name,
-            table = &*self.inner.config.uri,
+            table = %self.inner.config.display_uri(),
         );
 
         // Panic safety: block_on() panics if called from a tokio async context.

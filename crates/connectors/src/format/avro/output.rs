@@ -61,7 +61,7 @@ impl OutputFormat for AvroOutputFormat {
         let config = AvroEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
             query.as_bytes(),
         )))
-        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?;
+        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
 
         Ok(Box::new(config))
     }
@@ -81,13 +81,9 @@ impl OutputFormat for AvroOutputFormat {
         } else {
             format_config
         };
-        let avro_config = AvroEncoderConfig::deserialize(format_config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_json::to_string(config).unwrap_or_default(),
-            )
-        })?;
+        let avro_config =
+            serde_json_path_to_error::from_value::<AvroEncoderConfig>(format_config.clone())
+                .map_err(|e| ControllerError::encoder_config_field_error(endpoint_name, &e))?;
 
         if matches!(
             config.transport,
@@ -396,7 +392,7 @@ impl AvroEncoder {
         topic: Option<String>,
         is_index: bool,
     ) -> Result<Self, ControllerError> {
-        debug!("Creating Avro encoder; config: {config:#?}");
+        debug!("Creating Avro encoder for endpoint '{endpoint_name}'");
         match config.update_format {
             AvroUpdateFormat::Raw | AvroUpdateFormat::ConfluentJdbc => (),
             AvroUpdateFormat::Debezium => {
@@ -470,11 +466,11 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                         ),
                     )
                 })?,
+            // The schema is no credential: keep the parser's reason.
             Some(schema) => AvroSchema::parse_str(schema).map_err(|e| {
-                ControllerError::encoder_config_parse_error(
+                ControllerError::invalid_encoder_configuration(
                     endpoint_name,
                     &format!("invalid Avro schema: {e}"),
-                    &serde_json::to_string(&config).unwrap_or_default(),
                 )
             })?,
         };
