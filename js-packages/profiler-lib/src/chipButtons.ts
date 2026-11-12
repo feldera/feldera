@@ -143,15 +143,29 @@ export function chipAt(node: NodeSingular, x: number, y: number): ChipSlot | nul
     return null;
 }
 
+/** A node and its bounding box in graph coordinates. */
+export interface NodeBox {
+    node: NodeSingular;
+    box: ChipBox;
+}
+
+const nodeBoxes = (cy: Core): NodeBox[] =>
+    cy.nodes().map((node) => ({ node, box: node.boundingBox() }));
+
 /** The chip at a point in graph coordinates, on any node. A fast bounding box check skips most nodes.
  *  The box is made wider on the left, because a chip can be wider than its node. If the chip of a node
- *  and the chip of its region overlap, the node wins, because it is drawn on top. */
-export function hitTestChips(cy: Core, x: number, y: number): ChipHit | null {
+ *  and the chip of its region overlap, the node wins, because it is drawn on top. `boxes` must hold
+ *  the current box of each node of `cy`. */
+export function hitTestChips(
+    cy: Core,
+    x: number,
+    y: number,
+    boxes: NodeBox[] = nodeBoxes(cy)
+): ChipHit | null {
     let region: ChipHit | null = null;
-    for (const node of cy.nodes().toArray()) {
-        const box = node.boundingBox();
-        if (!shown(node)
-            || x < box.x1 - BADGE_CANVAS_WIDTH || x > box.x2 || y < box.y1 || y > box.y2) {
+    for (const { node, box } of boxes) {
+        if (x < box.x1 - BADGE_CANVAS_WIDTH || x > box.x2 || y < box.y1 || y > box.y2
+            || !shown(node)) {
             continue;
         }
         const slot = chipAt(node, x, y);
@@ -219,8 +233,20 @@ export function installChipButtons(
     // pointer moves. Without this, the clicked region keeps its icon, which now shows the wrong action.
     cy.on('layoutstop', () => showCount());
 
+    // `hitTestChips` runs for each pointer move, and the boxes of all nodes take milliseconds to get.
+    // So keep them until one of them changes. Cytoscape emits `bounds` when the box of an element
+    // changes.
+    let boxes: NodeBox[] | null = null;
+    cy.on('add remove bounds', 'node', () => {
+        boxes = null;
+    });
+    const chipAtPoint = (x: number, y: number): ChipHit | null => {
+        boxes ??= nodeBoxes(cy);
+        return hitTestChips(cy, x, y, boxes);
+    };
+
     cy.on('mousemove', (event: EventObject) => {
-        pointer(hitTestChips(cy, event.position.x, event.position.y) !== null);
+        pointer(chipAtPoint(event.position.x, event.position.y) !== null);
     });
 
     const dispatch = (hit: ChipHit) => {
@@ -233,7 +259,7 @@ export function installChipButtons(
     // Touch and pen input only. A mouse click does not get here, because the `mousedown` listener below
     // stops it.
     cy.on('tap', (event: EventObject) => {
-        const hit = hitTestChips(cy, event.position.x, event.position.y);
+        const hit = chipAtPoint(event.position.x, event.position.y);
         if (hit !== null) {
             dispatch(hit);
         }
@@ -244,7 +270,7 @@ export function installChipButtons(
     }
     const chipAtMouse = (event: MouseEvent): ChipHit | null => {
         const point = projectIntoViewport(cy, event);
-        return point === null ? null : hitTestChips(cy, point.x, point.y);
+        return point === null ? null : chipAtPoint(point.x, point.y);
     };
     /** The chip under the pointer at `mousedown`, until `mouseup`. */
     let pressed: ChipHit | null = null;
