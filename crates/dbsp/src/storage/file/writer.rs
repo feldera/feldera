@@ -1348,7 +1348,8 @@ impl Writer {
             match key_filter {
                 BatchKeyFilter::Bloom(filter) => {
                     let layout = *filter.layout();
-                    let data: Vec<u64> = filter.module_words().concat();
+                    let built = filter.built();
+                    let data: Vec<u64> = built.modules().concat();
                     if layout.total_modules() == 1 {
                         // A one-module filter is a plain fastbloom filter, so
                         // writing it in the original encoding keeps the file
@@ -1368,7 +1369,7 @@ impl Writer {
                             .1
                     } else {
                         incompatible_features |= INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
-                        let set_bits = filter.density().set_bits().to_vec();
+                        let set_bits = built.density().set_bits().to_vec();
                         let filter_block = ModularBloomFilterBlockRef {
                             header: BlockHeader::new(&MODULAR_BLOOM_FILTER_BLOCK_MAGIC),
                             total_modules: layout.total_modules(),
