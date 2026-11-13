@@ -2000,6 +2000,14 @@ impl Controller {
                 labels,
                 runtime.memory_pressure_epoch,
             );
+            if let Some(module_max) = runtime.bloom_filter_module_max {
+                metrics.gauge(
+                    "bloom_filter_module_max",
+                    "Max number of Bloom filter modules a filter of 64 KiB or more may keep, from 0 (no filter) to 4. Lowered under high memory pressure. Only reported when the experimental evict_bloom_filter dev tweak is on.",
+                    labels,
+                    module_max,
+                );
+            }
         }
 
         metrics.counter(

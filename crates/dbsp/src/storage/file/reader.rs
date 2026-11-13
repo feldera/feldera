@@ -11,13 +11,14 @@ use super::{AnyFactories, BatchKeyFilter, Deserializer, Factories};
 use crate::Runtime;
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
+use crate::storage::tracking_bloom_filter::BloomFilterModuleHandle;
 use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
         BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn,
         INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, IndexBlockHeader, MIN_SUPPORTED_VERSION,
-        NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, Varint,
+        NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, Varint, bloom_filter_data_offset,
     },
     file::item::ArchivedItem,
 };
@@ -1807,13 +1808,38 @@ fn read_block_prefix(
     location: BlockLocation,
     size: usize,
 ) -> Result<Arc<FBuf>, Error> {
-    let size = size.next_multiple_of(512).min(location.size);
-    let prefix = if size == location.size {
+    read_block_range(file_handle, location, 0, size).map(|(bytes, _)| bytes)
+}
+
+/// Reads bytes `start..end` of the block at `location`.
+///
+/// The storage layer reads whole 512-byte sectors, so this reads the sectors
+/// that cover the range, clamped to the block, and returns them with the
+/// offset of `start` within them.
+fn read_block_range(
+    file_handle: &dyn FileReader,
+    location: BlockLocation,
+    start: usize,
+    end: usize,
+) -> Result<(Arc<FBuf>, usize), Error> {
+    let first = start / 512 * 512;
+    let last = end.next_multiple_of(512).min(location.size);
+    let sectors = if first == 0 && last == location.size {
         location
     } else {
-        BlockLocation::new(location.offset, size).expect("512-aligned by construction")
+        BlockLocation::new(location.offset + first as u64, last - first)
+            .expect("512-aligned by construction")
     };
-    Ok(file_handle.read_block(prefix)?)
+    Ok((file_handle.read_block(sectors)?, start - first))
+}
+
+/// Decodes little-endian 64-bit words.
+fn le_words(bytes: &[u8]) -> impl ExactSizeIterator<Item = u64> + '_ {
+    bytes
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|word| u64::from_le_bytes(*word))
 }
 
 /// The whole block, reusing `head` when it already holds all of it.
@@ -1826,6 +1852,51 @@ fn whole_block(
         return Ok(head.clone());
     }
     Ok(file_handle.read_block(location)?)
+}
+
+/// Reads module `index` of the Bloom filter block at `location`, whose module
+/// 0 starts `data_offset` bytes into the block.
+///
+/// This is how a filter that dropped modules under memory pressure gets them
+/// back. It reads only the sectors that hold the module.
+pub(crate) fn read_bloom_filter_module(
+    file: &dyn FileReader,
+    location: BlockLocation,
+    data_offset: usize,
+    words_per_module: u32,
+    index: u32,
+) -> Result<Arc<[u64]>, Error> {
+    let module_bytes = words_per_module as usize * 8;
+    let start = data_offset + index as usize * module_bytes;
+    let end = start + module_bytes;
+    if end > location.size {
+        return Err(Error::Corruption(CorruptionError::InvalidFilterEncoding {
+            location,
+            kind: "bloom filter module",
+            inner: format!(
+                "module {index} ends at byte {end}, past the {}-byte block",
+                location.size
+            ),
+        }));
+    }
+    let (bytes, skip) = read_block_range(file, location, start, end)?;
+    Ok(le_words(&bytes[skip..skip + module_bytes]).collect())
+}
+
+/// Lets a Bloom filter read its modules back from `file` later.
+fn attach_module_handle(
+    filter: &mut Option<BatchKeyFilter>,
+    file: &Arc<dyn FileReader>,
+    location: Option<BlockLocation>,
+) {
+    if let (Some(BatchKeyFilter::Bloom(bloom)), Some(location)) = (filter.as_mut(), location) {
+        let data_offset = bloom_filter_data_offset(bloom.layout().total_modules());
+        bloom.set_module_handle(BloomFilterModuleHandle::File {
+            file: file.clone(),
+            location,
+            data_offset,
+        });
+    }
 }
 
 /// Reads a membership filter block.
@@ -1923,12 +1994,7 @@ fn read_filter_block(
                 )));
             }
 
-            let words: Vec<u64> = bytes[front_len..wanted]
-                .as_chunks::<8>()
-                .0
-                .iter()
-                .map(|word| u64::from_le_bytes(*word))
-                .collect();
+            let words: Vec<u64> = le_words(&bytes[front_len..wanted]).collect();
             Ok(BatchKeyFilter::from_modular(layout, &words, density))
         }
         ROARING_BITMAP_FILTER_BLOCK_MAGIC => {
@@ -2126,7 +2192,7 @@ where
         factories: &[&AnyFactories],
         cache: fn() -> Option<Arc<BufferCache>>,
         file: Arc<dyn FileReader>,
-        membership_filter: Option<BatchKeyFilter>,
+        mut membership_filter: Option<BatchKeyFilter>,
     ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
         let stats = AtomicCacheStats::default();
         let file_trailer = read_trailer(cache, &*file, &stats)?;
@@ -2183,6 +2249,7 @@ where
         } else {
             None
         };
+        attach_module_handle(&mut membership_filter, &file, membership_filter_location);
 
         Ok((
             Self {
@@ -2280,10 +2347,17 @@ where
     pub fn membership_filter(&self) -> Result<Option<BatchKeyFilter>, Error> {
         let key_range = self.key_range()?;
         let first_key = key_range.as_ref().map(|(min, _)| min.as_ref().as_data());
-        self.membership_filter_location
+        let mut filter = self
+            .membership_filter_location
             .map(|location| read_filter_block(&*self.file.file_handle, location, first_key))
-            .transpose()
-            .map(Option::flatten)
+            .transpose()?
+            .flatten();
+        attach_module_handle(
+            &mut filter,
+            &self.file.file_handle,
+            self.membership_filter_location,
+        );
+        Ok(filter)
     }
 
     pub(crate) fn open_with_filter(

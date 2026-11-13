@@ -797,6 +797,31 @@ impl ModularBloomFilterHeader {
     }
 }
 
+/// Whether a filter of `total_modules` modules is written as a
+/// [`BloomFilterBlock`], the encoding that predates modular filters, instead of
+/// a [`ModularBloomFilterHeader`] followed by the modules.
+///
+/// A one-module filter is a plain fastbloom filter, so writing it in the
+/// original encoding keeps the file readable by binaries that predate modular
+/// filters.
+pub fn bloom_filter_block_is_legacy(total_modules: u32) -> bool {
+    total_modules == 1
+}
+
+/// Byte offset of module 0 in the filter block written for a filter of
+/// `total_modules` modules.
+///
+/// In a [`BloomFilterBlock`] the data follows the block header, `num_hashes`
+/// and the word count. In a modular block it follows the
+/// [`ModularBloomFilterHeader`].
+pub fn bloom_filter_data_offset(total_modules: u32) -> usize {
+    if bloom_filter_block_is_legacy(total_modules) {
+        8 + 4 + 8
+    } else {
+        ModularBloomFilterHeader::len_for(total_modules)
+    }
+}
+
 /// A block representing a modular Bloom filter (with data by reference).
 #[binwrite]
 pub struct ModularBloomFilterBlockRef<'a> {

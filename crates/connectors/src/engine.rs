@@ -476,4 +476,8 @@ pub struct RuntimeGauges {
 
     /// The number of times the memory pressure reached high or critical.
     pub memory_pressure_epoch: u64,
+
+    /// Max number of Bloom filter modules a large filter may keep, or `None`
+    /// when the experimental `evict_bloom_filter` dev tweak is off.
+    pub bloom_filter_module_max: Option<u32>,
 }
