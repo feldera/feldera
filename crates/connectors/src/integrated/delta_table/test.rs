@@ -3684,10 +3684,7 @@ pub fn cdc_file_indexed_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
-#[engine_test(
-    ignore_if(target_arch = "aarch64", "flaky on aarch64"),
-    requires(Storage, Checkpoints, SuspendResume)
-)]
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn cdc_file_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         // We cannot use proptest macros in `async` context, so generate
