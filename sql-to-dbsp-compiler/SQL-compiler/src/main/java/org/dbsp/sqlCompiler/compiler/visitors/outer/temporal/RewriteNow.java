@@ -6,9 +6,11 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -218,6 +220,13 @@ public class RewriteNow extends CircuitCloneVisitor {
         return result;
     }
 
+    /** True if {@code port} is produced by a constant.  The join of a constant with NOW()
+     * reads only the rows of the constant at each clock step, so it is cheap. */
+    static boolean isConstant(OutputPort port) {
+        return port.node().is(DBSPConstantOperator.class)
+                || port.node().is(DBSPIncrementalConstantOperator.class);
+    }
+
     void warnExpensive(@Nullable DBSPExpression expression) {
         this.compiler.reportWarning(
                 Objects.requireNonNull(expression).getSourcePosition(), "Inefficient pattern",
@@ -232,7 +241,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         cn.apply(function);
         if (cn.found()) {
             OutputPort input = this.mapped(operator.input());
-            this.warnExpensive(cn.nowExpression);
+            if (!isConstant(input))
+                this.warnExpensive(cn.nowExpression);
             DBSPSimpleOperator join = this.createJoin(
                     input.simpleNode(), operator, Objects.requireNonNull(cn.nowExpression));
             RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
@@ -497,7 +507,8 @@ public class RewriteNow extends CircuitCloneVisitor {
             DBSPSimpleOperator join = this.createJoin(
                     result, operator, Objects.requireNonNull(cn.nowExpression));
             RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
-            this.warnExpensive(filterBody);
+            if (!isConstant(result.outputPort()))
+                this.warnExpensive(filterBody);
             function = filterBody.closure(function.parameters);
             function = rn.apply(function).to(DBSPClosureExpression.class);
             DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());

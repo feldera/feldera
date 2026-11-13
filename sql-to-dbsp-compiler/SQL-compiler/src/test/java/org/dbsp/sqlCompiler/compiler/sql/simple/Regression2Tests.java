@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
-import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
+import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -473,6 +473,22 @@ public class Regression2Tests extends SqlIoTest {
                     7|FROM transactions
                     8|WHERE LEAST(ts, NOW()) < ts - INTERVAL 1 DAY;
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
+    }
+
+    @Test
+    public void nowOverConstant() {
+        // NOW() in a projection and in a filter of a constant: at each clock step the join
+        // with NOW() reads only the rows of the constant
+        DBSPCompiler compiler = this.getCC("""
+                CREATE VIEW years AS
+                SELECT YEAR(NOW()) AS y UNION ALL SELECT YEAR(NOW()) + 1 AS y;
+                CREATE VIEW odd AS
+                SELECT x FROM (VALUES (1), (2)) AS t(x) WHERE x <> SECOND(NOW());""").compiler;
+        StringBuilder inefficient = new StringBuilder();
+        for (CompilerMessages.Message message : compiler.messages.messages)
+            if (message.errorType.equals("Inefficient pattern"))
+                inefficient.append(message);
+        Assert.assertEquals("", inefficient.toString());
     }
 
     @Test
