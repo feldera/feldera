@@ -549,6 +549,7 @@ mod tests {
             input_distribution: BTreeMap::new(),
             output_assignment: None,
             view_integrals: Default::default(),
+            runtime_version: None,
         }
     }
 
