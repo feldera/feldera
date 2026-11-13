@@ -2313,6 +2313,37 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void filterBelowUnnestPassthrough() {
+        // The WHERE clause drops every row, so PARSE_JSON must not see 'not-json'
+        var ccs = this.getCCS("""
+                CREATE TABLE cfs (id INT, def_id INT, value VARCHAR);
+                CREATE TABLE defs (id INT, data_type INT);
+                CREATE VIEW v AS
+                SELECT cfs.id, CAST(elem AS VARCHAR) AS e
+                FROM cfs JOIN defs ON defs.id = cfs.def_id,
+                UNNEST(CAST(PARSE_JSON(cfs.value) AS VARIANT ARRAY)) AS elem
+                WHERE defs.data_type IN (4, 9);""");
+        ccs.step("""
+                INSERT INTO cfs VALUES (1, 10, 'not-json');
+                INSERT INTO defs VALUES (10, 1);""", """
+                 id | e
+                --------""");
+    }
+
+    @Test
+    public void unsafeFilterStaysAboveUnnest() {
+        // The arrays are empty or NULL, so the WHERE clause never runs and 10 / 0 must not fail
+        var ccs = this.getCCS("""
+                CREATE TABLE t (id INT, d INT, arr INT ARRAY);
+                CREATE VIEW v AS
+                SELECT t.id, x FROM t, UNNEST(t.arr) AS x
+                WHERE 10 / t.d > 1;""");
+        ccs.step("INSERT INTO t VALUES (1, 0, ARRAY()), (2, 0, NULL);", """
+                 id | x
+                --------""");
+    }
+
+    @Test
     public void mergedFiltersKeepOrder() {
         // The inner WHERE drops the row because k is NULL, so 10 / 0 must not run
         var ccs = this.getCCS("""
