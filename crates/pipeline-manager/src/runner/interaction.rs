@@ -621,8 +621,12 @@ impl RunnerInteraction {
 
         // Build the HTTP response with the same status, headers and streaming body
         let mut builder = HttpResponseBuilder::new(response.status());
-        for header in response.headers().into_iter() {
-            builder.append_header(header);
+        // Do not copy Content-Length. With it, actix-web 4.12 sends a sized body instead of a
+        // chunked one. This release keeps the chunked responses of v0.334.2.
+        for (name, value) in response.headers() {
+            if name != header::CONTENT_LENGTH {
+                builder.append_header((name.clone(), value.clone()));
+            }
         }
         // Disable compression to avoid gzip frame buffering that causes clients to block
         builder.insert_header(actix_http::ContentEncoding::Identity);
@@ -710,8 +714,12 @@ pub(crate) async fn streaming_proxy(
 
     // Build the new HTTP response with the same status, headers and streaming body
     let mut builder = HttpResponseBuilder::new(status);
-    for header in response.headers().into_iter() {
-        builder.append_header(header);
+    // Do not copy Content-Length. With it, actix-web 4.12 sends a sized body instead of a
+    // chunked one. This release keeps the chunked responses of v0.334.2.
+    for (name, value) in response.headers() {
+        if name != header::CONTENT_LENGTH {
+            builder.append_header((name.clone(), value.clone()));
+        }
     }
     // Disable compression to avoid gzip frame buffering that causes clients to block
     builder.insert_header(actix_http::ContentEncoding::Identity);
