@@ -55,6 +55,7 @@ pub const fn avro_de_config() -> &'static SqlSerdeConfig {
         // will need to be made configurable.
         uuid_format: UuidFormat::String,
         positional_fields: false,
+        absent_columns: None,
     }
 }
 
