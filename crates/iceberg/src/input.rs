@@ -185,6 +185,24 @@ fn used_columns(
         .collect()
 }
 
+/// Checks the TIMESTAMP columns that the connector reads, see
+/// [`check_timestamp_columns`]. The connector does not read an unused column
+/// that `skip_unused_columns` skips, so its type in the table does not matter.
+fn check_used_timestamp_columns(
+    table_schema: &ArrowSchema,
+    schema: &Relation,
+    config: &IcebergReaderConfig,
+) -> Result<(), String> {
+    let used = used_sql_columns(schema, config);
+    let fields: Vec<Field> = schema
+        .fields
+        .iter()
+        .filter(|f| used.contains(&f.name.name()))
+        .cloned()
+        .collect();
+    check_timestamp_columns(&fields, table_schema)
+}
+
 /// Quoted, comma-separated column list for `select {} from snapshot` queries.
 fn used_column_list(columns: &[String]) -> String {
     columns
@@ -3364,9 +3382,9 @@ impl IcebergInputEndpointInner {
 
         // `iceberg_input_serde_config` reads a TIMESTAMP column as microseconds,
         // so it must be an Arrow timestamp, not an integer.
-        check_timestamp_columns(&schema.fields, provider.schema().as_ref()).map_err(|e| {
-            ControllerError::invalid_transport_configuration(&self.endpoint_name, &e)
-        })?;
+        check_used_timestamp_columns(provider.schema().as_ref(), schema, &self.config).map_err(
+            |e| ControllerError::invalid_transport_configuration(&self.endpoint_name, &e),
+        )?;
 
         let used_columns = used_columns(provider.schema().as_ref(), schema, &self.config);
         if used_columns.is_empty() {
@@ -3789,7 +3807,7 @@ impl IcebergInputEndpointInner {
         // check is not sufficient: the schema of the table can change later.
         let batch = match check_timestamp_columns(fields, batch.schema_ref())
             .map_err(|e| e.to_string())
-            .and_then(|()| timestamps_to_micros(batch).map_err(|e| e.to_string()))
+            .and_then(|()| timestamps_to_micros(batch, fields).map_err(|e| e.to_string()))
         {
             Ok(batch) => batch,
             Err(e) => {
@@ -3940,6 +3958,26 @@ mod tests {
                 .map(|name| ArrowField::new(*name, DataType::Int32, true))
                 .collect::<Vec<_>>(),
         )
+    }
+
+    /// A TIMESTAMP column stored as an integer stops the connector only when
+    /// the connector reads the column.
+    #[test]
+    fn timestamp_check_skips_unread_columns() {
+        let fields = vec![
+            field("used", false, false, None),
+            Field::new(SqlIdentifier::new("ts", false), ColumnType::timestamp(true))
+                .with_unused(true),
+        ];
+        let table_schema = arrow_schema(&["used", "ts"]);
+        let config = snapshot_config();
+
+        let read =
+            check_used_timestamp_columns(&table_schema, &relation(fields.clone(), false), &config);
+        assert!(read
+            .unwrap_err()
+            .starts_with("column ts has SQL type TIMESTAMP"));
+        check_used_timestamp_columns(&table_schema, &relation(fields, true), &config).unwrap();
     }
 
     /// The projection is the intersection of the Iceberg schema and the SQL
@@ -4954,7 +4992,7 @@ mod variant_tests {
             field("dec", ColumnType::decimal(10, 2, false)),
         ];
         check_timestamp_columns(&fields, batch.schema_ref()).unwrap();
-        let batch = timestamps_to_micros(batch).unwrap();
+        let batch = timestamps_to_micros(batch, &fields).unwrap();
         let (batch, reason) = order_columns(batch, &fields);
         assert_eq!(reason, None);
         assert!(has_positional_fields(batch.schema_ref()));

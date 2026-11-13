@@ -2,8 +2,8 @@
 //!
 //! `serde_arrow` gives a timestamp as its raw integer, without its unit. An
 //! input connector that reads with `TimestampFormat::MicrosSinceEpochOrString`
-//! converts the timestamps of each batch to microseconds with
-//! [`timestamps_to_micros`], and checks with [`check_timestamp_columns`] that
+//! converts the timestamps that its SQL `TIMESTAMP` columns read to
+//! microseconds with [`timestamps_to_micros`], and checks with [`check_timestamp_columns`] that
 //! no SQL `TIMESTAMP` column reads an Arrow integer, which the format would
 //! take for microseconds. A string column passes the check: the format parses
 //! each value. The connector checks at startup, and again for each batch,
@@ -24,10 +24,16 @@ use arrow::datatypes::{
 use arrow::error::ArrowError;
 use feldera_types::program_schema::{ColumnType, Field, SqlType};
 
-/// Converts every timestamp in `batch`, at any depth, to microseconds.
+/// Converts to microseconds each timestamp in `batch`, at any depth, that a
+/// SQL `TIMESTAMP` in `fields` reads.
 ///
-/// A batch without timestamps in other units is returned as it is.
-pub fn timestamps_to_micros(batch: RecordBatch) -> Result<RecordBatch, ArrowError> {
+/// A timestamp that another SQL type reads keeps its unit: `BIGINT` reads its
+/// integer, and `VARCHAR` reads all its digits. A batch without timestamps in
+/// other units is returned as it is.
+pub fn timestamps_to_micros(
+    batch: RecordBatch,
+    fields: &[Field],
+) -> Result<RecordBatch, ArrowError> {
     let schema = batch.schema();
     if !schema
         .fields()
@@ -37,19 +43,18 @@ pub fn timestamps_to_micros(batch: RecordBatch) -> Result<RecordBatch, ArrowErro
         return Ok(batch);
     }
 
-    let columns = batch
-        .columns()
-        .iter()
-        .map(array_to_micros)
-        .collect::<Result<Vec<_>, _>>()?;
-    let fields = schema
+    let columns = struct_to_micros(schema.fields(), batch.columns(), fields)?;
+    let arrow_fields = schema
         .fields()
         .iter()
         .zip(&columns)
         .map(|(field, column)| with_data_type(field, column.data_type()))
         .collect::<Fields>();
     RecordBatch::try_new_with_options(
-        Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone())),
+        Arc::new(Schema::new_with_metadata(
+            arrow_fields,
+            schema.metadata().clone(),
+        )),
         columns,
         &RecordBatchOptions::new().with_row_count(Some(batch.num_rows())),
     )
@@ -105,13 +110,45 @@ fn with_data_type(field: &FieldRef, data_type: &DataType) -> FieldRef {
     }
 }
 
-fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
-    if !needs_conversion(array.data_type()) {
+/// Converts the columns of a batch or of a struct that `fields` read.
+fn struct_to_micros(
+    arrow_fields: &Fields,
+    columns: &[ArrayRef],
+    fields: &[Field],
+) -> Result<Vec<ArrayRef>, ArrowError> {
+    arrow_fields
+        .iter()
+        .zip(columns)
+        .map(|(arrow_field, column)| {
+            if !needs_conversion(column.data_type()) {
+                return Ok(column.clone());
+            }
+            match sql_field(fields, arrow_field.name()) {
+                Some(field) => array_to_micros(column, &field.columntype),
+                None => Ok(column.clone()),
+            }
+        })
+        .collect()
+}
+
+/// The SQL field that reads the Arrow field `name`: the field with this
+/// spelling, or else with this name when case is ignored.
+fn sql_field<'a>(fields: &'a [Field], name: &str) -> Option<&'a Field> {
+    fields.iter().find(|f| f.name.name() == name).or_else(|| {
+        let lowercase = name.to_lowercase();
+        fields
+            .iter()
+            .find(|f| f.name.name().to_lowercase() == lowercase)
+    })
+}
+
+fn array_to_micros(array: &ArrayRef, column_type: &ColumnType) -> Result<ArrayRef, ArrowError> {
+    if !needs_conversion(array.data_type()) || !has_timestamp(column_type) {
         return Ok(array.clone());
     }
 
-    match array.data_type() {
-        DataType::Timestamp(unit, tz) => {
+    match (&column_type.typ, array.data_type()) {
+        (SqlType::Timestamp, DataType::Timestamp(unit, tz)) => {
             let micros = match unit {
                 TimeUnit::Second => {
                     convert::<TimestampSecondType>(array, |s| s.checked_mul(1_000_000))
@@ -127,13 +164,10 @@ fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
             }?;
             Ok(Arc::new(micros.with_timezone_opt(tz.clone())))
         }
-        DataType::Struct(_) => {
+        (SqlType::Struct, DataType::Struct(_)) => {
             let array = array.as_struct();
-            let columns = array
-                .columns()
-                .iter()
-                .map(array_to_micros)
-                .collect::<Result<Vec<_>, _>>()?;
+            let sql_fields = column_type.fields.as_deref().unwrap_or_default();
+            let columns = struct_to_micros(array.fields(), array.columns(), sql_fields)?;
             let fields = array
                 .fields()
                 .iter()
@@ -146,9 +180,9 @@ fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
                 array.nulls().cloned(),
             )?))
         }
-        DataType::List(field) => {
+        (SqlType::Array, DataType::List(field)) => {
             let array = array.as_list::<i32>();
-            let values = array_to_micros(array.values())?;
+            let values = component_to_micros(array.values(), column_type)?;
             Ok(Arc::new(ListArray::try_new(
                 with_data_type(field, values.data_type()),
                 array.offsets().clone(),
@@ -156,9 +190,9 @@ fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
                 array.nulls().cloned(),
             )?))
         }
-        DataType::LargeList(field) => {
+        (SqlType::Array, DataType::LargeList(field)) => {
             let array = array.as_list::<i64>();
-            let values = array_to_micros(array.values())?;
+            let values = component_to_micros(array.values(), column_type)?;
             Ok(Arc::new(LargeListArray::try_new(
                 with_data_type(field, values.data_type()),
                 array.offsets().clone(),
@@ -166,9 +200,9 @@ fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
                 array.nulls().cloned(),
             )?))
         }
-        DataType::FixedSizeList(field, size) => {
+        (SqlType::Array, DataType::FixedSizeList(field, size)) => {
             let array = array.as_fixed_size_list();
-            let values = array_to_micros(array.values())?;
+            let values = component_to_micros(array.values(), column_type)?;
             Ok(Arc::new(FixedSizeListArray::try_new(
                 with_data_type(field, values.data_type()),
                 *size,
@@ -176,20 +210,45 @@ fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
                 array.nulls().cloned(),
             )?))
         }
-        DataType::Map(field, sorted) => {
+        (SqlType::Map, DataType::Map(field, sorted)) => {
             let array = array.as_map();
-            let entries = array_to_micros(&(Arc::new(array.entries().clone()) as ArrayRef))?;
+            let entries = array.entries();
+            let columns = [&column_type.key, &column_type.value]
+                .into_iter()
+                .zip(entries.columns())
+                .map(|(sql_type, column)| match sql_type {
+                    Some(sql_type) => array_to_micros(column, sql_type),
+                    None => Ok(column.clone()),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let entry_fields = entries
+                .fields()
+                .iter()
+                .zip(&columns)
+                .map(|(field, column)| with_data_type(field, column.data_type()))
+                .collect();
+            let entries = StructArray::try_new(entry_fields, columns, entries.nulls().cloned())?;
             Ok(Arc::new(MapArray::try_new(
                 with_data_type(field, entries.data_type()),
                 array.offsets().clone(),
-                entries.as_struct().clone(),
+                entries,
                 array.nulls().cloned(),
                 *sorted,
             )?))
         }
+        // The SQL type does not read these as timestamps.
+        (
+            _,
+            DataType::Timestamp(_, _)
+            | DataType::Struct(_)
+            | DataType::List(_)
+            | DataType::LargeList(_)
+            | DataType::FixedSizeList(_, _)
+            | DataType::Map(_, _),
+        ) => Ok(array.clone()),
         // Rare containers go through the Arrow cast kernel, which rounds
-        // nanoseconds toward zero.
-        data_type => cast_with_options(
+        // nanoseconds toward zero and converts all the timestamps they hold.
+        (_, data_type) => cast_with_options(
             array,
             &micros_type(data_type),
             &CastOptions {
@@ -197,6 +256,16 @@ fn array_to_micros(array: &ArrayRef) -> Result<ArrayRef, ArrowError> {
                 ..Default::default()
             },
         ),
+    }
+}
+
+fn component_to_micros(
+    values: &ArrayRef,
+    column_type: &ColumnType,
+) -> Result<ArrayRef, ArrowError> {
+    match &column_type.component {
+        Some(component) => array_to_micros(values, component),
+        None => Ok(values.clone()),
     }
 }
 
@@ -224,18 +293,19 @@ pub fn check_timestamp_columns(fields: &[Field], schema: &Schema) -> Result<(), 
 fn check_fields(fields: &[Field], arrow_fields: &Fields, prefix: &str) -> Result<(), String> {
     // The check runs for each batch, so skip the columns it does not apply to.
     for field in fields.iter().filter(|f| has_timestamp(&f.columntype)) {
-        let name = field.name.name();
-        let Some(arrow_field) = arrow_fields
+        let lowercase = field.name.name().to_lowercase();
+        // The source can have more than one such column, e.g., `t` and `T`:
+        // a read by name can take its value from any of them.
+        for arrow_field in arrow_fields
             .iter()
-            .find(|f| f.name().to_lowercase() == name.to_lowercase())
-        else {
-            continue;
-        };
-        check_type(
-            &field.columntype,
-            arrow_field.data_type(),
-            &format!("{prefix}{}", field.name.sql_name()),
-        )?;
+            .filter(|f| f.name().to_lowercase() == lowercase)
+        {
+            check_type(
+                &field.columntype,
+                arrow_field.data_type(),
+                &format!("{prefix}{}", field.name.sql_name()),
+            )?;
+        }
     }
     Ok(())
 }
@@ -334,30 +404,42 @@ mod test {
         DataType::Timestamp(TimeUnit::Microsecond, None)
     }
 
+    fn field(name: &str, column_type: ColumnType) -> Field {
+        Field::new(SqlIdentifier::new(name, false), column_type)
+    }
+
+    fn timestamp(name: &str) -> Field {
+        field(name, ColumnType::timestamp(true))
+    }
+
     #[test]
     fn units() {
         let utc = Some("UTC".into());
-        let converted = timestamps_to_micros(batch(vec![
-            (
-                "s",
-                Arc::new(TimestampSecondArray::from(vec![Some(-2), None, Some(3)])),
-            ),
-            (
-                "ms",
-                Arc::new(
-                    TimestampMillisecondArray::from(vec![Some(-2), Some(3), None])
-                        .with_timezone_opt(utc.clone()),
+        let fields = [timestamp("s"), timestamp("MS"), timestamp("ns")];
+        let converted = timestamps_to_micros(
+            batch(vec![
+                (
+                    "s",
+                    Arc::new(TimestampSecondArray::from(vec![Some(-2), None, Some(3)])),
                 ),
-            ),
-            (
-                "ns",
-                Arc::new(TimestampNanosecondArray::from(vec![
-                    Some(-1_500),
-                    Some(1_500),
-                    None,
-                ])),
-            ),
-        ]))
+                (
+                    "ms",
+                    Arc::new(
+                        TimestampMillisecondArray::from(vec![Some(-2), Some(3), None])
+                            .with_timezone_opt(utc.clone()),
+                    ),
+                ),
+                (
+                    "ns",
+                    Arc::new(TimestampNanosecondArray::from(vec![
+                        Some(-1_500),
+                        Some(1_500),
+                        None,
+                    ])),
+                ),
+            ]),
+            &fields,
+        )
         .unwrap();
 
         assert_eq!(
@@ -396,10 +478,14 @@ mod test {
             Arc::new(TimestampSecondArray::from(vec![1, 2, 3])),
             None,
         );
-        let converted = timestamps_to_micros(batch(vec![
-            ("row", Arc::new(inner)),
-            ("list", Arc::new(list)),
-        ]))
+        let fields = [
+            field("row", ColumnType::structure(true, &[timestamp("t")])),
+            field("list", ColumnType::array(true, ColumnType::timestamp(true))),
+        ];
+        let converted = timestamps_to_micros(
+            batch(vec![("row", Arc::new(inner)), ("list", Arc::new(list))]),
+            &fields,
+        )
         .unwrap();
 
         let row = converted.column(0).as_struct();
@@ -423,18 +509,71 @@ mod test {
     #[test]
     fn micros_unchanged() {
         let column: ArrayRef = Arc::new(TimestampMicrosecondArray::from(vec![1, 2]));
-        let converted = timestamps_to_micros(batch(vec![("t", column.clone())])).unwrap();
+        let converted =
+            timestamps_to_micros(batch(vec![("t", column.clone())]), &[timestamp("t")]).unwrap();
         assert!(Arc::ptr_eq(converted.column(0), &column));
     }
 
     #[test]
     fn overflow() {
-        let error = timestamps_to_micros(batch(vec![(
-            "s",
-            Arc::new(TimestampSecondArray::from(vec![i64::MAX])),
-        )]))
+        let error = timestamps_to_micros(
+            batch(vec![(
+                "s",
+                Arc::new(TimestampSecondArray::from(vec![i64::MAX])),
+            )]),
+            &[timestamp("s")],
+        )
         .unwrap_err();
         assert!(error.to_string().contains("does not fit"), "{error}");
+    }
+
+    /// A timestamp that a SQL type other than TIMESTAMP reads keeps its unit.
+    #[test]
+    fn only_sql_timestamps() {
+        let nanos = || Arc::new(TimestampNanosecondArray::from(vec![1_500])) as ArrayRef;
+        let nanos_type = DataType::Timestamp(TimeUnit::Nanosecond, None);
+        let row = StructArray::from(vec![
+            (
+                Arc::new(ArrowField::new("t", nanos_type.clone(), true)),
+                nanos(),
+            ),
+            (
+                Arc::new(ArrowField::new("n", nanos_type.clone(), true)),
+                nanos(),
+            ),
+        ]);
+        let fields = [
+            timestamp("t"),
+            field("n", ColumnType::bigint(true)),
+            field("s", ColumnType::varchar(true)),
+            field(
+                "row",
+                ColumnType::structure(
+                    true,
+                    &[timestamp("t"), field("n", ColumnType::bigint(true))],
+                ),
+            ),
+        ];
+        let converted = timestamps_to_micros(
+            batch(vec![
+                ("T", nanos()),
+                ("n", nanos()),
+                ("s", nanos()),
+                ("row", Arc::new(row)),
+                ("other", nanos()),
+            ]),
+            &fields,
+        )
+        .unwrap();
+
+        let schema = converted.schema();
+        assert_eq!(micros(converted.column(0)), [Some(1)]);
+        for unchanged in [1, 2, 4] {
+            assert_eq!(schema.field(unchanged).data_type(), &nanos_type);
+        }
+        let row = converted.column(3).as_struct();
+        assert_eq!(micros(row.column(0)), [Some(1)]);
+        assert_eq!(row.column(1).data_type(), &nanos_type);
     }
 
     #[test]
@@ -475,5 +614,12 @@ mod test {
 
         let ints = Schema::new(vec![ArrowField::new("ts", DataType::Int64, true)]);
         assert!(check_timestamp_columns(&fields, &ints).is_err());
+
+        // A read by name can take the value of any column with this name.
+        let both = Schema::new(vec![
+            ArrowField::new("ts", micros_type(), true),
+            ArrowField::new("TS", DataType::Int64, true),
+        ]);
+        assert!(check_timestamp_columns(&fields, &both).is_err());
     }
 }

@@ -35,13 +35,16 @@ pub fn has_positional_fields(schema: &Schema) -> bool {
         .is_some_and(|value| *value == *POSITIONAL_FIELDS_TOKEN)
 }
 
-/// Schema metadata key of the columns of the table that an ordered batch does
-/// not have: one character for each column, `1` for an absent column.
+/// Schema metadata key that tells which columns of the table an ordered batch
+/// has: one character for each column, `1` for an absent column.
 const ABSENT_COLUMNS: &str = "feldera.absent_columns";
 
 /// The columns of the table that a batch in order does not have: one flag for
-/// each column, in the order of the SQL declaration. `None` when the batch
-/// has all the columns, or is not in order.
+/// each column, in the order of the SQL declaration. `None` when the batch is
+/// not in order.
+///
+/// The number of flags also tells the deserializer whether its record has all
+/// the columns of the table.
 pub fn absent_columns(schema: &Schema) -> Option<Vec<bool>> {
     if !has_positional_fields(schema) {
         return None;
@@ -88,12 +91,8 @@ pub fn order_columns(batch: RecordBatch, fields: &[Field]) -> (RecordBatch, Opti
             POSITIONAL_FIELDS.to_string(),
             POSITIONAL_FIELDS_TOKEN.clone(),
         );
-        if absent.contains(&true) {
-            let flags = absent.iter().map(|absent| if *absent { '1' } else { '0' });
-            metadata.insert(ABSENT_COLUMNS.to_string(), flags.collect());
-        } else {
-            metadata.remove(ABSENT_COLUMNS);
-        }
+        let flags = absent.iter().map(|absent| if *absent { '1' } else { '0' });
+        metadata.insert(ABSENT_COLUMNS.to_string(), flags.collect());
         let schema = Arc::new(Schema::new_with_metadata(arrow_fields, metadata));
         let options = RecordBatchOptions::new().with_row_count(Some(len));
         RecordBatch::try_new_with_options(schema, columns, &options).map_err(|e| e.to_string())
@@ -404,7 +403,7 @@ mod test {
         assert_eq!(values(ordered.column(1)), vec![Some(3)]);
     }
 
-    /// A batch with all the columns has no absent columns, whatever its
+    /// A batch with all the columns has no absent column, whatever its
     /// metadata from outside says.
     #[test]
     fn no_absent_column() {
@@ -418,7 +417,7 @@ mod test {
 
         assert_eq!(reason, None);
         assert!(has_positional_fields(ordered.schema_ref()));
-        assert_eq!(absent_columns(ordered.schema_ref()), None);
+        assert_eq!(absent_columns(ordered.schema_ref()), Some(vec![false]));
     }
 
     /// The by-name path reads a batch with no column of the table, and a

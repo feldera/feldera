@@ -173,6 +173,9 @@ pub struct SqlSerdeConfig {
 /// declaration. An absent column gets the value that it gets when a record is
 /// read by name: its default, `NULL`, or an error. This applies to the table
 /// record only: each nested `ROW` holds all its fields.
+///
+/// A record type with another number of columns than the flags, such as one
+/// without the unused columns of the table, reads the input by name.
 #[derive(Clone, Debug)]
 pub struct AbsentColumns {
     /// One flag for each column of the table, in declaration order.
