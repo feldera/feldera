@@ -151,7 +151,7 @@ fn read_like_connector(batch: arrow::array::RecordBatch) -> (Vec<DeltaTestStruct
 
     let fields = DeltaTestStruct::schema();
     check_timestamp_columns(&fields, batch.schema_ref()).unwrap();
-    let batch = timestamps_to_micros(batch).unwrap();
+    let batch = timestamps_to_micros(batch, &fields).unwrap();
     let (batch, _) = order_columns(batch, &fields);
     let positional = has_positional_fields(batch.schema_ref());
     let config = crate::deinput::ArrowSerdeConfig::new(delta_input_serde_config());
@@ -161,6 +161,44 @@ fn read_like_connector(batch: arrow::array::RecordBatch) -> (Vec<DeltaTestStruct
     )
     .unwrap();
     (read, positional)
+}
+
+/// A record without an unused column of the table, which the compiler can
+/// remove, takes its value from the column with its name.
+#[test]
+fn delta_record_without_a_table_column_reads_its_own_columns() {
+    use arrow::array::{ArrayRef, Int64Array, RecordBatch};
+    use feldera_adapterlib::utils::arrow_layout::order_columns;
+    use feldera_types::deserialize_table_record;
+    use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
+    use std::sync::Arc;
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Wanted {
+        wanted: i64,
+    }
+    deserialize_table_record!(Wanted["Wanted", 1] {
+        (wanted, "wanted", false, i64, |_| None)
+    });
+
+    let field = |name: &str| Field::new(SqlIdentifier::new(name, false), ColumnType::bigint(true));
+    let fields = [field("unused"), field("wanted")];
+    let column = |value: i64| Arc::new(Int64Array::from(vec![value])) as ArrayRef;
+    let config = crate::deinput::ArrowSerdeConfig::new(delta_input_serde_config());
+    let read = |batch: RecordBatch| {
+        let (batch, reason) = order_columns(batch, &fields);
+        assert_eq!(reason, None);
+        Vec::<Wanted>::deserialize_with_context(
+            serde_arrow::Deserializer::from_record_batch(&batch).unwrap(),
+            config.for_batch(&batch).as_ref(),
+        )
+        .unwrap()
+    };
+
+    let all = RecordBatch::try_from_iter([("unused", column(11)), ("wanted", column(22))]);
+    assert_eq!(read(all.unwrap()), [Wanted { wanted: 22 }]);
+    let skipped = RecordBatch::try_from_iter([("wanted", column(22))]);
+    assert_eq!(read(skipped.unwrap()), [Wanted { wanted: 22 }]);
 }
 
 /// A batch with reversed columns, an extra column, and nanosecond timestamps
@@ -803,7 +841,7 @@ proptest::proptest! {
 
         let by_name: Vec<DeltaTestStruct> = Vec::deserialize_with_context(
             serde_arrow::Deserializer::from_record_batch(
-                &timestamps_to_micros(batch.clone()).unwrap(),
+                &timestamps_to_micros(batch.clone(), &DeltaTestStruct::schema()).unwrap(),
             )
             .unwrap(),
             &delta_input_serde_config(),

@@ -726,11 +726,21 @@ impl<'a> ColumnIndexSeed<'a> {
         }
 
         let lowercase_name = name.to_lowercase();
-        let Some(idx) = self
-            .field_map
-            .with(|field_map| field_map.get(&lowercase_name).copied())
-        else {
+        let Some((idx, ambiguous)) = self.field_map.with(|field_map| {
+            let idx = field_map.get(&lowercase_name).copied()?;
+            Some((idx, field_map.len() != self.columns.len()))
+        }) else {
             return Ok(None);
+        };
+        // Fields that differ only in case, such as `a` and `"A"`, share an
+        // entry of the map. The field with this spelling gets the value, as
+        // with the hint, so the order of the columns in the input does not
+        // change the result.
+        let idx = if ambiguous {
+            let exact = self.columns.iter().position(|(field, _)| *field == name);
+            exact.unwrap_or(idx)
+        } else {
+            idx
         };
         let (expected, case_sensitive) = self.columns[idx];
         if case_sensitive && name != expected {
@@ -863,7 +873,13 @@ macro_rules! deserialize_table_record {
                         // The absent columns are those of this record only; the
                         // values of its columns use the configuration without them.
                         let (context, absent) = match &context.absent_columns {
-                            Some(absent) => (absent.field_config(), Some(absent.absent())),
+                            Some(absent) => (
+                                absent.field_config(),
+                                // No flags when the input has all the columns.
+                                (absent.num_present() != absent.absent().len()
+                                    || absent.absent().len() != $num_cols)
+                                    .then(|| absent.absent()),
+                            ),
                             None => (context, None),
                         };
                         Self {
@@ -964,6 +980,12 @@ macro_rules! deserialize_table_record {
 
                         while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
 
+                        // A positional input gives each column of its source, as
+                        // a read by name does, so a NULL gets the same value.
+                        if self.context.positional_fields {
+                            $($(self.$field_name = self.$field_name.take().map($postprocess);)*)*
+                        }
+
                         // An absent column gets the value that the by-name path gives it.
                         if let Some(absent) = absent {
                             let mut _idx = 0usize;
@@ -993,16 +1015,20 @@ macro_rules! deserialize_table_record {
                 // deserializers.  In the future we may want to make the choice between map
                 // and sequence representations configurable, so we won't need this trick.
                 //deserializer.deserialize_map(visitor)
-                if context.positional_fields {
+                match (context.positional_fields, &context.absent_columns) {
+                    // The record does not have all the columns of the table, for example
+                    // when the compiler removed the unused columns from it. Only the
+                    // field names tell which column of the input each field reads.
+                    (true, Some(absent)) if absent.absent().len() != $num_cols => deserializer
+                        .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor),
                     // The input holds the columns in declaration order; skip the field names.
-                    let num_present = context
-                        .absent_columns
-                        .as_ref()
-                        .map_or($num_cols, |absent| absent.num_present());
-                    deserializer.deserialize_tuple(num_present, visitor)
-                } else {
-                    deserializer
-                        .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)
+                    (true, absent) => {
+                        let num_present =
+                            absent.as_ref().map_or($num_cols, |absent| absent.num_present());
+                        deserializer.deserialize_tuple(num_present, visitor)
+                    }
+                    (false, _) => deserializer
+                        .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor),
                 }
             }
         }
@@ -1191,6 +1217,112 @@ mod test {
         );
         // The flags are for another record type.
         assert!(deserialize(vec![false, true], "[1]").is_err());
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Trimmed {
+        c: u32,
+        e: Option<u32>,
+    }
+
+    deserialize_table_record!(Trimmed["Trimmed", 2] {
+        (c, "c", false, u32, |_| None),
+        (e, "e", false, Option<u32>, |_| Some(None))
+    });
+
+    /// A record without some columns of the table, such as the unused columns
+    /// that the compiler can remove, reads a positional input by name.
+    #[test]
+    fn record_without_all_columns() {
+        let deserialize = |absent: Vec<bool>, json: &str| {
+            let config = SqlSerdeConfig::default().with_absent_columns(absent);
+            Trimmed::deserialize_with_context(
+                &mut serde_json::Deserializer::from_str(json),
+                &config,
+            )
+            .map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            deserialize(
+                vec![false; 5],
+                r#"{"a": 1, "b": 5, "c": 6, "d": [2, 3], "e": 4}"#
+            ),
+            Ok(Trimmed { c: 6, e: Some(4) })
+        );
+        assert_eq!(
+            deserialize(vec![false, true, false, true, true], r#"{"a": 1, "c": 6}"#),
+            Ok(Trimmed { c: 6, e: None })
+        );
+        // A sequence does not tell which columns it holds.
+        assert!(deserialize(vec![false, true, true, true, false], "[6, 4]").is_err());
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    #[allow(non_snake_case)]
+    struct SameNames {
+        A: Option<u32>,
+        a: Option<u32>,
+        b: Option<u32>,
+    }
+
+    deserialize_table_record!(SameNames["SameNames", 3] {
+        (A, "A", true, Option<u32>, |_| Some(None)),
+        (a, "a", false, Option<u32>, |_| Some(None)),
+        (b, "b", false, Option<u32>, |_| Some(None))
+    });
+
+    /// With fields that differ only in case, the field with the spelling of
+    /// the column gets its value, wherever the column is in the input.
+    #[test]
+    fn names_that_differ_only_in_case() {
+        let deserialize = |json| deserialize_with_default_context::<SameNames>(json).unwrap();
+        let upper = SameNames {
+            A: Some(1),
+            a: None,
+            b: Some(0),
+        };
+        assert_eq!(deserialize(r#"{"A": 1, "b": 0}"#), upper);
+        assert_eq!(deserialize(r#"{"b": 0, "A": 1}"#), upper);
+        let lower = SameNames {
+            A: None,
+            a: Some(1),
+            b: Some(0),
+        };
+        assert_eq!(deserialize(r#"{"a": 1, "b": 0}"#), lower);
+        assert_eq!(deserialize(r#"{"b": 0, "a": 1}"#), lower);
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Update {
+        id: u32,
+        s: Option<Option<u32>>,
+    }
+
+    deserialize_table_record!(Update["Update", 2] {
+        (id, "id", false, u32, |_| None),
+        (s, "s", false, Option<Option<u32>>, |_| Some(None), |x| if x.is_none() { Some(None) } else { x })
+    });
+
+    /// A positional read gives a NULL of the input the same value as a read by
+    /// name: here "set to NULL", and not "no change".
+    #[test]
+    fn positional_fields_postprocess() {
+        let by_name = SqlSerdeConfig::default();
+        let positional = SqlSerdeConfig::default().with_positional_fields(true);
+        let absent = SqlSerdeConfig::default().with_absent_columns(vec![false, true]);
+        let deserialize = |config: &SqlSerdeConfig, json: &str| {
+            Update::deserialize_with_context(&mut serde_json::Deserializer::from_str(json), config)
+                .unwrap()
+        };
+        let set_null = Update {
+            id: 1,
+            s: Some(None),
+        };
+        assert_eq!(deserialize(&by_name, r#"{"id": 1, "s": null}"#), set_null);
+        assert_eq!(deserialize(&positional, "[1, null]"), set_null);
+        let no_change = Update { id: 1, s: None };
+        assert_eq!(deserialize(&by_name, r#"{"id": 1}"#), no_change);
+        assert_eq!(deserialize(&absent, "[1]"), no_change);
     }
 
     /// A type-erased deserializer is passed on as it is, not erased again.
