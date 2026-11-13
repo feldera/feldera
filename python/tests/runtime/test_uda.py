@@ -233,6 +233,7 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
             }
         ],
         update_format="insert_delete",
+        wait=True,
     )
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [
@@ -289,6 +290,7 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
             }
         ],
         update_format="insert_delete",
+        wait=True,
     )
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [
@@ -310,6 +312,7 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
             }
         ],
         update_format="insert_delete",
+        wait=True,
     )
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [
@@ -331,6 +334,7 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
             }
         ],
         update_format="insert_delete",
+        wait=True,
     )
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [
@@ -404,6 +408,7 @@ ByteArray::new(&val.data.to_be_bytes()[16..])
             },
         ],
         update_format="insert_delete",
+        wait=True,
     )
     output = list(pipeline.query("SELECT * FROM V;"))
     assert output == [{"s": None, "n": None, "c": 0}]
