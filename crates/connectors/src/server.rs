@@ -4961,8 +4961,9 @@ fn get_or_create_http_input_endpoint(
         name: endpoint_name.clone(),
     };
 
-    let guard = controller.register_api_connection()?;
-    let endpoint = HttpInputEndpoint::new(config.clone()).with_api_connection_guard(guard);
+    // The endpoint takes no API connection slot. It stays until the pipeline
+    // stops, so a slot would put a limit on the number of tables.
+    let endpoint = HttpInputEndpoint::new(config.clone());
     // Create endpoint config.
     let config = InputEndpointConfig::new(
         table_name,
@@ -5264,7 +5265,8 @@ async fn output_endpoint(
     // than racing the streaming body that drains it.
     let response_receiver = endpoint.connect_stream();
 
-    // Connect endpoint.
+    // Connect endpoint.  The slot is given back when this handler returns,
+    // not when the response stream closes.
     let _guard = controller.register_api_connection()?;
 
     let endpoint_id = controller.add_output_endpoint(
@@ -7161,6 +7163,59 @@ pub mod test_http {
                     input.endpoint_name
                 );
             }
+        })
+    }
+
+    /// `/ingress` accepts pushes to more tables than `MAX_API_CONNECTIONS`,
+    /// and `/egress` works after them. Each (table, format) pair keeps its
+    /// ingress endpoint until the pipeline stops, so the endpoints must not
+    /// use API connection slots.
+    #[engine_test]
+    pub fn ingress_to_more_tables_than_api_connections(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            use crate::controller::MAX_API_CONNECTIONS;
+
+            ensure_default_crypto_provider();
+
+            let tables = MAX_API_CONNECTIONS as usize + 1;
+            let server = start_test_server_with_options(
+                engine,
+                &json!({"name": "test", "inputs": {}, "outputs": {}}),
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &vec![None; tables],
+            )
+            .await;
+            start_pipeline(&server).await;
+
+            for table in 1..=tables {
+                let mut response = server
+                    .post(format!(
+                        "/ingress/test_input{table}?format=json&update_format=raw"
+                    ))
+                    .send_body(format!(
+                        r#"{{"id": {table}, "b": true, "i": null, "s": "a"}}"#
+                    ))
+                    .await
+                    .unwrap();
+                assert!(
+                    response.status().is_success(),
+                    "push to table {table}: {} {:?}",
+                    response.status(),
+                    response.body().await
+                );
+            }
+
+            let ingress_endpoints = get_stats(&server)
+                .await
+                .inputs
+                .iter()
+                .filter(|input| input.endpoint_name.contains(".api-ingress-"))
+                .count();
+            assert_eq!(ingress_endpoints, tables);
+
+            let response = server.post("/egress/test_output1").send().await.unwrap();
+            assert!(response.status().is_success(), "{}", response.status());
         })
     }
 

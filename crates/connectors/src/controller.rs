@@ -198,8 +198,15 @@ pub use journal::StepMetadata;
 pub(crate) use stats::MAX_CONNECTOR_ERROR_LEN;
 pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
 
-/// Maximal number of concurrent API connections per circuit
-/// (including both input and output connections).
+/// Maximal number of API connection slots per pipeline.
+///
+/// Only `/egress` takes a slot, and it gives the slot back when its handler
+/// returns, before the response stream starts. So the limit does not cap the
+/// number of open `/egress` streams.
+///
+/// HTTP ingress takes no slot. It keeps one input endpoint per (table, format)
+/// until the pipeline stops, so a slot would cap the number of tables that a
+/// client can push to.
 // TODO: make this configurable.
 pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
