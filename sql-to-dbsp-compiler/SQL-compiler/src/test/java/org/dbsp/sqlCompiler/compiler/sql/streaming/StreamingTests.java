@@ -4593,4 +4593,75 @@ public class StreamingTests extends StreamingTestBase {
         ccs.visit(gc);
         Assert.assertTrue(gc.unbounded.toString(), gc.unbounded.isEmpty());
     }
+
+    /** The people whose birthday is in the next seven days.  The join on (month, day)
+     * keeps one copy of person and at most 8 day keys; the output changes only when the date changes. */
+    @Test
+    public void birthdaysInTheNextWeek() {
+        var ccs = this.getCCS("""
+                CREATE TABLE person (name VARCHAR, dob DATE NOT NULL) WITH ('expected_size' = '1000000');
+                -- Today and the next six days
+                CREATE LOCAL VIEW days AS
+                SELECT TIMESTAMPADD(DAY, t.d, CAST(NOW() AS DATE)) AS day
+                FROM (VALUES 0, 1, 2, 3, 4, 5, 6) AS t(d);
+                -- The (month, day) of the dates of birth that have a birthday on each day
+                CREATE LOCAL VIEW day_keys AS
+                SELECT day, MONTH(day) AS m, DAYOFMONTH(day) AS dd FROM days
+                UNION ALL
+                -- In a year without February 29, the birthday of a person born on February 29 is February 28
+                SELECT day, 2 AS m, 29 AS dd FROM days
+                WHERE MONTH(day) = 2 AND DAYOFMONTH(day) = 28 AND MAKE_DATE(YEAR(day), 2, 29) IS NULL;
+                CREATE VIEW soon AS
+                SELECT p.name, p.dob, k.day AS bday
+                FROM person p JOIN day_keys k
+                ON MONTH(p.dob) = k.m AND DAYOFMONTH(p.dob) = k.dd;""").withStringTrim();
+        // 2023 has no February 29
+        ccs.step("""
+                INSERT INTO now VALUES('2023-02-25 12:00:00');
+                INSERT INTO person VALUES('ann', '2000-02-29');
+                INSERT INTO person VALUES('bob', '1990-02-28');
+                INSERT INTO person VALUES('cy', '1985-03-01');
+                INSERT INTO person VALUES('dan', '1970-12-31');
+                INSERT INTO person VALUES('eve', '1999-01-02');""", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 ann  | 2000-02-29 | 2023-02-28 | 1
+                 bob  | 1990-02-28 | 2023-02-28 | 1
+                 cy   | 1985-03-01 | 2023-03-01 | 1""");
+        // 2024 has a February 29
+        ccs.step("INSERT INTO now VALUES('2024-02-25 12:00:00');", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 ann  | 2000-02-29 | 2023-02-28 | -1
+                 bob  | 1990-02-28 | 2023-02-28 | -1
+                 cy   | 1985-03-01 | 2023-03-01 | -1
+                 ann  | 2000-02-29 | 2024-02-29 | 1
+                 bob  | 1990-02-28 | 2024-02-28 | 1
+                 cy   | 1985-03-01 | 2024-03-01 | 1""");
+        // The seven days include the start of the next year
+        ccs.step("INSERT INTO now VALUES('2024-12-28 12:00:00');", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 ann  | 2000-02-29 | 2024-02-29 | -1
+                 bob  | 1990-02-28 | 2024-02-28 | -1
+                 cy   | 1985-03-01 | 2024-03-01 | -1
+                 dan  | 1970-12-31 | 2024-12-31 | 1
+                 eve  | 1999-01-02 | 2025-01-02 | 1""");
+        // The year changes, and a person is inserted
+        ccs.step("""
+                INSERT INTO now VALUES('2025-01-01 00:00:00');
+                INSERT INTO person VALUES('fay', '2001-01-05');""", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 dan  | 1970-12-31 | 2024-12-31 | -1
+                 fay  | 2001-01-05 | 2025-01-05 | 1""");
+        // The clock moves, but the date does not change
+        ccs.step("INSERT INTO now VALUES('2025-01-01 18:00:00');", """
+                 name | dob | bday | weight
+                ---------------------------""");
+        ccs.step("REMOVE FROM person VALUES('eve', '1999-01-02');", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 eve  | 1999-01-02 | 2025-01-02 | -1""");
+    }
 }
