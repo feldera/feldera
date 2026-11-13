@@ -2547,15 +2547,19 @@ impl Controller {
 
     pub async fn rebalance(&self) -> Result<(), ControllerError> {
         let (sender, receiver) = oneshot::channel();
+        // The callback requests the step, so the step also happens when the caller stops
+        // waiting for the reply (for example, the HTTP client disconnects).
+        let inner = self.inner.clone();
         self.inner
             .send_command(Command::Rebalance(Box::new(move |result| {
+                if result.is_ok() {
+                    inner.request_step();
+                }
                 if sender.send(result).is_err() {
                     error!("`/rebalance` result could not be sent");
                 }
             })));
-        reply_or_controller_exit(receiver.await)?;
-        self.inner.request_step();
-        Ok(())
+        reply_or_controller_exit(receiver.await)
     }
 
     /// Applies a resize. The new `memory_max` becomes the memory budget, or
