@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change: `GET /v0/pipelines/{name}/samply_profile?latest=true`
+  returns 204 No Content without a `Retry-After` header when no Samply
+  profile was collected. Before, it returned 400 with `NoSamplyProfile`.
+  Without `latest`, the response is unchanged.
 - Incompatible change (support bundles): in new collections,
   `pipeline_config.json` no longer has `program_info.dataflow`, which was a
   copy of `dataflow_graph.json`.

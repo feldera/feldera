@@ -4322,16 +4322,20 @@ async fn get_samply_profile(
 ) -> Result<HttpResponse, PipelineError> {
     let samply_state = state.samply_state.lock().unwrap();
 
-    // If latest=true, check if profiling is in progress and return 204 No Content
-    if query_params.latest
-        && let SamplyStatus::InProgress { expected_after } = samply_state.samply_status
-    {
-        let now = chrono::Utc::now();
-        let retry_after_secs = (expected_after - now).num_seconds().max(0);
+    // With latest=true, 204 No Content means that there is no profile yet:
+    // with Retry-After, one is in progress; without it, none was started.
+    if query_params.latest {
+        if let SamplyStatus::InProgress { expected_after } = samply_state.samply_status {
+            let now = chrono::Utc::now();
+            let retry_after_secs = (expected_after - now).num_seconds().max(0);
 
-        return Ok(HttpResponse::NoContent()
-            .insert_header(("Retry-After", retry_after_secs.to_string()))
-            .finish());
+            return Ok(HttpResponse::NoContent()
+                .insert_header(("Retry-After", retry_after_secs.to_string()))
+                .finish());
+        }
+        if samply_state.last_profile.is_none() {
+            return Ok(HttpResponse::NoContent().finish());
+        }
     }
 
     // Return the last profile result
@@ -6783,6 +6787,37 @@ pub mod test_http {
                     .unwrap();
                 assert_ne!(response.status(), StatusCode::BAD_REQUEST, "{duration}");
             }
+        })
+    }
+
+    /// Before any Samply profile, `GET /samply_profile?latest=true` reports
+    /// "no profile" as 204 without `Retry-After`, not as an error.
+    /// Without `latest`, there is nothing to download, so it is an error.
+    #[engine_test]
+    pub fn samply_profile_latest_without_profile(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            crate::ensure_default_crypto_provider();
+
+            let server = start_test_server(
+                engine,
+                &json!({"name": "test", "inputs": {}, "outputs": {}}),
+                Uuid::new_v4(),
+            )
+            .await;
+
+            let response = server
+                .get("/samply_profile?latest=true")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NO_CONTENT);
+            assert!(response.headers().get("retry-after").is_none());
+
+            let mut response = server.get("/samply_profile").send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = response.body().await.unwrap();
+            let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(error["error_code"], "NoSamplyProfile", "{error}");
         })
     }
 

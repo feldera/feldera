@@ -5577,7 +5577,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Samply Profile",
-        "description": "Required role: `read` or higher.\n\nRetrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.\nIf ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.\nIf ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 204 with Retry-After header.\nIf ?latest parameter is specified and no Samply profile was collected, returns HTTP 204 without Retry-After header.",
         "operationId": "get_pipeline_samply_profile",
         "parameters": [
           {
@@ -5602,7 +5602,7 @@
           {
             "name": "latest",
             "in": "query",
-            "description": "If true, returns 204 redirect with Retry-After header if profile collection is in progress.\nIf false or not provided, returns the last collected profile.",
+            "description": "If true, returns 204 No Content when there is no profile to download yet:\nwith a Retry-After header if profile collection is in progress, without one\nif no profile was collected.\nIf false or not provided, returns the last collected profile.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -5611,7 +5611,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: may return 204 No Content with Retry-After header if latest=true and profiling is in progress.",
+            "description": "Samply profile as a gzip containing the profile that can be inspected by the samply tool. Note: if latest=true, may return 204 No Content: with Retry-After header if profiling is in progress, without it if no profile was collected.",
             "content": {
               "application/gzip": {
                 "schema": {

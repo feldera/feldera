@@ -800,21 +800,25 @@ type BlobDownloadHandle = {
 /**
  * Download samply profile with optional progress tracking.
  * @param pipelineName - Name of the pipeline
- * @param latest - If true and profiling is in progress, returns expectedInSeconds instead of the last profile
+ * @param latest - If true, returns expectedInSeconds while profiling is in progress, and null if there is no profile
  * @param onProgress - Optional callback for download progress (bytesDownloaded, bytesTotal)
- * @returns Object with a promise to profile data blob and filename, or expectedInSeconds if in progress, plus cancel function
+ * @returns Object with a promise to profile data blob and filename plus cancel function, expectedInSeconds if in progress, or null if there is no profile
  */
 export const getSamplyProfile = async (
   pipelineName: string,
   latest: boolean,
   onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
-): Promise<BlobDownloadHandle | { expectedInSeconds: number }> => {
+): Promise<BlobDownloadHandle | { expectedInSeconds: number } | null> => {
   const result = getSamplyProfileStream(pipelineName, latest)
   const response = await result.response
 
-  // Check for 204 No Content (profile collection in progress)
+  // 204 No Content: with Retry-After, a profile is in progress; without it, there is no profile
   if (response.status === 204) {
-    const expectedInSeconds = parseInt(response.headers.get('Retry-After') ?? '')
+    const retryAfter = response.headers.get('Retry-After')
+    if (retryAfter === null) {
+      return null
+    }
+    const expectedInSeconds = parseInt(retryAfter)
     if (isNaN(expectedInSeconds)) {
       throw new Error(`Profile collection is in progress, but estimated time is not known`)
     }

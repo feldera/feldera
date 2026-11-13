@@ -1634,7 +1634,8 @@ export const postPipelineResume = <ThrowOnError extends boolean = true>(
  * Required role: `read` or higher.
  *
  * Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
- * If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
+ * If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 204 with Retry-After header.
+ * If ?latest parameter is specified and no Samply profile was collected, returns HTTP 204 without Retry-After header.
  */
 export const getPipelineSamplyProfile = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineSamplyProfileData, ThrowOnError>
