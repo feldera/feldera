@@ -688,14 +688,9 @@ public class Simplify extends ExpressionTranslator {
                             result = right;
                         }
                     }
-                } else if (left instanceof DBSPUnaryExpression unaryLeft &&
-                        right instanceof DBSPUnaryExpression unaryRight &&
-                        unaryLeft.opcode == DBSPOpcode.WRAP_BOOL &&
-                        unaryRight.opcode == DBSPOpcode.WRAP_BOOL) {
-                    // (bool) a && (bool) b => (bool)(a && b)
-                    result = new DBSPBinaryExpression(expression.getNode(), unaryLeft.source.getType(),
-                            DBSPOpcode.AND, unaryLeft.source, unaryRight.source).wrapBoolIfNeeded();
                 }
+                // Do not rewrite (bool) a && (bool) b to (bool)(a && b):
+                // the SQL AND also evaluates b when a is NULL, and b can fail
             } else if (opcode == DBSPOpcode.OR) {
                 if (left.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
