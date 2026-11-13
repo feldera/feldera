@@ -6154,6 +6154,7 @@ impl StepSelection {
         }
         match self.inputs {
             StepInputs::All => true,
+            StepInputs::Paused => status.config.connector_config.transport.is_http_input(),
             StepInputs::CheckpointBarriers => status.is_barrier(),
             StepInputs::None => false,
         }

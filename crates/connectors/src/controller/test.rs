@@ -3292,6 +3292,11 @@ fn ingress_rows(controller: &Controller, name: &str, ids: Range<u32>) -> Complet
 
 /// Sends one `/ingress` request for rows with `ids` to `endpoint`.
 fn send_ingress(endpoint: &HttpInputEndpoint, ids: Range<u32>) {
+    send_ingress_with_force(endpoint, ids, false);
+}
+
+/// Like [send_ingress], with `force` as in an HTTP request's `?force=` query.
+fn send_ingress_with_force(endpoint: &HttpInputEndpoint, ids: Range<u32>, force: bool) {
     TOKIO.block_on(async {
         let (request, mut payload) = actix_web::test::TestRequest::default()
             .set_payload(
@@ -3307,7 +3312,7 @@ fn send_ingress(endpoint: &HttpInputEndpoint, ids: Range<u32>) {
         .await
         .unwrap();
         endpoint
-            .complete_request(payload, false, None)
+            .complete_request(payload, force, None)
             .await
             .unwrap();
     });
@@ -4384,6 +4389,9 @@ pub fn committed_connector_input_does_not_spin_the_circuit(engine: &dyn Pipeline
 struct ManualInputEndpoint {
     details: Arc<Mutex<Option<ManualInputEndpointDetails>>>,
     closed: Arc<AtomicBool>,
+    /// Answer `Queue` by flushing the queued records, as a real connector
+    /// does, instead of waiting for `release`.
+    polled: bool,
 }
 
 struct ManualInputEndpointDetails {
@@ -4396,6 +4404,15 @@ impl ManualInputEndpoint {
         Self {
             details: Arc::new(Mutex::new(None)),
             closed: Arc::new(AtomicBool::new(false)),
+            polled: false,
+        }
+    }
+
+    /// An endpoint that flushes its queued records when polled.
+    fn polled() -> Self {
+        Self {
+            polled: true,
+            ..Self::new()
         }
     }
 
@@ -4412,6 +4429,73 @@ impl ManualInputEndpoint {
     fn release(&self) {
         self.details.lock().unwrap().as_ref().unwrap().queue.queue();
     }
+}
+
+/// In a paused multihost pipeline, a step with [StepInputs::Paused] takes the
+/// input forced into an HTTP input endpoint.  Other input stays buffered.
+#[engine_test]
+pub fn multihost_paused_step_polls_only_http_input(engine: &dyn PipelineTestEngine) {
+    use feldera_types::coordination::{StepAction, StepInputs, StepRequest};
+
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "multihost": { "hosts": 1 },
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.pause();
+    let manual = ManualInputEndpoint::polled();
+    let manual_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": "unused"}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    let manual_id = controller
+        .add_input_endpoint("manual", manual_config, Box::new(manual.clone()), None)
+        .unwrap();
+    let http = HttpInputEndpoint::new(HttpInputConfig {
+        name: "http".into(),
+    });
+    controller
+        .add_input_endpoint(
+            "http",
+            http_input_config("http"),
+            Box::new(http.clone()),
+            None,
+        )
+        .unwrap();
+
+    manual.push("1,true,,foo\n");
+    send_ingress_with_force(&http, 10..12, true);
+    let step = controller.step_watcher().borrow().step;
+    controller.set_coordination_request(StepRequest::new(
+        step,
+        StepAction::Step,
+        StepInputs::Paused,
+    ));
+    wait(|| controller.step_watcher().borrow().step > step, 10_000)
+        .expect("the coordinator's step never ran");
+
+    let status = controller.status();
+    wait(|| status.num_total_processed_records() == 2, 10_000)
+        .expect("the step did not take the HTTP input");
+    let manual_buffered = status.input_status()[&manual_id]
+        .metrics
+        .buffered_records
+        .load(Ordering::Acquire);
+    assert_eq!(manual_buffered, 1);
+    assert_eq!(status.num_total_processed_records(), 2);
+    controller.stop().unwrap();
 }
 
 /// A final batch reported before closure must still be collected and counted.
@@ -4510,6 +4594,7 @@ impl InputReader for ManualInputEndpoint {
             return;
         }
         match command {
+            InputReaderCommand::Queue { .. } if self.polled => self.release(),
             // Report no input: the test releases it with
             // `ManualInputEndpoint::release`.
             InputReaderCommand::Queue { .. } => self

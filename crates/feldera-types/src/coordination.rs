@@ -209,6 +209,13 @@ pub struct CoordinationCapabilities {
     /// at `/coordination/checkpoint/output_assignment`.
     #[serde(default)]
     pub has_checkpoint_output_assignment: bool,
+
+    /// The pipeline accepts [StepInputs::Paused] in a [StepRequest].
+    ///
+    /// A pipeline without this capability cannot parse a step request with
+    /// that value.
+    #[serde(default)]
+    pub accepts_paused_step_inputs: bool,
 }
 
 impl CoordinationCapabilities {
@@ -219,6 +226,7 @@ impl CoordinationCapabilities {
             input_choices: true,
             step_request_seq: true,
             has_checkpoint_output_assignment: true,
+            accepts_paused_step_inputs: true,
         }
     }
 }
@@ -612,6 +620,12 @@ pub enum StepInputs {
     /// checkpoint to trigger a step.  For executing a step, use input only from
     /// input endpoints that are blocking a checkpoint.
     CheckpointBarriers,
+
+    /// The pipeline is paused.  Allow only input arriving on HTTP input
+    /// endpoints to trigger a step, and for executing a step, use input only
+    /// from them.  While the pipeline is paused, they accept input only from
+    /// requests with `force=true`.
+    Paused,
 
     /// Do not consider any input as triggering a step.  For executing a step,
     /// do not use any input.
