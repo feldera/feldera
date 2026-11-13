@@ -7,9 +7,12 @@
     parseLogResume
   } from '#lib/functions/pipelines/logCursor.ts'
 
+  // Keyed by pipeline id, so a rename keeps the log history
   const streams: Record<
     string,
     {
+      /** The current pipeline name, which the logs API takes. A rename updates it. */
+      pipelineName: string
       firstRowIndex: number
       rows: string[]
       totalSkippedBytes: number
@@ -44,11 +47,11 @@
    * reconnect does not blank the view while it waits for the first byte.
    */
   const openConnection = (
-    pipelineName: string,
+    pipelineId: string,
     requested: LogCursor | null,
     resumed: LogResume | null
   ) => {
-    const stream = streams[pipelineName]
+    const stream = streams[pipelineId]
     if (!isExactResume(requested, resumed)) {
       stream.rows = []
       stream.firstRowIndex = 0
@@ -64,11 +67,17 @@
 
   let getStreams = new Ref(streams)
   const pipelineActionCallbacks = usePipelineActionCallbacks()
+  // Delete callbacks get the name of the deleted pipeline
   const dropLogHistory = async (pipelineName: string) => {
-    if ('open' in streams[pipelineName].stream) {
-      streams[pipelineName].stream.stop()
+    for (const [pipelineId, entry] of Object.entries(streams)) {
+      if (entry.pipelineName !== pipelineName) {
+        continue
+      }
+      if ('open' in entry.stream) {
+        entry.stream.stop()
+      }
+      delete streams[pipelineId]
     }
-    delete streams[pipelineName]
   }
 </script>
 
@@ -110,13 +119,15 @@
     /** Reports the current match count so the panel can drive its search counter/nav buttons. */
     onLogMatchCountChange?: (count: number) => void
   } = $props()
+  let pipelineId = $derived(pipeline.current.id)
   let pipelineName = $derived(pipeline.current.name)
 
   let pipelineStatusName = $derived(unionName(pipeline.current.status))
 
   let pipelineLogs = $derived.by(() => {
-    if (!streams[pipelineName]) {
-      streams[pipelineName] = {
+    if (!streams[pipelineId]) {
+      streams[pipelineId] = {
+        pipelineName,
         firstRowIndex: 0,
         stream: { closed: {} },
         rows: [],
@@ -126,20 +137,22 @@
         cursor: null
       }
     }
-    return getStreams.current[pipelineName]
+    return getStreams.current[pipelineId]
   })
 
   $effect(() => {
-    pipelineName // Reactive dependency only needed when closing the previous stream when switching pipelines
+    // A rename reconnects under the new name. The cursor resumes the stream, so the rows stay.
+    const connectedId = pipelineId
+    const connectedName = pipelineName
     untrack(() => {
+      streams[connectedId].pipelineName = connectedName
       if (!deleted) {
-        startStream(pipelineName, 0)
+        startStream(connectedId, 0)
       }
     })
     // Close log stream when leaving log tab, switching to another pipeline, or when readonly
-    let oldPipelineName = pipelineName
     return () => {
-      stopLogStream(oldPipelineName)
+      stopLogStream(connectedId)
     }
   })
   const bufferSize = 10000
@@ -178,8 +191,8 @@
       .exhaustive()
 
   const api = usePipelineManager()
-  const startStream = (pipelineName: string, attempts: number) => {
-    if ('open' in streams[pipelineName].stream || 'cancelFetch' in streams[pipelineName].stream) {
+  const startStream = (pipelineId: string, attempts: number) => {
+    if ('open' in streams[pipelineId].stream || 'cancelFetch' in streams[pipelineId].stream) {
       return
     }
     const abortController = new AbortController()
@@ -187,38 +200,38 @@
     const connection = {
       cancelFetch: () => {
         abortController.abort()
-        streams[pipelineName].stream = { closed: {} }
+        streams[pipelineId].stream = { closed: {} }
       }
     }
-    streams[pipelineName].stream = connection
+    streams[pipelineId].stream = connection
     // Ask the server to carry on from where we stopped, so reconnecting only costs us the
     // lines we missed rather than the whole log again. An empty cursor still asks to be
     // told our position; leaving the parameter out altogether selects the old behaviour.
-    const requestedCursor = streams[pipelineName].cursor
+    const requestedCursor = streams[pipelineId].cursor
     api
-      .pipelineLogsStream(pipelineName, formatLogCursor(requestedCursor), {
+      .pipelineLogsStream(streams[pipelineId].pipelineName, formatLogCursor(requestedCursor), {
         signal: abortController.signal
       })
       .then((result) => {
         // Ignore the response if this is no longer the current connection. It may have been
         // cancelled, or replaced by a newer one, or the log history may have been dropped.
         // Without this check two connections would write to the same rows and cursor.
-        if (streams[pipelineName]?.stream !== connection) {
+        if (streams[pipelineId]?.stream !== connection) {
           return
         }
         if (result instanceof Error) {
-          streams[pipelineName].stream = { closed: {} }
-          streams[pipelineName].connectionError = result.message
+          streams[pipelineId].stream = { closed: {} }
+          streams[pipelineId].connectionError = result.message
           // `cause` is the API's error body, with the status added by `streamingFetch`.
           const cause = result.cause as { error_code?: string; status?: number } | undefined
           // A cursor the server rejects will not become acceptable by being sent again, so
           // keeping it would leave the viewer looping over the same error and never showing
           // another log line. Drop it and let the next attempt start the log over.
           if (cause?.error_code === 'InvalidLogCursorParam') {
-            streams[pipelineName].cursor = null
+            streams[pipelineId].cursor = null
           }
           // 503 is the server asking for a slower retry, so each one widens the backoff.
-          tryRestartStream(pipelineName, cause?.status === 503 ? attempts + 1 : 0)
+          tryRestartStream(pipelineId, cause?.status === 503 ? attempts + 1 : 0)
           return
         }
         // Where the server picked us up. It arrives with the response headers, so we hold
@@ -237,32 +250,39 @@
           newlineTextDecoder({
             bufferSize: 16 * 1024 * 1024,
             onSkipped: ({ bytes, lines }) => {
-              streams[pipelineName].totalSkippedBytes += bytes
+              // The delete callback can drop the log history while the stream still delivers lines
+              if (!streams[pipelineId]) {
+                return
+              }
+              streams[pipelineId].totalSkippedBytes += bytes
               pendingSkippedLines += lines
             }
           }),
           {
             pushChanges: (changes: string[]) => {
+              if (!streams[pipelineId]) {
+                return
+              }
               if (freshConnection) {
                 freshConnection = false
-                openConnection(pipelineName, requestedCursor, resumed)
+                openConnection(pipelineId, requestedCursor, resumed)
               }
               const droppedNum = pushAsCircularBuffer(
-                () => streams[pipelineName].rows,
+                () => streams[pipelineId].rows,
                 bufferSize,
                 (v: string) => v
               )(changes)
-              streams[pipelineName].firstRowIndex += droppedNum
+              streams[pipelineId].firstRowIndex += droppedNum
               // Count every line the server sent, including the ones we dropped to keep
               // up. Otherwise reconnecting would fetch that stretch all over again, when
               // we had already chosen not to display it.
-              if (streams[pipelineName].cursor) {
-                streams[pipelineName].cursor.seq += changes.length + pendingSkippedLines
+              if (streams[pipelineId].cursor) {
+                streams[pipelineId].cursor.seq += changes.length + pendingSkippedLines
               }
               pendingSkippedLines = 0
             },
             onParseEnded: (reason) => {
-              const current = streams[pipelineName]?.stream
+              const current = streams[pipelineId]?.stream
               // Ignore a callback from a stream we've already replaced: scroll-pause can stop
               // this stream and scroll-resume can open a new one before this 'cancelled' callback
               // lands. Acting on it would clobber the live stream's handle. Identify "still mine"
@@ -270,11 +290,11 @@
               if (!current || !('open' in current) || current.open !== result.stream) {
                 return
               }
-              streams[pipelineName].stream = { closed: {} }
+              streams[pipelineId].stream = { closed: {} }
               if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
                 return
               }
-              tryRestartStream(pipelineName, 0)
+              tryRestartStream(pipelineId, 0)
             }
           }
         )
@@ -282,26 +302,27 @@
         // cleared on the first `pushChanges` above, so the view stays populated until then.
         // Clearing the error here rather than on the first batch keeps it from outliving the
         // failure on a stream that is caught up and so has no line to send.
-        streams[pipelineName].connectionError = null
-        streams[pipelineName].stream = { open: result.stream, stop: cancel }
+        streams[pipelineId].connectionError = null
+        streams[pipelineId].stream = { open: result.stream, stop: cancel }
         getStreams.current = streams
       })
   }
   const backoffDelaysMs = [5, 5, 15, 30, 60].map((s) => s * 1000)
   const getDelayMs = (attempts: number) => backoffDelaysMs.at(attempts) ?? backoffDelaysMs.at(-1)!
   // Start stream unless it ended less than retryAllowedSinceDelayMs ago
-  const tryRestartStream = (pipelineName: string, attempts: number) => {
+  const tryRestartStream = (pipelineId: string, attempts: number) => {
     if (deleted) return
-    if ('cancelRetry' in streams[pipelineName].stream) {
+    const current = streams[pipelineId]?.stream
+    if (!current || 'cancelRetry' in current) {
       return
     }
     const delayMs = getDelayMs(attempts)
-    const timeout = setTimeout(() => startStream(pipelineName, attempts), delayMs)
-    streams[pipelineName].stream = {
+    const timeout = setTimeout(() => startStream(pipelineId, attempts), delayMs)
+    streams[pipelineId].stream = {
       closed: {},
       cancelRetry: () => {
         clearTimeout(timeout)
-        streams[pipelineName].stream = { closed: {} }
+        streams[pipelineId].stream = { closed: {} }
       },
       retryAtTimestamp: Date.now() + delayMs
     }
@@ -312,8 +333,8 @@
   // which deliberately does not auto-restart. Used by scroll-pause (so the user can read back
   // through history with no "connection lost" banner) and by teardown when leaving the tab or
   // switching pipelines.
-  const stopLogStream = (pipelineName: string) => {
-    const stream = streams[pipelineName]?.stream
+  const stopLogStream = (pipelineId: string) => {
+    const stream = streams[pipelineId]?.stream
     if (!stream) {
       return
     }
@@ -321,7 +342,7 @@
       stream.stop()
       // Mark closed now rather than waiting for the (delayed) onParseEnded tick, so a
       // scroll-resume that arrives within the flush window sees a closed stream and reconnects.
-      streams[pipelineName].stream = { closed: {} }
+      streams[pipelineId].stream = { closed: {} }
     } else if ('cancelFetch' in stream) {
       stream.cancelFetch()
     } else if ('cancelRetry' in stream) {
@@ -330,8 +351,8 @@
   }
   // Scroll-resume: when the view sticks to the bottom again, reconnect the feed. Drop any
   // pending retry first so we connect immediately rather than waiting out the backoff.
-  const resumeLogStream = (pipelineName: string) => {
-    const s = streams[pipelineName]?.stream
+  const resumeLogStream = (pipelineId: string) => {
+    const s = streams[pipelineId]?.stream
     if (!s) {
       return
     }
@@ -341,16 +362,16 @@
     if ('open' in s || 'cancelFetch' in s) {
       return
     }
-    startStream(pipelineName, 0)
+    startStream(pipelineId, 0)
   }
   const onStickToBottomChange = (stickToBottom: boolean) => {
     if (deleted) {
       return
     }
     if (stickToBottom) {
-      resumeLogStream(pipelineName)
+      resumeLogStream(pipelineId)
     } else {
-      stopLogStream(pipelineName)
+      stopLogStream(pipelineId)
     }
   }
 
@@ -417,7 +438,7 @@
   {:else if 'cancelFetch' in stream}
     <WarningBanner>Connecting to logs stream...</WarningBanner>
   {/if}
-  {#key pipelineName}
+  {#key pipelineId}
     <LogsStreamList
       logs={pipelineLogs}
       search={logSearch}
