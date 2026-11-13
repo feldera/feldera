@@ -17,7 +17,8 @@ Key capabilities:
 
 Checkpoint sync uses the `file` storage backend with
 [`rclone`](https://rclone.org/) under the hood to interact with S3-compatible
-object stores.
+object stores, Google Cloud Storage, and
+[Azure Blob Storage](#azure-blob-storage).
 
 Here is a minimal configuration to sync checkpoints to S3:
 
@@ -42,6 +43,22 @@ Here is a minimal configuration to sync checkpoints to S3:
 This configuration restores from the latest checkpoint on startup (downloading
 from S3 if not available locally) and pushes new checkpoints to S3 every 120
 seconds.
+
+### Configuration checks at start
+
+Feldera checks the `sync` configuration each time the pipeline starts, before
+the first transfer. A pipeline with a configuration that fails a check does not
+start, and the error names the field to change:
+
+| Check                                                     | How to correct the configuration                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------- |
+| `read_bucket` and `bucket` are the same location          | Point `read_bucket` to a different location, or remove it.            |
+| `read_bucket` and `bucket` are in different object stores | Use the same `gs://` or `az://` prefix on both, or no prefix on both. |
+| An `az://` bucket has no `access_key`                     | Set `access_key` to the name of the storage account.                  |
+| An `az://` bucket has no container name                   | Write the bucket as `az://<container>[/<path>]`.                      |
+| The deprecated `standby` field is `true`                  | Remove the field and start the pipeline with `initial=standby`.       |
+
+Before, only a start in [standby mode](#standby-mode) did these checks.
 
 ## Bucket ownership
 
@@ -177,14 +194,14 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 
 | Field                   | Type            | Default     | Description                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------- | --------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO). For a `gs://` bucket, the Google Cloud Storage JSON API base URL; a bare host gets `/storage/v1/` appended. Leave empty for the public service.                                                                                                                                                                                                                                                                                                  |
-| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`). Prefix it with `gs://` to sync to Google Cloud Storage through its native API instead of S3; `provider`, `access_key`, and `secret_key` are then ignored and rclone authenticates with Application Default Credentials (for example a GKE Workload Identity). This is the pipeline's read/write checkpoint location and must be unique to this pipeline. See [Bucket ownership](#bucket-ownership).                                                                                                                                                      |
-| `read_bucket`           | `string`        |             | A read-only fallback bucket used to seed the pipeline when `bucket` has no checkpoint. Uses the same connection settings as `bucket` and, for Google Cloud Storage, the same `gs://` prefix (`provider`, `access_key`, `secret_key`, `endpoint`, `region`). The pipeline **never writes** to `read_bucket`. Must point to a different location than `bucket`. See [Seeding from an existing pipeline](#seeding-from-an-existing-pipeline). |
+| `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO). For a `gs://` bucket, the Google Cloud Storage JSON API base URL; a bare host gets `/storage/v1/` appended. Leave empty for the public service. For an `az://` bucket, the blob service endpoint of the storage account; leave empty for `https://<account>.blob.core.windows.net`.                                                                                                                                                                                                                                                                                                  |
+| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`). Prefix it with `gs://` to sync to Google Cloud Storage through its native API instead of S3; `provider`, `access_key`, and `secret_key` are then ignored and rclone authenticates with Application Default Credentials (for example a GKE Workload Identity). Prefix it with `az://` to sync to Azure Blob Storage through its native API, as `az://<container>[/<path>]`; see [Azure Blob Storage](#azure-blob-storage). This is the pipeline's read/write checkpoint location and must be unique to this pipeline. See [Bucket ownership](#bucket-ownership).                                                                                                                                                      |
+| `read_bucket`           | `string`        |             | A read-only fallback bucket used to seed the pipeline when `bucket` has no checkpoint. Uses the same connection settings as `bucket` and the same `gs://` or `az://` prefix, if any (`provider`, `access_key`, `secret_key`, `endpoint`, `region`). The pipeline **never writes** to `read_bucket`. Must point to a different location than `bucket`. See [Seeding from an existing pipeline](#seeding-from-an-existing-pipeline). |
 | `take_bucket_ownership` | `boolean`       | `false`     | When `true`, the pipeline takes ownership of `bucket` as it starts, even if another pipeline owns it, and logs a warning that names both owners. Applies only at startup: if another pipeline takes `bucket` over while this pipeline is running, this pipeline's pushes fail. See [Taking over a checkpoint location](#taking-over-a-checkpoint-location). |
 | `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                                                                                                                                                                                                                             |
-| `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure. Not required for `gs://` buckets, which ignore it.                                                                                                                                                                                                                                                  |
-| `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                                                                                                                                                                                                                           |
-| `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                                                                                                                                                                                                                        |
+| `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure. Not required for `gs://` and `az://` buckets, which ignore it.                                                                                                                                                                                                                                                  |
+| `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA). For an `az://` bucket, the name of the storage account, which is required.                                                                                                                                                                                                                                                                                                           |
+| `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth. For an `az://` bucket, the shared key of the storage account.                                                                                                                                                                                                                                                                                                                        |
 | `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from, or `latest` to restore from the latest checkpoint.                                                                                                                                                                                                                                                                                                  |
 | `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true`, the pipeline fails to start if no checkpoint is found in any source (local storage, `bucket`, or `read_bucket`). When `false`, the pipeline starts from scratch instead.                                                                                                                                                                                               |
 | `standby`               | `boolean`       | `false`     | **Deprecated.** Use `initial=standby` when starting the pipeline instead. See [Standby mode](#standby-mode).                                                                                                                                                                                                                                                                        |
@@ -197,7 +214,7 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | `multi_thread_streams`  | `integer (u8)`  | `10`        | Number of streams for multi-threaded downloads.                                                                                                                                                                                                                                                                                                                                     |
 | `multi_thread_cutoff`   | `string`        | `100M`      | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`.                                                                                                                                                                                                                                                                |
 | `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                                                                                                                                                                                                                     |
-| `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`. Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/).                                                                                                                                                                                                           |
+| `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`. Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/), [S3 flags](https://rclone.org/s3/), [Google Cloud Storage flags](https://rclone.org/googlecloudstorage/), and [Azure Blob Storage flags](https://rclone.org/azureblob/).                                                                                                                                                                                                           |
 | `retention_min_count`   | `integer (u32)` | `10`        | The minimum number of checkpoints to retain in object store. No checkpoints will be deleted if the total count is below this threshold.                                                                                                                                                                                                                                             |
 | `min_retention` | duration   | `30d`       | The minimum age a checkpoint must reach before it becomes eligible for deletion, for example `30d`. All younger checkpoints will be preserved. Replaces the deprecated `retention_min_age`.                                                                                                                                                                                                                                               |
 
@@ -279,6 +296,40 @@ service account on GKE. That identity needs:
 Access checks use bucket-level IAM only (rclone's `--gcs-bucket-policy-only`),
 so buckets with uniform bucket-level access work and no per-object ACL is
 ever set.
+
+## Azure Blob Storage
+
+With an `az://` bucket, checkpoints sync to a container of an Azure storage
+account through the Azure Blob Storage API:
+
+```json
+"sync": {
+  "bucket": "az://CONTAINER_NAME/DIRECTORY_NAME",
+  "access_key": "STORAGE_ACCOUNT_NAME",
+  "secret_key": "STORAGE_ACCOUNT_KEY",
+  "start_from_checkpoint": "latest"
+}
+```
+
+- `access_key` is the name of the storage account. It is required.
+- `secret_key` is a shared key of the storage account. **Omit** it to load
+  credentials from the environment instead:
+  - If the environment of the pipeline has `RCLONE_AZUREBLOB_KEY`, Feldera
+    uses that shared key.
+  - If not, Feldera uses an identity, for example the
+    [Workload Identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview)
+    of the pipeline's Kubernetes service account on AKS, or a managed identity.
+- The container must exist. Feldera does not create it.
+- Do not put a key or a shared access signature (SAS) in `flags`. Feldera does
+  not pass `flags` when it lists the container, so the credential has no
+  effect there.
+- `provider` and `region` are ignored.
+
+An identity from the environment needs these roles:
+
+- `Storage Blob Data Contributor` on the container of `bucket`: checkpoints
+  are listed, read, written, and deleted when retention removes old ones.
+- `Storage Blob Data Reader` on the container of `read_bucket`, if configured.
 
 ## IRSA
 

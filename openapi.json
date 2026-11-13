@@ -17028,12 +17028,12 @@
         "properties": {
           "access_key": {
             "type": "string",
-            "description": "The access key used to authenticate with the storage provider.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.",
+            "description": "The access key used to authenticate with the storage provider.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.\n\nFor an `az://` bucket this is the name of the storage account, and it is required.",
             "nullable": true
           },
           "bucket": {
             "type": "string",
-            "description": "The name of the storage bucket.\n\nThis may include a path to a folder inside the bucket (e.g., `my-bucket/data`).\n\nPrefix it with `gs://` to sync to Google Cloud Storage through its native\nAPI instead of S3. `provider`, `access_key`, and `secret_key` are then\nignored; rclone authenticates with Application Default Credentials, for\nexample a GKE Workload Identity."
+            "description": "The name of the storage bucket.\n\nThis may include a path to a folder inside the bucket (e.g., `my-bucket/data`).\n\nPrefix it with `gs://` to sync to Google Cloud Storage through its native\nAPI instead of S3. `provider`, `access_key`, and `secret_key` are then\nignored; rclone authenticates with Application Default Credentials, for\nexample a GKE Workload Identity.\n\nPrefix it with `az://` to sync to Azure Blob Storage through its native\nAPI: `az://<container>[/<path>]`. `access_key` is then the name of the\nstorage account and `secret_key` its shared key; `provider` and\n`region` are ignored. The container must exist."
           },
           "checkers": {
             "type": "integer",
@@ -17049,7 +17049,7 @@
           },
           "endpoint": {
             "type": "string",
-            "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nFor a `gs://` bucket this is the Google Cloud Storage JSON API base URL;\na bare host gets `/storage/v1/` appended. Leave empty for the public service.\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
+            "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nFor a `gs://` bucket this is the Google Cloud Storage JSON API base URL;\na bare host gets `/storage/v1/` appended. Leave empty for the public service.\n\nFor an `az://` bucket this is the blob service endpoint of the storage\naccount. Leave empty for `https://<account>.blob.core.windows.net`.\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
             "nullable": true
           },
           "fail_if_no_checkpoint": {
@@ -17100,7 +17100,7 @@
           },
           "read_bucket": {
             "type": "string",
-            "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`. The\nscheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,\nbecause the prefix alone selects the object store.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
+            "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`. The\nscheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,\nand an `az://` `bucket` an `az://` `read_bucket`, because the prefix\nalone selects the object store.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
             "nullable": true
           },
           "region": {
@@ -17117,7 +17117,7 @@
           },
           "secret_key": {
             "type": "string",
-            "description": "The secret key used together with the access key for authentication.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.",
+            "description": "The secret key used together with the access key for authentication.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.\n\nFor an `az://` bucket this is the shared key of the storage account. If not provided,\nrclone reads the credentials from the environment, for example an AKS Workload Identity\nor a managed identity.",
             "nullable": true
           },
           "standby": {

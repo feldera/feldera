@@ -6799,6 +6799,8 @@ export type SyncConfig = {
    * If not provided, rclone will fall back to environment-based credentials, such as
    * `RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
    * this can be left empty to allow automatic authentication via the pod's service account.
+   *
+   * For an `az://` bucket this is the name of the storage account, and it is required.
    */
   access_key?: string | null
   /**
@@ -6810,6 +6812,11 @@ export type SyncConfig = {
    * API instead of S3. `provider`, `access_key`, and `secret_key` are then
    * ignored; rclone authenticates with Application Default Credentials, for
    * example a GKE Workload Identity.
+   *
+   * Prefix it with `az://` to sync to Azure Blob Storage through its native
+   * API: `az://<container>[/<path>]`. `access_key` is then the name of the
+   * storage account and `secret_key` its shared key; `provider` and
+   * `region` are ignored. The container must exist.
    */
   bucket: string
   /**
@@ -6833,6 +6840,9 @@ export type SyncConfig = {
    *
    * For a `gs://` bucket this is the Google Cloud Storage JSON API base URL;
    * a bare host gets `/storage/v1/` appended. Leave empty for the public service.
+   *
+   * For an `az://` bucket this is the blob service endpoint of the storage
+   * account. Leave empty for `https://<account>.blob.core.windows.net`.
    *
    * Relevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)
    */
@@ -6910,7 +6920,8 @@ export type SyncConfig = {
    * location instead.  All connection settings (`endpoint`, `region`,
    * `provider`, `access_key`, `secret_key`) are shared with `bucket`. The
    * scheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,
-   * because the prefix alone selects the object store.
+   * and an `az://` `bucket` an `az://` `read_bucket`, because the prefix
+   * alone selects the object store.
    *
    * The pipeline **never writes** to `read_bucket`.
    *
@@ -6936,6 +6947,10 @@ export type SyncConfig = {
    * If not provided, rclone will fall back to environment-based credentials, such as
    * `RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
    * this can be left empty to allow automatic authentication via the pod's service account.
+   *
+   * For an `az://` bucket this is the shared key of the storage account. If not provided,
+   * rclone reads the credentials from the environment, for example an AKS Workload Identity
+   * or a managed identity.
    */
   secret_key?: string | null
   /**

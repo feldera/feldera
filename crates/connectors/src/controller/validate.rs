@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, HashSet};
 
 use feldera_adapterlib::errors::controller::ConfigError;
-use feldera_types::config::PipelineConfig;
+use feldera_types::config::{PipelineConfig, StorageBackendConfig};
 
 use super::distribution::validate_distribution;
 
 pub fn validate_config(config: &PipelineConfig) -> Result<(), ConfigError> {
+    validate_sync_config(config)?;
+
     let mut dependencies = Vec::new();
 
     for (endpoint_name, input) in config.inputs.iter() {
@@ -31,6 +33,19 @@ pub fn validate_config(config: &PipelineConfig) -> Result<(), ConfigError> {
         return Err(ConfigError::cyclic_dependency(cycle));
     }
 
+    Ok(())
+}
+
+/// Checks the checkpoint sync configuration, if the pipeline has one, so that
+/// every way to start a pipeline rejects a bad one before the first transfer.
+fn validate_sync_config(config: &PipelineConfig) -> Result<(), ConfigError> {
+    if let Some((_, options)) = config.storage()
+        && let StorageBackendConfig::File(ref file_cfg) = options.backend
+        && let Some(ref sync) = file_cfg.sync
+    {
+        sync.validate()
+            .map_err(|error| ConfigError::InvalidSyncConfig { error })?;
+    }
     Ok(())
 }
 
@@ -162,4 +177,25 @@ fn test_find_cycle() {
             ("ep4".to_string(), "D".to_string())
         ])
     );
+}
+
+#[cfg(test)]
+#[test]
+fn bad_sync_config_fails_validation() {
+    fn config(sync: serde_json::Value) -> PipelineConfig {
+        serde_json::from_value(serde_json::json!({
+            "name": "test",
+            "storage_config": {"path": "/tmp/storage"},
+            "storage": {"backend": {"name": "file", "config": {"sync": sync}}},
+        }))
+        .unwrap()
+    }
+
+    let err = validate_config(&config(serde_json::json!({"bucket": "az://ckpts/a"}))).unwrap_err();
+    assert!(err.to_string().contains("set `access_key`"), "{err}");
+
+    validate_config(&config(
+        serde_json::json!({"bucket": "az://ckpts/a", "access_key": "account"}),
+    ))
+    .unwrap();
 }
