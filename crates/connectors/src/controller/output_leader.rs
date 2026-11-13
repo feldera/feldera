@@ -5,7 +5,8 @@
 //! reports it, for each committed transaction, to the leader, which is the part on the host that
 //! the coordinator assigned to the connector's stream.  The leader waits for every part's report
 //! of the step and then commits all of them together.  A part's report returns once that commit
-//! is done, so no part counts its output as written before it is.
+//! is done, so no part counts its output as written before it is.  If any part failed to write
+//! its output, the leader commits none of the step, so that a reader never sees part of it.
 //!
 //! | Host       | Role              | For each committed transaction at step S                     |
 //! |------------|-------------------|--------------------------------------------------------------|
@@ -63,7 +64,9 @@ pub enum OutputPartRole {
 
 impl OutputPart {
     /// Commits `payload`, this part's output for the transaction that committed at `step`,
-    /// together with the other parts' output.
+    /// together with the other parts' output.  `payload` is an error if this part failed to
+    /// write its output.  If any part's payload is an error, the leader does not call `commit`,
+    /// and the step fails on every part.
     ///
     /// On the leader, `commit` receives every part's payload and commits them.  Elsewhere, the
     /// payload goes to the leader.  Either way, this returns once the leader's commit is done.
@@ -73,21 +76,26 @@ impl OutputPart {
     pub fn commit(
         &self,
         step: Step,
-        payload: JsonValue,
+        payload: Result<JsonValue, String>,
         shutdown: &CancellationToken,
         on_wait: &mut dyn FnMut(Duration, &[usize]),
         commit: impl FnOnce(Vec<JsonValue>) -> AnyResult<()>,
     ) -> AnyResult<()> {
         match &self.role {
             OutputPartRole::Leader(leader) => {
-                let mut payloads = match leader.gather(step, shutdown, on_wait) {
+                let gathered = leader
+                    .gather(step, shutdown, on_wait)
+                    .and_then(|mut payloads| {
+                        payloads.insert(0, payload.map_err(|e| failed_part(self.host, step, &e))?);
+                        Ok(payloads)
+                    });
+                let payloads = match gathered {
                     Ok(payloads) => payloads,
                     Err(error) => {
                         leader.finish(step, Err(error.clone()));
                         return Err(anyhow!(error));
                     }
                 };
-                payloads.insert(0, payload);
                 let result = commit(payloads);
                 leader.finish(
                     step,
@@ -96,11 +104,16 @@ impl OutputPart {
                 result
             }
             OutputPartRole::Follower(client) => {
+                let (payload, error) = match payload {
+                    Ok(payload) => (payload, None),
+                    Err(error) => (JsonValue::Null, Some(error)),
+                };
                 let report = OutputPartReport {
                     endpoint: self.endpoint.clone(),
                     host: self.host,
                     step,
                     payload,
+                    error,
                 };
                 TOKIO.block_on(async {
                     shutdown
@@ -113,6 +126,11 @@ impl OutputPart {
             }
         }
     }
+}
+
+/// The error of a step in which the part on `host` failed to write its output, with `error`.
+fn failed_part(host: usize, step: Step, error: &str) -> String {
+    format!("the part on host {host} failed to write its output for step {step}: {error}")
 }
 
 /// The leader of a distributed output connector, which collects the other parts' reports.
@@ -134,8 +152,9 @@ pub struct CommitLeader {
 
 #[derive(Default)]
 struct LeaderState {
-    /// The reports of steps not yet committed, by step and then by host.
-    pending: BTreeMap<Step, BTreeMap<usize, JsonValue>>,
+    /// The reports of steps not yet committed, by step and then by host.  A report is an error
+    /// if its part failed to write its output.
+    pending: BTreeMap<Step, BTreeMap<usize, Result<JsonValue, String>>>,
 
     /// The result of each recently finished step.
     results: BTreeMap<Step, Result<(), String>>,
@@ -162,9 +181,15 @@ impl CommitLeader {
         }
     }
 
-    /// Records `host`'s report of `step` and waits until the leader finishes the step.  Returns
-    /// the result of the leader's commit.
-    pub async fn report(&self, host: usize, step: Step, payload: JsonValue) -> Result<(), String> {
+    /// Records `host`'s report of `step`, which is an error if the part failed to write its
+    /// output, and waits until the leader finishes the step.  Returns the result of the leader's
+    /// commit.
+    pub async fn report(
+        &self,
+        host: usize,
+        step: Step,
+        payload: Result<JsonValue, String>,
+    ) -> Result<(), String> {
         let mut finished = self.finished.subscribe();
         {
             let mut state = self.state.lock().unwrap();
@@ -211,8 +236,9 @@ impl CommitLeader {
     }
 
     /// Waits until every other part has reported `step`, and returns their payloads.  Returns an
-    /// error if `shutdown` is cancelled, or the leader is closed (see [Self::close]), first, or if
-    /// a part that has not reported `step` has reported a later step, so that it skipped `step`.
+    /// error if a part reported that it failed to write its output, if `shutdown` is cancelled,
+    /// or the leader is closed (see [Self::close]), first, or if a part that has not reported
+    /// `step` has reported a later step, so that it skipped `step`.
     /// Such a part waits for the later step, so waiting for its report of `step` would never
     /// end.
     ///
@@ -239,7 +265,10 @@ impl CommitLeader {
             let n_reports = state.pending.get(&step).map_or(0, |reports| reports.len());
             if n_reports >= self.n_followers {
                 let reports = state.pending.remove(&step).unwrap_or_default();
-                return Ok(reports.into_values().collect());
+                return reports
+                    .into_iter()
+                    .map(|(host, report)| report.map_err(|e| failed_part(host, step, &e)))
+                    .collect();
             }
             if shutdown.is_cancelled() || state.closed {
                 return Err("the pipeline stopped before every part reported".into());
@@ -330,7 +359,7 @@ mod tests {
     use serde_json::json;
     use tokio_util::sync::CancellationToken;
 
-    use super::CommitLeader;
+    use super::{CommitLeader, OutputPart, OutputPartRole};
 
     /// The leader gathers every part's report of a step, and each part gets the result of the
     /// leader's commit, including a part that repeats its report afterward.
@@ -341,7 +370,7 @@ mod tests {
         let reports: Vec<_> = (1..3)
             .map(|host| {
                 let leader = leader.clone();
-                runtime.spawn(async move { leader.report(host, 7, json!(host)).await })
+                runtime.spawn(async move { leader.report(host, 7, Ok(json!(host))).await })
             })
             .collect();
 
@@ -356,9 +385,71 @@ mod tests {
             assert_eq!(runtime.block_on(report).unwrap(), Err("no room".into()));
         }
         assert_eq!(
-            runtime.block_on(leader.report(1, 7, json!(1))),
+            runtime.block_on(leader.report(1, 7, Ok(json!(1)))),
             Err("no room".into())
         );
+    }
+
+    /// If any part, the leader's own included, failed to write its output for a step, the leader
+    /// commits none of the step, and every part gets an error that names the part that failed.
+    #[test]
+    fn a_failed_part_fails_the_step() {
+        let leader = Arc::new(CommitLeader::new(3));
+        let part = OutputPart {
+            endpoint: "spread".into(),
+            host: 0,
+            leader_host: 0,
+            role: OutputPartRole::Leader(leader.clone()),
+        };
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let shutdown = CancellationToken::new();
+        let no_commit = |_| -> anyhow::Result<()> { panic!("the leader committed a failed step") };
+
+        // Another part failed.
+        let reports: Vec<_> = [(1, Ok(json!(1))), (2, Err("disk full".to_string()))]
+            .into_iter()
+            .map(|(host, payload)| {
+                let leader = leader.clone();
+                runtime.spawn(async move { leader.report(host, 7, payload).await })
+            })
+            .collect();
+        let error = part
+            .commit(7, Ok(json!(0)), &shutdown, &mut |_, _| {}, no_commit)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("host 2") && error.contains("disk full"),
+            "{error}"
+        );
+        for report in reports {
+            assert_eq!(runtime.block_on(report).unwrap(), Err(error.clone()));
+        }
+
+        // The leader's own part failed.
+        let report = runtime.spawn({
+            let leader = leader.clone();
+            async move { leader.report(1, 8, Ok(json!(1))).await }
+        });
+        let report2 = runtime.spawn({
+            let leader = leader.clone();
+            async move { leader.report(2, 8, Ok(json!(2))).await }
+        });
+        let error = part
+            .commit(
+                8,
+                Err("no room".into()),
+                &shutdown,
+                &mut |_, _| {},
+                no_commit,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("host 0") && error.contains("no room"),
+            "{error}"
+        );
+        assert_eq!(runtime.block_on(report).unwrap(), Err(error.clone()));
+        assert_eq!(runtime.block_on(report2).unwrap(), Err(error));
     }
 
     /// A report of a step that the leader already finished without it fails, and so does a
@@ -369,13 +460,20 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let skipped = runtime.spawn({
             let leader = leader.clone();
-            async move { leader.report(1, 4, json!(null)).await }
+            async move { leader.report(1, 4, Ok(json!(null))).await }
         });
         runtime.block_on(async { tokio::time::sleep(Duration::from_millis(50)).await });
         leader.finish(5, Ok(()));
         assert!(runtime.block_on(skipped).unwrap().is_err());
-        assert!(runtime.block_on(leader.report(1, 3, json!(null))).is_err());
-        assert_eq!(runtime.block_on(leader.report(1, 5, json!(null))), Ok(()));
+        assert!(
+            runtime
+                .block_on(leader.report(1, 3, Ok(json!(null))))
+                .is_err()
+        );
+        assert_eq!(
+            runtime.block_on(leader.report(1, 5, Ok(json!(null)))),
+            Ok(())
+        );
     }
 
     /// Closing the leader fails the reports that wait for it and the reports
@@ -386,7 +484,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let waiting = runtime.spawn({
             let leader = leader.clone();
-            async move { leader.report(1, 4, json!(null)).await }
+            async move { leader.report(1, 4, Ok(json!(null))).await }
         });
         runtime.block_on(async { tokio::time::sleep(Duration::from_millis(50)).await });
         leader.close();
@@ -399,7 +497,7 @@ mod tests {
         assert!(
             within(runtime.spawn({
                 let leader = leader.clone();
-                async move { leader.report(1, 5, json!(null)).await }
+                async move { leader.report(1, 5, Ok(json!(null))).await }
             }))
             .unwrap()
             .is_err()
@@ -416,7 +514,7 @@ mod tests {
         let leader = Arc::new(leader);
         let _report = runtime.spawn({
             let leader = leader.clone();
-            async move { leader.report(2, 1, json!(null)).await }
+            async move { leader.report(2, 1, Ok(json!(null))).await }
         });
         let shutdown = CancellationToken::new();
         // Stops the wait if `on_wait` is never called.
@@ -447,7 +545,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _report = runtime.spawn({
             let leader = leader.clone();
-            async move { leader.report(1, 5, json!(1)).await }
+            async move { leader.report(1, 5, Ok(json!(1))).await }
         });
         let gather = std::thread::spawn({
             let leader = leader.clone();
@@ -477,7 +575,7 @@ mod tests {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let behind = runtime.spawn({
             let leader = leader.clone();
-            async move { leader.report(1, 8, json!(8)).await }
+            async move { leader.report(1, 8, Ok(json!(8))).await }
         });
         std::thread::sleep(Duration::from_millis(100));
         let gather = std::thread::spawn({
@@ -494,7 +592,7 @@ mod tests {
         assert!(error.contains("step 8"), "{error}");
         let report = runtime.spawn({
             let leader = leader.clone();
-            async move { leader.report(1, 10, json!(10)).await }
+            async move { leader.report(1, 10, Ok(json!(10))).await }
         });
         assert_eq!(gather.join().unwrap().unwrap(), [json!(10)]);
         leader.finish(10, Ok(()));

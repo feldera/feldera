@@ -182,6 +182,7 @@ mod tests {
             host: 1,
             step: 4,
             payload: serde_json::json!([]),
+            error: None,
         }
     }
 
