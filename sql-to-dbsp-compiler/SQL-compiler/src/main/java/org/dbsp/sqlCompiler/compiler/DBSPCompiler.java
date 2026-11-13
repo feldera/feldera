@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.BalanceSetOperations;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CteToLocalViews;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
@@ -633,7 +634,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         RenameIdentifiers renamer = new RenameIdentifiers();
         for (ParsedStatement stat : statements) {
             if (stat.visible()) {
-                SqlNode node = stat.statement();
+                // Serialize the set operation chains in the grouping of the source
+                SqlNode node = BalanceSetOperations.leftDeep(stat.statement());
                 if (this.options.ioOptions.anonymize)
                     node = Objects.requireNonNull(renamer.visitNode(node));
                 Utilities.enforce(node != null);

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -12,6 +13,7 @@ import org.junit.Test;
 import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.List;
 
 /** Parser tests that are expected to fail. */
 public class NegativeParserTests extends BaseSQLTests {
@@ -308,5 +310,22 @@ public class NegativeParserTests extends BaseSQLTests {
                 2:18: error: Not supported: SELECT DISTINCT ON is not supported.
                 See https://docs.feldera.com/sql/unsupported-operations#select-distinct-on
                 """);
+    }
+
+    /** A StackOverflowError gets its own message, also as the cause of a parse error,
+     * which then has no position */
+    @Test
+    public void stackOverflowMessage() {
+        CompilerMessages parse = new CompilerMessages(this.testCompiler());
+        parse.reportError(new SqlParseException(null, null, null, null, new StackOverflowError()));
+        CompilerMessages other = new CompilerMessages(this.testCompiler());
+        other.reportError(new RuntimeException(new StackOverflowError()));
+        for (CompilerMessages messages : List.of(parse, other)) {
+            CompilerMessages.Message message = messages.getMessage(0);
+            Assert.assertEquals("Stack overflow", message.errorType);
+            Assert.assertEquals("The compiler ran out of stack space. This happens when a query is " +
+                    "nested too deeply. Simplify the query, for example by splitting it into several views.",
+                    message.message);
+        }
     }
 }
