@@ -6,12 +6,12 @@
    *  `profile`, then drives the layout through `callbacks` as the Visualizer would. */
   export const capture: {
     callbacks?: ProfilerCallbacks
-    /** The SQL lines the layout handed the diagram. */
-    programCode?: string[]
     profile: CircuitProfile | null
+    /** The metrics that the layout selected in the diagram, in order. */
+    selectedMetrics: string[]
     /** The latest props of the code panel's tab, the only panel handed a `file`. */
     sourceTab?: { file: SourceFile; highlightRanges: SourcePositionRange[] }
-  } = { profile: null }
+  } = { profile: null, selectedMetrics: [] }
 </script>
 
 <script lang="ts">
@@ -21,7 +21,6 @@
   // calls stay harmless no-ops.
   const props: {
     callbacks?: ProfilerCallbacks
-    programCode?: string[]
     file?: SourceFile
     highlightRanges?: SourcePositionRange[]
   } = $props()
@@ -29,7 +28,6 @@
   $effect(() => {
     if (props.callbacks) {
       capture.callbacks = props.callbacks
-      capture.programCode = props.programCode
     }
   })
 
@@ -42,7 +40,9 @@
   export function getProfile() {
     return capture.profile
   }
-  export function selectMetric(_metricId: string) {}
+  export function selectMetric(metricId: string) {
+    capture.selectedMetrics.push(metricId)
+  }
   export function search(_query: string) {}
   export function showGlobalMetrics(_isSticky?: boolean) {}
   export function showTopNodes(_isSticky?: boolean) {}

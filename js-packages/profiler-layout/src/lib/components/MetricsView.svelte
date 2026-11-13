@@ -51,6 +51,7 @@
   import { buildSearchTargets, matchTargets } from '../functions/metricsSearch'
   import { positiveMod, Tooltip, type SearchDirection } from 'common-ui'
   import { tick } from 'svelte'
+  import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
 
   interface Props {
     mode: MetricsMode
@@ -111,6 +112,23 @@
   const genericTable = $derived(
     tooltipData && 'genericTable' in tooltipData ? tooltipData.genericTable : null
   )
+  // The top nodes table has a row for each drawn node, often more than a thousand, so it mounts
+  // only the rows near the view. The rows are absolutely placed, so they cannot share the column
+  // widths of a table. The node and value columns are as wide as their longest text.
+  let topNodesList: VirtualizerHandle | undefined = $state()
+  // The estimated row height is one line of `text-sm`, the `py-1` padding and the top border.
+  // The list measures the real height of a taller row, for example a long operation on two lines.
+  const topNodeRowHeightPx = 29
+  const topNodesColumns = $derived.by(() => {
+    const rows = genericTable?.rows ?? []
+    const widestCh = (texts: string[]) => Math.max(...texts.map((text) => text.length)) + 2
+    const node = widestCh([genericTable?.columns[0] ?? '', ...rows.map((row) => row.stub.text)])
+    const value = widestCh([
+      genericTable?.columns[1] ?? '',
+      ...rows.map((row) => row.cells[0]?.text ?? '')
+    ])
+    return `${node}ch ${value}ch minmax(0, 1fr)`
+  })
 
   // Scroll targets the search can jump to in the current view, in DOM order; each carries a
   // `data-block-id` anchor (see {@link buildSearchTargets}).
@@ -167,6 +185,12 @@
     const n = ids.length
     matchCursor = positiveMod(matchCursor, n)
     const target = ids[matchCursor]
+    if (!showAttributesView) {
+      // The list mounts the row of the hit only after it scrolls to that row.
+      const rowIndex = searchTargets.findIndex((t) => t.id === target)
+      topNodesList?.scrollToIndex(rowIndex, { align: 'start', smooth: true })
+      return { current: matchCursor + 1, total: n }
+    }
     // A hit inside a collapsed block would scroll to a hidden row.
     setCollapsed(target, false)
     // Scrolling before the expanded rows are laid out clamps the scroll to the collapsed
@@ -246,34 +270,47 @@
       No top-nodes data — select a metric to compute.
     </div>
   {:else}
-    <div class="rounded-base bg-white-dark p-4 shadow-sm">
+    <div
+      class="flex h-full flex-col rounded-base bg-white-dark p-4 shadow-sm text-sm"
+      role="table"
+      aria-label={genericTable.header}
+      aria-rowcount={genericTable.rows.length + 1}
+    >
       <h3 class="mb-3 text-base font-semibold text-surface-900-100">{genericTable.header}</h3>
-      <table class="w-full border-collapse text-sm">
-        <thead>
-          <tr class="text-left text-xs font-medium uppercase tracking-wide text-surface-600-400">
-            {#each genericTable.columns as col}
-              <th class="px-2 py-1">{col}</th>
-            {/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each genericTable.rows as row, i}
-            <tr class="border-t border-surface-200-800" data-block-id="top-node-{i}">
-              <td class="px-2 py-1">
+      <div
+        class="grid text-left text-xs font-medium uppercase tracking-wide text-surface-600-400"
+        style:grid-template-columns={topNodesColumns}
+        role="row"
+      >
+        {#each genericTable.columns as col}
+          <div class="px-2 py-1" role="columnheader">{col}</div>
+        {/each}
+      </div>
+      <div class="scrollbar min-h-0 flex-1 overflow-y-auto" role="rowgroup">
+        <Virtualizer data={genericTable.rows} itemSize={topNodeRowHeightPx} bind:this={topNodesList}>
+          {#snippet children(row, i)}
+            <div
+              class="grid border-t border-surface-200-800"
+              style:grid-template-columns={topNodesColumns}
+              role="row"
+              aria-rowindex={i + 2}
+              data-block-id="top-node-{i}"
+            >
+              <div class="px-2 py-1" role="cell">
                 <button
                   type="button"
                   class="cursor-pointer text-secondary-600-400 hover:underline"
                   onclick={() => row.stub.onclick?.()}
                 >{row.stub.text}</button>
-              </td>
+              </div>
               {#each row.cells as cell}
-                <td class="px-2 py-1 text-right tabular-nums">{cell.text}</td>
-                <td class="px-2 py-1 text-surface-700-300">{cell.operation}</td>
+                <div class="px-2 py-1 text-right tabular-nums" role="cell">{cell.text}</div>
+                <div class="px-2 py-1 text-surface-700-300" role="cell">{cell.operation}</div>
               {/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+            </div>
+          {/snippet}
+        </Virtualizer>
+      </div>
     </div>
   {/if}
 {/snippet}

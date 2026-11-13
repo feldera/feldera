@@ -171,7 +171,6 @@ describe('profile viewer — uploaded bundles', () => {
     getSuitableProfiles.mockReturnValue([[new Date('2026-01-14T00:00:00Z'), []]])
     processProfileFiles.mockResolvedValue({
       profile: {},
-      dataflow: {},
       sourceFiles: [],
       logText: '',
       globalMetrics: {},

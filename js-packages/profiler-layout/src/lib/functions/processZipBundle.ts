@@ -5,7 +5,7 @@ import {
   type ConnectorStatus
 } from 'common-ui/connectorMetrics'
 import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
-import type { Dataflow, JsonProfiles } from 'profiler-lib'
+import { CircuitProfile, type Dataflow, type JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'
 import type { GlobalMetrics } from './globalMetrics'
@@ -71,9 +71,10 @@ export interface SourceFile {
 }
 
 export interface ProcessedProfile {
-  /** Parsed `circuit_profile.json` */
-  profile?: JsonProfiles
-  dataflow?: Dataflow
+  /** The model of `circuit_profile.json`, with the source positions from `dataflow_graph.json` */
+  profile?: CircuitProfile
+  /** The reason why `CircuitProfile` could not read `circuit_profile.json`. Set only when `profile` is not set. */
+  profileError?: string
   logText?: string
   pipelineName?: string
   /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes them. */
@@ -148,6 +149,36 @@ async function readZipItem(file: ZipItem): Promise<Uint8Array> {
   return new Uint8Array(await new Response(inflated).arrayBuffer())
 }
 
+/** Builds the model of a parsed circuit profile and adds the source positions to it. */
+export function buildCircuitProfile(
+  json: JsonProfiles,
+  dataflow: Dataflow | undefined,
+  programCode: string[] | undefined
+): CircuitProfile {
+  const { profile } = CircuitProfile.fromJson(json)
+  profile.setDataflow(dataflow, programCode)
+  return profile
+}
+
+/** Reads `circuit_profile.json` into its model. The parsed JSON is local to this function, so the
+ *  garbage collector can free it when the function returns. If the file cannot be unzipped or
+ *  parsed, or `CircuitProfile` cannot read the JSON, the function returns `profileError` and does
+ *  not throw. */
+async function readCircuitProfile(
+  file: ZipItem,
+  dataflow: Dataflow | undefined,
+  programCode: string[] | undefined
+): Promise<{ profile?: CircuitProfile; profileError?: string }> {
+  try {
+    const json = JSON.parse(new TextDecoder().decode(await readZipItem(file))) as JsonProfiles
+    return { profile: buildCircuitProfile(json, dataflow, programCode) }
+  } catch (e) {
+    return {
+      profileError: `Failed to read the circuit profile: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+}
+
 /**
  * Process a specific set of profile files (already unzipped) into structured data.
  * Use this with the files from getSuitableProfiles() for efficient processing.
@@ -156,13 +187,6 @@ async function readZipItem(file: ZipItem): Promise<Uint8Array> {
  */
 export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedProfile> {
   const decoder = new TextDecoder()
-
-  // The circuit profile is optional: a bundle without it still yields config, logs and stats.
-  const profileFile = files.find((file) => circuitProfileRegex.test(file.filename))
-  let profile: JsonProfiles | undefined
-  if (profileFile) {
-    profile = JSON.parse(decoder.decode(await readZipItem(profileFile))) as JsonProfiles
-  }
 
   const dataflowFile = files.find((file) => dataflowGraphRegex.test(file.filename))
   let dataflow: Dataflow | undefined
@@ -195,6 +219,15 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     ).flatMap(({ code, ...file }) => (typeof code === 'string' && code ? [{ ...file, code }] : []))
     sourceFiles = [...programFiles, ...udfFiles]
   }
+
+  // The circuit profile is optional. A bundle without it still gives the config, logs and stats.
+  const profileFile = files.find((file) => circuitProfileRegex.test(file.filename))
+  // The model shows the SQL of each circuit node from the lines of `program.sql` when the dataflow
+  // has no `sources`, as in a support bundle.
+  const programCode = sourceFiles?.find((f) => f.name === 'program.sql')?.code.split('\n')
+  const { profile, profileError } = profileFile
+    ? await readCircuitProfile(profileFile, dataflow, programCode)
+    : {}
 
   const logsFile = files.find((file) => logsRegex.test(file.filename))
   let logText: string | undefined
@@ -236,7 +269,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
 
   return {
     profile,
-    dataflow,
+    profileError,
     logText,
     pipelineName,
     globalMetrics,

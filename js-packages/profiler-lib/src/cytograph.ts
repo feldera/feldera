@@ -10,15 +10,21 @@ import { Sources } from './dataflow.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
-import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
+import { buildGraphStyle, type DiagramTheme, labelWidth, RAISED_EDGE_CLASS } from './diagramTheme.js';
 import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
 import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
-import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
+import { elkNodeLayoutOptions, regionMinWidth, reserveRegionChipRows } from './regionSize.js';
 import { installChipButtons, isToggleable, refreshChips } from './chipButtons.js';
 import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
+import { pauseFrames } from './cytoscapeRenderer.js';
+import { type ElkLayoutOptions, layoutCache, layoutCacheKey, leafPositions, runPresetLayout } from './layoutCache.js';
+
+// The module registers each extension one time, because cytoscape warns when code registers it again.
+cytoscape.use(elk);
+cytoscape.use(dblclick);
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
@@ -81,7 +87,7 @@ class Attributes {
         // Matrix of measurements
         readonly matrix: MeasurementMatrix,
         // Key-value attributes
-        readonly kv: Map<string, string>,
+        readonly keyValues: Map<string, string>,
     ) { };
 }
 
@@ -130,6 +136,8 @@ class GraphNode {
                 "text_width": labelWidth(label),
                 // For an expanded node its min width depends on the title and the chip button
                 "min_width": this.hasChildren ? regionMinWidth(label, this.leafCount) : 0,
+                // `reserveRegionChipRows` sets this value after each layout.
+                "min_height": 0,
                 "operator": this.label,
                 "sources": this.sources,
                 "has_source": this.hasSourcePosition,
@@ -187,8 +195,10 @@ export class Cytograph {
     readonly nodeChildren: OMap<NodeId, Set<NodeId>>;
     readonly nodes: Array<GraphNode>;
     readonly edges: Array<GraphEdge>;
-    // Maps edges ids in the underlying graph to edges ids in the drawn graph
+    // Maps the id of each edge in `graph` to the id of the drawn edge that stands for it.
     readonly edgeMap: Map<string, string>;
+    // The drawn edges by id, so that parallel edges between two drawn nodes become one edge.
+    private readonly edgesById: Map<string, GraphEdge> = new Map();
 
     constructor(readonly graph: Graph<NodeId>) {
         this.nodes = [];
@@ -201,9 +211,18 @@ export class Cytograph {
         this.nodes.push(node);
     }
 
-    /** Map an edge in the real underlying graph to an edge in the displayed graph. */
-    mapEdge(original: GraphEdge, real: GraphEdge) {
-        this.edgeMap.set(original.getId(), real.getId());
+    /** Adds the drawn edge from `source` to `target` that stands for the edge `original` of `graph`.
+     *  All edges of `graph` with the same drawn nodes and the same `back` flag share one drawn edge.
+     *  ELK then lays out one edge for each pair of nodes, which makes the layout faster. */
+    addDrawnEdge(original: Edge<NodeId>, source: NodeId, target: NodeId) {
+        // The id depends only on the drawn edge, so that `diff` keeps the edge when other edges change.
+        const id = source + "->" + target + (original.back ? ":back" : "");
+        if (!this.edgesById.has(id)) {
+            const drawn = new GraphEdge(source, target, id, original.back);
+            this.edgesById.set(id, drawn);
+            this.edges.push(drawn);
+        }
+        this.edgeMap.set(original.id, id);
     }
 
     /** Get all the simple nodes inside the specified node. */
@@ -211,23 +230,6 @@ export class Cytograph {
         if (this.nodeChildren.has(id))
             return this.nodeChildren.get(id).unwrap();
         return new Set([id]);
-    }
-
-    /** Create a graph edge, but do not add it to the graph. */
-    createEdge(source: string, target: string, back: boolean): GraphEdge {
-        // Must generate a unique ID for each edge; source and target and not enough
-        // to distinguish two edges, since this is in general a multigraph.
-        let identical_count = 0;
-        for (const e of this.edges) {
-            if (e.source === source && e.target === target) {
-                identical_count++;
-            }
-        }
-        let id = source + "->" + target;
-        if (identical_count > 0) {
-            id += ":" + (identical_count + 1);
-        }
-        return new GraphEdge(source, target, id, back);
     }
 
     /** Used to convert nodes and edges to a representation understood by cytoscape. */
@@ -287,7 +289,7 @@ export class Cytograph {
                 if (set.isSome())
                     set.unwrap().add(nodeId);
                 else {
-                    result.nodeChildren.set(topParent, new Set(nodeId));
+                    result.nodeChildren.set(topParent, new Set([nodeId]));
                 }
             }
 
@@ -333,49 +335,23 @@ export class Cytograph {
             }
         }
 
-        // Keys are pairs (Simple node ID, target node ID), where target is simple or complex
-        // Used to avoid inserting the same edge twice between two complex nodes
-        // if the edge represents the same channel.
-        let insertedEdges: Set<string> = new Set();
-        for (const edge of profile.edges) {
-            let source = edge.source;
-            let target = edge.target;
-            let originalEdge = result.createEdge(source, target, edge.back);
-
+        for (const edge of g.edges) {
+            let source = edge.from;
+            let target = edge.to;
             let sourceParent = profile.getTopParent(source);
             let targetParent = profile.getTopParent(target);
-            let expandSource = selection.regionsExpanded.contains(sourceParent);
-            let expandTarget = selection.regionsExpanded.contains(targetParent);
-            if (profile.complexNodes.has(target))
-                // Do not add edges to complex nodes.
-                continue;
-
-            if (!expandSource)
+            if (!selection.regionsExpanded.contains(sourceParent))
                 source = sourceParent;
-            if (!expandTarget)
+            if (!selection.regionsExpanded.contains(targetParent))
                 target = targetParent;
 
             let sourceNode = inserted.get(source).expect(`Node ${source} not found in visible map`);
             let targetNode = inserted.get(target).expect(`Node ${target} not found in visible map`);
-
             if (sourceNode === targetNode) {
                 // Induced edges can be self-edges; do not add these
                 continue;
             }
-
-            // Detect whether an edge represents the same channel as a previous edge
-            // (only suppressed if the edge goes to a complex node)
-            if (!expandTarget) {
-                let pair = edge.source.toString() + "," + targetNode.id.toString();
-                if (insertedEdges.has(pair)) {
-                    continue;
-                }
-                insertedEdges.add(pair);
-            }
-
-            let realEdge = result.createEdge(sourceNode.id, targetNode.id, edge.back);
-            result.edges.push(realEdge);
-            result.mapEdge(originalEdge, realEdge);
+            result.addDrawnEdge(edge, sourceNode.id, targetNode.id);
         }
         return result;
     }
@@ -404,6 +380,12 @@ class GraphDiff {
     }
 }
 
+// The thoroughness of the crossing minimization of ELK. At 2, ELK keeps most of the input order,
+// and the input order groups the operators of one SQL statement. Higher values give a few fewer
+// crossings, but scatter a statement across the drawing. Do not add `considerModelOrder.strategy`,
+// because its sort pass takes about 15 of the 18 s of the layout of a circuit with 1707 nodes.
+const ELK_THOROUGHNESS = 2;
+
 /** Handles updates and rendering for the displayed cytograph. */
 export class CytographRendering {
     /** The progress message while the graph changes and ELK lays it out. */
@@ -414,8 +396,14 @@ export class CytographRendering {
      * If true do not remove the node information from the screen on mouse leave
      */
     stickyInformation: boolean;
-    // Current node that has tooltip displayed (for refreshing on metadata changes)
-    private currentTooltipNode: NodeId | null = null;
+    // The node that the node report shows. A metadata change refreshes the report.
+    private reportedNode: NodeId | null = null;
+    // The profile and the scales of the last `updateMetadata`, for `computeAttributes`.
+    private metadataProfile: CircuitProfile | null = null;
+    private displayScales: DisplayScales = new Map();
+    // The graph and the mask of the visible workers of the last computation of `displayScales`.
+    private scalesGraph: Cytograph | null = null;
+    private scalesWorkerMask = "";
     /** Where the view is. */
     private readonly viewport: Viewport;
     /** Everything that reacts to the diagram's lifecycle rather than driving it.
@@ -425,6 +413,24 @@ export class CytographRendering {
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
+    /** Resumes the frames that `pauseFrames` paused. Not null while a layout runs. `FrozenLayout`
+     *  hides the frames during a layout, but each frame costs a style update and a draw of the whole
+     *  changed graph, so the diagram pauses them. */
+    private resumeFrames: (() => void) | null = null;
+    /** The `layoutCacheKey` of the last layout that started. */
+    private layoutKey: string | null = null;
+    /** The number of ELK layouts that are running. */
+    private elkLayoutsRunning = 0;
+    /** The edges that `traceSelection` colored, so that `clearTrace` changes only these edges. */
+    private tracedEdges: EdgeCollection;
+    /** The edges that have `RAISED_EDGE_CLASS`. `raiseTracedEdges` makes them equal to `tracedEdges`. */
+    private raisedEdges: EdgeCollection;
+    /** The animation frame request of `scheduleRaise`, or null if no request is pending. */
+    private raiseFrame: number | null = null;
+    /** `setEvents` adds this listener to the document, and `dispose` removes it. */
+    private readonly onDocumentKeyup = (event: KeyboardEvent) => this.keyup(event);
+    /** `dispose` aborts this controller, which removes the chip button listeners from the graph container. */
+    private readonly chipButtonsLifetime = new AbortController();
 
     constructor(
         graphContainer: HTMLElement,
@@ -438,9 +444,6 @@ export class CytographRendering {
         private clearMessage: () => void,
         private onTooltipContextChanged: () => void,
         private theme: DiagramTheme = 'light') {
-        cytoscape.use(elk);
-        cytoscape.use(dblclick);
-
         this.currentGraph = null;
         this.stickyInformation = false;
         // Start with an empty graph
@@ -448,6 +451,8 @@ export class CytographRendering {
             container: graphContainer,
             elements: [],
         });
+        this.tracedEdges = this.cy.collection();
+        this.raisedEdges = this.cy.collection();
         installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
@@ -515,7 +520,7 @@ export class CytographRendering {
             'algorithm': 'layered',
             'elk.direction': 'DOWN',
             'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-            'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+            'elk.layered.thoroughness': ELK_THOROUGHNESS,
             'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF'
         }
     };
@@ -530,7 +535,8 @@ export class CytographRendering {
         elk: {
             'algorithm': 'layered',
             'elk.direction': 'DOWN',
-            'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
+            'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+            'elk.layered.thoroughness': ELK_THOROUGHNESS
         }
     };
 
@@ -577,72 +583,76 @@ export class CytographRendering {
         return new SerializedMeasurement(m, percentile);
     }
 
-    /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
-    computeAttributes(profile: CircuitProfile, selection: MetadataSelection,
-        scales: DisplayScales) {
+    /** Computes the attributes that the node report of `node` shows, for the current metadata selection. */
+    private computeAttributes(node: GraphNode): Attributes {
+        const profile = this.metadataProfile!;
+        const selection = this.metadataSelection;
+        const scales = this.displayScales;
         let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
         // One column per visible worker. Aggregates such as min/max are not produced here:
         // consumers that want them compute them from the per-worker values themselves.
         let columnNames = workers.map(w => w.toString());
-        for (const node of this.currentGraph!.nodes) {
-            let profileNode = profile.getNode(node.getId()).unwrap();
-            let data = new Map<string, Array<SerializedMeasurement>>();
-            // Totals over the same workers the cells show, so they match what is displayed.
-            let values = new Map<string, PropertyValue>();
-            // Select just the visible metrics
-            // Compute per-worker attributes
-            for (let metric of profileNode.measurements.getMetrics()) {
-                let range = scales.get(metric)?.range ?? NumericRange.empty();
-                let metrics = profileNode.getMeasurements(metric);
-                let selected = selection.workersVisible.getSelectedElements(metrics);
-                let measurements: Array<SerializedMeasurement> = [];
-                for (const m of selected) {
-                    measurements.push(CytographRendering.toMeasurement(m, range));
-                }
-                data.set(metric, measurements);
-                let total = profileNode.totalOf(metric, selected);
-                if (total.isSome()) {
-                    values.set(metric, total.unwrap());
-                }
+        let profileNode = profile.getNode(node.getId()).unwrap();
+        let data = new Map<string, Array<SerializedMeasurement>>();
+        // Totals over the same workers the cells show, so they match what is displayed.
+        let values = new Map<string, PropertyValue>();
+        // The readings of each metric on the visible workers
+        for (let metric of profileNode.measurements.getMetrics()) {
+            let range = scales.get(metric)?.range ?? NumericRange.empty();
+            let metrics = profileNode.getMeasurements(metric);
+            let selected = selection.workersVisible.getSelectedElements(metrics);
+            let measurements: Array<SerializedMeasurement> = [];
+            for (const m of selected) {
+                measurements.push(CytographRendering.toMeasurement(m, range));
             }
-            // The toplevel node stands for the whole circuit, so it holds the largest total of
-            // every metric and has to be shaded against the metrics beside it instead.
-            const overview = node.getId() === this.rootNodeId;
-            const shares = overview ? PropertyValue.categoryShares(values) : undefined;
-            let totals = new Map<string, SerializedMeasurement>();
-            for (const [metric, total] of values) {
-                const share = overview
-                    ? shares!.get(metric) ?? 0
-                    : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
-                totals.set(metric, new SerializedMeasurement(total, share));
+            data.set(metric, measurements);
+            let total = profileNode.totalOf(metric, selected);
+            if (total.isSome()) {
+                values.set(metric, total.unwrap());
             }
-            // additional key-value per node attributes
-            let kv = new Map();
-            kv.set("id", node.id);
-            if (node.persistentId.isSome()) {
-                kv.set("persistentId", node.persistentId.unwrap());
-            }
-            kv.set("operation", node.getLabel());
-            kv.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
-            if (!profile.isTop(node.getId())) {
-                // Not shown for the toplevel node
-                kv.set("consumers", profile.consumerCount(node.getId()).toString());
-            }
+        }
+        // The toplevel node stands for the whole circuit, so it holds the largest total of
+        // every metric and has to be shaded against the metrics beside it instead.
+        const overview = node.getId() === this.rootNodeId;
+        const shares = overview ? PropertyValue.categoryShares(values) : undefined;
+        let totals = new Map<string, SerializedMeasurement>();
+        for (const [metric, total] of values) {
+            const share = overview
+                ? shares!.get(metric) ?? 0
+                : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
+            totals.set(metric, new SerializedMeasurement(total, share));
+        }
+        const keyValues = new Map<string, string>();
+        keyValues.set("id", node.id);
+        if (node.persistentId.isSome()) {
+            keyValues.set("persistentId", node.persistentId.unwrap());
+        }
+        keyValues.set("operation", node.getLabel());
+        keyValues.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
+        if (!profile.isTop(node.getId())) {
+            // Not shown for the toplevel node
+            keyValues.set("consumers", profile.consumerCount(node.getId()).toString());
+        }
 
-            let parent = profile.parents.get(node.id);
-            if (parent.isSome()) {
-                const p = parent.unwrap();
-                kv.set("parent", p);
-            }
-            let matrix = new MeasurementMatrix(
-                columnNames, [...profileNode.measurements.getMetrics()], data, totals);
-            let attributes = new Attributes(matrix, kv);
+        let parent = profile.parents.get(node.id);
+        if (parent.isSome()) {
+            const p = parent.unwrap();
+            keyValues.set("parent", p);
+        }
+        let matrix = new MeasurementMatrix(
+            columnNames, [...profileNode.measurements.getMetrics()], data, totals);
+        return new Attributes(matrix, keyValues);
+    }
+
+    /** Writes the `expanded` and `invisible` data fields of each node, which change with the graph.
+     *  Writes only the changed values, because each write restyles the node. */
+    private updateNodeFlags() {
+        for (const node of this.currentGraph!.nodes) {
             let rendered = this.getRenderedNode(node.getId());
-            rendered.data("expanded", node.expanded);
-            rendered.data("has_children", node.hasChildren);
-            // attach the attributes to the node
-            rendered.data("attributes", attributes);
-            if (node.getId() === this.rootNodeId) {
+            if (rendered.data("expanded") !== node.expanded) {
+                rendered.data("expanded", node.expanded);
+            }
+            if (node.getId() === this.rootNodeId && rendered.data("invisible") !== true) {
                 rendered.data("invisible", true);
             }
         }
@@ -663,7 +673,10 @@ export class CytographRendering {
                 percents = range.percents(max);
             }
             let rendered = this.getRenderedNode(node.getId());
-            rendered.data("value", percents);
+            // Cytoscape restyles the node on each write, also when the value does not change.
+            if (rendered.data("value") !== percents) {
+                rendered.data("value", percents);
+            }
         }
     }
 
@@ -680,18 +693,28 @@ export class CytographRendering {
     updateMetadata(profile: CircuitProfile, selection: MetadataSelection) {
         if (this.currentGraph === null)
             return;
+        this.metadataProfile = profile;
         this.metadataSelection = selection;
-        // One pass over the drawn nodes feeds the node highlighting, the per-worker bars and the
-        // totals, so all three describe the same population.
-        const scales = profile.displayScales(this.drawnNodes(),
-            values => selection.workersVisible.getSelectedElements(values));
-        this.computeImportance(profile, selection, scales);
-        this.computeAttributes(profile, selection, scales);
-        this.cy.style().update();
+        // The scales depend only on the drawn nodes and the visible workers, so a metric switch keeps them.
+        const workerMask = profile.getWorkerNames()
+            .map((_, index) => selection.workersVisible.contains(index) ? "1" : "0").join("");
+        if (this.scalesGraph !== this.currentGraph || this.scalesWorkerMask !== workerMask) {
+            // One pass over the drawn nodes gives the scales of the node shading, the per-worker bars
+            // and the totals, so all three use the same set of nodes.
+            this.displayScales = profile.displayScales(this.drawnNodes(),
+                values => selection.workersVisible.getSelectedElements(values));
+            this.scalesGraph = this.currentGraph;
+            this.scalesWorkerMask = workerMask;
+        }
+        // In a batch, cytoscape restyles each changed node one time, after all writes.
+        this.cy.batch(() => {
+            this.computeImportance(profile, selection, this.displayScales);
+            this.updateNodeFlags();
+        });
 
         // Refresh the tooltip if there's a node currently displayed
-        if (this.currentTooltipNode !== null) {
-            const node = this.getRenderedNode(this.currentTooltipNode);
+        if (this.reportedNode !== null) {
+            const node = this.getRenderedNode(this.reportedNode);
             if (node) {
                 this.displayNodeAttributes(node);
             }
@@ -711,18 +734,59 @@ export class CytographRendering {
         this.renderingInFlight = true;
         this.callbacks.onRenderingChange?.(true);
         this.message(CytographRendering.LAYOUT_MESSAGE);
+        this.resumeFrames ??= pauseFrames(this.cy);
         try {
-            this.cy
-                .layout(options)
-                .run();
+            this.runLayout(options);
         } catch (e) {
-            this.renderingInFlight = false;
-            this.callbacks.onRenderingChange?.(false);
-            // No `layoutstop` will arrive either, so whatever the observers put up to cover the change
-            // has to come down here or it never will.
-            notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
+            this.abandonLayout();
             throw e;
         }
+    }
+
+    /** Runs ELK, or moves the nodes to the positions from an earlier ELK layout of the same input. */
+    private runLayout(options: ElkLayoutOptions) {
+        const key = layoutCacheKey(this.cy, options);
+        this.layoutKey = key;
+        // A running ELK layout moves the nodes when it finishes. A cached layout must not finish
+        // before it, because then the older ELK layout would be the last one on screen.
+        const positions = this.elkLayoutsRunning === 0 ? layoutCache.get(key) : undefined;
+        if (positions === undefined) {
+            const layout = this.cy.layout(options as never);
+            layout.one('layoutstop', () => {
+                this.elkLayoutsRunning--;
+                // If the graph changed during the layout, a newer layout runs, and these positions do
+                // not belong to `key`.
+                if (this.layoutKey === key) {
+                    layoutCache.set(key, leafPositions(this.cy));
+                }
+            });
+            layout.run();
+            // The count goes up after `run`, because a `run` that throws emits no `layoutstop`.
+            this.elkLayoutsRunning++;
+            return;
+        }
+        // ELK gives its result after `updateGraph` returns. The cached layout also waits, so that the
+        // code after `updateGraph` always runs before `layoutComplete`.
+        queueMicrotask(() => {
+            if (this.cy.destroyed() || this.layoutKey !== key) {
+                return;
+            }
+            try {
+                runPresetLayout(this.cy, positions);
+            } catch (e) {
+                this.abandonLayout();
+                throw e;
+            }
+        });
+    }
+
+    /** Undoes what `initiateLayout` started, after a layout throws. No `layoutstop` follows a throw. */
+    private abandonLayout() {
+        this.endFramePause();
+        this.renderingInFlight = false;
+        this.callbacks.onRenderingChange?.(false);
+        // The observers remove what they show over the changing graph.
+        notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
     }
 
     /** Modify the rendered graph incrementally by applying a diff. */
@@ -799,7 +863,7 @@ export class CytographRendering {
         onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined,
         onShowSource?: ((node: NodeId) => void) | undefined
     }) {
-        document.addEventListener('keyup', (e) => this.keyup(e));
+        document.addEventListener('keyup', this.onDocumentKeyup);
         // Called here rather than in the constructor because this is where the chips' actions arrive;
         // `setEvents` runs once per instance.
         installChipButtons(this.cy, () => this.theme, {
@@ -811,7 +875,7 @@ export class CytographRendering {
                 callbacks.onShowSource?.(id);
             },
             onToggle: (id) => this.toggleCircuitRegion(id, callbacks.onNodeDoubleClick)
-        });
+        }, this.chipButtonsLifetime.signal);
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
@@ -866,12 +930,19 @@ export class CytographRendering {
     }
 
     layoutComplete() {
+        reserveRegionChipRows(this.cy);
+        this.endFramePause();
         this.clearMessage();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
         // In order: the viewport settles zoom and pan, then the picture held over the layout comes down
         // onto the finished one.
         notifyObservers(this.observers, (observer) => observer.layoutSettled?.());
+    }
+
+    private endFramePause() {
+        this.resumeFrames?.();
+        this.resumeFrames = null;
     }
 
     getActualEdgeId(e: Edge<NodeId>): string {
@@ -886,29 +957,16 @@ export class CytographRendering {
     // Note that the node can be a parent, in this case we compute the
     // edges reachable from ALL its children.
     reachableFrom(id: NodeId, forward: boolean): EdgeCollection {
-        // If a node is complex, get the list of children
-        let nodes = this.currentGraph!.getSimpleNodes(id);
-        let result = this.cy!.collection();
-        for (const node of nodes) {
-            if (forward) {
-                let reachable = this.graph.reachableFrom(node, e => !e.back);
-                for (let e of reachable) {
-                    let edgeId = this.getActualEdgeId(e);
-                    let edge = this.cy!.getElementById(edgeId);
-                    if (edge !== undefined)
-                        result = result.union(edge);
-                }
-            } else {
-                let reverseReachable = this.graph.canReach(node, e => !e.back);
-                for (let e of reverseReachable) {
-                    let edgeId = this.getActualEdgeId(e);
-                    let edge = this.cy!.getElementById(edgeId);
-                    if (edge !== undefined)
-                        result = result.union(edge);
-                }
+        // `merge` adds to this collection in place. `union` would make a copy for each edge.
+        const result = this.cy.collection();
+        for (const node of this.currentGraph!.getSimpleNodes(id)) {
+            const reachable = forward
+                ? this.graph.reachableFrom(node, e => !e.back)
+                : this.graph.canReach(node, e => !e.back);
+            for (const e of reachable) {
+                result.merge(this.cy.getElementById(this.getActualEdgeId(e)));
             }
         }
-
         return result;
     }
 
@@ -937,10 +995,10 @@ export class CytographRendering {
      *
      *  This reads the class on the node, so the result always agrees with what is on screen. */
     private reportIsMarked(): boolean {
-        if (this.currentTooltipNode === null) {
+        if (this.reportedNode === null) {
             return false;
         }
-        return this.getRenderedNode(this.currentTooltipNode).hasClass(SELECTED_NODE_CLASS);
+        return this.getRenderedNode(this.reportedNode).hasClass(SELECTED_NODE_CLASS);
     }
 
     /** Give `node` the selection mark (`SELECTED_NODE_CLASS`), and remove the mark from all other
@@ -968,25 +1026,51 @@ export class CytographRendering {
         // The edges that connect directly to the node get their own colors.
         forward.intersection(node.outgoers('edge')).addClass('highlight-forward-adjacent');
         backward.intersection(node.incomers('edge')).addClass('highlight-backward-adjacent');
+        this.tracedEdges = forward.union(backward);
+        this.scheduleRaise();
     }
 
     /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
     private clearTrace() {
         this.markSelected(null);
-        this.cy.edges().removeClass(
+        this.tracedEdges.removeClass(
             'highlight-forward highlight-backward highlight-forward-adjacent highlight-backward-adjacent');
+        this.tracedEdges = this.cy.collection();
+        this.scheduleRaise();
+    }
+
+    /** Calls `raiseTracedEdges` in the next animation frame. A change of `z-index` makes cytoscape
+     *  sort all elements again before it draws. Because of this delay, the frame that shows or removes
+     *  a trace does not include the sort. If the trace changes again before the next frame, only the
+     *  last trace gets raised. */
+    private scheduleRaise() {
+        if (this.raiseFrame !== null) {
+            return;
+        }
+        this.raiseFrame = requestAnimationFrame(() => {
+            this.raiseFrame = null;
+            this.raiseTracedEdges();
+        });
+    }
+
+    /** Draws the traced edges over the other edges, and the edges of an older trace in the usual order. */
+    private raiseTracedEdges() {
+        this.raisedEdges.difference(this.tracedEdges).removeClass(RAISED_EDGE_CLASS);
+        this.tracedEdges.difference(this.raisedEdges).addClass(RAISED_EDGE_CLASS);
+        this.raisedEdges = this.tracedEdges;
     }
 
     displayNodeAttributes(node: NodeSingular) {
         const nodeId = node.id();
-        const attributes: Attributes = node.data().attributes;
-        const sources = node.data("sources")
-        if (this.cy === null) {
+        const graphNode = this.currentGraph?.nodes.find((n) => n.getId() === nodeId);
+        if (this.cy === null || graphNode === undefined || this.metadataProfile === null) {
             return;
         }
+        const attributes = this.computeAttributes(graphNode);
+        const sources = node.data("sources")
 
-        // Track the current tooltip node for refreshing on metadata changes
-        this.currentTooltipNode = nodeId;
+        // A metadata change refreshes the report of this node.
+        this.reportedNode = nodeId;
         this.onTooltipContextChanged()
         this.traceSelection(node);
 
@@ -1049,9 +1133,9 @@ export class CytographRendering {
         }
 
         // Add additional key-value attributes
-        if (attributes.kv.size !== 0) {
+        if (attributes.keyValues.size !== 0) {
             visible = true;
-            for (const [key, value] of attributes.kv.entries()) {
+            for (const [key, value] of attributes.keyValues.entries()) {
                 if (key == "id") {
                     tooltipData.title = value + tooltipData.title;
                 } else if (key == "operation") {
@@ -1086,7 +1170,7 @@ export class CytographRendering {
     }
 
     hideNodeInformation() {
-        this.currentTooltipNode = null;
+        this.reportedNode = null;
         this.clearTrace();
         this.onTooltipContextChanged()
         this.callbacks.displayNodeAttributes(Option.none(), false);
@@ -1103,7 +1187,14 @@ export class CytographRendering {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
         }
+        this.endFramePause();
         notifyObservers(this.observers, (observer) => observer.dispose?.());
+        if (this.raiseFrame !== null) {
+            cancelAnimationFrame(this.raiseFrame);
+            this.raiseFrame = null;
+        }
+        document.removeEventListener('keyup', this.onDocumentKeyup);
+        this.chipButtonsLifetime.abort();
 
         // Destroy the Cytoscape instance
         if (this.cy) {

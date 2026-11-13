@@ -24,9 +24,8 @@
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type {
-    Dataflow,
+    CircuitProfile,
     DiagramTheme,
-    JsonProfiles,
     MetricOption,
     NodeAttributes,
     ProfilerCallbacks,
@@ -59,9 +58,12 @@
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
-    /** Parsed circuit profile */
-    profileData?: JsonProfiles
-    dataflowData: Dataflow | undefined
+    /** The circuit profile to draw. It must not be a deep `$state` object, because reads through
+     *  its proxies make the diagram much slower on a large profile. */
+    profile?: CircuitProfile
+    /** The reason why `processProfileFiles` could not read the circuit profile of the bundle. The
+     *  header notice shows this reason on hover. */
+    profileError?: string
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
     globalMetrics?: GlobalMetrics
@@ -100,8 +102,8 @@
   }
 
   let {
-    profileData,
-    dataflowData,
+    profile,
+    profileError,
     logText,
     globalMetrics,
     connectorMetrics,
@@ -121,29 +123,33 @@
     onRenderingChange
   }: Props = $props()
 
-  const hasProfile = $derived(profileData !== undefined)
+  const hasProfile = $derived(profile !== undefined)
   // Without a profile, the Metrics tab can only show the global stats from `stats.json`.
   const hasMetrics = $derived(hasProfile || buildGlobalMetrics(globalMetrics).length > 0)
-  // `processProfileFiles` gives an empty `program.sql` a tab. Only empty files count as no code.
+  // `processProfileFiles` also gives a tab to an empty `program.sql`, so a bundle has code only if
+  // a source file has text.
   const hasSourceCode = $derived(sourceFiles.some((f) => f.code.trim() !== ''))
+  // An unreadable profile collapses the graph panel as a missing profile does. The header notice
+  // tells the two cases apart.
+  const profileGap = $derived(profileError ? 'an unreadable circuit profile' : 'no circuit profile')
   // The header notice about the missing parts of the bundle. The first matching row gives the text.
   const missingDataNotice = $derived(
     [
       {
         matches: !hasProfile && !hasMetrics && !hasSourceCode,
-        text: 'This bundle has no circuit profile and no pipeline code, so the dataflow graph, metrics and code are unavailable.'
+        text: `This bundle has ${profileGap} and no pipeline code, so the dataflow graph, metrics and code are unavailable.`
       },
       {
         matches: !hasProfile && !hasSourceCode,
-        text: 'This bundle has no circuit profile and no pipeline code, so the dataflow graph and code are unavailable.'
+        text: `This bundle has ${profileGap} and no pipeline code, so the dataflow graph and code are unavailable.`
       },
       {
         matches: !hasProfile && !hasMetrics,
-        text: 'This bundle has no circuit profile, so the dataflow graph and metrics are unavailable.'
+        text: `This bundle has ${profileGap}, so the dataflow graph and metrics are unavailable.`
       },
       {
         matches: !hasProfile,
-        text: 'This bundle has no circuit profile, so the dataflow graph is unavailable.'
+        text: `This bundle has ${profileGap}, so the dataflow graph is unavailable.`
       },
       {
         matches: !hasSourceCode,
@@ -157,7 +163,7 @@
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
-  // In percent. The resizers cannot hide the code panel completely.
+  // In percent. This minimum keeps the resizers from hiding the code panel.
   const codePaneMinSize = 15
   const belowGraphPaneDefaultSize = 100 - graphPaneDefaultSize
 
@@ -179,9 +185,6 @@
   let showAdvancedMetrics = $state(false)
   // The metric selector lists only the metrics that the tables show.
   const levelMetricOptions = $derived(levelMetrics(metrics, showAdvancedMetrics))
-  // The metric that colors the diagram: `selectedMetricId` when the selector lists it, or else a
-  // listed metric. The selector then never holds a metric that it does not list.
-  const shownMetricId = $derived(metricToSelect(selectedMetricId, levelMetricOptions))
   let issueSeverityFilter = $state<'all' | 'error' | 'warning' | 'info'>('all')
   let issueCategoryFilter = $state<string>('all')
   const issueCategories = $derived(uniqueCategories(triageResults.results))
@@ -262,7 +265,7 @@
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
-            header: `Nodes with highest values for "${MetricDescriptions.label(shownMetricId)}"`,
+            header: `Nodes with highest values for "${MetricDescriptions.label(selectedMetricId)}"`,
             columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
@@ -275,7 +278,13 @@
     },
     onMetricsChanged: (newMetrics, newSelectedMetricId) => {
       metrics = newMetrics
-      selectedMetricId = newSelectedMetricId
+      // The diagram can call this callback in an effect. `untrack` keeps `showAdvancedMetrics`
+      // out of the dependencies of that effect.
+      const listed = levelMetrics(
+        newMetrics,
+        untrack(() => showAdvancedMetrics)
+      )
+      selectedMetricId = metricToSelect(newSelectedMetricId, listed)
     },
     displayMessage: (msg) => {
       message = msg.unwrapOr('')
@@ -286,6 +295,14 @@
     onRenderingChange: (rendering) => {
       onRenderingChange?.(rendering)
     }
+  }
+
+  /** Shows or hides the advanced metrics. If the metric selector does not list the selected metric
+   *  after the change, the function selects a listed metric. The selected metric is then always
+   *  listed, so the next toggle keeps the diagram metric. */
+  function setShowAdvancedMetrics(show: boolean) {
+    showAdvancedMetrics = show
+    selectedMetricId = metricToSelect(selectedMetricId, levelMetrics(metrics, show))
   }
 
   /** Show the SQL the node was compiled from, selected and scrolled into view in the code panel.
@@ -306,7 +323,7 @@
   // the current sticky tooltip via the callbacks above, but those only touch tooltipData — so
   // this does not feed back into any effect (no loop).
   $effect(() => {
-    profilerDiagram?.selectMetric(shownMetricId)
+    profilerDiagram?.selectMetric(selectedMetricId)
   })
 
   // Reset to the overview whenever the loaded bundle changes. `analysisView` is reset first so the
@@ -314,7 +331,7 @@
   // that `showGlobalMetrics` triggers sees a non-node view and can't overwrite `lastNodeData`
   // with the overview payload.
   $effect(() => {
-    void profileData
+    void profile
     const diagram = profilerDiagram
     queueMicrotask(() => {
       analysisView = 'overview'
@@ -363,9 +380,6 @@
     lookupProgress = null
   })
 
-  // The lines of `program.sql`. `ProfilerDiagram` shows the SQL of each circuit node from these
-  // lines when the dataflow has no `sources`, as in a support bundle.
-  const programCode = $derived(sourceFiles.find((f) => f.name === 'program.sql')?.code.split('\n'))
   let sourceCurrentTab = $state('program.sql')
   // The file of the selected tab. It is `undefined` when the bundle has no source files.
   // It defaults to the first file of the bundle when the bundle does not have the selected file.
@@ -492,7 +506,7 @@
       {@render loadProfileControl?.()}
       <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
       {#if missingDataNotice}
-        <p class="text-surface-800-200">{missingDataNotice}</p>
+        <p class="text-surface-800-200" title={profileError}>{missingDataNotice}</p>
       {/if}
       {#if hasProfile}
         <div class="ml-auto">
@@ -581,7 +595,7 @@
   <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
     {#if levelMetricOptions.length > 0}
       <MetricSelect
-        bind:value={() => shownMetricId, (id) => (selectedMetricId = id)}
+        bind:value={selectedMetricId}
         metrics={levelMetricOptions}
         class="w-42"
         title="Select metric"
@@ -664,7 +678,7 @@
     <Switch
       name="showAdvancedMetrics"
       checked={showAdvancedMetrics}
-      onCheckedChange={(e) => (showAdvancedMetrics = e.checked)}
+      onCheckedChange={(e) => setShowAdvancedMetrics(e.checked)}
     >
       <Switch.Control class="h-5 w-9">
         <Switch.Thumb />
@@ -769,14 +783,12 @@
 <!-- Persistent ProfilerDiagram overlay. Always mounted at root, sized to mirror the
      <PersistentPlaceholder> in graphPanel. Surviving the layout toggle (and any other
      conditional re-render of graphPanel) is what keeps the Visualizer's internal state intact
-     instead of being torn down and re-created from `profileData` each time. -->
-{#if profileData}
+     instead of being torn down and re-created from `profile` each time. -->
+{#if profile}
   <PersistentContent persistent={diagramRect} class="overflow-hidden bg-white-dark">
     <ProfilerDiagram
       bind:this={profilerDiagram}
-      {profileData}
-      {dataflowData}
-      {programCode}
+      {profile}
       {callbacks}
       {theme}
     />

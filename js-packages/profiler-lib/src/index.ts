@@ -30,3 +30,4 @@ export {
 } from './profile.js';
 export { type Dataflow, SourcePositionRange } from './dataflow.js';
 export { type Option } from './util.js';
+export { clearLayoutCache } from './layoutCache.js';

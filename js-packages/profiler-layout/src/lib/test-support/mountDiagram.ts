@@ -5,6 +5,7 @@
 
 import type { NodeAttributes, Option, ProfilerCallbacks } from 'profiler-lib'
 import { render } from 'vitest-browser-svelte'
+import { buildCircuitProfile } from '../functions/processZipBundle'
 import ThemedDiagram from './ThemedDiagram.svelte'
 
 const simple = (id: string, label: string) => ({ Simple: { id, label } })
@@ -199,6 +200,9 @@ export async function mountDiagram(
     doubleClicks: [] as Array<{ nodeId: string, type: 'group' | 'leaf' }>,
     /** One entry per `displayNodeAttributes`, the node it carried or `null` for a dismissal. */
     attributes: [] as Array<{ nodeId: string | null, isSticky: boolean }>,
+    /** What the last node report showed: its worker columns, and the metric of the row marked as
+     *  the current metric. */
+    lastReport: { columns: [] as string[], currentMetric: undefined as string | undefined },
     /** One entry per `displayMessage`, the message or `null` when it is cleared. */
     messages: [] as Array<string | null>
   }
@@ -207,6 +211,15 @@ export async function mountDiagram(
       reported.attributes.push({
         nodeId: data.match({ some: (v) => v.nodeId, none: () => null }),
         isSticky
+      })
+      data.match({
+        some: (v) => {
+          reported.lastReport = {
+            columns: v.columns,
+            currentMetric: v.rows.find((row) => row.isCurrentMetric)?.metric
+          }
+        },
+        none: () => {}
       })
     },
     displayTopNodes: () => {},
@@ -229,10 +242,10 @@ export async function mountDiagram(
     }
   } as unknown as ProfilerCallbacks
 
+  /** Builds a new model of `profile`, as the application does for each load. */
+  const buildModel = () => buildCircuitProfile(profile as never, dataflow as never, undefined)
   const props = {
-    profileData: profile as never,
-    dataflowData: dataflow as never,
-    programCode: undefined,
+    profile: buildModel(),
     callbacks,
     theme
   }
@@ -241,6 +254,8 @@ export async function mountDiagram(
     search(query: string): void
     setTheme(theme: 'light' | 'dark'): void
     showGlobalMetrics(isSticky?: boolean): void
+    selectMetric(metricId: string): void
+    toggleWorker(workerId: string): void
   }
   await layout
 
@@ -248,7 +263,7 @@ export async function mountDiagram(
     // biome-ignore lint/suspicious/noExplicitAny: the registry cytoscape leaves on its container
     _cyreg: { cy: any }
   }
-  const cy = container._cyreg.cy
+  let cy = container._cyreg.cy
   mountedCy = cy
   await settle()
   if (!keepOpeningView) {
@@ -474,6 +489,23 @@ export async function mountDiagram(
     pointer,
     click,
     diagram: component,
-    cleanup: () => wrapper.remove()
+    /** Loads a copy of the profile into the same component, as the application loads a new bundle
+     *  or snapshot. The diagram reuses its container. Returns the new cytoscape instance. */
+    reload: async () => {
+      layout = new Promise<void>((resolve) => (laidOut = resolve))
+      await rendered.rerender({ ...props, profile: buildModel() })
+      await layout
+      cy = container._cyreg.cy
+      mountedCy = cy
+      await settle()
+      return cy
+    },
+    /** Removes the diagram from the page, but keeps the component mounted. */
+    cleanup: () => wrapper.remove(),
+    /** Unmounts the component, which disposes the diagram, and removes the diagram from the page. */
+    unmount: () => {
+      rendered.unmount()
+      wrapper.remove()
+    }
   }
 }

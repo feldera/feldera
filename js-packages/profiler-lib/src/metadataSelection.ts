@@ -92,10 +92,10 @@ export class MetadataSelector {
     }
 
     /**
-     * Select a metric by ID
+     * Selects the metric with the id `metricId`. Does nothing if the metric is already selected or unknown.
      */
     selectMetric(metricId: string): void {
-        if (this.allMetrics.has(metricId)) {
+        if (metricId !== this.selectedMetric && this.allMetrics.has(metricId)) {
             this.selectedMetric = metricId;
             this.onChange();
         }

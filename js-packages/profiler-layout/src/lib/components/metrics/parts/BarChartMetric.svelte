@@ -115,8 +115,17 @@
   }
 
   const chartHeight = $derived(expanded ? maxBarHeight : previewBarHeight)
+
   // Avg/min/max stay visible in both preview modes, expanded or collapsed.
   const showValues = true
+
+  // One tooltip serves all the bars of the chart. With advanced metrics, the overview of a large
+  // support bundle has about 80 charts of one bar per worker. A tooltip for each bar would mount
+  // thousands of components. The tooltip opens on hover and on focus of a bar, and shows the reading
+  // of that bar.
+  const barsId = $props.id()
+  let tooltipWorker = $state(0)
+  const tooltipCell = $derived(cells[tooltipWorker])
 </script>
 
 <!-- One grid row: the six cells, on a subgrid so the band behind them is unbroken. -->
@@ -172,8 +181,7 @@
 </div>
 
 <!-- Bar chart row spans full block width; container height + each bar height animate.
-     NOTE: keep the column span in step with the header in MetricsDistributionBlock.
-     Each bar gets a hover tooltip showing the worker index and the formatted reading. -->
+     NOTE: keep the column span in step with the header in MetricsDistributionBlock. -->
 <div
   class="bar-chart col-span-6 flex items-end gap-0.5 mb-2"
   style:min-height="{chartHeight}px"
@@ -185,10 +193,22 @@
       class="flex-1 rounded-md transition-[height,background-color] duration-200 ease-in-out"
       style:height="{b.height}px"
       style:background-color={barColor(b.t)}
+      data-bars={barsId}
+      data-worker={i}
     ></div>
-    <Tooltip class="whitespace-nowrap" placement="top">Worker {i}: {c.value.toString()}</Tooltip>
   {/each}
 </div>
+<!-- The tooltip finds its bars when it mounts, so the key block mounts it again when the worker count changes. -->
+{#key cells.length}
+  <Tooltip
+    class="whitespace-nowrap"
+    placement="top"
+    triggeredBy={`[data-bars="${barsId}"]`}
+    onbeforetoggle={(e) => (tooltipWorker = Number(e.trigger.dataset.worker))}
+  >
+    Worker {tooltipWorker}: {tooltipCell?.value.toString()}
+  </Tooltip>
+{/key}
 
 <style>
   .bar-chart {
