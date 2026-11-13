@@ -475,6 +475,8 @@ A distributed connector works as follows:
   leader, which adds all of them to the table in one commit.  A reader
   therefore sees all of a transaction's output or none of it, as with a
   connector that runs on one host.
+- If any host fails to write its files for a transaction, the leader commits
+  none of the transaction, and the connector reports an error on every host.
 
 A distributed Delta Lake output connector has these limits:
 

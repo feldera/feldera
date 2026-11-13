@@ -5867,7 +5867,14 @@ async fn coordination_output_commit(
     };
     Ok(
         match leader
-            .report(report.host, report.step, report.payload)
+            .report(
+                report.host,
+                report.step,
+                match report.error {
+                    Some(error) => Err(error),
+                    None => Ok(report.payload),
+                },
+            )
             .await
         {
             Ok(()) => HttpResponse::Ok().finish(),
@@ -7752,6 +7759,7 @@ pub mod test_http {
                 host: 0,
                 step: 0,
                 payload: json!("x".repeat(3 << 20)),
+                error: None,
             };
             let response = pipeline.servers[1]
                 .post("/coordination/output/commit")

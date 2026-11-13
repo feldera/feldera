@@ -259,6 +259,9 @@ pub struct DeltaTableWriter {
     /// usual, but the leader commits every part's files of a transaction at once, in
     /// `steps_processed`, so that each transaction is one commit.
     part: Option<OutputPart>,
+    /// The first error of this part in `encode` since `steps_processed` last reported.  The
+    /// report then says that the part failed, so that the leader commits none of the step.
+    part_error: Option<String>,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
@@ -492,6 +495,7 @@ impl DeltaTableWriter {
             merge_violations: 0,
             merge_reload: false,
             part,
+            part_error: None,
         })
     }
 }
@@ -1670,40 +1674,45 @@ impl OutputConsumer for DeltaTableWriter {
         let num_bytes: usize = self.pending_actions.iter().map(|a| a.size as usize).sum();
         let num_rows = std::mem::take(&mut self.num_rows);
         let actions = std::mem::take(&mut self.pending_actions);
-        let result = serde_json::to_value(&actions)
-            .map_err(anyhow::Error::from)
-            .and_then(|payload| {
-                let mut on_wait = |waited: Duration, reported: &[usize]| {
-                    if let Some(controller) = self.inner.controller.upgrade() {
-                        controller.update_output_connector_health(
-                            self.inner.endpoint_id,
-                            waiting_health(waited, count, reported),
-                        );
+        // A part that failed to write some of its output reports the failure instead of its
+        // files, which are orphans that `VACUUM` collects.
+        let result = match self.part_error.take() {
+            Some(error) => Ok(Err(error)),
+            None => serde_json::to_value(&actions).map(Ok),
+        }
+        .map_err(anyhow::Error::from)
+        .and_then(|payload| {
+            let mut on_wait = |waited: Duration, reported: &[usize]| {
+                if let Some(controller) = self.inner.controller.upgrade() {
+                    controller.update_output_connector_health(
+                        self.inner.endpoint_id,
+                        waiting_health(waited, count, reported),
+                    );
+                }
+            };
+            part.commit(
+                count,
+                payload,
+                &self.inner.shutdown,
+                &mut on_wait,
+                |payloads| {
+                    let mut all = Vec::new();
+                    for payload in payloads {
+                        let adds = serde_json::from_value::<Vec<Add>>(payload)?;
+                        for add in &adds {
+                            check_part_file(&add.path)?;
+                        }
+                        all.extend(adds);
                     }
-                };
-                part.commit(
-                    count,
-                    payload,
-                    &self.inner.shutdown,
-                    &mut on_wait,
-                    |payloads| {
-                        let mut all = Vec::new();
-                        for payload in payloads {
-                            let adds = serde_json::from_value::<Vec<Add>>(payload)?;
-                            for add in &adds {
-                                check_part_file(&add.path)?;
-                            }
-                            all.extend(adds);
-                        }
-                        if all.is_empty() {
-                            return Ok(());
-                        }
-                        // Panic safety: block_on() panics if called from a tokio async context.
-                        // steps_processed() is called from the dedicated output thread.
-                        TOKIO.block_on(self.task.commit_with_retry(&all))
-                    },
-                )
-            });
+                    if all.is_empty() {
+                        return Ok(());
+                    }
+                    // Panic safety: block_on() panics if called from a tokio async context.
+                    // steps_processed() is called from the dedicated output thread.
+                    TOKIO.block_on(self.task.commit_with_retry(&all))
+                },
+            )
+        });
         self.inner.records_written.store(0, Ordering::Relaxed);
         match result {
             Ok(()) => {
@@ -2068,16 +2077,9 @@ impl DeltaTableWriter {
     }
 }
 
-impl Encoder for DeltaTableWriter {
-    fn consumer(&mut self) -> &mut dyn OutputConsumer {
-        self
-    }
-
-    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
-        if self.merge.is_some() {
-            return self.encode_merge(batch);
-        }
-
+impl DeltaTableWriter {
+    /// Writes `batch` in append mode, as [Encoder::encode] does.
+    fn encode_append(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         // Panic safety: block_on() panics if called from a tokio async context.
         // encode() is called from the dedicated output thread (output_thread_func).
         if let Err(e) = TOKIO.block_on(self.task.open_leaders_table()) {
@@ -2085,7 +2087,8 @@ impl Encoder for DeltaTableWriter {
                 "error opening delta table '{}': {e:#}",
                 self.inner.config.uri
             );
-            // As at initialization, a table that this part cannot open stops the connector.
+            // This part tries to open the table again for its next batch.  Meanwhile, its report
+            // fails each step on every part (see `part_error`).
             if let Some(controller) = self.inner.controller.upgrade() {
                 controller.output_transport_error(
                     self.inner.endpoint_id,
@@ -2178,6 +2181,25 @@ impl Encoder for DeltaTableWriter {
         }
 
         Ok(())
+    }
+}
+
+impl Encoder for DeltaTableWriter {
+    fn consumer(&mut self) -> &mut dyn OutputConsumer {
+        self
+    }
+
+    fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
+        if self.merge.is_some() {
+            return self.encode_merge(batch);
+        }
+        let result = self.encode_append(batch);
+        if let Err(error) = &result
+            && self.part.is_some()
+        {
+            self.part_error.get_or_insert_with(|| format!("{error:#}"));
+        }
+        result
     }
 }
 
@@ -2602,6 +2624,82 @@ pub mod parallel {
         TOKIO.block_on(follower.task.open_leaders_table()).unwrap();
         assert!(!follower.task.unopened);
         assert_eq!(follower.task.delta_table.version(), Some(0));
+    }
+
+    /// A part that fails to write some of its output for a step makes the leader commit none of
+    /// the step, although the part wrote its other batches and the other part wrote its share.
+    /// A reader then sees all of a transaction's output or none of it, as with one host.
+    #[engine_test]
+    pub fn a_failed_part_commits_none_of_the_step(engine: &dyn ConnectorTestEngine) {
+        use crate::controller::output_leader::{CommitLeader, OutputPart, OutputPartRole};
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().join("table");
+        let uri = uri.to_str().unwrap();
+        let leader = Arc::new(CommitLeader::new(2));
+        let mut endpoint = DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_endpoint",
+            &serde_json::from_value(json!({"uri": uri, "mode": "append", "max_retries": 0}))
+                .unwrap(),
+            &None,
+            &value_relation(),
+            Weak::new(),
+            CancellationToken::new(),
+            false,
+            false,
+            false,
+            Some(OutputPart {
+                endpoint: "test_endpoint".into(),
+                host: 0,
+                leader_host: 0,
+                role: OutputPartRole::Leader(leader.clone()),
+            }),
+        )
+        .unwrap();
+        let version = endpoint.task.delta_table.version().unwrap();
+        let records = make_records(8);
+        let follower_reports = |step| {
+            let leader = leader.clone();
+            std::thread::spawn(move || TOKIO.block_on(leader.report(1, step, Ok(json!([])))))
+        };
+
+        // In step 1, this part fails to write one batch, because its store refuses every file,
+        // and then writes another.
+        let follower = follower_reports(1);
+        let not_a_directory = dir.path().join("not_a_directory");
+        std::fs::write(&not_a_directory, b"").unwrap();
+        let store = std::mem::replace(
+            &mut endpoint.object_store,
+            Arc::new(
+                deltalake::logstore::object_store::local::LocalFileSystem::new_with_prefix(
+                    &not_a_directory,
+                )
+                .unwrap(),
+            ),
+        );
+        encode_failing_batch(
+            &mut endpoint,
+            &build_non_indexed_batch(engine, &records[0..4], 1),
+        );
+        endpoint.object_store = store;
+        encode_batch(
+            &mut endpoint,
+            &build_non_indexed_batch(engine, &records[4..8], 1),
+        );
+        endpoint.consumer().steps_processed(1);
+        assert!(follower.join().unwrap().is_err());
+        assert_eq!(endpoint.task.delta_table.version(), Some(version));
+
+        // Step 2 succeeds on both parts, so it commits.
+        let follower = follower_reports(2);
+        encode_batch(
+            &mut endpoint,
+            &build_non_indexed_batch(engine, &records[4..8], 1),
+        );
+        endpoint.consumer().steps_processed(2);
+        assert_eq!(follower.join().unwrap(), Ok(()));
+        assert_eq!(endpoint.task.delta_table.version(), Some(version + 1));
     }
 
     /// A leader that waits for the other parts to report a large step reports the wait, but the

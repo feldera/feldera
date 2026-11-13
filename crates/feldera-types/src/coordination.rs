@@ -766,8 +766,13 @@ pub struct OutputPartReport {
     /// The step at which the transaction committed.
     pub step: Step,
 
-    /// The part's output, in a form that the connector defines.
+    /// The part's output, in a form that the connector defines.  `null` if `error` is set.
     pub payload: JsonValue,
+
+    /// Set if the part failed to write its output for the step.  The leader then fails the
+    /// step on every part, instead of committing the other parts' output without this part's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// `/coordination/labels/incomplete` reply, streamed from pipeline to coordinator.
