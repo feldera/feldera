@@ -140,6 +140,7 @@ proptest = { workspace = true }
 proptest-derive = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 serial_test = { workspace = true }
+tikv-jemallocator = { workspace = true }
 size-of = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
@@ -165,4 +166,12 @@ harness = false
 
 [[bench]]
 name = "delta_merge"
+harness = false
+
+[[bench]]
+name = "delta_parse"
+harness = false
+
+[[bench]]
+name = "delta_pipeline"
 harness = false

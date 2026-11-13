@@ -67,6 +67,9 @@ pub enum TimestampFormat {
     MillisSinceEpoch,
     /// Time specified in microseconds since UNIX epoch.
     MicrosSinceEpoch,
+    /// Parsing: accepts microseconds since UNIX epoch, or a string in the
+    /// specified `chrono` format. Encoding: outputs microseconds.
+    MicrosSinceEpochOrString(&'static str),
     /// Time specified in the RFC 3339 format.
     Rfc3339,
 }
@@ -77,6 +80,11 @@ pub enum DecimalFormat {
     #[default]
     Numeric,
     String,
+    /// The significand as a 128-bit integer.
+    ///
+    /// On input, a `DECIMAL(p, s)` value is its significand with the scale
+    /// `s`, as a 128-bit integer or as the 16 bytes of one in native byte
+    /// order. The other representations of a decimal are also accepted.
     I128,
 }
 
@@ -148,6 +156,13 @@ pub struct SqlSerdeConfig {
     pub binary_format: BinaryFormat,
     /// 'UUID' format.
     pub uuid_format: UuidFormat,
+    /// Read the fields of a record by position, not by name.
+    ///
+    /// The input must then hold every column of each record, and of each
+    /// nested `ROW`, in the order of the SQL declaration, with no extra
+    /// columns. Only an input that was put in this order sets this flag;
+    /// see `order_columns` in `feldera_adapterlib`.
+    pub positional_fields: bool,
 }
 
 impl SqlSerdeConfig {
@@ -192,6 +207,11 @@ impl SqlSerdeConfig {
         self.uuid_format = uuid_format;
         self
     }
+
+    pub fn with_positional_fields(mut self, positional_fields: bool) -> Self {
+        self.positional_fields = positional_fields;
+        self
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
@@ -212,6 +232,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
@@ -223,6 +244,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
             JsonFlavor::DebeziumPostgres => Self {
                 time_format: TimeFormat::Micros,
@@ -233,6 +255,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -243,6 +266,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
             JsonFlavor::Pandas => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
@@ -253,6 +277,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
             JsonFlavor::Blockchain => {
                 SqlSerdeConfig::default().with_binary_format(BinaryFormat::Base58)
@@ -267,6 +292,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Base64,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
             JsonFlavor::ClockInput => {
                 SqlSerdeConfig::default().with_timestamp_format(TimestampFormat::MillisSinceEpoch)
@@ -282,6 +308,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 // as JSON and let Postgres parse it.
                 binary_format: BinaryFormat::PgHex,
                 uuid_format: UuidFormat::String,
+                positional_fields: false,
             },
         }
     }

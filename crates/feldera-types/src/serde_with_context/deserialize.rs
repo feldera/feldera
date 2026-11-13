@@ -45,7 +45,14 @@ use serde::{
     Deserialize, Deserializer, Serialize,
     de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
 };
-use std::{collections::BTreeMap, fmt, marker::PhantomData, sync::Arc};
+use std::{
+    cell::LazyCell,
+    collections::{BTreeMap, HashMap},
+    fmt,
+    marker::PhantomData,
+    sync::Arc,
+    thread::LocalKey,
+};
 
 use crate::serde_with_context::SqlSerdeConfig;
 
@@ -638,12 +645,136 @@ impl<'de, AUX> DeserializeSeed<'de> for ErasedDeserializationContext<'de, '_, AU
     where
         D: Deserializer<'de>,
     {
-        let mut deserializer = <dyn ErasedDeserializer>::erase(deserializer);
-        self.val
-            .erased_deserialize_with_context(&mut deserializer, self.context)
-            .map_err(D::Error::custom)?;
+        let mut deserializer = deserializer;
+        match as_erased(&mut deserializer) {
+            Some(erased) => self
+                .val
+                .erased_deserialize_with_context(erased, self.context),
+            None => self.val.erased_deserialize_with_context(
+                &mut <dyn ErasedDeserializer>::erase(deserializer),
+                self.context,
+            ),
+        }
+        .map_err(D::Error::custom)
+    }
+}
 
-        Ok(())
+/// Gives `deserializer` as a type-erased deserializer when it is one already.
+///
+/// The fields of a nested record, and of each record read from Arrow or Avro,
+/// get a type-erased deserializer. To erase it again adds a virtual call to
+/// each visitor call and makes `erased_serde` put each result on the heap.
+fn as_erased<'r, 'de, D>(deserializer: &'r mut D) -> Option<&'r mut dyn ErasedDeserializer<'de>>
+where
+    D: Deserializer<'de>,
+{
+    if typeid::of::<D>() != typeid::of::<&mut dyn ErasedDeserializer<'static>>() {
+        return None;
+    }
+    // SAFETY: The type IDs are equal and ignore only lifetimes, so `D` is
+    // `&'a mut dyn ErasedDeserializer<'x>`. `'x` is `'de`, because that type
+    // implements `Deserializer<'de>` for no other `'x`, and `'a` outlives the
+    // borrow `'r` of a value that contains it.
+    let erased = unsafe {
+        &mut *std::ptr::from_mut(deserializer).cast::<&mut dyn ErasedDeserializer<'de>>()
+    };
+    Some(&mut **erased)
+}
+
+/// Deserializes a column name of a table record into the index of its field,
+/// or `None` for a column the record does not have. A name spelled other than
+/// the field leaves its spelling in `spelling`, for error messages.
+///
+/// Formats such as Arrow send the columns of each row in the same order, so
+/// the column after the previous one is tried first, by exact name. Only a
+/// miss pays for the lowercase copy and the hash lookup.
+///
+/// The value is two words, so `erased_serde` returns it without a heap
+/// allocation.
+#[doc(hidden)]
+pub struct ColumnIndexSeed<'a> {
+    /// Name and case sensitivity of each field, in field order.
+    columns: &'a [(&'static str, bool)],
+    /// Lowercase column name to field index.
+    field_map: &'static LocalKey<LazyCell<HashMap<String, usize>>>,
+    /// The field index to try first.
+    hint: usize,
+    /// Receives the spelling of a name that matched a field other than exactly.
+    spelling: &'a mut Option<String>,
+}
+
+impl<'a> ColumnIndexSeed<'a> {
+    pub fn new(
+        columns: &'a [(&'static str, bool)],
+        field_map: &'static LocalKey<LazyCell<HashMap<String, usize>>>,
+        hint: usize,
+        spelling: &'a mut Option<String>,
+    ) -> Self {
+        Self {
+            columns,
+            field_map,
+            hint,
+            spelling,
+        }
+    }
+
+    fn lookup<E: SerdeError>(self, name: &str) -> Result<Option<usize>, E> {
+        if let Some((expected, _)) = self.columns.get(self.hint)
+            && *expected == name
+        {
+            return Ok(Some(self.hint));
+        }
+
+        let lowercase_name = name.to_lowercase();
+        let Some(idx) = self
+            .field_map
+            .with(|field_map| field_map.get(&lowercase_name).copied())
+        else {
+            return Ok(None);
+        };
+        let (expected, case_sensitive) = self.columns[idx];
+        if case_sensitive && name != expected {
+            return Err(E::custom(format!(
+                "incorrect case-sensitive field name: expected: {expected}, found: {name}"
+            )));
+        }
+        if name != expected {
+            *self.spelling = Some(name.to_string());
+        }
+        Ok(Some(idx))
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for ColumnIndexSeed<'_> {
+    type Value = Option<usize>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(self)
+    }
+}
+
+impl<'de> Visitor<'de> for ColumnIndexSeed<'_> {
+    type Value = Option<usize>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a column name")
+    }
+
+    fn visit_str<E: SerdeError>(self, name: &str) -> Result<Self::Value, E> {
+        self.lookup(name)
+    }
+
+    fn visit_bytes<E: SerdeError>(self, name: &[u8]) -> Result<Self::Value, E> {
+        match std::str::from_utf8(name) {
+            Ok(name) => self.lookup(name),
+            Err(_) => Err(E::invalid_value(
+                serde::de::Unexpected::Bytes(name),
+                &"a UTF-8 column name",
+            )),
+        }
     }
 }
 
@@ -700,8 +831,8 @@ macro_rules! deserialize_table_record {
             where
                 D: serde::Deserializer<'de>
             {
-                use $crate::serde_with_context::{SqlSerdeConfig, ErasedDeserializeWithContext, ErasedDeserializationContext, field_parse_error, invalid_length_error};
-                use serde::de::{MapAccess, SeqAccess, Error as _};
+                use $crate::serde_with_context::{SqlSerdeConfig, ErasedDeserializeWithContext, ErasedDeserializationContext, ColumnIndexSeed, field_parse_error, invalid_length_error};
+                use serde::de::{MapAccess, SeqAccess};
                 use std::{cell::LazyCell, collections::HashMap};
 
                 struct RecordVisitor<'de> {
@@ -761,28 +892,27 @@ macro_rules! deserialize_table_record {
                     where
                         A: MapAccess<'de>
                     {
-                        let mut deserializers: [(&mut dyn ErasedDeserializeWithContext<$aux_type>, bool, &'static str); $num_cols] = [
-                            $((&mut self.$field_name as &mut dyn ErasedDeserializeWithContext<$aux_type>, $case_sensitive, $column_name)
+                        const COLUMNS: [(&'static str, bool); $num_cols] = [$(($column_name, $case_sensitive)),*];
+
+                        let mut deserializers: [&mut dyn ErasedDeserializeWithContext<$aux_type>; $num_cols] = [
+                            $(&mut self.$field_name as &mut dyn ErasedDeserializeWithContext<$aux_type>
                             ),*
                         ];
 
-                        while let Some(column_name) = map.next_key::<std::borrow::Cow<'de, str>>()? {
-                            let lowercase_column_name = column_name.to_lowercase();
-                            if let Some(idx) = FIELD_MAP.with(|field_map| field_map.get(&lowercase_column_name).cloned()) {
-                                let (deserializer, case_sensitive, expected_column_name) = &mut deserializers[idx];
-                                if *case_sensitive {
-                                    if column_name.as_ref() != *expected_column_name {
-                                        return Err(A::Error::custom(format!("incorrect case-sensitive field name: expected: {expected_column_name}, found: {column_name}")));
-                                    }
-                                }
-                                let res = map.next_value_seed(ErasedDeserializationContext::new(*deserializer, &self.context));
-
-                                if let Err(e) = res {
-                                    return Err(field_parse_error(column_name.as_ref(), e));
-                                }
-                            } else {
+                        let mut hint = 0;
+                        let mut spelling = None;
+                        while let Some(idx) = map.next_key_seed(ColumnIndexSeed::new(&COLUMNS, &FIELD_MAP, hint, &mut spelling))? {
+                            let Some(idx) = idx else {
                                 let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                                continue;
+                            };
+                            let res = map.next_value_seed(ErasedDeserializationContext::new(deserializers[idx], &self.context));
+
+                            if let Err(e) = res {
+                                return Err(field_parse_error(spelling.as_deref().unwrap_or(COLUMNS[idx].0), e));
                             }
+                            spelling = None;
+                            hint = idx + 1;
                         }
 
                         $(
@@ -836,8 +966,13 @@ macro_rules! deserialize_table_record {
                 // deserializers.  In the future we may want to make the choice between map
                 // and sequence representations configurable, so we won't need this trick.
                 //deserializer.deserialize_map(visitor)
-                deserializer
+                if context.positional_fields {
+                    // The input holds the columns in declaration order; skip the field names.
+                    deserializer.deserialize_tuple($num_cols, visitor)
+                } else {
+                    deserializer
                         .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)
+                }
             }
         }
     };
@@ -930,6 +1065,48 @@ mod test {
             .map_err(|e| e.to_string()),
             Err(r#"incorrect case-sensitive field name: expected: field2, found: FIELD2 at line 1 column 25"#.to_string())
         );
+    }
+
+    /// With `positional_fields`, a record is read as a sequence and never as a map.
+    #[test]
+    fn positional_fields() {
+        let config = SqlSerdeConfig::default().with_positional_fields(true);
+        let deserialize = |json: &str| {
+            CaseSensitive::deserialize_with_context(
+                &mut serde_json::Deserializer::from_str(json),
+                &config,
+            )
+            .map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            deserialize(r#"[true, "foo", 100]"#),
+            Ok(CaseSensitive {
+                fIeLd1: true,
+                field2: "foo".to_string(),
+                field3: Some(100)
+            })
+        );
+        assert_eq!(
+            deserialize(r#"{"fIeLd1": true, "field2": "foo"}"#),
+            Err(
+                "invalid type: map, expected a record of type CaseSensitive at line 1 column 0"
+                    .to_string()
+            )
+        );
+    }
+
+    /// A type-erased deserializer is passed on as it is, not erased again.
+    #[test]
+    fn as_erased() {
+        let mut json = serde_json::Deserializer::from_str("1");
+        assert!(super::as_erased(&mut &mut json).is_none());
+
+        let mut erased = <dyn erased_serde::Deserializer>::erase(&mut json);
+        let mut reference: &mut dyn erased_serde::Deserializer = &mut erased;
+        let address = std::ptr::from_mut(reference).cast::<()>();
+        let same = super::as_erased(&mut reference).unwrap();
+        assert_eq!(std::ptr::from_mut(same).cast::<()>(), address);
+        assert_eq!(erased_serde::deserialize::<u32>(same).unwrap(), 1);
     }
 
     #[test]

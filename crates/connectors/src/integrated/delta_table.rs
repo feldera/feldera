@@ -181,19 +181,20 @@ pub fn register_storage_handlers() {
 
 pub fn delta_input_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
-        // Delta standard specifies that the timestamp type uses microseconds.
-        // In reality, delta parquet files can represent timestamps as either
-        // microseconds or nanoseconds.  Other options might be possible.
-        // `serde_arrow` knows the correct type from the Arrow schema, and its
-        // `Deserializer` implementation is nice enough to return the timestamp
-        // formatted as string if the `Deserialize` implementation asks for it
-        // (by calling `deserialize_str`), so we rely on that instead of trying
-        // to deserialize the timestamp as an integer.  A better solution would
-        // require a more flexible SqlSerdeConfig type that would specify a
-        // schema per field.
-        .with_timestamp_format(TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%Z"))
+        // Delta specifies microseconds, but a Parquet file can also hold
+        // nanoseconds, and `serde_arrow` gives the raw integer without its unit.
+        // The connector converts each batch with `timestamps_to_micros` and
+        // checks at startup that every TIMESTAMP column is an Arrow timestamp
+        // or a string. Formatting each value to a string and parsing it back,
+        // as before, cost a large part of the parse time. A string column is
+        // parsed with the format that all columns went through before.
+        .with_timestamp_format(TimestampFormat::MicrosSinceEpochOrString(
+            "%Y-%m-%dT%H:%M:%S%.f%Z",
+        ))
         .with_date_format(DateFormat::DaysSinceEpoch)
-        .with_decimal_format(DecimalFormat::String)
+        // `order_columns` gives a decimal as its significand when the scale
+        // matches; otherwise `serde_arrow` gives it as a string.
+        .with_decimal_format(DecimalFormat::I128)
         // DeltaLake doesn't have a native UUID type. We assume that UUID
         // is represented as a string. If a different representation is used, the user
         // will have to deserialize into VARBINARY first. Alternatively, we can make

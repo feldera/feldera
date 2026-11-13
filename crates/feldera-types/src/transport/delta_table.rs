@@ -484,8 +484,9 @@ fn default_change_feed() -> DeltaTableChangeFeed {
         .unwrap_or_default()
 }
 
+/// The number of CPU cores, at most 16. Each parsing task holds a record batch.
 fn default_num_parsers() -> u32 {
-    4
+    std::thread::available_parallelism().map_or(4, |n| n.get().min(16) as u32)
 }
 
 /// Delta table transaction mode.
@@ -693,11 +694,13 @@ pub struct DeltaTableReaderConfig {
     /// form `SELECT * from <table> ORDER BY <cdc_order_by>`.
     pub cdc_order_by: Option<String>,
 
-    /// The number of parallel parsing tasks the connector uses to process data read from the
-    /// table. Increasing this value can enhance performance by allowing more concurrent processing.
-    /// Recommended range: 1–10. The default is 4.
-    #[serde(default = "default_num_parsers")]
-    pub num_parsers: u32,
+    /// The number of record batches the connector parses at the same time. Parsing runs on a
+    /// pool with one thread per CPU core, which all connectors share, so a larger value only
+    /// helps while the pool has idle threads. Each batch in flight holds memory.
+    /// All connectors together keep at most two batches per CPU core in flight.
+    /// The default is the number of CPU cores available to the pipeline, at most 16.
+    #[serde(default)]
+    pub num_parsers: Option<u32>,
 
     /// Maximum number of concurrent object store reads performed by all Delta Lake connectors.
     ///
@@ -777,6 +780,14 @@ pub struct DeltaTableReaderConfig {
 impl DeltaTableReaderConfig {
     pub fn max_retries(&self) -> u32 {
         self.max_retries.unwrap_or(u32::MAX)
+    }
+
+    /// The number of record batches to parse at the same time.
+    ///
+    /// The default depends on the host, so the pipeline computes it, not the
+    /// service that stores the configuration.
+    pub fn num_parsers(&self) -> u32 {
+        self.num_parsers.unwrap_or_else(default_num_parsers)
     }
 }
 
@@ -858,11 +869,13 @@ fn test_delta_reader_config_serde() {
     let config = serde_json::from_str::<DeltaTableReaderConfig>(config_str).unwrap();
 
     let serialized_config = serde_json::to_string(&config).unwrap();
-    let expected = r#"{"uri":"protocol:/path/to/somewhere","mode":"follow","transaction_mode":"none","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":4,"max_concurrent_readers":null,"customoption1":"val1","customoption2":"val2","verbose":0}"#;
+    // An unset `num_parsers` stays unset: the pipeline computes the default.
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","mode":"follow","transaction_mode":"none","timestamp_column":"ts","filter":null,"skip_unused_columns":false,"snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","end_version":null,"cdc_delete_filter":null,"cdc_order_by":null,"num_parsers":null,"max_concurrent_readers":null,"customoption1":"val1","customoption2":"val2","verbose":0}"#;
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
         serde_json::from_str::<serde_json::Value>(expected).unwrap()
     );
+    assert_eq!(config.num_parsers(), default_num_parsers());
 }
 
 /// Each `change_feed` setting round-trips through JSON and reports the right
