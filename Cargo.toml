@@ -51,7 +51,7 @@ actix-files = "0.7.3"
 actix-http = "3.12.1"
 actix-tls = { version = "3.4.0", default-features = false, features = ["accept", "rustls-0_23"] }
 actix-test = "0.1.1"
-actix-web = "4.11.0"
+actix-web = "4.12.0"
 actix-web-httpauth = "0.8.0"
 actix-web-static-files = "4.0.1"
 actix-ws = "0.3.0"
