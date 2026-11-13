@@ -216,6 +216,11 @@ impl CommitLeader {
     /// Such a part waits for the later step, so waiting for its report of `step` would never
     /// end.
     ///
+    /// A pending report of an earlier step fails at once, because the leader will not commit
+    /// that step.  Otherwise, a part that waits for the answer to its report of an earlier step
+    /// would never report `step`, which happens when the leader is recreated while a part
+    /// retries a report, or when hosts add the connector at different steps.
+    ///
     /// After each warning interval of waiting, logs a warning and calls `on_wait` with how long it
     /// has waited and the hosts that have reported.
     pub fn gather(
@@ -228,6 +233,9 @@ impl CommitLeader {
         let mut next_warning = self.wait_warning;
         let mut state = self.state.lock().unwrap();
         loop {
+            if Self::fail_earlier(&mut state, step) {
+                self.finished.send_modify(|n| *n += 1);
+            }
             let n_reports = state.pending.get(&step).map_or(0, |reports| reports.len());
             if n_reports >= self.n_followers {
                 let reports = state.pending.remove(&step).unwrap_or_default();
@@ -272,6 +280,23 @@ impl CommitLeader {
         }
     }
 
+    /// Fails every pending report of a step before `step`, which the leader will not commit.
+    /// Returns true if there was any.  The failures stay in `results` until [Self::finish] trims
+    /// it.
+    fn fail_earlier(state: &mut LeaderState, step: Step) -> bool {
+        let earlier: Vec<Step> = state.pending.range(..step).map(|(s, _)| *s).collect();
+        for s in &earlier {
+            state.pending.remove(s);
+            state.results.insert(
+                *s,
+                Err(format!(
+                    "the leader did not commit step {s}, but it went on to step {step}"
+                )),
+            );
+        }
+        !earlier.is_empty()
+    }
+
     /// Fails every waiting and later report, because the leader's connector stopped.
     pub fn close(&self) {
         let mut state = self.state.lock().unwrap();
@@ -287,16 +312,7 @@ impl CommitLeader {
     /// means that something went wrong; it fails.
     pub fn finish(&self, step: Step, result: Result<(), String>) {
         let mut state = self.state.lock().unwrap();
-        let earlier: Vec<Step> = state.pending.range(..step).map(|(s, _)| *s).collect();
-        for s in earlier {
-            state.pending.remove(&s);
-            state.results.insert(
-                s,
-                Err(format!(
-                    "the leader did not commit step {s}, but it committed step {step}"
-                )),
-            );
-        }
+        Self::fail_earlier(&mut state, step);
         state.results.insert(step, result);
         while state.results.len() > KEPT_RESULTS {
             state.results.pop_first();
@@ -450,6 +466,39 @@ mod tests {
             error.contains("{1}") && error.contains("skipped"),
             "{error}"
         );
+    }
+
+    /// A part that waits for the answer to its report of an earlier step than the one that the
+    /// leader gathers gets an error, so that it can report the leader's step, instead of both
+    /// waiting forever.
+    #[test]
+    fn a_part_that_is_behind_fails_instead_of_waiting() {
+        let leader = Arc::new(CommitLeader::new(2));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let behind = runtime.spawn({
+            let leader = leader.clone();
+            async move { leader.report(1, 8, json!(8)).await }
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        let gather = std::thread::spawn({
+            let leader = leader.clone();
+            move || leader.gather(10, &CancellationToken::new(), &mut |_, _| {})
+        });
+
+        // The part's report of step 8 fails, and it goes on to report step 10.
+        let error = runtime
+            .block_on(async { tokio::time::timeout(Duration::from_secs(5), behind).await })
+            .expect("the report of step 8 is still waiting")
+            .unwrap()
+            .unwrap_err();
+        assert!(error.contains("step 8"), "{error}");
+        let report = runtime.spawn({
+            let leader = leader.clone();
+            async move { leader.report(1, 10, json!(10)).await }
+        });
+        assert_eq!(gather.join().unwrap().unwrap(), [json!(10)]);
+        leader.finish(10, Ok(()));
+        assert_eq!(runtime.block_on(report).unwrap(), Ok(()));
     }
 
     /// The leader stops waiting when its connector stops.
