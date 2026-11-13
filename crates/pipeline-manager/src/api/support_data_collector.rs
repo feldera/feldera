@@ -34,6 +34,8 @@ use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
+/// Each collection keeps its bundle in memory until it is stored.
+const MAX_CONCURRENT_COLLECTIONS: usize = 4;
 const SKIPPED_BY_USER: &str = "Skipped due to user request";
 
 type BundleResult<T> = Result<T, String>;
@@ -1330,13 +1332,22 @@ impl SupportDataCollector {
             }
         }
 
-        // Collect data for each due pipeline
-        for entry in to_collect {
-            match self.collect_pipeline_data(&entry).await {
+        let this = &*self;
+        let results: Vec<_> = futures_util::stream::iter(to_collect)
+            .map(|entry| async move {
+                let result = this.collect_pipeline_data(&entry).await;
+                (entry, result, Instant::now())
+            })
+            .buffer_unordered(MAX_CONCURRENT_COLLECTIONS)
+            .collect()
+            .await;
+
+        for (entry, result, completed) in results {
+            match result {
                 Ok(PostCollectionAction::Reschedule) => {
-                    // Schedule next collection at `collection_frequency` seconds from now.
+                    // Schedule next collection `collection_frequency` seconds after this one completed.
                     let next_collection =
-                        Instant::now() + Duration::from_secs(self.collection_frequency);
+                        completed + Duration::from_secs(self.collection_frequency);
                     let next_entry = CollectionScheduleEntry {
                         pipeline_id: entry.pipeline_id,
                         tenant_id: entry.tenant_id,
@@ -1353,7 +1364,7 @@ impl SupportDataCollector {
 
                     // Try again in a minute.
                     let backoff_duration = Duration::from_secs(60);
-                    let next_collection = Instant::now() + backoff_duration;
+                    let next_collection = completed + backoff_duration;
                     let rescheduled_entry = CollectionScheduleEntry {
                         pipeline_id: entry.pipeline_id,
                         tenant_id: entry.tenant_id,
@@ -2977,5 +2988,160 @@ mod tests {
             bundle.system_config.unwrap_err(),
             SKIPPED_BY_USER.to_string()
         );
+    }
+
+    /// Creates a pipeline that is running at `location`.
+    async fn running_pipeline(
+        db: &Mutex<crate::db::storage_postgres::StoragePostgres>,
+        tenant_id: TenantId,
+        name: &str,
+        location: &str,
+    ) -> PipelineId {
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let mut descr = PipelineDescr::test_descr();
+        descr.name = name.to_string();
+        let db = db.lock().await;
+        db.new_pipeline(tenant_id, pipeline_id.0, "v0", descr)
+            .await
+            .unwrap();
+        db.transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
+            .await
+            .unwrap();
+        db.transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline_id,
+            Version(1),
+            &SqlCompilationInfo::success(),
+            &json!({
+                "schema": { "inputs": [], "outputs": [] },
+                "input_connectors": {},
+                "output_connectors": {},
+            }),
+        )
+        .await
+        .unwrap();
+        db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, Version(1))
+            .await
+            .unwrap();
+        db.transit_program_status_to_success(
+            tenant_id,
+            pipeline_id,
+            Version(1),
+            &RustCompilationInfo::default(),
+            "test-checksum",
+            "test-integrity-checksum",
+            "test-info-integrity-checksum",
+        )
+        .await
+        .unwrap();
+        db.set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            name,
+            RuntimeDesiredStatus::Running,
+            BootstrapConfig::default(),
+            false,
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_provisioning(
+            tenant_id,
+            pipeline_id,
+            Version(1),
+            Uuid::nil(),
+            json!({ "inputs": {} }),
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline_id,
+            Version(1),
+            location,
+            json!({}),
+            RuntimeStatus::Initializing,
+            json!(""),
+            RuntimeDesiredStatus::Running,
+        )
+        .await
+        .unwrap();
+        db.remain_deployment_resources_status_provisioned(
+            tenant_id,
+            pipeline_id,
+            Version(1),
+            json!({}),
+            RuntimeStatus::Running,
+            json!(""),
+            RuntimeDesiredStatus::Running,
+            Some(json!({ "checkpoints": [] })),
+        )
+        .await
+        .unwrap();
+        pipeline_id
+    }
+
+    /// A slow pipeline does not delay the collection of another due pipeline.
+    #[actix_web::test]
+    async fn slow_pipeline_does_not_delay_other_collections() {
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp_dir) = setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+        let state = Arc::new(ServerState::test_state(db.clone()).await);
+        let tenant_id = TenantRecord::default().id;
+
+        let delay = Duration::from_secs(2);
+        let slow_server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_delay(delay))
+            .mount(&slow_server)
+            .await;
+        let fast_server = MockServer::start().await;
+        let slow =
+            running_pipeline(&db, tenant_id, "slow", &slow_server.address().to_string()).await;
+        let fast =
+            running_pipeline(&db, tenant_id, "fast", &fast_server.address().to_string()).await;
+
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let mut collector =
+            SupportDataCollector::new(state, awc::Client::default(), 600, 2, shutdown_rx);
+        let now = Instant::now();
+        for (pipeline_id, next_collection) in [(slow, now), (fast, now + Duration::from_nanos(1))] {
+            let entry = CollectionScheduleEntry {
+                pipeline_id,
+                tenant_id,
+                next_collection,
+            };
+            collector.schedule.insert(next_collection, entry);
+        }
+
+        let stored = |pipeline_id| {
+            let db = db.clone();
+            async move {
+                let mut client = db.lock().await.pool.get().await.unwrap();
+                let txn = transaction::begin(&mut client).await.unwrap();
+                let bundles =
+                    crate::db::operations::pipeline::get_support_bundle_data(&txn, pipeline_id, 10)
+                        .await
+                        .unwrap();
+                txn.commit().await.unwrap();
+                bundles.len()
+            }
+        };
+
+        let (result, fast_stored) = tokio::join!(collector.collect_due_pipelines(), async {
+            while stored(fast).await == 0 {
+                sleep(Duration::from_millis(50)).await;
+            }
+            now.elapsed()
+        });
+        result.unwrap();
+        assert!(
+            fast_stored < delay,
+            "fast pipeline stored after {fast_stored:?}"
+        );
+        assert_eq!(stored(slow).await, 1);
+        assert_eq!(collector.schedule.len(), 2);
     }
 }
