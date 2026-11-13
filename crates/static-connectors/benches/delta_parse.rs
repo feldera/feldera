@@ -17,7 +17,7 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use dbsp_connectors::integrated::delta_table::delta_input_serde_config;
-use feldera_adapterlib::utils::arrow_layout::{has_positional_fields, order_columns};
+use feldera_adapterlib::utils::arrow_layout::order_columns;
 use feldera_adapterlib::utils::arrow_timestamps::timestamps_to_micros;
 use feldera_sqllib::{Array, F64, SqlDecimal, SqlString, SqlVariant, Timestamp};
 use feldera_types::deserialize_table_record;
@@ -25,7 +25,7 @@ use feldera_types::program_schema::{ColumnType, Field as SqlField, SqlIdentifier
 use feldera_types::serde_with_context::DeserializeWithContext;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-use static_connectors::deinput::arrow_deserializer;
+use static_connectors::deinput::{ArrowSerdeConfig, arrow_deserializer};
 
 // Pipelines allocate through jemalloc.
 #[global_allocator]
@@ -304,10 +304,10 @@ fn parse(batch: &RecordBatch, fields: &[SqlField]) -> Vec<Record> {
     let (batch, by_name) = order_columns(batch, fields);
     assert_eq!(by_name, None);
     // As `ArrowZSetStream` does: positional when the columns are in order.
-    let config = delta_input_serde_config()
-        .with_positional_fields(has_positional_fields(batch.schema_ref()));
+    let config = ArrowSerdeConfig::new(delta_input_serde_config());
     let deserializer = arrow_deserializer(&batch).unwrap();
-    Vec::<Record>::deserialize_with_context_aux(deserializer, &config, &None).unwrap()
+    Vec::<Record>::deserialize_with_context_aux(deserializer, &config.for_batch(&batch), &None)
+        .unwrap()
 }
 
 /// The SQL columns that match `fields`. Only the ROW structure and the decimals

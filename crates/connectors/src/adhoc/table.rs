@@ -51,6 +51,7 @@ pub const fn input_adhoc_arrow_serde_config() -> &'static SqlSerdeConfig {
         binary_format: BinaryFormat::Array,
         uuid_format: UuidFormat::String,
         positional_fields: false,
+        absent_columns: None,
     }
 }
 
@@ -69,6 +70,7 @@ pub const fn output_adhoc_arrow_serde_config() -> &'static SqlSerdeConfig {
         // adjusting uuid type encoding in `columntype_to_datatype`.
         uuid_format: UuidFormat::String,
         positional_fields: false,
+        absent_columns: None,
     }
 }
 
