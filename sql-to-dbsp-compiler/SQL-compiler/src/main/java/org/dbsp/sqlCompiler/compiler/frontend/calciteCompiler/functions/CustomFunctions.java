@@ -92,6 +92,7 @@ public class CustomFunctions {
         this.functions.add(JsonKeysFunction.KEYS);
         this.functions.add(JsonKeysFunction.OBJECT_KEYS);
         this.functions.add(LeastNonNullsFunction.INSTANCE);
+        this.functions.add(PadFunction.LPAD);
         this.functions.add(MakeDateFunction.INSTANCE);
         this.functions.add(MakeTimeFunction.INSTANCE);
         this.functions.add(MakeTimestampFunction.INSTANCE);
@@ -104,6 +105,7 @@ public class CustomFunctions {
         this.functions.add(ParseTimestampFunction.INSTANCE);
         this.functions.add(RegexpReplaceFunction.INSTANCE);
         this.functions.add(RlikeFunction.INSTANCE);
+        this.functions.add(PadFunction.RPAD);
         this.functions.add(SqlSafeCastFunction.INSTANCE);
         this.functions.add(SequenceFunction.INSTANCE);
         this.functions.add(SplitPartFunction.INSTANCE);
@@ -318,6 +320,22 @@ public class CustomFunctions {
 
         private SplitPartFunction() {
             super(SqlLibraryOperators.SPLIT_PART, "string#split_part", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    /** LPAD(string, length [, fill]) and RPAD(string, length [, fill]).
+     * Lengths count Unicode characters; Calcite's functions count UTF-16 code units. */
+    static class PadFunction extends NonOptimizedFunction {
+        static final PadFunction LPAD = new PadFunction("LPAD");
+        static final PadFunction RPAD = new PadFunction("RPAD");
+
+        private PadFunction(String name) {
+            super(name,
+                    ReturnTypes.VARCHAR_NULLABLE,
+                    OperandTypes.family(List.of(SqlTypeFamily.CHARACTER, SqlTypeFamily.INTEGER, SqlTypeFamily.CHARACTER),
+                            i -> i == 2),
+                    SqlFunctionCategory.STRING, "string#" + name.toLowerCase(Locale.ENGLISH),
+                    FunctionDocumentation.NO_FILE);
         }
     }
 
