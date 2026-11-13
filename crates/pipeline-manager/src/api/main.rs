@@ -1280,6 +1280,10 @@ pub async fn run(
             .app_data(state_cloned.clone())
             .app_data(client)
     })
+    // Close the connection when the client closes it. Otherwise a streaming response that
+    // writes nothing, such as the logs of a quiet pipeline, leaks its connection until a
+    // write fails.
+    .h1_allow_half_closed(false)
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
 
