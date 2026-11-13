@@ -10,9 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.382.0
+
 - Incompatible change (support bundles): in new collections,
   `pipeline_config.json` no longer has `program_info.dataflow`, which was a
   copy of `dataflow_graph.json`.
+
 - The API server now accepts JSON request bodies of up to 64 MiB. Before, the
   limit was 2 MiB. When you create or update a pipeline, the body holds its SQL
   program, Rust UDF code, configuration, name, description and tags. Change the
@@ -21,11 +24,13 @@ Source edition can be found on github.
   `controlPlane.env`). The server holds each body in memory while it parses
   it, so a lower limit caps the memory one request can use. A request over the
   limit gets `413 Payload Too Large`, and the message now names the setting.
+
 - Delta Lake: applying a deletion vector no longer fails on Parquet files that
   Databricks Photon writes with 256-value `DELTA_BINARY_PACKED` miniblocks, as
   it does for tables with `delta.parquet.format.version = 2.12.0`. Before, the
   read failed with `cannot skip miniblock of size 256`, and the input connector
   retried the file without making progress.
+
 - Incompatible change (Enterprise): the compiler server image no longer
   includes the AWS CLI.  In `credential-provider` values, replace
   `aws codeartifact get-authorization-token` with `codeartifact-token`, which
