@@ -522,6 +522,9 @@ public class CalciteOptimizer implements IWritesLogs {
                 //CoreRules.PROJECT_JOIN_TRANSPOSE
         ));
 
+        this.addStep(new SimpleOptimizerStep("Push filters through UNNEST", 0,
+                new FilterUncollectTransposeRule()));
+
         this.addStep(new BaseOptimizerStep("Simple Join conditions", 2) {
             @Override
             HepProgram getProgram(RelNode node, int level) {
