@@ -2311,4 +2311,16 @@ public class RegressionTests extends SqlIoTest {
         this.qf("SELECT PARSE_TIMESTAMP('%Y-%m-%d', '2020-01-01')",
                 "Invalid format in PARSE_TIMESTAMP: '%Y-%m-%d'");
     }
+
+    @Test
+    public void mergedFiltersKeepOrder() {
+        // The inner WHERE drops the row because k is NULL, so 10 / 0 must not run
+        var ccs = this.getCCS("""
+                CREATE TABLE a (id INT, x INT, k INT);
+                CREATE VIEW v AS
+                SELECT * FROM (SELECT * FROM a WHERE k <> 0) s WHERE 10 / s.x > 1;""");
+        ccs.step("INSERT INTO a VALUES (1, 0, NULL);", """
+                 id | x | k
+                ------------""");
+    }
 }

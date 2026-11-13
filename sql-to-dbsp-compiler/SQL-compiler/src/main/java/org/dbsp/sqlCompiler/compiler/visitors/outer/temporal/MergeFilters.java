@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -69,12 +70,15 @@ public class MergeFilters extends CircuitCloneVisitor {
         Utilities.enforce(sourceFunction.parameters.length == 1);
         Utilities.enforce(function.parameters.length == 1);
         DBSPVariablePath var = sourceFunction.parameters[0].getType().var();
+        // FindComparisons needs (bool)(a && b) to use a single window.  The SQL AND is safe here:
+        // both are comparisons of the same column, so if 'a' is NULL, 'b' is NULL and cannot fail.
+        DBSPExpression left = sourceFunction.call(var).reduce(this.compiler).stripWrapBool();
+        DBSPExpression right = function.call(var).reduce(this.compiler).stripWrapBool();
         DBSPExpression combined = ExpressionCompiler.makeBinaryExpression(
                 sourceFunction.getNode(),
-                function.getResultType(),
+                DBSPTypeBool.create(left.getType().mayBeNull || right.getType().mayBeNull),
                 DBSPOpcode.AND,
-                sourceFunction.call(var),
-                function.call(var)).closure(var).reduce(this.compiler);
+                left, right).wrapBoolIfNeeded().closure(var).reduce(this.compiler);
         DBSPFilterOperator newFilter = new DBSPFilterOperator(filter.getRelNode(), combined, source.input());
         this.map(filter, newFilter);
     }
