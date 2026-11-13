@@ -6,6 +6,7 @@ use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
+use crate::http_server::H1_ALLOW_HALF_CLOSED;
 use crate::license::LicenseCheck;
 use crate::oidc::fetch::OidcClients;
 use crate::oidc::userinfo::UserProfileCache;
@@ -1008,6 +1009,7 @@ pub async fn run(
             .app_data(state_cloned.clone())
             .app_data(client)
     })
+    .h1_allow_half_closed(H1_ALLOW_HALF_CLOSED)
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
 

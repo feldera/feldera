@@ -7,6 +7,7 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::error::ManagerError;
+use crate::http_server::H1_ALLOW_HALF_CLOSED;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_automata::PipelineAutomaton;
 use crate::runner::pipeline_executor::PipelineExecutor;
@@ -155,6 +156,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
             .service(get_healthz)
             .service(get_logs)
     })
+    .h1_allow_half_closed(H1_ALLOW_HALF_CLOSED)
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
     let listener = TcpListener::bind((
