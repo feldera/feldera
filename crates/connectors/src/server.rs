@@ -5848,8 +5848,8 @@ async fn coordination_output_commit(
     state: WebData<ServerState>,
     body: web::Payload,
 ) -> Result<HttpResponse, PipelineError> {
-    // A report lists every file that a part wrote in a step, so it can be far larger than actix's
-    // default limit for JSON.
+    // A report holds the Delta Lake `Add` action, with column statistics, of every file that a
+    // part wrote in a step.  One large step can exceed actix's 2 MiB limit for JSON.
     const MAX_REPORT_BYTES: usize = 256 << 20;
     let Ok(body) = body.to_bytes_limited(MAX_REPORT_BYTES).await else {
         return Ok(HttpResponse::PayloadTooLarge().body(format!(
