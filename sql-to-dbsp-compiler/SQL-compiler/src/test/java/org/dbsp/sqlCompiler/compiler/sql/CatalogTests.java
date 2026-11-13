@@ -971,4 +971,43 @@ public class CatalogTests extends BaseSQLTests {
                 SAFE_CAST(NULL AS user_def_udt) AS to_udt
                 ;""");
     }
+
+    /** Check the case sensitivity flag of each field in 'node'; return the number of fields named 'Leaf' */
+    static int checkCaseSensitivity(JsonNode node) {
+        int leaves = 0;
+        JsonNode fields = node.get("fields");
+        if (fields != null) {
+            for (JsonNode field : fields) {
+                String name = field.get("name").asText();
+                JsonNode caseSensitive = field.get("case_sensitive");
+                Assert.assertNotNull("No case sensitivity for field " + name, caseSensitive);
+                Assert.assertEquals(ProgramIdentifier.needsQuotes(name), caseSensitive.asBoolean());
+                if (name.equals("Leaf"))
+                    leaves++;
+            }
+        }
+        for (JsonNode child : node)
+            leaves += checkCaseSensitivity(child);
+        return leaves;
+    }
+
+    @Test
+    public void nestedCaseSensitivity() {
+        var ccs = this.getCCS("""
+                CREATE TYPE user_def AS ("Leaf" INT, plain INT);
+                CREATE TABLE T (
+                    in_row ROW("Mid" ROW("Leaf" INT)),
+                    in_array ROW("Leaf" INT) ARRAY,
+                    in_map MAP<VARCHAR, ROW("Leaf" INT)>,
+                    in_map_array MAP<VARCHAR, ROW("Leaf" INT) ARRAY>,
+                    in_type user_def
+                );
+                CREATE VIEW V AS SELECT * FROM T;""");
+        JsonNode table = ccs.compiler.metadata.getTableDescription(new ProgramIdentifier("t"))
+                .asJson(true);
+        int leaves = 0;
+        for (JsonNode column : table.get("fields"))
+            leaves += checkCaseSensitivity(column.get("columntype"));
+        Assert.assertEquals(table.toPrettyString(), 5, leaves);
+    }
 }

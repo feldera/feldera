@@ -261,20 +261,11 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
     }
 
     default void addColumnCaseSensitivity(JsonNode repr) {
-        JsonNode component = repr.get("component");
-        if (component != null) {
-            this.addColumnCaseSensitivity(component);
-            return;
-        }
-        JsonNode key = repr.get("key");
-        if (key != null) {
-            this.addColumnCaseSensitivity(key);
-            return;
-        }
-        JsonNode value = repr.get("value");
-        if (value != null) {
-            this.addColumnCaseSensitivity(value);
-            return;
+        // A type can have more than one of these, e.g., a MAP has a key and a value
+        for (String child: new String[] { "component", "key", "value", "type" }) {
+            JsonNode node = repr.get(child);
+            if (node instanceof ObjectNode)
+                this.addColumnCaseSensitivity(node);
         }
         JsonNode fields = repr.get("fields");
         if (fields != null) {
@@ -284,10 +275,8 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
                 String name = field.get("name").asText();
                 boolean caseSensitive = ProgramIdentifier.needsQuotes(name);
                 obj.put("case_sensitive", caseSensitive);
-                JsonNode type = field.get("type");
-                if (type instanceof ObjectNode) {
-                    this.addColumnCaseSensitivity(type);
-                }
+                // The type of a field can be inline in the field itself
+                this.addColumnCaseSensitivity(field);
             }
         }
     }
