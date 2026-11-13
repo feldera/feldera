@@ -8,6 +8,7 @@ from .helper import (
     create_pipeline,
     gen_pipeline_name,
     get,
+    get_pipeline,
     patch_json,
     start_pipeline_as_paused,
     stop_pipeline,
@@ -23,7 +24,8 @@ RESOURCE_FIELDS = [
 ]
 
 # Explicit, so the spec is checked against values rather than all `None`.
-RESOURCES = {"cpu_cores_min": 1, "memory_max": "2G", "storage_max": "1G"}
+# GKE hyperdisk-balanced refuses volumes under 4 GiB.
+RESOURCES = {"cpu_cores_min": 1, "memory_max": "2G", "storage_max": "4Gi"}
 
 STATES = {"Current", "InProgress", "Failed", "Terminating", "NotFound", "Unknown"}
 
@@ -40,9 +42,12 @@ def test_pipeline_deployment(pipeline_name):
     spec = TEST_CLIENT.get_pipeline_deployment(pipeline_name)["spec"]["resources"]
     assert all(spec[field] is None for field in RESOURCE_FIELDS), spec
 
+    # PATCH replaces the whole `runtime_config`: keep `hosts` and `workers`.
+    runtime_config = get_pipeline(pipeline_name, "all").json()["runtime_config"]
+    runtime_config["resources"] = RESOURCES
     r = patch_json(
         api_url(f"/pipelines/{pipeline_name}"),
-        {"runtime_config": {"resources": RESOURCES}},
+        {"runtime_config": runtime_config},
     )
     assert r.status_code == HTTPStatus.OK, r.text
     start_pipeline_as_paused(pipeline_name)
