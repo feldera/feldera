@@ -261,6 +261,7 @@ export const programStatusOf = (status: PipelineStatus) =>
 const toPipelineThumb = (
   pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'program_error' | 'udf_rust' | 'udf_toml'>
 ) => ({
+  id: pipeline.id,
   name: pipeline.name,
   description: pipeline.description ?? '',
   tags: pipeline.tags ?? [],

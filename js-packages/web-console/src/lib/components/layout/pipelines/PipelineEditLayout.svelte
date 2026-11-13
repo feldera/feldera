@@ -448,8 +448,8 @@
           <PaneResizer class="pane-divider-horizontal h-px! bg-panel-line" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
-              <!-- A new pipeline remounts the panel, so it picks its opening tab again -->
-              {#key pipelineName}
+              <!-- A new pipeline remounts the panel, so it picks its opening tab again. A rename keeps the id, so the panel stays mounted. -->
+              {#key pipeline.current.id}
                 <MonitoringPanel
                   pipeline={pipeline as WritablePipeline<true>}
                   metrics={metrics as { current: PipelineMetrics }}

@@ -12,11 +12,11 @@
    * Stream Start Conditions:
    * 1. When a relation (table/view) checkbox is checked by the user
    * 2. When the pipeline transitions to 'start_paused' state (via pipelineActionCallbacks)
-   * 3. When pipelineName/tenantName changes AND the pipeline is interactive (Running/Paused)
+   * 3. When pipelineId/tenantName changes AND the pipeline is interactive (Running/Paused)
    *
    * Stream Stop/Cleanup Conditions:
    * 1. When a relation checkbox is unchecked by the user
-   * 2. When pipelineName or tenantName changes (cleanup callback cancels old pipeline streams)
+   * 2. When pipelineId or tenantName changes (cleanup callback cancels old pipeline streams)
    * 3. When pipeline is deleted (via 'delete' action callback)
    *
    * Pipeline Interactive States (can stream data):
@@ -24,10 +24,13 @@
    *
    * Key Implementation Details:
    * - startSelectedStreams(): Starts streams for all selected relations, checks isPipelineInteractive
-   * - Effect on pipelineName/tenantName: Non-reactive to isInteractive, only starts if interactive
+   * - Effect on pipelineId/tenantName: Non-reactive to isInteractive, only starts if interactive
    * - 'start_paused' callback: Always attempts to start streams (pipeline state guarantees validity)
    * - Each stream has a cancelStream() function stored in pipelinesRelations for cleanup
    * - Buffer clearing happens in startSelectedStreams to reset data when pipeline restarts
+   * - State is keyed by pipeline id, so a rename keeps the selected relations and the rows.
+   *   `pipelineNames` maps the id to the current name, which the API and the action
+   *   callbacks use.
    */
 
   import type { ChangeStreamData, Row } from '#lib/components/pipelines/editor/ChangeStream.svelte'
@@ -47,6 +50,16 @@
     stopStream?: () => void
   }
 
+  // Tenant -> pipeline id -> current pipeline name
+  const pipelineNames: Record<string, Record<string, string>> = {}
+  const findPipelineId = (tenantName: string, pipelineName: string) =>
+    Object.entries(pipelineNames[tenantName] ?? {}).find(([, name]) => name === pipelineName)?.[0]
+  // Tenant -> pipeline id -> the 'start_paused' callback and the name it is registered under
+  const startPausedCallbacks: Record<
+    string,
+    Record<string, { pipelineName: string; callback: () => Promise<void> }>
+  > = {}
+
   let pipelinesRelations = $state<
     Record<string, Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>>
   >({})
@@ -56,6 +69,18 @@
   const getChangeStream = new Ref(changeStream)
 
   const bufferSize = 10000
+  // Drop the rows of one relation, and keep the rows of the others
+  const dropRelationRows = (tenantName: string, pipelineId: string, relationName: string) => {
+    const pipelineChangeStream = changeStream[tenantName]?.[pipelineId]
+    if (!pipelineChangeStream) {
+      return
+    }
+    ;({ rows: pipelineChangeStream.rows, headers: pipelineChangeStream.headers } = filterOutRows(
+      pipelineChangeStream.rows,
+      pipelineChangeStream.headers,
+      relationName
+    ))
+  }
   const filterOutRows = (rows: Row[], headers: number[], relationName: string) => {
     let batchRelationName: string | undefined
     const newRows = rows.filter((row) => {
@@ -84,16 +109,17 @@
   const startReadingStream = (
     api: PipelineManagerApi,
     tenantName: string,
-    pipelineName: string,
+    pipelineId: string,
     relationName: string
   ) => {
     const clearStreamHandles = () => {
-      const relation = pipelinesRelations[tenantName]?.[pipelineName]?.[relationName]
+      const relation = pipelinesRelations[tenantName]?.[pipelineId]?.[relationName]
       if (relation) {
         relation.cancelStream = undefined
         relation.stopStream = undefined
       }
     }
+    const pipelineName = pipelineNames[tenantName][pipelineId]
     const request = api.relationEgressStream(pipelineName, relationName).then((result) => {
       if (result instanceof Error) {
         clearStreamHandles()
@@ -104,7 +130,7 @@
       // determine column order; falls back to the relation schema (e.g. for the
       // skipped-bytes path, where there's no row to sample).
       const buildSectionHeader = (sample?: XgressEntry): Row => {
-        const fields = pipelinesRelations[tenantName][pipelineName][relationName].fields
+        const fields = pipelinesRelations[tenantName][pipelineId][relationName].fields
         const columns: Field[] = sample
           ? Object.keys('insert' in sample ? sample.insert : sample.delete).map(
               (name) => fields[normalizeCaseIndependentName({ name })]
@@ -115,7 +141,7 @@
 
       const appendForRelation = (newRows: Row[], sample?: XgressEntry) =>
         appendRowsForRelation(
-          changeStream[tenantName][pipelineName],
+          changeStream[tenantName][pipelineId],
           relationName,
           newRows,
           buildSectionHeader,
@@ -133,7 +159,11 @@
           {
             bufferSize: 4 * 1024 * 1024,
             onSkipped: ({ bytes: skippedBytes }) => {
-              const cs = changeStream[tenantName][pipelineName]
+              // The delete callback can drop the history while the stream still delivers rows
+              const cs = changeStream[tenantName]?.[pipelineId]
+              if (!cs) {
+                return
+              }
               // Coalesce consecutive skip markers for the same relation: if the row
               // at the tail is already a skip marker tagged with this relation, just
               // bump its byte count in place instead of pushing another row. Keeps
@@ -151,6 +181,9 @@
         ),
         {
           pushChanges: (rows: XgressEntry[]) => {
+            if (!changeStream[tenantName]?.[pipelineId]) {
+              return
+            }
             appendForRelation(rows as unknown as Row[], rows[0])
           },
           onParseEnded: () => {
@@ -164,7 +197,7 @@
     })
     // Bare network stop: halt reading without removing already-received rows. Drives
     // scroll-pause, where the paused view must keep showing the latest data.
-    pipelinesRelations[tenantName][pipelineName][relationName].stopStream = () => {
+    pipelinesRelations[tenantName][pipelineId][relationName].stopStream = () => {
       request.then((cancel) => {
         cancel?.()
         clearStreamHandles()
@@ -172,18 +205,11 @@
     }
     // Full teardown: stop reading and drop this relation's rows from the buffer (used when a
     // relation is unchecked or the pipeline is torn down).
-    pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = () => {
+    pipelinesRelations[tenantName][pipelineId][relationName].cancelStream = () => {
       request.then((cancel) => {
         cancel?.()
         clearStreamHandles()
-        ;({
-          rows: changeStream[tenantName][pipelineName].rows,
-          headers: changeStream[tenantName][pipelineName].headers
-        } = filterOutRows(
-          changeStream[tenantName][pipelineName].rows,
-          changeStream[tenantName][pipelineName].headers,
-          relationName
-        ))
+        dropRelationRows(tenantName, pipelineId, relationName)
         getChangeStream.current = changeStream
       })
     }
@@ -191,24 +217,24 @@
   const startSelectedStreams = (
     api: PipelineManagerApi,
     tenantName: string,
-    pipelineName: string
+    pipelineId: string
   ) => {
-    changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
-    const relations = Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
+    changeStream[tenantName][pipelineId] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
+    const relations = Object.entries(pipelinesRelations[tenantName]?.[pipelineId] ?? {})
       .filter((relation) => relation[1].selected)
       .map((relation) => relation[0])
     for (const relationName of relations) {
-      if (pipelinesRelations[tenantName][pipelineName][relationName].cancelStream) {
+      if (pipelinesRelations[tenantName][pipelineId][relationName].cancelStream) {
         continue
       }
-      startReadingStream(api, tenantName, pipelineName, relationName)
+      startReadingStream(api, tenantName, pipelineId, relationName)
     }
     getChangeStream.current = changeStream
   }
   // Scroll-pause: stop reading every selected relation's stream without touching the
   // buffer, so the view freezes on the rows already received and no new data arrives.
-  const pauseSelectedStreams = (tenantName: string, pipelineName: string) => {
-    const relations = pipelinesRelations[tenantName]?.[pipelineName]
+  const pauseSelectedStreams = (tenantName: string, pipelineId: string) => {
+    const relations = pipelinesRelations[tenantName]?.[pipelineId]
     if (!relations) {
       return
     }
@@ -224,9 +250,9 @@
   const resumeSelectedStreams = (
     api: PipelineManagerApi,
     tenantName: string,
-    pipelineName: string
+    pipelineId: string
   ) => {
-    const relations = pipelinesRelations[tenantName]?.[pipelineName]
+    const relations = pipelinesRelations[tenantName]?.[pipelineId]
     if (!relations) {
       return
     }
@@ -234,36 +260,54 @@
       if (!relation.selected || relation.cancelStream) {
         continue
       }
-      startReadingStream(api, tenantName, pipelineName, relationName)
+      startReadingStream(api, tenantName, pipelineId, relationName)
     }
     getChangeStream.current = changeStream
   }
-  const registerPipelineName = (
+  const registerPipeline = (
     api: PipelineManagerApi,
     tenantName: string,
+    pipelineId: string,
     pipelineName: string
   ) => {
+    pipelineNames[tenantName] ??= {}
+    pipelineNames[tenantName][pipelineId] = pipelineName
+    // Action callbacks are keyed by name, so move the callback when the pipeline is renamed
+    startPausedCallbacks[tenantName] ??= {}
+    const registered = startPausedCallbacks[tenantName][pipelineId]
+    if (registered?.pipelineName !== pipelineName) {
+      if (registered) {
+        pipelineActionCallbacks.remove(registered.pipelineName, 'start_paused', registered.callback)
+      }
+      const callback = async () => {
+        startSelectedStreams(api, tenantName, pipelineId)
+      }
+      pipelineActionCallbacks.add(pipelineName, 'start_paused', callback)
+      startPausedCallbacks[tenantName][pipelineId] = { pipelineName, callback }
+    }
     if (!pipelinesRelations[tenantName]) {
       pipelinesRelations[tenantName] = {}
     }
-    if (pipelinesRelations[tenantName][pipelineName]) {
+    if (pipelinesRelations[tenantName][pipelineId]) {
       return
     }
-    pipelinesRelations[tenantName][pipelineName] = {}
+    pipelinesRelations[tenantName][pipelineId] = {}
     if (!changeStream[tenantName]) {
       changeStream[tenantName] = {}
     }
-    changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 }
-    pipelineActionCallbacks.add(pipelineName, 'start_paused', async () => {
-      startSelectedStreams(api, tenantName, pipelineName)
-    })
+    changeStream[tenantName][pipelineId] = { rows: [], headers: [], totalSkippedBytes: 0 }
   }
+  // Delete callbacks get the name of the deleted pipeline
   const dropChangeStreamHistory = async (tenantName: string, pipelineName: string) => {
+    const pipelineId = findPipelineId(tenantName, pipelineName)
+    if (pipelineId === undefined) {
+      return
+    }
     if (pipelinesRelations[tenantName]) {
-      delete pipelinesRelations[tenantName][pipelineName]
+      delete pipelinesRelations[tenantName][pipelineId]
     }
     if (changeStream[tenantName]) {
-      delete changeStream[tenantName][pipelineName]
+      delete changeStream[tenantName][pipelineId]
     }
   }
 
@@ -274,7 +318,11 @@
    */
   export const hasSelectedRelations = (pipelineName: string): boolean => {
     const tenantName = getSelectedTenant() || ''
-    const relations = pipelinesRelations[tenantName]?.[pipelineName]
+    const pipelineId = findPipelineId(tenantName, pipelineName)
+    if (pipelineId === undefined) {
+      return false
+    }
+    const relations = pipelinesRelations[tenantName]?.[pipelineId]
     if (!relations) {
       return false
     }
@@ -319,6 +367,8 @@
     deleted = false
   }: { pipeline: { current: ExtendedPipeline }; deleted?: boolean } = $props()
 
+  const api = usePipelineManager()
+  let pipelineId = $derived(pipeline.current.id)
   let pipelineName = $derived(pipeline.current.name)
   let tenantName = $derived(getSelectedTenant() || '')
   let isInteractive = $derived(!deleted && isPipelineInteractive(pipeline.current.status))
@@ -336,25 +386,24 @@
 
   const reloadSchema = async (
     tenantName: string,
-    pipelineName: string,
+    pipelineId: string,
     pipeline: ExtendedPipeline
   ) => {
     const schema = pipeline.programInfo?.schema
     if (!schema) {
       return
     }
-    registerPipelineName(api, tenantName, pipelineName)
-    const oldSchema = pipelinesRelations[tenantName]?.[pipelineName]
+    const oldSchema = pipelinesRelations[tenantName]?.[pipelineId]
     if (!pipelinesRelations[tenantName]) {
       pipelinesRelations[tenantName] = {}
     }
-    pipelinesRelations[tenantName][pipelineName] = {}
+    pipelinesRelations[tenantName][pipelineId] = {}
     const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
       for (const newRelation of newRelations) {
         const newRelationName = getCaseIndependentName(newRelation)
         const oldRelation =
           oldSchema?.[newRelationName]?.type === type && oldSchema[newRelationName]
-        pipelinesRelations[tenantName][pipelineName][newRelationName] = oldRelation || {
+        pipelinesRelations[tenantName][pipelineId][newRelationName] = oldRelation || {
           type,
           selected: false,
           fields: Object.fromEntries(
@@ -367,27 +416,31 @@
     process('views', schema.outputs)
   }
 
-  $effect(() => {
-    void pipeline.current
-    untrack(() => reloadSchema(tenantName, pipelineName, pipeline.current))
+  $effect.pre(() => {
+    registerPipeline(api, tenantName, pipelineId, pipelineName)
   })
 
   $effect(() => {
-    pipelineName
+    void pipeline.current
+    untrack(() => reloadSchema(tenantName, pipelineId, pipeline.current))
+  })
+
+  $effect(() => {
+    pipelineId
     tenantName
 
-    const oldPipelineName = pipelineName
+    const oldPipelineId = pipelineId
 
     // Start streams for any selected relations when pipeline is interactive
     untrack(() => {
       if (isInteractive) {
-        startSelectedStreams(api, tenantName, pipelineName)
+        startSelectedStreams(api, tenantName, pipelineId)
       }
     })
 
     return () => {
-      // Clean up active streams when pipelineName changes
-      const relations = pipelinesRelations[tenantName]?.[oldPipelineName]
+      // Clean up active streams when pipelineId changes
+      const relations = pipelinesRelations[tenantName]?.[oldPipelineId]
       if (relations) {
         for (const relation of Object.values(relations)) {
           relation.cancelStream?.()
@@ -397,7 +450,7 @@
   })
 
   let inputs = $derived(
-    Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
+    Object.entries(pipelinesRelations[tenantName]?.[pipelineId] ?? {})
       .filter((e) => e[1].type === 'tables')
       .map(([relationName, value]) => ({
         relationName,
@@ -405,7 +458,7 @@
       }))
   )
   let outputs = $derived(
-    Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
+    Object.entries(pipelinesRelations[tenantName]?.[pipelineId] ?? {})
       .filter((e) => e[1].type === 'views')
       .map(([relationName, value]) => ({
         relationName,
@@ -436,7 +489,6 @@
     }
   })
 
-  const api = usePipelineManager()
   const pasteChanges = (changes: { relationName: string; values: XgressEntry[] }[]) => {
     for (const batch of changes) {
       api.relationIngress(pipelineName, batch.relationName, batch.values, 'force')
@@ -486,32 +538,21 @@
         disabled={isDisabled}
         onchange={(e) => {
           const follow = e.currentTarget.checked
-          pipelinesRelations[tenantName][pipelineName][relation.relationName].selected = follow
+          const relations = pipelinesRelations[tenantName][pipelineId]
+          relations[relation.relationName].selected = follow
           if (follow) {
             // If stream is stopped - the action will silently fail
-            startReadingStream(api, tenantName, pipelineName, relation.relationName)
+            startReadingStream(api, tenantName, pipelineId, relation.relationName)
           } else {
-            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream?.()
-            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream =
-              undefined
-            if (
-              !Object.values(pipelinesRelations[tenantName][pipelineName]).some(
-                ({ selected }) => selected
-              )
-            ) {
-              changeStream[tenantName][pipelineName].rows = []
-              changeStream[tenantName][pipelineName].headers = []
-              getChangeStream.current = changeStream
-              return
+            relations[relation.relationName].cancelStream?.()
+            relations[relation.relationName].cancelStream = undefined
+            const isAnySelected = Object.values(relations).some(({ selected }) => selected)
+            if (isAnySelected) {
+              dropRelationRows(tenantName, pipelineId, relation.relationName)
+            } else {
+              changeStream[tenantName][pipelineId].rows = []
+              changeStream[tenantName][pipelineId].headers = []
             }
-            ;({
-              rows: changeStream[tenantName][pipelineName].rows,
-              headers: changeStream[tenantName][pipelineName].headers
-            } = filterOutRows(
-              changeStream[tenantName][pipelineName].rows,
-              changeStream[tenantName][pipelineName].headers,
-              relation.relationName
-            ))
             getChangeStream.current = changeStream
           }
         }}
@@ -544,20 +585,20 @@
 {/snippet}
 
 {#snippet dataView()}
-  {#if getChangeStream.current[tenantName]?.[pipelineName]?.rows?.length}
-    {#key `${tenantName}::${pipelineName}`}
+  {#if getChangeStream.current[tenantName]?.[pipelineId]?.rows?.length}
+    {#key `${tenantName}::${pipelineId}`}
       <ChangeStream
-        changeStream={getChangeStream.current[tenantName][pipelineName]}
+        changeStream={getChangeStream.current[tenantName][pipelineId]}
         onScrollPausedChange={(paused) => {
           if (paused) {
-            pauseSelectedStreams(tenantName, pipelineName)
+            pauseSelectedStreams(tenantName, pipelineId)
           } else {
-            resumeSelectedStreams(api, tenantName, pipelineName)
+            resumeSelectedStreams(api, tenantName, pipelineId)
           }
         }}
       ></ChangeStream>
     {/key}
-  {:else if Object.values(pipelinesRelations[tenantName]?.[pipelineName] ?? {}).some((r) => r.selected)}
+  {:else if Object.values(pipelinesRelations[tenantName]?.[pipelineId] ?? {}).some((r) => r.selected)}
     <span class="p-2 text-surface-600-400">
       The selected tables and views have not emitted any new changes
     </span>

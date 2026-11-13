@@ -93,12 +93,13 @@ const buildFakeLogsStream = (): FakeLogsStream => ({
 let testCounter = 0
 const nextPipelineName = () => `logsearch-test-${++testCounter}`
 
-// The minimal `pipeline` prop MonitoringPanel needs to render the Logs tab: a name (the
-// log-stream key), a status, and an empty `compilerOutput` so the error
+// The minimal `pipeline` prop MonitoringPanel needs to render the Logs tab: an id (the
+// log-stream key), a name, a status, and an empty `compilerOutput` so the error
 // extraction it runs on mount finds nothing to report.
 const pipelineProp = (name: string, status: 'Running' | 'Stopped' | 'Paused' = 'Stopped') =>
   ({
     current: {
+      id: name,
       name,
       status,
       compilerOutput: {}

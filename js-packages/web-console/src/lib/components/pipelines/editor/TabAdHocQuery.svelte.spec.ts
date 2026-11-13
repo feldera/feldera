@@ -61,9 +61,9 @@ vi.mock('$app/state', () => ({
 // Imported AFTER vi.mock so the mock takes effect.
 import TabAdHocQuery from './TabAdHocQuery.svelte'
 
-const pipelineProp = (name: string): { current: ExtendedPipeline } => ({
+const pipelineProp = (name: string, id = name): { current: ExtendedPipeline } => ({
   // `Running` makes the tab interactive so the Run button is enabled.
-  current: { name, status: 'Running' } as ExtendedPipeline
+  current: { id, name, status: 'Running' } as ExtendedPipeline
 })
 
 // The results scroll box is at most 80% of the tab's height, and the virtual list renders only
@@ -218,5 +218,19 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
     await expect.element(page.getByText('1 row', { exact: true })).toBeInTheDocument()
     expect(page.getByText('then stopped').elements()).toHaveLength(0)
     expect(page.getByText('Stopped before any row arrived').elements()).toHaveLength(0)
+  })
+})
+
+describe('TabAdHocQuery.svelte: rename', () => {
+  it('keeps the queries of a renamed pipeline and runs them under the new name', async () => {
+    const screen = renderTab('p-adhoc-before')
+    await page.getByRole('textbox').first().fill('SELECT 1')
+
+    // The id stays the same across a rename
+    await screen.rerender({ pipeline: pipelineProp('p-adhoc-after', 'p-adhoc-before') })
+
+    await expect.element(page.getByRole('textbox').first()).toHaveValue('SELECT 1')
+    await page.getByRole('button', { name: 'Run query' }).first().click()
+    expect(adHocQueryMock).toHaveBeenLastCalledWith('p-adhoc-after', 'SELECT 1')
   })
 })

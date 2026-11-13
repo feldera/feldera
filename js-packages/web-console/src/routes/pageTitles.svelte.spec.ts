@@ -38,11 +38,11 @@ vi.mock('$app/state', () => ({
   page: { status: 500, error: { message: 'Internal Error' }, url: new URL('http://localhost/') }
 }))
 
+import RootErrorPage from './+error.svelte'
 import AuthenticatedErrorPage from './(system)/(authenticated)/+error.svelte'
 import AdminPage from './(system)/(authenticated)/(authorized)/(shell)/admin/+page.svelte'
 import DemosPage from './(system)/(authenticated)/(authorized)/(shell)/demos/+page.svelte'
 import HealthPage from './(system)/(authenticated)/(authorized)/(shell)/health/+page.svelte'
-import RootErrorPage from './+error.svelte'
 
 let mounted: { unmount: () => Promise<void> } | undefined
 
@@ -58,14 +58,15 @@ describe('page titles', () => {
     ['/health', 'Health | Feldera', HealthPage],
     ['the root error page', 'Error | Feldera', RootErrorPage],
     ['the signed-in error page', 'Error | Feldera', AuthenticatedErrorPage]
-  ] as [string, string, Component][])(
-    '%s replaces a stale tab title with %s',
-    async (_page, expectedTitle, PageComponent) => {
-      document.title = 'nb-unihost-2 | Profile Viewer'
+  ] as [
+    string,
+    string,
+    Component
+  ][])('%s replaces a stale tab title with %s', async (_page, expectedTitle, PageComponent) => {
+    document.title = 'nb-unihost-2 | Profile Viewer'
 
-      mounted = render(PageComponent) as unknown as typeof mounted
+    mounted = render(PageComponent) as unknown as typeof mounted
 
-      await expect.poll(() => document.title).toBe(expectedTitle)
-    }
-  )
+    await expect.poll(() => document.title).toBe(expectedTitle)
+  })
 })

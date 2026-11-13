@@ -40,8 +40,8 @@ export const resolvePastedLinkPipelineName = (name: string, pipelines: { name: s
     ? resolveDuplicatePipelineName(name, pipelines)
     : name
 
-// Keyed by pipeline name. The record lives in memory only, so a page reload drops
-// the link's code.
+// Keyed by pipeline id, so a pipeline rename keeps the link's code. The record lives in memory only,
+// so a page reload drops the link's code.
 let pastedLinks = $state<Record<string, PastedLinkFiles>>({})
 
 /**
@@ -50,11 +50,11 @@ let pastedLinks = $state<Record<string, PastedLinkFiles>>({})
  * user to confirm every save until the user confirms one.
  */
 export const usePastedLinks = () => ({
-  get(pipelineName: string): PastedLinkFiles | undefined {
-    return pastedLinks[pipelineName]
+  get(pipelineId: string): PastedLinkFiles | undefined {
+    return pastedLinks[pipelineId]
   },
-  clear(pipelineName: string) {
-    delete pastedLinks[pipelineName]
+  clear(pipelineId: string) {
+    delete pastedLinks[pipelineId]
   }
 })
 
@@ -68,6 +68,7 @@ export const useOpenPastedLink = () => {
   return async (requestedName: string, files: PastedLinkFiles) => {
     captureEvent('demo_opened', { demo: requestedName, already_created: false, placement: 'url' })
     let pipelineName: string
+    let pipelineId: string
     try {
       pipelineName = resolvePastedLinkPipelineName(requestedName, await api.getPipelines())
       const newPipeline = await api.postPipeline({
@@ -79,13 +80,14 @@ export const useOpenPastedLink = () => {
         udf_rust: '',
         udf_toml: ''
       })
+      pipelineId = newPipeline.id
       updatePipelines((pipelines) => (pipelines.push(newPipeline), pipelines))
     } catch {
       // The API layer reports the error.
       goto(resolve(`/`), { replaceState: true })
       return
     }
-    pastedLinks[pipelineName] = files
+    pastedLinks[pipelineId] = files
     // Replace the `/create/` history entry, so that going back and forward does not
     // create another pipeline.
     goto(resolve(`/pipelines/${encodeURIComponent(pipelineName)}/`), { replaceState: true })
