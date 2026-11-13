@@ -114,7 +114,7 @@
   const rustUdfsAllowed = $derived(page.data.feldera?.config.allow_rust_udfs ?? true)
 
   const pastedLinks = usePastedLinks()
-  let pastedLinkFiles = $derived(pastedLinks.get(pipeline.current.name))
+  let pastedLinkFiles = $derived(pastedLinks.get(pipeline.current.id))
 
   let files = $derived.by(() => {
     const current = pipeline.current
@@ -218,9 +218,11 @@ example = "1.0"`,
   })
 
   let pipelineName = $derived(pipeline.current.name)
+  // Editor state is keyed by the id, so a rename keeps open files, drafts and undo history
+  let pipelineId = $derived(pipeline.current.id)
 
   $effect.pre(() => {
-    currentPipelineFile[pipelineName] ??= 'program.sql'
+    currentPipelineFile[pipelineId] ??= 'program.sql'
   })
 
   let downstreamChanged = $state(false)
@@ -238,15 +240,15 @@ example = "1.0"`,
     resolve: (isConfirmed: boolean) => void
   }>()
   const confirmPastedLinkSave = () => {
-    // `pipelineName` can change before the user answers.
-    const confirmedPipelineName = pipelineName
+    // `pipelineId` can change before the user answers.
+    const confirmedPipelineId = pipelineId
     const fileNames = pastedLinkFiles ? pastedLinkFileNames(pastedLinkFiles) : []
     return new Promise<boolean>((resolve) => {
       pastedLinkSaveRequest = {
         fileNames,
         resolve: (isConfirmed) => {
           if (isConfirmed) {
-            pastedLinks.clear(confirmedPipelineName)
+            pastedLinks.clear(confirmedPipelineId)
           }
           resolve(isConfirmed)
         }
@@ -266,23 +268,30 @@ example = "1.0"`,
   // every file belonging to the given pipeline. Uses the module-level
   // `disposeCodeEditorFile` so it's safe to call from cleanup after the
   // CodeEditor instance has torn down.
-  const dropPipelineFileState = async (pipelineNameToDrop: string) => {
+  const dropPipelineFileState = (pipelineIdToDrop: string) => {
     for (const fileName of PIPELINE_FILE_NAMES) {
-      disposeCodeEditorFile(`${pipelineNameToDrop}/${fileName}`)
+      disposeCodeEditorFile(`${pipelineIdToDrop}/${fileName}`)
     }
-    delete currentPipelineFile[pipelineNameToDrop]
+    delete currentPipelineFile[pipelineIdToDrop]
     // Disposing the models discards the link's code. Clear the entry, so that the
     // code does not come back when the pipeline opens again.
-    pastedLinks.clear(pipelineNameToDrop)
+    pastedLinks.clear(pipelineIdToDrop)
+  }
+  // Delete callbacks get the pipeline name. Only the mounted pipeline has file state,
+  // so compare the name with the mounted pipeline.
+  const dropDeletedPipelineFileState = async (deletedPipelineName: string) => {
+    if (deletedPipelineName === pipelineName) {
+      dropPipelineFileState(pipelineId)
+    }
   }
 
   // Enforce the "only the current pipeline has in-memory state" invariant:
   // when the mounted pipeline changes (navigation to another pipeline or
   // unmount), drop the previous pipeline's file state.
   $effect(() => {
-    const mountedName = pipelineName
+    const mountedId = pipelineId
     return () => {
-      untrack(() => dropPipelineFileState(mountedName))
+      untrack(() => dropPipelineFileState(mountedId))
     }
   })
 
@@ -290,9 +299,9 @@ example = "1.0"`,
   // handles the case where the currently-open pipeline is deleted from a
   // different view before unmount runs.
   $effect(() => {
-    untrack(() => pipelineActionCallbacks.add('', 'delete', dropPipelineFileState))
+    untrack(() => pipelineActionCallbacks.add('', 'delete', dropDeletedPipelineFileState))
     return () => {
-      untrack(() => pipelineActionCallbacks.remove('', 'delete', dropPipelineFileState))
+      untrack(() => pipelineActionCallbacks.remove('', 'delete', dropDeletedPipelineFileState))
     }
   })
 
@@ -423,11 +432,11 @@ example = "1.0"`,
 
 <CodeEditor
   bind:this={codeEditorRef}
-  path={pipelineName}
+  path={pipelineId}
   {files}
   editDisabled={codeReadOnly}
   readOnlyMessage={!codeEdit.allowed ? 'You have read-only access' : undefined}
-  bind:currentFileName={currentPipelineFile[pipelineName]}
+  bind:currentFileName={currentPipelineFile[pipelineId]}
   autoSave={autoSaveFiles.value && !pastedLinkFiles}
   {confirmSave}
   bind:downstreamChanged

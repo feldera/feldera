@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import PipelineEditLayout from '#lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     usePipelineList,
@@ -13,7 +14,7 @@
 
   const { data, params } = $props()
 
-  const { updatePipeline } = useUpdatePipelineList()
+  const { updatePipeline, discardPendingListRefresh } = useUpdatePipelineList()
 
   let pipelineName = $state(decodeURIComponent(params.pipelineName))
   let deleted = $state(false)
@@ -25,10 +26,19 @@
 
   let pipelineCache: { current: ExtendedPipeline | undefined } = $state({ current: undefined })
   const set = (pipeline: ExtendedPipeline | undefined) => {
-    // Update both single pipeline cache and pipeline list cache to ensure consistency
+    // Update both single pipeline cache and pipeline list cache
+    const previousName = pipelineCache.current?.name
     pipelineCache.current = pipeline
-    if (pipeline) {
-      updatePipeline(pipeline.name, () => pipeline)
+    if (!pipeline) {
+      return
+    }
+    // After a rename, the list entry has the old name until the list refreshes
+    updatePipeline(previousName ?? pipeline.name, () => pipeline)
+    if (previousName !== undefined && previousName !== pipeline.name) {
+      // A list refresh that is in flight can return the old name and overwrite the entry
+      discardPendingListRefresh()
+      // Set the new name before the URL changes, so the list lookup below finds the pipeline
+      pipelineName = pipeline.name
     }
   }
   const update = (pipeline: Partial<ExtendedPipeline>) => {
@@ -41,8 +51,15 @@
   const api = usePipelineManager()
   const pipeline = $derived(writablePipeline({ api, pipeline: pipelineCache, set, update }))
   $effect.pre(() => {
-    set(undefined)
     const { pending, abort } = data.pipelinePreload
+    // After a rename, the new URL names the cached pipeline. Keep that pipeline, so the layout
+    // stays mounted.
+    const isCached = untrack(
+      () => pipelineCache.current?.name === decodeURIComponent(params.pipelineName)
+    )
+    if (!isCached) {
+      set(undefined)
+    }
     pending.then(set, () => {})
     // Abort the in-flight fetch if the effect re-runs (user navigated to a
     // different pipeline) or the component unmounts. An aborted request
