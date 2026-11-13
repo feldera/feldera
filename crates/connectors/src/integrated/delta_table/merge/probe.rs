@@ -1030,6 +1030,11 @@ mod test {
                 deltalake::TableProperty::DataSkippingNumIndexedCols,
                 Some("20"),
             )
+            // Checkpoints then also hold `stats_parsed`, which the reader prefers to the JSON.
+            .with_configuration_property(
+                deltalake::TableProperty::CheckpointWriteStatsAsStruct,
+                Some("true"),
+            )
             .await
             .unwrap();
         let schema = table.snapshot().unwrap().snapshot().arrow_schema();
@@ -1082,6 +1087,63 @@ mod test {
         )
         .await;
         assert_bounds_match(&table, &names, &mut usable, "after an add without stats");
+
+        // Stats with a null or missing side. A bound here could prune a file that holds the key.
+        let shapes = [
+            (
+                "no-bounds-null",
+                r#"{"numRecords":3,"minValues":null,"maxValues":null}"#,
+            ),
+            ("no-bounds-absent", r#"{"numRecords":3}"#),
+            ("min-only", r#"{"numRecords":3,"minValues":{"id":-1}}"#),
+        ];
+        // Without stats the shapes would only repeat the `no-stats` case.
+        let assert_shapes_read = |table: &DeltaTable| {
+            let read: Vec<String> = (table.snapshot().unwrap().log_data().iter())
+                .filter(|f| f.num_records().is_some())
+                .map(|f| f.path().to_string())
+                .collect();
+            for (name, _) in &shapes {
+                assert!(
+                    read.contains(&format!("{name}.parquet")),
+                    "{name} lost its stats"
+                );
+            }
+        };
+        let adds = shapes
+            .iter()
+            .map(|(name, stats)| {
+                let path = format!("{name}.parquet");
+                std::fs::copy(
+                    dir.path().join(first.path().as_ref()),
+                    dir.path().join(&path),
+                )
+                .unwrap();
+                deltalake::kernel::Action::Add(deltalake::kernel::Add {
+                    path,
+                    size: first.size(),
+                    modification_time: first.modification_time(),
+                    data_change: true,
+                    stats: Some(stats.to_string()),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        crate::integrated::delta_table::merge::test::commit(&mut table, adds).await;
+        assert_shapes_read(&table);
+        assert_bounds_match(&table, &names, &mut usable, "after adds with partial stats");
+        // The reopen reads the shapes from `stats_parsed`, not from the JSON.
+        deltalake::checkpoints::create_checkpoint(&table)
+            .await
+            .unwrap();
+        let table = deltalake::open_table(reopen(&table)).await.unwrap();
+        assert_shapes_read(&table);
+        assert_bounds_match(
+            &table,
+            &names,
+            &mut usable,
+            "after a partial-stats checkpoint",
+        );
 
         let (mut table, metrics) = table.optimize().await.unwrap();
         assert!(metrics.num_files_removed > 0, "OPTIMIZE rewrote nothing");
@@ -1153,9 +1215,13 @@ mod test {
                         usable.insert(name.clone());
                     }
                     if name == "id" {
-                        // Make sure that each file with stats gets a bound.
-                        let has_stats = file.num_records().is_some();
-                        assert_eq!(new_min.is_some(), has_stats, "{step}: id");
+                        // From the stats shape, so a bug shared by both reads still fails.
+                        let path = file.path();
+                        let has_min =
+                            file.num_records().is_some() && !path.starts_with("no-bounds");
+                        let has_max = has_min && path != "min-only.parquet";
+                        assert_eq!(new_min.is_some(), has_min, "{step}: id min in {path}");
+                        assert_eq!(new_max.is_some(), has_max, "{step}: id max in {path}");
                     }
                 }
             }
