@@ -1042,7 +1042,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start_samply_profile(duration)
         time.sleep(duration)
 
-        timeout = time.monotonic() + 5
+        # Under CI load, samply can take several seconds to stop and
+        # presymbolicate after the recording window ends.
+        timeout = time.monotonic() + 30
 
         samply_profile_bytes = None
 
@@ -1055,6 +1057,7 @@ class TestPipeline(SharedTestPipeline):
             except FelderaAPIError as e:
                 if e.status_code == 500:
                     raise
+                time.sleep(0.1)
 
         assert isinstance(samply_profile_bytes, bytes)
         assert len(samply_profile_bytes) > 0
