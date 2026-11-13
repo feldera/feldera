@@ -29,7 +29,7 @@ use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
-use feldera_adapterlib::utils::arrow_layout::{absent_columns, has_positional_fields};
+use feldera_adapterlib::utils::arrow_layout::absent_columns;
 use feldera_sqllib::SqlVariant;
 use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
@@ -694,12 +694,9 @@ impl ArrowSerdeConfig {
     /// A batch with its columns in declaration order is read by position,
     /// without the columns of the table that it does not have.
     pub fn for_batch(&self, batch: &RecordBatch) -> Cow<'_, SqlSerdeConfig> {
-        if !has_positional_fields(batch.schema_ref()) {
-            return Cow::Borrowed(&self.by_name);
-        }
         match absent_columns(batch.schema_ref()) {
             Some(absent) => Cow::Owned(self.positional.clone().with_absent_columns(absent)),
-            None => Cow::Borrowed(&self.positional),
+            None => Cow::Borrowed(&self.by_name),
         }
     }
 }

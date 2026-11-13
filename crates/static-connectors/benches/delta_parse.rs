@@ -300,7 +300,7 @@ fn random_batch(rows: usize) -> RecordBatch {
 
 /// What the connector's parser task does with a batch, without the Z-set.
 fn parse(batch: &RecordBatch, fields: &[SqlField]) -> Vec<Record> {
-    let batch = timestamps_to_micros(batch.clone()).unwrap();
+    let batch = timestamps_to_micros(batch.clone(), fields).unwrap();
     let (batch, by_name) = order_columns(batch, fields);
     assert_eq!(by_name, None);
     // As `ArrowZSetStream` does: positional when the columns are in order.

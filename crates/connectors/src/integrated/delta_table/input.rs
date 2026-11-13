@@ -3510,7 +3510,22 @@ impl DeltaTableInputEndpointInner {
             ControllerError::invalid_transport_configuration(&self.endpoint_name, &message)
         };
         let schema = self.logical_schema().map_err(|e| invalid(e.to_string()))?;
-        check_timestamp_columns(&self.schema.fields, &schema).map_err(invalid)
+        self.check_used_timestamp_columns(&schema).map_err(invalid)
+    }
+
+    /// Checks the TIMESTAMP columns that the connector reads. It does not read
+    /// an unused column that `skip_unused_columns` skips, so the type of that
+    /// column in the table does not matter.
+    fn check_used_timestamp_columns(&self, schema: &ArrowSchema) -> Result<(), String> {
+        let used = self.used_sql_columns();
+        let fields: Vec<Field> = self
+            .schema
+            .fields
+            .iter()
+            .filter(|f| used.contains(&f.name.name()))
+            .cloned()
+            .collect();
+        check_timestamp_columns(&fields, schema)
     }
 
     fn validate_change_data_feed(&self, table: &DeltaTable) -> Result<(), ControllerError> {
@@ -3940,7 +3955,7 @@ impl DeltaTableInputEndpointInner {
         // check is not sufficient: the schema of the table can change later.
         let batch = match check_timestamp_columns(fields, batch.schema_ref())
             .map_err(|e| e.to_string())
-            .and_then(|()| timestamps_to_micros(batch).map_err(|e| e.to_string()))
+            .and_then(|()| timestamps_to_micros(batch, fields).map_err(|e| e.to_string()))
         {
             Ok(batch) => batch,
             Err(e) => {
@@ -6932,6 +6947,52 @@ mod cdc_projection_tests {
             None,
             None,
         )
+    }
+
+    /// A TIMESTAMP column stored as an integer stops the connector only when
+    /// the connector reads the column.
+    #[test]
+    fn timestamp_check_skips_unread_columns() {
+        let endpoint = |skip_unused_columns: bool| {
+            let config: DeltaTableReaderConfig = serde_json::from_value(json!({
+                "uri": "/tmp/does-not-exist",
+                "mode": "snapshot",
+                "skip_unused_columns": skip_unused_columns,
+            }))
+            .unwrap();
+            let fields = vec![
+                field("s", false),
+                Field::new(SqlIdentifier::new("ts", false), ColumnType::timestamp(true))
+                    .with_unused(true),
+            ];
+            DeltaTableInputEndpointInner::new(
+                "test_endpoint",
+                config,
+                SessionContext::new(),
+                Box::new(MockInputConsumer::new()),
+                Relation::new(
+                    SqlIdentifier::new("test_table", false),
+                    fields,
+                    false,
+                    BTreeMap::new(),
+                ),
+                None,
+                None,
+            )
+        };
+        let table_schema = ArrowSchema::new(vec![
+            ArrowField::new("s", ArrowDataType::Utf8, true),
+            ArrowField::new("ts", ArrowDataType::Int64, true),
+        ]);
+
+        let read = endpoint(false).check_used_timestamp_columns(&table_schema);
+        assert!(
+            read.unwrap_err()
+                .starts_with("column ts has SQL type TIMESTAMP")
+        );
+        endpoint(true)
+            .check_used_timestamp_columns(&table_schema)
+            .unwrap();
     }
 
     /// A frame shaped like one CDC read side: the declared columns, the columns

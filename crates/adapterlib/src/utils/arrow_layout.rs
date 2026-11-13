@@ -5,7 +5,7 @@
 //! The same pass gives each `DECIMAL` column as its 128-bit significands, so
 //! that the deserializer does not read each value through a formatted string.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock};
 
 use arrow::array::{
@@ -35,13 +35,16 @@ pub fn has_positional_fields(schema: &Schema) -> bool {
         .is_some_and(|value| *value == *POSITIONAL_FIELDS_TOKEN)
 }
 
-/// Schema metadata key of the columns of the table that an ordered batch does
-/// not have: one character for each column, `1` for an absent column.
+/// Schema metadata key that tells which columns of the table an ordered batch
+/// has: one character for each column, `1` for an absent column.
 const ABSENT_COLUMNS: &str = "feldera.absent_columns";
 
 /// The columns of the table that a batch in order does not have: one flag for
-/// each column, in the order of the SQL declaration. `None` when the batch
-/// has all the columns, or is not in order.
+/// each column, in the order of the SQL declaration. `None` when the batch is
+/// not in order.
+///
+/// The number of flags also tells the deserializer whether its record has all
+/// the columns of the table.
 pub fn absent_columns(schema: &Schema) -> Option<Vec<bool>> {
     if !has_positional_fields(schema) {
         return None;
@@ -88,12 +91,8 @@ pub fn order_columns(batch: RecordBatch, fields: &[Field]) -> (RecordBatch, Opti
             POSITIONAL_FIELDS.to_string(),
             POSITIONAL_FIELDS_TOKEN.clone(),
         );
-        if absent.contains(&true) {
-            let flags = absent.iter().map(|absent| if *absent { '1' } else { '0' });
-            metadata.insert(ABSENT_COLUMNS.to_string(), flags.collect());
-        } else {
-            metadata.remove(ABSENT_COLUMNS);
-        }
+        let flags = absent.iter().map(|absent| if *absent { '1' } else { '0' });
+        metadata.insert(ABSENT_COLUMNS.to_string(), flags.collect());
         let schema = Arc::new(Schema::new_with_metadata(arrow_fields, metadata));
         let options = RecordBatchOptions::new().with_row_count(Some(len));
         RecordBatch::try_new_with_options(schema, columns, &options).map_err(|e| e.to_string())
@@ -116,15 +115,24 @@ fn order_struct(
     // Two SQL fields that differ only in case, such as `a` and `"A"`, can
     // both match one source column. The by-name path resolves that.
     let mut lowercase_names = HashSet::with_capacity(fields.len());
+    let source_columns = source_columns(arrow_fields);
     for field in fields {
         let name = field.name.name();
-        if !lowercase_names.insert(name.to_lowercase()) {
+        let lowercase = name.to_lowercase();
+        let found = find_column(
+            arrow_fields,
+            &source_columns,
+            &name,
+            &lowercase,
+            field.name.case_sensitive,
+        )?;
+        if !lowercase_names.insert(lowercase) {
             return Err(format!(
                 "more than one column is named {} when case is ignored",
                 field.name.sql_name()
             ));
         }
-        match find_column(arrow_fields, columns, &name, field.name.case_sensitive)? {
+        match found.map(|index| (&arrow_fields[index], &columns[index])) {
             Some((arrow_field, column)) => {
                 let column = order_array(column, &field.columntype)?;
                 out_fields.push(with_data_type(arrow_field, column.data_type()));
@@ -150,32 +158,37 @@ fn order_struct(
 /// The by-name deserializer matches the spelling first and then the lowercase
 /// name. With more than one candidate, such as `x` and `X`, its result depends
 /// on the order of the columns, so it must make that choice.
-fn find_column<'a>(
-    arrow_fields: &'a Fields,
-    columns: &'a [ArrayRef],
+fn find_column(
+    arrow_fields: &Fields,
+    source_columns: &HashMap<String, Option<usize>>,
     name: &str,
+    lowercase: &str,
     case_sensitive: bool,
-) -> Result<Option<(&'a FieldRef, &'a ArrayRef)>, String> {
-    let lowercase = name.to_lowercase();
-    let mut found = None;
-    for (arrow_field, column) in arrow_fields.iter().zip(columns) {
-        if arrow_field.name().to_lowercase() != lowercase {
-            continue;
-        }
-        if found.is_some() {
-            return Err(format!(
-                "the source has more than one column named {name} when case is ignored"
-            ));
-        }
-        found = Some((arrow_field, column));
-    }
-    match found {
-        Some((arrow_field, _)) if case_sensitive && arrow_field.name() != name => Err(format!(
-            "case-sensitive column {name} is spelled {} in the source",
-            arrow_field.name()
+) -> Result<Option<usize>, String> {
+    match source_columns.get(lowercase) {
+        None => Ok(None),
+        Some(None) => Err(format!(
+            "the source has more than one column named {name} when case is ignored"
         )),
-        found => Ok(found),
+        Some(Some(index)) if case_sensitive && arrow_fields[*index].name() != name => Err(format!(
+            "case-sensitive column {name} is spelled {} in the source",
+            arrow_fields[*index].name()
+        )),
+        Some(Some(index)) => Ok(Some(*index)),
     }
+}
+
+/// The index of each source column by its lowercase name. A name that more
+/// than one column has gives `None`.
+fn source_columns(arrow_fields: &Fields) -> HashMap<String, Option<usize>> {
+    let mut source_columns = HashMap::with_capacity(arrow_fields.len());
+    for (index, arrow_field) in arrow_fields.iter().enumerate() {
+        source_columns
+            .entry(arrow_field.name().to_lowercase())
+            .and_modify(|duplicate| *duplicate = None)
+            .or_insert(Some(index));
+    }
+    source_columns
 }
 
 fn order_array(array: &ArrayRef, column_type: &ColumnType) -> Result<ArrayRef, String> {
@@ -404,7 +417,7 @@ mod test {
         assert_eq!(values(ordered.column(1)), vec![Some(3)]);
     }
 
-    /// A batch with all the columns has no absent columns, whatever its
+    /// A batch with all the columns has no absent column, whatever its
     /// metadata from outside says.
     #[test]
     fn no_absent_column() {
@@ -418,7 +431,7 @@ mod test {
 
         assert_eq!(reason, None);
         assert!(has_positional_fields(ordered.schema_ref()));
-        assert_eq!(absent_columns(ordered.schema_ref()), None);
+        assert_eq!(absent_columns(ordered.schema_ref()), Some(vec![false]));
     }
 
     /// The by-name path reads a batch with no column of the table, and a
