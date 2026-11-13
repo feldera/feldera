@@ -837,6 +837,8 @@ macro_rules! deserialize_table_record {
 
                 struct RecordVisitor<'de> {
                     context: &'de SqlSerdeConfig,
+                    // The columns that a positional input does not have.
+                    absent: Option<&'de [bool]>,
                     __feldera_metadata: &'de Option<$aux_type>,
                     $($field_name: Option<$type>,)*
                 }
@@ -858,8 +860,15 @@ macro_rules! deserialize_table_record {
 
                 impl<'de> RecordVisitor<'de> {
                     fn new(context: &'de SqlSerdeConfig, __feldera_metadata: &'de Option<$aux_type>) -> Self {
+                        // The absent columns are those of this record only; the
+                        // values of its columns use the configuration without them.
+                        let (context, absent) = match &context.absent_columns {
+                            Some(absent) => (absent.field_config(), Some(absent.absent())),
+                            None => (context, None),
+                        };
                         Self {
                             context,
+                            absent,
                             __feldera_metadata,
                             $($field_name: None,)*
                         }
@@ -934,10 +943,17 @@ macro_rules! deserialize_table_record {
                             ),*
                         ];
 
+                        let absent = self.absent;
+                        if absent.is_some_and(|absent| absent.len() != $num_cols) {
+                            return Err(invalid_length_error(absent.map_or(0, <[bool]>::len), $num_cols));
+                        }
                         let mut _cols: usize = 0;
 
                         for (_cols, (column_name, deserializer)) in deserializers.iter_mut().enumerate()
                         {
+                            if absent.is_some_and(|absent| absent[_cols]) {
+                                continue;
+                            }
                             let res = seq.next_element_seed(ErasedDeserializationContext::new(*deserializer, &self.context));
                             match res {
                                 Err(e) => return Err(field_parse_error(column_name, e)),
@@ -947,6 +963,17 @@ macro_rules! deserialize_table_record {
                         }
 
                         while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+
+                        // An absent column gets the value that the by-name path gives it.
+                        if let Some(absent) = absent {
+                            let mut _idx = 0usize;
+                            $(
+                                if absent[_idx] {
+                                    self.$field_name()?;
+                                }
+                                _idx += 1;
+                            )*
+                        }
 
                         Ok($table {
                             $($field_name: self.$field_name.unwrap(),
@@ -968,7 +995,11 @@ macro_rules! deserialize_table_record {
                 //deserializer.deserialize_map(visitor)
                 if context.positional_fields {
                     // The input holds the columns in declaration order; skip the field names.
-                    deserializer.deserialize_tuple($num_cols, visitor)
+                    let num_present = context
+                        .absent_columns
+                        .as_ref()
+                        .map_or($num_cols, |absent| absent.num_present());
+                    deserializer.deserialize_tuple(num_present, visitor)
                 } else {
                     deserializer
                         .deserialize_struct($sql_table, [$($column_name,)*].as_slice(), visitor)
@@ -1093,6 +1124,73 @@ mod test {
                     .to_string()
             )
         );
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Inner {
+        x: u8,
+        y: Option<u8>,
+    }
+
+    deserialize_table_record!(Inner["Inner", 2] {
+    (x, "x", false, u8, |_| None),
+    (y, "y", false, Option<u8>, |_| Some(None))
+    });
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct Outer {
+        a: u8,
+        b: Option<u8>,
+        c: u8,
+        d: Inner,
+        e: u8,
+    }
+
+    deserialize_table_record!(Outer["Outer", 5] {
+    (a, "a", false, u8, |_| None),
+    (b, "b", false, Option<u8>, |_| Some(None)),
+    (c, "c", false, u8, |_| Some(7)),
+    (d, "d", false, Inner, |_| None),
+    (e, "e", false, u8, |_| None)
+    });
+
+    /// With `absent_columns`, the sequence holds only the other columns. An
+    /// absent column gets its `NULL` or its default, or is an error. A nested
+    /// record holds all its fields.
+    #[test]
+    fn absent_columns() {
+        let deserialize = |absent: Vec<bool>, json: &str| {
+            let config = SqlSerdeConfig::default().with_absent_columns(absent);
+            Outer::deserialize_with_context(&mut serde_json::Deserializer::from_str(json), &config)
+                .map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            deserialize(vec![false, true, true, false, false], "[1, [2, 3], 4]"),
+            Ok(Outer {
+                a: 1,
+                b: None,
+                c: 7,
+                d: Inner { x: 2, y: Some(3) },
+                e: 4,
+            })
+        );
+        assert_eq!(
+            deserialize(vec![false; 5], "[1, 5, 6, [2, 3], 4]"),
+            Ok(Outer {
+                a: 1,
+                b: Some(5),
+                c: 6,
+                d: Inner { x: 2, y: Some(3) },
+                e: 4,
+            })
+        );
+        // `e` has no `NULL` and no default.
+        assert_eq!(
+            deserialize(vec![false, false, false, false, true], "[1, 5, 6, [2, 3]]"),
+            Err("missing field `e` at line 1 column 17".to_string())
+        );
+        // The flags are for another record type.
+        assert!(deserialize(vec![false, true], "[1]").is_err());
     }
 
     /// A type-erased deserializer is passed on as it is, not erased again.

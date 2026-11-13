@@ -35,6 +35,21 @@ pub fn has_positional_fields(schema: &Schema) -> bool {
         .is_some_and(|value| *value == *POSITIONAL_FIELDS_TOKEN)
 }
 
+/// Schema metadata key of the columns of the table that an ordered batch does
+/// not have: one character for each column, `1` for an absent column.
+const ABSENT_COLUMNS: &str = "feldera.absent_columns";
+
+/// The columns of the table that a batch in order does not have: one flag for
+/// each column, in the order of the SQL declaration. `None` when the batch
+/// has all the columns, or is not in order.
+pub fn absent_columns(schema: &Schema) -> Option<Vec<bool>> {
+    if !has_positional_fields(schema) {
+        return None;
+    }
+    let absent = schema.metadata().get(ABSENT_COLUMNS)?;
+    Some(absent.bytes().map(|flag| flag == b'1').collect())
+}
+
 /// Puts the columns of `batch`, and of each nested `ROW`, in the order of
 /// `fields`, drops the columns that `fields` does not have, and marks the
 /// schema with [`POSITIONAL_FIELDS`].
@@ -43,24 +58,46 @@ pub fn has_positional_fields(schema: &Schema) -> bool {
 /// `FixedSizeBinary(16)` column on the same buffer, which
 /// `DecimalFormat::I128` reads as significands.
 ///
-/// When the batch cannot be put in order, because a column is absent or
-/// misspelled, returns the batch unchanged with the reason. The deserializer
-/// then reads the records by name, which fills in an absent column from its
-/// default and reports the other problems.
+/// The batch can be without some columns of the table, for example the unused
+/// columns that the connector does not read: [`absent_columns`] then gives
+/// them, and the deserializer fills them in as it does when it reads by name.
+///
+/// When the batch cannot be put in order, because a column is misspelled or a
+/// field of a nested `ROW` is absent, returns the batch unchanged with the
+/// reason. The deserializer then reads the records by name, which fills in an
+/// absent field from its default and reports the other problems.
 pub fn order_columns(batch: RecordBatch, fields: &[Field]) -> (RecordBatch, Option<String>) {
     let len = batch.num_rows();
-    let ordered = order_struct(batch.schema_ref().fields(), batch.columns(), fields).and_then(
-        |(arrow_fields, columns)| {
-            let mut metadata = batch.schema_ref().metadata().clone();
-            metadata.insert(
-                POSITIONAL_FIELDS.to_string(),
-                POSITIONAL_FIELDS_TOKEN.clone(),
-            );
-            let schema = Arc::new(Schema::new_with_metadata(arrow_fields, metadata));
-            let options = RecordBatchOptions::new().with_row_count(Some(len));
-            RecordBatch::try_new_with_options(schema, columns, &options).map_err(|e| e.to_string())
-        },
-    );
+    let mut absent = Vec::new();
+    let ordered = order_struct(
+        batch.schema_ref().fields(),
+        batch.columns(),
+        fields,
+        Some(&mut absent),
+    )
+    .and_then(|(arrow_fields, columns)| {
+        // serde_arrow cannot read a batch with no column.
+        if columns.is_empty() {
+            return Err("the batch has no column of the table".to_string());
+        }
+        Ok((arrow_fields, columns))
+    })
+    .and_then(|(arrow_fields, columns)| {
+        let mut metadata = batch.schema_ref().metadata().clone();
+        metadata.insert(
+            POSITIONAL_FIELDS.to_string(),
+            POSITIONAL_FIELDS_TOKEN.clone(),
+        );
+        if absent.contains(&true) {
+            let flags = absent.iter().map(|absent| if *absent { '1' } else { '0' });
+            metadata.insert(ABSENT_COLUMNS.to_string(), flags.collect());
+        } else {
+            metadata.remove(ABSENT_COLUMNS);
+        }
+        let schema = Arc::new(Schema::new_with_metadata(arrow_fields, metadata));
+        let options = RecordBatchOptions::new().with_row_count(Some(len));
+        RecordBatch::try_new_with_options(schema, columns, &options).map_err(|e| e.to_string())
+    });
     match ordered {
         Ok(ordered) => (ordered, None),
         Err(reason) => (batch, Some(reason)),
@@ -71,6 +108,8 @@ fn order_struct(
     arrow_fields: &Fields,
     columns: &[ArrayRef],
     fields: &[Field],
+    // Receives one flag for each field. Without it, an absent field is an error.
+    mut absent: Option<&mut Vec<bool>>,
 ) -> Result<(Fields, Vec<ArrayRef>), String> {
     let mut out_fields = Vec::with_capacity(fields.len());
     let mut out_columns = Vec::with_capacity(fields.len());
@@ -90,10 +129,16 @@ fn order_struct(
                 let column = order_array(column, &field.columntype)?;
                 out_fields.push(with_data_type(arrow_field, column.data_type()));
                 out_columns.push(column);
+                if let Some(absent) = &mut absent {
+                    absent.push(false);
+                }
             }
-            // Only the by-name path knows the value of an absent column: NULL,
-            // its default, or an error.
-            None => return Err(format!("column {} is absent", field.name.sql_name())),
+            None => match &mut absent {
+                Some(absent) => absent.push(true),
+                // Only the by-name path gives a value to an absent field of a
+                // nested ROW: NULL, its default, or an error.
+                None => return Err(format!("column {} is absent", field.name.sql_name())),
+            },
         }
     }
     Ok((out_fields.into(), out_columns))
@@ -156,7 +201,8 @@ fn order_array(array: &ArrayRef, column_type: &ColumnType) -> Result<ArrayRef, S
                 return Err("a ROW column has no field list".to_string());
             };
             let array = array.as_struct();
-            let (arrow_fields, columns) = order_struct(array.fields(), array.columns(), fields)?;
+            let (arrow_fields, columns) =
+                order_struct(array.fields(), array.columns(), fields, None)?;
             StructArray::try_new_with_length(
                 arrow_fields,
                 columns,
@@ -290,7 +336,9 @@ mod test {
     use arrow::datatypes::{DataType, Field as ArrowField, Fields, Int64Type};
     use feldera_types::program_schema::{ColumnType, Field, SqlIdentifier};
 
-    use super::{POSITIONAL_FIELDS, has_positional_fields, order_columns};
+    use super::{
+        ABSENT_COLUMNS, POSITIONAL_FIELDS, absent_columns, has_positional_fields, order_columns,
+    };
 
     fn ints(values: &[i64]) -> ArrayRef {
         Arc::new(Int64Array::from(values.to_vec()))
@@ -329,17 +377,77 @@ mod test {
         assert_eq!(values(ordered.column(1)), vec![Some(2)]);
     }
 
-    /// An absent column needs the by-name path, which knows its default.
+    /// An absent column of the table is recorded; the other columns are in order.
     #[test]
     fn absent_column() {
-        let batch = batch(vec![("other", ints(&[1, 2]))]);
+        let batch = batch(vec![
+            ("c", ints(&[3])),
+            ("other", ints(&[9])),
+            ("a", ints(&[1])),
+        ]);
+        let fields = [
+            field("a", ColumnType::bigint(true)),
+            field("b", ColumnType::bigint(true)),
+            field("c", ColumnType::bigint(true)),
+            field("d", ColumnType::bigint(true)),
+        ];
+
+        let (ordered, reason) = order_columns(batch, &fields);
+
+        assert_eq!(reason, None);
+        assert_eq!(
+            absent_columns(ordered.schema_ref()),
+            Some(vec![false, true, false, true])
+        );
+        assert_eq!(ordered.num_columns(), 2);
+        assert_eq!(values(ordered.column(0)), vec![Some(1)]);
+        assert_eq!(values(ordered.column(1)), vec![Some(3)]);
+    }
+
+    /// A batch with all the columns has no absent columns, whatever its
+    /// metadata from outside says.
+    #[test]
+    fn no_absent_column() {
+        let batch = batch(vec![("a", ints(&[1]))]);
+        let metadata = [(ABSENT_COLUMNS.to_string(), "1".to_string())].into();
+        let schema = batch.schema().as_ref().clone().with_metadata(metadata);
+        let batch = batch.with_schema(Arc::new(schema)).unwrap();
+        assert_eq!(absent_columns(batch.schema_ref()), None);
+
+        let (ordered, reason) = order_columns(batch, &[field("a", ColumnType::bigint(true))]);
+
+        assert_eq!(reason, None);
+        assert!(has_positional_fields(ordered.schema_ref()));
+        assert_eq!(absent_columns(ordered.schema_ref()), None);
+    }
+
+    /// The by-name path reads a batch with no column of the table, and a
+    /// batch with an absent field in a nested ROW.
+    #[test]
+    fn absent_column_read_by_name() {
         let fields = [field("a", ColumnType::bigint(true))];
-
-        let (unchanged, reason) = order_columns(batch, &fields);
-
-        assert!(reason.unwrap().contains("absent"));
+        let (unchanged, reason) = order_columns(batch(vec![("other", ints(&[1, 2]))]), &fields);
+        assert!(reason.unwrap().contains("no column"));
         assert!(!has_positional_fields(unchanged.schema_ref()));
         assert_eq!(unchanged.column(0).len(), 2);
+
+        let row = StructArray::from(vec![(
+            Arc::new(ArrowField::new("x", DataType::Int64, false)),
+            ints(&[10]),
+        )]);
+        let row_type = ColumnType::structure(
+            true,
+            &[
+                field("x", ColumnType::bigint(false)),
+                field("y", ColumnType::bigint(true)),
+            ],
+        );
+        let (unchanged, reason) = order_columns(
+            batch(vec![("r", Arc::new(row) as ArrayRef)]),
+            &[field("r", row_type)],
+        );
+        assert!(reason.unwrap().contains("absent"));
+        assert!(!has_positional_fields(unchanged.schema_ref()));
     }
 
     /// A batch from outside that claims to be in order is not read by position.

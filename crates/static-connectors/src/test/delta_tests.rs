@@ -154,9 +154,10 @@ fn read_like_connector(batch: arrow::array::RecordBatch) -> (Vec<DeltaTestStruct
     let batch = timestamps_to_micros(batch).unwrap();
     let (batch, _) = order_columns(batch, &fields);
     let positional = has_positional_fields(batch.schema_ref());
+    let config = crate::deinput::ArrowSerdeConfig::new(delta_input_serde_config());
     let read = Vec::deserialize_with_context(
         serde_arrow::Deserializer::from_record_batch(&batch).unwrap(),
-        &delta_input_serde_config().with_positional_fields(positional),
+        config.for_batch(&batch).as_ref(),
     )
     .unwrap();
     (read, positional)
@@ -194,9 +195,9 @@ fn delta_positional_read_matches_written_records() {
     assert_eq!(read, records);
 }
 
-/// A batch without a nullable column is read by name, and the column is NULL.
+/// A batch without a nullable column is read by position, and the column is NULL.
 #[test]
-fn delta_absent_column_is_read_by_name_as_null() {
+fn delta_absent_column_is_read_by_position_as_null() {
     let records: Vec<DeltaTestStruct> = (0..50)
         .map(|i| {
             let mut record = delta_test_record(i * 2);
@@ -209,7 +210,7 @@ fn delta_absent_column_is_read_by_name_as_null() {
     });
 
     let (read, positional) = read_like_connector(batch);
-    assert!(!positional);
+    assert!(positional);
     let expected: Vec<DeltaTestStruct> = records
         .into_iter()
         .map(|record| DeltaTestStruct {
@@ -236,33 +237,24 @@ fn delta_string_column_is_read_as_timestamp() {
             .format("%Y-%m-%dT%H:%M:%S%.fZ")
             .to_string()
     })));
-    let with_strings = |by_name: bool| {
-        changed_batch(&records, |field, column| match field.name().as_str() {
-            "timestamp_ntz" => Some((
-                field.clone().with_data_type(DataType::Utf8),
-                strings.clone(),
-            )),
-            // `unused` is nullable in every record of this test.
-            "unused" if by_name => None,
-            _ => Some((field.clone(), column.clone())),
-        })
-    };
-    let expected: Vec<DeltaTestStruct> = records
-        .iter()
-        .cloned()
-        .map(|record| DeltaTestStruct {
-            unused: None,
-            ..record
-        })
-        .collect();
+    let batch = changed_batch(&records, |field, column| match field.name().as_str() {
+        "timestamp_ntz" => Some((
+            field.clone().with_data_type(DataType::Utf8),
+            strings.clone(),
+        )),
+        _ => Some((field.clone(), column.clone())),
+    });
 
-    let (read, positional) = read_like_connector(with_strings(false));
+    let (read, positional) = read_like_connector(batch.clone());
     assert!(positional);
     assert_eq!(read, records);
 
-    let (read, positional) = read_like_connector(with_strings(true));
-    assert!(!positional);
-    assert_eq!(read, expected);
+    let read: Vec<DeltaTestStruct> = Vec::deserialize_with_context(
+        serde_arrow::Deserializer::from_record_batch(&batch).unwrap(),
+        &delta_input_serde_config(),
+    )
+    .unwrap();
+    assert_eq!(read, records);
 }
 
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -819,7 +811,7 @@ proptest::proptest! {
         .unwrap();
         let (read, positional) = read_like_connector(batch);
 
-        proptest::prop_assert_eq!(positional, !drop_unused);
+        proptest::prop_assert!(positional);
         proptest::prop_assert_eq!(read, by_name);
     }
 }

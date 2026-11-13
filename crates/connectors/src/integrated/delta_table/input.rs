@@ -8056,10 +8056,10 @@ mod positional_path_tests {
     }
 
     /// A batch without a column of the table, which `skip_unused_columns`
-    /// produces, is read by name.
+    /// produces, is read by position.
     #[test]
-    fn a_batch_without_a_column_is_read_by_name() {
-        assert!(!read_by_position(
+    fn a_batch_without_a_column_is_read_by_position() {
+        assert!(read_by_position(
             batch(vec![("id", ids())]),
             Polarity::Fixed(true)
         ));

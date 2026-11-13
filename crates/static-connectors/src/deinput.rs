@@ -29,12 +29,13 @@ use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
-use feldera_adapterlib::utils::arrow_layout::has_positional_fields;
+use feldera_adapterlib::utils::arrow_layout::{absent_columns, has_positional_fields};
 use feldera_sqllib::SqlVariant;
 use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use serde_json::de::SliceRead;
+use std::borrow::Cow;
 use std::hash::Hasher;
 use std::iter::zip;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
@@ -677,25 +678,28 @@ where
 
 /// The configuration of an Arrow stream, for the two ways to read a record.
 #[derive(Clone)]
-struct ArrowSerdeConfig {
+pub struct ArrowSerdeConfig {
     by_name: SqlSerdeConfig,
     positional: SqlSerdeConfig,
 }
 
 impl ArrowSerdeConfig {
-    fn new(config: SqlSerdeConfig) -> Self {
+    pub fn new(config: SqlSerdeConfig) -> Self {
         Self {
             positional: config.clone().with_positional_fields(true),
             by_name: config,
         }
     }
 
-    /// A batch with its columns in declaration order is read by position.
-    fn for_batch(&self, batch: &RecordBatch) -> &SqlSerdeConfig {
-        if has_positional_fields(batch.schema_ref()) {
-            &self.positional
-        } else {
-            &self.by_name
+    /// A batch with its columns in declaration order is read by position,
+    /// without the columns of the table that it does not have.
+    pub fn for_batch(&self, batch: &RecordBatch) -> Cow<'_, SqlSerdeConfig> {
+        if !has_positional_fields(batch.schema_ref()) {
+            return Cow::Borrowed(&self.by_name);
+        }
+        match absent_columns(batch.schema_ref()) {
+            Some(absent) => Cow::Owned(self.positional.clone().with_absent_columns(absent)),
+            None => Cow::Borrowed(&self.positional),
         }
     }
 }
@@ -732,7 +736,7 @@ where
 
         let records = Vec::<D>::deserialize_with_context_aux(
             deserializer,
-            self.config.for_batch(data),
+            &self.config.for_batch(data),
             self.metadata.get(metadata),
         )?;
         self.buffer
@@ -752,7 +756,7 @@ where
 
         let records = Vec::<D>::deserialize_with_context_aux(
             deserializer,
-            self.config.for_batch(data),
+            &self.config.for_batch(data),
             self.metadata.get(metadata),
         )?;
         self.buffer
@@ -783,7 +787,7 @@ where
 
         let records = Vec::<D>::deserialize_with_context_aux(
             deserializer,
-            self.config.for_batch(data),
+            &self.config.for_batch(data),
             self.metadata.get(metadata),
         )?;
 
@@ -1702,7 +1706,7 @@ where
 
         let records = Vec::<VD>::deserialize_with_context_aux(
             deserializer,
-            self.config.for_batch(data),
+            &self.config.for_batch(data),
             self.metadata.get(metadata),
         )?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
@@ -1723,7 +1727,7 @@ where
 
         let records = Vec::<VD>::deserialize_with_context_aux(
             deserializer,
-            self.config.for_batch(data),
+            &self.config.for_batch(data),
             self.metadata.get(metadata),
         )?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
@@ -1763,7 +1767,7 @@ where
 
         let records = Vec::<VD>::deserialize_with_context_aux(
             deserializer,
-            self.config.for_batch(data),
+            &self.config.for_batch(data),
             self.metadata.get(metadata),
         )?;
         self.buffer
