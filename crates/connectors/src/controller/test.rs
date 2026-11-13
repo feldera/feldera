@@ -4392,6 +4392,10 @@ struct ManualInputEndpoint {
     /// Answer `Queue` by flushing the queued records, as a real connector
     /// does, instead of waiting for `release`.
     polled: bool,
+
+    /// If set, the endpoint supports suspend, and each `Queue` reports a
+    /// checkpoint barrier if this is true and a seekable position otherwise.
+    barrier: Option<Arc<AtomicBool>>,
 }
 
 struct ManualInputEndpointDetails {
@@ -4405,7 +4409,41 @@ impl ManualInputEndpoint {
             details: Arc::new(Mutex::new(None)),
             closed: Arc::new(AtomicBool::new(false)),
             polled: false,
+            barrier: None,
         }
+    }
+
+    /// A polled endpoint that holds a checkpoint barrier until
+    /// [Self::release_barrier].
+    fn with_barrier() -> Self {
+        Self {
+            polled: true,
+            barrier: Some(Arc::new(AtomicBool::new(true))),
+            ..Self::new()
+        }
+    }
+
+    /// Makes the next `Queue` report a seekable position, which releases the
+    /// barrier.
+    fn release_barrier(&self) {
+        self.barrier
+            .as_ref()
+            .unwrap()
+            .store(false, Ordering::Release);
+    }
+
+    /// Flushes the queued records and reports a barrier or a seekable
+    /// position (see [Self::with_barrier]).
+    fn queue_with_barrier(&self, barrier: &AtomicBool) {
+        let guard = self.details.lock().unwrap();
+        let queue = &guard.as_ref().unwrap().queue;
+        let (amt, _hasher, _aux) = queue.flush_with_aux();
+        let resume = if barrier.load(Ordering::Acquire) {
+            super::Resume::Barrier
+        } else {
+            super::Resume::Seek { seek: json!({}) }
+        };
+        queue.consumer.extended(amt, Some(resume), Vec::new());
     }
 
     /// An endpoint that flushes its queued records when polled.
@@ -4429,6 +4467,181 @@ impl ManualInputEndpoint {
     fn release(&self) {
         self.details.lock().unwrap().as_ref().unwrap().queue.queue();
     }
+}
+
+/// A paused pipeline does not take input that a connector buffered: the input
+/// waits until the pipeline starts again.  The pipeline reports the pause only
+/// when no step in progress can take that input.
+#[engine_test]
+pub fn paused_pipeline_does_not_poll_buffered_input(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 1,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    let endpoint = ManualInputEndpoint::polled();
+    let endpoint_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": "unused"}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("manual", endpoint_config, Box::new(endpoint.clone()), None)
+        .unwrap();
+    let status = controller.status();
+    let reported_state = || status.global_metrics.reported_state();
+
+    // A running pipeline takes buffered input.
+    endpoint.push("1,true,,foo\n2,true,,foo\n");
+    wait(|| status.num_total_processed_records() == 2, 10_000)
+        .expect("a running pipeline did not take buffered input");
+
+    // A paused pipeline does not, even in a step that something else requests.
+    controller.pause();
+    wait(|| reported_state() == super::PipelineState::Paused, 10_000)
+        .expect("the circuit thread never reported the pause");
+    endpoint.push("3,true,,foo\n");
+    let steps = status.global_metrics.total_completed_steps();
+    controller.request_step();
+    wait(
+        || status.global_metrics.total_completed_steps() > steps,
+        10_000,
+    )
+    .expect("no step");
+    assert_eq!(status.num_total_processed_records(), 2);
+    assert_eq!(status.num_buffered_input_records(), 1);
+
+    // Starting the pipeline releases the input.
+    controller.start();
+    wait(|| reported_state() == super::PipelineState::Running, 10_000)
+        .expect("the circuit thread never reported the start");
+    wait(|| status.num_total_processed_records() == 3, 10_000)
+        .expect("a started pipeline did not take buffered input");
+    controller.stop().unwrap();
+}
+
+/// A suspend of a paused pipeline without fault tolerance takes the input that
+/// an endpoint buffered at a checkpoint barrier, so that the endpoint passes
+/// the barrier.  Otherwise, the suspend would wait until the pipeline starts.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
+pub fn paused_suspend_polls_barrier_input(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "min_batch_size_records": 1,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    let endpoint = ManualInputEndpoint::with_barrier();
+    let endpoint_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": "unused"}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    let id = controller
+        .add_input_endpoint("manual", endpoint_config, Box::new(endpoint.clone()), None)
+        .unwrap();
+    let status = controller.status();
+
+    // The endpoint reaches a barrier.
+    endpoint.push("1,true,,foo\n");
+    wait(|| status.num_total_processed_records() == 1, 10_000)
+        .expect("a running pipeline did not take buffered input");
+    assert!(status.input_status()[&id].is_barrier());
+
+    // While paused, the endpoint buffers input that passes the barrier.  A step
+    // does not take it.
+    controller.pause();
+    wait(
+        || status.global_metrics.reported_state() == super::PipelineState::Paused,
+        10_000,
+    )
+    .expect("the circuit thread never reported the pause");
+    endpoint.push("2,true,,foo\n");
+    endpoint.release_barrier();
+    let steps = status.global_metrics.total_completed_steps();
+    controller.request_step();
+    wait(
+        || status.global_metrics.total_completed_steps() > steps,
+        10_000,
+    )
+    .expect("no step");
+    assert_eq!(status.num_total_processed_records(), 1);
+
+    // A suspend takes it.
+    let (sender, receiver) = mpsc::channel();
+    controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    receiver
+        .recv_timeout(Duration::from_secs(20))
+        .expect("the suspend waited for the pipeline to start")
+        .expect("the suspend failed");
+    assert_eq!(status.num_total_processed_records(), 2);
+    let _ = controller.stop();
+}
+
+/// Until a pipeline first runs, it polls every endpoint even though it starts
+/// out paused: no reader has buffered input yet, and the first poll records
+/// each connector's resume position, which a checkpoint needs.
+#[engine_test]
+pub fn paused_pipeline_polls_until_it_first_runs(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    let endpoint = ManualInputEndpoint::polled();
+    let endpoint_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": "unused"}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("manual", endpoint_config, Box::new(endpoint.clone()), None)
+        .unwrap();
+
+    endpoint.push("1,true,,foo\n");
+    controller.request_step();
+    let status = controller.status();
+    wait(|| status.num_total_processed_records() == 1, 10_000)
+        .expect("a pipeline that never ran did not poll its endpoint");
+    controller.stop().unwrap();
 }
 
 /// In a paused multihost pipeline, a step with [StepInputs::Paused] takes the
@@ -4564,7 +4777,7 @@ pub fn closed_reader_final_progress_is_collected(engine: &dyn PipelineTestEngine
 
 impl InputEndpoint for ManualInputEndpoint {
     fn fault_tolerance(&self) -> Option<FtModel> {
-        None
+        self.barrier.as_ref().map(|_| FtModel::AtLeastOnce)
     }
 }
 
@@ -4594,7 +4807,10 @@ impl InputReader for ManualInputEndpoint {
             return;
         }
         match command {
-            InputReaderCommand::Queue { .. } if self.polled => self.release(),
+            InputReaderCommand::Queue { .. } if self.polled => match &self.barrier {
+                Some(barrier) => self.queue_with_barrier(barrier),
+                None => self.release(),
+            },
             // Report no input: the test releases it with
             // `ManualInputEndpoint::release`.
             InputReaderCommand::Queue { .. } => self

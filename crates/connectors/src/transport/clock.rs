@@ -405,7 +405,7 @@ pub mod test {
     //! `tests` cover the clock in a pipeline.
 
     use crate::{
-        Controller,
+        Controller, PipelineState,
         test::{
             engine_test,
             pipeline::{PipelineTestEngine, TestCircuit, query},
@@ -1025,6 +1025,46 @@ pub mod test {
             "a delta below the resolution rounds up"
         );
         assert_eq!(advance(&pipeline, Some(0)).unwrap(), now4);
+        pipeline.stop().unwrap();
+    }
+
+    /// An HTTP-driven `advance` while paused returns the new `NOW()` and requests a step, but
+    /// the circuit receives the new value only after the pipeline resumes.
+    #[engine_test(requires(Storage, FaultTolerance))]
+    pub fn advance_http_driven_while_paused(engine: &dyn PipelineTestEngine) {
+        let tempdir = TempDir::new().unwrap();
+        let config = config(
+            &storage(&tempdir),
+            1,
+            json!({ "dev_tweaks": { "now_offset": HTTP_ANCHOR, "now_http_driven": true } }),
+        );
+        let pipeline = controller(engine, &config, "advance while paused");
+        let anchor = millis(HTTP_ANCHOR);
+        pipeline.start();
+        wait_for_clock_timestamp(&pipeline, anchor);
+
+        let status = pipeline.status();
+        pipeline.pause();
+        wait(
+            || status.global_metrics.reported_state() == PipelineState::Paused,
+            default_timeout_ms(),
+        )
+        .unwrap();
+        let steps = status.global_metrics.total_completed_steps();
+        assert_eq!(advance(&pipeline, Some(60_000)).unwrap(), anchor + 60_000);
+        wait(
+            || status.global_metrics.total_completed_steps() > steps,
+            default_timeout_ms(),
+        )
+        .unwrap();
+        assert_eq!(
+            ticks(&pipeline).and_then(|(_, last)| last),
+            Some(anchor),
+            "a paused pipeline does not take the new NOW()"
+        );
+
+        pipeline.start();
+        wait_for_clock_timestamp(&pipeline, anchor + 60_000);
         pipeline.stop().unwrap();
     }
 

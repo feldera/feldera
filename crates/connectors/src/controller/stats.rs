@@ -175,6 +175,17 @@ pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     state: Atomic<PipelineState>,
 
+    /// The state that the server reports: a copy of `state` that the circuit
+    /// thread takes between steps.  Steps also select their input by this
+    /// state, so a reported pause means that no step can take connector
+    /// input.
+    reported_state: Atomic<PipelineState>,
+
+    /// True once the pipeline has run.  Until then, no reader has buffered
+    /// input, so a paused pipeline still polls its endpoints: the first poll
+    /// records each connector's resume position, which a checkpoint needs.
+    has_run: AtomicBool,
+
     /// Whether [PipelineState::Terminated] means "a suspend completed
     /// successfully" rather than "the pipeline died".
     ///
@@ -346,6 +357,8 @@ impl GlobalControllerMetrics {
         let initial_start_time = initial_start_time.unwrap_or(start_time);
         Self {
             state: Atomic::new(PipelineState::Paused),
+            reported_state: Atomic::new(PipelineState::Paused),
+            has_run: AtomicBool::new(false),
             suspended: AtomicBool::new(false),
             fatal_error: OnceLock::new(),
             bootstrap_in_progress: AtomicBool::new(false),
@@ -379,6 +392,26 @@ impl GlobalControllerMetrics {
 
     pub fn get_state(&self) -> PipelineState {
         self.state.load(Ordering::Acquire)
+    }
+
+    /// Copies `state` to `reported_state`.  Only the circuit thread calls
+    /// this, between steps.
+    pub(crate) fn update_reported_state(&self) {
+        self.reported_state
+            .store(self.get_state(), Ordering::Release);
+    }
+
+    /// The state that the server reports (see `reported_state`), or
+    /// [PipelineState::Terminated] once the pipeline terminates.
+    pub fn reported_state(&self) -> PipelineState {
+        match self.get_state() {
+            PipelineState::Terminated => PipelineState::Terminated,
+            _ => self.reported_state.load(Ordering::Acquire),
+        }
+    }
+
+    pub(crate) fn has_run(&self) -> bool {
+        self.has_run.load(Ordering::Acquire)
     }
 
     /// Whether the pipeline reached [PipelineState::Terminated] because a
@@ -673,6 +706,9 @@ impl ControllerStatus {
         if desired == PipelineState::Terminated {
             self.global_metrics.state.store(desired, Ordering::Relaxed);
         } else {
+            if desired == PipelineState::Running {
+                self.global_metrics.has_run.store(true, Ordering::Release);
+            }
             let mut current = self.state();
             while current != desired && current != PipelineState::Terminated {
                 match self.global_metrics.state.compare_exchange(
@@ -1671,7 +1707,8 @@ impl ControllerStatus {
         #[allow(clippy::manual_unwrap_or_default)]
         #[allow(clippy::manual_unwrap_or)]
         let global_metrics = adapter_stats::ExternalGlobalControllerMetrics {
-            state: match self.global_metrics.state.load(Ordering::Acquire) {
+            // The same state as `/status` (see `GlobalControllerMetrics::reported_state`).
+            state: match self.global_metrics.reported_state() {
                 PipelineState::Paused => adapter_stats::PipelineState::Paused,
                 PipelineState::Running => adapter_stats::PipelineState::Running,
                 PipelineState::Terminated => adapter_stats::PipelineState::Terminated,
