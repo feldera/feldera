@@ -391,11 +391,11 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
     public VisitDecision preorder(DBSPClosureExpression expression) {
         super.preorder(expression);
         if (!this.context.isEmpty()) {
-            // This means that we are analyzing a closure within another closure; ignore, since
-            // nested closures must currently be pure functions
-            this.currentValue.popContext();
-            this.set(expression, FieldSet.EMPTY);
-            return VisitDecision.STOP;
+            // A nested closure: its parameters are not fields of the analyzed parameters,
+            // but its body can use fields of the enclosing closure's parameters.
+            for (DBSPParameter param: expression.parameters)
+                this.setCurrentValue(param, FieldSet.EMPTY);
+            return VisitDecision.CONTINUE;
         }
         for (DBSPParameter param: expression.parameters) {
             ParameterField pf = new ParameterField(param, List.of());
@@ -409,6 +409,12 @@ public class FindUsedFields extends SymbolicInterpreter<IUsedFields> {
             }
         }
         return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPClosureExpression expression) {
+        this.copy(expression, expression.body);
+        super.postorder(expression);
     }
 
     @Override

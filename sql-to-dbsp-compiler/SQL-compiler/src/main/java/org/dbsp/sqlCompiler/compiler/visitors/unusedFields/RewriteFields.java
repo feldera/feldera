@@ -20,6 +20,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Rewrite field accesses according to a {@link ParameterFieldUse}.
  * Very similar to the {@link CanonicalForm} visitor. */
@@ -30,6 +33,8 @@ public class RewriteFields extends InnerRewriteVisitor {
         by the 'newParam' table, and Y is given by fieldRemap[param][X]. */
     final ParameterFieldUse fieldRemap;
     final ResolveReferences resolver;
+    /** Parameters of closures nested in the rewritten closure; they are not rewritten */
+    final Set<DBSPParameter> nestedParameters;
     final int depth;
     /** Field use map for the currently evaluated expression */
     @Nullable FieldUseMap current;
@@ -43,6 +48,7 @@ public class RewriteFields extends InnerRewriteVisitor {
         this.fieldRemap = fieldRemap;
         this.newParam = newParam;
         this.resolver = new ResolveReferences(compiler, false);
+        this.nestedParameters = new HashSet<>();
         this.depth = depth;
         this.current = null;
         this.currentDepth = 0;
@@ -66,6 +72,11 @@ public class RewriteFields extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPParameter param) {
+        if (this.nestedParameters.contains(param)) {
+            this.map(param, param);
+            this.setCurrent(null, 0);
+            return VisitDecision.STOP;
+        }
         DBSPParameter replacement = this.newParam.get(param);
         this.map(param, replacement);
         this.setCurrent(this.fieldRemap.get(param), 0);
@@ -75,7 +86,7 @@ public class RewriteFields extends InnerRewriteVisitor {
     @Override
     public VisitDecision preorder(DBSPVariablePath var) {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
-        if (declaration.is(DBSPParameter.class)) {
+        if (declaration.is(DBSPParameter.class) && !this.nestedParameters.contains(declaration)) {
             DBSPParameter param = declaration.to(DBSPParameter.class);
             DBSPParameter replacement = this.newParam.get(param);
             this.map(var, replacement.asVariable());
@@ -123,9 +134,9 @@ public class RewriteFields extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPClosureExpression expression) {
         for (IDBSPInnerNode node: this.context) {
             if (node.is(DBSPClosureExpression.class)) {
-                // Nested closure
-                this.map(expression, expression);
-                return VisitDecision.STOP;
+                // Nested closure: keep its parameters, rewrite its body
+                this.nestedParameters.addAll(Arrays.asList(expression.parameters));
+                break;
             }
         }
         return super.preorder(expression);
@@ -182,6 +193,7 @@ public class RewriteFields extends InnerRewriteVisitor {
     @Override
     public void startVisit(IDBSPInnerNode node) {
         this.resolver.reference.clear();
+        this.nestedParameters.clear();
         this.resolver.apply(node);
         super.startVisit(node);
     }
