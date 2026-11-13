@@ -7,7 +7,9 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_logs::FollowMode;
+use actix_web::error::PayloadError;
 use actix_web::http::header::{self, HeaderValue};
+use actix_web::web::Bytes;
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, http::Method, web::Payload};
 use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
@@ -15,7 +17,13 @@ use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
 use feldera_types::error::ErrorResponse;
 use feldera_types::query::{MAX_WS_FRAME_SIZE, WS_SUBPROTOCOL};
+use futures_util::Stream;
+use std::cell::{Cell, RefCell};
 use std::fmt::Display;
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::task::{Context, Poll};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
@@ -165,15 +173,162 @@ pub fn format_disconnected_error_message<T: Display>(_error: T) -> String {
         .to_string()
 }
 
+/// How long the proxy keeps trying to open a connection to a pipeline.
+///
+/// A connect failure means the request was never sent, so repeating it cannot apply it
+/// twice. Right after a pipeline (re)start, cluster DNS can keep answering with the previous
+/// pod's IP for the record's TTL, and a pod can refuse connections for a moment before its
+/// server listens. Retrying here spares every client a transient 503.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ConnectRetry {
+    /// Time from the first attempt after which the proxy gives up.
+    budget: Duration,
+    /// Pause between attempts. A refused connection or a resolver error fails at once; a
+    /// connect to a dead address takes the connector's own timeout.
+    pause: Duration,
+}
+
+impl ConnectRetry {
+    /// Stale DNS entries in Kubernetes clusters most commonly resolve within 5 s (EKS) to
+    /// 30 s (GKE). A connect to a dead address costs the connector's 5 s timeout, so 35 s
+    /// leaves room for an attempt that starts after a 30 s entry expired.
+    pub(crate) const DEFAULT: Self = Self {
+        budget: Duration::from_secs(35),
+        pause: Duration::from_secs(1),
+    };
+
+    /// A single attempt.
+    pub(crate) const NONE: Self = Self {
+        budget: Duration::ZERO,
+        pause: Duration::ZERO,
+    };
+
+    #[cfg(test)]
+    fn new(budget: Duration, pause: Duration) -> Self {
+        Self { budget, pause }
+    }
+}
+
+/// Whether `error` says the connection to the pipeline was never opened, so the request
+/// was not sent.
+fn is_connect_failure(error: &SendRequestError) -> bool {
+    matches!(error, SendRequestError::Connect(connect) if !matches!(connect, ConnectError::Disconnected))
+}
+
+/// Hands the same request body to every connection attempt.
+///
+/// `awc` takes the body by value, so a failed attempt would otherwise consume it. A connect
+/// failure happens before any byte of the body is read, so the next attempt streams it from
+/// its beginning. `was_read` turns true once an attempt got far enough to read from it, after
+/// which a retry is no longer safe.
+#[derive(Clone)]
+struct SharedPayload {
+    inner: Rc<RefCell<Payload>>,
+    was_read: Rc<Cell<bool>>,
+}
+
+impl SharedPayload {
+    fn new(body: Payload) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(body)),
+            was_read: Rc::new(Cell::new(false)),
+        }
+    }
+
+    fn was_read(&self) -> bool {
+        self.was_read.get()
+    }
+}
+
+impl Stream for SharedPayload {
+    type Item = Result<Bytes, PayloadError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.was_read.set(true);
+        Pin::new(&mut *self.inner.borrow_mut()).poll_next(cx)
+    }
+}
+
+/// A recheck for callers without a database: the pipeline is taken to be where it was.
+fn no_recheck() -> std::future::Ready<Result<Option<String>, ManagerError>> {
+    std::future::ready(Ok(None))
+}
+
+/// Sends the request that `attempt` builds for the current URL, trying again while opening
+/// the connection fails, `retry.budget` has not run out, and `may_retry` confirms nothing was
+/// sent yet. Before each further attempt, `recheck` says whether the pipeline is still there
+/// to be reached (`Err` with its status when it is not) and where (`Some(url)` once it moved).
+/// Returns the response and the request as sent.
+async fn send_with_connect_retry<Fut>(
+    pipeline_name: &str,
+    timeout: Duration,
+    retry: ConnectRetry,
+    mut url: String,
+    mut attempt: impl FnMut(&str) -> (String, awc::SendClientRequest),
+    may_retry: impl Fn() -> bool,
+    mut recheck: impl FnMut() -> Fut,
+) -> Result<(ClientResponse<Decoder<actix_http::Payload>>, String), ManagerError>
+where
+    Fut: Future<Output = Result<Option<String>, ManagerError>>,
+{
+    let started = Instant::now();
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let (request_str, send) = attempt(&url);
+        let error = match send.await {
+            Ok(response) => {
+                if attempts > 1 {
+                    info!(
+                        pipeline = pipeline_name,
+                        pipeline_id = "N/A",
+                        "Connected to the pipeline on attempt {attempts} after {:.1}s: {request_str}",
+                        started.elapsed().as_secs_f64()
+                    );
+                }
+                return Ok((response, request_str));
+            }
+            Err(error) => error,
+        };
+        if !is_connect_failure(&error) || !may_retry() || started.elapsed() >= retry.budget {
+            return Err(pipeline_send_error(
+                pipeline_name,
+                &request_str,
+                timeout,
+                error,
+                attempts,
+                started.elapsed(),
+            )
+            .into());
+        }
+        tokio::time::sleep(retry.pause).await;
+        // The pipeline may have been stopped or restarted meanwhile: give up with its status
+        // error, or follow it to its new location.
+        if let Some(current) = recheck().await?
+            && current != url
+        {
+            info!(
+                pipeline = pipeline_name,
+                pipeline_id = "N/A",
+                "The pipeline moved while connecting to it, continuing at {current}"
+            );
+            url = current;
+        }
+    }
+}
+
 /// Converts an error from sending a request to a pipeline into a [`RunnerError`].
 ///
 /// A failure to open the connection gets its own error code, because then the
-/// request was not sent and the client can safely retry it.
+/// request was not sent and the client can safely retry it. `attempts` and `elapsed`
+/// describe the retries the proxy already made.
 fn pipeline_send_error(
     pipeline_name: &str,
     request_str: &str,
     timeout: Duration,
     e: SendRequestError,
+    attempts: u32,
+    elapsed: Duration,
 ) -> RunnerError {
     let pipeline_name = pipeline_name.to_string();
     let request = request_str.to_string();
@@ -190,10 +345,17 @@ fn pipeline_send_error(
                 error: format_disconnected_error_message(e),
             }
         }
-        SendRequestError::Connect(_) => RunnerError::PipelineInteractionConnectFailed {
+        _ if is_connect_failure(&e) => RunnerError::PipelineInteractionConnectFailed {
             pipeline_name,
             request,
-            error: format!("{e}"),
+            error: if attempts > 1 {
+                format!(
+                    "{e} ({attempts} attempts over {:.1}s)",
+                    elapsed.as_secs_f64()
+                )
+            } else {
+                format!("{e}")
+            },
         },
         _ => RunnerError::PipelineInteractionUnreachable {
             pipeline_name,
@@ -282,7 +444,11 @@ impl RunnerInteraction {
     ///
     /// This method is static as it is directly provided the pipeline
     /// identifier and location. It thus does not need to retrieve it
-    /// from the database.
+    /// from the database. For the same reason it makes a single connection
+    /// attempt: without a re-check, a retry could keep dialing a stopped
+    /// pipeline's old location for the whole budget, and the metrics scrape
+    /// calls this once per pipeline in sequence. Callers that can re-check use
+    /// `forward_http_request_to_pipeline_with_retry`.
     #[allow(clippy::too_many_arguments)]
     pub async fn forward_http_request_to_pipeline(
         common_config: &CommonConfig,
@@ -296,24 +462,73 @@ impl RunnerInteraction {
         body_size_limit: Option<usize>,
         accept_encoding: Option<&str>,
     ) -> Result<HttpResponse, ManagerError> {
+        Self::forward_http_request_to_pipeline_with_retry(
+            common_config,
+            client,
+            pipeline_name,
+            location,
+            method,
+            endpoint,
+            query_string,
+            timeout,
+            body_size_limit,
+            accept_encoding,
+            ConnectRetry::NONE,
+            no_recheck,
+        )
+        .await
+    }
+
+    /// [`Self::forward_http_request_to_pipeline`] with an explicit connect retry policy and
+    /// a `recheck` for [`send_with_connect_retry`].
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn forward_http_request_to_pipeline_with_retry<Fut>(
+        common_config: &CommonConfig,
+        client: &awc::Client,
+        pipeline_name: &str,
+        location: &str,
+        method: Method,
+        endpoint: &str,
+        query_string: &str,
+        timeout: Option<Duration>,
+        body_size_limit: Option<usize>,
+        accept_encoding: Option<&str>,
+        retry: ConnectRetry,
+        recheck: impl FnMut() -> Fut,
+    ) -> Result<HttpResponse, ManagerError>
+    where
+        Fut: Future<Output = Result<Option<String>, ManagerError>>,
+    {
         // Perform request to the pipeline
         let url = common_config.pipeline_url(location, endpoint, query_string);
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        // `.no_decompress()` also suppresses awc's own `Accept-Encoding` header.
-        let mut request = client
-            .request(method, &url)
-            .timeout(timeout)
-            .force_close()
-            .no_decompress();
-        if let Some(accept_encoding) = accept_encoding {
-            request = request.insert_header((header::ACCEPT_ENCODING, accept_encoding));
-        }
-        let request_str = Self::format_request(&request);
+        // `.no_decompress()` also suppresses awc's own `Accept-Encoding` header. Each
+        // connection attempt needs a request of its own, as sending consumes it.
+        let build_request = |url: &str| {
+            let mut request = client
+                .request(method.clone(), url)
+                .timeout(timeout)
+                .force_close()
+                .no_decompress();
+            if let Some(accept_encoding) = accept_encoding {
+                request = request.insert_header((header::ACCEPT_ENCODING, accept_encoding));
+            }
+            request
+        };
 
-        let mut original_response = request
-            .send()
-            .await
-            .map_err(|e| pipeline_send_error(pipeline_name, &request_str, timeout, e))?;
+        let (mut original_response, request_str) = send_with_connect_retry(
+            pipeline_name,
+            timeout,
+            retry,
+            url,
+            |url| {
+                let request = build_request(url);
+                (Self::format_request(&request), request.send())
+            },
+            || true,
+            recheck,
+        )
+        .await?;
         let status = original_response.status();
 
         if !status.is_success() {
@@ -406,7 +621,15 @@ impl RunnerInteraction {
         accept_encoding: Option<&str>,
     ) -> Result<HttpResponse, ManagerError> {
         let (location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
-        let r = RunnerInteraction::forward_http_request_to_pipeline(
+        let recheck = || async move {
+            let (location, _) = self.check_pipeline(tenant_id, pipeline_name).await?;
+            Ok(Some(self.common_config.pipeline_url(
+                &location,
+                endpoint,
+                query_string,
+            )))
+        };
+        let r = RunnerInteraction::forward_http_request_to_pipeline_with_retry(
             &self.common_config,
             client,
             pipeline_name,
@@ -417,6 +640,8 @@ impl RunnerInteraction {
             timeout,
             body_size_limit,
             accept_encoding,
+            ConnectRetry::DEFAULT,
+            recheck,
         )
         .await;
 
@@ -587,11 +812,30 @@ impl RunnerInteraction {
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
+        let query_string = request.query_string();
         let url = self
             .common_config
-            .pipeline_url(&location, endpoint, request.query_string());
+            .pipeline_url(&location, endpoint, query_string);
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        streaming_proxy(client, &url, pipeline_name, &request, body, timeout).await
+        let recheck = || async move {
+            let (location, _) = self.check_pipeline(tenant_id, pipeline_name).await?;
+            Ok(Some(self.common_config.pipeline_url(
+                &location,
+                endpoint,
+                query_string,
+            )))
+        };
+        streaming_proxy_with_retry(
+            client,
+            &url,
+            pipeline_name,
+            &request,
+            body,
+            timeout,
+            ConnectRetry::DEFAULT,
+            recheck,
+        )
+        .await
     }
 
     pub(crate) async fn get_logs_from_pipeline(
@@ -752,41 +996,61 @@ fn is_missing_route(status: actix_web::http::StatusCode, body: &[u8]) -> bool {
 ///
 /// The client and the pipeline negotiate compression directly: the client's
 /// `Accept-Encoding` is forwarded and the pipeline's `Content-Encoding` is
-/// relayed unchanged.
-pub(crate) async fn streaming_proxy(
+/// relayed unchanged. `retry` and `recheck` are for [`send_with_connect_retry`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn streaming_proxy_with_retry<Fut>(
     client: &awc::Client,
     url: &str,
     pipeline_name: &str,
     request: &HttpRequest,
     body: Payload,
     timeout: Duration,
-) -> Result<HttpResponse, ManagerError> {
+    retry: ConnectRetry,
+    recheck: impl FnMut() -> Fut,
+) -> Result<HttpResponse, ManagerError>
+where
+    Fut: Future<Output = Result<Option<String>, ManagerError>>,
+{
     // `.no_decompress()` suppresses awc's own `Accept-Encoding` header and keeps the
-    // pipeline's bytes as they are; the manager never decodes a streamed body.
-    let mut new_request = client
-        .request(request.method().clone(), url)
-        .timeout(timeout)
-        .force_close()
-        .no_decompress();
+    // pipeline's bytes as they are; the manager never decodes a streamed body. Each
+    // connection attempt needs a request of its own, as sending consumes it.
+    let build_request = |url: &str| {
+        let mut new_request = client
+            .request(request.method().clone(), url)
+            .timeout(timeout)
+            .force_close()
+            .no_decompress();
 
-    // `authorization` has already been handled by the API server, and is thus not needed
-    // to be forwarded to the pipeline itself.
-    for header in request
-        .headers()
-        .into_iter()
-        .filter(|(h, _)| *h != "connection" && *h != "authorization")
-    {
-        new_request = new_request.append_header(header);
-    }
-
-    let new_request = new_request;
-    let request_str = RunnerInteraction::format_request(&new_request);
+        // `authorization` has already been handled by the API server, and is thus not needed
+        // to be forwarded to the pipeline itself.
+        for header in request
+            .headers()
+            .into_iter()
+            .filter(|(h, _)| *h != "connection" && *h != "authorization")
+        {
+            new_request = new_request.append_header(header);
+        }
+        new_request
+    };
 
     // Perform request to the pipeline
-    let response = new_request
-        .send_stream(body)
-        .await
-        .map_err(|e| pipeline_send_error(pipeline_name, &request_str, timeout, e))?;
+    let body = SharedPayload::new(body);
+    let (response, request_str) = send_with_connect_retry(
+        pipeline_name,
+        timeout,
+        retry,
+        url.to_string(),
+        |url| {
+            let request = build_request(url);
+            (
+                RunnerInteraction::format_request(&request),
+                request.send_stream(body.clone()),
+            )
+        },
+        || !body.was_read(),
+        recheck,
+    )
+    .await?;
 
     let status = response.status();
 
@@ -825,9 +1089,16 @@ mod tests {
     #[test]
     fn send_error_connect_failure_is_distinct() {
         let code = |e| {
-            pipeline_send_error("p", "POST /ingress/t0", Duration::from_secs(5), e)
-                .error_code()
-                .into_owned()
+            pipeline_send_error(
+                "p",
+                "POST /ingress/t0",
+                Duration::from_secs(5),
+                e,
+                1,
+                Duration::ZERO,
+            )
+            .error_code()
+            .into_owned()
         };
         assert_eq!(
             code(SendRequestError::Connect(ConnectError::Timeout)),
@@ -859,17 +1130,183 @@ mod tests {
             .port();
         let url = format!("http://127.0.0.1:{port}/ingress/t0");
         let (req, payload) = test_get_request(&[]);
-        let err = streaming_proxy(
+        let err = streaming_proxy_with_retry(
             &awc::Client::default(),
             &url,
             "test-pipeline",
             &req,
             payload,
             Duration::from_secs(10),
+            ConnectRetry::NONE,
+            no_recheck,
         )
         .await
         .unwrap_err();
         assert_eq!(err.error_code(), "PipelineInteractionConnectFailed");
+    }
+
+    /// A port nothing listens on, from a listener that is bound and dropped.
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    /// Builds a POST carrying `body` the way the API server hands it to the proxy.
+    fn test_post_request(body: &'static [u8]) -> (HttpRequest, Payload) {
+        use actix_web::FromRequest as _;
+        let (req, mut inner_payload) = TestRequest::post().set_payload(body).to_http_parts();
+        let web_payload = Payload::from_request(&req, &mut inner_payload)
+            .into_inner()
+            .unwrap();
+        (req, web_payload)
+    }
+
+    /// After `delay`, listens on `port`, reads one request through the end of its chunked
+    /// body, answers 200, and hands back the raw bytes it received.
+    fn serve_one_request_after(port: u16, delay: Duration) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            std::thread::sleep(delay);
+            let listener = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut received = Vec::new();
+            let mut chunk = [0u8; 4096];
+            while !received.ends_with(b"0\r\n\r\n") {
+                match stream.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => received.extend_from_slice(&chunk[..n]),
+                }
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .unwrap();
+            received
+        })
+    }
+
+    /// The proxy keeps trying while nothing listens, and the whole body reaches the
+    /// pipeline once it is up, as after a restart whose address the resolver still serves stale.
+    #[actix_web::test]
+    async fn test_streaming_proxy_retries_until_the_pipeline_listens() {
+        setup();
+        let port = free_port();
+        let delay = Duration::from_millis(1500);
+        let server = serve_one_request_after(port, delay);
+        let url = format!("http://127.0.0.1:{port}/ingress/t0");
+        let (req, payload) = test_post_request(b"{\"c0\": 1}");
+        let started = std::time::Instant::now();
+        let resp = streaming_proxy_with_retry(
+            &awc::Client::default(),
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            ConnectRetry::new(Duration::from_secs(10), Duration::from_millis(200)),
+            no_recheck,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert!(started.elapsed() >= delay);
+        assert_eq!(read_body(resp).await, b"ok");
+
+        let received = String::from_utf8_lossy(&server.join().unwrap()).into_owned();
+        assert!(received.starts_with("POST /ingress/t0 "), "{received}");
+        assert!(received.contains("{\"c0\": 1}"), "{received}");
+    }
+
+    /// With nothing ever listening, the proxy gives up once its budget is spent and says how
+    /// many attempts it made.
+    #[actix_web::test]
+    async fn test_streaming_proxy_connect_retry_budget() {
+        setup();
+        let port = free_port();
+        let url = format!("http://127.0.0.1:{port}/ingress/t0");
+        let (req, payload) = test_get_request(&[]);
+        let budget = Duration::from_secs(1);
+        let started = std::time::Instant::now();
+        let err = streaming_proxy_with_retry(
+            &awc::Client::default(),
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            ConnectRetry::new(budget, Duration::from_millis(100)),
+            no_recheck,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.error_code(), "PipelineInteractionConnectFailed");
+        assert!(started.elapsed() >= budget);
+        assert!(err.to_string().contains("attempts over"), "{err}");
+    }
+
+    /// Once the pipeline is no longer there to be reached, the proxy stops retrying and
+    /// reports the pipeline's status instead of running down its budget.
+    #[actix_web::test]
+    async fn test_streaming_proxy_connect_retry_stops_when_the_pipeline_is_gone() {
+        setup();
+        let url = format!("http://127.0.0.1:{}/ingress/t0", free_port());
+        let (req, payload) = test_get_request(&[]);
+        let gone = || {
+            std::future::ready(Err(ManagerError::from(RunnerError::PipelineUnavailable {
+                pipeline_name: "test-pipeline".to_string(),
+            })))
+        };
+        let started = std::time::Instant::now();
+        let err = streaming_proxy_with_retry(
+            &awc::Client::default(),
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            ConnectRetry::new(Duration::from_secs(10), Duration::from_millis(100)),
+            gone,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.error_code(), "PipelineUnavailable");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// When the pipeline moves while the proxy is retrying, the next attempt goes to its new
+    /// location.
+    #[actix_web::test]
+    async fn test_streaming_proxy_connect_retry_follows_a_moved_pipeline() {
+        setup();
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/ingress/t0"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        let dead_url = format!("http://127.0.0.1:{}/ingress/t0", free_port());
+        let new_url = format!("{}/ingress/t0", mock_server.uri());
+        let (req, payload) = test_post_request(b"{\"c0\": 1}");
+        let moved = || std::future::ready(Ok(Some(new_url.clone())));
+        let resp = streaming_proxy_with_retry(
+            &awc::Client::default(),
+            &dead_url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+            ConnectRetry::new(Duration::from_secs(10), Duration::from_millis(100)),
+            moved,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), 200);
     }
 
     /// A pipeline that accepts the request and then closes the connection may
@@ -887,13 +1324,15 @@ mod tests {
         });
         let url = format!("http://127.0.0.1:{port}/ingress/t0");
         let (req, payload) = test_get_request(&[]);
-        let err = streaming_proxy(
+        let err = streaming_proxy_with_retry(
             &awc::Client::default(),
             &url,
             "test-pipeline",
             &req,
             payload,
             Duration::from_secs(10),
+            ConnectRetry::DEFAULT,
+            no_recheck,
         )
         .await
         .unwrap_err();
@@ -1008,13 +1447,15 @@ mod tests {
         let url = format!("{}/dump_json_profile", mock_server.uri());
         let client = awc::Client::default();
         let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
-        let resp = streaming_proxy(
+        let resp = streaming_proxy_with_retry(
             &client,
             &url,
             "test-pipeline",
             &req,
             payload,
             Duration::from_secs(10),
+            ConnectRetry::DEFAULT,
+            no_recheck,
         )
         .await
         .unwrap();
@@ -1048,13 +1489,15 @@ mod tests {
         let url = format!("{}/dump_json_profile", mock_server.uri());
         let client = awc::Client::default();
         let (req, payload) = test_get_request(&[("accept-encoding", "gzip")]);
-        let resp = streaming_proxy(
+        let resp = streaming_proxy_with_retry(
             &client,
             &url,
             "test-pipeline",
             &req,
             payload,
             Duration::from_secs(10),
+            ConnectRetry::DEFAULT,
+            no_recheck,
         )
         .await
         .unwrap();
