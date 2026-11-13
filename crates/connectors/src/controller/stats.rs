@@ -1783,12 +1783,7 @@ impl ControllerStatus {
             platform_version: option_env!("FELDERA_PLATFORM_VERSION")
                 .unwrap_or(env!("CARGO_PKG_VERSION"))
                 .to_string(),
-            // A pipeline-manager older than FELDERA_RUNTIME_VERSION still sets the
-            // override, which holds the resolved git SHA of the selected runtime.
-            runtime_version: option_env!("FELDERA_RUNTIME_VERSION")
-                .or(option_env!("FELDERA_RUNTIME_OVERRIDE"))
-                .unwrap_or(env!("CARGO_PKG_VERSION"))
-                .to_string(),
+            runtime_version: crate::controller::checkpoint::runtime_version().to_string(),
         };
 
         // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior
