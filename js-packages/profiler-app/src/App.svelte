@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Progress } from '@skeletonlabs/skeleton-svelte'
   import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
@@ -11,12 +12,25 @@
     type ZipItem
   } from 'profiler-layout'
   import type { Dataflow, JsonProfiles } from 'profiler-lib'
+  import { MediaQuery } from 'svelte/reactivity'
   import { TriageResults } from 'triage-types'
   import faviconDataUrl from '$assets/favicon.svg?dataurl=enc'
-  import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
-  import FelderaModernLogomarkColorDark from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
+  import FelderaModernLogoBlack from '$assets/images/feldera-modern/Feldera Logo Black Solid.svg?component'
+  import FelderaModernLogomarkBlack from '$assets/images/feldera-modern/Feldera Logomark Black.svg?component'
+
+  const prefersDark = new MediaQuery('(prefers-color-scheme: dark)')
+  // Null until the user picks a theme. Until then the theme follows the system setting.
+  let chosenTheme: 'light' | 'dark' | null = $state(null)
+  const theme = $derived(chosenTheme ?? (prefersDark.current ? 'dark' : 'light'))
+
+  // As in web-console, the `dark` class on <html> switches the theme of all components.
+  $effect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+  })
 
   let isLoading = $state(false)
+  // True while the diagram computes its layout.
+  let isRendering = $state(false)
   let errorMessage = $state('')
   let profileFiles: [Date, ZipItem[]][] = $state([])
   let selectedTimestamp: Date | null = $state(null)
@@ -118,7 +132,30 @@
   class="hidden"
 />
 
+{#snippet themeToggle()}
+  <button
+    class="btn-icon text-[20px] hover:bg-row-hover fd {theme === 'dark' ? 'fd-sun' : 'fd-moon'}"
+    title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+    aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+    onclick={() => (chosenTheme = theme === 'dark' ? 'light' : 'dark')}
+  ></button>
+{/snippet}
+
 <div class="flex h-full w-full flex-col font-dm-sans relative" data-theme="feldera-modern-theme">
+  <!-- Thin bar at the top of the page while a bundle loads or the diagram computes its layout,
+       as in the web-console profile viewer. -->
+  <div
+    class="pointer-events-none absolute inset-x-0 top-0 z-50 px-4 transition-opacity {isLoading ||
+    isRendering
+      ? ''
+      : 'opacity-0'}"
+  >
+    <Progress class="h-1" value={null} max={100}>
+      <Progress.Track>
+        <Progress.Range class="bg-secondary-500" />
+      </Progress.Track>
+    </Progress>
+  </div>
   {#if profileData}
     <SupportBundleViewerLayout
       profileData={profileData.profile}
@@ -131,13 +168,16 @@
       pipelineEvents={profileData.pipelineEvents}
       sourceFiles={profileData.sourceFiles}
       triageResults={new TriageResults()}
+      {theme}
       {profileFiles}
       {selectedTimestamp}
       onSelectTimestamp={handleSelectTimestamp}
       bind:sqlPanelFullHeight
+      onRenderingChange={(rendering) => (isRendering = rendering)}
+      headerEnd={themeToggle}
     >
       {#snippet loadProfileControl()}
-        <FelderaModernLogoColorDark class="h-8 px-2" />
+        <FelderaModernLogoBlack class="h-8 fill-logo px-2 dark:fill-white" />
         <button
           class="rounded-base bg-primary-500 px-4 py-1.5 text-sm font-medium text-primary-contrast-500 transition-colors hover:bg-primary-500/85"
           onclick={() => fileInput?.click()}
@@ -148,17 +188,20 @@
     </SupportBundleViewerLayout>
   {:else}
     <!-- Welcome screen -->
+    <div class="absolute top-4 right-4">
+      {@render themeToggle()}
+    </div>
     <div class="flex h-full w-full flex-col items-center justify-center gap-6 p-8">
-      <FelderaModernLogomarkColorDark class="h-10" />
+      <FelderaModernLogomarkBlack class="h-10 fill-logo dark:fill-white" />
       <div class="text-center">
-        <h1 class="mb-2 text-4xl font-bold text-surface-900">Feldera Profiler</h1>
-        <p class="text-lg text-surface-600">
+        <h1 class="mb-2 text-4xl font-bold text-surface-950-50">Feldera Profiler</h1>
+        <p class="text-lg text-surface-600-400">
           Visualize DBSP circuit profiles from support bundles
         </p>
       </div>
 
-      <div class="bg-surface-50 max-w-md rounded-container p-6 shadow-lg">
-        <p class="mb-6 text-sm text-surface-700">
+      <div class="max-w-md rounded-container bg-surface-50-950 p-6 shadow-lg">
+        <p class="mb-6 text-sm text-surface-700-300">
           Load a Feldera support bundle (.zip file) to explore the circuit profile,
           program code, logs and the pipeline config.
         </p>
@@ -168,7 +211,7 @@
             <div
               class="h-6 w-6 animate-spin rounded-full border-2 border-secondary-500 border-t-transparent"
             ></div>
-            <span class="text-sm text-surface-600">Processing bundle…</span>
+            <span class="text-sm text-surface-600-400">Processing bundle…</span>
           </div>
         {:else}
           <button
@@ -181,7 +224,7 @@
 
         {#if errorMessage}
           <div
-            class="mt-4 rounded-base border border-error-200 bg-error-50/50 p-3 text-sm text-error-800"
+            class="mt-4 rounded-base border border-error-200-800 bg-error-50-950 p-3 text-sm text-error-800-200"
           >
             <strong>Error:</strong>
             {errorMessage}
