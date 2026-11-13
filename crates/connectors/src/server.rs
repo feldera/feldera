@@ -2118,7 +2118,8 @@ fn get_status(
                 }
             }
 
-            return match controller.status().global_metrics.get_state() {
+            // `Paused` means that no step takes connector input.
+            return match controller.status().global_metrics.reported_state() {
                 PipelineState::Paused => Ok(inner_status(
                     runtime_desired_status,
                     &controller,
@@ -7413,6 +7414,39 @@ pub mod test_http {
             assert_eq!(snapshot2_records, all_expected);
             assert!(!snapshot2_chunks.is_empty());
             assert!(snapshot2_chunks.iter().all(|chunk| chunk.snapshot));
+        })
+    }
+
+    /// A paused pipeline still processes forced HTTP input, and it stays
+    /// `Paused`.
+    #[engine_test]
+    pub fn paused_pipeline_processes_forced_http_input(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let server = start_test_server(
+                engine,
+                &json!({"name": "test", "inputs": {}, "outputs": {}}),
+                Uuid::new_v4(),
+            )
+            .await;
+            start_pipeline(&server).await;
+            send_input(&server, &test_batches(0, 10)).await;
+            pause_pipeline(&server).await;
+            let CompletionTokenResponse { token } =
+                TestHttpSender::send_stream_deserialize_resp::<CompletionTokenResponse>(
+                    server.post("/ingress/test_input1?force=true"),
+                    &test_batches(10, 10),
+                )
+                .await;
+            wait_for_completion(&server, &token).await;
+            assert_eq!(
+                get_stats(&server)
+                    .await
+                    .global_metrics
+                    .total_processed_records,
+                20
+            );
+            wait_for_status(&server, RuntimeStatus::Paused).await;
         })
     }
 

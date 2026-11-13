@@ -676,6 +676,12 @@ class Pipeline:
         they equal each other (thus, all input records present at the pipeline
         have been processed).
 
+        A paused pipeline does not process the input that its connectors
+        buffered, so for a paused pipeline, this function counts that input
+        as if it were processed.  The exception is input that HTTP input
+        connectors buffered, such as forced input from `input_json()`: a
+        paused pipeline processes it, so this function waits for it.
+
         :param idle_interval_s: Idle interval duration (default is 5.0 seconds).
         :param timeout_s: Timeout waiting for idle (`None` = no timeout is enforced).
         :param poll_interval_s: Polling interval, should be set substantially
@@ -703,12 +709,13 @@ class Pipeline:
 
         start_time_s = time.monotonic()
         idle_started_s = None
-        prev = (0, 0)
+        prev = (0, 0, 0)
         while True:
             now_s = time.monotonic()
 
             # Metrics retrieval
-            metrics = self.stats().global_metrics
+            stats = self.stats()
+            metrics = stats.global_metrics
             total_input_records = metrics.total_input_records
             total_processed_records = metrics.total_processed_records
             if metrics.total_input_records is None:
@@ -721,12 +728,22 @@ class Pipeline:
 metrics"""
                 )
 
+            # A paused pipeline holds buffered input until it resumes, except
+            # in HTTP input connectors, which it still polls.
+            buffered = metrics.buffered_input_records or 0
+            held = 0
+            if metrics.state == PipelineStatus.PAUSED:
+                held = sum(
+                    (i.metrics.buffered_records or 0)
+                    for i in stats.inputs
+                    if ".api-ingress-" not in (i.endpoint_name or "")
+                )
+
             # Idle check
-            unchanged = (
-                prev[0] == total_input_records and prev[1] == total_processed_records
-            )
-            equal = total_input_records == total_processed_records
-            prev = (total_input_records, total_processed_records)
+            current = (total_input_records, total_processed_records, buffered)
+            unchanged = prev == current
+            equal = total_input_records == total_processed_records + held
+            prev = current
             if unchanged and equal:
                 if idle_started_s is None:
                     idle_started_s = now_s
@@ -987,6 +1004,11 @@ metrics"""
         state. If the pipeline is already paused, it will remain in the PAUSED
         state.
 
+        A paused pipeline does not process the input that its connectors
+        buffered, except forced input to HTTP input connectors. When this
+        function waits, it returns after the step that was in progress at the
+        time of the pause is complete.
+
         :param wait: Set True to wait for the pipeline to pause. True by default
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to pause.
@@ -1077,6 +1099,10 @@ metrics"""
         next pipeline step; queries against materialized views may
         observe the previous ``NOW()`` until that step completes.  Poll
         the view if you need read-after-write semantics.
+
+        A paused pipeline does not take the new value until it resumes, so
+        while the pipeline is paused, the views keep the previous ``NOW()``.
+        Do not poll the view for the new value until after :meth:`.resume`.
 
         :return: A dict ``{"now_ms": <int>, "now": <RFC 3339 str>}``.
 

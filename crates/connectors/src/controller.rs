@@ -3725,6 +3725,13 @@ impl CircuitThread {
         let mut output_backpressure_warning: Option<LongOperationWarning> = None;
 
         loop {
+            // No step is in progress, so the reported state can change: the
+            // next steps select their input by it.
+            self.controller
+                .status
+                .global_metrics
+                .update_reported_state();
+
             self.remove_requested_inputs();
 
             // Run received commands.  Commands can initiate checkpoint
@@ -4779,6 +4786,17 @@ impl CircuitThread {
                 "checkpoint requested: only CheckpointBarrier inputs will be processed"
             );
             StepInputs::CheckpointBarriers
+        } else if self.controller.status.global_metrics.has_run()
+            && self.controller.status.global_metrics.reported_state() == PipelineState::Paused
+        {
+            // A paused pipeline stops polling the input that connectors
+            // buffered, so that a pause is a clear stop point.  (With a
+            // coordinator, the coordinator requests the same inputs.)
+            //
+            // Select by the reported state, not by the requested state, so
+            // that when the server reports a pause, no step takes connector
+            // input.
+            StepInputs::Paused
         } else {
             StepInputs::All
         };
@@ -9837,6 +9855,9 @@ impl ControllerInner {
 
     fn pause(&self) {
         self.status.set_state(PipelineState::Paused);
+        // Wake the circuit thread so that it applies the pause (see
+        // `GlobalControllerMetrics::reported_state`).
+        self.unpark_circuit();
         self.unpark_backpressure();
     }
 

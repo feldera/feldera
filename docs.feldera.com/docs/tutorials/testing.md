@@ -681,24 +681,32 @@ pipeline continues to run:
 
 | While paused, the pipeline | Notes |
 |----------------------------|-------|
-| Processes the input that its connectors have already buffered | The pipeline continues to empty the buffers, in steps, until it has processed all this input. |
+| Does not process input that its connectors buffer | The input stays in the buffers until `resume()`. This includes input that a connector buffered before the pause. |
 | Answers ad-hoc queries | `pipeline.query()` works as usual. |
-| Accepts input from the SDK only when the input is forced | `pipeline.input_json()` raises a `RuntimeError` unless the call passes `force=True`. |
-| Does not advance the clock | While the pipeline is paused, the clock connector does not initiate new steps, as it does normally. The value returned by `NOW()` changes in steps initiated by another reason, for example to process buffered or forced input.  Such a step *may* advance the clock: either reading the system clock, or, (when `now_http_driven` is configured) to the value supplied by the last `advance_clock()` call executed. |
+| Accepts input from the SDK only when the input is forced | `pipeline.input_json()` raises a `RuntimeError` unless the call passes `force=True`. The pipeline processes forced input, and any other input that the HTTP input connectors buffered. |
+| Does not advance the clock | The clock connector does not initiate new steps, and the pipeline does not take new clock values from it. `NOW()` keeps its value until `resume()`. With `now_http_driven`, `advance_clock()` returns the new value, but the pipeline takes it only after `resume()`. |
 
-`pause()` returns when the pipeline reports the `PAUSED` status, but the
-pipeline is not necessarily inactive:
+`pause()` returns when the pipeline reports the `PAUSED` status.  The
+pipeline reports this status only after the step that was in progress at
+the time of the pause, if any, is complete.  After `pause()` returns, the
+views change only because of forced input.  A connector can continue to
+buffer input for a short time after the pause, but the pipeline does not
+process that input until `resume()`.  For a paused pipeline,
+`pipeline.wait_for_idle()` counts the buffered input as if it were
+processed, except the input that the HTTP input connectors buffered.
 
-* The pipeline may still be processing the input in the buffers, so the
-  views can change after `pause()` returns.
-* A connector may process the stop request *after* the `pause()` call returns,
-  so it can even buffer more records after the `pause()` call has completed.
-  There currently is no way to check that all the connectors
-  are truly stopped; see [issue 7568](https://github.com/feldera/feldera/issues/7568).
+There are two exceptions:
 
-When the test program is the only source of input, no connector delivers input
-after `pause()`.  The test can wait until the pipeline has processed
-all the input that it received, by comparing the following counters:
+| Case | Behavior |
+|------|----------|
+| Checkpoint | To make a checkpoint, a pipeline without fault tolerance processes the buffered input of the connectors that block the checkpoint (see [Fault tolerance](/pipelines/fault-tolerance)). |
+| Paused before the first run | A pipeline that starts paused, for example with `start_paused()` or after a restart from a checkpoint, processes the buffered input of all its connectors until it runs for the first time.  This lets each connector record its starting position for checkpoints. |
+
+A multihost pipeline behaves the same way.
+
+When the test program is the only source of input, the test can wait until
+the pipeline has processed all the input that it received, by comparing
+the following counters:
 
 ```python
 def queues_empty(pipeline: Pipeline) -> bool:
@@ -716,36 +724,33 @@ def queues_empty(pipeline: Pipeline) -> bool:
     return completed == received
 
 
-def check_paused_pipeline_processes_queued_input(pipeline: Pipeline) -> None:
+def check_paused_pipeline_holds_queued_input(pipeline: Pipeline) -> None:
     pipeline.start()
-    # Do not wait: the pipeline queues the rows, and processes them later.
     pipeline.input_json(
-        "orders",
-        [{"id": i, "customer": "alice", "amount": 1} for i in range(1000)],
-        wait=False,
+        "orders", [{"id": 0, "customer": "alice", "amount": 1}]
     )
-    pipeline.pause()
     wait_for_condition("all input is processed", lambda: queues_empty(pipeline))
-    queued = list(pipeline.query("SELECT * FROM customer_totals"))
+    pipeline.pause()
+    before = list(pipeline.query("SELECT * FROM customer_totals"))
 
     # A paused pipeline accepts input from the SDK only when it is forced.
-    pipeline.input_json("orders", [{"id": 1000, "customer": "bob", "amount": 5}], force=True)
+    pipeline.input_json("orders", [{"id": 1, "customer": "bob", "amount": 5}], force=True)
     forced = list(pipeline.query("SELECT * FROM customer_totals ORDER BY customer"))
 
     # A running pipeline accepts input without force.
     pipeline.resume()
-    pipeline.input_json("orders", [{"id": 1001, "customer": "bob", "amount": 7}])
+    pipeline.input_json("orders", [{"id": 2, "customer": "bob", "amount": 7}])
     resumed = list(pipeline.query("SELECT * FROM customer_totals ORDER BY customer"))
     pipeline.stop(force=True)
     pipeline.clear_storage()
 
-    assert queued == [{"customer": "alice", "total": 1000, "num_orders": 1000}]
+    assert before == [{"customer": "alice", "total": 1, "num_orders": 1}]
     assert forced == [
-        {"customer": "alice", "total": 1000, "num_orders": 1000},
+        {"customer": "alice", "total": 1, "num_orders": 1},
         {"customer": "bob", "total": 5, "num_orders": 1},
     ]
     assert resumed == [
-        {"customer": "alice", "total": 1000, "num_orders": 1000},
+        {"customer": "alice", "total": 1, "num_orders": 1},
         {"customer": "bob", "total": 12, "num_orders": 2},
     ]
 ```
