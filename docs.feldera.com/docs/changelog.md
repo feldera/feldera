@@ -10,6 +10,17 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Checkpoint sync (Enterprise): a `bucket` that starts with `az://` syncs
+  checkpoints to Azure Blob Storage through its native API, so an S3 gateway
+  in front of the storage account is no longer necessary. See
+  [Azure Blob Storage](/pipelines/checkpoint-sync#azure-blob-storage).
+- Incompatible change (checkpoint sync, Enterprise): Feldera now checks the
+  `sync` configuration each time a pipeline starts. Before, only a start in
+  standby mode did the checks. A pipeline does not start if `read_bucket` is
+  the same location as `bucket`, if `read_bucket` and `bucket` are in
+  different object stores, or if the deprecated `standby` field is `true`. See
+  [Configuration checks at start](/pipelines/checkpoint-sync#configuration-checks-at-start).
+
 ## v0.382.0
 
 - Incompatible change (support bundles): in new collections,

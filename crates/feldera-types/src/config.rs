@@ -688,6 +688,9 @@ pub struct SyncConfig {
     /// For a `gs://` bucket this is the Google Cloud Storage JSON API base URL;
     /// a bare host gets `/storage/v1/` appended. Leave empty for the public service.
     ///
+    /// For an `az://` bucket this is the blob service endpoint of the storage
+    /// account. Leave empty for `https://<account>.blob.core.windows.net`.
+    ///
     /// Relevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)
     pub endpoint: Option<String>,
 
@@ -699,6 +702,11 @@ pub struct SyncConfig {
     /// API instead of S3. `provider`, `access_key`, and `secret_key` are then
     /// ignored; rclone authenticates with Application Default Credentials, for
     /// example a GKE Workload Identity.
+    ///
+    /// Prefix it with `az://` to sync to Azure Blob Storage through its native
+    /// API: `az://<container>[/<path>]`. `access_key` is then the name of the
+    /// storage account and `secret_key` its shared key; `provider` and
+    /// `region` are ignored. The container must exist.
     pub bucket: String,
 
     /// The region that this bucket is in.
@@ -719,6 +727,8 @@ pub struct SyncConfig {
     /// If not provided, rclone will fall back to environment-based credentials, such as
     /// `RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
     /// this can be left empty to allow automatic authentication via the pod's service account.
+    ///
+    /// For an `az://` bucket this is the name of the storage account, and it is required.
     pub access_key: Option<String>,
 
     /// The secret key used together with the access key for authentication.
@@ -726,6 +736,10 @@ pub struct SyncConfig {
     /// If not provided, rclone will fall back to environment-based credentials, such as
     /// `RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
     /// this can be left empty to allow automatic authentication via the pod's service account.
+    ///
+    /// For an `az://` bucket this is the shared key of the storage account. If not provided,
+    /// rclone reads the credentials from the environment, for example an AKS Workload Identity
+    /// or a managed identity.
     pub secret_key: Option<String>,
 
     /// When set, the pipeline will try fetch the specified checkpoint from the
@@ -855,7 +869,8 @@ pub struct SyncConfig {
     /// location instead.  All connection settings (`endpoint`, `region`,
     /// `provider`, `access_key`, `secret_key`) are shared with `bucket`. The
     /// scheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,
-    /// because the prefix alone selects the object store.
+    /// and an `az://` `bucket` an `az://` `read_bucket`, because the prefix
+    /// alone selects the object store.
     ///
     /// The pipeline **never writes** to `read_bucket`.
     ///
@@ -938,12 +953,36 @@ impl SyncConfig {
                         .to_owned(),
                 );
             }
-            // The `gs://` prefix selects the object store, so a mismatch would
-            // send the fallback pull to the wrong service.
-            if is_gcs_bucket(rb) != is_gcs_bucket(&self.bucket) {
+            // The prefix selects the object store, so a mismatch would send
+            // the fallback pull to the wrong service.
+            if SyncObjectStore::of(rb) != SyncObjectStore::of(&self.bucket) {
                 return Err(format!(
-                    "invalid sync config: `bucket` ('{}') and `read_bucket` ('{}') must use the same object store; prefix both with `gs://` for Google Cloud Storage or neither for S3",
+                    "invalid sync config: `bucket` ('{}') and `read_bucket` ('{}') must use the same object store; prefix both with `gs://` for Google Cloud Storage, both with `az://` for Azure Blob Storage, or neither for S3",
                     self.bucket, rb
+                ));
+            }
+        }
+
+        // rclone builds the service URL from the account name, and no
+        // credential in the environment supplies it.
+        if SyncObjectStore::of(&self.bucket) == SyncObjectStore::AzureBlob
+            && self.access_key.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(format!(
+                "invalid sync config: `bucket` ('{}') is in Azure Blob Storage, which needs the name of the storage account; set `access_key` to it",
+                self.bucket
+            ));
+        }
+
+        for (field, bucket) in [
+            ("bucket", Some(&self.bucket)),
+            ("read_bucket", self.read_bucket.as_ref()),
+        ] {
+            if let Some(bucket) = bucket
+                && azure_container(bucket) == Some("")
+            {
+                return Err(format!(
+                    "invalid sync config: `{field}` ('{bucket}') does not name a container; write it as `az://<container>[/<path>]`"
                 ));
             }
         }
@@ -952,9 +991,31 @@ impl SyncConfig {
     }
 }
 
-/// Whether a sync `bucket` names Google Cloud Storage rather than S3.
-fn is_gcs_bucket(bucket: &str) -> bool {
-    bucket.starts_with("gs://")
+/// The object store that the scheme of a sync `bucket` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncObjectStore {
+    S3,
+    Gcs,
+    AzureBlob,
+}
+
+impl SyncObjectStore {
+    fn of(bucket: &str) -> Self {
+        if bucket.starts_with("gs://") {
+            Self::Gcs
+        } else if bucket.starts_with("az://") {
+            Self::AzureBlob
+        } else {
+            Self::S3
+        }
+    }
+}
+
+/// The container that an `az://<container>[/<path>]` bucket names, or `None`
+/// if `bucket` is not in Azure Blob Storage.
+fn azure_container(bucket: &str) -> Option<&str> {
+    let path = bucket.strip_prefix("az://")?;
+    Some(path.split('/').next().unwrap_or_default())
 }
 
 /// Configuration for supplying a custom pipeline StatefulSet template via a Kubernetes ConfigMap.
@@ -4522,6 +4583,55 @@ mod sync_config_tests {
             .validate()
             .unwrap_err();
         assert!(err.contains("same object store"), "{err}");
+        for (bucket, read_bucket) in [
+            ("az://ckpts/a", "ckpts/b"),
+            ("ckpts/a", "az://ckpts/b"),
+            ("az://ckpts/a", "gs://ckpts/b"),
+        ] {
+            let err = azure_config(bucket, Some(read_bucket))
+                .validate()
+                .unwrap_err();
+            assert!(err.contains("same object store"), "{err}");
+        }
+    }
+
+    fn azure_config(bucket: &str, read_bucket: Option<&str>) -> SyncConfig {
+        SyncConfig {
+            access_key: Some("account".to_owned()),
+            ..config(bucket, read_bucket)
+        }
+    }
+
+    #[test]
+    fn azure_bucket_needs_the_storage_account_name() {
+        azure_config("az://ckpts/a", Some("az://ckpts/b"))
+            .validate()
+            .unwrap();
+
+        let err = config("az://ckpts/a", None).validate().unwrap_err();
+        assert!(err.contains("set `access_key`"), "{err}");
+        let empty = SyncConfig {
+            access_key: Some(String::new()),
+            ..config("az://ckpts/a", None)
+        };
+        let err = empty.validate().unwrap_err();
+        assert!(err.contains("set `access_key`"), "{err}");
+    }
+
+    #[test]
+    fn azure_bucket_needs_a_container_name() {
+        for bucket in ["az://", "az:///dir"] {
+            let err = azure_config(bucket, None).validate().unwrap_err();
+            assert!(err.contains("`bucket`"), "{err}");
+            assert!(err.contains("does not name a container"), "{err}");
+
+            let err = azure_config("az://ckpts/a", Some(bucket))
+                .validate()
+                .unwrap_err();
+            assert!(err.contains("`read_bucket`"), "{err}");
+        }
+        azure_config("az://ckpts", None).validate().unwrap();
+        azure_config("az://ckpts/", None).validate().unwrap();
     }
 
     #[test]

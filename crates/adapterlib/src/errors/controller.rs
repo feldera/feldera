@@ -191,6 +191,11 @@ pub enum ConfigError {
         error: String,
     },
 
+    /// The checkpoint sync configuration of the storage backend is not valid.
+    InvalidSyncConfig {
+        error: String,
+    },
+
     InvalidLayout(LayoutError),
 }
 
@@ -232,6 +237,7 @@ impl DetailedError for ConfigError {
                 Cow::from("DatafusionMemoryExceedsBudget")
             }
             Self::InvalidDevTweaks { .. } => Cow::from("InvalidDevTweaks"),
+            Self::InvalidSyncConfig { .. } => Cow::from("InvalidSyncConfig"),
             Self::InvalidLayout(_) => Cow::from("LayoutError"),
         }
     }
@@ -472,6 +478,8 @@ impl Display for ConfigError {
                 "'datafusion_memory' ({datafusion_memory}) must be less than the pipeline's memory budget ({max_rss}); the difference is the budget available to the DBSP circuit"
             ),
             Self::InvalidDevTweaks { error } => write!(f, "invalid dev_tweaks: {error}"),
+            // The messages of `SyncConfig::validate` name the config themselves.
+            Self::InvalidSyncConfig { error } => f.write_str(error),
             Self::InvalidLayout(e) => write!(f, "Multihost layout error: {e}"),
         }
     }
