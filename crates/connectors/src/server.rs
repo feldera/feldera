@@ -1213,6 +1213,10 @@ pub fn run_server(
     // timeouts might be a symptom of another problem, though, such as the
     // client in some cases getting stuck and not sending its request.)
     .client_request_timeout(CLIENT_REQUEST_TIMEOUT)
+    // Close the connection when the client closes it. Otherwise a streaming response that
+    // writes nothing, such as `/coordination/status` while the status does not change,
+    // leaks its connection until a write fails.
+    .h1_allow_half_closed(false)
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
