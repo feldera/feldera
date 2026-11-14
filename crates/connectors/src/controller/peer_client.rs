@@ -66,7 +66,11 @@ impl PeerClient {
     /// harm.  If the leader's commit failed, this returns that error.  The caller stops it at
     /// shutdown.
     pub async fn report_output(&self, host: usize, report: &OutputPartReport) -> AnyResult<()> {
-        let url = self.host_urls[host].join("coordination/output/commit")?;
+        let url = self
+            .host_urls
+            .get(host)
+            .ok_or_else(|| anyhow!("no URL for host {host}"))?
+            .join("coordination/output/commit")?;
         let mut delay = self.first_retry_delay;
         let mut attempts = 0u64;
         loop {

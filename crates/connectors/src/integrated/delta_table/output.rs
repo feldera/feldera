@@ -2088,16 +2088,7 @@ impl DeltaTableWriter {
                 self.inner.config.uri
             );
             // This part tries to open the table again for its next batch.  Meanwhile, its report
-            // fails each step on every part (see `part_error`).
-            if let Some(controller) = self.inner.controller.upgrade() {
-                controller.output_transport_error(
-                    self.inner.endpoint_id,
-                    &self.inner.endpoint_name,
-                    true,
-                    anyhow!("{e:#}"),
-                    Some("delta_open"),
-                );
-            }
+            // fails each step on every part (see `part_error`).  The caller reports the error.
             return Err(e);
         }
 
