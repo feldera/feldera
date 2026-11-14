@@ -3725,6 +3725,13 @@ impl CircuitThread {
         let mut output_backpressure_warning: Option<LongOperationWarning> = None;
 
         loop {
+            // No step is in progress, so the reported state can change: the
+            // next steps select their input by it.
+            self.controller
+                .status
+                .global_metrics
+                .update_reported_state();
+
             self.remove_requested_inputs();
 
             // Run received commands.  Commands can initiate checkpoint
@@ -4779,6 +4786,23 @@ impl CircuitThread {
                 "checkpoint requested: only CheckpointBarrier inputs will be processed"
             );
             StepInputs::CheckpointBarriers
+        } else if self.controller.status.global_metrics.has_run()
+            && self.controller.status.global_metrics.reported_state() == PipelineState::Paused
+            && !self.controller.commit_waits_for_input()
+        {
+            // A paused pipeline stops polling the input that connectors
+            // buffered, so that a pause is a clear stop point.  (With a
+            // coordinator, the coordinator requests the same inputs.)
+            //
+            // Select by the reported state, not by the requested state, so
+            // that when the server reports a pause, no step takes connector
+            // input.
+            //
+            // An API commit includes the input queued at its request, so it
+            // waits until all the endpoints are polled (see
+            // [CommitTarget::drained]).  Until then, poll them all, even
+            // though the pipeline is paused.
+            StepInputs::Paused
         } else {
             StepInputs::All
         };
@@ -9837,6 +9861,9 @@ impl ControllerInner {
 
     fn pause(&self) {
         self.status.set_state(PipelineState::Paused);
+        // Wake the circuit thread so that it applies the pause (see
+        // `GlobalControllerMetrics::reported_state`).
+        self.unpark_circuit();
         self.unpark_backpressure();
     }
 
@@ -10404,6 +10431,16 @@ impl ControllerInner {
             // advances only when the circuit steps.
             TransactionState::Committing { .. } => true,
         }
+    }
+
+    /// Returns true if an API commit request waits for the input that was
+    /// queued at the request (see [CommitTarget]).
+    fn commit_waits_for_input(&self) -> bool {
+        self.transaction_info
+            .lock()
+            .unwrap()
+            .commit_target
+            .is_some()
     }
 
     /// Returns true if (transaction_state == Committing).
