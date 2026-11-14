@@ -102,41 +102,45 @@ public class DeferCarriedColumnsTests extends SqlIoTest {
                          2  | p  | q  | r  |NULL|NULL|NULL|NULL""");
     }
 
-    /** A chain inside a recursive view: the payload of each edge crosses three lookups
-     * unread and is fetched from edge at the end of the chain, on every iteration. */
+    /** A chain in the definition of a recursive view.  The chain does not read the view, so it
+     * runs outside the recursion and feeds it: the payload of each edge crosses three lookups
+     * unread and is fetched from edge at the end of the chain.  Six payload columns make
+     * deferring pay in both join orders that Calcite may choose. */
     @Test
     public void chainInsideARecursiveView() {
         Rewritten rewritten = this.compile("""
                 CREATE TABLE edge(src INT NOT NULL, dst INT NOT NULL,
-                                  p1 VARCHAR, p2 VARCHAR, p3 VARCHAR, p4 VARCHAR, PRIMARY KEY(src, dst));
+                                  p1 VARCHAR, p2 VARCHAR, p3 VARCHAR, p4 VARCHAR, p5 VARCHAR, p6 VARCHAR,
+                                  PRIMARY KEY(src, dst));
                 DECLARE RECURSIVE VIEW reach(src INT NOT NULL, dst INT NOT NULL,
-                                             p1 VARCHAR, p2 VARCHAR, p3 VARCHAR, p4 VARCHAR,
+                                             p1 VARCHAR, p2 VARCHAR, p3 VARCHAR, p4 VARCHAR, p5 VARCHAR, p6 VARCHAR,
                                              v1 VARCHAR, v2 VARCHAR, v3 VARCHAR);
                 CREATE VIEW reach AS
-                SELECT e.src, e.dst, e.p1, e.p2, e.p3, e.p4, l1.v1, l2.v2, l3.v3
+                SELECT e.src, e.dst, e.p1, e.p2, e.p3, e.p4, e.p5, e.p6, l1.v1, l2.v2, l3.v3
                 FROM edge e LEFT JOIN l1 ON e.dst = l1.k LEFT JOIN l2 ON e.dst = l2.k LEFT JOIN l3 ON e.dst = l3.k
                 UNION
-                SELECT r.src, e.dst, e.p1, e.p2, e.p3, e.p4, l1.v1, l2.v2, l3.v3
+                SELECT r.src, e.dst, e.p1, e.p2, e.p3, e.p4, e.p5, e.p6, l1.v1, l2.v2, l3.v3
                 FROM edge e LEFT JOIN l1 ON e.dst = l1.k LEFT JOIN l2 ON e.dst = l2.k LEFT JOIN l3 ON e.dst = l3.k
                 JOIN reach r ON r.dst = e.src;""");
         Assert.assertTrue(rewritten.log(),
-                rewritten.log().contains("Deferred 4 columns across 3 left joins"));
+                rewritten.log().contains("Deferred 6 columns across 3 left joins"));
         // Results validated using postgres
         rewritten.ccs().stepWeightOne("""
-                        INSERT INTO edge VALUES (1, 2, 'a', 'b', 'c', 'd'), (2, 3, 'e', 'f', 'g', 'h'),
-                                                (3, 4, 'i', 'j', 'k', 'l');
+                        INSERT INTO edge VALUES (1, 2, 'a', 'b', 'c', 'd', 'm', 'n'),
+                                                (2, 3, 'e', 'f', 'g', 'h', 'o', 'p'),
+                                                (3, 4, 'i', 'j', 'k', 'l', 'q', 'r');
                         INSERT INTO l1 VALUES (2, 'A'), (4, 'AA');
                         INSERT INTO l2 VALUES (3, 'B');
                         INSERT INTO l3 VALUES (4, 'C');""",
                 """
-                         src | dst | p1 | p2 | p3 | p4 | v1 | v2 | v3
-                        ---------------------------------------------
-                         1   | 2   | a  | b  | c  | d  | A  |NULL|NULL
-                         1   | 3   | e  | f  | g  | h  |NULL| B  |NULL
-                         1   | 4   | i  | j  | k  | l  | AA |NULL| C
-                         2   | 3   | e  | f  | g  | h  |NULL| B  |NULL
-                         2   | 4   | i  | j  | k  | l  | AA |NULL| C
-                         3   | 4   | i  | j  | k  | l  | AA |NULL| C""");
+                         src | dst | p1 | p2 | p3 | p4 | p5 | p6 | v1 | v2 | v3
+                        -------------------------------------------------------
+                         1   | 2   | a  | b  | c  | d  | m  | n  | A  |NULL|NULL
+                         1   | 3   | e  | f  | g  | h  | o  | p  |NULL| B  |NULL
+                         1   | 4   | i  | j  | k  | l  | q  | r  | AA |NULL| C
+                         2   | 3   | e  | f  | g  | h  | o  | p  |NULL| B  |NULL
+                         2   | 4   | i  | j  | k  | l  | q  | r  | AA |NULL| C
+                         3   | 4   | i  | j  | k  | l  | q  | r  | AA |NULL| C""");
     }
 
     /** The start has two keys: the primary key id, which no join reads, and the TOP-1
