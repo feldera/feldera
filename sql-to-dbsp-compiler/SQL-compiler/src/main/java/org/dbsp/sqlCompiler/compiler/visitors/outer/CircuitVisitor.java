@@ -118,12 +118,16 @@ public abstract class CircuitVisitor
         return Utilities.last(this.context);
     }
 
+    /** Drop the private state of a visitor (unneeded after the visit is complete) */
+    public void drop() {}
+
     /** Returns by default the input circuit unmodified. */
     @Override
     public DBSPCircuit apply(DBSPCircuit node) {
         this.startVisit(node);
         node.accept(this);
         this.endVisit();
+        this.drop();
         return node;
     }
 

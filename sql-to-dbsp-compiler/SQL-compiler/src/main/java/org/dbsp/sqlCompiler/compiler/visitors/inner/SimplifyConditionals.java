@@ -64,6 +64,13 @@ public class SimplifyConditionals implements IRTransform {
     }
 
     @Override
+    public void drop() {
+        this.containsIf.drop();
+        this.findConstants.drop();
+        this.replaceConstants.drop();
+    }
+
+    @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
         if (!node.is(DBSPExpression.class))
             return node;

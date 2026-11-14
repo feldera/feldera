@@ -52,10 +52,10 @@ import java.util.*;
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, ICompilerComponent {
     /** For each {@link OutputPort} in the original circuit an {@link OutputPort} in the
      * result circuit which computes the same result. */
-    protected final Map<OutputPort, OutputPort> remap;
-    protected final Map<ICircuit, ICircuit> circuitRemap;
+    protected Map<OutputPort, OutputPort> remap;
+    protected Map<ICircuit, ICircuit> circuitRemap;
     protected final boolean force;
-    protected final Set<IDBSPOuterNode> visited = new HashSet<>();
+    protected Set<IDBSPOuterNode> visited = new HashSet<>();
     /** Stack of circuits under construction.  Not the same as 'current': current
      * has nodes from the *old* circuit, whereas these are nodes in the *new* circuit. */
     protected final List<ICircuit> underConstruction;
@@ -612,6 +612,15 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     }
 
     @Override
+    public void drop() {
+        super.drop();
+        // New collections, because clear() keeps the table of the old ones
+        this.visited = new HashSet<>();
+        this.remap = new HashMap<>();
+        this.circuitRemap = new HashMap<>();
+    }
+
+    @Override
     public VisitDecision preorder(DBSPNestedOperator operator) {
         if (this.visited.contains(operator))
             return VisitDecision.STOP;
@@ -687,6 +696,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         circuit.accept(this);
         this.endVisit();
         ICircuit result = Utilities.getExists(this.circuitRemap, circuit);
+        this.drop();
         return result.to(DBSPCircuit.class);
     }
 }

@@ -54,8 +54,10 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 /** All optimizations applied to circuits. */
@@ -264,8 +266,10 @@ public class CircuitOptimizer extends Passes {
             new TestSerialize(this.compiler).apply(circuit);
     }
 
-    public DBSPCircuit optimize(DBSPCircuit input) {
-        DBSPCircuit result = this.apply(input);
+    /** Optimize the circuit in {@code input}.  Takes the circuit out of {@code input} and keeps
+     * no other reference, so the input circuit can be freed while the passes run. */
+    public DBSPCircuit optimize(AtomicReference<DBSPCircuit> input) {
+        DBSPCircuit result = this.apply(Objects.requireNonNull(input.getAndSet(null)));
         boolean requested = this.compiler.options.languageOptions.incrementalize;
         Utilities.enforce(result.incremental == requested, () -> "The circuit is " +
                 (result.incremental ? "" : "not ") + "incremental, but the compilation " +

@@ -47,6 +47,14 @@ public class RemoveOperators extends CircuitCloneVisitor {
     }
 
     @Override
+    public void drop() {
+        super.drop();
+        // This visitor is the only reader of 'keep'.  clear() keeps the table, which the
+        // FindDeadCode that owns the set fills again in its next run.
+        this.keep.clear();
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSimpleOperator node) {
         if (this.keep.contains(node)) {
             this.replace(node);
