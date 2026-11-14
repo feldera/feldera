@@ -798,9 +798,15 @@ pub(crate) async fn streaming_proxy(
         );
     }
 
-    // Build the new HTTP response with the same status, headers and streaming body
+    // Build the new HTTP response with the same status, headers and streaming body.
+    // Do not copy `Content-Length`: from actix-web 4.12, `streaming()` then sends a
+    // sized body instead of a chunked stream.
     let mut builder = HttpResponseBuilder::new(status);
-    for header in response.headers().into_iter() {
+    for header in response
+        .headers()
+        .into_iter()
+        .filter(|(name, _)| **name != header::CONTENT_LENGTH)
+    {
         builder.append_header(header);
     }
     // An explicit `Content-Encoding` keeps the `Compress` middleware on the manager's
@@ -1062,6 +1068,47 @@ mod tests {
         assert_eq!(resp.status(), 200);
         assert_eq!(resp.headers().get("content-encoding").unwrap(), "gzip");
         assert_eq!(read_body(resp).await, compressed);
+    }
+
+    /// An upstream `Content-Length` does not reach the client, so the response
+    /// stays a chunked stream, as the buffered proxy path also drops it.
+    #[actix_web::test]
+    async fn test_streaming_proxy_drops_upstream_content_length() {
+        use actix_web::body::MessageBody as _;
+
+        setup();
+        let mock_server = MockServer::start().await;
+
+        let zip = b"PK not really a zip, but the proxy must not care".to_vec();
+        Mock::given(method("GET"))
+            .and(path("/dump_profile"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(zip.clone())
+                    .insert_header("content-type", "application/zip"),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let url = format!("{}/dump_profile", mock_server.uri());
+        let client = awc::Client::default();
+        let (req, payload) = test_get_request(&[]);
+        let resp = streaming_proxy(
+            &client,
+            &url,
+            "test-pipeline",
+            &req,
+            payload,
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.status(), 200);
+        assert!(resp.headers().get(header::CONTENT_LENGTH).is_none());
+        assert_eq!(resp.body().size(), actix_web::body::BodySize::Stream);
+        assert_eq!(read_body(resp).await, zip);
     }
 
     fn selected_protocol(subprotocols: Option<&str>) -> Option<String> {
