@@ -2016,6 +2016,33 @@ pub fn api_transaction_commit_includes_queued_records(engine: &dyn PipelineTestE
     controller.stop().unwrap();
 }
 
+/// An API commit on a paused pipeline includes the records that a connector
+/// queued before the commit request.  A paused step does not poll the
+/// connector, so the commit must make the pipeline poll it.
+#[engine_test]
+pub fn paused_api_transaction_commit_includes_queued_records(engine: &dyn PipelineTestEngine) {
+    let (controller, feeder, before) = start_api_transaction_test(engine, false);
+
+    controller.start_transaction().unwrap();
+    push_records(&feeder, 0..100);
+    controller.pause();
+    wait(
+        || controller.status().global_metrics.reported_state() == super::PipelineState::Paused,
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the circuit thread never reported the pause");
+    controller
+        .start_commit_transaction(TransactionToCommit::Open)
+        .unwrap();
+
+    assert_eq!(transactions_to_commit(&controller, 100, before), 1);
+    assert_eq!(
+        controller.status().global_metrics.reported_state(),
+        super::PipelineState::Paused
+    );
+    controller.stop().unwrap();
+}
+
 /// Waits until `controller` has run a transaction after `before` and has no
 /// transaction open, that is, until a commit that the test requested is done.
 fn wait_for_commit(controller: &Controller, before: u64) {
