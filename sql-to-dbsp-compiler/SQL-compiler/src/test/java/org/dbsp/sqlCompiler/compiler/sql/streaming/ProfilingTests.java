@@ -575,6 +575,69 @@ public class ProfilingTests extends StreamingTestBase {
         Assert.assertEquals(0L, (long) measured[2]);
     }
 
+    /** A temporal filter with a lower bound keeps in its input trace only the rows in its window.
+     * The aggregate after it keeps only the groups in the window. */
+    @Test
+    public void profileTemporalFilter() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW recent_totals AS
+                SELECT FLOOR(event_time TO SECOND) AS t, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM events
+                WHERE event_time >= NOW() - INTERVAL 5 MINUTES
+                GROUP BY FLOOR(event_time TO SECOND), id;""";
+        // NOW() moves one second per batch, and each batch has a row at NOW() for each id.
+        // The window holds 300 batches, 15,000 of the 100,000 rows.
+        String main = growthMain("""
+                append_to_collection_handle(&zset!(Tup1::new(event_time) => 1), &streams.0);
+                for id in 0..IDS {
+                    append_to_collection_handle(&zset!(Tup3::new(event_time, id, batch + id) => 1), &streams.1);
+                }
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = &read_output_spine(&streams.2);
+                """);
+        assertStateBounded(this.measure(sql, main), "The state of the temporal filter");
+    }
+
+    /** Aggregates grouped by the TUMBLE and HOP windows of a column with LATENESS keep in their
+     * input traces only the groups at or above the waterline. */
+    @Test
+    public void profileTumbleHop() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTES,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW tumble_totals AS
+                SELECT window_start, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM TABLE(TUMBLE(TABLE events, DESCRIPTOR(event_time), INTERVAL 1 SECOND))
+                GROUP BY window_start, id;
+                CREATE VIEW hop_totals AS
+                SELECT window_start, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM TABLE(HOP(TABLE events, DESCRIPTOR(event_time), INTERVAL 1 SECOND, INTERVAL 2 SECONDS))
+                GROUP BY window_start, id;""";
+        // Each batch has a row for each id, one second after the previous batch: a new window and
+        // a new group for each id.  The five minute LATENESS keeps 300 windows of groups live.
+        String main = growthMain("""
+                for id in 0..IDS {
+                    append_to_collection_handle(&zset!(Tup3::new(event_time, id, batch + id) => 1), &streams.0);
+                }
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = &read_output_spine(&streams.1);
+                let _ = &read_output_spine(&streams.2);
+                """);
+        assertStateBounded(this.measure(sql, main), "The state of the window aggregates");
+    }
+
     /** A LAG partitioned by a column with LATENESS keeps in its traces only the partitions at or
      * above the waterline.  The state grows today: the runtime LAG integrates an encoded copy of
      * its input, which the RetainKeys of the compiler do not reach. */
