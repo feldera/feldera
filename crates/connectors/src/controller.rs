@@ -4788,6 +4788,7 @@ impl CircuitThread {
             StepInputs::CheckpointBarriers
         } else if self.controller.status.global_metrics.has_run()
             && self.controller.status.global_metrics.reported_state() == PipelineState::Paused
+            && !self.controller.commit_waits_for_input()
         {
             // A paused pipeline stops polling the input that connectors
             // buffered, so that a pause is a clear stop point.  (With a
@@ -4796,6 +4797,11 @@ impl CircuitThread {
             // Select by the reported state, not by the requested state, so
             // that when the server reports a pause, no step takes connector
             // input.
+            //
+            // An API commit includes the input queued at its request, so it
+            // waits until all the endpoints are polled (see
+            // [CommitTarget::drained]).  Until then, poll them all, even
+            // though the pipeline is paused.
             StepInputs::Paused
         } else {
             StepInputs::All
@@ -10425,6 +10431,16 @@ impl ControllerInner {
             // advances only when the circuit steps.
             TransactionState::Committing { .. } => true,
         }
+    }
+
+    /// Returns true if an API commit request waits for the input that was
+    /// queued at the request (see [CommitTarget]).
+    fn commit_waits_for_input(&self) -> bool {
+        self.transaction_info
+            .lock()
+            .unwrap()
+            .commit_target
+            .is_some()
     }
 
     /// Returns true if (transaction_state == Committing).

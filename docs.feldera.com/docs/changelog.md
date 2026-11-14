@@ -24,8 +24,8 @@ Source edition can be found on github.
   its connectors buffered.  The input waits until the pipeline resumes.
   Forced input to HTTP input connectors is still processed.  The pipeline
   reports `Paused` only after the step in progress at the pause is complete,
-  so after `pause()` returns, the views change only because of forced input.
-  See [Pausing a pipeline](/tutorials/testing#pausing-a-pipeline) and
+  so after `pause()` returns, the views change only because of HTTP input,
+  or in a few cases such as a transaction commit or a checkpoint.  See [Pausing a pipeline](/tutorials/testing#pausing-a-pipeline) and
   [issue 7568](https://github.com/feldera/feldera/issues/7568).
 
 ## v0.382.0

@@ -121,7 +121,9 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
   before `commit_transaction`. Thus, the transaction can also include some input that arrives
   after `commit_transaction`, until the commit starts. During the synchronization phase of
   [concurrent bootstrapping](/pipelines/modifying#concurrent-bootstrapping), which pauses input
-  ingestion, the commit starts without the input that is still queued.
+  ingestion, the commit starts without the input that is still queued. A
+  [paused](/tutorials/testing#pausing-a-pipeline) pipeline still ingests this input, so that the
+  commit can finish.
 
 * The optional `transaction_id` query parameter, as in `commit_transaction?transaction_id=42`, names the
   transaction that `start_transaction` returned. The pipeline then commits only that transaction. If the

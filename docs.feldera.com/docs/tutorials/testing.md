@@ -689,16 +689,18 @@ pipeline continues to run:
 `pause()` returns when the pipeline reports the `PAUSED` status.  The
 pipeline reports this status only after the step that was in progress at
 the time of the pause, if any, is complete.  After `pause()` returns, the
-views change only because of forced input.  A connector can continue to
+views change only because of input to the HTTP input connectors, or in one
+of the cases in the table below.  A connector can continue to
 buffer input for a short time after the pause, but the pipeline does not
 process that input until `resume()`.  For a paused pipeline,
 `pipeline.wait_for_idle()` counts the buffered input as if it were
 processed, except the input that the HTTP input connectors buffered.
 
-There are two exceptions:
+The pipeline also processes buffered input in these cases:
 
 | Case | Behavior |
 |------|----------|
+| Transaction commit | A transaction that commits while the pipeline is paused includes the input that the connectors buffered before the commit request, so the pipeline processes that input to finish the commit.  A commit that was in progress at the pause also finishes.  See [Transactions](/pipelines/transactions). |
 | Checkpoint | To make a checkpoint, a pipeline without fault tolerance processes the buffered input of the connectors that block the checkpoint (see [Fault tolerance](/pipelines/fault-tolerance)). |
 | Paused before the first run | A pipeline that starts paused, for example with `start_paused()` or after a restart from a checkpoint, processes the buffered input of all its connectors until it runs for the first time.  This lets each connector record its starting position for checkpoints. |
 
