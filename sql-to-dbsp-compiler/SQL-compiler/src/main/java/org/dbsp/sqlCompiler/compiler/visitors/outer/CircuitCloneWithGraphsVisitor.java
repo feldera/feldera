@@ -14,4 +14,11 @@ public abstract class CircuitCloneWithGraphsVisitor extends CircuitCloneVisitor 
         super(compiler, false);
         this.graphs = graphs;
     }
+
+    @Override
+    public void drop() {
+        super.drop();
+        // This visitor is the only reader of the graphs
+        this.graphs.clear();
+    }
 }

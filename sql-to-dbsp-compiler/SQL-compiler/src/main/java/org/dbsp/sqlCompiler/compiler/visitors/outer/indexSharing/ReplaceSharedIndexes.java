@@ -51,13 +51,20 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
     final FindSharedIndexes finder;
     /** Maps each join, star join, aggregate, or fixed-index operator that reads a shared index
      * to the shared sources of its inputs */
-    final Map<DBSPSimpleOperator, ConsumerInputs> sharedInputs;
+    Map<DBSPSimpleOperator, ConsumerInputs> sharedInputs;
     /** Maps a builder to the wide MapIndex operator created from it */
-    final Map<WideMapIndexBuilder, DBSPMapIndexOperator> sharedIndexes;
+    Map<WideMapIndexBuilder, DBSPMapIndexOperator> sharedIndexes;
 
     public ReplaceSharedIndexes(DBSPCompiler compiler, FindSharedIndexes finder) {
         super(compiler, false);
         this.finder = finder;
+        this.sharedInputs = new HashMap<>();
+        this.sharedIndexes = new HashMap<>();
+    }
+
+    @Override
+    public void drop() {
+        super.drop();
         this.sharedInputs = new HashMap<>();
         this.sharedIndexes = new HashMap<>();
     }

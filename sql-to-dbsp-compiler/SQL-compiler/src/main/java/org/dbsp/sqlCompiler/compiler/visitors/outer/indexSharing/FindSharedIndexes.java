@@ -42,7 +42,7 @@ import java.util.Set;
 /** Finds multiple {@link DBSPMapIndexOperator}s that can be combined into a single wide one */
 class FindSharedIndexes extends CircuitWithGraphsVisitor {
     final List<Candidates> candidates;
-    final Set<DBSPMapIndexOperator> visited;
+    Set<DBSPMapIndexOperator> visited;
 
     boolean sameKey(DBSPClosureExpression first, DBSPClosureExpression second) {
         DBSPVariablePath varLeft = first.getResultType().ref().var();
@@ -59,6 +59,13 @@ class FindSharedIndexes extends CircuitWithGraphsVisitor {
     public FindSharedIndexes(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs);
         this.candidates = new ArrayList<>();
+        this.visited = new HashSet<>();
+    }
+
+    /** Keeps 'candidates', which the next pass reads */
+    @Override
+    public void drop() {
+        super.drop();
         this.visited = new HashSet<>();
     }
 

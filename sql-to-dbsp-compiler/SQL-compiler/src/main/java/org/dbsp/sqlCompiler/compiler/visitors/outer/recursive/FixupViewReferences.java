@@ -43,6 +43,12 @@ class FixupViewReferences extends CircuitCloneVisitor {
     }
 
     @Override
+    public void drop() {
+        super.drop();
+        this.scc = null;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
         super.preorder(circuit);
         CircuitGraph graph = this.graphs.getGraph(circuit);

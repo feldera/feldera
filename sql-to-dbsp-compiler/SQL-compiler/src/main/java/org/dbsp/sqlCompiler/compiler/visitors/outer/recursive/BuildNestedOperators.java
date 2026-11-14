@@ -39,16 +39,16 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
     @Nullable
     SCC<DBSPOperator> scc = null;
-    final Map<Integer, DBSPNestedOperator> components;
-    final Set<DBSPNestedOperator> toAdd;
+    Map<Integer, DBSPNestedOperator> components;
+    Set<DBSPNestedOperator> toAdd;
     /**
      * Maps each view in an SCC to its output.
      */
-    final Map<ProgramIdentifier, OutputPort> viewPort;
+    Map<ProgramIdentifier, OutputPort> viewPort;
     /**
      * Maps each component and operator to the delta that contains its output
      */
-    final Map<DBSPNestedOperator, Map<OutputPort, DBSPDeltaOperator>> deltasCreated;
+    Map<DBSPNestedOperator, Map<OutputPort, DBSPDeltaOperator>> deltasCreated;
 
     BuildNestedOperators(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs);
@@ -58,6 +58,16 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
         this.deltasCreated = new HashMap<>();
         // Operators moved into a nested circuit and their declarations change kind
         this.preservesKinds = false;
+    }
+
+    @Override
+    public void drop() {
+        super.drop();
+        this.scc = null;
+        this.components = new HashMap<>();
+        this.toAdd = new HashSet<>();
+        this.viewPort = new HashMap<>();
+        this.deltasCreated = new HashMap<>();
     }
 
     @Override
