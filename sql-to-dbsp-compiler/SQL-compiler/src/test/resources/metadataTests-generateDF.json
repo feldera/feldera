@@ -92,7 +92,9 @@
       "calcite": {
         "partial": 3
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
+      ],
       "persistent_id": "7706b468a9815ae464fa7d937e03cd10fd042b24d79ea55ec8e3672307f449ff"
     }, "s4": {
       "operation": "map",
@@ -102,7 +104,9 @@
       "calcite": {
         "partial": 3
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
+      ],
       "persistent_id": "96a9953e1ac37cab6f362e291cdad38a463335df6646b65e2d641e94fc6b78fc"
     }, "s5": {
       "operation": "neg",
@@ -112,7 +116,9 @@
       "calcite": {
         "partial": 3
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
+      ],
       "persistent_id": "d02fe90a618dbdc136eb40ef800518a5e76f8a8501671376993b84f998cceb50"
     }, "s6": {
       "operation": "incremental_constant",
@@ -120,7 +126,9 @@
       "calcite": {
         "partial": 3
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
+      ],
       "persistent_id": "846f657032b4a8d58432c4914cec8b21e5acac396342f15bde80158d2ef91b4d"
     }, "s7": {
       "operation": "atomic_sum",
@@ -132,7 +140,9 @@
       "calcite": {
         "partial": 3
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
+      ],
       "persistent_id": "179258bf40fafaebeee5addd1a59a1afbdba805e708f1c35df5a6518a78f125c"
     }, "s8": {
       "operation": "inspect",
