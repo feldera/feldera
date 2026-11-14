@@ -42,7 +42,7 @@ import java.util.Set;
 /** Finds multiple {@link DBSPMapIndexOperator}s that can be combined into a single wide one */
 class FindSharedIndexes extends CircuitWithGraphsVisitor {
     final List<Candidates> candidates;
-    final Set<DBSPMapIndexOperator> visited;
+    Set<DBSPMapIndexOperator> visited;
 
     boolean sameKey(DBSPClosureExpression first, DBSPClosureExpression second) {
         DBSPVariablePath varLeft = first.getResultType().ref().var();
@@ -59,6 +59,13 @@ class FindSharedIndexes extends CircuitWithGraphsVisitor {
     public FindSharedIndexes(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs);
         this.candidates = new ArrayList<>();
+        this.visited = new HashSet<>();
+    }
+
+    /** Keeps 'candidates', which the next pass reads */
+    @Override
+    public void drop() {
+        super.drop();
         this.visited = new HashSet<>();
     }
 
@@ -227,19 +234,43 @@ class FindSharedIndexes extends CircuitWithGraphsVisitor {
             remaining.addAll(Linq.where(this.members, m -> !m.requiresFixedIndex()));
             List<List<MapIndexAndConsumer>> result = new ArrayList<>();
             // Greedy algorithm: pick the widest fixed-inputs operator and add
-            // all compatible operators to the list.
+            // all compatible operators to the list.  Each member that needs a fixed index
+            // must read the entire shared value, in order.
             while (!remaining.isEmpty()) {
+                MapIndexAndConsumer first = remaining.get(0);
+                List<MapIndexAndConsumer> others = remaining.subList(1, remaining.size());
+                // The builder holds the functions of the group.  The loop adds the function of each
+                // candidate to test it, and removes the function if the candidate does not fit.
+                WideMapIndexBuilder builder = WideMapIndexBuilder.start(compiler, first);
+                boolean hasFixed = first.requiresFixedIndex();
+                if (hasFixed && !builder.emitsIdentityPermutation(0)) {
+                    // Candidates only add fields, so 'first' never reads the entire shared value
+                    remaining = new ArrayList<>(others);
+                    continue;
+                }
+
                 List<MapIndexAndConsumer> group = new ArrayList<>();
-                group.add(remaining.remove(0));
-                for (int i = 0; i < remaining.size(); i++) {
-                    List<MapIndexAndConsumer> trial = Linq.append(group, remaining.get(i));
-                    if (WideMapIndexBuilder.create(compiler, trial).reproducesFixedValues(trial)) {
-                        group.add(remaining.remove(i));
-                        i--;
+                group.add(first);
+                List<MapIndexAndConsumer> rejected = new ArrayList<>();
+                for (MapIndexAndConsumer candidate : others) {
+                    int fieldCount = builder.fieldCount();
+                    builder.addFunction(compiler, candidate.index().getClosureFunction());
+                    boolean fixed = candidate.requiresFixedIndex();
+                    // A new field makes the fixed members of the group read only part of the value
+                    boolean widened = builder.fieldCount() > fieldCount;
+                    boolean fits = !(hasFixed && widened) &&
+                            (!fixed || builder.emitsIdentityPermutation(group.size()));
+                    if (fits) {
+                        group.add(candidate);
+                        hasFixed = hasFixed || fixed;
+                    } else {
+                        builder.removeLastFunction();
+                        rejected.add(candidate);
                     }
                 }
                 if (group.size() > 1)
                     result.add(group);
+                remaining = rejected;
             }
             return result;
         }

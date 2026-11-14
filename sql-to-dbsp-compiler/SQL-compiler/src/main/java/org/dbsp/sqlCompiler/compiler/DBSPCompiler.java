@@ -108,6 +108,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -843,7 +844,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             this.validateForeignKeys(circuit, foreignKeys);
             if (!this.options.ioOptions.inputCircuit) {
-                DBSPCircuit unoptimized = circuit;
+                // The optimizer takes the only reference to the unoptimized circuit, so that the
+                // circuit can be freed after the first pass
+                AtomicReference<DBSPCircuit> unoptimized = new AtomicReference<>(circuit);
+                circuit = null;
                 circuit = timed("Optimizer", () -> this.optimize(unoptimized));
             }
             return circuit;
@@ -942,12 +946,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.compileInternal(program, true);
     }
 
-    @Nullable DBSPCircuit optimize(@Nullable DBSPCircuit circuit) {
-        if (circuit == null) return null;
+    /** Optimize the circuit in {@code unoptimized}; the optimizer takes it out of the reference */
+    DBSPCircuit optimize(AtomicReference<DBSPCircuit> unoptimized) {
         CircuitOptimizer optimizer = new CircuitOptimizer(this);
         if (this.optimizerHook != null)
             this.optimizerHook.accept(optimizer);
-        return optimizer.optimize(circuit);
+        return optimizer.optimize(unoptimized);
     }
 
     public void removeTable(ProgramIdentifier name) {

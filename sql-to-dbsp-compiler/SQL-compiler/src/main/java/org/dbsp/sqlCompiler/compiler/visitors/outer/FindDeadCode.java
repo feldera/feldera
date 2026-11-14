@@ -57,14 +57,14 @@ import java.util.Set;
  * operators that are 'used' by other operators (inputs, outputs,
  * and sources). */
 public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
-    public final Set<DBSPOperator> reachable = new HashSet<>();
+    public Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
     /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
     /** Key: the end of an implicit back edge, a view declaration or the output half of a split
      * operator; value: the port that feeds the key on the back edge. */
-    final Map<DBSPOperator, OutputPort> backEdges = new HashMap<>();
+    Map<DBSPOperator, OutputPort> backEdges = new HashMap<>();
 
     /**
      * Run the dead code visitor.
@@ -73,6 +73,14 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public FindDeadCode(DBSPCompiler compiler, boolean keepAllSources) {
         super(compiler);
         this.keepAllSources = keepAllSources;
+    }
+
+    /** Keeps 'toKeep', which the next pass reads */
+    @Override
+    public void drop() {
+        super.drop();
+        this.reachable = new HashSet<>();
+        this.backEdges = new HashMap<>();
     }
 
     public void keep(DBSPOperator operator) {

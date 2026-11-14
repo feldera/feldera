@@ -248,6 +248,35 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testLongLineSnippets() {
+        // Lines of 343 and 347 characters; column 'y' starts at column 180 of line 1
+        String pad = "/* " + "x".repeat(150) + " */";
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(
+                pad + " CREATE TABLE T(x INT, y INT); " + pad + "\n" +
+                pad + " CREATE VIEW V AS SELECT x FROM T; " + pad);
+        compiler.getFinalCircuit(true);
+        // Both lines show columns 80 to 284: 100 characters before the range and 100 after it
+        TestUtil.assertMessagesContain(compiler,
+                "    1|..." + "x".repeat(74) + " */ CREATE TABLE T(x INT, y INT); /* " + "x".repeat(94) + "...\n" +
+                " ".repeat(109) + "^^^^^\n" +
+                "    2|..." + "x".repeat(74) + " */ CREATE VIEW V AS SELECT x FROM T; /* " + "x".repeat(90) + "...\n");
+
+        // The SUM call is 242 characters long
+        compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(
+                "CREATE TABLE T(g INT, d DOUBLE); CREATE VIEW V AS SELECT g, SUM(" +
+                "d + ".repeat(59) + "d) FROM T GROUP BY g;");
+        compiler.getFinalCircuit(true);
+        // The range starts at column 61, so the line shows its first 260 characters:
+        // the 60 before the range, 100 of the range, and 100 after them
+        TestUtil.assertMessagesContain(compiler,
+                "    1|CREATE TABLE T(g INT, d DOUBLE); CREATE VIEW V AS SELECT g, SUM(" +
+                "d + ".repeat(49) + "...\n" +
+                " ".repeat(66) + "^".repeat(100) + "\n");
+    }
+
+    @Test
     public void testFormatWarnings() {
         String sql = "CREATE TABLE T(d DATE);\n" +
                 "CREATE VIEW V AS SELECT FORMAT_DATE(DATE '2020-10-10', '%Y-%m');";
