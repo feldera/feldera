@@ -13,18 +13,34 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Linq;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /** Choose for each join whether it is dynamically balanced or just a hash join */
 public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
+    /** Maps an output port to true if a GC operator garbage-collects the integral of the port */
+    private final Map<OutputPort, Boolean> garbageCollected;
+
     protected BalancedJoins(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs);
+        this.garbageCollected = new HashMap<>();
     }
 
-    /** True if a GC operator garbage-collects the integral of {@code port}. */
+    @Override
+    public Token startVisit(IDBSPOuterNode circuit) {
+        this.garbageCollected.clear();
+        return super.startVisit(circuit);
+    }
+
+    /** True if a GC operator garbage-collects the integral of {@code port}.
+     * Cached, because a port can feed thousands of joins. */
     private boolean isGarbageCollected(OutputPort port) {
-        return Linq.any(this.getGraph().getSuccessors(port.node()), succ -> succ.node().is(IGCOperator.class) &&
-                succ.node().to(IGCOperator.class).garbageCollects(port));
+        return this.garbageCollected.computeIfAbsent(port, p ->
+                Linq.any(this.getGraph().getSuccessors(p.node()), succ -> succ.node().is(IGCOperator.class) &&
+                        succ.node().to(IGCOperator.class).garbageCollects(p)));
     }
 
     private boolean canBalance(DBSPJoinBaseOperator join) {

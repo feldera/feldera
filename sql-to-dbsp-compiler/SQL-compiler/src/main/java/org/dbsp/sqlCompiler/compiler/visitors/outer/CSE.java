@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
@@ -55,12 +56,22 @@ public class CSE extends Repeat {
         final Map<DBSPOperator, DBSPOperator> canonical;
         /** Constants and incremental constants: sources, which no common input links */
         final List<DBSPSimpleOperator> constants;
+        /** Key: a circuit; value: maps a {@link Feature} to the operators of the circuit that
+         * have it and are their own canonical representatives, in circuit order */
+        final Map<ICircuit, Map<Feature, List<DBSPOperator>>> representatives;
 
         public FindCSE(DBSPCompiler compiler, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
             super(compiler, graphs);
             this.canonical = canonical;
             this.constants = new ArrayList<>();
+            this.representatives = new HashMap<>();
+        }
+
+        @Override
+        public void endVisit() {
+            this.representatives.clear();
+            super.endVisit();
         }
 
         /** True if two constants have the same type and the same values, compared as expressions,
@@ -91,7 +102,6 @@ public class CSE extends Repeat {
                 }
             }
             this.constants.add(operator);
-            postorder(operator.to(DBSPOperator.class));
         }
 
         @Override
@@ -200,27 +210,58 @@ public class CSE extends Repeat {
             }
         }
 
+        /** Fields of an operator that {@link DBSPOperator#equivalent} requires to be equal after
+         * RemoveCSE, so two operators that are equivalent after RemoveCSE have equal features.
+         * @param kind    The operation of a simple operator or of an operator with error;
+         *                the class name for other operators.
+         * @param inputs  The inputs of a simple operator or of an operator with error, as
+         *                RemoveCSE replaces them; empty for other operators. */
+        record Feature(String kind, List<OutputPort> inputs) {}
+
+        /** The port that RemoveCSE uses in place of {@code port} */
+        OutputPort canonicalPort(OutputPort port) {
+            DBSPOperator representative = this.canonical.get(port.node());
+            return representative == null ? port : representative.getOutput(port.outputNumber);
+        }
+
+        Feature feature(DBSPOperator operator) {
+            DBSPSimpleOperator simple = operator.as(DBSPSimpleOperator.class);
+            if (simple != null)
+                return new Feature(simple.operation, Linq.map(simple.inputs, this::canonicalPort));
+            DBSPOperatorWithError withError = operator.as(DBSPOperatorWithError.class);
+            if (withError != null)
+                return new Feature(withError.operation, Linq.map(withError.inputs, this::canonicalPort));
+            return new Feature(operator.getClass().getName(), List.of());
+        }
+
+        /** Compares each operator with the earlier operators of its circuit that have the same
+         * feature.  The inputs of an operator precede it, so their representatives are final when
+         * the operator is visited, and a chain of equivalent operators merges in one visit. */
         @Override
         public void postorder(DBSPOperator operator) {
-            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
-            // Compare every pair of destinations
-            for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).node();
-                List<List<DBSPOperator>> baseGc = this.outputGcSuccessors(base);
-                for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).node();
-                    if (this.canonical.containsKey(compare))
-                        // Already found a canonical representative
+            if (operator.inputs.isEmpty() || this.canonical.containsKey(operator))
+                // Sources and declarations are never equivalent; 'constant' compares constants
+                return;
+            List<DBSPOperator> candidates = this.representatives
+                    .computeIfAbsent(this.getParent(), c -> new HashMap<>())
+                    .computeIfAbsent(this.feature(operator), f -> new ArrayList<>());
+            List<List<DBSPOperator>> gc = this.outputGcSuccessors(operator);
+            for (DBSPOperator candidate : candidates) {
+                DBSPOperator afterRemoveCSE = operator;
+                if (!operator.inputs.equals(candidate.inputs)) {
+                    if (!operator.is(DBSPSimpleOperator.class))
                         continue;
-                    if (compare == base)
-                        // E.g., a join where both inputs come from the same source
-                        continue;
-                    // The next round will CSE the GC operators as well
-                    if (base.equivalent(compare) && this.sameOutputGc(baseGc, this.outputGcSuccessors(compare))) {
-                        this.setCanonical(compare, base);
-                    }
+                    // The inputs differ, but RemoveCSE replaces them with the candidate's inputs
+                    afterRemoveCSE = operator.withInputs(candidate.inputs, false);
+                }
+                // The GC operators come later; they merge when visited
+                if (candidate.equivalent(afterRemoveCSE) &&
+                        this.sameOutputGc(this.outputGcSuccessors(candidate), gc)) {
+                    this.setCanonical(operator, candidate);
+                    return;
                 }
             }
+            candidates.add(operator);
         }
     }
 
