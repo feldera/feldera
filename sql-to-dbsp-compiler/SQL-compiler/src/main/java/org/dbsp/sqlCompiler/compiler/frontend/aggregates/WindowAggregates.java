@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -130,8 +131,10 @@ public abstract class WindowAggregates implements ICastable {
             DBSPSimpleOperator input, DBSPSimpleOperator lastOperator,
             @Nullable List<Integer> previousPartitionKeys, boolean isLast);
 
+    /** Add {@code call}; the operators built from {@link #node} get the source position of the call. */
     public void addAggregate(AggregateCall call) {
         this.aggregateCalls.add(call);
+        this.node.addSourcePositions(List.of(new SourcePositionRange(call.getParserPosition())));
     }
 
     public DBSPTupleExpression partitionKeys() {
