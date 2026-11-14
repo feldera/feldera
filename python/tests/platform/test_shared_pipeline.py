@@ -1030,6 +1030,18 @@ class TestPipeline(SharedTestPipeline):
             == CompletionTokenStatus.COMPLETE
         )
 
+    def _skip_if_perf_events_blocked(self, e: FelderaAPIError):
+        # samply needs perf events.  A host whose kernel.perf_event_paranoid
+        # is too high (Ubuntu's default is 4) blocks them even with the
+        # PERFMON capability, and samply's error names that setting.
+        if e.error_code == "SamplyProfilingFailure" and "perf_event_paranoid" in str(
+            e.details
+        ):
+            self.skipTest(
+                "host blocks perf events (lower kernel.perf_event_paranoid): "
+                + str(e.details)
+            )
+
     @enterprise_only
     def test_samply_profile(self):
         self.pipeline.set_runtime_config(
@@ -1038,7 +1050,11 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start()
 
         duration = 5
-        self.pipeline.start_samply_profile(duration)
+        try:
+            self.pipeline.start_samply_profile(duration)
+        except FelderaAPIError as e:
+            self._skip_if_perf_events_blocked(e)
+            raise
         time.sleep(duration)
 
         timeout = time.monotonic() + 5
@@ -1053,6 +1069,7 @@ class TestPipeline(SharedTestPipeline):
                 time.sleep(0.1)
             except FelderaAPIError as e:
                 if e.status_code == 500:
+                    self._skip_if_perf_events_blocked(e)
                     raise
 
         assert isinstance(samply_profile_bytes, bytes)
