@@ -85,6 +85,22 @@ pub struct Checkpoint {
     /// multihost and in checkpoints that predate this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_assignment: Option<BTreeMap<String, usize>>,
+
+    /// Version of the runtime that wrote this checkpoint, the same value that
+    /// the pipeline reports as `runtime_version` in its status.  This is
+    /// `None` in checkpoints that predate this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_version: Option<String>,
+}
+
+/// Returns the version of this runtime: the same value that the pipeline
+/// reports as `runtime_version` in its status.
+pub fn runtime_version() -> &'static str {
+    // A pipeline-manager older than FELDERA_RUNTIME_VERSION still sets the
+    // override, which holds the resolved git SHA of the selected runtime.
+    option_env!("FELDERA_RUNTIME_VERSION")
+        .or(option_env!("FELDERA_RUNTIME_OVERRIDE"))
+        .unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
 impl Checkpoint {
@@ -123,6 +139,7 @@ impl Checkpoint {
 
         format!(
             r#"Checkpoint made at step {}:
+  Runtime version: {}
   Initial pipeline start time: {}
   Checkpoint timestamp: {}
   Records processed before the checkpoint: {}
@@ -134,6 +151,7 @@ impl Checkpoint {
   Checkpointed output connector metrics:
 {}"#,
             self.step,
+            self.runtime_version.as_deref().unwrap_or("Unknown"),
             self.initial_start_time,
             checkpoint_timestamp,
             self.processed_records,
@@ -288,7 +306,10 @@ fn unix_epoch() -> DateTime<Utc> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Checkpoint, CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics};
+    use super::{
+        Checkpoint, CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics,
+        runtime_version,
+    };
     use crate::controller::stats::{ConnectorErrorList, MAX_CONNECTOR_ERRORS};
     use chrono::{TimeZone, Utc};
     use feldera_types::adapter_stats::ConnectorError;
@@ -407,6 +428,41 @@ mod tests {
         let connector = &checkpoint.config.outputs["v.c"];
 
         assert!(!connector.connector_config.paused);
+    }
+
+    /// A checkpoint records the runtime version that wrote it, through a JSON
+    /// round trip.  A checkpoint written before this field existed still
+    /// opens, with an unknown version.
+    #[test]
+    fn checkpoint_runtime_version() {
+        let old_format = serde_json::json!({
+            "circuit": null,
+            "step": 3,
+            "config": { "workers": 4 },
+            "processed_records": 100,
+            "input_metadata": {},
+        });
+        let mut checkpoint: Checkpoint = serde_json::from_value(old_format).unwrap();
+        assert_eq!(checkpoint.runtime_version, None);
+        assert!(
+            checkpoint
+                .display_summary()
+                .contains("Runtime version: Unknown")
+        );
+
+        checkpoint.runtime_version = Some(runtime_version().to_string());
+        let json = serde_json::to_value(&checkpoint).unwrap();
+        assert_eq!(json["runtime_version"], runtime_version());
+        let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            checkpoint.runtime_version.as_deref(),
+            Some(runtime_version())
+        );
+        assert!(
+            checkpoint
+                .display_summary()
+                .contains(&format!("Runtime version: {}", runtime_version()))
+        );
     }
 
     #[test]

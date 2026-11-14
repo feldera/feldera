@@ -19,7 +19,7 @@
 
 use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
-    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics,
+    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, runtime_version,
 };
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
@@ -5637,6 +5637,7 @@ impl FtState {
             output_statistics: HashMap::new(),
             input_distribution: controller.input_distribution.clone(),
             output_assignment: controller.output_assignment.clone(),
+            runtime_version: Some(runtime_version().to_string()),
         };
         let journal = storage.open_journal(JournalMode::Create(&checkpoint))?;
 
@@ -6532,8 +6533,20 @@ impl ControllerInit {
             output_statistics,
             input_distribution: checkpointed_input_distribution,
             output_assignment: checkpointed_output_assignment,
+            runtime_version: checkpoint_runtime_version,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
+        match checkpoint_runtime_version {
+            Some(version) if version != runtime_version() => info!(
+                "checkpoint was written by runtime version {version}, but this is runtime version {}",
+                runtime_version()
+            ),
+            Some(_) => (),
+            None => info!(
+                "checkpoint does not record the runtime version that wrote it (this is runtime version {})",
+                runtime_version()
+            ),
+        }
 
         let init_checkpoint = circuit.map(|circuit| circuit.uuid);
 
@@ -11267,6 +11280,7 @@ impl RunningCheckpoint {
             output_statistics,
             input_distribution: circuit.controller.input_distribution.clone(),
             output_assignment: circuit.controller.output_assignment.clone(),
+            runtime_version: Some(runtime_version().to_string()),
         };
         Span::new("blocking")
             .with_category("Checkpoint")
