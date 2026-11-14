@@ -14,6 +14,7 @@ import org.apache.calcite.rex.RexWindowBounds;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlWindowTableFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.ImmutableBitSet;
@@ -121,10 +122,12 @@ public class SessionRewriteRule
         if (input.getRowType().getFieldList().get(tsIndex).getType().isNullable())
             b.filter(b.isNotNull(b.field(tsIndex)));
 
+        // The LAG and SUM calls get the source position of the SESSION call
+        final SqlParserPos pos = invocation.getParserPosition();
         // prev = LAG(ts) OVER w, appended as field $n
         final List<Integer> keyList = keys.toList();
         b.projectPlus(
-                b.aggregateCall(SqlStdOperatorTable.LAG, b.field(tsIndex))
+                b.aggregateCall(pos, SqlStdOperatorTable.LAG, b.field(tsIndex))
                         .over()
                         .partitionBy(b.fields(keyList))
                         .orderBy(b.field(tsIndex))
@@ -143,7 +146,7 @@ public class SessionRewriteRule
 
         // sid = SUM(brk) OVER w, replaces brk as field $n
         b.project(replaceLast(b.fields(), n,
-                b.aggregateCall(SqlStdOperatorTable.SUM, b.field(n))
+                b.aggregateCall(pos, SqlStdOperatorTable.SUM, b.field(n))
                         .over()
                         .partitionBy(b.fields(keyList))
                         .orderBy(b.field(tsIndex))

@@ -3,6 +3,8 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
+import javax.annotation.Nullable;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,7 +28,10 @@ import java.util.Set;
  *   <li>The tests also assert that the circuit never receives late data: the model and
  *       the circuit agree on the waterlines.</li>
  * </ul>
- * The pairs can have rows of different types; a change goes to the pairs whose rows have its type. */
+ * The pairs can have rows of different types; a change goes to the pairs whose rows have its type.
+ *
+ * <p>A program whose LATE_ views read NOW() declares table {@link #CLOCK}, and its PLAIN_ views
+ * read the time from the only row of CLOCK instead.  A step that sets the time sets both. */
 public final class DifferentialTester {
     final CompilerCircuitStream ccs;
     final List<TablePair<?>> pairs;
@@ -35,6 +40,14 @@ public final class DifferentialTester {
     final Map<TablePair<?>, LatenessModel<?>> models = new HashMap<>();
     /** The expected change of view D in every step: the header of its table and no rows. */
     final String expectedDChange;
+    /** Table CLOCK: the time of NOW() for the PLAIN_ views, in its only row. */
+    public static final String CLOCK = "CREATE TABLE CLOCK(t TIMESTAMP NOT NULL);\n";
+    /** The time in table CLOCK; null while CLOCK is empty. */
+    @Nullable
+    LocalDateTime now = null;
+    /** The time that the next step gives NOW() and table CLOCK; null if the next step keeps the time. */
+    @Nullable
+    LocalDateTime nextNow = null;
 
     /** @param ccs      The stream of a program whose only output is view D.
      *  @param columns  The columns of views LATE_ALL and PLAIN_ALL. */
@@ -73,6 +86,35 @@ public final class DifferentialTester {
                 SELECT 'plain' AS side, * FROM (SELECT * FROM PLAIN_ALL EXCEPT ALL SELECT * FROM LATE_ALL) plain_extra
                 UNION ALL
                 """ + errors + " FROM ERROR_VIEW;";
+    }
+
+    /** Make the next step set NOW() and the row of table CLOCK to {@code time}.  NOW() is the
+     * largest time that a step sets, so {@code time} must not be before the current time. */
+    public void setNow(LocalDateTime time) {
+        Utilities.enforce(this.now == null || !time.isBefore(this.now),
+                () -> "Time " + time + " is before the current time " + this.now);
+        this.nextNow = time;
+    }
+
+    /** Run a step that only sets NOW() and the row of table CLOCK to {@code time}. */
+    public void advance(LocalDateTime time) {
+        this.setNow(time);
+        this.step(Set.of(), List.of(), List.of());
+    }
+
+    /** The statements that set NOW() and the row of table CLOCK to the time of the next step,
+     * or an empty string if the next step keeps the time. */
+    String clockStatements() {
+        if (this.nextNow == null)
+            return "";
+        String time = TablePair.literal(this.nextNow);
+        StringBuilder result = new StringBuilder("INSERT INTO now VALUES (").append(time).append(");\n");
+        if (this.now != null)
+            result.append("REMOVE FROM CLOCK VALUES (").append(TablePair.literal(this.now)).append(");\n");
+        result.append("INSERT INTO CLOCK VALUES (").append(time).append(");\n");
+        this.now = this.nextNow;
+        this.nextNow = null;
+        return result.toString();
     }
 
     /** Insert {@code rows} in one step. */
@@ -130,7 +172,7 @@ public final class DifferentialTester {
      * then move the waterlines of the next steps.
      * @param mustReach  Names of the pairs that must receive at least one change of the step. */
     void step(Set<String> mustReach, List<Record> inserts, List<Record> deletes) {
-        StringBuilder sql = new StringBuilder();
+        StringBuilder sql = new StringBuilder(this.clockStatements());
         Set<String> reached = new HashSet<>();
         for (TablePair<?> pair : this.pairs) {
             StringBuilder changes = new StringBuilder();

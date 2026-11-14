@@ -871,10 +871,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     /** Implement one list of aggregates (possibly from a rollup) described by a LogicalAggregate. */
     OutputPort implementAggregateList(LogicalAggregate aggregate, ImmutableBitSet localKeys) {
-        CalciteRelNode node = CalciteObject.create(aggregate);
+        List<AggregateCall> aggregateCalls = aggregate.getAggCallList();
+        // The operators that implement the aggregate get the source positions of its calls
+        CalciteRelNode node = CalciteObject.create(aggregate).addSourcePositions(
+                Linq.map(aggregateCalls, call -> new SourcePositionRange(call.getParserPosition())));
         RelNode input = aggregate.getInput();
         DBSPSimpleOperator opInput = this.getInputAs(input, true);
-        List<AggregateCall> aggregateCalls = aggregate.getAggCallList();
 
         DBSPType type = this.convertType(node.getPositionRange(), aggregate.getRowType(), false);
         DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);

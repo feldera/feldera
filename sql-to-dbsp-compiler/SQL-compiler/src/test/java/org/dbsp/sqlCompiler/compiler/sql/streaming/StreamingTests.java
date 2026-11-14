@@ -1182,118 +1182,6 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
-    public void sessionGc() {
-        // LATENESS on the SESSION timestamp column with SESSION windows.
-        // The RetainKeys operators attach to the inputs of the JoinIndex of the LAG;
-        // the steps below run with compaction to check that this works.
-        String sql = """
-                CREATE TABLE events(
-                    ts  TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
-                    uid VARCHAR
-                );
-                CREATE VIEW sessions AS
-                SELECT uid, COUNT(*) AS cnt, window_start, window_end
-                FROM TABLE(SESSION(TABLE events, DESCRIPTOR(ts), DESCRIPTOR(uid), INTERVAL 10 MINUTES))
-                GROUP BY uid, window_start, window_end;""";
-        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep().withStringTrim();
-        // TODO: window_start cannot have a waterline (a session can be unbounded)
-        // but window_end does, but the algorithm we use does not find it.
-        ccs.visit(new CircuitVisitor(ccs.compiler) {
-            int retainKeys = 0;
-            int retainNValues = 0;
-            int rollingWithWaterline = 0;
-
-            @Override
-            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-                this.retainKeys++;
-            }
-
-            @Override
-            public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
-                this.retainNValues++;
-            }
-
-            @Override
-            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
-                this.rollingWithWaterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.rollingWithWaterline);
-                Assert.assertEquals(2, this.retainKeys);
-                // MIN and MAX of the session timestamps read the same stream as the join that
-                // follows them, which keeps every row; the shared integral is not garbage collected
-                Assert.assertEquals(0, this.retainNValues);
-            }
-        });
-        // The waterline is max over all data of (ts - 1 hour); each step is
-        // filtered with the waterline computed from the previous steps.
-        // Before this step: waterline = minimum, table is empty.
-        // Two sessions start: 'a' has two events 5 minutes apart, 'b' one event
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 10:00:00', 'a'),
-                                         ('2020-01-01 10:05:00', 'a'),
-                                         ('2020-01-01 10:00:00', 'b');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                ----------------------------------------------------------------
-                 a   |   2 | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | 1
-                 b   |   1 | 2020-01-01 10:00:00 | 2020-01-01 10:10:00 | 1""");
-        // Before this step, table contents (rows above the ==== line are
-        // below the waterline):
-        //   ts    | uid |
-        //  -------+-----+
-        //  ==============  waterline = 10:05 - 1:00 = 09:05
-        //   10:00 | a   |
-        //   10:00 | b   |
-        //   10:05 | a   |
-        // 7 minutes after the last 'a' event: extends the 'a' session
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 10:12:00', 'a');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                ----------------------------------------------------------------
-                 a   | 2   | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | -1
-                 a   | 3   | 2020-01-01 10:00:00 | 2020-01-01 10:22:00 | 1""");
-        // Before this step:
-        //   ts    | uid |
-        //  -------+-----+
-        //  ==============  waterline = 10:12 - 1:00 = 09:12
-        //   10:00 | a   |
-        //   10:00 | b   |
-        //   10:05 | a   |
-        //   10:12 | a   |
-        // Far from the previous event: a new session
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 13:00:00', 'a');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                -----------------------------------------------------------------
-                 a   | 1   | 2020-01-01 13:00:00 | 2020-01-01 13:10:00 | 1""");
-        // Before this step:
-        //   ts    | uid |
-        //  -------+-----+
-        //   10:00 | a   | frozen
-        //   10:00 | b   | frozen
-        //   10:05 | a   | frozen
-        //   10:12 | a   | frozen
-        //  ==============  waterline = 13:00 - 1:00 = 12:00
-        //   13:00 | a   |
-        // The frozen sessions can no longer change; compaction may collect
-        // their state.  This row is below the waterline: late, dropped
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 11:30:00', 'a');""", """
-                 uid | cnt | window_start | window_end | weight
-                ------------------------------------------------""");
-        // Before this step: same contents and waterline as the previous step.
-        // Exactly on the waterline: not late; more than one gap away from
-        // both neighbor sessions, so it forms its own
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 12:00:00', 'a');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                ----------------------------------------------------------------
-                 a   |   1 | 2020-01-01 12:00:00 | 2020-01-01 12:10:00 | 1""");
-    }
-
-    @Test
     public void sessionDelete() {
         // Sessions react to deletions: removing a row can split a session in
         // two, or move its start.  No LATENESS.
@@ -1346,59 +1234,6 @@ public class StreamingTests extends StreamingTestBase {
                  uid | cnt | window_start        | window_end          | weight
                 ----------------------------------------------------------------
                  a   |   1 | 2020-01-01 10:20:00 | 2020-01-01 10:30:00 | -1""");
-    }
-
-    @Test
-    public void sessionGcLateMerge() {
-        // A session that straddles the waterline can still merge with an
-        // on-time row; the merged session's window_start comes from a value
-        // below the waterline, so value retention must keep it.
-        String sql = """
-                CREATE TABLE events(
-                    ts  TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
-                    uid VARCHAR
-                );
-                CREATE VIEW sessions AS
-                SELECT uid, COUNT(*) AS cnt, window_start, window_end
-                FROM TABLE(SESSION(TABLE events, DESCRIPTOR(ts), DESCRIPTOR(uid), INTERVAL 10 MINUTES))
-                GROUP BY uid, window_start, window_end;""";
-        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep().withStringTrim();
-        // Before this step: waterline = minimum, table is empty
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 11:50:00', 'a'),
-                                         ('2020-01-01 11:55:00', 'a');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                ----------------------------------------------------------------
-                 a   |   2 | 2020-01-01 11:50:00 | 2020-01-01 12:05:00 | 1""");
-        // Before this step:
-        //   ts    | uid |
-        //  -------+-----+
-        //  ==============  waterline = 11:55 - 1:00 = 10:55
-        //   11:50 | a   |
-        //   11:55 | a   |
-        // An unrelated key advances the waterline to 12:00; the 'a' session
-        // now straddles it: its rows are below, but a row on the waterline
-        // can still merge with it
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 13:00:00', 'z');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                ----------------------------------------------------------------
-                 z   |   1 | 2020-01-01 13:00:00 | 2020-01-01 13:10:00 | 1""");
-        // Before this step:
-        //   ts    | uid |
-        //  -------+-----+
-        //   11:50 | a   | below the waterline, but the session is still live
-        //   11:55 | a   | (a row at 12:00..12:05 can merge with it)
-        //  ==============  waterline = 13:00 - 1:00 = 12:00
-        //   13:00 | z   |
-        // On-time row 9 minutes after 11:55: merges; window_start must still
-        // be 11:50, which only survives GC if value retention kept it
-        ccs.step("""
-                INSERT INTO events VALUES('2020-01-01 12:04:00', 'a');""", """
-                 uid | cnt | window_start        | window_end          | weight
-                ----------------------------------------------------------------
-                 a   |   2 | 2020-01-01 11:50:00 | 2020-01-01 12:05:00 | -1
-                 a   |   3 | 2020-01-01 11:50:00 | 2020-01-01 12:14:00 | 1""");
     }
 
     @Test
@@ -4592,5 +4427,76 @@ public class StreamingTests extends StreamingTestBase {
         FindUnboundedState gc = new FindUnboundedState(ccs.compiler);
         ccs.visit(gc);
         Assert.assertTrue(gc.unbounded.toString(), gc.unbounded.isEmpty());
+    }
+
+    /** The people whose birthday is in the next seven days.  The join on (month, day)
+     * keeps one copy of person and at most 8 day keys; the output changes only when the date changes. */
+    @Test
+    public void birthdaysInTheNextWeek() {
+        var ccs = this.getCCS("""
+                CREATE TABLE person (name VARCHAR, dob DATE NOT NULL) WITH ('expected_size' = '1000000');
+                -- Today and the next six days
+                CREATE LOCAL VIEW days AS
+                SELECT TIMESTAMPADD(DAY, t.d, CAST(NOW() AS DATE)) AS day
+                FROM (VALUES 0, 1, 2, 3, 4, 5, 6) AS t(d);
+                -- The (month, day) of the dates of birth that have a birthday on each day
+                CREATE LOCAL VIEW day_keys AS
+                SELECT day, MONTH(day) AS m, DAYOFMONTH(day) AS dd FROM days
+                UNION ALL
+                -- In a year without February 29, the birthday of a person born on February 29 is February 28
+                SELECT day, 2 AS m, 29 AS dd FROM days
+                WHERE MONTH(day) = 2 AND DAYOFMONTH(day) = 28 AND MAKE_DATE(YEAR(day), 2, 29) IS NULL;
+                CREATE VIEW soon AS
+                SELECT p.name, p.dob, k.day AS bday
+                FROM person p JOIN day_keys k
+                ON MONTH(p.dob) = k.m AND DAYOFMONTH(p.dob) = k.dd;""").withStringTrim();
+        // 2023 has no February 29
+        ccs.step("""
+                INSERT INTO now VALUES('2023-02-25 12:00:00');
+                INSERT INTO person VALUES('ann', '2000-02-29');
+                INSERT INTO person VALUES('bob', '1990-02-28');
+                INSERT INTO person VALUES('cy', '1985-03-01');
+                INSERT INTO person VALUES('dan', '1970-12-31');
+                INSERT INTO person VALUES('eve', '1999-01-02');""", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 ann  | 2000-02-29 | 2023-02-28 | 1
+                 bob  | 1990-02-28 | 2023-02-28 | 1
+                 cy   | 1985-03-01 | 2023-03-01 | 1""");
+        // 2024 has a February 29
+        ccs.step("INSERT INTO now VALUES('2024-02-25 12:00:00');", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 ann  | 2000-02-29 | 2023-02-28 | -1
+                 bob  | 1990-02-28 | 2023-02-28 | -1
+                 cy   | 1985-03-01 | 2023-03-01 | -1
+                 ann  | 2000-02-29 | 2024-02-29 | 1
+                 bob  | 1990-02-28 | 2024-02-28 | 1
+                 cy   | 1985-03-01 | 2024-03-01 | 1""");
+        // The seven days include the start of the next year
+        ccs.step("INSERT INTO now VALUES('2024-12-28 12:00:00');", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 ann  | 2000-02-29 | 2024-02-29 | -1
+                 bob  | 1990-02-28 | 2024-02-28 | -1
+                 cy   | 1985-03-01 | 2024-03-01 | -1
+                 dan  | 1970-12-31 | 2024-12-31 | 1
+                 eve  | 1999-01-02 | 2025-01-02 | 1""");
+        // The year changes, and a person is inserted
+        ccs.step("""
+                INSERT INTO now VALUES('2025-01-01 00:00:00');
+                INSERT INTO person VALUES('fay', '2001-01-05');""", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 dan  | 1970-12-31 | 2024-12-31 | -1
+                 fay  | 2001-01-05 | 2025-01-05 | 1""");
+        // The clock moves, but the date does not change
+        ccs.step("INSERT INTO now VALUES('2025-01-01 18:00:00');", """
+                 name | dob | bday | weight
+                ---------------------------""");
+        ccs.step("REMOVE FROM person VALUES('eve', '1999-01-02');", """
+                 name | dob        | bday       | weight
+                ------------------------------------------
+                 eve  | 1999-01-02 | 2025-01-02 | -1""");
     }
 }

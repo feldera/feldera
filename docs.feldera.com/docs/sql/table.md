@@ -68,6 +68,8 @@ function:
 - `window_start`, of the same type as the column `orders.rowtime`
 - `window_end`, of the same type as the column `orders.rowtime`
 
+A `NULL` timestamp produces no rows in the result.
+
 ### `HOP`
 
 `HOP` assigns windows that cover rows within the interval of size and

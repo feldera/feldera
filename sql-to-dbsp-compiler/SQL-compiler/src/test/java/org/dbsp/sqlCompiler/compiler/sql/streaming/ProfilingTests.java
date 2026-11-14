@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -500,6 +501,170 @@ public class ProfilingTests extends StreamingTestBase {
         }
         // No row is late
         Assert.assertEquals(0L, (long) measured[2]);
+    }
+
+    /** A Rust test that feeds 2000 batches, one per second, and writes the state after half the
+     * stream, the state at the end, and the number of late rows.  The state is measured after a
+     * compaction.
+     * @param batch  Rust statements that feed one batch and read the outputs; they can use
+     *               {@code batch}, the number of the batch, {@code event_time}, its time, and
+     *               {@code IDS}, the number of rows of a batch. */
+    static String growthMain(String batch) {
+        return """
+                #![allow(unused_imports)]
+
+                use dbsp::{
+                    circuit::{CircuitConfig, metrics::TOTAL_LATE_RECORDS},
+                    utils::{Tup1, Tup3},
+                    zset,
+                };
+                use feldera_sqllib::{append_to_collection_handle, read_output_spine, Timestamp};
+
+                use std::fs::File;
+                use std::io::Write;
+                use std::sync::atomic::Ordering;
+                use std::time::Duration;
+                use temp::circuit;
+
+                const BATCHES: i64 = 2000;
+                // The state is measured here and at the end of the stream
+                const HALF: i64 = BATCHES / 2;
+                const IDS: i64 = 50;
+                const MS_PER_BATCH: i64 = 1000;
+                // Milliseconds of the first batch
+                const START_MS: i64 = 1788858000000;
+
+                #[test]
+                pub fn test() {
+                    let (mut circuit, streams) = circuit(
+                        CircuitConfig::with_workers(3)).expect("could not build circuit");
+                    let mut half: u64 = 0;
+                    for batch in 0..BATCHES {
+                        let event_time = Timestamp::from_milliseconds(START_MS + batch * MS_PER_BATCH);
+                """ + batch.indent(8) + """
+                        if batch == HALF - 1 {
+                            half = state(&mut circuit);
+                        }
+                    }
+                    let full = state(&mut circuit);
+                    let late = TOTAL_LATE_RECORDS.load(Ordering::Relaxed);
+                    let data = format!("{},{},{}\\n", half, full, late);
+                    let mut file = File::create("mem.txt").expect("Could not create file");
+                    file.write_all(data.as_bytes()).expect("Could not write data");
+                }
+
+                /// The size of the circuit state, in bytes.
+                fn state(circuit: &mut dbsp::DBSPHandle) -> u64 {
+                    circuit.start_compaction().expect("could not start compaction");
+                    circuit.wait_for_compaction(Duration::from_secs(600))
+                        .expect("compaction did not converge");
+                    let profile = circuit.retrieve_profile().expect("could not get profile");
+                    profile.total_used_bytes().unwrap().bytes as u64
+                }""";
+    }
+
+    /** Fail if the state at the end of the stream is more than 5% larger than after half of it,
+     * or if a row is late.
+     * @param measured  The bytes after half the stream, the bytes at the end, and the late rows. */
+    static void assertStateBounded(Long[] measured, String what) {
+        if (measured[1] > 1.05 * measured[0]) {
+            System.err.println("State after half the stream and after all of it:");
+            System.err.println(Arrays.toString(measured));
+            Assert.fail(what + " grew with the stream");
+        }
+        Assert.assertEquals(0L, (long) measured[2]);
+    }
+
+    /** A temporal filter with a lower bound keeps in its input trace only the rows in its window.
+     * The aggregate after it keeps only the groups in the window. */
+    @Test
+    public void profileTemporalFilter() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW recent_totals AS
+                SELECT FLOOR(event_time TO SECOND) AS t, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM events
+                WHERE event_time >= NOW() - INTERVAL 5 MINUTES
+                GROUP BY FLOOR(event_time TO SECOND), id;""";
+        // NOW() moves one second per batch, and each batch has a row at NOW() for each id.
+        // The window holds 300 batches, 15,000 of the 100,000 rows.
+        String main = growthMain("""
+                append_to_collection_handle(&zset!(Tup1::new(event_time) => 1), &streams.0);
+                for id in 0..IDS {
+                    append_to_collection_handle(&zset!(Tup3::new(event_time, id, batch + id) => 1), &streams.1);
+                }
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = &read_output_spine(&streams.2);
+                """);
+        assertStateBounded(this.measure(sql, main), "The state of the temporal filter");
+    }
+
+    /** Aggregates grouped by the TUMBLE and HOP windows of a column with LATENESS keep in their
+     * input traces only the groups at or above the waterline. */
+    @Test
+    public void profileTumbleHop() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTES,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW tumble_totals AS
+                SELECT window_start, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM TABLE(TUMBLE(TABLE events, DESCRIPTOR(event_time), INTERVAL 1 SECOND))
+                GROUP BY window_start, id;
+                CREATE VIEW hop_totals AS
+                SELECT window_start, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM TABLE(HOP(TABLE events, DESCRIPTOR(event_time), INTERVAL 1 SECOND, INTERVAL 2 SECONDS))
+                GROUP BY window_start, id;""";
+        // Each batch has a row for each id, one second after the previous batch: a new window and
+        // a new group for each id.  The five minute LATENESS keeps 300 windows of groups live.
+        String main = growthMain("""
+                for id in 0..IDS {
+                    append_to_collection_handle(&zset!(Tup3::new(event_time, id, batch + id) => 1), &streams.0);
+                }
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = &read_output_spine(&streams.1);
+                let _ = &read_output_spine(&streams.2);
+                """);
+        assertStateBounded(this.measure(sql, main), "The state of the window aggregates");
+    }
+
+    /** A LAG partitioned by a column with LATENESS keeps in its traces only the partitions at or
+     * above the waterline.  The state grows today: the runtime LAG integrates an encoded copy of
+     * its input, which the RetainKeys of the compiler do not reach. */
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1850")
+    public void profileLagRetainKeys() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTES,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW previous_amounts AS
+                SELECT event_time, id, amount,
+                       LAG(amount) OVER (PARTITION BY event_time ORDER BY id) AS previous
+                FROM events;""";
+        // One batch per second with a row for each id: a new partition every second.  The five
+        // minute LATENESS keeps 300 partitions live, 15,000 rows of 100,000.
+        String main = growthMain("""
+                for id in 0..IDS {
+                    append_to_collection_handle(&zset!(Tup3::new(event_time, id, batch + id) => 1), &streams.0);
+                }
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = &read_output_spine(&streams.1);
+                """);
+        assertStateBounded(this.measure(sql, main), "The traces of the LAG");
     }
 
     @Test

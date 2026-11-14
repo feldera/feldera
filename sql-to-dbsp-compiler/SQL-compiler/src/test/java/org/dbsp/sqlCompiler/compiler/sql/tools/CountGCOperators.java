@@ -9,9 +9,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
@@ -21,7 +23,8 @@ import java.util.List;
 
 /** Records the GC operators of a circuit, its star joins, and its inner and left joins. */
 public class CountGCOperators extends CircuitVisitor {
-    /** One letter per GC operator: K for RetainKeys, V for RetainValues, N for RetainNValues. */
+    /** One letter per GC operator: K for RetainKeys, V for RetainValues, N for RetainNValues,
+     * W for a window with a lower bound, and R for a rolling aggregate with a waterline. */
     private final List<String> kinds = new ArrayList<>();
     /** The kinds of star join operators, in circuit order. */
     public final List<String> starJoins = new ArrayList<>();
@@ -45,6 +48,17 @@ public class CountGCOperators extends CircuitVisitor {
     @Override
     public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
         this.kinds.add("N");
+    }
+
+    @Override
+    public void postorder(DBSPWindowOperator operator) {
+        if (!operator.lowerUnbounded)
+            this.kinds.add("W");
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+        this.kinds.add("R");
     }
 
     @Override

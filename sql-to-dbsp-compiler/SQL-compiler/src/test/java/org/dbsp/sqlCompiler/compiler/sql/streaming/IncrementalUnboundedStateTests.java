@@ -503,9 +503,10 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                     5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.region_id GROUP BY c.region;
                                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^
                 (no input file): Unbounded state
-                (no input file):4:1: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
+                (no input file):5:18: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
                     4|CREATE VIEW V AS
                     5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.region_id GROUP BY c.region;
+                                       ^^^^^^^^
                 """);
     }
 
@@ -609,9 +610,10 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                     5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
                                                                                          ^^^^^^^^^^^^^^^^^
                 (no input file): Unbounded state
-                (no input file):4:1: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
+                (no input file):5:18: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
                     4|CREATE VIEW V AS
                     5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
+                                       ^^^^^^^^
                 """);
     }
 
@@ -698,9 +700,9 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                 FROM input GROUP BY b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10;""",
                 """
                 (no input file): Unbounded state
-                (no input file):5:1: warning: Unbounded state: The state of an aggregate in the code implementing view 'output' may grow without bound
-                    5|CREATE VIEW output AS
+                (no input file):6:53: warning: Unbounded state: The state of an aggregate in the code implementing view 'output' may grow without bound
                     6|SELECT b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, COUNT(*) AS cnt
+                                                                          ^^^^^^^^
                     7|FROM input GROUP BY b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10;
                 Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
                 See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
@@ -717,9 +719,10 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                 SELECT b0, b1, b2, b3, b4, b5, b6, COUNT(*) AS cnt FROM input GROUP BY b0, b1, b2, b3, b4, b5, b6;""",
                 """
                 (no input file): Unbounded state
-                (no input file):3:1: warning: Unbounded state: The state of an aggregate in the code implementing view 'output' may grow without bound
+                (no input file):4:36: warning: Unbounded state: The state of an aggregate in the code implementing view 'output' may grow without bound
                     3|CREATE VIEW output AS
                     4|SELECT b0, b1, b2, b3, b4, b5, b6, COUNT(*) AS cnt FROM input GROUP BY b0, b1, b2, b3, b4, b5, b6;
+                                                         ^^^^^^^^
                 Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
                 See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
                 """);
@@ -825,6 +828,51 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                     2|CREATE TABLE S(x INT, y INT);
                     3|CREATE VIEW V AS SELECT * FROM (SELECT x, y, ROW_NUMBER() OVER (PARTITION BY x ORDER BY y) AS rn FROM T) WHERE rn <= 2;
                                                                    ^^^^^^^^^^^^
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
+    }
+
+    @Test
+    public void lagPartitionedByLatenessColumn() {
+        // The traces of a LAG grow with its input, whatever GC operators the compiler
+        // attaches to its input and output streams
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                CREATE VIEW V AS SELECT ts, x, LAG(x) OVER (PARTITION BY ts ORDER BY x) AS prev FROM T;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:32: warning: Unbounded state: The state of a window function in the code implementing view 'v' may grow without bound
+                    1|CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                    2|CREATE VIEW V AS SELECT ts, x, LAG(x) OVER (PARTITION BY ts ORDER BY x) AS prev FROM T;
+                                                     ^^^^^^
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
+    }
+
+    @Test
+    public void lagOverTemporalFilter() {
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL, x INT);
+                CREATE VIEW V AS SELECT ts, x, LAG(x) OVER (PARTITION BY ts ORDER BY x) AS prev
+                FROM T WHERE ts >= NOW() - INTERVAL 1 HOUR;""");
+    }
+
+    @Test
+    public void sessionKeepsItsInput() {
+        // SESSION is built on a LAG partitioned by the session key, which keeps every row;
+        // the warning points at the SESSION call
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, k INT);
+                CREATE VIEW V AS SELECT * FROM
+                TABLE(SESSION(TABLE T, DESCRIPTOR(ts), DESCRIPTOR(k), INTERVAL 10 MINUTES));""",
+                """
+                (no input file): Unbounded state
+                (no input file):3:7: warning: Unbounded state: The state of a window function in the code implementing view 'v' may grow without bound
+                    2|CREATE VIEW V AS SELECT * FROM
+                    3|TABLE(SESSION(TABLE T, DESCRIPTOR(ts), DESCRIPTOR(k), INTERVAL 10 MINUTES));
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
                 See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
                 """);
