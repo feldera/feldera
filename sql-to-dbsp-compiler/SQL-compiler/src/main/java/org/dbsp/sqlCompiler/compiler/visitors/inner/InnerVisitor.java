@@ -169,6 +169,12 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.circuitContext = circuit;
     }
 
+    @Override
+    public void drop() {
+        this.operatorContext = null;
+        this.circuitContext = null;
+    }
+
     public InnerVisitor(DBSPCompiler compiler) {
         this.id = crtId++;
         this.compiler = compiler;

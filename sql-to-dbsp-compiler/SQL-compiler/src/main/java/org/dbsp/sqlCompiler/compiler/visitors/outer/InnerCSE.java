@@ -78,4 +78,10 @@ public class InnerCSE implements IRTransform {
         this.numbering.setOperatorContext(operator);
         this.cse.setOperatorContext(operator);
     }
+
+    @Override
+    public void drop() {
+        this.numbering.drop();
+        this.cse.drop();
+    }
 }

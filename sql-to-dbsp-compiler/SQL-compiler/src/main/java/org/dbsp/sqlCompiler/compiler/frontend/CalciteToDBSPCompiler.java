@@ -250,7 +250,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     // Result is deposited here
     @Nullable private DBSPCircuit circuit;
     // Map each compiled RelNode operator to its DBSP implementation.
-    final Map<RelNode, DBSPSimpleOperator> nodeOperator;
+    Map<RelNode, DBSPSimpleOperator> nodeOperator;
     final TableContents tableContents;
     final CompilerOptions options;
     final DBSPCompiler compiler;
@@ -265,7 +265,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * since operators are created in topological order, and whenever
      * this visitor is invoked it will produce a result for a 
      * "prefix" of the final circuit. */
-    final MultisetAnalysis multisets;
+    MultisetAnalysis multisets;
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
@@ -313,6 +313,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPCircuit result = this.circuit;
         this.circuit = null;
+        // Both reference every operator of the circuit, and nothing reads them after this point
+        this.nodeOperator = new HashMap<>();
+        this.multisets = new MultisetAnalysis(this.compiler);
         return result;
     }
 

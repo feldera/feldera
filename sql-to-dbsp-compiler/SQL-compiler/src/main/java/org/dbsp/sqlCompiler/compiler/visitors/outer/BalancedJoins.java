@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Linq;
 
 import java.util.HashMap;
@@ -22,7 +21,7 @@ import java.util.Map;
 /** Choose for each join whether it is dynamically balanced or just a hash join */
 public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
     /** Maps an output port to true if a GC operator garbage-collects the integral of the port */
-    private final Map<OutputPort, Boolean> garbageCollected;
+    private Map<OutputPort, Boolean> garbageCollected;
 
     protected BalancedJoins(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs);
@@ -30,9 +29,9 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
     }
 
     @Override
-    public Token startVisit(IDBSPOuterNode circuit) {
-        this.garbageCollected.clear();
-        return super.startVisit(circuit);
+    public void drop() {
+        super.drop();
+        this.garbageCollected = new HashMap<>();
     }
 
     /** True if a GC operator garbage-collects the integral of {@code port}.

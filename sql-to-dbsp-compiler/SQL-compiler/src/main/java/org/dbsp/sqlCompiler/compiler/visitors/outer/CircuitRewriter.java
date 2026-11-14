@@ -1014,6 +1014,12 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
+    public void drop() {
+        super.drop();
+        this.transform.drop();
+    }
+
+    @Override
     public String toString() {
         return super.toString() + "-" + this.transform;
     }

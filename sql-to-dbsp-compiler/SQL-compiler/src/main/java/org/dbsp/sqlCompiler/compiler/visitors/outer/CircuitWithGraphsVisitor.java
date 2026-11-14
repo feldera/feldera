@@ -14,4 +14,11 @@ public class CircuitWithGraphsVisitor extends CircuitVisitor {
         super(compiler);
         this.graphs = graphs;
     }
+
+    @Override
+    public void drop() {
+        super.drop();
+        // This visitor is the only reader of the graphs
+        this.graphs.clear();
+    }
 }

@@ -55,10 +55,10 @@ public class CSE extends Repeat {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
         /** Constants and incremental constants: sources, which no common input links */
-        final List<DBSPSimpleOperator> constants;
+        List<DBSPSimpleOperator> constants;
         /** Key: a circuit; value: maps a {@link Feature} to the operators of the circuit that
          * have it and are their own canonical representatives, in circuit order */
-        final Map<ICircuit, Map<Feature, List<DBSPOperator>>> representatives;
+        Map<ICircuit, Map<Feature, List<DBSPOperator>>> representatives;
 
         public FindCSE(DBSPCompiler compiler, CircuitGraphs graphs,
                        Map<DBSPOperator, DBSPOperator> canonical) {
@@ -68,10 +68,12 @@ public class CSE extends Repeat {
             this.representatives = new HashMap<>();
         }
 
+        /** Keeps 'canonical', which the next pass reads */
         @Override
-        public void endVisit() {
-            this.representatives.clear();
-            super.endVisit();
+        public void drop() {
+            super.drop();
+            this.constants = new ArrayList<>();
+            this.representatives = new HashMap<>();
         }
 
         /** True if two constants have the same type and the same values, compared as expressions,
@@ -273,6 +275,14 @@ public class CSE extends Repeat {
         public RemoveCSE(DBSPCompiler compiler, Map<DBSPOperator, DBSPOperator> canonical) {
             super(compiler, false);
             this.canonical = canonical;
+        }
+
+        @Override
+        public void drop() {
+            super.drop();
+            // RemoveCSE is the last reader of 'canonical'.  clear() keeps the table, which
+            // FindCSE fills again in the next round.
+            this.canonical.clear();
         }
 
         @Override
