@@ -30,6 +30,9 @@ class WideMapIndexBuilder {
     /** For each function the list of outputs it emits as its value */
     final List<List<Integer>> outputIndexes;
     final boolean valueNullable;
+    /** Size of {@link #outputFields} before the last {@link #addFunction}; -1 if no call can be undone */
+    private int fieldCountBeforeLastAdd;
+
     private WideMapIndexBuilder(CalciteRelNode node, DBSPVariablePath var, DBSPExpression
             keyExpression, boolean valueNullable) {
         this.node = node;
@@ -39,6 +42,7 @@ class WideMapIndexBuilder {
         this.valueNullable = valueNullable;
         this.keyExpression = keyExpression;
         this.eqContext = new EquivalenceContext();
+        this.fieldCountBeforeLastAdd = -1;
     }
 
     @Override
@@ -53,6 +57,7 @@ class WideMapIndexBuilder {
         Utilities.enforce(resultType.size() == 2);
         DBSPTypeTuple valueType = resultType.tupFields[1].to(DBSPTypeTuple.class);
         Utilities.enforce(valueType.mayBeNull == this.valueNullable);
+        this.fieldCountBeforeLastAdd = this.outputFields.size();
         List<Integer> currentOutputs = new ArrayList<>(valueType.size());
         for (int i = 0; i < valueType.size(); i++) {
             // For a closure of the form clo = (TupX::new(...), Some(TupY::new(a, b, c))
@@ -80,16 +85,41 @@ class WideMapIndexBuilder {
         this.outputIndexes.add(currentOutputs);
     }
 
-    public static WideMapIndexBuilder create(
-            CalciteRelNode node, DBSPCompiler compiler, List<DBSPClosureExpression> closures) {
-        Utilities.enforce(closures.size() > 1);
-        DBSPClosureExpression first = closures.get(0);
+    /** Undo the last {@link #addFunction}: remove its output list and the fields it added.
+     * Only one call can be undone. */
+    void removeLastFunction() {
+        Utilities.enforce(this.fieldCountBeforeLastAdd >= 0, () -> "No function to remove");
+        Utilities.removeLast(this.outputIndexes);
+        this.outputFields.subList(this.fieldCountBeforeLastAdd, this.outputFields.size()).clear();
+        this.fieldCountBeforeLastAdd = -1;
+    }
+
+    /** Number of fields in the shared value */
+    int fieldCount() {
+        return this.outputFields.size();
+    }
+
+    /** A builder that holds only the function {@code first} */
+    static WideMapIndexBuilder start(CalciteRelNode node, DBSPCompiler compiler, DBSPClosureExpression first) {
         Utilities.enforce(first.parameters.length == 1);
         DBSPVariablePath var = first.parameters[0].type.var();
         boolean valueNullable = first.getResultType().to(DBSPTypeRawTuple.class).tupFields[1].mayBeNull;
         DBSPExpression keyExpression = first.call(var).field(0).reduce(compiler);
         WideMapIndexBuilder result = new WideMapIndexBuilder(node, var, keyExpression, valueNullable);
-        for (var clo: closures)
+        result.addFunction(compiler, first);
+        return result;
+    }
+
+    /** A builder that holds only the index function of {@code first} */
+    static WideMapIndexBuilder start(DBSPCompiler compiler, FindSharedIndexes.MapIndexAndConsumer first) {
+        return start(first.index().getRelNode(), compiler, first.index().getClosureFunction());
+    }
+
+    public static WideMapIndexBuilder create(
+            CalciteRelNode node, DBSPCompiler compiler, List<DBSPClosureExpression> closures) {
+        Utilities.enforce(closures.size() > 1);
+        WideMapIndexBuilder result = start(node, compiler, closures.get(0));
+        for (var clo: closures.subList(1, closures.size()))
             result.addFunction(compiler, clo);
         return result;
     }
@@ -111,16 +141,6 @@ class WideMapIndexBuilder {
             DBSPCompiler compiler, List<FindSharedIndexes.MapIndexAndConsumer> members) {
         List<DBSPClosureExpression> functions = Linq.map(members, m -> m.index().getClosureFunction());
         return create(members.get(0).index().getRelNode(), compiler, functions);
-    }
-
-    /** True if every member that needs a fixed index reads the entire shared value, in the
-     * order this builder produces it.
-     * @param members  The members merged into this builder, in the order it merged them. */
-    boolean reproducesFixedValues(List<FindSharedIndexes.MapIndexAndConsumer> members) {
-        for (int i = 0; i < members.size(); i++)
-            if (members.get(i).requiresFixedIndex() && !this.emitsIdentityPermutation(i))
-                return false;
-        return true;
     }
 
     /** The function of the wide MapIndex: it computes the shared key and the shared value */

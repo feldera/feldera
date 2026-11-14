@@ -55,12 +55,18 @@ class FixupViewReferences extends CircuitCloneVisitor {
         Utilities.enforce(this.scc != null);
         Map<ProgramIdentifier, DBSPViewOperator> viewByName = new HashMap<>();
         Map<ProgramIdentifier, DBSPViewDeclarationOperator> declByName = new HashMap<>();
+        // Index is the SCC id; each list holds the operators of that SCC in circuit order
+        List<List<DBSPOperator>> operatorsByScc = new ArrayList<>(this.scc.count);
+        for (int i = 0; i < this.scc.count; i++)
+            operatorsByScc.add(new ArrayList<>());
+        for (DBSPOperator operator : circuit.allOperators) {
+            int sccId = Utilities.getExists(this.scc.componentId, operator);
+            operatorsByScc.get(sccId).add(operator);
+        }
         for (int i = 0; i < this.scc.count; i++) {
             // SCCs are in reverse topological order
             int sccId = this.scc.count - i - 1;
-            // Operators in the circuit in circuit order from the current SCC
-            List<DBSPOperator> operators = Linq.where(
-                    circuit.allOperators, o -> this.scc.componentId.get(o) == sccId);
+            List<DBSPOperator> operators = operatorsByScc.get(sccId);
             for (DBSPOperator operator : operators) {
                 // We only have simple operators at this stage
                 DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
