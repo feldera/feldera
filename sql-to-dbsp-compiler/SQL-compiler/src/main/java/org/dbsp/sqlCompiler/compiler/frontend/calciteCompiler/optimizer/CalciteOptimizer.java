@@ -117,6 +117,8 @@ public class CalciteOptimizer implements IWritesLogs {
         public RelNode optimize(RelNode rel, int level) {
             HepProgram program = this.getProgram(rel, level);
             HepPlanner planner = new HepPlanner(program);
+            // Without this mode each rule match walks the whole plan
+            planner.setLargePlanMode(true);
             planner.setRoot(rel);
             return planner.findBestExp();
         }
