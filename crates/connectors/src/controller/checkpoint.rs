@@ -95,9 +95,9 @@ pub struct Checkpoint {
     #[serde(default)]
     pub view_integrals: ViewIntegrals,
 
-    /// Version of the runtime that wrote this checkpoint (see
-    /// [runtime_version]).  This is `None` in checkpoints that predate this
-    /// field.
+    /// Version of the runtime that wrote this checkpoint, the same value that
+    /// the pipeline reports as `runtime_version` in its status.  This is
+    /// `None` in checkpoints that predate this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_version: Option<String>,
 }
