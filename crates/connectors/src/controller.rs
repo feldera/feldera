@@ -807,6 +807,21 @@ fn bootstrapped_output_endpoints(
         .collect()
 }
 
+/// Checks that the coordinator sent one URL for each of `n_hosts` hosts, so that a part of a
+/// distributed output connector can reach its leader on any host.
+fn check_host_urls(host_urls: &[String], n_hosts: usize) -> Result<(), ControllerError> {
+    if host_urls.len() != n_hosts {
+        return Err(ControllerError::invalid_transport_configuration(
+            "host URLs",
+            &format!(
+                "the coordinator sent {} host URLs for {n_hosts} hosts",
+                host_urls.len()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Returns each stream that is in both `recorded` and `assigned`, on different hosts, with its host
 /// in each.
 fn moved_output_streams<'a>(
@@ -3427,6 +3442,7 @@ impl CircuitThread {
 
         let layout = circuit_params.layout.clone();
         let peer_client = if layout.is_multihost() && !host_urls.is_empty() {
+            check_host_urls(&host_urls, layout.n_hosts())?;
             Some(
                 PeerClient::new(
                     &host_urls,
@@ -7008,9 +7024,12 @@ impl ControllerInit {
     /// Sets the host that writes each output relation of a multihost pipeline.
     ///
     /// Warns about each stream that the assignment moves away from the host that the checkpoint
-    /// recorded, because the restart then rebuilds that stream's state.
+    /// recorded, because the restart then rebuilds that stream's state.  With view integrals on
+    /// all hosts, no host has a stream's state, so a move rebuilds nothing.
     fn with_output_assignment(mut self, output_assignment: BTreeMap<String, usize>) -> Self {
-        if let Some(recorded) = &self.checkpointed_output_assignment {
+        if let Some(recorded) = &self.checkpointed_output_assignment
+            && !self.circuit_params.spread_view_integrals
+        {
             for (stream, old, new) in moved_output_streams(recorded, &output_assignment) {
                 warn!(
                     "the coordinator moved output stream {stream:?} from host {old}, where the checkpoint has its state, to host {new}, so the pipeline rebuilds that state"
@@ -11850,6 +11869,21 @@ mod controller_init_tests {
     use feldera_types::size::ConfigSize;
     use serde_json::json;
     use std::{borrow::Cow, collections::BTreeMap};
+
+    /// A part reaches its leader by the leader's host URL, so a list with a URL for each host
+    /// passes, and a list that is short or long fails.
+    #[test]
+    fn check_host_urls() {
+        let urls = |n| vec!["http://h/".to_string(); n];
+        assert!(super::check_host_urls(&urls(3), 3).is_ok());
+        for n in [2, 4] {
+            let error = super::check_host_urls(&urls(n), 3).unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("{n} host URLs for 3 hosts")),
+                "{error}"
+            );
+        }
+    }
 
     /// A stream moves if both maps have it, on different hosts.  A stream that only one of them
     /// has, because it is new or gone, does not move.
