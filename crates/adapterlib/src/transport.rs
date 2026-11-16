@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
-use feldera_types::coordination::{Completion, InputShard};
+use feldera_types::coordination::{Completion, InputBound, InputShard};
 use feldera_types::program_schema::Relation;
 use feldera_types::transaction::TransactionId;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
@@ -933,6 +933,15 @@ pub trait InputReader: Send + Sync {
     fn startup_choice(&self) -> Option<JsonValue> {
         None
     }
+
+    /// For a synchronized input connector (see
+    /// `TransportConfig::synchronizes_input`), sets the global bound `B` that
+    /// the coordinator computed: the reader may stage only records whose keys
+    /// are below `bound` (see the `feldera_types::coordination` module).
+    ///
+    /// A reader that synchronizes its input starts with
+    /// [InputBound::NotReady].  The default implementation does nothing.
+    fn set_input_bound(&self, _bound: InputBound) {}
 }
 
 /// Position in an input stream, including the timestamp when the data was ingested
@@ -1129,6 +1138,23 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// input alone, such as the host that follows a table's log after the
     /// snapshot, reports `(1, 1)`.  The default implementation does nothing.
     fn set_input_share(&self, _mine: usize, _total: usize) {}
+
+    /// For a synchronized input connector (see
+    /// `TransportConfig::synchronizes_input`), reports this host's bound
+    /// `R_h`: every record that the reader has not staged yet has a key of at
+    /// least `bound`, and the records below `bound` fit in about one batch
+    /// (see the `feldera_types::coordination` module).
+    ///
+    /// Returns the global bound to use from now on, if this host decides it
+    /// alone, because it reads all of the connector's input.  Otherwise,
+    /// returns `None`, and the global bound arrives later through
+    /// [InputReader::set_input_bound].
+    ///
+    /// The default implementation returns `Some(bound)`, as for a connector
+    /// on a single host.
+    fn report_input_bound(&self, bound: InputBound) -> Option<InputBound> {
+        Some(bound)
+    }
 
     /// Returns a watch receiver that fires each time pipeline step processing
     /// completes.  The value is the count of fully-processed steps

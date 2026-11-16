@@ -144,6 +144,40 @@
 //!
 //! After a request to commit, the connector waits until the transaction is no
 //! longer open.
+//!
+//! # Synchronized inputs
+//!
+//! A table with `LATENESS` drops input that arrives too late.  Each host of a
+//! distributed input connector reads its own part of the input at its own
+//! pace, so without help, a host that gets ahead would make the input of the
+//! other hosts late.  A synchronized input connector (see
+//! `TransportConfig::synchronizes_input`) avoids that.  It gives each record an
+//! [OrderKey], and the hosts flush their records in key order, as follows:
+//!
+//! ```text
+//!  host h                                 coordinator
+//!    |                                         |
+//!    | InputBounds: R_h for each connector     |
+//!    |---------------------------------------->|
+//!    |                                         | B = min over hosts of R_h
+//!    | StepRequest                             |
+//!    |   input_bounds: B for each connector    |
+//!    |<----------------------------------------|
+//!    | flushes only records with key below B   |
+//! ```
+//!
+//! Each host's bound `R_h` ([InputBound]) promises that every record that the
+//! host has not buffered yet has a key of at least `R_h`.  It is also no
+//! greater than the key that would make the host's records below it more
+//! than one batch.  Thus, the records of all hosts with keys below
+//! `B` fit in one step each, and no host holds a record below `B` after the
+//! step.  The coordinator only compares bounds, so it does not need to know
+//! what the keys mean.
+//!
+//! The coordinator lists the connectors that it synchronizes in
+//! [CoordinationActivate::synchronized_inputs].  A pipeline refuses to start a
+//! synchronized distributed connector that is not in that list, because it
+//! would never receive a bound for it.
 
 use std::{
     borrow::Cow,
@@ -216,6 +250,15 @@ pub struct CoordinationCapabilities {
     /// that value.
     #[serde(default)]
     pub accepts_paused_step_inputs: bool,
+
+    /// The pipeline reports [InputBounds] at `/coordination/input/bounds`,
+    /// obeys [StepRequest::input_bounds], and honors
+    /// [CoordinationActivate::synchronized_inputs].
+    ///
+    /// A pipeline without this capability reads a synchronized distributed
+    /// connector without regard for the other hosts.
+    #[serde(default)]
+    pub synchronized_inputs: bool,
 }
 
 impl CoordinationCapabilities {
@@ -227,6 +270,7 @@ impl CoordinationCapabilities {
             step_request_seq: true,
             has_checkpoint_output_assignment: true,
             accepts_paused_step_inputs: true,
+            synchronized_inputs: true,
         }
     }
 }
@@ -290,6 +334,15 @@ pub struct CoordinationActivate {
     /// leader.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_urls: Vec<String>,
+
+    /// The distributed input connectors that the coordinator synchronizes
+    /// across the hosts (see the module documentation), by name.
+    ///
+    /// A coordinator that predates this field sends none.  Then the pipeline
+    /// refuses to start a synchronized distributed connector, because the
+    /// coordinator would never send it a bound.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub synchronized_inputs: BTreeSet<String>,
 }
 
 /// `/coordination/input/choices` reply.
@@ -579,6 +632,15 @@ pub struct StepRequest {
     /// `None` means that the coordinator predates this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<u64>,
+
+    /// The global bound `B` of each synchronized input connector (see the
+    /// module documentation).  The pipeline flushes only the records of such a
+    /// connector whose keys are below its bound.  A synchronized connector that
+    /// is not in this map keeps the bound that it had, which starts as
+    /// [InputBound::NotReady].  Keeping it is safe, because the connector has
+    /// promised that its records not queued yet are at or above it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input_bounds: BTreeMap<String, InputBound>,
 }
 
 impl StepRequest {
@@ -590,6 +652,15 @@ impl StepRequest {
             transaction_members: None,
             transaction_id: None,
             seq: None,
+            input_bounds: BTreeMap::new(),
+        }
+    }
+
+    /// Returns this request with `input_bounds` set to `bounds`.
+    pub fn with_input_bounds(self, bounds: BTreeMap<String, InputBound>) -> Self {
+        Self {
+            input_bounds: bounds,
+            ..self
         }
     }
 
@@ -644,6 +715,78 @@ pub enum StepInputs {
     ///
     /// This is for committing a transaction.
     None,
+}
+
+/// The ordering key of a record of a synchronized input connector.
+///
+/// A connector maps the value that orders its input, such as a timestamp, to
+/// a key.  The map must be monotone: if one value is not greater than another,
+/// then its key is not greater either.  It does not have to be exact: values
+/// that map to the same key are flushed in the same step.
+///
+/// The coordinator only compares keys.  All the hosts of a connector map keys
+/// the same way, because they run the same program with the same connector
+/// configuration.  Later versions can add variants, such as a byte string,
+/// behind a new capability.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderKey {
+    /// An unsigned integer key, such as a timestamp in microseconds.  A
+    /// signed value maps to this with its sign bit flipped (see
+    /// [OrderKey::from_i64]).
+    U64(u64),
+}
+
+impl OrderKey {
+    /// Returns the key for signed value `value`, ordered as `value` is.
+    pub fn from_i64(value: i64) -> Self {
+        Self::U64((value as u64) ^ (1 << 63))
+    }
+}
+
+/// A bound on the keys of a synchronized input connector (see the module
+/// documentation).
+///
+/// The variants are in increasing order.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum InputBound {
+    /// Below every key.  A host reports this until it knows a bound, for
+    /// example while one of its Kafka partitions has no records yet.
+    #[default]
+    NotReady,
+
+    /// Below this key.
+    Key(OrderKey),
+
+    /// Above every key.  A host reports this when it has no more input to
+    /// read and none buffered, so that it does not hold back the others.
+    Done,
+}
+
+impl InputBound {
+    /// Returns true if a record with `key` is below this bound, so that a
+    /// step may flush it.
+    pub fn admits(&self, key: &OrderKey) -> bool {
+        match self {
+            Self::NotReady => false,
+            Self::Key(bound) => key < bound,
+            Self::Done => true,
+        }
+    }
+}
+
+/// `/coordination/input/bounds` update, streamed by pipeline to coordinator.
+///
+/// Maps from the name of each synchronized input connector on this host to
+/// the host's bound `R_h` for it (see the module documentation).  The pipeline
+/// sends an update when a bound changes.  A connector that is not in the map
+/// has bound [InputBound::NotReady].
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct InputBounds {
+    pub bounds: BTreeMap<String, InputBound>,
 }
 
 /// `/coordination/checkpoint/status`, streamed by pipeline to coordinator.
@@ -835,9 +978,148 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{
-        CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputDistribution,
-        InputShard, StepAction, StepRequest, StepStatus,
+        CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputBound,
+        InputBounds, InputDistribution, InputShard, OrderKey, StepAction, StepRequest, StepStatus,
     };
+    use crate::config::TransportConfig;
+    use serde_json::json;
+
+    proptest! {
+        /// The map from signed values to keys keeps their order.
+        #[test]
+        fn signed_keys_keep_their_order(a: i64, b: i64) {
+            prop_assert_eq!(OrderKey::from_i64(a).cmp(&OrderKey::from_i64(b)), a.cmp(&b));
+        }
+
+        /// A bound admits exactly the keys below it.
+        #[test]
+        fn bounds_admit_keys_below_them(key: u64, bound: u64) {
+            let key = OrderKey::U64(key);
+            prop_assert!(!InputBound::NotReady.admits(&key));
+            prop_assert!(InputBound::Done.admits(&key));
+            let bound = InputBound::Key(OrderKey::U64(bound));
+            prop_assert_eq!(bound.admits(&key), InputBound::Key(key) < bound);
+        }
+    }
+
+    /// The coordinator takes the minimum of the hosts' bounds, so the order of
+    /// the variants is part of the protocol.
+    #[test]
+    fn bounds_are_ordered() {
+        let key = |k| InputBound::Key(OrderKey::U64(k));
+        let ordered = [
+            InputBound::NotReady,
+            key(0),
+            key(5),
+            key(u64::MAX),
+            InputBound::Done,
+        ];
+        assert!(ordered.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(
+            [InputBound::Done, key(7), key(3)].into_iter().min(),
+            Some(key(3))
+        );
+        assert_eq!(
+            [key(3), InputBound::NotReady].into_iter().min(),
+            Some(InputBound::NotReady)
+        );
+    }
+
+    /// The JSON form of bounds is part of the protocol.
+    #[test]
+    fn bounds_serialize_as_tagged_enums() {
+        let bounds = InputBounds {
+            bounds: BTreeMap::from([
+                ("a".to_string(), InputBound::NotReady),
+                ("b".to_string(), InputBound::Key(OrderKey::U64(5))),
+                ("c".to_string(), InputBound::Done),
+            ]),
+        };
+        let expected = json!({"bounds": {"a": "not_ready", "b": {"key": {"u64": 5}}, "c": "done"}});
+        assert_eq!(serde_json::to_value(&bounds).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<InputBounds>(expected).unwrap(),
+            bounds
+        );
+
+        let request = StepRequest::new_idle(5).with_input_bounds(bounds.bounds.clone());
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["input_bounds"]["b"], json!({"key": {"u64": 5}}));
+        assert_eq!(
+            serde_json::from_value::<StepRequest>(json).unwrap(),
+            request
+        );
+    }
+
+    /// A coordinator or pipeline that predates synchronized inputs must still
+    /// interoperate: the missing fields mean "nothing is synchronized", and a
+    /// new peer sends no new fields when nothing is synchronized.
+    #[test]
+    fn old_messages_have_no_synchronized_inputs() {
+        let request: StepRequest = serde_json::from_value(json!({
+            "action": "trigger",
+            "step": 5,
+            "inputs": "All",
+        }))
+        .unwrap();
+        assert!(request.input_bounds.is_empty());
+        let request = serde_json::to_value(StepRequest::new_idle(5)).unwrap();
+        assert!(request.get("input_bounds").is_none(), "{request}");
+
+        let activate: CoordinationActivate = serde_json::from_value(json!({
+            "exchanges": [],
+            "local_address": "127.0.0.1:1",
+            "desired_status": "Paused",
+            "checkpoint": null,
+            "inputs": {},
+            "output_assignment": {},
+        }))
+        .unwrap();
+        assert!(activate.synchronized_inputs.is_empty());
+        let activate = serde_json::to_value(&activate).unwrap();
+        assert!(activate.get("synchronized_inputs").is_none(), "{activate}");
+
+        let capabilities: CoordinationCapabilities = serde_json::from_value(json!({})).unwrap();
+        assert!(!capabilities.synchronized_inputs);
+    }
+
+    #[test]
+    fn synchronizing_transports() {
+        let kafka = |sync: bool| {
+            TransportConfig::KafkaInput(
+                serde_json::from_value(json!({
+                    "topic": "t",
+                    "bootstrap.servers": "localhost:9092",
+                    "synchronize_partitions": sync,
+                }))
+                .unwrap(),
+            )
+        };
+        let delta = |extra: serde_json::Value| {
+            let mut config = json!({"uri": "memory://", "mode": "snapshot"});
+            config
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            TransportConfig::DeltaTableInput(serde_json::from_value(config).unwrap())
+        };
+        let iceberg = |extra: serde_json::Value| {
+            let mut config = json!({"mode": "snapshot"});
+            config
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            TransportConfig::IcebergInput(serde_json::from_value(config).unwrap())
+        };
+
+        assert!(kafka(true).synchronizes_input());
+        assert!(!kafka(false).synchronizes_input());
+        assert!(delta(json!({"timestamp_column": "ts"})).synchronizes_input());
+        assert!(!delta(json!({})).synchronizes_input());
+        assert!(iceberg(json!({"timestamp_column": "ts"})).synchronizes_input());
+        assert!(!iceberg(json!({})).synchronizes_input());
+        assert!(!TransportConfig::EmptyInput.synchronizes_input());
+    }
 
     fn shards(n_hosts: usize, home: usize) -> Vec<InputShard> {
         (0..n_hosts)
