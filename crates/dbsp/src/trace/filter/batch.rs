@@ -4,6 +4,7 @@
 //! present", so callers can reject cheap cases before doing the exact lookup.
 
 use crate::{
+    Runtime,
     dynamic::{DataTrait, DynVec},
     storage::{
         file::{
@@ -128,7 +129,22 @@ where
         key_range: Option<KeyRange<K>>,
         membership_filter: Option<BatchKeyFilter>,
     ) -> Self {
-        let membership_filter = membership_filter.map(Arc::<dyn BatchFilter<K>>::from);
+        // The writer and the reader both hand over the filter here, after
+        // the file holds every module, so this is where eviction may start.
+        // The manager keeps a weak handle to the same allocation the batch
+        // shares, so it can trim the filter the batch actually probes.
+        let membership_filter = membership_filter.map(|filter| -> Arc<dyn BatchFilter<K>> {
+            match filter {
+                BatchKeyFilter::Bloom(bloom) => {
+                    let bloom = Arc::new(bloom);
+                    if let Some(runtime) = Runtime::runtime() {
+                        runtime.bloom_filter_manager().enroll(&bloom);
+                    }
+                    bloom
+                }
+                filter => Arc::from(filter),
+            }
+        });
         Self::new(key_range, membership_filter)
     }
 

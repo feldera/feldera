@@ -19,6 +19,7 @@ use crate::storage::{
             INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader,
             MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, NodeType,
             ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
+            bloom_filter_block_is_legacy,
         },
         reader::TreeNode,
     },
@@ -1348,11 +1349,9 @@ impl Writer {
             match key_filter {
                 BatchKeyFilter::Bloom(filter) => {
                     let layout = *filter.layout();
-                    let data: Vec<u64> = filter.module_words().concat();
-                    if layout.total_modules() == 1 {
-                        // A one-module filter is a plain fastbloom filter, so
-                        // writing it in the original encoding keeps the file
-                        // readable by binaries that predate modular filters.
+                    let built = filter.built();
+                    let data: Vec<u64> = built.modules().concat();
+                    if bloom_filter_block_is_legacy(layout.total_modules()) {
                         let filter_block = BloomFilterBlockRef {
                             header: BlockHeader::new(
                                 &crate::storage::file::format::BLOOM_FILTER_BLOCK_MAGIC,
@@ -1368,7 +1367,7 @@ impl Writer {
                             .1
                     } else {
                         incompatible_features |= INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
-                        let set_bits = filter.density().set_bits().to_vec();
+                        let set_bits = built.density().set_bits().to_vec();
                         let filter_block = ModularBloomFilterBlockRef {
                             header: BlockHeader::new(&MODULAR_BLOOM_FILTER_BLOCK_MAGIC),
                             total_modules: layout.total_modules(),

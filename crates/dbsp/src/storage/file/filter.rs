@@ -18,7 +18,7 @@ pub(crate) use roaring::TouchedWindowCounter;
 pub use roaring::TrackingRoaringBitmap;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
 
-pub(crate) use bloom::{rate_can_evict, resident_modules};
+pub(crate) use bloom::{modules_for_rate, rate_can_evict, rate_for_modules, resident_modules};
 
 /// The configured false positive rate, which decides both how new filters are
 /// written and how many modules an existing filter keeps resident.

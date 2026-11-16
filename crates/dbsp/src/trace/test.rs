@@ -3533,6 +3533,102 @@ fn file_val_batch_filter_follows_the_rate() {
     );
 }
 
+/// With the experimental `evict_bloom_filter` dev tweak on, high memory
+/// pressure drops one module from a large file batch's Bloom filter, and the
+/// filter then reads it back from the file. The batch finds every key
+/// throughout.
+///
+/// `rate` picks the block format: four modules at 1e-4 are written as a
+/// modular block, one module at 0.1 in the original one-module encoding.
+/// `keys` must make the filter large enough to be enrolled.
+fn assert_bloom_evicts_and_restores(rate: f64, keys: u64, modules: u32) {
+    const GIB: u64 = 1 << 30;
+    let key = |i: u64| i * 7919;
+    let assert_all_keys = move |batch: &FileWSet<DynData, DynZWeight>, when: &str| {
+        for i in (0..keys).step_by(997) {
+            let mut cursor = batch.cursor();
+            assert!(
+                cursor.seek_key_exact(key(i).erase(), None),
+                "lost key {} {when}",
+                key(i)
+            );
+        }
+    };
+
+    // 1 GiB of a 10 GiB limit is low pressure.
+    with_mock_process_rss(GIB, || {
+        let dir = tempdir().expect("temp dir");
+        let mut config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(dir.path())
+            .with_max_rss_bytes(Some(10 * GIB));
+        config.dev_tweaks.evict_bloom_filter = Some(true);
+        config.dev_tweaks.enable_roaring = Some(false);
+        set_false_positive_rate(&mut config, rate);
+        run_in_circuit_with_storage_config(config, move || {
+            let factories = <FileWSetFactories<DynData, DynZWeight>>::new::<u64, (), ZWeight>();
+            let mut builder = <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                &factories,
+                keys as usize,
+                0,
+            );
+            for i in 0..keys {
+                let weight: ZWeight = 1;
+                builder.push_time_diff(&(), weight.erase());
+                builder.push_key(key(i).erase());
+            }
+            let batch = builder.done();
+            assert_eq!(batch.membership_filter_kind(), FilterKind::Bloom);
+            let full = batch.membership_filter_stats().size_byte;
+            assert!(
+                full >= crate::storage::bloom_filter_manager::MIN_EVICTABLE_BYTES,
+                "a filter of {full} bytes is too small to enroll"
+            );
+
+            // 9.2 GiB of 10 GiB is past the 90% where High starts.
+            crate::circuit::runtime::tests::set_mock_process_rss_bytes(92 * GIB / 10);
+            let runtime = Runtime::runtime().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while runtime.bloom_filter_module_max() == Some(modules) {
+                assert!(Instant::now() < deadline, "the module max never dropped");
+                sleep(Duration::from_millis(100));
+            }
+            assert_eq!(runtime.bloom_filter_module_max(), Some(modules - 1));
+            // Back to low pressure, so the module max stays where it is.
+            crate::circuit::runtime::tests::set_mock_process_rss_bytes(GIB);
+
+            let shrunk = batch.membership_filter_stats().size_byte;
+            assert!(
+                shrunk < full,
+                "the filter kept {shrunk} bytes of {full} after the module max dropped"
+            );
+            assert_all_keys(&batch, "after eviction");
+
+            // The module max only comes back after a minute of low pressure, so read
+            // the dropped module directly, the way a restoring tick does.
+            let filters = runtime.bloom_filter_manager().live_filters();
+            assert_eq!(filters.len(), 1);
+            let added = filters[0].restore_one().expect("reading the module back");
+            assert!(added > 0, "no module was read back");
+            assert_eq!(filters[0].resident_modules(), modules);
+            assert_eq!(batch.membership_filter_stats().size_byte, full);
+            assert_all_keys(&batch, "after restoring");
+        });
+    });
+}
+
+#[test]
+fn bloom_filter_modules_evict_and_restore_in_a_modular_block() {
+    // About 1.4 MiB of filter at four modules.
+    assert_bloom_evicts_and_restores(1e-4, 600_000, 4);
+}
+
+#[test]
+fn bloom_filter_module_evicts_and_restores_in_a_one_module_block() {
+    // About 1.1 MiB of filter at one module, which the writer stores in the
+    // encoding that predates modular filters.
+    assert_bloom_evicts_and_restores(1e-1, 1_900_000, 1);
+}
+
 /// Retention by `LastN`, `TopN` and `BottomN`: every value satisfying the filter
 /// survives, along with a bounded number that do not.
 ///
