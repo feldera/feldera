@@ -6395,6 +6395,54 @@ pub fn checkpoint_state_file_names_its_own_circuit(engine: &dyn PipelineTestEngi
     controller.stop().unwrap();
 }
 
+/// The state that a pipeline stores records the runtime version that wrote
+/// it.  This checks both writers: the initial state of a fault-tolerant
+/// pipeline, and a checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance, StaticStorageLayout))]
+pub fn stored_state_records_runtime_version(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test", "workers": 4,
+        "storage_config": {"path": storage_dir},
+        "storage": true, "fault_tolerance": {}, "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    let version = Some(crate::controller::checkpoint::runtime_version());
+
+    let initial = open_storage(engine, &config)
+        .latest_checkpoint()
+        .unwrap()
+        .expect("the fault-tolerant pipeline stored no initial state");
+    assert!(
+        initial.circuit.is_none(),
+        "expected the initial state, but found a checkpoint"
+    );
+    assert_eq!(initial.runtime_version.as_deref(), version);
+
+    controller.start();
+    wait(|| !controller.is_replaying(), default_timeout_ms()).unwrap();
+    let uuid = controller
+        .checkpoint()
+        .unwrap()
+        .circuit
+        .expect("the checkpoint the controller reports has no circuit metadata")
+        .uuid;
+    let checkpoint = open_storage(engine, &config).checkpoint(uuid).unwrap();
+    assert_eq!(checkpoint.runtime_version.as_deref(), version);
+
+    controller.stop().unwrap();
+}
+
 /// A restart resumes from the newest published checkpoint, even when the root
 /// `state.json` still names the one before it, as a crash between publishing a
 /// checkpoint and rewriting the root file leaves it.
