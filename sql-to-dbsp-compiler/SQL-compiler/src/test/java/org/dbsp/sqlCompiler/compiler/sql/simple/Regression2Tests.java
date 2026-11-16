@@ -263,7 +263,7 @@ public class Regression2Tests extends SqlIoTest {
                 "Function 'SIMILAR TO' not yet implemented");
         this.statementsFailingInCompilation(
                 "CREATE VIEW v AS SELECT 'abc' NOT SIMILAR TO '(b|c)%' AS b;",
-                "Function 'SIMILAR TO' not yet implemented");
+                "Function 'NOT SIMILAR TO' not yet implemented");
     }
 
     @Test
