@@ -19,7 +19,7 @@ jobs:
     runs-on: [gke-runners-amd64]
 
     container:
-      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6b55e7712dc63d4bef432a1468e360209a32c2e3
 
     steps:
       - name: Checkout repository
