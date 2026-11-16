@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -85,9 +86,11 @@ import java.util.Set;
  *
  * <p>The analysis computes two properties:
  * <ul>
- * <li>"bounded", a property of streams: the integral of
- * the stream is bounded.</li>
- * <li>"bounded state", a property of operators.  An operator may internally
+ * <li>"bounded", a property of streams: the integral of the stream is bounded by its data.
+ * A GC operator does not make a stream bounded: it prunes the integral that the operator
+ * reading the stream keeps, while the stream itself can still accumulate without bound.</li>
+ * <li>"bounded state", a property of operators: every integral the operator keeps is bounded,
+ * because its stream is bounded or because a GC operator prunes it.  An operator may internally
  * contain multiple integrators.</li>
  * </ul>
  * Note that a join of a bounded stream with an unbounded table over a key of the
@@ -115,9 +118,10 @@ public class FindUnboundedState extends Passes {
      */
     public record UnboundedOperator(DBSPOperator operator, ICircuit circuit, List<Integer> unboundedInputs) { }
 
-    /** Streams whose integral is bounded */
+    /** Streams whose integral is bounded by their data; a GC operator never adds a stream */
     final Set<OutputPort> bounded = new HashSet<>();
-    /** Streams whose trace is pruned by a GC operator */
+    /** Streams whose integral, kept by the operator that reads the stream, a GC operator prunes;
+     * a stream is recorded by {@link #carriedStream} */
     final Set<OutputPort> gcedStreams = new HashSet<>();
     /** Operators whose state may grow without bound */
     public final List<UnboundedOperator> unbounded = new ArrayList<>();
@@ -132,7 +136,7 @@ public class FindUnboundedState extends Passes {
         this.add(new FindGCedStreams(compiler));
         this.keys = new LosslessCastKeyAnalysis(compiler);
         this.add(this.keys);
-        FindBounded findBounded = new FindBounded(compiler);
+        FindBoundedIntegrals findBounded = new FindBoundedIntegrals(compiler);
         this.add(findBounded);
         // Second run for recursive circuits
         this.add(findBounded);
@@ -151,16 +155,24 @@ public class FindUnboundedState extends Passes {
         return super.apply(circuit);
     }
 
-    /** True if the integral of the stream is bounded without the help of a GC operator */
-    boolean isBoundedWithoutGC(OutputPort port) {
+    /** True if the integral of the stream is bounded by its data */
+    boolean isBounded(OutputPort port) {
         // A waterline stream carries one scalar per step, whichever operator computes it,
         // so integrating it keeps a single value.
         return port.kind() == StreamKind.WATERLINE || this.bounded.contains(port);
     }
 
-    /** True if the integral of the stream is bounded */
-    boolean isBounded(OutputPort port) {
-        return this.isBoundedWithoutGC(port) || this.gcedStreams.contains(port);
+    /** The stream that {@code port} carries: a noop operator outputs the stream of its input */
+    static OutputPort carriedStream(OutputPort port) {
+        while (port.node().is(DBSPNoopOperator.class))
+            port = port.node().to(DBSPNoopOperator.class).input();
+        return port;
+    }
+
+    /** True if the integral of the stream, kept by the operator that reads the stream, is bounded:
+     * the stream is bounded, or a GC operator prunes the integral */
+    boolean isIntegralBounded(OutputPort port) {
+        return this.isBounded(port) || this.gcedStreams.contains(carriedStream(port));
     }
 
     /** True if some output stream of the operator has its stream pruned by a GC operator */
@@ -287,13 +299,15 @@ public class FindUnboundedState extends Passes {
         @Override
         public void postorder(DBSPOperator node) {
             if (node.is(IGCOperator.class))
-                FindUnboundedState.this.gcedStreams.add(node.to(IGCOperator.class).data());
+                FindUnboundedState.this.gcedStreams.add(carriedStream(node.to(IGCOperator.class).data()));
         }
     }
 
-    /** Compute the "bounded" stream property. */
-    class FindBounded extends CircuitVisitor {
-        FindBounded(DBSPCompiler compiler) {
+    /** Find the streams whose integral is bounded by their data.  An operator whose state a GC
+     * operator bounds can still produce a stream that accumulates without bound: an aggregate
+     * pruned by a waterline keeps few groups, but its output has a row for every group. */
+    class FindBoundedIntegrals extends CircuitVisitor {
+        FindBoundedIntegrals(DBSPCompiler compiler) {
             super(compiler);
         }
 
@@ -346,10 +360,11 @@ public class FindUnboundedState extends Passes {
             this.markBounded(node);
         }
 
-        /** Prunes its state and its output using its waterline input */
+        /** A rolling aggregate produces one row per input row; the waterline prunes its state,
+         * not its output */
         @Override
         public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
-            this.markBounded(node);
+            this.postorder((DBSPOperator) node);
         }
 
         /** A table is bounded when its declaration says so; the NOW system table holds one row */
@@ -594,10 +609,10 @@ public class FindUnboundedState extends Passes {
         }
 
         /** The runtime LAG, top-k, rank and row-number operators keep their input and their output
-         * in traces of their own, which grow with their input, so the state of such an operator
-         * is bounded only when its input is bounded without GC. */
+         * in traces of their own, which no GC operator reaches, so the state of such an operator
+         * is bounded only when its input is bounded. */
         void ownTraces(DBSPUnaryOperator node) {
-            if (!FindUnboundedState.this.isBoundedWithoutGC(node.input()))
+            if (!FindUnboundedState.this.isBounded(node.input()))
                 this.markUnbounded(node, List.of(0));
         }
 
@@ -630,13 +645,13 @@ public class FindUnboundedState extends Passes {
                 return;
             List<Integer> unbounded = new ArrayList<>();
             for (int input = 0; input < node.inputs.size(); input++) {
-                if (!FindUnboundedState.this.isBounded(node.inputs.get(input)))
+                if (!FindUnboundedState.this.isIntegralBounded(node.inputs.get(input)))
                     unbounded.add(input);
             }
             if (node.inputs.isEmpty()) {
                 // A stateful input operator stores the table; the table is bounded
                 // only when the declaration promises a bounded size
-                if (!FindUnboundedState.this.isBounded(node.getOutput(0)))
+                if (!FindUnboundedState.this.isIntegralBounded(node.getOutput(0)))
                     this.markUnbounded(node, unbounded);
                 return;
             }
