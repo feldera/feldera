@@ -1300,6 +1300,26 @@ public class Regression3Tests extends SqlIoTest {
                  2""");
     }
 
+    /** Uncorrelated EXISTS next to and inside a correlated EXISTS. Validated on Postgres */
+    @Test
+    public void calcite7929() {
+        var ccs = this.getCCS("""
+                CREATE TABLE s(x INT);
+                CREATE TABLE t(y INT);
+                CREATE VIEW V AS SELECT x,
+                  EXISTS(SELECT 1 FROM t WHERE y > 10) AS e,
+                  EXISTS(SELECT 1 FROM t WHERE t.y = s.x) AS ec,
+                  EXISTS(SELECT 1 FROM t WHERE t.y = s.x AND EXISTS(SELECT 1 FROM t WHERE y > 10)) AS en
+                FROM s;""");
+        ccs.stepWeightOne("""
+                INSERT INTO s VALUES (1), (2);
+                INSERT INTO t VALUES (2), (3);""", """
+                 x | e     | ec    | en
+                ---------------------------
+                 1 | false | false | false
+                 2 | false | true  | false""");
+    }
+
     @Test
     public void issue7925() {
         var ccs = this.getCCS("""
