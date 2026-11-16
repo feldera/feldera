@@ -57,7 +57,9 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use distribution::{ActivationInput, input_shard, output_is_distributed, resume_distribution};
+use distribution::{
+    ActivationInput, input_shard, output_is_distributed, resume_distribution, validate_lateness,
+};
 use feldera_adapterlib::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
@@ -8928,6 +8930,13 @@ impl ControllerInner {
             &self.layout,
             activation.map(|activation| &activation.distribution),
         )?;
+        // An unknown table is reported when the endpoint is added.
+        if let Some(table) = self
+            .catalog
+            .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
+        {
+            validate_lateness(endpoint_name, shard.as_ref(), &table.schema)?;
+        }
         let mut transport_config = endpoint_config.connector_config.transport.clone();
         if let Some(metadata) = transport_config.transport_metadata_mut()
             && let Some(ref name) = self.status.pipeline_config.given_name
