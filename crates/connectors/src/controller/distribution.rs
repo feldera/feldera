@@ -12,6 +12,7 @@ use feldera_types::circuit::Layout;
 use feldera_types::{
     config::{ConnectorConfig, TransportConfig},
     coordination::{InputDistribution, InputShard},
+    program_schema::Relation,
 };
 use serde_json::Value as JsonValue;
 use tracing::{info, warn};
@@ -156,6 +157,40 @@ pub fn input_shard(
     }
 }
 
+/// Returns an error if input connector `endpoint_name`, which reads `shard`,
+/// feeds `table` and `table` has a column with `LATENESS`.
+///
+/// The waterline of a table is global across the hosts, but each host reads
+/// its part of the input at its own pace.  If one host gets ahead, the
+/// waterline passes the input that the other hosts did not read yet, and the
+/// pipeline drops that input as late.
+pub fn validate_lateness(
+    endpoint_name: &str,
+    shard: Option<&InputShard>,
+    table: &Relation,
+) -> Result<(), ConfigError> {
+    if shard.is_none_or(|shard| shard.n_hosts() <= 1) {
+        return Ok(());
+    }
+    let columns = table
+        .fields
+        .iter()
+        .filter(|field| field.lateness.is_some())
+        .map(|field| field.name.sql_name())
+        .collect::<Vec<_>>();
+    if columns.is_empty() {
+        return Ok(());
+    }
+    Err(ConfigError::invalid_transport_configuration(
+        endpoint_name,
+        &format!(
+            "a distributed input connector does not support table {}, because its column(s) {} have LATENESS: the hosts read their parts of the input independently, so the pipeline could drop input as late; remove the 'distributed' property, or run the pipeline on one host",
+            table.name.sql_name(),
+            columns.join(", "),
+        ),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
@@ -164,6 +199,7 @@ mod tests {
     use feldera_types::{
         config::{ConnectorConfig, TransportConfig},
         coordination::{InputDistribution, InputShard},
+        program_schema::{ColumnType, Field, Relation, SqlIdentifier},
         transport::{datagen::DatagenInputConfig, kafka::KafkaInputConfig},
     };
 
@@ -171,8 +207,42 @@ mod tests {
 
     use super::{
         input_shard, output_is_distributed, resume_distribution, validate_distribution,
-        validate_output_distribution,
+        validate_lateness, validate_output_distribution,
     };
+
+    /// Table `t` with an `id` column and a `ts` column, with `LATENESS` on
+    /// `ts` if `lateness` is true.
+    fn table(lateness: bool) -> Relation {
+        let ts = Field::new(SqlIdentifier::from("ts"), ColumnType::timestamp(false));
+        let ts = if lateness {
+            ts.with_lateness("INTERVAL '1' HOUR")
+        } else {
+            ts
+        };
+        Relation::new(
+            SqlIdentifier::from("t"),
+            vec![
+                Field::new(SqlIdentifier::from("id"), ColumnType::bigint(false)),
+                ts,
+            ],
+            false,
+            BTreeMap::new(),
+        )
+    }
+
+    /// Only a connector that more than one host reads is refused, and only for
+    /// a table with `LATENESS`.
+    #[test]
+    fn distributed_lateness_is_rejected() {
+        let multihost = InputShard::new(0, 3, HOME_1).unwrap();
+        let error = validate_lateness("c", Some(&multihost), &table(true)).unwrap_err();
+        assert!(error.to_string().contains("LATENESS"), "{error}");
+        assert!(error.to_string().contains("ts"), "{error}");
+
+        validate_lateness("c", Some(&multihost), &table(false)).unwrap();
+        validate_lateness("c", Some(&InputShard::ALL), &table(true)).unwrap();
+        validate_lateness("c", None, &table(true)).unwrap();
+    }
 
     fn kafka(distributed: bool) -> ConnectorConfig {
         let config: KafkaInputConfig = serde_json::from_value(serde_json::json!({
