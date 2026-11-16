@@ -18,6 +18,15 @@ Source edition can be found on github.
   `GET /v0/pipelines/{pipeline_name}/circuit_json_profile`, which returns it as
   JSON, or open a support bundle in the profile viewer of the Web Console.
 
+- Incompatible change: a paused pipeline no longer processes the input that
+  its connectors buffered.  The input waits until the pipeline resumes.
+  Forced input to HTTP input connectors is still processed.  The pipeline
+  reports `Paused` only after the step in progress at the pause is complete,
+  so after `pause()` returns, the views change only because of HTTP input,
+  or in a few cases such as a transaction commit or a checkpoint.  See
+  [Pausing a pipeline](/tutorials/testing#pausing-a-pipeline) and
+  [issue 7568](https://github.com/feldera/feldera/issues/7568).
+
 ## v0.383.0
 
 - Checkpoint sync (Enterprise): a `bucket` that starts with `az://` syncs
@@ -31,13 +40,6 @@ Source edition can be found on github.
   the same location as `bucket`, if `read_bucket` and `bucket` are in
   different object stores, or if the deprecated `standby` field is `true`. See
   [Configuration checks at start](/pipelines/checkpoint-sync#configuration-checks-at-start).
-- Incompatible change: a paused pipeline no longer processes the input that
-  its connectors buffered.  The input waits until the pipeline resumes.
-  Forced input to HTTP input connectors is still processed.  The pipeline
-  reports `Paused` only after the step in progress at the pause is complete,
-  so after `pause()` returns, the views change only because of HTTP input,
-  or in a few cases such as a transaction commit or a checkpoint.  See [Pausing a pipeline](/tutorials/testing#pausing-a-pipeline) and
-  [issue 7568](https://github.com/feldera/feldera/issues/7568).
 
 ## v0.382.0
 
