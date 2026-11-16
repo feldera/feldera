@@ -852,6 +852,67 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     }
 
     @Test
+    public void lagOverAggregateGroupedByLatenessColumn() {
+        // A RetainKeys bounds the state of the aggregate, but not its output, which has a row for
+        // every group; the LAG keeps every row of its input
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                CREATE LOCAL VIEW A AS SELECT ts, SUM(x) AS s FROM T GROUP BY ts;
+                CREATE VIEW V AS SELECT ts, s, LAG(s) OVER (PARTITION BY ts ORDER BY s) AS prev FROM A;""",
+                """
+                (no input file): Unbounded state
+                (no input file):3:32: warning: Unbounded state: The state of a window function in the code implementing view 'v' may grow without bound
+                    2|CREATE LOCAL VIEW A AS SELECT ts, SUM(x) AS s FROM T GROUP BY ts;
+                    3|CREATE VIEW V AS SELECT ts, s, LAG(s) OVER (PARTITION BY ts ORDER BY s) AS prev FROM A;
+                                                     ^^^^^^
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                CREATE LOCAL VIEW A AS SELECT window_start AS ws, SUM(x) AS s FROM TABLE(TUMBLE(TABLE T, DESCRIPTOR(ts), INTERVAL 1 HOUR)) GROUP BY window_start;
+                CREATE VIEW V AS SELECT ws, s, LAG(s) OVER (PARTITION BY ws ORDER BY s) AS prev FROM A;""",
+                """
+                (no input file): Unbounded state
+                (no input file):3:32: warning: Unbounded state: The state of a window function in the code implementing view 'v' may grow without bound
+                    2|CREATE LOCAL VIEW A AS SELECT window_start AS ws, SUM(x) AS s FROM TABLE(TUMBLE(TABLE T, DESCRIPTOR(ts), INTERVAL 1 HOUR)) GROUP BY window_start;
+                    3|CREATE VIEW V AS SELECT ws, s, LAG(s) OVER (PARTITION BY ws ORDER BY s) AS prev FROM A;
+                                                     ^^^^^^
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
+    }
+
+    @Test
+    public void starJoinOfAggregatesGroupedByLatenessColumn() {
+        // The star join reads the aggregates through noop operators, which carry the streams
+        // that the RetainKeys of the aggregates prune
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT, y INT);
+                CREATE VIEW V AS SELECT ts, MIN(x) AS lo, MAX(y) AS hi, SUM(x) AS s FROM T GROUP BY ts;""");
+    }
+
+    @Test
+    public void joinOverAggregateGroupedByLatenessColumn() {
+        // A RetainKeys bounds the state of the aggregate, but not its output, which has a row for
+        // every group; the join keeps every row of A, since s has no waterline
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                CREATE TABLE B(s INT, y INT) WITH ('expected_size' = '100');
+                CREATE LOCAL VIEW A AS SELECT ts, SUM(x) AS s FROM T GROUP BY ts;
+                CREATE VIEW W AS SELECT A.ts, B.y FROM A JOIN B ON A.s = B.s;""",
+                """
+                (no input file): Unbounded state
+                (no input file):4:52: warning: Unbounded state: The state of a JOIN in the code implementing view 'w' may grow without bound
+                    3|CREATE LOCAL VIEW A AS SELECT ts, SUM(x) AS s FROM T GROUP BY ts;
+                    4|CREATE VIEW W AS SELECT A.ts, B.y FROM A JOIN B ON A.s = B.s;
+                                                                         ^^^^^^^^^
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
+    }
+
+    @Test
     public void lagOverTemporalFilter() {
         this.assertNoUnboundedStateWarnings("""
                 CREATE TABLE T(ts TIMESTAMP NOT NULL, x INT);
@@ -861,8 +922,8 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
 
     @Test
     public void sessionKeepsItsInput() {
-        // SESSION is built on a LAG partitioned by the session key, which keeps every row;
-        // the warning points at the SESSION call
+        // SESSION is built on a LAG partitioned by the session key, an aggregate of the bounds
+        // of each session, and a join, which keep every row; the warnings point at the SESSION call
         this.assertUnboundedStateWarnings("""
                 CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, k INT);
                 CREATE VIEW V AS SELECT * FROM
@@ -875,6 +936,16 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
                 See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                (no input file): Unbounded state
+                (no input file):3:7: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
+                    2|CREATE VIEW V AS SELECT * FROM
+                    3|TABLE(SESSION(TABLE T, DESCRIPTOR(ts), DESCRIPTOR(k), INTERVAL 10 MINUTES));
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                (no input file): Unbounded state
+                (no input file):3:7: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                    2|CREATE VIEW V AS SELECT * FROM
+                    3|TABLE(SESSION(TABLE T, DESCRIPTOR(ts), DESCRIPTOR(k), INTERVAL 10 MINUTES));
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 """);
     }
 

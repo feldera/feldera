@@ -23,6 +23,9 @@ Try it!
 */
 
 SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+-- The aggregates in user_stats keep one row for each customer: their state grows with
+-- the number of customers, not with the number of transactions.
+SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = 1;
 
 -- Customers.
 CREATE TABLE customer (
