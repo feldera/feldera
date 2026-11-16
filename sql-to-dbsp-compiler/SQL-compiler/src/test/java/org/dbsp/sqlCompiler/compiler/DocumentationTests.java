@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FelderaSqlValidator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.RejectUnsupportedPlans;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
@@ -21,8 +22,8 @@ public class DocumentationTests {
             WarnFloatingPointEquality.DOCUMENTATION,
             RejectUnsupportedPlans.ROW_DOCUMENTATION,
             RejectUnsupportedPlans.WINDOW_DOCUMENTATION,
-            RejectUnsupportedPlans.DISTINCT_WINDOW_DOCUMENTATION,
-            RejectUnsupportedPlans.WITHIN_DISTINCT_DOCUMENTATION,
+            FelderaSqlValidator.DISTINCT_WINDOW_DOCUMENTATION,
+            FelderaSqlValidator.WITHIN_DISTINCT_DOCUMENTATION,
             SqlToRelCompiler.RECURSION_DOCUMENTATION,
             SqlToRelCompiler.QUANTIFIED_DISTINCT_DOCUMENTATION,
             ExpressionCompiler.QUANTIFIED_ARRAY_DOCUMENTATION,
