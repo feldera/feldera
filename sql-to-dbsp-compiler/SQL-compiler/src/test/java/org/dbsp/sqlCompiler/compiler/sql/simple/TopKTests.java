@@ -479,4 +479,35 @@ public class TopKTests extends SqlIoTest {
                  3  |     | 70 | 1
                     | 2   | 60 | 1"""));
     }
+
+    /** A TopK in the same window as SUM, which Calcite computes with two aggregates, COUNT and $SUM0 */
+    @Test
+    public void topKWithSum() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(id INT, ts INT, x INT);
+                CREATE VIEW rn_first AS
+                SELECT * FROM (
+                    SELECT id, ts, x,
+                           ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts) AS rn,
+                           SUM(x) OVER (PARTITION BY id ORDER BY ts) AS s
+                    FROM t)
+                WHERE rn <= 2;
+                CREATE VIEW sum_first AS
+                SELECT id, ts, x, rn, s FROM (
+                    SELECT id, ts, x,
+                           SUM(x) OVER (PARTITION BY id ORDER BY ts) AS s,
+                           ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts) AS rn
+                    FROM t)
+                WHERE rn <= 2;""");
+        String expected = """
+                 id | ts | x  | rn | s  | weight
+                --------------------------------
+                 1  | 1  | 10 | 1  | 10 | 1
+                 1  | 2  | 20 | 2  | 30 | 1
+                 2  | 5  |    | 1  |    | 1
+                 2  | 6  | 7  | 2  | 7  | 1""";
+        // Validated on Postgres
+        ccs.stepMultiView("INSERT INTO t VALUES (1, 1, 10), (1, 2, 20), (1, 3, 30), (2, 5, NULL), (2, 6, 7);",
+                Map.of("rn_first", expected, "sum_first", expected));
+    }
 }
