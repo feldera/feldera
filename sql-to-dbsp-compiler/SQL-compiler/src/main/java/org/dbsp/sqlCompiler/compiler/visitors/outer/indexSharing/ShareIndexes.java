@@ -1,8 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 
 /** Find patterns where the same collection is indexed twice on the same key with different values
@@ -54,6 +58,10 @@ public class ShareIndexes extends Passes {
         this.add(graph1);
         this.add(new DuplicateSharedIndexes(compiler, graph1.getGraphs()));
         this.add(new DeadCode(compiler, true));
+
+        AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
+        this.add(new OptimizeWithGraph(compiler,
+                g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed)));
 
         // Share the same MapIndex between many integrators
         Graph graph2 = new Graph(compiler);
