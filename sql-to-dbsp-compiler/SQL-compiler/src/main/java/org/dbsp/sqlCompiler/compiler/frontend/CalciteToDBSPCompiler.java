@@ -2568,14 +2568,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (int i = 0; i < inputRowType.size(); i++)
             shuffle.add(i);
 
-        // If the parent node in the Rel tree is a LogicalFilter, extract the condition here.
+        // Condition of the parent LogicalFilter, if any; a TopK aggregate can implement part of it.
+        RexNode parentCondition = null;
+        if (!this.ancestors.isEmpty() && this.getParent() instanceof LogicalFilter filter)
+            parentCondition = filter.getCondition();
+        // Part of the parent condition that the TopK aggregate does not implement.
         RexNode remainingCondition = null;
-        if (!this.ancestors.isEmpty()) {
-            RelNode parent = this.getParent();
-            if (parent instanceof LogicalFilter filter) {
-                remainingCondition = filter.getCondition();
-            }
-        }
 
         List<Integer> previousPartitionKeys = null;
         for (WindowAggregates ga: toProcess) {
@@ -2585,9 +2583,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 //   LogicalWindow(window#0=[window(partition ... order by ... aggs [RANK()])])
                 // There is no way this can be expressed otherwise in SQL or using RelNode.
                 // This works for RANK, DENSE_RANK, and ROW_NUMBER.
-                if (remainingCondition != null && topKAggregate == null) {
+                if (parentCondition != null && topKAggregate == null) {
                     // We can have only one TopK aggregate
-                    WindowCondition winCondition = this.findTopKCondition(remainingCondition, ga.windowFieldIndex);
+                    WindowCondition winCondition = this.findTopKCondition(parentCondition, ga.windowFieldIndex);
                     if (winCondition != null) {
                         remainingCondition = winCondition.remaining;
                         topKAggregate = new TopKAggregate(ga.to(RankAggregate.class), winCondition.limit);
@@ -2664,7 +2662,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (this.filterImplementation != null)
                 throw new InternalCompilerError("Unexpected filter implementation ",
                         CalciteObject.create(window));
+            // The result implements the parent filter, so it is not registered for the window:
+            // another parent of the window compiles the window again.
+            this.addOperator(lastOperator);
             this.filterImplementation = lastOperator;
+            return;
         }
         this.assignOperator(window, lastOperator);
     }

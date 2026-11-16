@@ -1370,6 +1370,63 @@ public class Regression3Tests extends SqlIoTest {
                  2  | false""");
     }
 
+    /** A window read by two filters. Validated on Postgres */
+    @Test
+    public void issue7987() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t (id INT, kind VARCHAR, ts VARCHAR);
+                CREATE MATERIALIZED VIEW v AS
+                WITH a AS (
+                    SELECT id, kind, ts,
+                           CASE WHEN lead(ts) OVER (PARTITION BY id ORDER BY ts) IS NULL THEN TRUE ELSE FALSE END AS cur
+                    FROM t),
+                n  AS (SELECT * FROM a WHERE kind = 'NEW'),
+                nn AS (SELECT a.id, a.kind, a.ts, a.cur FROM a JOIN n ON a.id = n.id WHERE a.kind <> 'NEW')
+                SELECT id, kind, ts, cur FROM n
+                UNION ALL
+                SELECT id, kind, ts, cur FROM nn;""").withStringTrim();
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES
+                (1, 'NEW', '2007-01-01'),
+                (1, 'UPD', '2007-02-01'),
+                (1, 'UPD', '2007-03-01'),
+                (2, 'NEW', '2007-01-05'),
+                (3, 'NEW', '2007-01-09'),
+                (3, 'CLOSE', '2007-02-09');""", """
+                 id | kind  | ts         | cur
+                ----------------------------------
+                 1  | NEW   | 2007-01-01 | false
+                 1  | UPD   | 2007-02-01 | false
+                 1  | UPD   | 2007-03-01 | true
+                 2  | NEW   | 2007-01-05 | true
+                 3  | NEW   | 2007-01-09 | false
+                 3  | CLOSE | 2007-02-09 | true""");
+    }
+
+    /** A ROW_NUMBER window read by two TopK filters and by a filter that is not a TopK.
+     * Validated on Postgres */
+    @Test
+    public void sharedTopKWindow() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(id INT, ts INT);
+                CREATE VIEW v AS
+                WITH r AS (SELECT id, ts, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts) AS rn FROM t)
+                SELECT id, ts, rn FROM r WHERE rn <= 1
+                UNION ALL
+                SELECT id, ts, rn FROM r WHERE rn <= 2 AND ts > 10
+                UNION ALL
+                SELECT id, ts, rn FROM r WHERE rn > 2;""");
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES (1, 5), (1, 15), (1, 25), (2, 20);""", """
+                 id | ts | rn
+                --------------
+                 1  | 5  | 1
+                 1  | 15 | 2
+                 1  | 25 | 3
+                 2  | 20 | 1
+                 2  | 20 | 1""");
+    }
+
     /** A LEFT correlate that is not over UNNEST is reported as a decorrelation failure */
     @Test
     public void leftCorrelateWithoutUnnest() {
