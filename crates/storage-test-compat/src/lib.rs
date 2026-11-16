@@ -19,7 +19,7 @@ use std::sync::Arc;
 use dbsp::algebra::{F32, F64};
 use dbsp::storage::backend::StoragePath;
 use dbsp::storage::buffer_cache::BufferCache;
-use dbsp::storage::file::format::{Compression, VERSION_NUMBER};
+use dbsp::storage::file::format::{BatchMetadata, Compression, RuntimeVersion, VERSION_NUMBER};
 use dbsp::utils::Tup8;
 use uuid::Uuid as RawUuid;
 
@@ -178,6 +178,11 @@ pub enum GoldenWriterKind {
 /// present.
 pub const LEGACY_BLOOM_VERSION: u32 = 5;
 
+/// Runtime version that the golden writer records in the files it writes.
+///
+/// A fixed string, so that the files do not change with each release.
+pub const GOLDEN_RUNTIME_VERSION: &str = "golden-writer";
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GoldenSize {
     Large,
@@ -224,6 +229,20 @@ impl GoldenFileSpec {
             GoldenWriterKind::Writer3Modular => "-modular.feldera",
         };
         file_name
+    }
+
+    /// Returns the metadata that the file's trailer holds.
+    ///
+    /// The frozen `writer1` files predate the runtime version field, so they
+    /// show that an old trailer reads back with an unknown version.
+    pub fn expected_metadata(self) -> BatchMetadata {
+        match self.writer {
+            GoldenWriterKind::Writer1Bloom => BatchMetadata::default(),
+            GoldenWriterKind::Writer2Roaring | GoldenWriterKind::Writer3Modular => BatchMetadata {
+                runtime_version: RuntimeVersion::new(GOLDEN_RUNTIME_VERSION),
+                ..BatchMetadata::default()
+            },
+        }
     }
 
     pub fn path(self) -> PathBuf {
@@ -789,6 +808,7 @@ mod tests {
         storage_path: StoragePath,
         row_builder: fn(usize) -> T,
         aux_builder: fn(usize) -> i64,
+        expected_metadata: &BatchMetadata,
     ) where
         T: DBData + Default + Erase<DynData>,
     {
@@ -800,7 +820,7 @@ mod tests {
             &storage_path,
         )
         .unwrap();
-        assert_eq!(reader.metadata(), &BatchMetadata::default());
+        assert_eq!(reader.metadata(), expected_metadata);
 
         let n_rows = reader.n_rows(0) as usize;
         validate_key_range(&reader, row_builder);
@@ -830,6 +850,7 @@ mod tests {
         storage_path: StoragePath,
         row_builder: fn(usize) -> T,
         aux_builder: fn(usize) -> i64,
+        expected_metadata: &BatchMetadata,
     ) where
         T: DBData + Default + Erase<DynData>,
     {
@@ -846,7 +867,7 @@ mod tests {
             &storage_path,
         )
         .unwrap();
-        assert_eq!(reader.metadata(), &BatchMetadata::default());
+        assert_eq!(reader.metadata(), expected_metadata);
 
         let n_rows = reader.n_rows(0) as usize;
         validate_key_range(&reader, golden_writer2_key);
@@ -953,6 +974,7 @@ mod tests {
                         storage_path,
                         golden_row,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer3Modular, GoldenSize::Small) => {
@@ -961,6 +983,7 @@ mod tests {
                         storage_path,
                         golden_row_small,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer3Modular, GoldenSize::Variant) => {
@@ -969,6 +992,7 @@ mod tests {
                         storage_path,
                         golden_row_variant,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer1Bloom, GoldenSize::Large) => {
@@ -977,6 +1001,7 @@ mod tests {
                         storage_path,
                         golden_row,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer1Bloom, GoldenSize::Small) => {
@@ -985,6 +1010,7 @@ mod tests {
                         storage_path,
                         golden_row_small,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer1Bloom, GoldenSize::Variant) => {
@@ -993,6 +1019,7 @@ mod tests {
                         storage_path,
                         golden_row_variant,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer2Roaring, GoldenSize::Large) => {
@@ -1001,6 +1028,7 @@ mod tests {
                         storage_path,
                         golden_row,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer2Roaring, GoldenSize::Small) => {
@@ -1009,6 +1037,7 @@ mod tests {
                         storage_path,
                         golden_row_small,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
                 (GoldenWriterKind::Writer2Roaring, GoldenSize::Variant) => {
@@ -1017,6 +1046,7 @@ mod tests {
                         storage_path,
                         golden_row_variant,
                         golden_aux,
+                        &spec.expected_metadata(),
                     )
                 }
             }

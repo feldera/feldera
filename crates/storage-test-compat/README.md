@@ -29,6 +29,11 @@ cargo run -p storage-test-compat --bin golden-writer
 
 This rewrites the `writer2-*` and `writer3-*` files in `golden-files/`.
 
+The writer records `GOLDEN_RUNTIME_VERSION` as the runtime version in each file
+that it writes, so the files do not change with each release. The frozen
+`writer1-*` files predate that field, so they also show that an old file reads
+back with an unknown runtime version.
+
 ## The `writer1-*-bloom` files are frozen
 
 Those files hold single-module Bloom filters produced by a binary that predates

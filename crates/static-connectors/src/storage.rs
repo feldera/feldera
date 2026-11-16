@@ -12,6 +12,7 @@ use std::sync::{Arc, LazyLock};
 use anyhow::Result as AnyResult;
 use dbsp::circuit::CircuitStorageConfig;
 use dbsp::circuit::checkpointer::Checkpointer;
+use dbsp::storage::file::RuntimeVersion;
 use dbsp_connectors::engine::{
     Checkpoint, CheckpointSync, JournalMode, PipelineStorage, StepJournal, StepMetadata,
     StoredStatus,
@@ -46,6 +47,9 @@ pub struct StaticStorage {
 impl StaticStorage {
     /// Opens the storage that `config` names, or returns `None` if it names none.
     pub fn open(config: &PipelineConfig) -> Result<Option<Arc<Self>>, ControllerError> {
+        // Each layer file that this process writes records the runtime version.
+        RuntimeVersion::set_current(dbsp_connectors::runtime_version());
+
         config
             .storage()
             .map(|(storage_config, storage_options)| {
@@ -515,7 +519,7 @@ mod tests {
     use tempfile::TempDir;
     use uuid::Uuid;
 
-    use super::{Journal, StaticStorage, publish_with_state};
+    use super::{Journal, RuntimeVersion, StaticStorage, publish_with_state};
     use crate::test::init_test_logger;
 
     /// The storage of a pipeline whose storage is the directory `dir`.
@@ -529,6 +533,20 @@ mod tests {
         }))
         .unwrap();
         StaticStorage::open(&config).unwrap().unwrap()
+    }
+
+    /// Opening the storage sets the runtime version that layer files record.
+    ///
+    /// The setting is process-wide, but every test here opens storage, which
+    /// sets the same value, so test order does not matter.
+    #[test]
+    fn open_sets_runtime_version() {
+        let dir = TempDir::new().unwrap();
+        let _storage = storage_in(dir.path());
+        assert_eq!(
+            RuntimeVersion::current().get().as_deref(),
+            Some(dbsp_connectors::runtime_version())
+        );
     }
 
     /// The controller's state at step `step`, at circuit checkpoint `circuit`, if any.

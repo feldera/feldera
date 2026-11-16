@@ -183,7 +183,7 @@ pub use feldera_adapterlib::format::{
 pub use controller::{
     ConfigError, ConnectorConfig, Controller, ControllerError, ControllerInner, ControllerStatus,
     EndpointId, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
-    RuntimeConfig, TransactionToCommit, TransportConfig,
+    RuntimeConfig, TransactionToCommit, TransportConfig, runtime_version,
 };
 pub use transport::{
     InputConsumer, InputEndpoint, InputReader, OutputEndpoint, OutputEndpointCallbacks,

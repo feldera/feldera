@@ -19,7 +19,7 @@
 
 use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
-    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, ViewIntegrals, runtime_version,
+    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, ViewIntegrals,
 };
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
@@ -183,7 +183,7 @@ use crate::format::{
 };
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::{DistributedInput, create_integrated_input_endpoint};
-pub use checkpoint::{Checkpoint, CheckpointOffsets};
+pub use checkpoint::{Checkpoint, CheckpointOffsets, runtime_version};
 pub use error::{ConfigError, ControllerError};
 pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
