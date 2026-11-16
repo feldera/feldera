@@ -285,6 +285,7 @@ where
                 .saturating_sub(self.stats().negative_weight_count),
             touched_window_count: self.stats().touched_window_count,
             value_stamp: self.stats().value_stamp,
+            runtime_version: Default::default(),
         };
         let (file, filters) = writer.into_reader(stats).unwrap_storage();
         Self::from_parts(self.factories.clone(), Arc::new(file), filters)

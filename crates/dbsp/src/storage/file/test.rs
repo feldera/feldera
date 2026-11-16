@@ -15,11 +15,13 @@ use crate::{
         backend::{BlockLocation, StorageBackend},
         buffer_cache::BufferCache,
         file::{
-            TouchedWindowCount,
+            RuntimeVersion, TouchedWindowCount,
             format::{
-                BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
+                BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, BlockHeader, Compression,
+                FILE_TRAILER_BLOCK_MAGIC, FILE_TRAILER_SIZE, FileTrailer, FileTrailerColumn,
                 INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
-                MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+                MAX_RUNTIME_VERSION_LEN, MODULAR_BLOOM_FILTER_BLOCK_MAGIC, NodeType,
+                ROARING_BITMAP_FILTER_BLOCK_MAGIC,
             },
             reader::{
                 BulkRows, CorruptionError, Error as ReaderError, FilteredKeys, Reader,
@@ -3249,4 +3251,59 @@ mod key_block_size {
             .expect("a batch inserted under High memory pressure is spilled to storage");
         key_blocks_per_100k(path)
     }
+}
+
+/// A trailer from before the runtime version field existed reads back as
+/// unknown, and a long version is truncated on a character boundary.
+///
+/// `tests/runtime_version.rs` checks that the writer records the version, in a
+/// process of its own, because setting it is process-wide.
+#[test]
+fn runtime_version_format() {
+    // Zero padding, as in an old trailer, reads as an unknown version.
+    let old = BatchMetadata::read_le(&mut Cursor::new([0u8; 64])).unwrap();
+    assert_eq!(old, BatchMetadata::default());
+    assert_eq!(old.runtime_version.get(), None);
+
+    // "é" is 2 bytes, so an even cap would not test the boundary.
+    assert_eq!(MAX_RUNTIME_VERSION_LEN % 2, 0);
+    let long = format!("x{}", "é".repeat(MAX_RUNTIME_VERSION_LEN));
+    let truncated = RuntimeVersion::new(&long);
+    assert_eq!(truncated.get().unwrap().len(), MAX_RUNTIME_VERSION_LEN - 1);
+}
+
+/// The biggest trailer that the writers make fits in the block that the reader
+/// reads.
+#[test]
+fn worst_case_trailer_fits() {
+    let column = FileTrailerColumn {
+        node_offset: u64::MAX,
+        node_size: u32::MAX,
+        node_type: NodeType::Index,
+        n_rows: u64::MAX,
+    };
+    let trailer = FileTrailer {
+        header: BlockHeader::new(&FILE_TRAILER_BLOCK_MAGIC),
+        version: u32::MAX,
+        compression: Some(Compression::Snappy),
+        // `Writer2` writes the most columns.
+        columns: vec![column; 2],
+        filter_offset: u64::MAX,
+        filter_size: u32::MAX,
+        compatible_features: u64::MAX,
+        incompatible_features: u64::MAX,
+        filter_offset64: u64::MAX,
+        filter_size64: u64::MAX,
+        metadata: BatchMetadata {
+            negative_weight_count: u64::MAX,
+            touched_window_count: TouchedWindowCount::new(65_536),
+            value_stamp: ValueStampFlag::UPSERT_INDEX,
+            runtime_version: RuntimeVersion::new(&"x".repeat(MAX_RUNTIME_VERSION_LEN)),
+        },
+    };
+    let mut bytes = Cursor::new(Vec::new());
+    trailer.write_le(&mut bytes).unwrap();
+    let len = bytes.into_inner().len();
+    println!("worst-case trailer: {len} of {FILE_TRAILER_SIZE} bytes");
+    assert!(len <= FILE_TRAILER_SIZE);
 }

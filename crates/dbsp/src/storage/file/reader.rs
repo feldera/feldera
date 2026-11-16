@@ -15,9 +15,9 @@ use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn,
-        INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, IndexBlockHeader, MIN_SUPPORTED_VERSION,
-        NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, Varint,
+        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FILE_TRAILER_SIZE,
+        FileTrailerColumn, INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, IndexBlockHeader,
+        MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -2045,14 +2045,14 @@ fn read_trailer(
     stats: &AtomicCacheStats,
 ) -> Result<Arc<FileTrailer>, Error> {
     let file_size = file.get_size()?;
-    if file_size < 512 || (file_size % 512) != 0 {
+    if file_size < FILE_TRAILER_SIZE as u64 || (file_size % 512) != 0 {
         return Err(CorruptionError::InvalidFileSize(file_size).into());
     }
 
     let file_trailer = FileTrailer::new(
         cache,
         file,
-        BlockLocation::new(file_size - 512, 512).unwrap(),
+        BlockLocation::new(file_size - FILE_TRAILER_SIZE as u64, FILE_TRAILER_SIZE).unwrap(),
         stats,
     )?;
 

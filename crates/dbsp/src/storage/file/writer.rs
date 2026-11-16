@@ -14,11 +14,12 @@ use crate::storage::{
         format::{
             BatchMetadata, BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64,
             COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
-            FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen,
+            FILE_TRAILER_BLOCK_MAGIC, FILE_TRAILER_SIZE, FileTrailer, FileTrailerColumn, FixedLen,
             INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, INCOMPATIBLE_FEATURE_MODULAR_FILTERS,
             INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader,
             MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, NodeType,
-            ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
+            ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, RuntimeVersion,
+            VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
     },
@@ -1327,9 +1328,10 @@ impl Writer {
 
     pub fn close(
         mut self,
-        metadata: BatchMetadata,
+        mut metadata: BatchMetadata,
     ) -> Result<(Arc<dyn FileReader>, Option<BatchKeyFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
+        metadata.runtime_version = RuntimeVersion::current();
 
         // A file with no rows gets no filter. Every lookup misses such a file
         // anyway, and its filter block would start at offset 0, which the
@@ -1444,7 +1446,13 @@ impl Writer {
         }
         let (_block, location) = self
             .writer
-            .write_block(file_trailer.clone().into_block(4096), None)?;
+            .write_block(file_trailer.clone().into_block(FILE_TRAILER_SIZE), None)?;
+        // The reader reads only the last FILE_TRAILER_SIZE bytes, so it could
+        // not read a file with a bigger trailer.
+        assert_eq!(
+            location.size, FILE_TRAILER_SIZE,
+            "file trailer does not fit in {FILE_TRAILER_SIZE} bytes"
+        );
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 

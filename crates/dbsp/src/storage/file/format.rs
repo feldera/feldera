@@ -82,6 +82,8 @@ use crc32c;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use size_of::SizeOf;
+use std::borrow::Cow;
+use std::sync::OnceLock;
 
 /// Increment this when the base file format itself changes incompatibly.
 ///
@@ -212,6 +214,66 @@ impl ValueStampFlag {
     }
 }
 
+/// Version of the runtime that wrote a file.
+///
+/// Serialized as an 8-bit length and then that many bytes of UTF-8.  Length
+/// 0 means "unknown".  The trailer is zero-padded, so a file written before
+/// this field existed reads back as unknown.
+#[binrw]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeVersion {
+    #[bw(calc(bytes.len() as u8))]
+    len: u8,
+    #[br(count = len)]
+    bytes: Vec<u8>,
+}
+
+/// Longest version string that a trailer stores, in bytes.  Longer strings are
+/// truncated.
+///
+/// This is enough for a semantic version or a git SHA, and it leaves room in
+/// the [`FILE_TRAILER_SIZE`]-byte trailer for fields added later.
+pub const MAX_RUNTIME_VERSION_LEN: usize = 64;
+
+/// Size in bytes of the file trailer block.  The reader reads only the last
+/// this many bytes of a file, so a trailer must not be bigger.
+pub const FILE_TRAILER_SIZE: usize = 512;
+
+static CURRENT_RUNTIME_VERSION: OnceLock<RuntimeVersion> = OnceLock::new();
+
+impl RuntimeVersion {
+    /// Makes a version from `version`, truncated to [`MAX_RUNTIME_VERSION_LEN`]
+    /// bytes on a character boundary.
+    pub fn new(version: &str) -> Self {
+        let len = version.floor_char_boundary(MAX_RUNTIME_VERSION_LEN);
+        Self {
+            bytes: version.as_bytes()[..len].to_vec(),
+        }
+    }
+
+    /// Sets the version that this process writes into each new file.
+    ///
+    /// Only the first call has an effect.  Until a call, new files record an
+    /// unknown version.
+    ///
+    /// This is process-wide and cannot be undone, so a test that calls it
+    /// changes every file that the rest of its process writes.  Put such a test
+    /// in its own integration test binary, as `tests/runtime_version.rs` does.
+    pub fn set_current(version: &str) {
+        let _ = CURRENT_RUNTIME_VERSION.set(Self::new(version));
+    }
+
+    /// Returns the version that this process writes into each new file.
+    pub fn current() -> Self {
+        CURRENT_RUNTIME_VERSION.get().cloned().unwrap_or_default()
+    }
+
+    /// Returns the version, or `None` if it is unknown.
+    pub fn get(&self) -> Option<Cow<'_, str>> {
+        (!self.bytes.is_empty()).then(|| String::from_utf8_lossy(&self.bytes))
+    }
+}
+
 /// Additional metadata added to the file by the writer.
 #[binrw]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -230,14 +292,22 @@ pub struct BatchMetadata {
     /// Whether the value column carries a trailing column the reader hides.
     ///
     /// Appended after `touched_window_count`.  The trailer block is zero-padded
-    /// to 4 kB, so a trailer written before this field existed reads back as
+    /// to [`FILE_TRAILER_SIZE`] bytes, so a trailer written before this field existed reads back as
     /// [`ValueStampFlag::NO_STAMP`], exactly as `negative_weight_count` was added.
     pub value_stamp: ValueStampFlag,
+
+    /// Version of the runtime that wrote the file.
+    ///
+    /// Appended after `value_stamp`, so a trailer written before this field
+    /// existed reads back as unknown.  The writer fills this in from
+    /// [`RuntimeVersion::current`] and ignores the value that the caller
+    /// passes.
+    pub runtime_version: RuntimeVersion,
 }
 
 /// File trailer block.
 ///
-/// Padded with zeros to exactly fill a 4-kB block.
+/// Padded with zeros to exactly fill a [`FILE_TRAILER_SIZE`]-byte block.
 ///
 /// Serialized and deserialized automatically with [`mod@binrw`].
 #[binrw]
