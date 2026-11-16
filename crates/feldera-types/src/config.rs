@@ -4431,6 +4431,23 @@ impl TransportConfig {
         )
     }
 
+    /// Returns true if a distributed input connector with this transport
+    /// orders its input across the hosts of a multihost pipeline, so that a
+    /// table with `LATENESS` does not drop the input of a host that is behind
+    /// (see the [coordination](crate::coordination) module).
+    ///
+    /// The Kafka connector orders its input by Kafka message timestamp when
+    /// `synchronize_partitions` is set.  The Delta Lake and Iceberg connectors
+    /// order their snapshot by `timestamp_column` when it is set.
+    pub fn synchronizes_input(&self) -> bool {
+        match self {
+            TransportConfig::KafkaInput(config) => config.synchronize_partitions,
+            TransportConfig::DeltaTableInput(config) => config.timestamp_column.is_some(),
+            TransportConfig::IcebergInput(config) => config.timestamp_column.is_some(),
+            _ => false,
+        }
+    }
+
     /// Returns how to combine the frontiers' metadata that the hosts of a
     /// distributed input connector with this transport report.
     pub fn frontier_merge(&self) -> crate::adapter_stats::FrontierMerge {

@@ -25,6 +25,10 @@ pub struct ActivationInput {
 
     /// See `CoordinationActivate::input_choices`.
     pub choice: Option<JsonValue>,
+
+    /// Whether the coordinator synchronizes the connector (see
+    /// `CoordinationActivate::synchronized_inputs`).
+    pub synchronized: bool,
 }
 
 /// Returns the distribution of each distributed connector when this host
@@ -157,19 +161,63 @@ pub fn input_shard(
     }
 }
 
-/// Returns an error if input connector `endpoint_name`, which reads `shard`,
-/// feeds `table` and `table` has a column with `LATENESS`.
+/// Where a synchronized input connector gets its global bound (see the
+/// `feldera_types::coordination` module).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundSync {
+    /// This host reads all of the connector's input, so the host's own bound
+    /// is the global bound.
+    Local,
+
+    /// The hosts divide the connector's input, so the coordinator computes the
+    /// global bound from the bounds of all of the hosts.
+    Coordinated,
+}
+
+/// Returns how input connector `endpoint_name`, with `config`, which reads
+/// `shard`, synchronizes its input, or `None` if it does not.
+/// `coordinator_synchronizes` says whether the coordinator listed the
+/// connector in `CoordinationActivate::synchronized_inputs`.
+///
+/// Returns an error if the hosts divide the input but the coordinator does
+/// not synchronize the connector, because then the connector would never get
+/// a bound.
+pub fn bound_sync(
+    endpoint_name: &str,
+    config: &ConnectorConfig,
+    shard: Option<&InputShard>,
+    coordinator_synchronizes: bool,
+) -> Result<Option<BoundSync>, ConfigError> {
+    if !config.transport.synchronizes_input() {
+        Ok(None)
+    } else if shard.is_none_or(|shard| shard.n_hosts() <= 1) {
+        Ok(Some(BoundSync::Local))
+    } else if coordinator_synchronizes {
+        Ok(Some(BoundSync::Coordinated))
+    } else {
+        Err(ConfigError::invalid_transport_configuration(
+            endpoint_name,
+            "the coordinator does not synchronize this distributed connector across the hosts, probably because it is too old; upgrade the coordinator, or remove the 'distributed' property",
+        ))
+    }
+}
+
+/// Returns an error if input connector `endpoint_name`, which reads `shard`
+/// and synchronizes its input as `sync` says, feeds `table` and `table` has a
+/// column with `LATENESS`.
 ///
 /// The waterline of a table is global across the hosts, but each host reads
 /// its part of the input at its own pace.  If one host gets ahead, the
 /// waterline passes the input that the other hosts did not read yet, and the
-/// pipeline drops that input as late.
+/// pipeline drops that input as late.  A connector that the coordinator
+/// synchronizes avoids that.
 pub fn validate_lateness(
     endpoint_name: &str,
     shard: Option<&InputShard>,
+    sync: Option<BoundSync>,
     table: &Relation,
 ) -> Result<(), ConfigError> {
-    if shard.is_none_or(|shard| shard.n_hosts() <= 1) {
+    if shard.is_none_or(|shard| shard.n_hosts() <= 1) || sync == Some(BoundSync::Coordinated) {
         return Ok(());
     }
     let columns = table
@@ -184,7 +232,7 @@ pub fn validate_lateness(
     Err(ConfigError::invalid_transport_configuration(
         endpoint_name,
         &format!(
-            "a distributed input connector does not support table {}, because its column(s) {} have LATENESS: the hosts read their parts of the input independently, so the pipeline could drop input as late; remove the 'distributed' property, or run the pipeline on one host",
+            "a distributed input connector does not support table {}, because its column(s) {} have LATENESS: the hosts read their parts of the input independently, so the pipeline could drop input as late; synchronize the connector (with 'synchronize_partitions' for Kafka), remove the 'distributed' property, or run the pipeline on one host",
             table.name.sql_name(),
             columns.join(", "),
         ),
@@ -206,8 +254,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        input_shard, output_is_distributed, resume_distribution, validate_distribution,
-        validate_lateness, validate_output_distribution,
+        BoundSync, bound_sync, input_shard, output_is_distributed, resume_distribution,
+        validate_distribution, validate_lateness, validate_output_distribution,
     };
 
     /// Table `t` with an `id` column and a `ts` column, with `LATENESS` on
@@ -230,18 +278,70 @@ mod tests {
         )
     }
 
-    /// Only a connector that more than one host reads is refused, and only for
-    /// a table with `LATENESS`.
+    /// Only a connector that more than one host reads is refused, only for a
+    /// table with `LATENESS`, and only if the coordinator does not synchronize
+    /// it.
     #[test]
     fn distributed_lateness_is_rejected() {
         let multihost = InputShard::new(0, 3, HOME_1).unwrap();
-        let error = validate_lateness("c", Some(&multihost), &table(true)).unwrap_err();
+        let error = validate_lateness("c", Some(&multihost), None, &table(true)).unwrap_err();
         assert!(error.to_string().contains("LATENESS"), "{error}");
         assert!(error.to_string().contains("ts"), "{error}");
 
-        validate_lateness("c", Some(&multihost), &table(false)).unwrap();
-        validate_lateness("c", Some(&InputShard::ALL), &table(true)).unwrap();
-        validate_lateness("c", None, &table(true)).unwrap();
+        validate_lateness("c", Some(&multihost), None, &table(false)).unwrap();
+        validate_lateness("c", Some(&InputShard::ALL), None, &table(true)).unwrap();
+        validate_lateness("c", None, None, &table(true)).unwrap();
+        validate_lateness(
+            "c",
+            Some(&multihost),
+            Some(BoundSync::Coordinated),
+            &table(true),
+        )
+        .unwrap();
+        assert!(
+            validate_lateness("c", Some(&multihost), Some(BoundSync::Local), &table(true)).is_err()
+        );
+    }
+
+    /// A Kafka connector with `synchronize_partitions`.
+    fn synchronized_kafka() -> ConnectorConfig {
+        let config: KafkaInputConfig = serde_json::from_value(serde_json::json!({
+            "topic": "t",
+            "bootstrap.servers": "localhost:9092",
+            "synchronize_partitions": true,
+        }))
+        .unwrap();
+        ConnectorConfig {
+            distributed: true,
+            ..ConnectorConfig::new(TransportConfig::KafkaInput(config), None)
+        }
+    }
+
+    /// A connector that synchronizes is local on one host, coordinated on
+    /// several, and refused on several if the coordinator does not synchronize
+    /// it.
+    #[test]
+    fn bound_sync_depends_on_hosts_and_coordinator() {
+        let multihost = InputShard::new(0, 3, HOME_1).unwrap();
+        let sync = synchronized_kafka();
+        assert_eq!(
+            bound_sync("c", &kafka(true), Some(&multihost), true).unwrap(),
+            None
+        );
+        assert_eq!(
+            bound_sync("c", &sync, None, false).unwrap(),
+            Some(BoundSync::Local)
+        );
+        assert_eq!(
+            bound_sync("c", &sync, Some(&InputShard::ALL), false).unwrap(),
+            Some(BoundSync::Local)
+        );
+        assert_eq!(
+            bound_sync("c", &sync, Some(&multihost), true).unwrap(),
+            Some(BoundSync::Coordinated)
+        );
+        let error = bound_sync("c", &sync, Some(&multihost), false).unwrap_err();
+        assert!(error.to_string().contains("coordinator"), "{error}");
     }
 
     fn kafka(distributed: bool) -> ConnectorConfig {
