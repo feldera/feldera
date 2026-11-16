@@ -285,7 +285,7 @@ public class CalciteOptimizer implements IWritesLogs {
         removeSubqueries.addRules(0, CoreRules.AGGREGATE_REMOVE_LITERAL_AGG);
         this.addStep(removeSubqueries.setAbortOnError());
         // Must run right after "Remove sub-queries": later steps rewrite the constructs
-        // that RejectUnsupportedPlans checks, such as ROWS frames and DISTINCT aggregates.
+        // that RejectUnsupportedPlans checks, such as window frames.
         this.addStep(new CalciteOptimizerStep() {
             @Override
             public String getName() {

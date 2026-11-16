@@ -2,18 +2,26 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlSelectKeyword;
 import org.apache.calcite.sql.fun.SqlInOperator;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.validate.SqlValidatorCatalogReader;
 import org.apache.calcite.sql.validate.SqlValidatorImpl;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
+import org.apache.calcite.util.Optionality;
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.RejectUnsupportedPlans;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.Utilities;
 
 import java.util.Locale;
@@ -26,8 +34,15 @@ import java.util.function.UnaryOperator;
  *   or {@code ALL} whose left operand is a ROW value, such as {@code (a, b)};</li>
  *   <li>comparisons between a ROW value and a scalar sub-query.</li>
  * </ul>
- */
+ *
+ * <p>Also rejects {@code SIMILAR TO}, {@code MODE(DISTINCT ...)}, {@code WITHIN DISTINCT},
+ * and {@code DISTINCT} in window aggregates. */
 public class FelderaSqlValidator extends SqlValidatorImpl {
+    public static final Documentation.Link DISTINCT_WINDOW_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "distinct-in-window-aggregates");
+    public static final Documentation.Link WITHIN_DISTINCT_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "within-distinct-not-supported");
+
     /** Maps a position in the statement to the position reported to the user */
     private final UnaryOperator<SqlParserPos> sourcePositionRemap;
 
@@ -101,9 +116,45 @@ public class FelderaSqlValidator extends SqlValidatorImpl {
         super.inferUnknownTypes(inferredType, scope, node);
     }
 
+    private boolean isDistinct(SqlCall call) {
+        SqlLiteral quantifier = call.getFunctionQuantifier();
+        return quantifier != null && quantifier.getValue() == SqlSelectKeyword.DISTINCT;
+    }
+
+    /** Throw if 'call' applies SIMILAR TO, MODE(DISTINCT), WITHIN DISTINCT, or DISTINCT
+     * in a window aggregate.  The conversion drops DISTINCT from the aggregates that
+     * ignore it, such as MIN, so these are accepted in a window. */
+    private void checkUnsupported(SqlCall call) {
+        switch (call.getKind()) {
+            case SIMILAR -> throw new UnimplementedException("Function " +
+                    Utilities.singleQuote(call.getOperator().getName()) + " not yet implemented",
+                    CalciteObject.create(this.sourcePositionRemap.apply(call.getParserPosition())));
+            case WITHIN_DISTINCT -> throw new UnsupportedException(
+                    "WITHIN DISTINCT is not supported.\n" + WITHIN_DISTINCT_DOCUMENTATION.citation(),
+                    this.getPositionRange(call));
+            case MODE -> {
+                if (this.isDistinct(call))
+                    throw new UnsupportedException("MODE does not support DISTINCT", this.getPositionRange(call));
+            }
+            case OVER -> {
+                if (call.operand(0) instanceof SqlCall aggregate
+                        && this.isDistinct(aggregate)
+                        && aggregate.getOperator() instanceof SqlAggFunction function
+                        && function.getDistinctOptionality() != Optionality.IGNORED)
+                    throw new UnsupportedException("Window aggregates do not support DISTINCT.\n" +
+                            DISTINCT_WINDOW_DOCUMENTATION.citation(), this.getPositionRange(aggregate));
+            }
+            default -> {}
+        }
+    }
+
     @Override
     public RelDataType deriveType(SqlValidatorScope scope, SqlNode expr) {
         this.checkRowComparison(scope, expr);
-        return super.deriveType(scope, expr);
+        RelDataType type = super.deriveType(scope, expr);
+        // After the derivation, which resolves the functions named in the call
+        if (expr instanceof SqlCall call)
+            this.checkUnsupported(call);
+        return type;
     }
 }
