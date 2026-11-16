@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -11,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -73,6 +75,14 @@ public class FieldUseMap {
         public abstract FieldInfo reduce(FieldInfo fieldInfo);
 
         public abstract FieldInfo project(int depth);
+
+        /** True if this and other mark the same fields as used */
+        abstract boolean sameUse(FieldInfo other);
+
+        /** The same uses as this, described for the type that 'present' compresses to.
+         * Each field used in this is used in 'present'.
+         * @param depth  Depth up to which 'present' is compressed. */
+        abstract FieldInfo relativeTo(FieldInfo present, int depth);
     }
 
     /** A reference to a FieldInfo */
@@ -132,6 +142,17 @@ public class FieldUseMap {
         public FieldInfo project(int depth) {
             var proj = this.field.project(depth);
             return new Ref(this.type, proj);
+        }
+
+        @Override
+        boolean sameUse(FieldInfo other) {
+            return this.field.sameUse(other.to(Ref.class).field);
+        }
+
+        @Override
+        FieldInfo relativeTo(FieldInfo present, int depth) {
+            FieldInfo relative = this.field.relativeTo(present.to(Ref.class).field, depth);
+            return new Ref(relative.getType().ref(), relative);
         }
 
         @Override
@@ -207,6 +228,20 @@ public class FieldUseMap {
             Utilities.enforce(this.type.sameType(other.type));
             Atomic oa = other.to(Atomic.class);
             return new Atomic(this.type, this.used || oa.used);
+        }
+
+        @Override
+        boolean sameUse(FieldInfo other) {
+            return this.used == other.to(Atomic.class).used;
+        }
+
+        @Override
+        FieldInfo relativeTo(FieldInfo present, int depth) {
+            if (present.anyUsed())
+                return new Atomic(this.type, this.used);
+            Utilities.enforce(!this.used);
+            // An unused field of a raw tuple compresses to the empty tuple
+            return FieldInfo.create(new DBSPTypeTuple(), false);
         }
     }
 
@@ -374,6 +409,39 @@ public class FieldUseMap {
             return new BitList(this.getTupleType(), fields);
         }
 
+        @Override
+        boolean sameUse(FieldInfo other) {
+            BitList ol = other.to(BitList.class);
+            Utilities.enforce(this.size() == ol.size());
+            for (int i = 0; i < this.size(); i++)
+                if (!this.fields.get(i).sameUse(ol.fields.get(i)))
+                    return false;
+            return true;
+        }
+
+        /** True if compression keeps field 'index' */
+        boolean keepsField(int index) {
+            return this.isRaw() || this.fields.get(index).anyUsed();
+        }
+
+        @Override
+        FieldInfo relativeTo(FieldInfo present, int depth) {
+            BitList pl = present.to(BitList.class);
+            Utilities.enforce(this.size() == pl.size());
+            if (depth == 0)
+                // Compression stops at this depth
+                return this;
+            List<FieldInfo> kept = new ArrayList<>();
+            for (int i = 0; i < this.size(); i++) {
+                if (pl.keepsField(i))
+                    kept.add(this.fields.get(i).relativeTo(pl.fields.get(i), depth - 1));
+                else
+                    Utilities.enforce(!this.fields.get(i).anyUsed());
+            }
+            DBSPTypeTupleBase type = pl.compressedType(depth).to(DBSPTypeTupleBase.class);
+            return new BitList(type, kept);
+        }
+
         public FieldInfo slice(int start, int endExclusive) {
             Utilities.enforce((endExclusive >= start));
             DBSPTypeTupleBase type = this.getTupleType().slice(start, endExclusive);
@@ -394,6 +462,12 @@ public class FieldUseMap {
 
     private FieldUseMap(FieldInfo info) {
         this.fieldInfo = info;
+    }
+
+    /** Depth of the fields of the rows of 'port' that can be unused: the fields of T for a
+     * ZSet of T, the fields of K and V for an IndexedZSet */
+    public static int depth(OutputPort port) {
+        return port.outputType().is(DBSPTypeIndexedZSet.class) ? 2 : 1;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -484,6 +558,23 @@ public class FieldUseMap {
     }
 
     public FieldUseMap project(int depth) { return new FieldUseMap(this.fieldInfo.project(depth)); }
+
+    /** True if compression keeps field 'index' of this tuple */
+    public boolean keepsField(int index) {
+        return this.fieldInfo.to(BitList.class).keepsField(index);
+    }
+
+    /** True if this and other mark the same fields as used */
+    public boolean sameUse(FieldUseMap other) {
+        return this.fieldInfo.sameUse(other.fieldInfo);
+    }
+
+    /** The same uses as this, described for the type that 'present' compresses to.
+     * Each field used in this is used in 'present'.
+     * @param depth  Depth up to which 'present' is compressed. */
+    public FieldUseMap relativeTo(FieldUseMap present, int depth) {
+        return new FieldUseMap(this.fieldInfo.relativeTo(present.fieldInfo, depth));
+    }
 
     public static FieldUseMap reduce(List<FieldUseMap> maps) {
         Utilities.enforce(!maps.isEmpty());

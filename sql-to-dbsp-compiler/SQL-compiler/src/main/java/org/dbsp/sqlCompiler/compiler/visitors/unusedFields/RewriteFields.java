@@ -122,6 +122,9 @@ public class RewriteFields extends InnerRewriteVisitor {
         this.pop(expression);
         if (this.current != null && this.currentDepth < this.depth) {
             FieldUseMap next = this.current.field(field);
+            // The new index of a removed field is the index of a different field
+            Utilities.enforce(this.current.keepsField(field),
+                    () -> "Field " + expression + " is read, but the use map " + this.current + " removes it");
             field = this.current.getNewIndex(field);
             this.setCurrent(next, currentDepth+1);
         }

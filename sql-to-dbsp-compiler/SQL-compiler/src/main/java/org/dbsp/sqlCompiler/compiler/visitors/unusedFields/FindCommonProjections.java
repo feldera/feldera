@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 import org.dbsp.util.graph.Port;
 
@@ -51,7 +50,7 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
             return;
         }
 
-        int depth = operator.outputType(0).is(DBSPTypeZSet.class) ? 1 : 2;
+        int depth = FieldUseMap.depth(operator.getOutput(0));
         boolean failed;
         List<FieldUseMap> usage = new ArrayList<>();
         List<ParameterFieldUse> useList = new ArrayList<>();
