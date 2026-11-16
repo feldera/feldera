@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -28,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -624,5 +626,61 @@ public class ShareIndexesTests extends StreamingTestBase {
         for (int i = 0; i < sharedStar.inputs.size(); i++)
             Assert.assertTrue(function.parameters[i + 1].getType().deref()
                     .sameType(sharedStar.inputs.get(i).getOutputIndexedZSetType().elementType));
+    }
+
+    @Test
+    public void projectionOfIndexSharesIndex() {
+        // One join reads an index of a map of T with the values 'a' and 's'.  The other join
+        // reads a projection of that index that keeps 's'.  Both joins keep one integral.
+        DBSPCompiler compiler = this.testCompiler();
+        DBSPCircuit circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        DBSPSourceMultisetOperator t = table(circuit, "T", "k", "a", "s");
+        DBSPSourceMultisetOperator s = table(circuit, "S", "k", "b");
+
+        // The function call makes the map expensive, so the indexes are not merged with the map
+        DBSPVariablePath tRow = t.getOutputZSetElementType().ref().var();
+        DBSPMapOperator map = new DBSPMapOperator(CalciteEmptyRel.INSTANCE,
+                new DBSPTupleExpression(
+                        tRow.deref().field(0),
+                        new DBSPApplyExpression("f", INT, tRow.deref().field(1)),
+                        tRow.deref().field(2)).closure(tRow),
+                t.outputPort());
+        circuit.addOperator(map);
+
+        DBSPVariablePath row = map.getOutputZSetElementType().ref().var();
+        DBSPMapIndexOperator wide = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
+                new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(row.deref().field(0)),
+                        new DBSPTupleExpression(row.deref().field(1), row.deref().field(2))).closure(row),
+                map.outputPort());
+        circuit.addOperator(wide);
+        DBSPVariablePath keyValue = wide.getOutputIndexedZSetType().getKVRefType().var();
+        DBSPMapIndexOperator narrow = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
+                new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(keyValue.field(0).deref().field(0)),
+                        new DBSPTupleExpression(keyValue.field(1).deref().field(1))).closure(keyValue),
+                wide.outputPort());
+        circuit.addOperator(narrow);
+
+        List<DBSPMapIndexOperator> indexes = List.of(wide, narrow);
+        for (int i = 0; i < indexes.size(); i++) {
+            List<OutputPort> joinInputs = Linq.list(indexes.get(i).outputPort(), index(circuit, s, 1));
+            DBSPClosureExpression joinFunction = firstFields(joinInputs);
+            DBSPJoinOperator join = new DBSPJoinOperator(CalciteEmptyRel.INSTANCE,
+                    new DBSPTypeZSet(joinFunction.getResultType()), joinFunction,
+                    joinInputs.get(0), joinInputs.get(1), false);
+            circuit.addOperator(join);
+            view(circuit, "J" + i, join);
+        }
+
+        DBSPCircuit shared = new ShareIndexes(compiler).apply(circuit);
+        List<DBSPJoinBaseOperator> joins = operators(shared, DBSPJoinBaseOperator.class);
+        Assert.assertEquals(2, joins.size());
+        Assert.assertSame(joins.get(0).left().node(), joins.get(1).left().node());
+        // One index of T and one index of S
+        Assert.assertEquals(2, operators(shared, DBSPMapIndexOperator.class).size());
+        // The shared value of T holds 'a' and 's'
+        Assert.assertEquals(2, joins.get(0).left().getOutputIndexedZSetType().elementType
+                .to(DBSPTypeTuple.class).size());
     }
 }
