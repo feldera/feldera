@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
@@ -419,8 +420,22 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
     public void postorder(DBSPDeindexOperator operator) {
         OutputPort source = this.mapped(operator.input());
         if (source.node().is(DBSPMapIndexOperator.class)) {
-            // deindex(mapindex) = nothing
-            this.map(operator, source.node().inputs.get(0).node().to(DBSPSimpleOperator.class));
+            DBSPMapIndexOperator index = source.node().to(DBSPMapIndexOperator.class);
+            OutputPort input = index.input();
+            DBSPClosureExpression function = index.getClosureFunction();
+            // The function that computes only the value of the index
+            DBSPClosureExpression value = function.body.field(1)
+                    .reduce(this.compiler)
+                    .closure(function.parameters);
+            if (input.outputType().is(DBSPTypeZSet.class) &&
+                    RemoveIdentityOperators.isIdentityFunction(value)) {
+                // deindex(mapindex) = nothing
+                this.map(operator, input.node().to(DBSPSimpleOperator.class));
+                return;
+            }
+            // deindex(mapindex(f)) = map(value of f)
+            DBSPSimpleOperator result = new DBSPMapOperator(operator.getRelNode(), value, input);
+            this.map(operator, result);
             return;
         }
         super.postorder(operator);
