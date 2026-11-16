@@ -51,6 +51,11 @@ public class UnusedFields extends Passes {
                     AnalyzedSet<DBSPOperator> mapOperators,
                     AnalyzedSet<DBSPOperator> mapAfterFilter) {
                 super("UnusedFieldsOnePass", compiler);
+                // These two passes remove the unused fields of all operators at once.
+                // The passes that follow move a projection one operator upstream in each repetition.
+                FindUsedOutputFields usedOutputs = new FindUsedOutputFields(compiler);
+                this.add(usedOutputs);
+                this.add(new RemoveUnusedOutputFields(compiler, usedOutputs));
                 this.add(new RemoveUnusedFields(compiler, operatorsAnalyzed));
                 // Very important, because OptimizeMaps works backward
                 this.add(new DeadCode(compiler, true));
@@ -237,6 +242,7 @@ public class UnusedFields extends Passes {
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         AnalyzedSet<DBSPOperator> mapOperators = new AnalyzedSet<>();
         AnalyzedSet<DBSPOperator> mapAfterFilter = new AnalyzedSet<>();
+        this.add(new CSE(compiler));
         this.add(new RepeatRemove(compiler, operatorsAnalyzed, mapOperators, mapAfterFilter));
         Graph graph = new Graph(compiler);
         this.add(graph);

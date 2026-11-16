@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisito
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.TriFunction;
 import org.dbsp.util.Utilities;
 
@@ -52,11 +51,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
             DBSPParameter filterParam = filterFunction.parameters[0];
             FindUsedFields mapFinder = new FindUsedFields(this.compiler);
             var mapUse = mapFinder.findUsedFields(mapFunction);
-            final int depth;
-            if (filter.input().outputType().is(DBSPTypeIndexedZSet.class))
-                depth = 2;
-            else
-                depth = 1;
+            final int depth = FieldUseMap.depth(filter.input());
 
             if (mapUse.hasUnusedFields(depth)) {
                 FieldUseMap mapUsed = mapUse.get(mapParam);

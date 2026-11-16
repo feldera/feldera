@@ -363,28 +363,9 @@
             }]
         },
         "positions": [],
-        "persistent_id": "9d2351242f9eecb29a29071df6232733f0284120c7dbc4c706b69a96b0d71594"
+        "persistent_id": "765e9fe060998c6f842fcb9c285ea427ae0ff112aed7cbaeeef62ae84e2fb07e"
       },
       "s3": {
-        "operation": "flat_map_index",
-        "inputs": [
-          { "node": "s2", "output": 0 }
-        ],
-        "calcite": {
-          "seq": [
-            {
-              "final": 6
-            },{
-              "partial": 7
-            }]
-        },
-        "positions": [
-          {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
-          {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
-        ],
-        "persistent_id": "10e04d83deb44d99837e4c9b3a4b922ee2653fc1b9eeac72195faba5824b9ca1"
-      },
-      "s4": {
         "operation": "flat_map_index",
         "inputs": [
           { "node": "s2", "output": 0 }
@@ -403,7 +384,26 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "e4ba625414f908abb886c3f78a9698b3d147a010aadad7f6a6bbeb00a4889c23"
+        "persistent_id": "fa4bbdc31de443068dcbc26124ec83fafac045d945ad24ce95c2718e7f50e672"
+      },
+      "s4": {
+        "operation": "flat_map_index",
+        "inputs": [
+          { "node": "s2", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "final": 6
+            },{
+              "partial": 7
+            }]
+        },
+        "positions": [
+          {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
+          {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
+        ],
+        "persistent_id": "f9234577437f0320131deee8f69cbb13a70c50d0b60d3ff5732529369d8da1eb"
       },
       "s5": {
         "operation": "delta0",
@@ -414,13 +414,13 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "d14edda363a29292e96f713efd5f0542e64701c32e7bed5f4bf1e31748dd32b8"
+        "persistent_id": "7ba83195b525f5db423c53fb225d7e4c520e32c6a4289b396ccd07dcb6538571"
       },
       "s6": {
         "operation": "join",
         "inputs": [
-          { "node": "s4", "output": 0 },
-          { "node": "s3", "output": 0 }
+          { "node": "s3", "output": 0 },
+          { "node": "s4", "output": 0 }
         ],
         "calcite": {
           "partial": 7
@@ -430,7 +430,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "8dc25e69a8262539166c81a9401b7ed547c4f5e98f501eb40b0fa3076abb7104"
+        "persistent_id": "7318a483c2d17528fca8e039dc1f825f8d246379dbd58d1e819dc970006b5617"
       },
       "s7": {
         "operation": "sum",
@@ -442,7 +442,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "46f5f9f2addbd6840de71e20961e26252e737da160f08aab45d55dae0a1a47ab"
+        "persistent_id": "314e915f020b446beef41270c3d43d08dd98856b2d20ada439fe2a9f656d8c61"
       }
     }, "s8": {
       "operation": "inspect",
@@ -456,7 +456,7 @@
       "positions": [
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "3e8f46dc4924b09d9d385ab1664c19dec0ad0c246483c67aeb758e8de3ea106d"
+      "persistent_id": "e3490d309906851a3ec0995d3977f324b3c4db8e3b7b476cf6c2912b0c51cdbf"
     }, "s9": {
       "operation": "incremental_constant",
       "inputs": [],
