@@ -64,8 +64,10 @@ public class RemoveIdentityOperators extends Passes {
     }
 
     /** Check whether a closure is an "identity" function for a Map or MapIndex operator.
-     * There are two possible shapes we check:
+     * There are three possible shapes we check:
      * |x| *x
+     * and, when x is a tuple, the copy of each field
+     * |x| Tup::new(x.0, x.1, ...)
      * and
      * |(&k, &v)| (*k, *v) */
     public static boolean isIdentityFunction(DBSPClosureExpression expression) {
@@ -82,9 +84,10 @@ public class RemoveIdentityOperators extends Passes {
             DBSPClosureExpression id;
             if (tuple != null) {
                 id = new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var.deref()), tuple.mayBeNull).closure(var);
-            } else {
-                id = var.deref().applyCloneIfNeeded().closure(var);
+                if (EquivalenceContext.equiv(expression, id))
+                    return true;
             }
+            id = var.deref().applyCloneIfNeeded().closure(var);
             return EquivalenceContext.equiv(expression, id);
         } else if (paramType.is(DBSPTypeRawTuple.class)) {
             DBSPTypeRawTuple raw = paramType.to(DBSPTypeRawTuple.class);
