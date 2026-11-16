@@ -1005,9 +1005,13 @@ metrics"""
         state.
 
         A paused pipeline does not process the input that its connectors
-        buffered, except forced input to HTTP input connectors. When this
-        function waits, it returns after the step that was in progress at the
-        time of the pause is complete.
+        buffered. The exceptions are input in HTTP input connectors, such as
+        forced input from :meth:`.input_json`, and the cases listed under
+        "Pausing a pipeline" in the testing guide, such as a transaction
+        commit. When this function waits, it returns after the step that was
+        in progress at the time of the pause is complete. A transaction commit
+        that was in progress at the pause still finishes after that, which
+        changes the views.
 
         :param wait: Set True to wait for the pipeline to pause. True by default
         :param timeout_s: The maximum time (in seconds) to wait for the
@@ -1100,9 +1104,12 @@ metrics"""
         observe the previous ``NOW()`` until that step completes.  Poll
         the view if you need read-after-write semantics.
 
-        A paused pipeline does not take the new value until it resumes, so
-        while the pipeline is paused, the views keep the previous ``NOW()``.
-        Do not poll the view for the new value until after :meth:`.resume`.
+        A paused pipeline takes the new value when it resumes, or earlier if
+        it commits a transaction: from a :meth:`.commit_transaction` request
+        until the commit starts, it polls all its connectors, the clock
+        included.  Otherwise, while the pipeline is paused, the views keep the
+        previous ``NOW()``, so do not poll the view for the new value until
+        after :meth:`.resume`.
 
         :return: A dict ``{"now_ms": <int>, "now": <RFC 3339 str>}``.
 
