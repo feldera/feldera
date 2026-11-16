@@ -1033,9 +1033,12 @@ class TestPipeline(SharedTestPipeline):
     def _skip_if_perf_events_blocked(self, e: FelderaAPIError):
         # samply needs perf events.  A host whose kernel.perf_event_paranoid
         # is too high (Ubuntu's default is 4) blocks them even with the
-        # PERFMON capability, and samply's error names that setting.
-        if e.error_code == "SamplyProfilingFailure" and "perf_event_paranoid" in str(
-            e.details
+        # PERFMON capability, and samply's error names that setting.  Skip
+        # only outside CI, so that CI cannot lose this test without notice.
+        if (
+            not os.environ.get("CI")
+            and e.error_code == "SamplyProfilingFailure"
+            and "perf_event_paranoid" in str(e.details)
         ):
             self.skipTest(
                 "host blocks perf events (lower kernel.perf_event_paranoid): "
