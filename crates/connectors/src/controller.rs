@@ -19,8 +19,7 @@
 
 use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
-    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, ViewIntegrals,
-    runtime_version,
+    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, ViewIntegrals, runtime_version,
 };
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
