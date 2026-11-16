@@ -684,15 +684,15 @@ pipeline continues to run:
 | Does not process input that its connectors buffer | The input stays in the buffers until `resume()`. This includes input that a connector buffered before the pause. |
 | Answers ad-hoc queries | `pipeline.query()` works as usual. |
 | Accepts input from the SDK only when the input is forced | `pipeline.input_json()` raises a `RuntimeError` unless the call passes `force=True`. The pipeline processes forced input, and any other input that the HTTP input connectors buffered. |
-| Does not advance the clock | The clock connector does not initiate new steps, and the pipeline does not take new clock values from it. `NOW()` keeps its value until `resume()`. With `now_http_driven`, `advance_clock()` returns the new value, but the pipeline takes it only after `resume()`. |
+| Does not advance the clock | The clock connector does not initiate new steps, and `NOW()` keeps its value until `resume()`, with one exception: from a `commit_transaction()` request until the commit starts, the pipeline takes a new clock value (see the table below). With `now_http_driven`, `advance_clock()` returns the new value at once. The pipeline takes it after `resume()` or during that exception, whichever comes first. |
 
 `pause()` returns when the pipeline reports the `PAUSED` status.  The
 pipeline reports this status only after the step that was in progress at
 the time of the pause, if any, is complete.  After `pause()` returns, the
 views change only because of input to the HTTP input connectors, or in one
 of the cases in the table below.  A connector can continue to
-buffer input for a short time after the pause, but the pipeline does not
-process that input until `resume()`.  For a paused pipeline,
+buffer input for a short time after the pause.  Except in the cases in the
+table below, the pipeline does not process that input until `resume()`.  For a paused pipeline,
 `pipeline.wait_for_idle()` counts the buffered input as if it were
 processed, except the input that the HTTP input connectors buffered.
 
@@ -700,11 +700,12 @@ The pipeline also processes buffered input in these cases:
 
 | Case | Behavior |
 |------|----------|
-| Transaction commit | A transaction that commits while the pipeline is paused includes the input that the connectors buffered before the commit request, so the pipeline processes that input to finish the commit.  A commit that was in progress at the pause also finishes.  See [Transactions](/pipelines/transactions). |
+| Transaction commit | From a `commit_transaction()` request until the commit starts, a paused pipeline polls all its connectors, the clock included, as a running pipeline does.  The transaction thus includes the input that the connectors buffered before the request, and any input that arrives before the commit starts.  If a connector in the transaction has not committed its part, this lasts until it does, which can be after `resume()`.  A commit that was in progress at the pause also finishes.  A transaction that only connectors started does not commit while the pipeline is paused, unless its commit started before the pause.  Until it commits, the pipeline takes no checkpoints, and a suspend waits.  See [Transactions](/pipelines/transactions). |
 | Checkpoint | To make a checkpoint, a pipeline without fault tolerance processes the buffered input of the connectors that block the checkpoint (see [Fault tolerance](/pipelines/fault-tolerance)). |
 | Paused before the first run | A pipeline that starts paused, for example with `start_paused()` or after a restart from a checkpoint, processes the buffered input of all its connectors until it runs for the first time.  This lets each connector record its starting position for checkpoints. |
 
-A multihost pipeline behaves the same way.
+A multihost pipeline behaves the same way, except that a transaction commit
+does not take the input that the connectors buffered.
 
 When the test program is the only source of input, the test can wait until
 the pipeline has processed all the input that it received, by comparing
