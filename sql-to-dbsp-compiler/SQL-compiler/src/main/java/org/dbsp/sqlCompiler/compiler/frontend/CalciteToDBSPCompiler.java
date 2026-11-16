@@ -2559,11 +2559,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         TopKAggregate topKAggregate = null;
 
         // We have to process multiple Groups, and each group has multiple aggregates.
+        // shuffle[i] is the position in the window's output row of the i-th field that the operators produce.
         List<Integer> shuffle = new ArrayList<>();
         List<Integer> later = new ArrayList<>();
         DBSPSimpleOperator lastOperator = input;
         int index = 0;
-        int elementIndex = 0;
 
         for (int i = 0; i < inputRowType.size(); i++)
             shuffle.add(i);
@@ -2589,8 +2589,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     if (winCondition != null) {
                         remainingCondition = winCondition.remaining;
                         topKAggregate = new TopKAggregate(ga.to(RankAggregate.class), winCondition.limit);
-                        later.add(inputRowType.size() + elementIndex);
-                        elementIndex++;
+                        later.add(ga.windowFieldIndex);
                         continue;
                     }
                 }
@@ -2600,8 +2599,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (lastOperator != input)
                 this.addOperator(lastOperator);
             lastOperator = ga.implement(input, lastOperator, previousPartitionKeys, index == toProcess.size() - 1);
-            shuffle.add(inputRowType.size() + elementIndex);
-            elementIndex++;
+            // A group produces one field for each of its aggregates
+            for (int i = 0; i < ga.aggregateCount(); i++)
+                shuffle.add(ga.windowFieldIndex + i);
             index++;
             previousPartitionKeys = ga.partitionKeyIndexes();
         }

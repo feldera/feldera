@@ -82,6 +82,11 @@ public abstract class WindowAggregates implements ICastable {
         return CalciteObject.create(this.window);
     }
 
+    /** Number of aggregate calls, which is the number of window fields this group produces. */
+    public int aggregateCount() {
+        return this.aggregateCalls.size();
+    }
+
     /** Indexes of the row fields that form the partition key, in key order. */
     public List<Integer> partitionKeyIndexes() {
         return this.partition.keyFieldIndexes();
