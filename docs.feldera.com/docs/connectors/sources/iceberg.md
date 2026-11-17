@@ -119,6 +119,7 @@ S3 and GCP FileIO implementations require additional configuration options docum
 | `s3.access-key-id`          | string | S3 access key id.|
 | `s3.secret-access-key`      | string | S3 secret access key.|
 | `s3.endpoint`               | string | Configure an alternative endpoint of the S3 service for the FileIO to access. This could be used to use S3 FileIO with any S3-compatible object storage service that has a different endpoint, or access a private S3 endpoint in a virtual private cloud.|
+| `s3.path-style-access`     | string | Set to `"true"` to address the bucket in the URL path (`http://host/bucket/key`) instead of the host name (`http://bucket.host/key`). S3-compatible services such as MinIO usually need it.|
 | `s3.region`                 | string | S3 region.|
 | `s3.session-token`          | string | S3 session token. This is required when using temporary credentials.|
 | `s3.allow-anonymous`        | string | Set to `"true"` to skip signing requests (e.g., for public buckets).|
