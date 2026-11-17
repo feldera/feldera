@@ -4,17 +4,16 @@ This document describes how to configure the endpoints of Feldera components (AP
 runner, pipelines) to serve HTTPS in the Enterprise edition.
 
 For Feldera to support HTTPS with single-host pipelines, the
-administrator must configure Feldera with a [wildcard
-certificate](#wildcard-certificate-generation) and a private key for
+administrator must configure Feldera with a wildcard
+certificate and a private key for
 its main DNS domain, e.g. for `*.feldera.svc.cluster.local`.  The
 Feldera API server, compiler runner, pipeline runner, pipeline
 stateful sets, and other top-level components share this certificate
 and key.
 
 For Feldera to also support HTTPS with multihost pipelines, the
-administrator must additionally configure Feldera with a [private CA
-certificate chain](#private-ca-certificate-chain-generation) and
-private key.  This allows the Feldera pipeline runner to generate keys
+administrator must additionally configure Feldera with a private CA
+certificate chain and private key.  This allows the Feldera pipeline runner to generate keys
 for multihost pipeline pods in their nested DNS domains,
 e.g. `<pipeline>-<ordinal>.<pipeline>.feldera.svc.cluster.local`,
 which a single wildcard certificate cannot cover.  The generated
@@ -31,6 +30,19 @@ from the other Feldera components.
 
 :::
 
+This page uses [cert-manager](https://cert-manager.io) to issue and
+renew these certificates.  Certificates from another source must meet
+these requirements:
+
+- The server certificate covers `*.<namespace>.svc.cluster.local`, and
+  `localhost` and `127.0.0.1` if you use `kubectl` port forwarding.
+- In the server certificate secret, `tls.crt` holds the complete chain,
+  from the leaf certificate to the root CA, and `tls.key` holds only the
+  private key of the leaf certificate.
+- In the private CA secret, `tls.crt` starts with the private CA
+  certificate, followed by its chain, and `tls.key` holds the private CA
+  key in PKCS#8 format.
+
 This document does not apply to the connection to the Postgres database used by the control plane,
 which can be [configured separately](helm-guide.md).
 
@@ -43,148 +55,224 @@ as it expects HTTPS. Restart the pipelines after configuring HTTPS.
 
 :::
 
-## Wildcard Certificate Generation
+## Using cert-manager
 
-To support HTTPS, the administrator must generate and install a
-wildcard certificate for `*.<namespace>.svc.cluster.local`, where
-`<namespace>` is the Kubernetes namespace in use, such as `feldera`.
+[cert-manager](https://cert-manager.io/docs/installation/) issues the
+certificates as Kubernetes secrets and renews them before they
+expire.  The example below creates one self-signed root CA in the
+`feldera` namespace with two branches:
 
-:::info
+```
+feldera-root-ca (self-signed)
+├── feldera-https-ca ── feldera-https-config   wildcard server certificate (httpsSecretRef)
+└── feldera-ca-config                          private CA for multihost pipelines and
+                                               client certificates (caSecretRef)
+```
 
-When using `kubectl` port forwarding, it is also useful to add
-hostname `localhost` and/or `127.0.0.1` to the certificate.
+An existing `ClusterIssuer` of your organization can take the place of
+the self-signed root.
 
-:::
+1. Install cert-manager in the cluster, if it is not there yet.
 
-Any method for generating a signed certificate is acceptable.  We
-assume later that the certificate file is named `tls.crt` and the
-private key file `tls.key`.  The following sections describe two ways
-to generate these files.
+2. Apply the issuers and certificates.  Replace `feldera` with your
+   namespace in `namespace`, `commonName` and `dnsNames`:
 
-### Generating a self-signed certificate with OpenSSL
-
-Suppose that we install Feldera in namespace `feldera` and will be
-using `kubectl` port forwarding.
-
-1. Create `x509_v3.ext` to specify the SANs (Subject Alternative Names):
+   ```yaml
+   apiVersion: cert-manager.io/v1
+   kind: Issuer
+   metadata:
+     name: feldera-selfsigned
+     namespace: feldera
+   spec:
+     selfSigned: {}
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-root-ca
+     namespace: feldera
+   spec:
+     isCA: true
+     commonName: feldera-root-ca
+     secretName: feldera-root-ca
+     duration: 87600h # 10 years
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+     issuerRef:
+       name: feldera-selfsigned
+       kind: Issuer
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Issuer
+   metadata:
+     name: feldera-root-ca
+     namespace: feldera
+   spec:
+     ca:
+       secretName: feldera-root-ca
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-https-ca
+     namespace: feldera
+   spec:
+     isCA: true
+     commonName: feldera-https-ca
+     secretName: feldera-https-ca
+     duration: 43800h # 5 years
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+     issuerRef:
+       name: feldera-root-ca
+       kind: Issuer
+   ---
+   apiVersion: cert-manager.io/v1
+   kind: Issuer
+   metadata:
+     name: feldera-https-ca
+     namespace: feldera
+   spec:
+     ca:
+       secretName: feldera-https-ca
+   ---
+   # Wildcard server certificate of the API server, compiler, runner, and pipelines.
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-https-config
+     namespace: feldera
+   spec:
+     secretName: feldera-https-config
+     commonName: feldera.svc.cluster.local
+     dnsNames:
+       - "*.feldera.svc.cluster.local"
+       - localhost # for kubectl port forwarding
+     ipAddresses:
+       - 127.0.0.1
+     usages:
+       - digital signature
+       - server auth
+     duration: 8760h # 1 year
+     renewBefore: 720h # 30 days
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+       rotationPolicy: Always
+     issuerRef:
+       name: feldera-https-ca
+       kind: Issuer
+   ---
+   # Private CA: the runner signs a certificate for each pipeline with it.
+   apiVersion: cert-manager.io/v1
+   kind: Certificate
+   metadata:
+     name: feldera-ca-config
+     namespace: feldera
+   spec:
+     isCA: true
+     commonName: feldera-private-ca
+     secretName: feldera-ca-config
+     duration: 43800h # 5 years
+     privateKey:
+       algorithm: ECDSA
+       size: 256
+       encoding: PKCS8
+     issuerRef:
+       name: feldera-root-ca
+       kind: Issuer
    ```
-   [x509_v3]
-   subjectAltName = @alt_names
 
-   [alt_names]
-   DNS.1 = localhost
-   DNS.2 = *.feldera.svc.cluster.local
-   IP.1 = 127.0.0.1
-   ```
+   The runner reads the private CA key only as PKCS#8, so keep
+   `encoding: PKCS8` on `feldera-ca-config`.
 
-2. Generate the certificate and private key using `openssl`:
-   ```
-   openssl req -x509 -newkey rsa:4096 -nodes \
-     -keyout tls.key -out tls.crt -days 365 \
-     -subj '/CN=localhost' -config x509_v3.ext -extensions x509_v3
-   ```
-
-3. This will create the `tls.key` and `tls.crt` files.
-
-### Using a certificate signed by an external CA
-
-If the certificate is not self-signed, but instead is signed by a root CA or an intermediate CA,
-the `tls.crt` should contain the complete bundle of the entire chain up until the root certificate
-authority. As such, it should contain multiple  `-----BEGIN CERTIFICATE----- (...) -----END CERTIFICATE-----`
-sections, starting with the leaf certificate and ending with the root certificate. The `tls.key`
-should only contain the single private key of the leaf certificate.
-
-## Private CA Certificate Chain Generation
-
-To support HTTPS for multihost pipelines, the administrator must
-additionally configure Feldera with a private CA certificate chain and
-private key.  This allows the Feldera pipeline runner to generate keys
-for multihost pipeline pods in their nested DNS domains,
-e.g. `<pipeline>-<ordinal>.<pipeline>.feldera.svc.cluster.local`,
-which a single wildcard certificate cannot cover.
-
-The private CA certificate chain can be and should be separate from
-any other PKI, because it is used only for connections between Feldera
-components, such as between the pipeline pods and the pipeline
-manager, not external software.
-
-Any method for generating a private CA certificate chain is
-acceptable.  We assume later that the CA certificate chain file is
-named `private_ca.crt` and the private key file `private_ca.key`.  The
-section below describes one way to generate these files.
-
-### Generating a private CA with OpenSSL
-
-1. Create `root_x509_v3.ext` to specify options for the root private CA:
+3. Wait until all certificates are ready:
 
    ```
-   [x509_v3]
-   basicConstraints = CA:TRUE,pathlen:1
+   kubectl get certificates -n feldera
    ```
 
-2. Create `intermediate_x509_v3.ext` to specify options for the
-   intermediate private CA:
+4. Set the secrets in the Helm values, as in [Configure
+   Kubernetes](#configure-kubernetes).  To also enable
+   [client certificates](#client-certificates), add `mtls.enabled: true`:
 
-   ```
-   [x509_v3]
-   basicConstraints = CA:TRUE,pathlen:0
-   ```
-
-3. Generate the root CA with `openssl`:
-
-   ```
-   openssl req -x509 -newkey rsa:4096 -nodes \
-         -keyout private_root_tls.key -out private_root_tls.crt -days 365 \
-         -subj '/CN=FelderaTest Private Root CA' \
-         -config root_x509_v3.ext -extensions x509_v3
+   ```yaml
+   httpsSecretRef: "feldera-https-config"
+   caSecretRef: "feldera-ca-config"
+   # mtls:
+   #   enabled: true
    ```
 
-4. Generate and sign the intermediate CA with `openssl`:
+
+To trust the server certificate from outside the cluster, for example
+with `curl` over port forwarding, use the root CA:
+
+```
+kubectl get secret -n feldera feldera-root-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > feldera-root-ca.crt
+curl --cacert feldera-root-ca.crt 'https://localhost:8080/v0/pipelines'
+```
+
+If an ingress or a Gateway API gateway forwards traffic to the API
+server, configure it to connect over HTTPS and to verify the API
+server against the `feldera-root-ca` secret.
+
+### Renew the server certificate
+
+cert-manager renews the server certificate (`feldera-https-config`) in
+the secret when `renewBefore` starts, 30 days before it expires in the
+example above.  The API server, the compiler, and the runner read the
+certificate only when they start, so they keep the old certificate until
+they restart.  A Feldera upgrade restarts them.
+
+If the old certificate expires before a restart:
+
+- Clients outside the cluster cannot connect to the API server.  For
+  example, `curl` fails with `certificate has expired`.
+- A pipeline that starts cannot download its binary from the compiler.
+  It stays in the `Unavailable` state, and its log shows
+  `Issued certificate has expired`.
+- Pipelines that are already running continue to run.
+
+To use the renewed certificate, do these steps before the old
+certificate expires.  If it has already expired, the same steps fix it.
+
+1. Get the time of the next renewal:
 
    ```
-   openssl req -new -newkey rsa:4096 -nodes \
-       -keyout private_intermediate_tls.key -out private_intermediate_tls.csr \
-       -subj '/CN=FelderaTest Intermediate CA'
-   openssl x509 -req \
-       -in private_intermediate_tls.csr -CA private_root_tls.crt -CAkey private_root_tls.key \
-       -CAcreateserial -out private_intermediate_tls.crt \
-       -days 360 -sha256 \
-       -extfile intermediate_x509_v3.ext -extensions x509_v3
+   kubectl get certificate -n feldera feldera-https-config -o jsonpath='{.status.renewalTime}'
    ```
 
-5. Produce the secret to install into Kubernetes:
+2. After that time, restart the control plane.  Replace `<release>`
+   with the name of your Helm release:
 
    ```
-   cat private_intermediate_tls.crt private_root_tls.crt > private_ca.crt
-   cat private_intermediate_tls.key > private_ca.key
+   kubectl rollout restart -n feldera \
+     deployment/<release>-api-server \
+     deployment/<release>-kubernetes-runner \
+     statefulset/<release>-compiler-server
    ```
+
+   With `compilerAutoscaling.enabled`, also restart
+   `deployment/<release>-compiler-artifact-server`.
+
+3. Stop and start pipelines that are in the `Unavailable` state.
+   Pipelines that run correctly do not need a restart.
+
+This applies only to the server certificate.  The control plane client
+certificate that the chart issues for [client
+certificates](#client-certificates) takes effect without a restart.
 
 ## Configure Kubernetes
 
-1. Create the Kubernetes TLS secret for `tls.key` and `tls.crt` files
-   from [wildcard certificate
-   generation](#wildcard-certificate-generation):
-
-   ```
-   kubectl create -n <namespace> secret tls feldera-https-config --key tls.key --cert tls.crt
-   ```
-
-   The secret (i.e., certificate and key) will be mounted as a directory with corresponding files
-   by each of the Feldera component (API server, compiler, runner, pipelines) pods.
-
-2. To additionally support multihost pipelines, create a Kubernetes
-   TLS secret for `private_ca.key` and `private_ca.crt` from [private
-   CA certificate chain
-   generation](#private-ca-certificate-chain-generation):
-
-   ```
-   kubectl create -n <namespace> secret tls feldera-ca-config --key private_ca.key --cert private_ca.crt
-   ```
-
-3. Provide in the Helm installation the reference for the
+1. Provide in the Helm installation the reference for the
    `httpsSecretRef` and, for multihost support, `caSecretRef`, value.
 
-   If you did not create the private CA for multihost pipeline support:
+   Without the private CA:
 
    - **Via file `values.yaml`:**
      ```
@@ -198,8 +286,7 @@ section below describes one way to generate these files.
        --set httpsSecretRef="feldera-https-config"
      ```
 
-   If you did create the private CA for multihost pipeline support:
-
+   With the private CA:
 
    - **Via file `values.yaml`:**
      ```
@@ -215,17 +302,17 @@ section below describes one way to generate these files.
        --set caSecretRef="feldera-ca-config"
      ```
 
-4. (Optional) Port forward:
+2. (Optional) Port forward:
    ```
    kubectl port-forward -n feldera svc/feldera-api-server 8080:8080
    ```
    ... and then open in the browser: https://localhost:8080
 
-   Note that the certificate will need to be trusted to not encounter
-   errors about an insecure connection (or self-signed certificates).
-   For example, when using curl:
+   Clients must trust the root CA to connect without certificate
+   errors.  For example, with `curl` and the root CA from [Using
+   cert-manager](#using-cert-manager):
    ```
-   curl --cacert tls.crt 'https://localhost:8080/v0/pipelines'
+   curl --cacert feldera-root-ca.crt 'https://localhost:8080/v0/pipelines'
    ```
 
    It is no longer possible to reach the endpoints via HTTP.
@@ -234,6 +321,24 @@ section below describes one way to generate these files.
    "localhost sent an invalid response" (Chrome) or
    "Received HTTP/0.9 when not allowed" (curl).
    Use `https://` as the protocol.
+
+:::note
+
+With `caSecretRef` and `kubernetesRunner.enablePerPipelineNamespace`, a
+pipeline in another namespace needs the server certificate in its own
+namespace. The pipeline uses it to verify the control plane. Without it,
+the pipeline pod stays in `ContainerCreating` with the event
+`secret "feldera-https-config" not found`. Copy only the certificate,
+not the private key, into each pipeline namespace:
+
+```
+kubectl get secret -n feldera feldera-https-config -o jsonpath='{.data.tls\.crt}' | base64 -d > tls.crt
+kubectl create secret generic feldera-https-config -n <pipeline-namespace> --from-file=tls.crt=tls.crt
+```
+
+Copy the certificate again each time it is renewed.
+
+:::
 
 ## Client certificates
 
@@ -267,7 +372,9 @@ Requirements:
 - `httpsSecretRef` and `caSecretRef` are set.
 - [cert-manager](https://cert-manager.io) runs in the cluster.  The chart
   creates an `Issuer` for the private CA and a `Certificate` for the control
-  plane.  The components read a renewed certificate without a restart.
+  plane.  The components read a renewed control plane certificate without
+  a restart.  The server certificate is different: see [Renew the server
+  certificate](#renew-the-server-certificate).
 
 ```
 httpsSecretRef: "feldera-https-config"
