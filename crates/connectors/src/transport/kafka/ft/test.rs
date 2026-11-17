@@ -2224,7 +2224,7 @@ fn check_fault_tolerance(
     create_dir(&storage_dir).unwrap();
     let output_path = tempdir.path().join("output.csv");
 
-    let config: PipelineConfig = serde_json::from_value(json!({
+    let mut config: PipelineConfig = serde_json::from_value(json!({
         "name": "test",
         "workers": 4,
         "storage_config": { "path": storage_dir },
@@ -2255,6 +2255,21 @@ fn check_fault_tolerance(
         }
     }))
     .unwrap();
+    if rounds.iter().any(|round| round.add_partition_afterward) {
+        // Log how librdkafka fetches the partitions that a round adds.
+        let TransportConfig::KafkaInput(kafka) = &mut config
+            .inputs
+            .get_mut("test_input1")
+            .unwrap()
+            .connector_config
+            .transport
+        else {
+            unreachable!()
+        };
+        kafka
+            .kafka_options
+            .insert("debug".into(), "consumer,fetch".into());
+    }
     let circuit = TestCircuit::Identity {
         relation: relation(),
         persistent_output_ids: vec![Some("output".to_string())],
@@ -2311,7 +2326,23 @@ fn check_fault_tolerance(
             result.unwrap_err();
             return;
         }
-        result.unwrap();
+        if result.is_err() {
+            // Say whether the reader or the circuit held back the records, and which partitions
+            // hold them.
+            let status = controller.status();
+            let inputs = status.input_status();
+            let input = inputs
+                .values()
+                .find(|input| input.endpoint_name == "test_input1")
+                .unwrap();
+            panic!(
+                "round {round}: {} of {total_records} records transmitted within 10 s; the input endpoint received {} records and buffers {}; the (low, high) watermarks of the topic's partitions are {:?}",
+                transmitted(),
+                input.metrics.total_records.load(Ordering::Acquire),
+                input.metrics.buffered_records.load(Ordering::Acquire),
+                kafka_resources.watermarks(topic, n_partitions),
+            );
+        }
 
         // No more records arrive, but give a bug the time to send some.
         sleep(Duration::from_millis(100));
