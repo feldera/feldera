@@ -15,7 +15,7 @@ Source edition can be found on github.
   its hosts, because a host that reads ahead of the others could make
   their input late.  A distributed Kafka connector can now set
   `synchronize_partitions` to synchronize its hosts, and a distributed
-  Delta Lake connector can now set `timestamp_column` (with
+  Delta Lake or Iceberg connector can now set `timestamp_column` (with
   `transaction_mode` set to `none`).  To keep such a pipeline running,
   synchronize the connector, or remove `distributed`.
 

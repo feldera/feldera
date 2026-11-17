@@ -26,7 +26,7 @@ use feldera_adapterlib::{
     utils::backoff::calculate_backoff_delay,
     utils::datafusion::{
         array_to_string, columns_referenced_by_expression, create_session_context_with,
-        execute_query_collect, execute_singleton_query, quote_sql_identifier,
+        execute_query_collect, execute_singleton_query, quote_sql_identifier, timestamp_order_key,
         timestamp_to_sql_expression, validate_sql_expression, validate_timestamp_column,
         ColumnNameSet,
     },
@@ -35,6 +35,7 @@ use feldera_adapterlib::{
 };
 use feldera_storage::tokio::TOKIO;
 use feldera_types::adapter_stats::ConnectorHealth;
+use feldera_types::coordination::{InputBound, OrderKey};
 use feldera_types::{
     config::{FtModel, PipelineConfig},
     program_schema::{Field, Relation},
@@ -80,7 +81,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
     thread,
@@ -1133,11 +1134,13 @@ impl IntegratedInputEndpoint for IcebergInputEndpoint {
 /// Returns an error if a distributed connector cannot honor `config`.
 fn validate_distributed(config: &IcebergReaderConfig) -> AnyResult<()> {
     // A distributed connector divides the snapshot's files among the hosts,
-    // which read their parts independently.  Reading the snapshot in
-    // timestamp order needs a single reader.
-    if config.timestamp_column.is_some() {
+    // which read their parts in timestamp order together, through the
+    // coordinator.  Each range of timestamps would need a transaction that
+    // every host joins, which is not supported yet.
+    if config.timestamp_column.is_some() && config.transaction_mode != IcebergTransactionMode::None
+    {
         bail!(
-            "a distributed Iceberg connector does not support 'timestamp_column', because each host reads its part of the snapshot in its own order"
+            "a distributed Iceberg connector with 'timestamp_column' requires 'transaction_mode' to be 'none'"
         );
     }
     // Only the home host follows the table, and it starts as soon as it has
@@ -1323,6 +1326,10 @@ impl InputReader for IcebergInputReader {
         self.inner.startup_choice.lock().unwrap().clone()
     }
 
+    fn set_input_bound(&self, bound: InputBound) {
+        self.inner.queue.set_input_bound(bound);
+    }
+
     fn request(&self, command: InputReaderCommand) {
         match command {
             InputReaderCommand::Replay { .. } => panic!(
@@ -1426,7 +1433,17 @@ impl IcebergInputEndpointInner {
         consumer: Box<dyn InputConsumer>,
         distributed: Option<DistributedInput>,
     ) -> Self {
-        let queue = Arc::new(InputQueue::new(consumer.clone()));
+        // A distributed connector that reads its snapshot in timestamp order
+        // on more than one host orders its input with the other hosts.
+        let mut queue = InputQueue::new(consumer.clone());
+        if config.timestamp_column.is_some()
+            && distributed
+                .as_ref()
+                .is_some_and(|distributed| distributed.shard.n_hosts() > 1)
+        {
+            queue = queue.synchronized();
+        }
+        let queue = Arc::new(queue);
         // Share the pipeline-wide `RuntimeEnv` so that scans against the
         // iceberg table spill to the bounded memory pool and on-disk scratch
         // dir alongside every other datafusion user in the pipeline.
@@ -1888,6 +1905,10 @@ impl IcebergInputEndpointInner {
         // string version is what we record as the resume point.
         let mut start = timestamp_to_sql_expression(&timestamp_field.columntype, &min_raw);
 
+        // For a synchronized connector, the upper keys of the ranges read so
+        // far (see `InputQueue::read_synchronized_range`).
+        let mut uppers = VecDeque::<OrderKey>::new();
+
         loop {
             // Evaluate SQL expression for the new end of the interval.
             let end_raw = execute_singleton_query(
@@ -1904,8 +1925,17 @@ impl IcebergInputEndpointInner {
                 range_query = format!("{range_query} and {filter}");
             }
 
-            self.execute_snapshot_query(&range_query, "range", input_stream, receiver)
-                .await;
+            // A synchronized connector tags the range's records with the
+            // range's end (see `InputQueue::read_synchronized_range`).
+            let read = self.execute_snapshot_query(&range_query, "range", input_stream, receiver);
+            if self.queue.input_bound().is_some() {
+                let upper = timestamp_order_key(&timestamp_field.columntype, &end_raw)?;
+                self.queue
+                    .read_synchronized_range(upper, &mut uppers, read)
+                    .await;
+            } else {
+                read.await;
+            }
 
             start = end.clone();
 
@@ -2891,6 +2921,10 @@ impl IcebergInputEndpointInner {
             )
             .await;
         };
+
+        // A synchronized connector orders only its snapshot, so after the
+        // snapshot it holds back none of the other hosts.
+        self.queue.set_promise(InputBound::Done);
 
         if reads_snapshot {
             self.metrics
@@ -5161,12 +5195,13 @@ mod distributed_tests {
             json!({"mode": "snapshot"}),
             json!({"mode": "follow"}),
             json!({"mode": "snapshot_and_follow", "transaction_mode": "snapshot"}),
+            json!({"mode": "snapshot", "timestamp_column": "ts"}),
         ] {
             assert!(validate(config.clone()).is_ok(), "{config}");
         }
         for config in [
             json!({"mode": "snapshot_and_follow"}),
-            json!({"mode": "snapshot", "timestamp_column": "ts"}),
+            json!({"mode": "snapshot", "timestamp_column": "ts", "transaction_mode": "snapshot"}),
         ] {
             assert!(validate(config.clone()).is_err(), "{config}");
         }
