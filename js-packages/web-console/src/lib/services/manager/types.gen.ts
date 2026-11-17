@@ -3513,7 +3513,12 @@ export type KafkaInputConfig = {
    *
    * Setting this option to `true` addresses the issue by synchronizing
    * ingestion across partitions, ingesting records in order of their Kafka
-   * event timestamps.
+   * event timestamps.  The connector ingests only the records whose
+   * timestamps are no later than the earliest of its partitions' latest
+   * timestamps, and limits each step to about one batch.  A distributed
+   * connector does the same across all of its hosts, through the multihost
+   * coordinator.  Synchronized input can be slower, because the slowest
+   * partition sets the pace for all of them.
    *
    * Pitfalls of this solution include:
    *
@@ -3536,10 +3541,8 @@ export type KafkaInputConfig = {
    * processed at all, because there is no way to know the timestamp for
    * the first event that will be added to that partition.
    *
-   * - In a topic with `N` nonempty partitions, at least `N - 1` events will
-   * always be left unprocessed (one in each of `N - 1` partitions), because
-   * there is no way to know the timestamp for the next event to be added to
-   * the partition whose events have been completely processed.
+   * - A partition that stops receiving events holds back the events of the
+   * other partitions that are later than its latest event.
    */
   synchronize_partitions?: boolean
   /**
