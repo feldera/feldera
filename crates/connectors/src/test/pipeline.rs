@@ -11,6 +11,7 @@ use feldera_adapterlib::test::ConnectorTestEngine;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 
+use crate::controller::ControllerBuilder;
 use crate::engine::{Checkpoint, CircuitFactory, OpenStorageFn};
 use crate::{Controller, ControllerError, PipelineConfig};
 
@@ -32,6 +33,10 @@ pub struct ControllerOptions {
     /// The controller bootstraps the parts of the circuit that changed since the checkpoint
     /// that it resumes from, rather than taking the circuit as unchanged.
     pub keep_program_diff: bool,
+
+    /// Replay hands each journaled step to the input endpoints early, to reproduce a past
+    /// bug.  The controller has it before replay starts.
+    pub feed_replay_early: bool,
 }
 
 /// An engine as the pipeline suites see it: the connector fixture, and the circuits that
@@ -91,16 +96,14 @@ pub trait PipelineTestEngine: ConnectorTestEngine {
     ) -> Result<Controller, ControllerError> {
         let factory = self.circuit_factory(circuit, options.setup)?;
         let open_storage = self.open_storage();
-        if options.keep_program_diff {
-            Controller::with_test_config_keep_program_diff(
-                factory,
-                &open_storage,
-                config,
-                error_callback,
-            )
-        } else {
-            Controller::with_test_config(factory, &open_storage, config, error_callback)
+        let mut init = ControllerBuilder::new(config, &open_storage)?.open_latest_checkpoint()?;
+        if !options.keep_program_diff
+            && let Some(diff) = init.pipeline_diff.as_mut()
+        {
+            diff.clear_program_diff()
         }
+        init.with_feed_replay_early(options.feed_replay_early)
+            .init(None, factory, error_callback)
     }
 }
 

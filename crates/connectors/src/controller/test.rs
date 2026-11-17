@@ -3520,22 +3520,23 @@ pub fn replay_fails_if_input_is_fed_before_commit(engine: &dyn PipelineTestEngin
     wait_for_completion(&controller, &token);
     controller.stop().unwrap();
 
-    // Restart from the journal, feeding replayed steps early.
+    // Restart from the journal, feeding replayed steps early.  Replay starts
+    // before `start`, so the controller must have the switch from the start.
     let errors = Arc::new(Mutex::new(Vec::new()));
     let controller = engine
-        .controller(
+        .controller_with_options(
             &circuit,
             &config,
+            ControllerOptions {
+                feed_replay_early: true,
+                ..ControllerOptions::default()
+            },
             Box::new({
                 let errors = errors.clone();
                 move |e, _| errors.lock().unwrap().push(e.to_string())
             }),
         )
         .unwrap_or_else(|e| panic!("restart failed: {e}"));
-    controller
-        .inner
-        .feed_replay_early
-        .store(true, Ordering::Release);
     controller.start();
     wait(|| !errors.lock().unwrap().is_empty(), default_timeout_ms())
         .expect("replay did not detect input fed before a commit");
