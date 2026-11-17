@@ -153,6 +153,13 @@ FLAGS_NO_TRANSFER = ["--max-transfer", "1B"]
 _PULLED = "checkpoint pulled successfully"
 # A line number past the end of any log.
 _PAST_THE_END = 2**63 - 1
+# The log lines that say most about a failed test: warnings, errors, panics,
+# and what the sync itself logged.
+_NOTABLE = re.compile(r"\b(WARN|ERROR)\b|panic|rclone|sync", re.IGNORECASE)
+# How many log lines of each kind the diagnostics of a failed test show, and
+# how many characters of each line.
+_LOG_EXCERPT_LINES = 40
+_LOG_EXCERPT_WIDTH = 1000
 
 # How long the harness waits for the effect of a step. A wait ends as soon as
 # the effect shows, so a long limit costs time only in a test that fails. The
@@ -749,6 +756,9 @@ class SyncPipeline:
         # The name of the pipeline on the platform.
         self.name = self.pipeline.name
         self._log(f"is the pipeline {self.name}")
+        # Where the log of the pipeline ends now: what follows is the log of
+        # this scenario, and what precedes it that of earlier ones.
+        self._log_start = self._log_end()
 
     # ------------------------------------------------------------------
     # Configuration
@@ -1378,7 +1388,8 @@ class SyncPipeline:
 
     def diagnostics(self) -> str:
         """Returns what a failed test needs: the steps so far, the sync
-        status and the state of the bucket."""
+        status, the state of the bucket and an excerpt of the pipeline's
+        log."""
         lines = list(self.timeline)
         try:
             lines.append(f"sync status: {self.sync_status()}")
@@ -1390,7 +1401,33 @@ class SyncPipeline:
             lines.extend(f"  {p}" for p in audit.problems())
         except Exception as error:
             lines.append(f"bucket audit failed: {error}")
+        try:
+            lines.extend(self._log_excerpt())
+        except Exception as error:
+            lines.append(f"log of {self.name} unavailable: {error}")
         return "\n".join(lines)
+
+    def _log_excerpt(self) -> list[str]:
+        """Returns the part of the pipeline's log that a failed test needs.
+
+        The platform keeps the log of a pipeline after the pipeline stops,
+        so the excerpt also shows why a pipeline failed to start.
+
+        :return: the last notable lines (see `_NOTABLE`) that the pipeline
+            logged in this scenario, then its last lines of any kind.
+        """
+        logged, _ = self._log_after(self._log_start)
+        # A line can hold a whole configuration; its beginning says enough.
+        logged = [line[:_LOG_EXCERPT_WIDTH] for line in logged]
+        notable = [line for line in logged if _NOTABLE.search(line)]
+        out = [
+            f"log of {self.name}: {len(logged)} lines in this scenario,"
+            f" {len(notable)} of them notable; the last notable ones:"
+        ]
+        out.extend(f"  {line}" for line in notable[-_LOG_EXCERPT_LINES:])
+        out.append(f"log of {self.name}: the last lines:")
+        out.extend(f"  {line}" for line in logged[-_LOG_EXCERPT_LINES:])
+        return out
 
 
 _UNITS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
