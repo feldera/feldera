@@ -403,7 +403,14 @@ RESTORE_FAILURES = {
 )
 def test_restore_failure_does_not_start_fresh(scenario, golden, start_from, damage):
     """A restore that fails for any reason but "there is no such checkpoint"
-    fails the start, with `fail_if_no_checkpoint` off."""
+    fails the start, with `fail_if_no_checkpoint` off.
+
+    One kind of damage is no damage to a multihost pipeline: a host whose
+    catalog names no checkpoint. It reads like a host that has not pushed
+    yet, which is what a push that reached only some of the hosts leaves
+    behind. The bucket then has no checkpoint that every host published, and
+    `fail_if_no_checkpoint` decides.
+    """
     wanted = golden.latest
     options: dict = {"start_from": _selector(start_from, wanted)}
     pattern = RESTORE_FAILURES[damage]
@@ -437,6 +444,11 @@ def test_restore_failure_does_not_start_fresh(scenario, golden, start_from, dama
             bucket.write(f"{host}{CATALOG_FILE}", b"[]")
 
     reader = scenario.pipeline("reader", bucket=bucket)
+    if MULTIHOST and damage == "empty_catalog":
+        reader.expect_start_error(
+            r"no checkpoint published by all", strict=True, **options
+        )
+        return
     reader.expect_start_error(pattern, **options)
 
 
@@ -482,7 +494,12 @@ def test_local_checkpoint_wins(scenario, other_golden):
     """A checkpoint in local storage is used before any remote one: before
     `read_bucket` when `bucket` is empty, and before an older checkpoint in
     `bucket`. With a wrong order the pipeline would come up with another
-    pipeline's data, or with older data than it has."""
+    pipeline's data, or with older data than it has.
+
+    The pipeline gets no input between a checkpoint and the stop after it, so
+    that its local storage holds the same state on every platform when it
+    starts again; see `SyncPipeline._expect_known_state`.
+    """
     p = scenario.pipeline()
     p.start()
     p.load()
@@ -492,21 +509,24 @@ def test_local_checkpoint_wins(scenario, other_golden):
     # `bucket` is empty and `read_bucket` holds other data: local wins.
     p.stop()
     p.start(start_from="latest", read_bucket=other_golden.bucket)
-    p.restored(local_1)
+    p.restored(local_1, feed=False)
     if not MULTIHOST:
+        # By UUID, too. No bucket has the checkpoint that the UUID names; the
+        # pipeline keeps what its local storage holds.
         p.stop()
         p.start(start_from=local_1.uuid, read_bucket=other_golden.bucket)
-        p.restored(local_1)
+        p.restored(local_1, feed=False)
 
     # Push a checkpoint, then make a newer one that stays local: the newer,
     # local one wins over the one in `bucket`.
+    p.round()
     p.checkpoint()
     p.push()
     p.round()
     local_2 = p.checkpoint()
     p.stop()
     p.start(start_from="latest")
-    p.restored(local_2)
+    p.restored(local_2, feed=False)
     if not MULTIHOST:
         p.stop()
         p.start(start_from=local_2.uuid)
