@@ -31,9 +31,9 @@ use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
-use crate::storage::file::TouchedWindowCount;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::storage::file::{FilterKind, FilterStats};
+use crate::storage::file::{RuntimeVersion, TouchedWindowCount};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
     UnfilteredMergeCursor, merge_cursor_over,
@@ -1057,6 +1057,14 @@ where
 
     fn from_path(_factories: &Self::Factories, _path: &StoragePath) -> Result<Self, ReaderError> {
         Err(ReaderError::Unsupported)
+    }
+
+    /// Returns the version of the runtime that wrote this batch's file.
+    ///
+    /// This is unknown for a batch that is not in a file, and for a file
+    /// written before files recorded the version.
+    fn runtime_version(&self) -> RuntimeVersion {
+        RuntimeVersion::default()
     }
 
     /// Returns whether [`Self::from_path`], given `factories`, can restore the

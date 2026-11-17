@@ -1,6 +1,7 @@
 use crate::storage::file::format::BatchMetadata;
 use crate::storage::file::{
-    FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
+    FilterKind, FilterStats, RuntimeVersion, TouchedWindowCount, TouchedWindowCounter,
+    collect_roaring_metadata,
 };
 use crate::trace::AccessHint;
 use crate::{
@@ -497,6 +498,10 @@ where
     type Timed<T: crate::Timestamp> = FileKeyBatch<K, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileWSetBuilder<K, R>;
+
+    fn runtime_version(&self) -> RuntimeVersion {
+        self.file.metadata().runtime_version.clone()
+    }
 
     fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         self.file.mark_for_checkpoint();
