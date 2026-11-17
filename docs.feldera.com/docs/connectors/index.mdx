@@ -127,7 +127,13 @@ The following attributes are common to all connectors:
   For an output connector, `max_queued_records` is the maximum number
   that the endpoint will hold in memory waiting for the output
   endpoint to send them, before the circuit pauses execution until the
-  backlog subsides.  Output connectors do not yet honor `max_queued_size`.
+  backlog subsides.  The circuit pauses only when the backlog is in
+  two or more batches, so one batch bigger than the limit, such as the
+  output of a large transaction, does not pause the circuit while the
+  connector writes it.  The connector can then hold up to two such
+  batches in memory, the one that it is writing and the next one.
+  With small batches, memory use does not change.  Output connectors
+  do not yet honor `max_queued_size`.
 
   These values are approximate: the pipeline pauses input or execution
   soon after they are exceeded, but not always instantly.

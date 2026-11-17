@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Connectors: one output batch bigger than `max_queued_records` no longer
+  stops the pipeline until the output connector writes all of it.  The
+  pipeline now waits only when the queued records are in two or more batches.
+  Before, a pipeline in which each transaction's output was bigger than the
+  limit waited for each transaction's output before it started on the next,
+  so output and processing did not overlap.  An output connector can now hold
+  up to two such batches in memory, where before it held one.  With small
+  batches, memory use does not change.  See
+  [`max_queued_records`](/connectors#max_queued_records).
+
 - Incompatible change (REST API, fda): the endpoint
   `GET /v0/pipelines/{pipeline_name}/circuit_profile`, which returned the
   circuit profile as graphviz `.dot` files in a zip archive, is removed, and so

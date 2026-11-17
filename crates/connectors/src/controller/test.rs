@@ -5672,10 +5672,123 @@ pub fn output_endpoint_records_transaction_after_enable(engine: &dyn PipelineTes
     controller.stop().unwrap();
 }
 
+/// The circuit keeps running while an output connector writes one transaction's
+/// output that is bigger than `max_queued_records`, and stalls only when the
+/// next transaction's output is queued behind it.
+///
+/// Before, the circuit stalled as soon as the first output batch went over the
+/// limit, so the next transaction could not start until the connector had
+/// written that batch, and output never overlapped with processing.
+#[engine_test]
+pub fn oversized_transaction_output_overlaps_next_transaction(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    const MAX_QUEUED: usize = 10;
+    // Each transaction's output, one batch that is over the limit.
+    const TXN: usize = 20 * MAX_QUEUED;
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 1_000_000_000,
+        "max_buffering_delay_usecs": 3_600_000_000u64,
+        "clock_resolution_usecs": 3_600_000_000u64,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &TestCircuit::identity(relation()),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+
+    // The connector blocks in each write until the test releases `hold`.
+    let blocked = Arc::new(AtomicBool::new(false));
+    let hold = Arc::new(AtomicBool::new(true));
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "max_queued_records": MAX_QUEUED,
+        "transport": { "name": "null_output" },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    controller
+        .add_output_endpoint(
+            "test_output1",
+            &output_config,
+            Box::new(BlockedOutputEndpoint {
+                blocked: blocked.clone(),
+                hold: hold.clone(),
+            }),
+            None,
+        )
+        .unwrap();
+    controller.start();
+
+    let feeder = TransactionalInputEndpoint::new();
+    let input_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" },
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("feeder", input_config, Box::new(feeder.clone()), None)
+        .unwrap();
+
+    let commit = |ids: Range<usize>| {
+        controller.start_transaction().unwrap();
+        push_records(&feeder, ids);
+        controller
+            .start_commit_transaction(TransactionToCommit::Open)
+            .unwrap();
+    };
+
+    // Transaction 1's output reaches the connector, which blocks writing it.
+    let before = controller.inner.get_transaction_number();
+    commit(0..TXN);
+    wait_for_commit(&controller, before);
+    wait(|| blocked.load(Ordering::Acquire), 10_000).unwrap();
+
+    // Transaction 2 runs and commits while the connector is still writing
+    // transaction 1's output.
+    let before = controller.inner.get_transaction_number();
+    commit(TXN..2 * TXN);
+    wait_for_commit(&controller, before);
+    assert!(hold.load(Ordering::Acquire));
+
+    // Now two oversized batches are queued, so the circuit stalls, and
+    // transaction 3 cannot start until the connector catches up.
+    let before = controller.inner.get_transaction_number();
+    commit(2 * TXN..3 * TXN);
+    assert!(
+        wait(|| controller.inner.get_transaction_number() > before, 1_000).is_err(),
+        "transaction 3 ran while two oversized output batches were queued"
+    );
+    assert_eq!(
+        output_endpoint_metrics(&controller, "test_output1").queued_records,
+        2 * TXN as u64
+    );
+
+    // Once the connector writes, everything goes through.
+    hold.store(false, Ordering::Release);
+    wait_for_commit(&controller, before);
+    wait(
+        || {
+            output_endpoint_metrics(&controller, "test_output1").transmitted_records
+                == 3 * TXN as u64
+        },
+        10_000,
+    )
+    .unwrap();
+    controller.stop().unwrap();
+}
+
 /// A paused connector cannot push the pipeline into backpressure.
 ///
-/// The circuit thread parks when an output endpoint has more than
-/// `max_queued_records` records queued (see `output_buffers_full`). Because a
+/// The circuit thread parks when an output endpoint has `max_queued_records`
+/// records queued in two or more batches (see `output_buffers_full`). Because a
 /// paused endpoint is handed entries with no data, its queue stops growing, and
 /// the pipeline keeps processing input even though the endpoint is wedged in a
 /// write that never returns.
@@ -10914,6 +11027,94 @@ fn test_output_progress_counter_waits_for_owed_output() {
         &unparker,
     );
     assert_eq!(processed(1), RESTORED_RECORDS);
+}
+
+/// One batch bigger than `max_queued_records` does not stall the circuit.
+///
+/// A transaction's output arrives in one batch at commit. If that batch alone
+/// filled the queue, the circuit would wait for the endpoint to write all of
+/// it before it ran the next transaction, so output would never overlap with
+/// processing. The queue is full only when a second non-empty batch arrives,
+/// and the endpoint wakes the circuit when it is no longer full.
+#[test]
+fn test_one_oversized_output_batch_does_not_fill_the_queue() {
+    use super::stats::ProcessedRecords;
+    use crate::{ControllerStatus, OutputEndpointConfig};
+
+    const MAX_QUEUED: u64 = 10;
+    const BIG: usize = 100;
+    // Also over the limit, so the queue is still over it after `BIG` is written.
+    const SECOND: usize = 2 * MAX_QUEUED as usize;
+
+    let config = serde_json::from_value(json!({
+        "name": "test_oversized_output_batch",
+        "workers": 1,
+    }))
+    .unwrap();
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    // Endpoint 0 sends batches directly, endpoint 1 buffers them. They leave the
+    // queue through `output_batch` and `buffer_batch`.
+    for (id, name, buffered) in [(0, "direct", false), (1, "buffered", true)] {
+        let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+            "stream": "v1",
+            "transport": { "name": "http_output", "config": {} },
+            "format": { "name": "json", "config": {} },
+            "max_queued_records": MAX_QUEUED,
+            "enable_output_buffer": buffered,
+        }))
+        .unwrap();
+        status.add_output(&id, name, &output_config, None, true);
+    }
+
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+    let processed = ProcessedRecords {
+        total_processed_input_records: 0,
+        total_processed_steps: 1,
+    };
+
+    for id in [0, 1] {
+        // One oversized batch, then empty batches that only carry progress.
+        status.enqueue_batch(id, BIG);
+        status.enqueue_batch(id, 0);
+        status.enqueue_batch(id, 0);
+        assert!(
+            !status.output_buffers_full(),
+            "endpoint {id}: one batch over the limit must not stall the circuit"
+        );
+
+        // A second non-empty batch, while the queue is over the limit, stalls it.
+        status.enqueue_batch(id, SECOND);
+        assert!(status.output_buffers_full(), "endpoint {id}");
+
+        // Writing the oversized batch leaves one non-empty batch, so the queue is
+        // no longer full, though still over the limit, and the endpoint must wake
+        // the circuit.
+        parker.park_timeout(Duration::ZERO);
+        if id == 0 {
+            status.output_batch(id, Some(processed), BIG, &unparker);
+        } else {
+            status.buffer_batch(id, BIG, &unparker);
+        }
+        assert!(!status.output_buffers_full(), "endpoint {id}");
+        let start = Instant::now();
+        parker.park_timeout(Duration::from_secs(10));
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "endpoint {id}: draining the queue did not wake the circuit thread"
+        );
+
+        // Drain the rest, so the next endpoint starts from an empty queue.
+        for n in [0, 0, SECOND] {
+            if id == 0 {
+                status.output_batch(id, Some(processed), n, &unparker);
+            } else {
+                status.buffer_batch(id, n, &unparker);
+            }
+        }
+        assert!(!status.output_buffers_full(), "endpoint {id}");
+    }
 }
 
 /// Dropping an output endpoint that is behind must republish the pipeline's

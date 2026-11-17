@@ -1475,7 +1475,7 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let max = endpoint_stats.config.connector_config.max_queued_records();
             let old = endpoint_stats.buffer_batch(num_records);
-            if old - (num_records as u64) <= max && old >= max {
+            if old >= max && !endpoint_stats.is_buffer_full() {
                 circuit_thread_unparker.unpark();
             }
         };
@@ -1497,7 +1497,7 @@ impl ControllerStatus {
             let old = endpoint_stats.output_batch(processed, num_records);
 
             let new = old - (num_records as u64);
-            if (old >= threshold && new <= threshold) || new == 0 {
+            if (old >= threshold && !endpoint_stats.is_buffer_full()) || new == 0 {
                 circuit_thread_unparker.unpark();
             }
         };
@@ -3240,6 +3240,12 @@ pub struct OutputEndpointStatus {
     /// this latch instead, and the endpoint takes the reading itself the
     /// moment it gets there.
     checkpoint_latch: Mutex<Option<CheckpointLatch>>,
+
+    /// Number of queued batches that hold at least one record.
+    ///
+    /// Unlike [`OutputEndpointMetrics::queued_batches`], this ignores the empty
+    /// batches that only carry progress. See [`Self::is_buffer_full`].
+    queued_nonempty_batches: AtomicU64,
 }
 
 /// What an output endpoint had put on the transport at a particular moment.
@@ -3300,9 +3306,18 @@ impl OutputEndpointStatus {
         }
     }
 
+    /// True if the circuit must wait for this endpoint before it runs another
+    /// step.
+    ///
+    /// The queue is full when it holds at least `max_queued_records` records in
+    /// two or more non-empty batches. One batch alone never fills the queue, so
+    /// the circuit can compute the next batch while the endpoint writes a batch
+    /// that is bigger than the limit, such as the output of a large
+    /// transaction.
     pub fn is_buffer_full(&self) -> bool {
         self.metrics.queued_records.load(Ordering::Acquire)
             >= self.config.connector_config.max_queued_records()
+            && self.queued_nonempty_batches.load(Ordering::Acquire) >= 2
     }
 
     pub fn is_busy(&self) -> bool {
@@ -3396,6 +3411,7 @@ impl OutputEndpointStatus {
             custom_metrics: None,
             paused: AtomicBool::new(config.connector_config.paused),
             checkpoint_latch: Mutex::new(None),
+            queued_nonempty_batches: AtomicU64::new(0),
         }
     }
 
@@ -3414,6 +3430,9 @@ impl OutputEndpointStatus {
             .queued_records
             .fetch_add(num_records as u64, Ordering::AcqRel);
         self.metrics.queued_batches.fetch_add(1, Ordering::AcqRel);
+        if num_records > 0 {
+            self.queued_nonempty_batches.fetch_add(1, Ordering::AcqRel);
+        }
     }
 
     /// A batch has been pushed to the output transport directly from the queue,
@@ -3434,6 +3453,9 @@ impl OutputEndpointStatus {
             .queued_records
             .fetch_sub(num_records as u64, Ordering::AcqRel);
         self.metrics.queued_batches.fetch_sub(1, Ordering::AcqRel);
+        if num_records > 0 {
+            self.queued_nonempty_batches.fetch_sub(1, Ordering::AcqRel);
+        }
 
         old
     }
@@ -3453,6 +3475,9 @@ impl OutputEndpointStatus {
             .queued_records
             .fetch_sub(num_records as u64, Ordering::AcqRel);
         self.metrics.queued_batches.fetch_sub(1, Ordering::AcqRel);
+        if num_records > 0 {
+            self.queued_nonempty_batches.fetch_sub(1, Ordering::AcqRel);
+        }
 
         old
     }
