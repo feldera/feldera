@@ -1,5 +1,7 @@
 use crate::circuit::GlobalNodeId;
-use crate::circuit::checkpointer::{Checkpointer, CommitProgressLog};
+use crate::circuit::checkpointer::{
+    Checkpointer, CommitProgressLog, RestoredBatchVersions, take_restored_batch_versions,
+};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
@@ -8,6 +10,7 @@ use crate::monitor::visual_graph::Graph;
 use crate::operator::communication::ExchangeTls;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
+use crate::storage::file::RuntimeVersion;
 use crate::trace::spine_async::MAX_LEVEL0_BATCH_SIZE_RECORDS;
 use crate::{
     Error as DbspError, RootCircuit, Runtime, RuntimeError, circuit::runtime::RuntimeHandle,
@@ -1312,6 +1315,11 @@ pub struct DBSPHandle {
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
 
+    /// The batches that the restore from a checkpoint read, by the runtime
+    /// version that wrote them.  Empty if the circuit did not start from a
+    /// checkpoint.
+    restored_batch_versions: RestoredBatchVersions,
+
     /// The bootstrap circuit's lifecycle state (see
     /// [`Self::create_bootstrap_circuit`]).
     bootstrap_circuit_state: BootstrapCircuitState,
@@ -1374,6 +1382,40 @@ impl WorkersCommitProgress {
     }
 }
 
+/// Describes `versions`, the batches restored from a checkpoint, for the log.
+///
+/// # Arguments
+///
+/// * `versions` - the number of batches by the runtime version that wrote them.
+/// * `current` - the version of this runtime, if known.
+///
+/// # Returns
+///
+/// One line, or `None` if no batches were restored.
+fn summarize_batch_versions(
+    versions: &RestoredBatchVersions,
+    current: Option<&str>,
+) -> Option<String> {
+    let total: usize = versions.values().sum();
+    if total == 0 {
+        return None;
+    }
+    let counts = versions
+        .iter()
+        .map(|(version, count)| match version.as_deref() {
+            None => format!("{count} by an unknown version"),
+            Some(version) if Some(version) == current => {
+                format!("{count} by {version} (this version)")
+            }
+            Some(version) => format!("{count} by {version}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "restored {total} batches from the checkpoint, written by runtime versions: {counts}"
+    ))
+}
+
 impl DBSPHandle {
     fn new(
         backend: Option<Arc<dyn StorageBackend>>,
@@ -1406,6 +1448,7 @@ impl DBSPHandle {
             fingerprint,
             runtime_elapsed: Duration::ZERO,
             bootstrap_info: None,
+            restored_batch_versions: RestoredBatchVersions::new(),
             bootstrap_circuit_state: BootstrapCircuitState::None,
             concurrent_bootstrap_info: None,
             concurrent_bootstrap_phase: None,
@@ -1416,6 +1459,14 @@ impl DBSPHandle {
 
     pub fn runtime(&self) -> &Runtime {
         self.runtime.as_ref().unwrap().runtime()
+    }
+
+    /// Returns the number of batches that the restore from a checkpoint read,
+    /// by the runtime version that wrote them.  `None` is an unknown version.
+    ///
+    /// Empty if the circuit did not start from a checkpoint.
+    pub fn restored_batch_versions(&self) -> &RestoredBatchVersions {
+        &self.restored_batch_versions
     }
 
     fn kill_inner(&mut self) -> ThreadResult<()> {
@@ -1820,12 +1871,14 @@ impl DBSPHandle {
         // outcome (divergence is unrecoverable, as in
         // `collect_restore_info`).
         let mut worker_outcomes = BTreeMap::<usize, ConcurrentRestoreOutcome>::new();
+        take_restored_batch_versions(self.runtime());
         self.broadcast_command(Command::RestoreConcurrent(base.clone()), |worker, resp| {
             let Response::ConcurrentRestore(outcome) = resp else {
                 panic!("Expected concurrent restore response, got {resp:?}");
             };
             worker_outcomes.insert(worker, outcome);
         })?;
+        self.report_restored_batches();
         for i in 1..worker_outcomes.len() {
             if worker_outcomes[&i] != worker_outcomes[&0] {
                 let _ = self.kill_inner();
@@ -1867,6 +1920,9 @@ impl DBSPHandle {
             Command::CreateBootstrapCircuit(Some(base)),
             "bootstrap-circuit restore",
         )?;
+        // The bootstrap circuit read the same checkpoint as the main circuit,
+        // which already reported it.
+        take_restored_batch_versions(self.runtime());
         // The workers hold bootstrap circuits from this point on; the only
         // non-fatal failure below is the cross-copy comparison, after which
         // the caller can clean up with `destroy_bootstrap_circuit`.
@@ -2180,8 +2236,10 @@ impl DBSPHandle {
     ///
     /// If the circuit needs bootstrapping new operators, put it in the bootstrap mode.
     fn send_restore(&mut self, base: StoragePath) -> Result<(), DbspError> {
+        take_restored_batch_versions(self.runtime());
         self.bootstrap_info =
             self.collect_restore_info(Command::Restore(base), "restart from a checkpoint")?;
+        self.report_restored_batches();
 
         if let Some(bootstrap_info) = &self.bootstrap_info {
             info!(
@@ -2190,6 +2248,21 @@ impl DBSPHandle {
         }
 
         Ok(())
+    }
+
+    /// Collects and logs the batches that the main circuit's restore from a
+    /// checkpoint just read.
+    ///
+    /// The caller discards the count with [`take_restored_batch_versions`]
+    /// before the restore, so that the count covers only that restore.
+    fn report_restored_batches(&mut self) {
+        self.restored_batch_versions = take_restored_batch_versions(self.runtime());
+        if let Some(summary) = summarize_batch_versions(
+            &self.restored_batch_versions,
+            RuntimeVersion::current().get().as_deref(),
+        ) {
+            info!("{summary}");
+        }
     }
 
     /// Notifies workers to exit the replay phase and start normal operation
@@ -2846,7 +2919,7 @@ pub(crate) mod tests {
     use super::{CHECKPOINT_THREAD_CACHE_BYTES, CheckpointPublisher, CircuitStorageConfig};
     use crate::algebra::OrdZSet as DynOrdZSet;
     use crate::circuit::CircuitConfig;
-    use crate::circuit::checkpointer::Checkpointer;
+    use crate::circuit::checkpointer::{Checkpointer, RestoredBatchVersions};
     use crate::circuit::operator_traits::OperatorCheckpoint;
     use crate::circuit::runtime::{AUXILIARY_CACHE, TOKIO_WORKER_INDEX, current_thread_type};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
@@ -2854,6 +2927,7 @@ pub(crate) mod tests {
     use crate::operator::TraceBound;
     use crate::storage::backend::StorageError;
     use crate::storage::buffer_cache::BufferCache;
+    use crate::storage::file::RuntimeVersion;
     use crate::trace::{BatchReaderFactories, Filter, Spine, Trace, TraceRole};
     use crate::typed_batch::Batch as _;
     use crate::utils::Tup2;
@@ -3554,6 +3628,62 @@ pub(crate) mod tests {
             let expected_zset = committed[i].clone();
             assert_eq!(expected_zset, res[0]);
         }
+    }
+
+    /// A restore counts the batches that it reads by the runtime version that
+    /// wrote them, and a circuit that does not start from a checkpoint counts
+    /// none.
+    #[test]
+    fn restore_counts_batch_versions() {
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(mkconfig(_temp.path())).unwrap();
+        assert!(dbsp.restored_batch_versions().is_empty());
+        let mut batch = vec![Tup2(1, Tup2(2, 1))];
+        input_handle.append(&mut batch);
+        dbsp.transaction().unwrap();
+        let cpm = dbsp.checkpoint().run().expect("commit failed");
+        let n_batches = dbsp
+            .checkpointer
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .gather_batches_for_checkpoint(&cpm)
+            .expect("failed to gather batches")
+            .len();
+        assert!(n_batches > 0);
+        drop(dbsp);
+
+        let mut cconf = mkconfig(_temp.path());
+        cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
+        let (dbsp, _) = mkcircuit(cconf).unwrap();
+        // Other tests in this process may set the version, so expect whatever
+        // it is now.
+        let version = RuntimeVersion::current().get().map(|v| v.into_owned());
+        assert_eq!(
+            dbsp.restored_batch_versions(),
+            &RestoredBatchVersions::from([(version, n_batches)])
+        );
+    }
+
+    #[test]
+    fn summarize_batch_versions_text() {
+        assert_eq!(
+            super::summarize_batch_versions(&RestoredBatchVersions::new(), None),
+            None
+        );
+        let versions = RestoredBatchVersions::from([
+            (None, 1),
+            (Some("0.383.0".to_string()), 2),
+            (Some("0.384.0".to_string()), 3),
+        ]);
+        assert_eq!(
+            super::summarize_batch_versions(&versions, Some("0.384.0")).as_deref(),
+            Some(
+                "restored 6 batches from the checkpoint, written by runtime versions: \
+                 1 by an unknown version, 2 by 0.383.0, 3 by 0.384.0 (this version)"
+            )
+        );
     }
 
     /// Smoke test for `gather_batches_for_checkpoint`.

@@ -1,6 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
-use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
+use crate::storage::file::{FilterKind, FilterStats, RuntimeVersion, TouchedWindowCount};
 use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, Error, NumEntries, Runtime,
@@ -811,6 +811,15 @@ where
                 })
             }
             Inner::File(_) | Inner::FileProj(_) => None,
+        }
+    }
+
+    fn runtime_version(&self) -> RuntimeVersion {
+        match &self.inner {
+            Inner::Vec(vec) => vec.runtime_version(),
+            Inner::File(file) => file.runtime_version(),
+            Inner::VecProj(vec) => vec.runtime_version(),
+            Inner::FileProj(file) => file.runtime_version(),
         }
     }
 

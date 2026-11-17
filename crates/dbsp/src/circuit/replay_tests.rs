@@ -7312,3 +7312,45 @@ fn test_concurrent_modified_recursive_view() {
         |info| assert_eq!(backfilled_scopes(info), 1),
     );
 }
+
+/// A restore through [`DBSPHandle::start_concurrent_bootstrap`] counts the
+/// batches that the main circuit read, the same as a plain restore of the same
+/// checkpoint, so it does not also count the bootstrap circuit's copy.
+///
+/// [`DBSPHandle::start_concurrent_bootstrap`]: crate::DBSPHandle::start_concurrent_bootstrap
+#[test]
+fn concurrent_restore_counts_batch_versions() {
+    init_test_logger();
+    let path = tempfile::tempdir().unwrap();
+    let checkpoint = {
+        let (mut circuit, (input, _output)) =
+            Runtime::init_circuit(circuit_config(path.path()), |c| Ok(concurrent_circuit1(c)))
+                .unwrap();
+        for x in 0..10u64 {
+            input.push(x, 1);
+            circuit.transaction().unwrap();
+        }
+        let checkpoint = circuit.checkpoint().run().unwrap();
+        circuit.kill().unwrap();
+        checkpoint
+    };
+
+    let plain = {
+        let mut config = circuit_config(path.path());
+        config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+        let (circuit, _) = Runtime::init_circuit(config, |c| Ok(concurrent_circuit1(c))).unwrap();
+        let versions = circuit.restored_batch_versions().clone();
+        circuit.kill().unwrap();
+        versions
+    };
+    assert!(!plain.is_empty());
+
+    let (mut circuit, _) =
+        Runtime::init_circuit(circuit_config(path.path()), |c| Ok(concurrent_circuit2(c))).unwrap();
+    assert!(circuit.restored_batch_versions().is_empty());
+    circuit
+        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
+        .unwrap();
+    assert_eq!(circuit.restored_batch_versions(), &plain);
+    circuit.kill().unwrap();
+}

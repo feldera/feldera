@@ -32,6 +32,10 @@ use feldera_storage::{DirEntry, StorageBackend, StorageFileType, StoragePath};
 use uuid::Uuid;
 
 use super::RuntimeError;
+use super::runtime::LocalStoreMarker;
+use crate::circuit::Runtime;
+use crate::trace::Batch;
+use typedmap::TypedMapKey;
 
 /// A "checkpointer" is responsible for the creation, and removal of
 /// checkpoints for a circuit.
@@ -759,6 +763,48 @@ pub(crate) fn checkpoint_invalid_data_error(operation: &'static str, detail: Str
         operation,
         path: Some(detail),
     })
+}
+
+/// Key in a [`Runtime`]'s local store for [`RestoredBatchVersions`].
+#[derive(Hash, PartialEq, Eq)]
+struct RestoredBatchVersionsId;
+
+impl TypedMapKey<LocalStoreMarker> for RestoredBatchVersionsId {
+    type Value = RestoredBatchVersions;
+}
+
+/// The number of batches that a restore read from a checkpoint, by the runtime
+/// version that wrote them.  `None` is an unknown version.
+pub type RestoredBatchVersions = BTreeMap<Option<String>, usize>;
+
+/// Counts `batch` in the restored batches of the current [`Runtime`].
+///
+/// Each worker's spines call this while they restore, and
+/// [`take_restored_batch_versions`] collects the total.
+pub(crate) fn record_restored_batch<B: Batch>(batch: &B) {
+    let Some(runtime) = Runtime::runtime() else {
+        return;
+    };
+    let version = batch
+        .runtime_version()
+        .get()
+        .map(|version| version.into_owned());
+    *runtime
+        .local_store()
+        .entry(RestoredBatchVersionsId)
+        .or_default()
+        .entry(version)
+        .or_default() += 1;
+}
+
+/// Returns the batches counted by [`record_restored_batch`] in `runtime`, and
+/// resets the count.
+pub(crate) fn take_restored_batch_versions(runtime: &Runtime) -> RestoredBatchVersions {
+    runtime
+        .local_store()
+        .remove(&RestoredBatchVersionsId)
+        .map(|entry| entry.1)
+        .unwrap_or_default()
 }
 
 /// Trait for types that can be check-pointed and restored.

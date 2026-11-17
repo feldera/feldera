@@ -2505,6 +2505,7 @@ where
                         format!("{batch}: {error}"),
                     )
                 })?;
+            crate::circuit::checkpointer::record_restored_batch(&batch);
             self.insert_without_blocking(batch);
         }
 
