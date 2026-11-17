@@ -25,7 +25,7 @@ use feldera_adapterlib::transport::{
     InputEndpoint, InputReaderCommand, Resume, Watermark, parse_resume_info,
 };
 use feldera_types::config::FtModel;
-use feldera_types::coordination::InputShard;
+use feldera_types::coordination::{InputBound, InputShard, OrderKey};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{
     CompiledHeaderFilter, KafkaInputConfig, KafkaStartFromConfig,
@@ -44,7 +44,7 @@ use rdkafka::{
 };
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
-use smallvec::{SmallVec, smallvec};
+use smallvec::SmallVec;
 #[cfg(any(test, feature = "testing"))]
 use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashSet, VecDeque};
@@ -94,11 +94,6 @@ impl KafkaFtInputEndpoint {
         shard: Option<InputShard>,
     ) -> AnyResult<KafkaFtInputEndpoint> {
         config.validate()?;
-        if shard.is_some() && config.synchronize_partitions {
-            bail!(
-                "a distributed Kafka connector does not support 'synchronize_partitions', because the hosts do not synchronize their partitions with each other"
-            );
-        }
         Ok(KafkaFtInputEndpoint { config, shard })
     }
 }
@@ -295,6 +290,11 @@ impl KafkaFtHasher {
 struct KafkaFtInputReaderInner {
     kafka_consumer: Arc<BaseConsumer<KafkaFtInputContext>>,
     errors: ArrayQueue<(KafkaError, String)>,
+
+    /// With `synchronize_partitions`, the global bound: the reader stages only
+    /// messages whose timestamps are below it (see
+    /// [InputReader::set_input_bound]).
+    input_bound: Mutex<InputBound>,
 }
 
 /// Error returned by [KafkaFtInputReaderInner::check_offsets].
@@ -786,6 +786,34 @@ impl KafkaFtInputReaderInner {
                     offsets: self.take_offsets(),
                 }
             }
+            /// Returns the number of records staged and not yet queued.
+            fn records(&self) -> usize {
+                self.amt.records
+                    + self
+                        .buffers
+                        .iter()
+                        .map(|buffer| buffer.amt.records)
+                        .sum::<usize>()
+            }
+            /// Stages the messages below `bound`.  In each partition, stops
+            /// at the first message that is not, so that the staged messages
+            /// are a prefix of the partition.  Returns the number of messages
+            /// staged.
+            fn stage_below(
+                &mut self,
+                receivers: &BTreeMap<i32, Arc<PartitionReceiver>>,
+                bound: &InputBound,
+                consumer: &dyn InputConsumer,
+            ) -> usize {
+                let mut n = 0;
+                for (index, (partition, receiver)) in receivers.iter().enumerate() {
+                    while let Some((offset, (msg, _timestamp))) = receiver.read_below(bound) {
+                        self.push_record(consumer, partition, offset, msg, index);
+                        n += 1;
+                    }
+                }
+                n
+            }
             fn pop_staged_buffer(&mut self, parser: &dyn Parser) -> StagedBuffer {
                 self.buffers
                     .pop_front()
@@ -839,6 +867,8 @@ impl KafkaFtInputReaderInner {
         // that the coordinator can join the hosts' offsets.
         let shard_partitions = shard.map(|_| receivers.keys().copied().collect::<Vec<_>>());
         let mut eoi = false;
+        let mut last_reported_bound = None;
+        let mut last_bound_inputs = None;
 
         loop {
             let was_running = running;
@@ -850,6 +880,14 @@ impl KafkaFtInputReaderInner {
                     InputReaderCommand::Extend => running = true,
                     InputReaderCommand::Pause => running = false,
                     InputReaderCommand::Queue { .. } => {
+                        // A step must take every message below the bound, on
+                        // every host, or the messages left behind could be
+                        // late in the next step.  Messages staged so far are
+                        // all in one buffer (see `maybe_stage` below).
+                        if config.synchronize_partitions {
+                            let bound = self.input_bound.lock().unwrap().clone();
+                            stager.stage_below(&receivers, &bound, &**consumer);
+                        }
                         let mut buffer = stager.pop_staged_buffer(&*parser);
                         consumer.check_flush(buffer.buffers.flush());
                         let metadata = serde_json::to_value(&Metadata {
@@ -899,41 +937,8 @@ impl KafkaFtInputReaderInner {
             let mut n_read = 0;
             if running && !eoi {
                 if config.synchronize_partitions {
-                    /// Returns the index(es) of the partition(s) in `receivers`
-                    /// with the earliest timestamp(s), or `None` if any of the
-                    /// receivers are out of received items.
-                    fn find_earliest(
-                        receivers: &BTreeMap<i32, Arc<PartitionReceiver>>,
-                    ) -> Option<SmallVec<[usize; 1]>> {
-                        let mut iter = receivers.values().enumerate().map(|(index, receiver)| {
-                            receiver.peek().map(|timestamp| (index, timestamp))
-                        });
-                        let (index, mut best_timestamp) = iter.next()??;
-                        let mut best_indexes = smallvec![index];
-                        for item in iter {
-                            let (index, timestamp) = item?;
-                            if timestamp < best_timestamp {
-                                best_indexes.clear();
-                                best_indexes.push(index);
-                                best_timestamp = timestamp;
-                            } else if timestamp == best_timestamp {
-                                best_indexes.push(index);
-                            }
-                        }
-                        Some(best_indexes)
-                    }
-
-                    while n_read < partitions.len()
-                        && let Some(indexes) = find_earliest(&receivers)
-                    {
-                        n_read += indexes.len();
-                        for index in indexes {
-                            let partition = partitions[index];
-                            let (offset, (msg, _timestamp)) =
-                                receivers[&partition].read(i64::MAX).unwrap();
-                            stager.push_record(&**consumer, &partition, offset, msg, index);
-                        }
-                    }
+                    let bound = self.input_bound.lock().unwrap().clone();
+                    n_read += stager.stage_below(&receivers, &bound, &**consumer);
                 } else {
                     for (index, (partition, receiver)) in receivers.iter().enumerate() {
                         if let Some((offset, (msg, _timestamp))) = receiver.read(i64::MAX) {
@@ -943,7 +948,12 @@ impl KafkaFtInputReaderInner {
                     }
                 };
 
-                stager.maybe_stage(&**consumer, &*parser);
+                // With synchronized partitions, the bound already keeps a
+                // step to about one batch, and a step must take all of the
+                // messages below it, so keep them in one buffer.
+                if !config.synchronize_partitions {
+                    stager.maybe_stage(&**consumer, &*parser);
+                }
             }
 
             // Keep polling even while the consumer is paused as `BaseConsumer`
@@ -978,19 +988,75 @@ impl KafkaFtInputReaderInner {
             if receivers.values().any(|r| r.fatal_error()) {
                 return Ok(());
             }
+            // Report this host's bound, and take the global bound right away
+            // if this host decides it alone.
+            let mut bound_changed = false;
+            // Each partition's next offset changes when it receives a message,
+            // and its length when the reader stages one.  The bound depends on
+            // nothing else, so the reader computes it again only when one of
+            // them changes, because that scans every queued message.
+            let bound_inputs = config.synchronize_partitions.then(|| {
+                (
+                    stager.records(),
+                    receivers
+                        .values()
+                        .map(|receiver| (receiver.next_offset(), receiver.len(), receiver.eof()))
+                        .collect::<Vec<_>>(),
+                )
+            });
+            if bound_inputs.is_some() && bound_inputs != last_bound_inputs {
+                last_bound_inputs = bound_inputs;
+                let latest = receivers
+                    .values()
+                    .map(|receiver| receiver.latest_timestamp())
+                    .collect::<Vec<_>>();
+                let room = consumer.max_batch_size().saturating_sub(stager.records());
+                let queued = if receivers
+                    .values()
+                    .map(|receiver| receiver.len())
+                    .sum::<usize>()
+                    > room
+                {
+                    let mut queued = Vec::new();
+                    for receiver in receivers.values() {
+                        receiver.queued_timestamps(&mut queued);
+                    }
+                    queued
+                } else {
+                    Vec::new()
+                };
+                // With `enable.partition.eof`, the reader reads nothing after
+                // the end of every partition.
+                let ended = receivers.values().all(|receiver| receiver.eof());
+                let ready = synchronized_bound(&latest, queued, room, ended);
+                if last_reported_bound.as_ref() != Some(&ready) {
+                    if let Some(bound) = consumer.report_input_bound(ready.clone()) {
+                        *self.input_bound.lock().unwrap() = bound;
+                        bound_changed = true;
+                    }
+                    last_reported_bound = Some(ready);
+                }
+            }
+
             // A host with no partitions ends its input once it runs, so
             // that it does not hold back the connector's merged frontier.
             //
             // The reader keeps running after it ends its input, because the
             // controller removes an endpoint whose reader exits, and a
             // distributed connector must stay on every host.
-            if !eoi && receivers.values().all(|r| r.eof()) && (running || !receivers.is_empty()) {
+            //
+            // A partition can reach its end while messages that it received
+            // still wait to be staged, so wait for those too.
+            if !eoi
+                && receivers.values().all(|r| r.eof() && r.is_empty())
+                && (running || !receivers.is_empty())
+            {
                 tracing::info!("reached end of all partitions (`enable.partition.eof` configured)");
                 consumer.eoi();
                 eoi = true;
             }
 
-            if n_read == 0 {
+            if n_read == 0 && !bound_changed {
                 thread::park_timeout(Duration::from_secs(1));
             }
         }
@@ -1084,6 +1150,7 @@ impl KafkaFtInputReader {
         let inner = Arc::new(KafkaFtInputReaderInner {
             kafka_consumer: Arc::new(kafka_consumer),
             errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
+            input_bound: Mutex::new(InputBound::NotReady),
         });
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
 
@@ -1168,6 +1235,10 @@ impl InputReader for KafkaFtInputReader {
 
     fn request(&self, command: InputReaderCommand) {
         let _ = self.command_sender.send(command);
+        self.poller_thread.unpark();
+    }
+    fn set_input_bound(&self, bound: InputBound) {
+        *self.inner.input_bound.lock().unwrap() = bound;
         self.poller_thread.unpark();
     }
     fn is_closed(&self) -> bool {
@@ -1309,6 +1380,57 @@ fn update_backpressure(topic: &str, partition: i32, has_backpressure: bool) {
 #[cfg(not(any(test, feature = "testing")))]
 fn update_backpressure(_topic: &str, _partition: i32, _has_backpressure: bool) {}
 
+/// Returns this host's bound `R_h` for a Kafka connector with
+/// `synchronize_partitions` (see the `feldera_types::coordination` module).
+///
+/// - `latest` holds the latest timestamp that each partition has received,
+///   or `None` for a partition that has received nothing.
+///
+/// - `queued` holds the timestamps of the messages received but not yet
+///   staged.  It may be empty if there are no more than `room` of them.
+///
+/// - `room` is the number of messages that the next step can still take.
+///
+/// - `ended` is true if the reader will receive no more messages.
+///
+/// The bound is the smaller of a promise and a cap.  Every message not
+/// received yet has a timestamp no earlier than the latest one received in
+/// its partition, so the promise admits the messages up to and including the
+/// earliest of the partitions' latest timestamps.  A message that arrives
+/// later with that same timestamp is not late.  The cap keeps the messages
+/// below the bound to about `room`.  If many messages share the earliest timestamp, the cap admits
+/// all of them, so that the bound always moves forward.
+pub(super) fn synchronized_bound(
+    latest: &[Option<i64>],
+    mut queued: Vec<i64>,
+    room: usize,
+    ended: bool,
+) -> InputBound {
+    let promise = if ended || latest.is_empty() {
+        InputBound::Done
+    } else {
+        match latest.iter().min() {
+            Some(Some(timestamp)) => {
+                InputBound::Key(OrderKey::from_i64(timestamp.saturating_add(1)))
+            }
+            _ => InputBound::NotReady,
+        }
+    };
+    let cap = if queued.len() <= room {
+        InputBound::Done
+    } else {
+        let (below, nth, _) = queued.select_nth_unstable(room);
+        let nth = *nth;
+        let earliest = below.iter().copied().min().unwrap_or(nth);
+        if room > 0 && earliest == nth {
+            InputBound::Key(OrderKey::from_i64(nth.saturating_add(1)))
+        } else {
+            InputBound::Key(OrderKey::from_i64(nth))
+        }
+    };
+    promise.min(cap)
+}
+
 /// Returns true if a partition queue that holds `n_bytes` should pause for
 /// backpressure.
 fn needs_backpressure(n_bytes: usize) -> bool {
@@ -1359,6 +1481,15 @@ struct PartitionReceiver {
 
     eof: AtomicBool,
     fatal_error: AtomicBool,
+
+    /// The latest timestamp of a message received in this partition, or
+    /// `i64::MIN` if none has been received or none had a timestamp.  With
+    /// `synchronize_partitions`, the messages that the partition receives
+    /// later should not have earlier timestamps.
+    latest_timestamp: AtomicI64,
+
+    /// Whether this partition has received a message.
+    received: AtomicBool,
 }
 
 impl PartitionReceiver {
@@ -1382,6 +1513,8 @@ impl PartitionReceiver {
             n_bytes: AtomicUsize::new(0),
             eof: AtomicBool::new(false),
             fatal_error: AtomicBool::new(false),
+            latest_timestamp: AtomicI64::new(i64::MIN),
+            received: AtomicBool::new(false),
             config: config.clone(),
             metadata_requested,
             header_filter,
@@ -1412,12 +1545,55 @@ impl PartitionReceiver {
         }
     }
 
-    pub fn peek(&self) -> Option<i64> {
-        self.messages
+    /// Reads the next message, if it has a timestamp below `bound`.
+    #[allow(clippy::type_complexity)]
+    pub fn read_below(
+        &self,
+        bound: &InputBound,
+    ) -> Option<(i64, (Option<Box<dyn InputBuffer>>, i64))> {
+        let next = self
+            .messages
             .lock()
             .unwrap()
-            .first_entry()
-            .map(|entry| entry.get().1)
+            .first_key_value()
+            .map(|(offset, (_, timestamp))| (*offset, *timestamp));
+        match next {
+            Some((offset, timestamp)) if bound.admits(&OrderKey::from_i64(timestamp)) => {
+                self.read(offset)
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns the latest timestamp received in this partition, or `None` if it
+    /// has received no message.  A message without a timestamp counts as
+    /// `i64::MIN`, as it does in the queue.
+    pub fn latest_timestamp(&self) -> Option<i64> {
+        self.received
+            .load(Ordering::Acquire)
+            .then(|| self.latest_timestamp.load(Ordering::Acquire))
+    }
+
+    /// Returns the number of messages received but not yet read.
+    pub fn len(&self) -> usize {
+        self.messages.lock().unwrap().len()
+    }
+
+    /// Returns true if every message received has been read.
+    pub fn is_empty(&self) -> bool {
+        self.messages.lock().unwrap().is_empty()
+    }
+
+    /// Appends the timestamps of the messages received but not yet read to
+    /// `timestamps`.
+    pub fn queued_timestamps(&self, timestamps: &mut Vec<i64>) {
+        timestamps.extend(
+            self.messages
+                .lock()
+                .unwrap()
+                .values()
+                .map(|(_, timestamp)| *timestamp),
+        );
     }
 
     pub fn fatal_error(&self) -> bool {
@@ -1553,6 +1729,10 @@ impl PartitionReceiver {
                 let offset = message.offset();
                 let next_offset = self.next_offset();
                 if offset >= next_offset {
+                    if let Some(timestamp) = message.timestamp().to_millis() {
+                        self.latest_timestamp.fetch_max(timestamp, Ordering::AcqRel);
+                    }
+                    self.received.store(true, Ordering::Release);
                     // Drop messages rejected by the header filter before parsing,
                     // so they never enter the offset ranges or the step hash.
                     // The consume position still moves forward, and replay
