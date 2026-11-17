@@ -149,10 +149,7 @@ added or modified views during bootstrap.
 
 ## Concurrent bootstrapping
 
-:::warning Experimental
-Concurrent bootstrapping is an experimental Enterprise-only feature and is
-disabled by default.
-:::
+<p className="preview-note">Concurrent bootstrapping is an Enterprise feature in <a href="/feature-maturity">preview</a>. It is disabled by default.</p>
 
 By default, bootstrapping is a **stop-the-world** operation: the pipeline ingests
 no input and existing views produce no output until every new and modified view has

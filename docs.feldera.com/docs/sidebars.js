@@ -457,12 +457,12 @@ const connectors = {
                 {
                     type: 'doc',
                     id: 'connectors/sinks/dynamodb',
-                    label: 'DynamoDB (experimental)'
+                    label: 'DynamoDB'
                 },
                 {
                     type: 'doc',
                     id: 'connectors/sinks/snowflake',
-                    label: 'Snowflake (experimental)'
+                    label: 'Snowflake'
                 },
                 {
                     type: 'doc',
@@ -472,7 +472,7 @@ const connectors = {
                 {
                     type: 'doc',
                     id: 'connectors/sinks/iceberg',
-                    label: 'Iceberg (experimental)'
+                    label: 'Iceberg'
                 },
                 {
                     type: 'doc',
@@ -585,7 +585,8 @@ const operations = {
         'operations/visualizing-profiles',
         'operations/required-domains',
         'operations/best_practices/best_practices',
-        'operations/telemetry'
+        'operations/telemetry',
+        'feature-maturity'
     ]
 };
 

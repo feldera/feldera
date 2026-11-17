@@ -1,8 +1,6 @@
 # PostgreSQL CDC input connector
 
-:::caution Experimental feature
-PostgreSQL CDC support is an experimental feature of Feldera.
-:::
+<p className="preview-note">The PostgreSQL CDC connector is in <a href="/feature-maturity">preview</a>.</p>
 
 :::note
 This page describes configuration options specific to the PostgreSQL CDC

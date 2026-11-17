@@ -1,8 +1,6 @@
 # Iceberg Sink Kafka Connector
 
-:::caution Experimental feature
-Iceberg support is an experimental feature of Feldera.
-:::
+<p className="preview-note">Iceberg output is in <a href="/feature-maturity">preview</a>.</p>
 
 Direct Iceberg output is not currently supported in Feldera.
 However, you can write to Iceberg indirectly via the Iceberg Sink Kafka Connect Connector.

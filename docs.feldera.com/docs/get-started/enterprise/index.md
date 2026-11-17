@@ -7,7 +7,7 @@ on which you deploy Feldera. Your data never leaves your premises.
 Feldera Enterprise adds
 [features](/architecture/enterprise) that are not available in the
 Docker offering. This includes multi-node clusters, pipeline and control plane
-fault-tolerance, pipeline resource isolation, pipeline scale-out (coming soon),
+fault-tolerance, pipeline resource isolation, pipeline scale-out ([preview](/feature-maturity)),
 and dedicated support.
 
 The documentation we provide here is publicly available, both to guide
