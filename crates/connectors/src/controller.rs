@@ -6415,7 +6415,20 @@ impl StepTrigger {
                     // so the step waits for `min_batch_size_records`.
                     self.buffer_timeout = now.checked_add(self.max_buffering_delay);
                 }
-                let wakeup = [self.buffer_timeout, next_checkpoint]
+                // A checkpoint that waits for the push timer needs a wakeup of
+                // its own: the next checkpoint can be far away, and an idle
+                // pipeline has no other reason to wake up.
+                let next_push = match last_checkpoint.id {
+                    Some(chk)
+                        if !sync_checkpoint_requested
+                            && !chk.is_nil()
+                            && Some(chk) != last_sync.id =>
+                    {
+                        next_checkpoint_sync
+                    }
+                    _ => None,
+                };
+                let wakeup = [self.buffer_timeout, next_checkpoint, next_push]
                     .into_iter()
                     .flatten()
                     .min();
