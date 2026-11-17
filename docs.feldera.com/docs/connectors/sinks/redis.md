@@ -1,8 +1,6 @@
 # Redis output connector
 
-:::caution Experimental feature
-Redis support is an experimental feature of Feldera.
-:::
+<p className="preview-note">The Redis connector is in <a href="/feature-maturity">preview</a>.</p>
 
 Feldera allows you to output data from a SQL view to Redis.
 

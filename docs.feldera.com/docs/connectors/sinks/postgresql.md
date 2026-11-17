@@ -1,9 +1,5 @@
 # PostgreSQL output connector
 
-:::caution Experimental feature
-PostgreSQL support is an experimental feature of Feldera.
-:::
-
 Feldera allows you to output data from a SQL view to a PostgreSQL database.
 These outputs are made as a series of transactions.
 

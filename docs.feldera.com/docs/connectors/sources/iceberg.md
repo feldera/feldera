@@ -6,11 +6,7 @@ See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
-:::warning
-
-Iceberg support is still experimental, and it may be substantially modified in the future.
-
-:::
+<p className="preview-note">Iceberg input is in <a href="/feature-maturity">preview</a>.</p>
 
 The Iceberg input connector enables data ingestion from an Apache Iceberg table into
 a Feldera pipeline. Currently, the connector supports batch reads, allowing users to

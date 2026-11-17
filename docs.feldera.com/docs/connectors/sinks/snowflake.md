@@ -1,4 +1,4 @@
-# Snowflake output connector (experimental)
+# Snowflake output connector
 
 The Feldera Snowflake connector ingests data change events produced by a Feldera
 pipeline into a Snowflake database in near-realtime.
@@ -6,11 +6,7 @@ pipeline into a Snowflake database in near-realtime.
 Because this connector uses the [Kafka output connector](kafka.md), it
 supports [fault tolerance](/pipelines/fault-tolerance) too.
 
-:::caution Experimental feature
-
-Snowflake support is an experimental feature of Feldera.
-
-:::
+<p className="experimental-note">The Snowflake connector is <a href="/feature-maturity">experimental</a>.</p>
 
 ## Architecture
 

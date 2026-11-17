@@ -1,8 +1,6 @@
 # Private Cargo Registry
 
-:::warning
-This feature is experimental and may have breaking changes in future releases.
-:::
+<p className="preview-note">Private cargo registry support is in <a href="/feature-maturity">preview</a>.</p>
 
 :::info
 This feature requires Feldera 0.349.0 or later.

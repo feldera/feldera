@@ -403,14 +403,6 @@ including only wrapper functions that call the API of this crate in
 
 ## User-defined aggregates
 
-:::warning Experimental feature
-
-Rust UDA support is currently experimental and may undergo significant
-changes, including non-backward-compatible modifications, in future
-releases of Feldera.
-
-:::
-
 :::danger
 
 * Feldera's incremental query engine assumes that all computations are deterministic. Using
@@ -691,13 +683,6 @@ Currently user-defined non-linear aggregation functions are not
 supported.  These may be added in the future.
 
 ## User-defined preprocessors
-
-:::warning Experimental feature
-
-Preprocessor support is currently experimental and may undergo significant changes, including
-non-backward-compatible modifications, in future releases of Feldera.
-
-:::
 
 :::danger
 
@@ -1049,13 +1034,6 @@ Currently exactly one preprocessor may be specified per connector.
 :::
 
 ## User-defined postprocessors
-
-:::warning Experimental feature
-
-Postprocessor support is currently experimental and may undergo significant changes, including
-non-backward-compatible modifications, in future releases of Feldera.
-
-:::
 
 :::danger
 

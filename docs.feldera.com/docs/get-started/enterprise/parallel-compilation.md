@@ -17,7 +17,7 @@ Feldera deploys the compiler server as a Kubernetes StatefulSet with **N** repli
 To further accelerate builds, Feldera optionally supports [sccache](https://github.com/mozilla/sccache) with an S3-compatible backend. This allows workers to share compiled operator artifacts instead of rebuilding identical code.
 
 :::info
-Workload-based autoscaling is available as an experimental feature; see [Autoscaling (experimental)](#autoscaling-experimental). Without it, you set the number of compiler server replicas at install time or scale them manually later.
+Workload-based autoscaling is in [preview](/feature-maturity); see [Autoscaling (preview)](#autoscaling-preview). Without it, you set the number of compiler server replicas at install time or scale them manually later.
 :::
 
 ---
@@ -151,7 +151,7 @@ parallelCompilation:
 
 ---
 
-## Autoscaling (experimental)
+## Autoscaling (preview)
 
 Compiler autoscaling scales the compiler server StatefulSet between 0 and N replicas so that idle deployments stop paying for compiler nodes. The kubernetes-runner drives the scaling:
 
@@ -165,7 +165,7 @@ A small always-on artifact server Deployment (`<release>-compiler-artifact-serve
 
 ```yaml
 compilerAutoscaling:
-  # Experimental: scale the compiler server StatefulSet to zero when idle.
+  # Preview: scale the compiler server StatefulSet to zero when idle.
   enabled: false
   # Seconds without pending compilation work before scaling to zero.
   idleTimeoutSeconds: 1800
@@ -324,7 +324,7 @@ Comman causes can be misconfigured S3 bucket / endpoint / credentials.
 | `parallelCompilation.sccache.s3.serverSideEncryptionKmsKeyId` | Enable SSE-KMS with a customer-managed KMS key. Takes precedence over the two settings above. Requires sccache 0.17 or newer | `arn:aws:kms:us-east-1:111122223333:key/<key-id>` |
 | `parallelCompilation.sccache.s3.endpoint` | Custom endpoint (e.g. MinIO) | `minio.mydomain.com:9000` |
 
-**Autoscaling (experimental)**
+**Autoscaling (preview)**
 | Key | Description | Default/Example |
 |-----|-------------|-----------------|
 | `compilerAutoscaling.enabled` | Scale the compiler server StatefulSet to zero when idle | `false` (ex: `true`) |

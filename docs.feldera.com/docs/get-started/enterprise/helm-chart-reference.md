@@ -65,8 +65,8 @@ The Kubernetes runner manages pipeline pod lifecycle.
 |-----|---------|-------------|
 | `kubernetesRunner.enablePerPipelineNamespace` | `false` | When `true`, pipelines can run in their own namespaces (requires `ClusterRole`/`ClusterRoleBinding`). When `false`, pipelines run in the same namespace as Feldera. |
 | `kubernetesRunner.allowedPipelineNamespaces` | `[]` | Namespaces a pipeline may select with `resources.namespace` when `enablePerPipelineNamespace` is `true`. An entry is an exact name or a pattern in which `*` matches any characters, such as `team-*`; a pattern must match the whole name. The Feldera namespace is always allowed. An empty list means no extra namespace is allowed. Chart v0.380.0 and later. |
-| `kubernetesRunner.enablePipelineResize` | `false` | **Experimental.** Allow changing the CPU, memory, storage, and volume attributes class of a running single-host pipeline without a restart. Requires Kubernetes 1.34 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
-| `kubernetesRunner.allowCustomPipelineTemplate` | `false` | **Experimental.** Allow pipelines to reference a ConfigMap containing a custom StatefulSet YAML template. The template format may change incompatibly across Feldera upgrades. |
+| `kubernetesRunner.enablePipelineResize` | `false` | **[Preview](/feature-maturity).** Allow changing the CPU, memory, storage, and volume attributes class of a running single-host pipeline without a restart. Requires Kubernetes 1.34 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
+| `kubernetesRunner.allowCustomPipelineTemplate` | `false` | **[Experimental](/feature-maturity).** Allow pipelines to reference a ConfigMap containing a custom StatefulSet YAML template. The template format may change incompatibly across Feldera upgrades. |
 | `kubernetesRunner.pipelineStatefulSetLabels` | `[]` | Labels added to pipeline StatefulSet `metadata.labels`. Format: `["key=value"]`. |
 | `kubernetesRunner.pipelineStatefulSetPodLabels` | `[]` | Labels added to pipeline StatefulSet `spec.template.metadata.labels`. Format: `["key=value"]`. |
 
@@ -119,8 +119,8 @@ Controls which Kubernetes secrets can be mounted in connectors via [secret refer
 |-----|---------|-------------|
 | `compilerPvcStorageSize` | `20Gi` | Size of the persistent volume used by the compiler server for build artifacts. |
 | `compilationProfile` | `"optimized"` | Default compilation profile. `"optimized"` produces faster pipelines at the cost of longer compile times. See [pipeline configuration](/pipelines/configuration) for available profiles. |
-| `compilerServer.cargo.config` | `null` | **Experimental.** Cargo configuration for pipeline builds, in `config.toml` format. See the [private cargo registry guide](./private-cargo-registry.md). The values may change incompatibly across Feldera upgrades. |
-| `compilerServer.serviceAccountAnnotations` | `[]` | **Experimental.** Annotations on the ServiceAccount the chart creates, as `key`/`value` pairs. Gives the compiler pods a cloud identity, such as an IRSA role. |
+| `compilerServer.cargo.config` | `null` | **[Preview](/feature-maturity).** Cargo configuration for pipeline builds, in `config.toml` format. See the [private cargo registry guide](./private-cargo-registry.md). The values may change incompatibly across Feldera upgrades. |
+| `compilerServer.serviceAccountAnnotations` | `[]` | **[Preview](/feature-maturity).** Annotations on the ServiceAccount the chart creates, as `key`/`value` pairs. Gives the compiler pods a cloud identity, such as an IRSA role. |
 
 ---
 

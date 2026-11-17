@@ -1652,3 +1652,28 @@ html[data-theme] .api-wrapper .col--5 input {
   width: 100%;
   table-layout: fixed;
 }
+
+/* Preview and Experimental notes: one quiet line with a small pill, not an admonition box. See /feature-maturity. */
+.markdown .preview-note,
+.markdown .experimental-note {
+  margin: 0.5rem 0 1.25rem;
+  font-size: var(--text-sm);
+  color: var(--color-surface-600);
+}
+.markdown .preview-note::before,
+.markdown .experimental-note::before {
+  content: "Preview";
+  display: inline-block;
+  margin-right: 0.5rem;
+  vertical-align: 0.1em;
+  padding: 0.05rem 0.45rem;
+  font: 400 var(--text-3xs) / 1.5 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-surface-600);
+  border: 1px solid var(--color-stone);
+  border-radius: 999px;
+}
+.markdown .experimental-note::before {
+  content: "Experimental";
+}
