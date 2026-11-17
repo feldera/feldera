@@ -39,6 +39,11 @@ ends on the condition that the scenario needs, and the limits of the waits
 (``STATE_TIMEOUT_S`` and the others) only bound a failure. To check that, run
 the tests with ``FELDERA_TEST_SYNC_FLAGS="--bwlimit 30k"``, which makes every
 transfer slow.
+
+Nor does a step depend on the platform that runs the pipelines. Platforms
+differ in what a stop does with input that no checkpoint covers, so the
+harness refuses to start a pipeline again after it was stopped with such
+input (:meth:`SyncPipeline._expect_known_state`).
 """
 
 from __future__ import annotations
@@ -741,6 +746,10 @@ class SyncPipeline:
         self.timeline: list[str] = []
         # Whether another scenario may use the pipeline after this one.
         self.reusable = True
+        # Whether the pipeline holds input that no checkpoint covers, and
+        # whether it did when the scenario stopped it; see `_expect_known_state`.
+        self._unsaved_input = False
+        self._stopped_with_unsaved_input = False
         # What identifies the numbering of the lines of the pipeline's log;
         # see `_log_end`. The platform tells the real value.
         self._log_epoch = str(UUID(int=0))
@@ -825,6 +834,7 @@ class SyncPipeline:
         :param options: fields of :class:`SyncOptions`; the others keep their
             defaults, not the values of the previous run.
         """
+        self._expect_known_state()
         self.options = SyncOptions(**options)
         self.pipeline.set_runtime_config(self._runtime_config())
         self._log(f"start {options}")
@@ -832,6 +842,7 @@ class SyncPipeline:
 
     def start_standby(self, **options) -> None:
         """Starts the pipeline in standby and waits for its first pull."""
+        self._expect_known_state()
         self.options = SyncOptions(**options)
         self.pipeline.set_runtime_config(self._runtime_config())
         self._log(f"start standby {options}")
@@ -840,6 +851,23 @@ class SyncPipeline:
         self.pipeline.start_standby()
         self.wait_for_standby_pull(before)
         self._expect_status(PipelineStatus.STANDBY)
+
+    def _expect_known_state(self) -> None:
+        """Requires that what the pipeline starts from does not depend on
+        the platform.
+
+        The harness stops a pipeline by force. On Kubernetes a
+        fault-tolerant pipeline with one host still writes a checkpoint as it
+        stops, so it restarts with all its input; on a local runner, and with
+        several hosts, it restarts from the last checkpoint before the stop.
+        The two agree only if no input arrived after that checkpoint.
+        """
+        assert not self._stopped_with_unsaved_input, (
+            f"{self.role}: the scenario stopped the pipeline with input that no"
+            " checkpoint covered, and starts it again. Whether the pipeline"
+            " still has that input depends on the platform. Make a checkpoint"
+            " before the stop, or clear the storage after it."
+        )
 
     def activate(self, timeout_s: float = STANDBY_TIMEOUT_S) -> None:
         self._log("activate")
@@ -982,11 +1010,13 @@ class SyncPipeline:
     def stop(self) -> None:
         self._log("stop")
         self.pipeline.stop(force=True)
+        self._stopped_with_unsaved_input = self._unsaved_input
 
     def wipe(self) -> None:
         """Stops the pipeline and clears its local storage."""
         self.stop()
         self.pipeline.clear_storage()
+        self._unsaved_input = self._stopped_with_unsaved_input = False
 
     def release(self, reuse: bool) -> list[str]:
         """Ends the part of the pipeline in its scenario: stops it and
@@ -1024,6 +1054,7 @@ class SyncPipeline:
         """Loads `dim` and waits for the generated input, then checks the
         state. Call once, on a pipeline that starts from nothing."""
         self.pipeline.input_json("dim", self.ledger.dim_rows())
+        self._unsaved_input = True
         self.pipeline.wait_for_completion()
         self.gen_total = self._gen_total()
         if not MULTIHOST:
@@ -1035,6 +1066,7 @@ class SyncPipeline:
         for _ in range(count):
             changes = self.ledger.next_round()
             self.pipeline.input_json("fact", changes, update_format="insert_delete")
+            self._unsaved_input = True
             self.verify()
         self._log(f"round {self.ledger.round}: {len(self.ledger.fact)} fact rows")
 
@@ -1100,6 +1132,7 @@ class SyncPipeline:
         """
         self.ledger = checkpoint.ledger.copy()
         self.gen_total = checkpoint.gen_total
+        self._unsaved_input = False
         self._log(f"restored {checkpoint.uuid}; expecting round {self.ledger.round}")
         self.verify()
         if feed:
@@ -1119,6 +1152,7 @@ class SyncPipeline:
             if wait > 0:
                 time.sleep(wait)
         self.pipeline.checkpoint(wait=True)
+        self._unsaved_input = False
         listed = self.pipeline.checkpoints()
         newest = max(listed, key=lambda c: (c.steps, str(c.uuid)))
         made = Checkpoint(
@@ -1161,6 +1195,7 @@ class SyncPipeline:
         wait_for_condition(
             "an automatic checkpoint covers the input", covers_input, timeout_s, 0.5
         )
+        self._unsaved_input = False
         made = Checkpoint(
             uuid=found[0],
             steps=found[1],
@@ -1214,7 +1249,7 @@ class SyncPipeline:
             test that damaged the bucket on purpose audits it itself.
         :return: the checkpoint that was pushed.
         """
-        before = self.bucket.objects()
+        before = self.bucket.audit()
         started = time.time()
         uuid = self.pipeline.sync_checkpoint(wait=True)
         made = self._checkpoint_for(uuid)
@@ -1227,15 +1262,21 @@ class SyncPipeline:
         )
         if audit:
             self.audit_after_push(made, after, started, time.time())
-            # A push uploads what the bucket lacks and nothing else. Only the
-            # catalog and the ownership file are replaced by every push.
+            # A push uploads the batch files that the newest checkpoint in
+            # the bucket lacks, and no others. A pipeline that carries on from
+            # that checkpoint therefore uploads only new files. A pipeline
+            # that went back to an older checkpoint uploads again the files
+            # that only older checkpoints in the bucket have. Every push
+            # replaces the catalog and the ownership file.
+            newest = before.batches_of(before.latest() & before.uuids())
             rewritten = sorted(
                 rel
-                for rel, info in before.items()
+                for rel, info in before.objects.items()
                 if rel in after.objects
                 and after.objects[rel] != info
                 and not _CATALOG.match(rel)
                 and rel != OWNER_FILE
+                and rel not in made.batches - newest
             )
             assert not rewritten, (
                 f"{self.role}: the push of {uuid} rewrote {len(rewritten)} objects"
