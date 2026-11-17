@@ -232,7 +232,7 @@ pub fn validate_lateness(
     Err(ConfigError::invalid_transport_configuration(
         endpoint_name,
         &format!(
-            "a distributed input connector does not support table {}, because its column(s) {} have LATENESS: the hosts read their parts of the input independently, so the pipeline could drop input as late; synchronize the connector (with 'synchronize_partitions' for Kafka), remove the 'distributed' property, or run the pipeline on one host",
+            "a distributed input connector does not support table {}, because its column(s) {} have LATENESS: the hosts read their parts of the input independently, so the pipeline could drop input as late; synchronize the connector (with 'synchronize_partitions' for Kafka, or 'timestamp_column' for Delta Lake), remove the 'distributed' property, or run the pipeline on one host",
             table.name.sql_name(),
             columns.join(", "),
         ),
