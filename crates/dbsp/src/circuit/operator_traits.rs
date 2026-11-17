@@ -752,6 +752,15 @@ pub trait ImportOperator<I, O>: Operator {
     fn input_preference(&self) -> OwnershipPreference {
         OwnershipPreference::INDIFFERENT
     }
+
+    /// Reports if the value that the last `import` or `import_owned` call
+    /// consumed was empty, or `None` if the operator cannot tell.
+    ///
+    /// The nested circuit uses this to count its runs that got no input, for
+    /// profiling.
+    fn imported_empty(&self) -> Option<bool> {
+        None
+    }
 }
 
 /// The name of an operator, primarily for use in CPU profiles.
