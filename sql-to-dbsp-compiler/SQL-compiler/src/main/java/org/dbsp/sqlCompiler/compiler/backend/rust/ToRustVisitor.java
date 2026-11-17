@@ -2271,7 +2271,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     /** A view and all its indexes */
-    static class ViewAndIndexes {
+    public static class ViewAndIndexes {
         @Nullable DBSPSinkOperator view;
         final List<DBSPSinkOperator> indexes = new ArrayList<>();
 
@@ -2306,27 +2306,31 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    // Key is a view name
-    final Map<String, ViewAndIndexes> indexes = new HashMap<>();
+    /** Key is a view name, value is the view and its indexes */
+    Map<String, ViewAndIndexes> indexes = new HashMap<>();
 
-    /** Group all indexes of a view in the 'indexes' map. */
-    public void discoverIndexes(DBSPCircuit circuit) {
+    /** Group the indexes of each view of the circuit by view name. */
+    public static Map<String, ViewAndIndexes> discoverIndexes(DBSPCircuit circuit) {
+        Map<String, ViewAndIndexes> result = new HashMap<>();
         for (DBSPOperator op: circuit.getAllOperators()) {
             if (op.is(DBSPSinkOperator.class)) {
                 DBSPSinkOperator sink = op.to(DBSPSinkOperator.class);
                 if (sink.isIndex()) {
-                    String view = sink.query;
-                    if (!this.indexes.containsKey(view))
-                        this.indexes.put(view, new ViewAndIndexes());
-                    this.indexes.get(view).addIndex(sink);
+                    ViewAndIndexes viewAndIndexes = result.computeIfAbsent(sink.query, k -> new ViewAndIndexes());
+                    viewAndIndexes.addIndex(sink);
                 } else {
-                    String view = sink.viewName.name();
-                    if (!this.indexes.containsKey(view))
-                        this.indexes.put(view, new ViewAndIndexes());
-                    this.indexes.get(view).setView(sink);
+                    ViewAndIndexes viewAndIndexes = result.computeIfAbsent(sink.viewName.name(), k -> new ViewAndIndexes());
+                    viewAndIndexes.setView(sink);
                 }
             }
         }
+        return result;
+    }
+
+    /** Use the indexes that {@link #discoverIndexes} found, for a visitor that does not visit the whole circuit. */
+    public ToRustVisitor withIndexes(Map<String, ViewAndIndexes> indexes) {
+        this.indexes = indexes;
+        return this;
     }
 
     @Override
@@ -2334,7 +2338,7 @@ public class ToRustVisitor extends CircuitVisitor {
         Token result = super.startVisit(node);
         DBSPCircuit circuit = node.to(DBSPCircuit.class);
         this.discoverLateMaterializations(circuit);
-        this.discoverIndexes(circuit);
+        this.indexes = discoverIndexes(circuit);
         return result;
     }
 }
