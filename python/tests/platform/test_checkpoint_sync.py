@@ -679,7 +679,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            "S3 checkpoint bucket is already owned by [\\s\\S]*id: pipeline-[^,)]+[\\s\\S]*"
+            "[Cc]heckpoint bucket is already owned by [\\s\\S]*id: pipeline-[^,)]+[\\s\\S]*"
             "Current pipeline is [\\s\\S]*id: pipeline-[^,)]+[\\s\\S]*"
             "Refusing to write checkpoint data",
         ):
@@ -757,7 +757,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # `first` lost the bucket while running, so its pushes now fail.
         with self.assertRaisesRegex(
             RuntimeError,
-            "S3 checkpoint bucket is already owned by [\\s\\S]*"
+            "[Cc]heckpoint bucket is already owned by [\\s\\S]*"
             "Refusing to write checkpoint data",
         ):
             push(first, 11)
