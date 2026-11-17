@@ -191,6 +191,19 @@ impl KafkaResources {
         wait_for_completion(&self.admin_client, &[(topic, new_partition_count as i32)]);
     }
 
+    /// Returns the low and high watermarks of partitions `0..n_partitions` of `topic`, or the
+    /// error of a partition whose watermarks the broker does not give.
+    pub fn watermarks(&self, topic: &str, n_partitions: usize) -> Vec<AnyResult<(i64, i64)>> {
+        (0..n_partitions as i32)
+            .map(|partition| {
+                self.admin_client
+                    .inner()
+                    .fetch_watermarks(topic, partition, Duration::from_secs(1))
+                    .map_err(|error| anyhow!("partition {partition}: {error}"))
+            })
+            .collect()
+    }
+
     /// Deletes the messages before `offset` in `partition` of `topic`, as
     /// retention does.
     pub fn delete_records(&self, topic: &str, partition: i32, offset: i64) {
