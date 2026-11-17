@@ -6,6 +6,7 @@ use crate::transport::{InputConsumer, Resume, Watermark};
 use anyhow::{Error as AnyError, anyhow};
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
+use feldera_types::coordination::InputBound;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
@@ -57,6 +58,16 @@ pub struct MockInputConsumerState {
     /// The last share reported through `InputConsumer::set_input_share`, as
     /// `(mine, total)`.
     pub input_share: Option<(usize, usize)>,
+
+    /// The bounds reported through `InputConsumer::report_input_bound`.
+    pub reported_bounds: Vec<InputBound>,
+
+    /// Whether `InputConsumer::report_input_bound` acts like a host whose
+    /// coordinator sets the global bound, instead of a single host.
+    pub coordinated: bool,
+
+    /// What `InputConsumer::pipeline_fault_tolerance` reports.
+    pub fault_tolerance: Option<FtModel>,
 }
 
 impl MockInputConsumerState {
@@ -72,6 +83,9 @@ impl MockInputConsumerState {
             open_transaction: None,
             custom_metrics: None,
             input_share: None,
+            reported_bounds: Vec::new(),
+            coordinated: false,
+            fault_tolerance: Some(FtModel::ExactlyOnce),
         }
     }
 
@@ -141,6 +155,12 @@ impl MockInputConsumer {
 }
 
 impl InputConsumer for MockInputConsumer {
+    fn report_input_bound(&self, bound: InputBound) -> Option<InputBound> {
+        let mut state = self.state();
+        state.reported_bounds.push(bound.clone());
+        (!state.coordinated).then_some(bound)
+    }
+
     fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
         let mut state = self.state();
 
@@ -165,7 +185,7 @@ impl InputConsumer for MockInputConsumer {
     }
 
     fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
-        Some(FtModel::ExactlyOnce)
+        self.state().fault_tolerance
     }
 
     fn parse_errors(&self, _errors: Vec<ParseError>) {}
