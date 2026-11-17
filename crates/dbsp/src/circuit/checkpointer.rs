@@ -765,6 +765,10 @@ pub(crate) fn checkpoint_invalid_data_error(operation: &'static str, detail: Str
     })
 }
 
+/// The number of batches that a restore read from a checkpoint, indexed by the
+/// runtime version that wrote them.  `None` is an unknown version.
+pub type RestoredBatchVersions = BTreeMap<Option<String>, usize>;
+
 /// Key in a [`Runtime`]'s local store for [`RestoredBatchVersions`].
 #[derive(Hash, PartialEq, Eq)]
 struct RestoredBatchVersionsId;
@@ -773,15 +777,11 @@ impl TypedMapKey<LocalStoreMarker> for RestoredBatchVersionsId {
     type Value = RestoredBatchVersions;
 }
 
-/// The number of batches that a restore read from a checkpoint, by the runtime
-/// version that wrote them.  `None` is an unknown version.
-pub type RestoredBatchVersions = BTreeMap<Option<String>, usize>;
-
-/// Counts `batch` in the restored batches of the current [`Runtime`].
+/// Adds `batch` to the [`RestoredBatchVersions`] of the current [`Runtime`].
 ///
-/// Each worker's spines call this while they restore, and
-/// [`take_restored_batch_versions`] collects the total.
-pub(crate) fn record_restored_batch<B: Batch>(batch: &B) {
+/// Each worker's spines call this for each batch that they restore.  The
+/// workers of a runtime share one count.
+pub(crate) fn record_restored_batch_version<B: Batch>(batch: &B) {
     let Some(runtime) = Runtime::runtime() else {
         return;
     };
@@ -797,8 +797,11 @@ pub(crate) fn record_restored_batch<B: Batch>(batch: &B) {
         .or_default() += 1;
 }
 
-/// Returns the batches counted by [`record_restored_batch`] in `runtime`, and
-/// resets the count.
+/// Returns the batches that [`record_restored_batch_version`] counted in
+/// `runtime`, and resets the count to zero.
+///
+/// [`DBSPHandle`](crate::DBSPHandle) calls this before a restore, to discard an
+/// earlier count, and after the restore, to read the new count.
 pub(crate) fn take_restored_batch_versions(runtime: &Runtime) -> RestoredBatchVersions {
     runtime
         .local_store()

@@ -1315,9 +1315,9 @@ pub struct DBSPHandle {
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
 
-    /// The batches that the restore from a checkpoint read, by the runtime
-    /// version that wrote them.  Empty if the circuit did not start from a
-    /// checkpoint.
+    /// What the most recent restore from a checkpoint read, for
+    /// [`Self::restored_batch_versions`].  It has no entries if the circuit did
+    /// not start from a checkpoint.
     restored_batch_versions: RestoredBatchVersions,
 
     /// The bootstrap circuit's lifecycle state (see
@@ -1386,7 +1386,8 @@ impl WorkersCommitProgress {
 ///
 /// # Arguments
 ///
-/// * `versions` - the number of batches by the runtime version that wrote them.
+/// * `versions` - the number of batches, indexed by the runtime version that
+///   wrote them.
 /// * `current` - the version of this runtime, if known.
 ///
 /// # Returns
@@ -1461,10 +1462,11 @@ impl DBSPHandle {
         self.runtime.as_ref().unwrap().runtime()
     }
 
-    /// Returns the number of batches that the restore from a checkpoint read,
-    /// by the runtime version that wrote them.  `None` is an unknown version.
+    /// Returns the number of batches that the most recent restore from a
+    /// checkpoint read, indexed by the runtime version that wrote them.
     ///
-    /// Empty if the circuit did not start from a checkpoint.
+    /// The result has no entries if the circuit did not start from a
+    /// checkpoint.
     pub fn restored_batch_versions(&self) -> &RestoredBatchVersions {
         &self.restored_batch_versions
     }
