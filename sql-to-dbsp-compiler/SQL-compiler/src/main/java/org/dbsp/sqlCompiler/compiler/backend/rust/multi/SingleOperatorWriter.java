@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 
+import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -43,6 +44,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
     final boolean topLevel;
     final CircuitPostfix materializations;
     final MultisetAnalysis multisets;
+    /** Key is a view name, value is the view and its indexes */
+    final Map<String, ToRustVisitor.ViewAndIndexes> indexes;
 
     /* Example output:
      * ... preamble ...
@@ -57,13 +60,14 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
      * } */
     public SingleOperatorWriter(DBSPOperator operator, DBSPCircuit circuit,
                                 ICircuit parent, CircuitPostfix materializations,
-                                MultisetAnalysis multisets) {
+                                MultisetAnalysis multisets, Map<String, ToRustVisitor.ViewAndIndexes> indexes) {
         this.circuit = circuit;
         this.parent = parent;
         this.operator = operator;
         this.topLevel = circuit == parent;
         this.materializations = materializations;
         this.multisets = multisets;
+        this.indexes = indexes;
     }
 
     /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
@@ -121,9 +125,9 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         ToRustVisitor visitor = new ToRustVisitor(
                 compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(),
                 this.materializations, this.multisets)
-                .withPreferHash(true);
+                .withPreferHash(true)
+                .withIndexes(this.indexes);
         visitor.innerVisitor.setOperatorContext(this.operator);
-        visitor.discoverIndexes(circuit);
 
         final String name = this.operator.getNodeName(true);
         this.builder().newline();

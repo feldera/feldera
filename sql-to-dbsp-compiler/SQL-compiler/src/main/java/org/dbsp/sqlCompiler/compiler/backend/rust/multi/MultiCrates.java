@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -124,11 +125,14 @@ public class MultiCrates {
         this.main.addDependency(this.globals);
     }
 
-    /** @param multisets The multiset analysis applied to {@code circuit} */
+    /** @param multisets The multiset analysis applied to {@code circuit}
+     *  @param indexes   The indexes of each view of {@code circuit}, by view name */
     CrateGenerator createOperatorCrate(DBSPCircuit circuit, DBSPOperator operator, ICircuit parent,
-                                       boolean enterprise, MultisetAnalysis multisets) {
+                                       boolean enterprise, MultisetAnalysis multisets,
+                                       Map<String, ToRustVisitor.ViewAndIndexes> indexes) {
         String name = FILE_PREFIX + operator.getNodeName(true);
-        SingleOperatorWriter single = new SingleOperatorWriter(operator, circuit, parent, this.materializations, multisets);
+        SingleOperatorWriter single = new SingleOperatorWriter(
+                operator, circuit, parent, this.materializations, multisets, indexes);
         return new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, single,
                 enterprise, true, compiler.options.ioOptions.testing);
     }
@@ -244,6 +248,7 @@ public class MultiCrates {
                 this.declarationMap = circuit.declarationMap;
                 MultisetAnalysis multisets = new MultisetAnalysis(this.compiler);
                 multisets.apply(circuit);
+                Map<String, ToRustVisitor.ViewAndIndexes> indexes = ToRustVisitor.discoverIndexes(circuit);
                 for (DBSPOperator operator: circuit.allOperators) {
                     CrateGenerator op;
                     if (operator.is(DBSPNestedOperator.class)) {
@@ -257,13 +262,14 @@ public class MultiCrates {
                             if (inside.is(DBSPViewDeclarationOperator.class))
                                 continue;
                             CrateGenerator insideOp = this.createOperatorCrate(
-                                    circuit, inside.to(DBSPSimpleOperator.class), nested, this.enterprise(), multisets);
+                                    circuit, inside.to(DBSPSimpleOperator.class), nested, this.enterprise(),
+                                    multisets, indexes);
                             this.addDependencies(insideOp, inside);
                             op.addDependency(insideOp);
                             this.generators.add(insideOp);
                         }
                     } else {
-                        op = this.createOperatorCrate(circuit, operator, circuit, this.enterprise(), multisets);
+                        op = this.createOperatorCrate(circuit, operator, circuit, this.enterprise(), multisets, indexes);
                     }
 
                     if (this.compiler.options.ioOptions.emitHandles &&
