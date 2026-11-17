@@ -15,7 +15,7 @@ our existing customers and to provide insight to interested parties.
 
 :::info
 Using Feldera Enterprise requires a license key. Please [contact
-sales](https://calendly.com/d/cn7m-grv-mzm/feldera-demo)  if you are interested.
+sales](https://www.feldera.com/see-a-demo)  if you are interested.
 :::
 
 :::tip

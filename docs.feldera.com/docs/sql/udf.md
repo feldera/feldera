@@ -403,6 +403,8 @@ including only wrapper functions that call the API of this crate in
 
 ## User-defined aggregates
 
+<p className="preview-note">Rust user-defined aggregates are in <a href="/feature-maturity">preview</a>.</p>
+
 :::danger
 
 * Feldera's incremental query engine assumes that all computations are deterministic. Using
