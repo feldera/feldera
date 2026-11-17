@@ -323,16 +323,20 @@ A distributed connector works as follows:
 
 Limits:
 
-- A distributed connector does not support
-  [`timestamp_column`](#ingesting-time-series-data-from-iceberg),
-  because each host reads its part of the snapshot in its own order.
-  Thus, [tables with LATENESS] that need the snapshot in timestamp order
-  cannot use a distributed connector.
+- A distributed connector that feeds a [table with LATENESS] must set
+  [`timestamp_column`](#ingesting-time-series-data-from-iceberg).
+  Otherwise, a host that reads ahead of the others could make their
+  records late, so the pipeline refuses to start.  With
+  `timestamp_column`, the hosts read their parts of the snapshot in
+  timestamp order together, through the multihost coordinator, one range
+  at a time.  This can make reading the snapshot slower, because the
+  slowest host sets the pace.  For now, such a connector requires
+  `transaction_mode` to be `none`.
 - The pipeline and its multihost coordinator must both support
   distributed Iceberg connectors.  Otherwise, the pipeline fails to
   start.
 
-[tables with LATENESS]: /sql/streaming/#lateness-expressions
+[table with LATENESS]: /sql/streaming/#lateness-expressions
 
 ## Ingesting time series data from Iceberg
 
