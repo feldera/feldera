@@ -14,7 +14,7 @@ class illarg_tbl(TstTable):
                       dbl DOUBLE,
                       booll BOOL,
                       str VARCHAR,
-                      bin BINARY,
+                      bin VARBINARY,
                       tmestmp TIMESTAMP,
                       tmestmp_tz TIMESTAMP WITH TIME ZONE,
                       datee DATE,

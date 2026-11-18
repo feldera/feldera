@@ -6,7 +6,7 @@ class asof_table1(TstTable):
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl1(
-                      id INT, intt INT NULL, str VARCHAR NULL, decimall DECIMAL(6, 2) NULL, reall REAL NULL, dbl DOUBLE NULL, booll BOOL NULL, bin BINARY NULL,
+                      id INT, intt INT NULL, str VARCHAR NULL, decimall DECIMAL(6, 2) NULL, reall REAL NULL, dbl DOUBLE NULL, booll BOOL NULL, bin BINARY(3) NULL,
                       tmestmp TIMESTAMP NULL,
                       datee DATE NULL,
                       tme TIME NULL,
@@ -102,7 +102,7 @@ class asof_table2(TstTable):
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl2(
-                      id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY,
+                      id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY(3),
                       tmestmp TIMESTAMP,
                       datee DATE,
                       tme TIME,
@@ -198,7 +198,7 @@ class asof_table3(TstTable):
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl3(
-                      id INT, intt INT NOT NULL, str VARCHAR NOT NULL, decimall DECIMAL(6, 2) NOT NULL, reall REAL NOT NULL, dbl DOUBLE NOT NULL, booll BOOL NOT NULL, bin BINARY NOT NULL,
+                      id INT, intt INT NOT NULL, str VARCHAR NOT NULL, decimall DECIMAL(6, 2) NOT NULL, reall REAL NOT NULL, dbl DOUBLE NOT NULL, booll BOOL NOT NULL, bin BINARY(3) NOT NULL,
                       tmestmp TIMESTAMP NOT NULL,
                       datee DATE NOT NULL,
                       tme TIME NOT NULL,
@@ -294,7 +294,7 @@ class asof_table4(TstTable):
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl4(
-                      id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY,
+                      id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY(3),
                       tmestmp TIMESTAMP,
                       datee DATE,
                       tme TIME,
