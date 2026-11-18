@@ -198,6 +198,17 @@ The following attributes are common to all connectors:
   [Iceberg](/connectors/sources/iceberg#distributed-connectors) input
   connectors support this setting.
 
+  A distributed input connector that feeds a table with
+  [`LATENESS`](/sql/streaming/#lateness-expressions) must synchronize
+  its hosts, so that a host that reads ahead of the others does not make
+  their input late.  Otherwise, the pipeline fails to start.  The Kafka
+  connector synchronizes its hosts with
+  [`synchronize_partitions`](/connectors/sources/kafka#synchronizing-partitions),
+  and the [Delta Lake](/connectors/sources/delta#distributed-connectors) and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors) connectors
+  with `timestamp_column`.  Synchronized input can be slower than input
+  that is not synchronized.
+
   For an output connector, the connector runs on every host and each host
   writes the part of the output on its own workers.  When `false`, the
   connector runs on one host, which writes all of its output.  Only the null

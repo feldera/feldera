@@ -1614,6 +1614,7 @@ fn do_bootstrap(
                     builder = builder.with_input_distribution(
                         take(&mut ca.input_distribution),
                         take(&mut ca.input_choices),
+                        take(&mut ca.synchronized_inputs),
                     );
                     *state.desired_status.lock().unwrap() = ca.desired_status;
                     match ca.checkpoint {
@@ -1856,6 +1857,7 @@ where
         .service(coordination_checkpoint_pull_status)
         .service(coordination_checkpoint_push)
         .service(coordination_transaction_status)
+        .service(coordination_input_bounds)
         .service(coordination_completion_status)
         .service(coordination_adhoc_catalog)
         .service(coordination_adhoc_lease)
@@ -3127,6 +3129,7 @@ pub mod test_http_helpers {
                 input_distribution: BTreeMap::new(),
                 input_choices: BTreeMap::new(),
                 host_urls,
+                synchronized_inputs: Default::default(),
             };
             let response = self.servers[host]
                 .post("/coordination/activate")
@@ -5685,6 +5688,19 @@ async fn coordination_transaction_status(
 ) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
         WatchStream::new(state.controller()?.transaction_watcher()).map(|value| {
+            Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
+        }),
+    ))
+}
+
+/// Streams this host's bound for each of its synchronized input connectors
+/// (see [feldera_types::coordination::InputBounds]).
+#[get("/coordination/input/bounds")]
+async fn coordination_input_bounds(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponseBuilder::new(StatusCode::OK).streaming(
+        WatchStream::new(state.controller()?.input_bounds_watcher()).map(|value| {
             Ok::<_, Infallible>(Bytes::from(serde_json::to_string(&value).unwrap() + "\n"))
         }),
     ))

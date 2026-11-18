@@ -242,8 +242,9 @@ fn test_synchronization() {
     reader.extend();
 
     // This is the number of records we expect to read when we produce
-    // `N_MESSAGES` records, since we can read all the records except that we
-    // end up blocked when one of the partitions is exhausted.
+    // `N_MESSAGES` records.  The bound admits the earliest of the partitions'
+    // latest timestamps, which is that of the sentinel at the end of
+    // partition 0, so the records up to and including that sentinel are read.
     let n = N_MESSAGES - N_PARTITIONS + 1;
 
     // Produce N_MESSAGES messages into random partitions[*], with timestamps
@@ -343,7 +344,8 @@ fn test_synchronization_backpressure() {
     produce_record(&producer, TOPIC, 1, 5000, now + 2000);
 
     // 2002 messages should get buffered (partition 0 ids 0..=2000, partition 1
-    // record id 5000).
+    // record id 5000).  The bound admits the timestamp of partition 1's
+    // record, which partition 0's record 2000 shares.
     let expect = 2002;
     println!("waiting for connector to buffer {expect} messages.");
     receiver.expect_buffering(expect);
@@ -388,7 +390,8 @@ fn test_synchronization_backpressure() {
     // partition 0.
     produce_record(&producer, TOPIC, 1, 5000, now + 5000);
 
-    // 1499 messages should get buffered (partition 0 ids 2001..3500).
+    // 1499 messages should get buffered (partition 0 ids 2001..3500).  The
+    // bound admits the timestamp of partition 0's last record.
     let expect = 1499;
     println!("waiting for connector to buffer {expect} messages.");
     receiver.expect_buffering(expect);
@@ -997,6 +1000,10 @@ struct DummyInputReceiverInner {
     drop_buffered: AtomicBool,
     calls: Mutex<Vec<ConsumerCall>>,
     flushed: Mutex<Vec<String>>,
+
+    /// See [DummyInputReceiver::set_coordinated].
+    max_batch_size: AtomicUsize,
+    coordinated: AtomicBool,
 }
 
 impl DummyInputReceiver {
@@ -1011,9 +1018,21 @@ impl DummyInputReceiver {
                 drop_buffered: AtomicBool::new(false),
                 calls: Mutex::new(Vec::new()),
                 flushed: Mutex::new(Vec::new()),
+                max_batch_size: AtomicUsize::new(usize::MAX),
+                coordinated: AtomicBool::new(false),
             }),
             parker,
         }
+    }
+
+    /// Makes the consumer act like one whose input bound a coordinator sets,
+    /// with a batch size of `max_batch_size`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_coordinated(&self, max_batch_size: usize) {
+        self.inner
+            .max_batch_size
+            .store(max_batch_size, Ordering::Release);
+        self.inner.coordinated.store(true, Ordering::Release);
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -1129,7 +1148,14 @@ impl DummyInputConsumer {
 
 impl InputConsumer for DummyInputConsumer {
     fn max_batch_size(&self) -> usize {
-        usize::MAX
+        self.0.max_batch_size.load(Ordering::Acquire)
+    }
+
+    fn report_input_bound(
+        &self,
+        bound: feldera_types::coordination::InputBound,
+    ) -> Option<feldera_types::coordination::InputBound> {
+        (!self.0.coordinated.load(Ordering::Acquire)).then_some(bound)
     }
 
     fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
@@ -3434,8 +3460,8 @@ mod distributed {
 
     use super::*;
     use crate::transport::kafka::KafkaFtInputEndpoint;
-    use crate::transport::kafka::ft::input::select_partitions;
-    use feldera_types::coordination::{InputDistribution, InputShard};
+    use crate::transport::kafka::ft::input::{select_partitions, synchronized_bound};
+    use feldera_types::coordination::{InputBound, InputDistribution, InputShard, OrderKey};
     use rdkafka::producer::Producer;
 
     fn shard(host: usize, n_hosts: usize, home: usize) -> InputShard {
@@ -3524,11 +3550,81 @@ mod distributed {
         assert!(select_partitions(config, 3, &shard(0, 2, 0)).is_err());
     }
 
+    /// The coordinator synchronizes the hosts, so a distributed connector
+    /// accepts `synchronize_partitions`.
     #[test]
-    fn synchronize_partitions_is_rejected() {
+    fn synchronize_partitions_is_accepted() {
         let sync = config(json!({"synchronize_partitions": true}));
-        assert!(KafkaFtInputEndpoint::new(sync.clone(), Some(InputShard::ALL)).is_err());
+        assert!(KafkaFtInputEndpoint::new(sync.clone(), Some(shard(0, 2, 0))).is_ok());
         assert!(KafkaFtInputEndpoint::new(sync, None).is_ok());
+    }
+
+    fn key(timestamp: i64) -> InputBound {
+        InputBound::Key(OrderKey::from_i64(timestamp))
+    }
+
+    /// The promise part of the bound admits the earliest of the partitions'
+    /// latest timestamps.
+    #[test]
+    fn bound_is_the_earliest_latest_timestamp() {
+        assert_eq!(
+            synchronized_bound(&[Some(30), Some(10), Some(20)], vec![], 100, false),
+            key(11)
+        );
+        // A partition that has received nothing holds back everything.
+        assert_eq!(
+            synchronized_bound(&[Some(30), None], vec![], 100, false),
+            InputBound::NotReady
+        );
+        // A partition whose messages have no timestamp, which count as
+        // `i64::MIN`, admits those messages.
+        assert_eq!(
+            synchronized_bound(&[Some(i64::MIN)], vec![], 100, false),
+            key(i64::MIN + 1)
+        );
+        // No partitions, or no more input, holds back nothing.
+        assert_eq!(
+            synchronized_bound(&[], vec![], 100, false),
+            InputBound::Done
+        );
+        assert_eq!(
+            synchronized_bound(&[Some(30), None], vec![], 100, true),
+            InputBound::Done
+        );
+    }
+
+    /// The cap part of the bound keeps a step to about `room` messages.
+    #[test]
+    fn bound_caps_the_batch() {
+        // Seven queued messages and room for three: the bound is the fourth
+        // earliest timestamp, so three are below it.
+        let queued = vec![7, 1, 6, 2, 5, 3, 4];
+        assert_eq!(
+            synchronized_bound(&[Some(100)], queued.clone(), 3, false),
+            key(4)
+        );
+        // The promise can be lower than the cap.
+        assert_eq!(
+            synchronized_bound(&[Some(2)], queued.clone(), 3, false),
+            key(3)
+        );
+        // When all of them fit, there is no cap.
+        assert_eq!(synchronized_bound(&[Some(100)], queued, 7, false), key(101));
+        // Without room, nothing more fits.
+        assert_eq!(
+            synchronized_bound(&[Some(100)], vec![5, 6], 0, false),
+            key(5)
+        );
+    }
+
+    /// Many messages with the same timestamp all fit, so that the bound
+    /// moves forward even if they are more than `room`.
+    #[test]
+    fn bound_moves_past_ties() {
+        assert_eq!(
+            synchronized_bound(&[Some(100)], vec![5, 5, 5, 5, 9], 2, false),
+            key(6)
+        );
     }
 
     fn create_reader(
@@ -3961,8 +4057,8 @@ mod unsorted_partitions {
         let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 3)]);
 
         // Partition `p` gets records `10 * p` and `10 * p + 1`, so partition 0
-        // has the earliest records.  After it reads both of them, partition 0
-        // is empty, so synchronization stops.
+        // has the earliest records.  The bound admits the timestamp of record
+        // 1, the latest in partition 0, so records 0 and 1 are read.
         let producer = TestProducer::new();
         let base = Timestamp::now().to_millis().unwrap();
         for partition in 0..3 {
@@ -3988,6 +4084,44 @@ mod unsorted_partitions {
             metadata: serde_json::to_value(&metadata).unwrap(),
         }]);
         assert_eq!(flushed_ids(&receiver), [0, 1]);
+    }
+
+    /// A step takes every message below the coordinator's bound, including
+    /// messages staged under an earlier, lower bound, even if together they
+    /// are more than a batch.  Otherwise, the messages left behind could be
+    /// late in the next step.
+    #[test]
+    fn queue_takes_all_messages_below_the_bound() {
+        use feldera_types::coordination::{InputBound, OrderKey};
+
+        init_test_logger();
+        const TOPIC: &str = "unsorted_partitions_queue_takes_all";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 2)]);
+        let producer = TestProducer::new();
+        let base = Timestamp::now().to_millis().unwrap();
+        produce(&producer, TOPIC, 0, base, 0..6);
+        produce(&producer, TOPIC, 1, base, 100..101);
+
+        let (_endpoint, receiver, reader) =
+            create_reader(TOPIC, json!({"synchronize_partitions": true}), None);
+        receiver.set_coordinated(2);
+        let bound = |id| InputBound::Key(OrderKey::from_i64(base + id));
+        reader.set_input_bound(bound(2));
+        reader.extend();
+        receiver.expect_buffering(2);
+        reader.set_input_bound(bound(5));
+        receiver.expect_buffering(3);
+        reader.queue(false);
+        let metadata = Metadata {
+            offsets: vec![0..5, 0..0],
+            shard: None,
+            partitions: None,
+        };
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: 5,
+            metadata: serde_json::to_value(&metadata).unwrap(),
+        }]);
+        assert_eq!(flushed_ids(&receiver), [0, 1, 2, 3, 4]);
     }
 
     /// Resuming from a checkpoint must give each partition its own offset.

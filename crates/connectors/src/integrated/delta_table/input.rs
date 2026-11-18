@@ -65,15 +65,16 @@ use feldera_adapterlib::utils::backoff::calculate_backoff_delay;
 use feldera_adapterlib::utils::datafusion::{
     ColumnNameSet, array_to_string, columns_referenced_by_expression,
     columns_referenced_by_order_by, create_session_context_with, execute_query_collect,
-    execute_singleton_query, quote_sql_identifier, timestamp_to_sql_expression,
-    validate_sql_expression, validate_sql_order_by, validate_timestamp_column,
+    execute_singleton_query, quote_sql_identifier, timestamp_order_key,
+    timestamp_to_sql_expression, validate_sql_expression, validate_sql_order_by,
+    validate_timestamp_column,
 };
 use feldera_adapterlib::utils::job_queue::JobQueue;
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{FtModel, PipelineConfig};
-use feldera_types::coordination::InputShard;
+use feldera_types::coordination::{InputBound, InputShard, OrderKey};
 use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{
     DeltaTableIngestMode, DeltaTableReaderConfig, DeltaTableTransactionMode,
@@ -83,7 +84,7 @@ use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fmt::{Display, Write as _};
 use std::future::Future;
 use std::hash::{Hash, Hasher};
@@ -893,12 +894,15 @@ const PER_HOST_SNAPSHOT_TRANSACTIONS_ENV: &str = "FELDERA_TEST_PER_HOST_SNAPSHOT
 /// Returns an error if a distributed connector cannot honor `config`.
 fn validate_distributed(config: &DeltaTableReaderConfig) -> AnyResult<()> {
     // A distributed connector divides the snapshot's files among the hosts,
-    // which read their parts independently.  Reading the snapshot in
-    // timestamp order, or a change data feed's rows in `cdc_order_by`
-    // order, needs a single reader.
-    if config.timestamp_column.is_some() {
+    // which read their parts in timestamp order together, through the
+    // coordinator.  Each range of timestamps would need a transaction that
+    // every host joins, which is not supported yet.  Reading a change data
+    // feed's rows in `cdc_order_by` order needs a single reader.
+    if config.timestamp_column.is_some()
+        && config.transaction_mode != DeltaTableTransactionMode::None
+    {
         bail!(
-            "a distributed DeltaLake connector does not support 'timestamp_column', because each host reads its part of the snapshot in its own order"
+            "a distributed DeltaLake connector with 'timestamp_column' requires 'transaction_mode' to be 'none'"
         );
     }
     if config.is_cdc() {
@@ -1159,6 +1163,10 @@ impl InputReader for DeltaTableInputReader {
 
     fn startup_choice(&self) -> Option<JsonValue> {
         self.inner.startup_choice.lock().unwrap().clone()
+    }
+
+    fn set_input_bound(&self, bound: InputBound) {
+        self.inner.queue.set_input_bound(bound);
     }
 
     fn request(&self, command: InputReaderCommand) {
@@ -1736,7 +1744,17 @@ impl DeltaTableInputEndpointInner {
         resume_info: Option<DeltaResumeInfo>,
         distributed: Option<DistributedInput>,
     ) -> Self {
-        let queue = Arc::new(InputQueue::new(consumer.clone()));
+        // A distributed connector that reads its snapshot in timestamp order
+        // on more than one host orders its input with the other hosts.
+        let mut queue = InputQueue::new(consumer.clone());
+        if config.timestamp_column.is_some()
+            && distributed
+                .as_ref()
+                .is_some_and(|distributed| distributed.shard.n_hosts() > 1)
+        {
+            queue = queue.synchronized();
+        }
+        let queue = Arc::new(queue);
 
         let metrics = Arc::new(DeltaTableMetrics::new());
         consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
@@ -2531,6 +2549,10 @@ impl DeltaTableInputEndpointInner {
         let mut start = min.clone();
         let mut total_records = 0usize;
 
+        // For a synchronized connector, the upper keys of the ranges read so
+        // far (see `InputQueue::read_synchronized_range`).
+        let mut uppers = VecDeque::<OrderKey>::new();
+
         loop {
             // Evaluate SQL expression for the new end of the interval.
             let end_raw = execute_singleton_query(
@@ -2548,15 +2570,23 @@ impl DeltaTableInputEndpointInner {
                 range_query = format!("{range_query} and {filter}");
             }
 
-            let range_record_count = self
-                .execute_snapshot_query(
-                    &range_query,
-                    "range",
-                    input_stream,
-                    receiver,
-                    self.config.max_retries(),
-                )
-                .await?;
+            // A synchronized connector tags the range's records with the
+            // range's end (see `InputQueue::read_synchronized_range`).
+            let read = self.execute_snapshot_query(
+                &range_query,
+                "range",
+                input_stream,
+                receiver,
+                self.config.max_retries(),
+            );
+            let range_record_count = if self.queue.input_bound().is_some() {
+                let upper = timestamp_order_key(&timestamp_field.columntype, &end_raw)?;
+                self.queue
+                    .read_synchronized_range(upper, &mut uppers, read)
+                    .await
+            } else {
+                read.await
+            }?;
             self.metrics
                 .snapshot_records_total
                 .fetch_add(range_record_count as u64, Ordering::Relaxed);
@@ -2854,6 +2884,10 @@ impl DeltaTableInputEndpointInner {
                 return;
             }
         };
+
+        // A synchronized connector orders only its snapshot, so after the
+        // snapshot it holds back none of the other hosts.
+        self.queue.set_promise(InputBound::Done);
 
         // Start following the table if required by the configuration.
         if self.follows() {
@@ -7502,6 +7536,142 @@ pub mod distributed_snapshot_tests {
         })
     }
 
+    /// A distributed connector that reads its snapshot in timestamp order on
+    /// several hosts reports the end of each range that it read, reads at
+    /// most one range ahead of the global bound, and flushes only the ranges
+    /// below the global bound.
+    #[engine_test]
+    pub fn synchronized_ordered_snapshot(engine: &dyn ConnectorTestEngine) {
+        use feldera_types::coordination::{InputBound, OrderKey};
+
+        run_async(async {
+            let dir = tempfile::TempDir::new().unwrap();
+            // A table with the columns of the input stream, whose `id`s are
+            // 0 to 29, in one file.
+            let uri = format!("file://{}", dir.path().display());
+            let table = CreateBuilder::new()
+                .with_location(&uri)
+                .with_save_mode(SaveMode::Ignore)
+                .with_columns([
+                    StructField::new("id", DataType::Primitive(PrimitiveType::Long), false),
+                    StructField::new("b", DataType::Primitive(PrimitiveType::Boolean), false),
+                    StructField::new("i", DataType::Primitive(PrimitiveType::Long), true),
+                    StructField::new("s", DataType::Primitive(PrimitiveType::String), false),
+                ])
+                .await
+                .unwrap();
+            let schema = Arc::new(ArrowSchema::new(vec![
+                ArrowField::new("id", ArrowDataType::Int64, false),
+                ArrowField::new("b", ArrowDataType::Boolean, false),
+                ArrowField::new("i", ArrowDataType::Int64, true),
+                ArrowField::new("s", ArrowDataType::Utf8, false),
+            ]));
+            let ids = (0..30).collect::<Vec<i64>>();
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(Int64Array::from(ids.clone())),
+                    Arc::new(arrow::array::BooleanArray::from(vec![true; 30])),
+                    Arc::new(Int64Array::from(ids.clone())),
+                    Arc::new(StringArray::from(
+                        ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    )),
+                ],
+            )
+            .unwrap();
+            let table = Arc::new(
+                table
+                    .write(vec![batch])
+                    .with_save_mode(SaveMode::Append)
+                    .await
+                    .unwrap(),
+            );
+
+            // `id` is the timestamp column, so the ranges are 0 to 9, 10 to
+            // 19, and 20 to 29.
+            let relation = stream_relation();
+            let mut columns = relation.fields.clone();
+            columns[0] = columns[0].clone().with_lateness("10");
+            let endpoint_relation = Relation::new(
+                SqlIdentifier::new("t", false),
+                columns,
+                false,
+                BTreeMap::new(),
+            );
+            let consumer = MockInputConsumer::new();
+            consumer.state().coordinated = true;
+            // Delta Lake's staged buffers cannot be hashed.
+            consumer.state().fault_tolerance = None;
+            let config: DeltaTableReaderConfig = serde_json::from_value(
+                json!({"uri": uri, "mode": "snapshot", "timestamp_column": "id"}),
+            )
+            .unwrap();
+            let shard = InputShard::new(0, 2, InputDistribution { home: 0 }).unwrap();
+            let endpoint = Arc::new(DeltaTableInputEndpointInner::new(
+                "t.delta",
+                config,
+                SessionContext::new(),
+                Box::new(consumer.clone()),
+                endpoint_relation,
+                None,
+                Some(DistributedInput {
+                    shard,
+                    choice: None,
+                }),
+            ));
+            *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+            endpoint.register_snapshot_table(&table).await.unwrap();
+            let collection = engine
+                .input_collection(&relation, &InputOptions::default())
+                .unwrap();
+            let mut input_stream = collection
+                .input_handle()
+                .handle
+                .configure_arrow_deserializer(SqlSerdeConfig::default())
+                .unwrap();
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+
+            let key = |key| InputBound::Key(OrderKey::from_i64(key));
+            // The queue reports its bound again after each flush, so leave
+            // out repeats.
+            let reported = || {
+                let mut reported = consumer.state().reported_bounds.clone();
+                reported.dedup();
+                reported
+            };
+            let flushed = || endpoint.queue.flush_with_aux().0.records;
+            let read =
+                endpoint.read_ordered_snapshot_inner(&table, input_stream.as_mut(), &mut receiver);
+            let drive = async {
+                // The connector reads two ranges, and then waits for the
+                // global bound to pass the first one.
+                while reported().len() < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                assert_eq!(reported(), [key(10), key(20)]);
+                assert_eq!(flushed(), 0);
+
+                // A bound of 10 admits only the first range, and lets the
+                // connector read the third.
+                endpoint.queue.set_input_bound(key(10));
+                assert_eq!(flushed(), 10);
+                while reported().len() < 3 {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                assert_eq!(reported(), [key(10), key(20), key(30)]);
+                endpoint.queue.set_input_bound(InputBound::Done);
+            };
+            let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+                tokio::join!(read, drive)
+            })
+            .await
+            .expect("the snapshot read should not hang");
+            assert_eq!(result.unwrap(), 30);
+            assert_eq!(flushed(), 20);
+        })
+    }
+
     /// A distributed connector rejects the settings that it cannot honor.
     #[test]
     fn distributed_rejects_unsupported_settings() {
@@ -7515,13 +7685,14 @@ pub mod distributed_snapshot_tests {
             json!({"mode": "follow"}),
             json!({"mode": "snapshot", "transaction_mode": "snapshot"}),
             json!({"mode": "snapshot_and_follow", "transaction_mode": "snapshot"}),
+            json!({"mode": "snapshot", "timestamp_column": "ts"}),
         ] {
             assert!(validate(config.clone()).is_ok(), "{config}");
         }
         for config in [
             json!({"mode": "snapshot_and_follow"}),
             json!({"mode": "cdc"}),
-            json!({"mode": "snapshot", "timestamp_column": "ts"}),
+            json!({"mode": "snapshot", "timestamp_column": "ts", "transaction_mode": "snapshot"}),
         ] {
             assert!(validate(config.clone()).is_err(), "{config}");
         }

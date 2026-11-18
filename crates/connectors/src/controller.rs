@@ -57,7 +57,10 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use distribution::{ActivationInput, input_shard, output_is_distributed, resume_distribution};
+use distribution::{
+    ActivationInput, BoundSync, bound_sync, input_shard, output_is_distributed,
+    resume_distribution, validate_lateness,
+};
 use feldera_adapterlib::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
@@ -87,8 +90,9 @@ use feldera_types::checkpoint::{CheckpointActivity, HostInfo};
 use feldera_types::circuit::Layout;
 use feldera_types::config::dev_tweaks::ViewIntegralsLayout;
 use feldera_types::coordination::{
-    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
-    StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
+    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputBound,
+    InputBounds, InputDistribution, StepAction, StepInputs, StepRequest, StepStatus,
+    TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::memory_pressure::MemoryPressure;
@@ -267,6 +271,10 @@ pub struct ControllerBuilder {
     /// [coordination::CoordinationActivate::input_choices]).
     input_choices: BTreeMap<String, JsonValue>,
 
+    /// The distributed input connectors that the coordinator synchronizes (see
+    /// [coordination::CoordinationActivate::synchronized_inputs]).
+    synchronized_inputs: BTreeSet<String>,
+
     /// The base URL of each host of a multihost pipeline, in host order (see
     /// [coordination::CoordinationActivate::host_urls]).  This is empty without a coordinator,
     /// or with a coordinator that predates it.
@@ -341,6 +349,7 @@ impl ControllerBuilder {
             layout: None,
             input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
+            synchronized_inputs: BTreeSet::new(),
             host_urls: Vec::new(),
             peer_root_certificate: None,
             output_assignment: BTreeMap::new(),
@@ -456,10 +465,12 @@ impl ControllerBuilder {
         self,
         input_distribution: BTreeMap<String, InputDistribution>,
         input_choices: BTreeMap<String, JsonValue>,
+        synchronized_inputs: BTreeSet<String>,
     ) -> Self {
         Self {
             input_distribution,
             input_choices,
+            synchronized_inputs,
             ..self
         }
     }
@@ -540,13 +551,17 @@ impl ControllerBuilder {
     /// Passes the settings of this builder that `init` does not have yet to
     /// `init`.  Every `open_*` method calls this, so that they cannot differ.
     fn finish(self, init: ControllerInit) -> ControllerInit {
-        init.with_input_distribution(self.input_distribution, self.input_choices)
-            .with_output_assignment(self.output_assignment)
-            .with_distributed_output_streams(self.distributed_output_streams)
-            .with_exchange_tls(self.exchange_tls)
-            .with_exchange_uuid(self.exchange_uuid)
-            .with_host_urls(self.host_urls)
-            .with_peer_root_certificate(self.peer_root_certificate)
+        init.with_input_distribution(
+            self.input_distribution,
+            self.input_choices,
+            self.synchronized_inputs,
+        )
+        .with_output_assignment(self.output_assignment)
+        .with_distributed_output_streams(self.distributed_output_streams)
+        .with_exchange_tls(self.exchange_tls)
+        .with_exchange_uuid(self.exchange_uuid)
+        .with_host_urls(self.host_urls)
+        .with_peer_root_certificate(self.peer_root_certificate)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -1445,6 +1460,12 @@ impl Controller {
     /// Returns an object for monitoring progress of transactions.
     pub fn transaction_watcher(&self) -> tokio::sync::watch::Receiver<TransactionCoordination> {
         self.inner.transaction_receiver.clone()
+    }
+
+    /// Returns a receiver for this host's bounds for its synchronized input
+    /// connectors (see `/coordination/input/bounds`).
+    pub fn input_bounds_watcher(&self) -> tokio::sync::watch::Receiver<InputBounds> {
+        self.inner.input_bounds.subscribe()
     }
 
     /// Returns an object for monitoring progress of input completion.
@@ -2611,6 +2632,8 @@ impl Controller {
             .lock()
             .unwrap()
             .set_coordinator_transaction(&coordination_request);
+        self.inner
+            .set_input_bounds(&coordination_request.input_bounds);
         *self.inner.coordination_request.lock().unwrap() = Some(coordination_request);
         self.inner.unpark_circuit();
     }
@@ -3343,6 +3366,7 @@ impl CircuitThread {
             checkpointed_input_distribution: _,
             checkpointed_output_assignment: _,
             input_choices,
+            synchronized_inputs,
             host_urls,
             peer_root_certificate,
             view_integrals,
@@ -3593,6 +3617,7 @@ impl CircuitThread {
             input_distribution,
             view_integrals,
             input_choices,
+            synchronized_inputs,
             peer_client,
             output_assignment,
             storage
@@ -6527,6 +6552,9 @@ pub struct ControllerInit {
     /// See [ControllerBuilder::input_choices].
     input_choices: BTreeMap<String, JsonValue>,
 
+    /// See [ControllerBuilder::synchronized_inputs].
+    synchronized_inputs: BTreeSet<String>,
+
     /// See [ControllerBuilder::host_urls].
     host_urls: Vec<String>,
 
@@ -6546,6 +6574,7 @@ impl ControllerInit {
         self,
         input_distribution: BTreeMap<String, InputDistribution>,
         input_choices: BTreeMap<String, JsonValue>,
+        synchronized_inputs: BTreeSet<String>,
     ) -> Self {
         Self {
             input_distribution: resume_distribution(
@@ -6553,6 +6582,7 @@ impl ControllerInit {
                 &self.checkpointed_input_distribution,
             ),
             input_choices,
+            synchronized_inputs,
             ..self
         }
     }
@@ -6610,6 +6640,7 @@ impl ControllerInit {
             checkpointed_input_distribution: BTreeMap::new(),
             checkpointed_output_assignment: None,
             input_choices: BTreeMap::new(),
+            synchronized_inputs: BTreeSet::new(),
             host_urls: Vec::new(),
             peer_root_certificate: None,
             #[cfg(any(test, feature = "testing"))]
@@ -6880,6 +6911,7 @@ impl ControllerInit {
             checkpointed_input_distribution,
             checkpointed_output_assignment,
             input_choices: BTreeMap::new(),
+            synchronized_inputs: BTreeSet::new(),
             host_urls: Vec::new(),
             peer_root_certificate: None,
             #[cfg(any(test, feature = "testing"))]
@@ -8490,6 +8522,10 @@ pub struct ControllerInner {
     step_receiver: tokio::sync::watch::Receiver<StepStatus>,
     checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
     transaction_receiver: tokio::sync::watch::Receiver<TransactionCoordination>,
+
+    /// This host's bound for each of its synchronized input connectors that
+    /// the coordinator synchronizes (see [coordination::InputBounds]).
+    input_bounds: tokio::sync::watch::Sender<InputBounds>,
     coordination_request: Mutex<Option<StepRequest>>,
     /// The latest [StepRequest] that had a [StepRequest::seq], to log a
     /// sequence number that does not increase.
@@ -8653,6 +8689,7 @@ impl ControllerInner {
         input_distribution: BTreeMap<String, InputDistribution>,
         view_integrals: ViewIntegrals,
         input_choices: BTreeMap<String, JsonValue>,
+        synchronized_inputs: BTreeSet<String>,
         peer_client: Option<PeerClient>,
         output_assignment: BTreeMap<String, usize>,
         storage_path: Option<PathBuf>,
@@ -8715,6 +8752,7 @@ impl ControllerInner {
                 step_receiver,
                 checkpoint_receiver,
                 transaction_receiver,
+                input_bounds: tokio::sync::watch::Sender::new(InputBounds::default()),
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 last_numbered_step_request: Mutex::new(None),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
@@ -8758,6 +8796,7 @@ impl ControllerInner {
                             .map(|distribution| ActivationInput {
                                 distribution: *distribution,
                                 choice: input_choices.get(&*input_name).cloned(),
+                                synchronized: synchronized_inputs.contains(&*input_name),
                             });
 
                     (
@@ -8979,6 +9018,19 @@ impl ControllerInner {
             &self.layout,
             activation.map(|activation| &activation.distribution),
         )?;
+        let sync = bound_sync(
+            endpoint_name,
+            &endpoint_config.connector_config,
+            shard.as_ref(),
+            activation.is_some_and(|activation| activation.synchronized),
+        )?;
+        // An unknown table is reported when the endpoint is added.
+        if let Some(table) = self
+            .catalog
+            .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
+        {
+            validate_lateness(endpoint_name, shard.as_ref(), sync, &table.schema)?;
+        }
         let mut transport_config = endpoint_config.connector_config.transport.clone();
         if let Some(metadata) = transport_config.transport_metadata_mut()
             && let Some(ref name) = self.status.pipeline_config.given_name
@@ -9007,7 +9059,23 @@ impl ControllerInner {
             endpoint,
             resume_info,
             distributed,
+            sync,
         )
+    }
+
+    /// Passes the coordinator's global bound for each synchronized input
+    /// connector to its reader (see [coordination::StepRequest::input_bounds]).
+    fn set_input_bounds(&self, bounds: &BTreeMap<String, InputBound>) {
+        if bounds.is_empty() {
+            return;
+        }
+        for endpoint in self.status.input_status().values() {
+            if let Some(bound) = bounds.get(&endpoint.endpoint_name)
+                && let Some(reader) = endpoint.reader.as_ref()
+            {
+                reader.set_input_bound(bound.clone());
+            }
+        }
     }
 
     /// Returns the values that this host's distributed input connectors chose
@@ -9107,7 +9175,22 @@ impl ControllerInner {
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
-        self.add_input_endpoint_inner(endpoint_name, endpoint_config, endpoint, resume_info, None)
+        // A connector added at runtime is not distributed, so it decides its
+        // bound alone.
+        let sync = bound_sync(
+            endpoint_name,
+            &endpoint_config.connector_config,
+            None,
+            false,
+        )?;
+        self.add_input_endpoint_inner(
+            endpoint_name,
+            endpoint_config,
+            endpoint,
+            resume_info,
+            None,
+            sync,
+        )
     }
 
     /// Like [Self::add_input_endpoint], with `distributed` passed to an
@@ -9119,6 +9202,7 @@ impl ControllerInner {
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
         distributed: Option<DistributedInput>,
+        sync: Option<BoundSync>,
     ) -> Result<EndpointId, ControllerError> {
         let (seek, initial_statistics) = resume_info.unzip();
 
@@ -9215,6 +9299,7 @@ impl ControllerInner {
             endpoint_id,
             endpoint_name,
             &endpoint_config.connector_config,
+            sync,
             self.clone(),
         ));
         let (fault_tolerance, open): (_, OpenInputReaderFn<'_>) = match endpoint {
@@ -11061,6 +11146,9 @@ struct InputProbe {
     controller: Arc<ControllerInner>,
     max_batch_size: usize,
     transaction_in_progress: AtomicBool,
+
+    /// How the endpoint synchronizes its input, if it does.
+    sync: Option<BoundSync>,
 }
 
 impl Clone for InputProbe {
@@ -11071,6 +11159,7 @@ impl Clone for InputProbe {
             controller: self.controller.clone(),
             max_batch_size: self.max_batch_size,
             transaction_in_progress: AtomicBool::new(false),
+            sync: self.sync,
         }
     }
 }
@@ -11080,6 +11169,7 @@ impl InputProbe {
         endpoint_id: EndpointId,
         endpoint_name: &str,
         connector_config: &ConnectorConfig,
+        sync: Option<BoundSync>,
         controller: Arc<ControllerInner>,
     ) -> Self {
         let max_batch_size = controller.max_connector_batch_size(connector_config);
@@ -11090,6 +11180,7 @@ impl InputProbe {
             controller,
             max_batch_size,
             transaction_in_progress: AtomicBool::new(false),
+            sync,
         }
     }
 }
@@ -11294,6 +11385,23 @@ impl InputConsumer for InputProbe {
             .set_input_share(self.endpoint_id, mine, total);
         // A larger share can unblock an endpoint that backpressure paused.
         self.controller.unpark_backpressure();
+    }
+
+    fn report_input_bound(&self, bound: InputBound) -> Option<InputBound> {
+        match self.sync {
+            // The reader does not synchronize, as far as the controller
+            // knows, so let it go ahead alone.
+            None | Some(BoundSync::Local) => Some(bound),
+            Some(BoundSync::Coordinated) => {
+                self.controller.input_bounds.send_if_modified(|bounds| {
+                    bounds
+                        .bounds
+                        .insert(self.endpoint_name.clone(), bound.clone())
+                        != Some(bound)
+                });
+                None
+            }
+        }
     }
 
     fn update_connector_health(&self, health: ConnectorHealth) {

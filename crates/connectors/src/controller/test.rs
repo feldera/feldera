@@ -12369,6 +12369,7 @@ pub fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished(
         controller: controller.inner.clone(),
         max_batch_size: 1024,
         transaction_in_progress: AtomicBool::new(false),
+        sync: None,
     };
 
     assert_eq!(
@@ -12415,8 +12416,83 @@ fn controller_with_probe(
         controller: controller.inner.clone(),
         max_batch_size: 1024,
         transaction_in_progress: AtomicBool::new(false),
+        sync: None,
     };
     (controller, probe)
+}
+
+/// A reader that records the input bounds that the controller sets.
+struct BoundRecorder(std::sync::Mutex<Vec<feldera_types::coordination::InputBound>>);
+
+impl feldera_adapterlib::transport::InputReader for BoundRecorder {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+    fn request(&self, _command: feldera_adapterlib::transport::InputReaderCommand) {}
+    fn is_closed(&self) -> bool {
+        false
+    }
+    fn set_input_bound(&self, bound: feldera_types::coordination::InputBound) {
+        self.0.lock().unwrap().push(bound);
+    }
+}
+
+/// A connector that synchronizes its input alone uses its own bound at once.
+/// One that the coordinator synchronizes publishes its bound for the
+/// coordinator, and its reader gets the coordinator's bound from the step
+/// request.
+#[engine_test]
+pub fn input_bounds_flow_through_the_coordinator(engine: &dyn PipelineTestEngine) {
+    use feldera_adapterlib::transport::InputConsumer;
+    use feldera_types::coordination::{InputBound, OrderKey, StepRequest};
+    use std::collections::BTreeMap;
+
+    let (controller, mut probe) = controller_with_probe(
+        engine,
+        json!({
+            "name": "test",
+            "workers": 1,
+            "inputs": {},
+            "outputs": {},
+            "multihost": {"hosts": 1},
+        }),
+    );
+    let reader = Arc::new(BoundRecorder(std::sync::Mutex::new(Vec::new())));
+    controller
+        .inner
+        .status
+        .inputs
+        .write()
+        .get_mut(&0)
+        .unwrap()
+        .reader = Some(reader.clone());
+    let key = |k| InputBound::Key(OrderKey::U64(k));
+    let mut watcher = controller.input_bounds_watcher();
+
+    probe.sync = Some(super::BoundSync::Local);
+    assert_eq!(probe.report_input_bound(key(5)), Some(key(5)));
+    assert!(!watcher.has_changed().unwrap());
+
+    probe.sync = Some(super::BoundSync::Coordinated);
+    assert_eq!(probe.report_input_bound(key(7)), None);
+    assert!(watcher.has_changed().unwrap());
+    assert_eq!(
+        watcher.borrow_and_update().bounds,
+        BTreeMap::from([("test_input".to_string(), key(7))])
+    );
+    // The same bound again is not an update.
+    assert_eq!(probe.report_input_bound(key(7)), None);
+    assert!(!watcher.has_changed().unwrap());
+
+    // The reader gets its own connector's bound, and only that.
+    controller.set_coordination_request(StepRequest::new_idle(0).with_input_bounds(
+        BTreeMap::from([
+            ("test_input".to_string(), key(6)),
+            ("other".to_string(), key(9)),
+        ]),
+    ));
+    assert_eq!(*reader.0.lock().unwrap(), [key(6)]);
+    controller.stop().unwrap();
 }
 
 /// True if `controller`'s open transaction waits for a connector to commit.
