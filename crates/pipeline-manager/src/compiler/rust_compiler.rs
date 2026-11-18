@@ -1827,6 +1827,27 @@ async fn call_compiler(
     ))
 }
 
+/// AWS variables that `cargo` inherits so that sccache can assume the IRSA role of the pod.
+///
+/// sccache reads the role and the token file only from the environment. None of these
+/// variables is a credential, and a build script can already read the same values from
+/// the AWS config file. Never add a variable that holds a key or a token.
+const SCCACHE_AWS_ENV_VARS: [&str; 5] = [
+    "AWS_PROFILE",
+    "AWS_ROLE_ARN",
+    "AWS_WEB_IDENTITY_TOKEN_FILE",
+    "AWS_REGION",
+    "AWS_STS_REGIONAL_ENDPOINTS",
+];
+
+/// Returns the variables of `env` that `cargo` inherits for sccache.
+fn sccache_env_vars(env: impl Iterator<Item = (String, String)>) -> Vec<(String, String)> {
+    env.filter(|(name, _)| {
+        name.starts_with("SCCACHE") || SCCACHE_AWS_ENV_VARS.contains(&name.as_str())
+    })
+    .collect()
+}
+
 /// A `cargo` command whose environment holds only what a build needs.
 ///
 /// By default, the command inherits all environment variables
@@ -1849,10 +1870,7 @@ pub(super) fn cargo_command_with_minimal_env() -> Result<Command, RustCompilatio
 
     let mut command = Command::new("cargo");
 
-    // get env vars that start with SCCACHE
-    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
-        .filter(|(key, _)| key.starts_with("SCCACHE"))
-        .collect();
+    let inherited_env_vars = sccache_env_vars(std::env::vars());
 
     command.env_clear();
     command.env("PATH", env_path);
@@ -1866,16 +1884,10 @@ pub(super) fn cargo_command_with_minimal_env() -> Result<Command, RustCompilatio
         command.env("CARGO_INCREMENTAL", cargo_incremental);
     }
 
-    // Preserve AWS_PROFILE if set, to allow sccache to use
-    // credentials from there.
-    // we avoid passing all AWS_* env vars to prevent leaking
-    // credentials from the malicious build scripts.
-    if let Some(aws_profile) = std::env::var_os("AWS_PROFILE") {
-        command.env("AWS_PROFILE", aws_profile);
-    }
-
-    for (key, value) in preserved_env_vars {
-        command.env(key, value);
+    // Other AWS variables stay out, so that a malicious build script cannot read
+    // credentials from the environment.
+    for (name, value) in inherited_env_vars {
+        command.env(name, value);
     }
 
     // Set compiler stack size to 20MB (10x the default) to prevent
@@ -2729,7 +2741,7 @@ mod test {
     use crate::compiler::rust_compiler::{
         STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
         decide_pipeline_binary_cleanup, is_permanent_upload_rejection, pipeline_binary_filename,
-        program_info_filename, sccache_message, valid_pipeline_binary_filenames,
+        program_info_filename, sccache_env_vars, sccache_message, valid_pipeline_binary_filenames,
         valid_program_info_filenames,
     };
     use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
@@ -2769,6 +2781,40 @@ mod test {
             panic!("expected a Rust compilation error");
         };
         assert_eq!(info.stderr, RUST_UDFS_NOT_ALLOWED);
+    }
+
+    /// Tests that cargo inherits the variables that sccache needs for IRSA, and no
+    /// AWS credentials.
+    #[test]
+    fn cargo_inherits_irsa_variables_but_no_credentials() {
+        let env = [
+            ("HOME", "/home/ubuntu"),
+            ("SCCACHE_IDLE_TIMEOUT", "0"),
+            ("AWS_PROFILE", "sccache"),
+            ("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/compiler"),
+            ("AWS_WEB_IDENTITY_TOKEN_FILE", "/var/run/secrets/token"),
+            ("AWS_REGION", "us-east-1"),
+            ("AWS_STS_REGIONAL_ENDPOINTS", "regional"),
+            ("AWS_ACCESS_KEY_ID", "key-id"),
+            ("AWS_SECRET_ACCESS_KEY", "key"),
+            ("AWS_SESSION_TOKEN", "token"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string()));
+        let inherited_names: Vec<String> = sccache_env_vars(env.into_iter())
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            inherited_names,
+            [
+                "SCCACHE_IDLE_TIMEOUT",
+                "AWS_PROFILE",
+                "AWS_ROLE_ARN",
+                "AWS_WEB_IDENTITY_TOKEN_FILE",
+                "AWS_REGION",
+                "AWS_STS_REGIONAL_ENDPOINTS",
+            ]
+        );
     }
 
     /// Tests that sccache's report is picked out of real `cargo build` output, that the
