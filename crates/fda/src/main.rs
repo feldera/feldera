@@ -4104,7 +4104,8 @@ fn main() {
             }
 
             if !matches!(cli.command, Commands::Welcome) {
-                splash::first_run(&cli.host);
+                let reads_stdin = std::env::args_os().any(|a| a == "--stdin");
+                splash::first_run(&cli.host, reads_stdin);
             }
 
             let client_opts = ClientOpts::from_cli(&cli);

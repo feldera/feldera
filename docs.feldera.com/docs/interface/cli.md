@@ -191,6 +191,34 @@ mkdir -Force (Split-Path $PROFILE)
   </TabItem>
 </Tabs>
 
+### Welcome animation
+
+The first time you run an `fda` command in a terminal, `fda` shows a short animation of the Feldera logo
+before the command runs. It shows one time on each computer. Push any key to skip it.
+
+`fda` does not show the animation when one of these is true:
+
+| Condition | Example |
+|---|---|
+| The `FDA_NO_ANIMATION` environment variable is set | `export FDA_NO_ANIMATION=1` |
+| The `CI` environment variable is set | CI systems set it |
+| `TERM` is `dumb` | Some editors and IDE consoles |
+| The output or the input is not a terminal | `fda pipelines \| less`, `fda ... --stdin < file.sql` |
+| The command reads from stdin | Any command with `--stdin` |
+| The terminal is smaller than the window | Less than 64 columns, or less than 31 rows at 80 columns |
+| The platform is not Linux or macOS | Windows |
+
+If the terminal is too small, `fda` shows the animation on a later run, in a larger terminal.
+
+`fda` records that the animation was shown in a file named `welcome-shown`:
+
+| Platform | Location |
+|---|---|
+| Linux | `$XDG_CONFIG_HOME/fda/welcome-shown` (usually `~/.config/fda/welcome-shown`) |
+| macOS | `~/Library/Application Support/com.Feldera.fda/welcome-shown` |
+
+To see the animation again, run `fda welcome`. To show it again on the next command, delete the file.
+
 ## Connecting & Authentication
 
 To connect to the Feldera manager, you need to provide the URL of the manager. You can either provide the URL as an
