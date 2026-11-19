@@ -7182,7 +7182,7 @@ pub mod test_http {
                 let body = String::from_utf8_lossy(&body);
                 let expected = match update_format {
                     "redis" => "not supported for JSON input",
-                    _ => "unknown variant `weighted`",
+                    _ => "a configuration value is not supported",
                 };
                 assert!(body.contains(expected), "{update_format}: {body}");
             }
