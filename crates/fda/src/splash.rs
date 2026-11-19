@@ -18,6 +18,7 @@ const LOGO: &[u8] = include_bytes!("splash_logo.bin");
 const SAMPLE_STEP: usize = 3;
 const SRC_W: f64 = 2000.0;
 const SRC_H: f64 = 875.0;
+const EMPTY_LABEL: u8 = 0;
 const BODY: u8 = 1;
 const FAR_WING: u8 = 2;
 const WORD: u8 = 3;
@@ -340,34 +341,56 @@ fn lanczos_weights(src: usize, dst: usize, span: f64) -> Vec<(usize, Vec<f64>)> 
         .collect()
 }
 
-/// Separable Lanczos-3 resize of a `w`x`h` grid to `dw`x`dh`.
-fn lanczos_resize(src: &[f64], w: usize, h: usize, dw: usize, dh: usize) -> Vec<f64> {
-    let wx = lanczos_weights(w, dw, SRC_W);
-    let wy = lanczos_weights(h, dh, SRC_H);
-    let mut rows = vec![0.0; h * dw];
-    for y in 0..h {
-        for (x, (lo, ws)) in wx.iter().enumerate() {
-            rows[y * dw + x] = ws
-                .iter()
-                .enumerate()
-                .map(|(k, v)| v * src[y * w + lo + k])
-                .sum();
+/// Lanczos-3 resize of each label in `labels`, a `w`x`h` grid, to `dw`x`dh`.
+/// Returns the coverage grid of each label, indexed by label.
+///
+/// Most of the logo is empty, so the horizontal pass adds only the filled px
+/// into the few output columns each one feeds, instead of filtering every px.
+fn lanczos_labels(labels: &[u8], w: usize, h: usize, dw: usize, dh: usize) -> [Vec<f64>; 4] {
+    // For each source column: the output columns it feeds, and with what weight.
+    let mut feeds: Vec<Vec<(usize, f64)>> = vec![Vec::new(); w];
+    for (i, (lo, ws)) in lanczos_weights(w, dw, SRC_W).into_iter().enumerate() {
+        for (k, v) in ws.into_iter().enumerate() {
+            feeds[lo + k].push((i, v));
         }
     }
-    let mut out = vec![0.0; dh * dw];
-    for (y, (lo, ws)) in wy.iter().enumerate() {
-        for x in 0..dw {
-            out[y * dw + x] = ws
-                .iter()
-                .enumerate()
-                .map(|(k, v)| v * rows[(lo + k) * dw + x])
-                .sum();
+    let mut rows: [Vec<f64>; 4] = std::array::from_fn(|_| vec![0.0; h * dw]);
+    for (idx, &label) in labels.iter().enumerate() {
+        if label != EMPTY_LABEL {
+            let (y, x) = (idx / w, idx % w);
+            let row = &mut rows[label as usize][y * dw..(y + 1) * dw];
+            for &(i, v) in &feeds[x] {
+                row[i] += v;
+            }
+        }
+    }
+    let wy = lanczos_weights(h, dh, SRC_H);
+    let mut out: [Vec<f64>; 4] = std::array::from_fn(|_| vec![0.0; dh * dw]);
+    for label in [BODY, FAR_WING, WORD] {
+        let (rows, out) = (&rows[label as usize], &mut out[label as usize]);
+        for (y, (lo, ws)) in wy.iter().enumerate() {
+            for (k, v) in ws.iter().enumerate() {
+                let src = &rows[(lo + k) * dw..(lo + k + 1) * dw];
+                for (o, r) in out[y * dw..(y + 1) * dw].iter_mut().zip(src) {
+                    *o += v * r;
+                }
+            }
         }
     }
     out
 }
 
+/// Dot rows above the landed logo, where the bird flies.
+const FILM_TOP_DOTS: usize = 16;
+
 impl Film {
+    /// Terminal rows the film takes at width `cols`.
+    fn rows(cols: usize) -> usize {
+        let ld = (cols - 10).min(64) * 2;
+        let lh = (ld as f64 * SRC_H / SRC_W).round() as usize;
+        (FILM_TOP_DOTS + lh) / 4 + 2
+    }
+
     fn new(cols: usize, color: ColorMode) -> Self {
         let (aw, ah, labels) = decode_logo();
         let w = cols;
@@ -376,14 +399,14 @@ impl Film {
         let lh = (ld as f64 * SRC_H / SRC_W).round() as usize;
         let f = ld as f64 / SRC_W; // dots per source px
         let ox = (cols * 2 - ld) / 2 / 2 * 2;
-        let oy = 16;
-        let h = (oy + lh) / 4 + 2;
+        let oy = FILM_TOP_DOTS;
+        let h = Film::rows(cols);
         let (hd, wd) = (h * 4, w * 2);
 
         // Final logo: Lanczos-resample each label onto the dot grid, so thin strokes stay crisp.
+        let coverage = lanczos_labels(&labels, aw, ah, ld, lh);
         let place = |want: u8| {
-            let mask: Vec<f64> = labels.iter().map(|&l| (l == want) as u8 as f64).collect();
-            let small = lanczos_resize(&mask, aw, ah, ld, lh);
+            let small = &coverage[want as usize];
             let mut g = vec![false; hd * wd];
             for ty in 0..lh {
                 for tx in 0..ld {
@@ -1009,45 +1032,102 @@ impl Window {
 
 const TAGLINE: [&str; 3] = ["Precisely compute ", "only what changed", "."];
 
+/// The terminal's (columns, rows), or `None` when it cannot be read.
 #[cfg(unix)]
-fn terminal_columns() -> usize {
-    // SAFETY: TIOCGWINSZ fills a winsize struct we own; on error we keep the default.
+fn terminal_size() -> Option<(usize, usize)> {
+    // SAFETY: `winsize` is a plain C struct of integers, so all zeroes is a valid value.
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+    // SAFETY: TIOCGWINSZ writes one `winsize` through the pointer, which points
+    // to `ws`, a live, writable `winsize` that we own for the whole call.
     let ok = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) } == 0;
-    if ok && ws.ws_col > 0 {
-        ws.ws_col as usize
-    } else {
-        80
+    (ok && ws.ws_col > 0 && ws.ws_row > 0).then_some((ws.ws_col as usize, ws.ws_row as usize))
+}
+
+/// Not read on other platforms, so the film never plays there.
+#[cfg(not(unix))]
+fn terminal_size() -> Option<(usize, usize)> {
+    None
+}
+
+/// Width inside the window's borders for a terminal `cols` wide.
+fn inner_width(cols: usize) -> usize {
+    cols.saturating_sub(4).clamp(60, 100)
+}
+
+/// Whether the animated window fits: the window, plus one row for the cursor
+/// under it. In a shorter terminal the cursor moves that redraw the film stop
+/// at the top of the screen, and frames land on the wrong rows.
+fn fits(cols: usize, rows: usize) -> bool {
+    let inner = inner_width(cols);
+    cols >= inner + 4 && rows > Window::FILM_TOP + Film::rows(inner) + Window::BELOW_FILM
+}
+
+/// Terminal settings from before the film, for the signal handler to restore.
+#[cfg(unix)]
+static SAVED_TERMIOS: std::sync::OnceLock<libc::termios> = std::sync::OnceLock::new();
+
+/// Signals that end fda while the film plays. SIGKILL cannot be caught.
+#[cfg(unix)]
+const RESTORE_ON: [libc::c_int; 4] = [libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT, libc::SIGINT];
+
+/// Restores the terminal and the cursor, then lets the signal end fda as usual.
+#[cfg(unix)]
+extern "C" fn restore_and_reraise(sig: libc::c_int) {
+    const SHOW: &[u8] = b"\x1b[0m\x1b[?25h\r\n";
+    // SAFETY: tcsetattr, write, signal and raise are async-signal-safe. The
+    // termios pointer comes from a static set before this handler was installed,
+    // and SHOW is a static buffer valid for SHOW.len() bytes.
+    unsafe {
+        if let Some(t) = SAVED_TERMIOS.get() {
+            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, t);
+        }
+        libc::write(libc::STDOUT_FILENO, SHOW.as_ptr().cast(), SHOW.len());
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
     }
 }
 
-#[cfg(not(unix))]
-fn terminal_columns() -> usize {
-    80
-}
-
 /// Puts stdin in non-canonical, no-echo mode so any key (Ctrl-C too) skips
-/// the film. Restores the terminal on drop.
+/// the film. Restores the terminal on drop, and on the signals in `RESTORE_ON`.
 struct Keys {
     #[cfg(unix)]
     saved: Option<libc::termios>,
+    #[cfg(unix)]
+    old_handlers: Vec<(libc::c_int, libc::sighandler_t)>,
 }
 
 impl Keys {
     #[cfg(unix)]
     fn new() -> Self {
-        // SAFETY: tcgetattr/tcsetattr on fd 0 with a termios we own.
-        unsafe {
-            let mut t: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(libc::STDIN_FILENO, &mut t) != 0 {
-                return Keys { saved: None };
-            }
-            let saved = t;
-            t.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
-            t.c_cc[libc::VMIN] = 0;
-            t.c_cc[libc::VTIME] = 0;
-            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t);
-            Keys { saved: Some(saved) }
+        let off = Keys {
+            saved: None,
+            old_handlers: Vec::new(),
+        };
+        // SAFETY: `termios` is a plain C struct of integers, so all zeroes is a valid value.
+        let mut t: libc::termios = unsafe { std::mem::zeroed() };
+        // SAFETY: tcgetattr writes one `termios` through the pointer, which points to `t`.
+        if unsafe { libc::tcgetattr(libc::STDIN_FILENO, &mut t) } != 0 {
+            return off;
+        }
+        let saved = t;
+        // The film plays once per process, so this is the only value ever set.
+        if SAVED_TERMIOS.set(saved).is_err() {
+            return off;
+        }
+        let handler = restore_and_reraise as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        let old_handlers = RESTORE_ON
+            .iter()
+            // SAFETY: installs a handler that only makes async-signal-safe calls.
+            .map(|&sig| (sig, unsafe { libc::signal(sig, handler) }))
+            .collect();
+        t.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
+        t.c_cc[libc::VMIN] = 0;
+        t.c_cc[libc::VTIME] = 0;
+        // SAFETY: tcsetattr reads one `termios` through the pointer, which points to `t`.
+        unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t) };
+        Keys {
+            saved: Some(saved),
+            old_handlers,
         }
     }
 
@@ -1061,7 +1141,8 @@ impl Keys {
     fn pressed(&self) -> Option<Vec<u8>> {
         self.saved?;
         let mut buf = [0u8; 64];
-        // SAFETY: VMIN=0/VTIME=0 make this read return at once.
+        // SAFETY: `buf` is a live, writable buffer valid for `buf.len()` bytes,
+        // and read writes at most that many. VMIN=0 and VTIME=0 make it return at once.
         let n = unsafe { libc::read(libc::STDIN_FILENO, buf.as_mut_ptr().cast(), buf.len()) };
         (n > 0).then(|| buf[..n as usize].to_vec())
     }
@@ -1076,8 +1157,13 @@ impl Drop for Keys {
     fn drop(&mut self) {
         #[cfg(unix)]
         if let Some(t) = self.saved {
-            // SAFETY: restores the attributes saved in `new`.
+            // SAFETY: tcsetattr reads one `termios` through the pointer, which
+            // points to `t`, the attributes saved in `new`.
             unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t) };
+            for &(sig, old) in &self.old_handlers {
+                // SAFETY: puts back the handler that was in place before `new`.
+                unsafe { libc::signal(sig, old) };
+            }
         }
     }
 }
@@ -1093,20 +1179,40 @@ impl Drop for Cursor {
     }
 }
 
-fn can_animate() -> bool {
-    stdout().is_terminal()
-        && std::io::stdin().is_terminal()
-        && std::env::var_os("CI").is_none()
-        && std::env::var_os("FDA_NO_ANIMATION").is_none()
-        && std::env::var("TERM").map_or(true, |t| t != "dumb")
+/// Whether the environment allows animation. `env` looks up a variable.
+fn animation_allowed(
+    stdout_tty: bool,
+    stdin_tty: bool,
+    env: impl Fn(&str) -> Option<String>,
+) -> bool {
+    stdout_tty
+        && stdin_tty
+        && env("CI").is_none()
+        && env("FDA_NO_ANIMATION").is_none()
+        && env("TERM").is_none_or(|t| t != "dumb")
 }
 
-/// Play the film, or print the still logo when animation is off.
+fn can_animate() -> bool {
+    animation_allowed(
+        stdout().is_terminal(),
+        std::io::stdin().is_terminal(),
+        |k| std::env::var_os(k).map(|v| v.to_string_lossy().into_owned()),
+    )
+}
+
+/// Write the first-run marker in `dir`. True only the first time: false when
+/// the marker is already there, or when it cannot be written.
+fn claim_first_run(dir: &std::path::Path) -> bool {
+    let marker = dir.join("welcome-shown");
+    !marker.exists() && std::fs::create_dir_all(dir).is_ok() && std::fs::write(&marker, b"").is_ok()
+}
+
 /// Play the film in its window, or print the still window when animation is off.
 /// `host` is the Feldera host fda talks to, shown in the CONNECTION panel.
 pub fn play(host: &str) {
     let color = ColorMode::detect();
-    let inner = terminal_columns().saturating_sub(4).clamp(60, 100);
+    let size = terminal_size();
+    let inner = inner_width(size.map_or(80, |(cols, _)| cols));
     let film = Film::new(inner, color);
     let window = Window {
         inner,
@@ -1114,7 +1220,8 @@ pub fn play(host: &str) {
         host: host.to_string(),
     };
     let mut out = stdout().lock();
-    if !can_animate() {
+    // A still print scrolls, so it is safe at any size.
+    if !can_animate() || !size.is_some_and(|(cols, rows)| fits(cols, rows)) {
         for row in window.rows(&film.final_frame(), true) {
             let _ = writeln!(out, "{row}");
         }
@@ -1191,24 +1298,21 @@ pub fn play(host: &str) {
 }
 
 /// Play the film once per machine, on the first command run in a terminal.
-pub fn first_run(host: &str) {
-    // Too narrow for the window: wait for a wider terminal rather than wrap.
-    if !can_animate() || terminal_columns() < 64 {
+/// `reads_stdin` is true when the command reads its input from stdin; the film
+/// would take the first keys typed for that input as its skip key.
+pub fn first_run(host: &str, reads_stdin: bool) {
+    // Too small for the window: wait for a larger terminal rather than garble it.
+    let fits_now = terminal_size().is_some_and(|(cols, rows)| fits(cols, rows));
+    if reads_stdin || !can_animate() || !fits_now {
         return;
     }
     let Some(dirs) = directories::ProjectDirs::from("com", "Feldera", "fda") else {
         return;
     };
-    let marker = dirs.config_dir().join("welcome-shown");
-    if marker.exists() {
-        return;
+    // Claim it first, so a failed or interrupted run does not play it again.
+    if claim_first_run(dirs.config_dir()) {
+        play(host);
     }
-    // Record it first, so a failed or interrupted run does not play it again.
-    if std::fs::create_dir_all(dirs.config_dir()).is_err() || std::fs::write(&marker, b"").is_err()
-    {
-        return;
-    }
-    play(host);
 }
 
 #[cfg(test)]
@@ -1298,6 +1402,105 @@ mod tests {
                 "host missing at {cols} columns"
             );
             assert!(!all.contains("https://"));
+        }
+    }
+
+    #[test]
+    fn animation_needs_two_terminals_and_a_clear_environment() {
+        let env = |vars: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                vars.iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        assert!(animation_allowed(true, true, env(&[])));
+        assert!(animation_allowed(
+            true,
+            true,
+            env(&[("TERM", "xterm-256color")])
+        ));
+        assert!(!animation_allowed(true, true, env(&[("CI", "true")])));
+        assert!(!animation_allowed(
+            true,
+            true,
+            env(&[("FDA_NO_ANIMATION", "1")])
+        ));
+        assert!(!animation_allowed(true, true, env(&[("TERM", "dumb")])));
+        assert!(
+            !animation_allowed(false, true, env(&[])),
+            "stdout is a pipe"
+        );
+        assert!(!animation_allowed(true, false, env(&[])), "stdin is a pipe");
+    }
+
+    #[test]
+    fn window_must_fit_the_terminal() {
+        // The window is 30 rows at 80 columns, so a default 80x24 terminal is too short.
+        let need = Window::FILM_TOP + Film::rows(inner_width(80)) + Window::BELOW_FILM;
+        assert_eq!(need, 30);
+        assert!(!fits(80, 24));
+        assert!(!fits(80, need), "no row left for the cursor");
+        assert!(fits(80, need + 1));
+        assert!(fits(80, 40));
+        assert!(!fits(63, 60), "too narrow");
+        assert!(fits(64, 60));
+    }
+
+    #[test]
+    fn first_run_marker_is_claimed_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("fda");
+        assert!(claim_first_run(&config), "first run plays");
+        assert!(config.join("welcome-shown").exists());
+        assert!(!claim_first_run(&config), "second run does not");
+
+        // A file where the config directory should be: the marker cannot be written.
+        let blocked = dir.path().join("blocked");
+        std::fs::write(&blocked, b"").unwrap();
+        assert!(!claim_first_run(&blocked.join("fda")));
+    }
+
+    /// The plain separable filter, to check the fast one against.
+    fn lanczos_dense(src: &[f64], w: usize, h: usize, dw: usize, dh: usize) -> Vec<f64> {
+        let (wx, wy) = (lanczos_weights(w, dw, SRC_W), lanczos_weights(h, dh, SRC_H));
+        let mut rows = vec![0.0; h * dw];
+        for y in 0..h {
+            for (x, (lo, ws)) in wx.iter().enumerate() {
+                rows[y * dw + x] = ws
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| v * src[y * w + lo + k])
+                    .sum();
+            }
+        }
+        let mut out = vec![0.0; dh * dw];
+        for (y, (lo, ws)) in wy.iter().enumerate() {
+            for x in 0..dw {
+                out[y * dw + x] = ws
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| v * rows[(lo + k) * dw + x])
+                    .sum();
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn fast_resize_matches_the_plain_filter() {
+        let (w, h, labels) = decode_logo();
+        let (dw, dh) = (128, 56);
+        let fast = lanczos_labels(&labels, w, h, dw, dh);
+        for label in [BODY, FAR_WING, WORD] {
+            let mask: Vec<f64> = labels.iter().map(|&l| (l == label) as u8 as f64).collect();
+            let plain = lanczos_dense(&mask, w, h, dw, dh);
+            let worst = plain
+                .iter()
+                .zip(&fast[label as usize])
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f64::max);
+            assert!(worst < 1e-9, "label {label} differs by {worst}");
         }
     }
 
