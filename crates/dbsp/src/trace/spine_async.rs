@@ -66,6 +66,7 @@ use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::{Context, HumanBytes, SizeOf};
 use smallvec::SmallVec;
+use std::{any::TypeId, ops::RangeInclusive, sync::Mutex};
 use std::{
     borrow::Cow,
     future::Future,
@@ -83,7 +84,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     sync::Condvar,
 };
-use std::{ops::RangeInclusive, sync::Mutex};
 use textwrap::indent;
 use tokio::{
     sync::{Notify, futures::OwnedNotified},
@@ -311,6 +311,12 @@ fn min_batches_to_merge(level: usize, merge_threshold_batches: usize) -> usize {
     }
 }
 
+/// Returns true if batches of type `B` hold times, as the batches of nested
+/// circuits do.
+fn has_times<B: Batch>() -> bool {
+    TypeId::of::<B::Time>() != TypeId::of::<()>()
+}
+
 impl<B> Slot<B>
 where
     B: Batch,
@@ -323,7 +329,8 @@ where
     }
 
     /// Starts a merge of every batch at `level` when more than
-    /// `min_negative_fraction` of the records they hold have negative weights.
+    /// `min_negative_fraction` of the records they hold are retractions, as
+    /// [`Batch::retraction_count`] counts them.
     ///
     /// Used to initiate merge at `level` without waiting for `merge_threshold_batches`
     /// if the level contains many negative weights. Merging negative weights is beneficial
@@ -340,8 +347,7 @@ where
     ///
     /// The batches the merge takes, or `None` when the slot is already
     /// merging, holds fewer than two batches, or holds too few retractions.
-    /// A batch that does not count its negative weights counts as having
-    /// none.
+    /// A batch that does not count its retractions counts as having none.
     fn try_start_cancelling_merge(
         &mut self,
         level: usize,
@@ -356,7 +362,7 @@ where
                 .fold((0u64, 0u64), |(records, negative), batch| {
                     (
                         records + batch.len_upper_bound() as u64,
-                        negative + batch.negative_weight_count().unwrap_or(0),
+                        negative + batch.retraction_count(),
                     )
                 });
         if records == 0 || negative as f64 / records as f64 <= min_negative_fraction {
@@ -767,8 +773,9 @@ where
             }
         }
 
-        // The topmost level merges early when enough of its records have
-        // negative weights.
+        // The topmost level merges early when enough of its records are
+        // retractions.  In a spine of batches with times, a merge cancels a
+        // retraction only once the frontier reaches the retraction's epoch.
         if self.last_non_empty_slot() == Some(level) {
             let min_negative_fraction = self.top_level_negative_weight_fraction;
             return self.slots[level].try_start_cancelling_merge(level, min_negative_fraction);
@@ -2608,21 +2615,23 @@ where
 
         let len = batch.len_upper_bound();
 
-        let effective_len = if merge {
+        let effective_len = if merge && !has_times::<B>() {
             // Merge batches with many negative weights more aggressively. Negative updates are likely to cancel
             // out during merging. Every time this happens, two records are eliminated from the spine, speeding
             // up lookups and reducing the spine's storage footprint. Furthermore, this avoids performance anomalies
             // where an operator spends a lot of time skipping over 0-weight records.
             //
-            // We implement this heuristic by accounting each record with a negative weight as N records when calculating
+            // We implement this heuristic by accounting each retraction as N records when calculating
             // the batch's effective length (N is equal to negative_weight_multiplier() + 1). This should push such batches
             // to the next level more eagerly, until they get merged with batches that contain matching positive-weight
             // records.
             //
             // We only apply this heuristic to merged batches to avoid reordering insertions and deletions by pushing
-            // deletions to higher levels than the insertions they correspond to.
-            let negative_weight_count = batch.negative_weight_count().unwrap_or(0) as usize;
-            len + negative_weight_count * (negative_weight_multiplier() as usize)
+            // deletions to higher levels than the insertions they correspond to, and only to batches without
+            // times: until the frontier reaches a retraction's epoch, a merge keeps it apart from the records it
+            // retracts.
+            let retraction_count = batch.retraction_count() as usize;
+            len + retraction_count * (negative_weight_multiplier() as usize)
         } else {
             len
         };
@@ -2882,9 +2891,11 @@ mod tests {
 #[cfg(test)]
 mod merge_rule_test {
     use super::{CompactionStatus, MERGE_COUNTS, Merge, MergerType, SharedState, Slot};
+    use crate::DynZWeight;
     use crate::algebra::{OrdZSet, OrdZSetFactories};
     use crate::circuit::{CircuitConfig, mkconfig};
     use crate::dynamic::{DynData, DynUnit};
+    use crate::trace::{Batch, VecKeyBatch, VecKeyBatchFactories};
     use crate::trace::{
         BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder, Filter,
         GroupFilter, TraceRole, test::run_in_circuit_with_storage_config,
@@ -2893,6 +2904,7 @@ mod merge_rule_test {
     use crate::utils::Tup2;
     use crate::{Runtime, ZWeight};
     use feldera_types::memory_pressure::MemoryPressure;
+    use std::ops::Range;
     use std::sync::{Arc, Mutex};
     use std::thread::sleep;
     use std::time::{Duration, Instant};
@@ -3216,14 +3228,84 @@ mod merge_rule_test {
             }
         }
     }
+
+    /// A batch with times, the kind that nested circuits keep their state in.
+    type Timed = VecKeyBatch<DynData, u32, DynZWeight>;
+
+    /// A batch with times that holds each key of `keys` once, at `time`, with
+    /// weight `weight`.
+    fn timed(keys: Range<i32>, time: u32, weight: ZWeight) -> Arc<Timed> {
+        let factories = <VecKeyBatchFactories<DynData, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+        let mut builder =
+            <Timed as Batch>::Builder::with_capacity(&factories, keys.len(), keys.len());
+        for key in keys {
+            builder.push_time_diff(&time, &weight);
+            builder.push_val(&());
+            builder.push_key(&key);
+        }
+        Arc::new(builder.done())
+    }
+
+    /// An integral's shared state for batches with times, outside any
+    /// runtime, so with the default settings.
+    fn timed_state() -> SharedState<Timed> {
+        SharedState::new(
+            &<VecKeyBatchFactories<DynData, u32, DynZWeight>>::new::<i32, (), ZWeight>(),
+            Arc::new(String::from("merge_rule_test")),
+            0,
+            TraceRole::Integral,
+        )
+    }
+
+    /// The highest level of a spine of batches with times merges for its
+    /// retractions as it does in a spine of batches without times, and the
+    /// lower levels keep their batches.
+    #[test]
+    fn the_highest_level_of_a_spine_with_times_merges_for_its_retractions() {
+        // 30 of the highest level's 110 records retract.
+        let mut state = timed_state();
+        state.slots[2].loose_batches.push_back(timed(0..80, 0, 1));
+        state.slots[2].loose_batches.push_back(timed(0..30, 1, -1));
+        state.slots[0].loose_batches.push_back(timed(80..90, 1, -1));
+        assert_eq!(
+            state.try_start_merge(2).map(|batches| batches.len()),
+            Some(2)
+        );
+        assert_eq!(
+            state.slots[0].loose_batches.len(),
+            1,
+            "the lower levels keep their batches"
+        );
+    }
+
+    /// Retractions short of the share at the highest level of a spine of
+    /// batches with times leave its batches where they are, however many
+    /// retractions the lower levels hold.
+    #[test]
+    fn retractions_short_of_the_share_leave_the_highest_level_with_times() {
+        // 20 of the highest level's 100 records retract: exactly a fifth is
+        // not past a fifth.  Level 0 holds nothing but retractions.
+        let mut state = timed_state();
+        state.slots[2].loose_batches.push_back(timed(0..80, 0, 1));
+        state.slots[2].loose_batches.push_back(timed(0..20, 1, -1));
+        state.slots[0].loose_batches.push_back(timed(20..60, 1, -1));
+        assert!(state.try_start_merge(2).is_none());
+        assert_eq!(state.slots[2].loose_batches.len(), 2);
+    }
 }
 
 #[cfg(test)]
 mod merge_threshold_test {
-    use super::{LooseBatchCount, MAX_LEVELS, MERGE_COUNTS, min_batches_to_merge};
-    use crate::ZWeight;
+    use super::{
+        LooseBatchCount, MAX_LEVEL0_BATCH_SIZE_RECORDS, MAX_LEVELS, MERGE_COUNTS,
+        min_batches_to_merge,
+    };
+    use crate::circuit::CircuitConfig;
+    use crate::time::Product;
+    use crate::trace::{Batch, Builder, OrdKeyBatch, OrdKeyBatchFactories};
     use crate::typed_batch::OrdZSet as TypedOrdZSet;
     use crate::utils::Tup2;
+    use crate::{DynZWeight, Runtime, ZWeight};
     use crate::{
         algebra::{OrdZSet, OrdZSetFactories},
         circuit::mkconfig,
@@ -3234,6 +3316,7 @@ mod merge_threshold_test {
         },
     };
     use feldera_types::config::{DevTweaks, dev_tweaks::MAX_MERGE_THRESHOLD_BATCHES};
+    use std::ops::Range;
     use std::sync::{Arc, Mutex};
     use std::thread::sleep;
     use std::time::{Duration, Instant};
@@ -3636,5 +3719,87 @@ mod merge_threshold_test {
             records, 300_000,
             "the merge should have dropped the keys the filter rejects"
         );
+    }
+
+    /// A spine of batches with times, as a nested circuit keeps them, empties
+    /// once an epoch has retracted what an earlier epoch added: the first merge
+    /// of its highest level after the frontier reaches the later epoch
+    /// compacts the times of both epochs to the same times, so that the
+    /// records cancel.
+    ///
+    /// Each key is added at one iteration and replaced at the next, the way a
+    /// recursive query revises a value, so the spine also holds records that
+    /// only the later epoch's cancel.  A batch of the next epoch, added once
+    /// the frontier has reached the later epoch, makes such a merge run,
+    /// whatever merges ran before it.
+    ///
+    /// The spine is read inside the runtime and checked outside it, because a
+    /// panic in a worker would abort the test process.
+    #[test]
+    fn an_epoch_that_retracts_everything_empties_the_spine() {
+        type Time = Product<u32, u32>;
+        type Timed = OrdKeyBatch<DynData, Time, DynZWeight>;
+        const KEYS: i32 = 1_000;
+        // A merge of every batch holds the four batches of all keys and the
+        // batch of one key.  Every batch, merged or not, stays at level 0, the
+        // spine's highest level, so the merge for the retractions takes all of
+        // them.
+        const LARGEST_BATCH: usize = 4 * KEYS as usize + 1;
+        const _: () = assert!(LARGEST_BATCH <= MAX_LEVEL0_BATCH_SIZE_RECORDS as usize);
+
+        let observed = Arc::new(Mutex::new(None));
+        let reporter = Arc::clone(&observed);
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories =
+                <OrdKeyBatchFactories<DynData, Time, DynZWeight>>::new::<i32, (), ZWeight>();
+            // Every key of `keys`, at `iteration` of `epoch`, with weight
+            // `weight`.
+            let batch = |keys: Range<i32>, epoch: u32, iteration: u32, weight: ZWeight| {
+                let time = Product::new(epoch, iteration);
+                let mut builder =
+                    <Timed as Batch>::Builder::with_capacity(&factories, keys.len(), keys.len());
+                for key in keys {
+                    builder.push_time_diff(&time, &weight);
+                    builder.push_val(&());
+                    builder.push_key(&key);
+                }
+                builder.done()
+            };
+            let mut spine = Spine::<Timed>::new(
+                &factories,
+                Arc::new(String::from("merge_threshold_test")),
+                TraceRole::Integral,
+            );
+
+            // Epoch 1 adds every key at iteration 0 and replaces it at
+            // iteration 1; epoch 2 reverses that.
+            spine.insert_without_blocking(batch(0..KEYS, 1, 0, 1));
+            spine.insert_without_blocking(batch(0..KEYS, 1, 1, -1));
+            spine.set_frontier(&Product::new(1, 0));
+            spine.insert_without_blocking(batch(0..KEYS, 2, 0, -1));
+            spine.insert_without_blocking(batch(0..KEYS, 2, 1, 1));
+            spine.set_frontier(&Product::new(2, 0));
+            // A new key in epoch 3.
+            spine.insert_without_blocking(batch(KEYS..KEYS + 1, 3, 0, 1));
+
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let records = loop {
+                let records = spine.len_upper_bound();
+                if records == 1 || Instant::now() > deadline {
+                    break records;
+                }
+                sleep(Duration::from_millis(10));
+            };
+            *reporter.lock().unwrap() = Some(records);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+
+        let records = observed
+            .lock()
+            .unwrap()
+            .expect("the circuit did not report the spine's size");
+        assert_eq!(records, 1, "only the key of epoch 3 should remain");
     }
 }

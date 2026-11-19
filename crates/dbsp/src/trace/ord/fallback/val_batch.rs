@@ -395,6 +395,13 @@ where
         }
     }
 
+    fn retraction_count(&self) -> u64 {
+        match &self.inner {
+            Inner::File(file) => file.retraction_count(),
+            Inner::Vec(vec) => vec.retraction_count(),
+        }
+    }
+
     fn touched_window_count(&self) -> TouchedWindowCount {
         match &self.inner {
             Inner::File(file) => file.touched_window_count(),

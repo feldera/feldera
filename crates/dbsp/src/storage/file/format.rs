@@ -303,6 +303,13 @@ pub struct BatchMetadata {
     /// [`RuntimeVersion::current`] and ignores the value that the caller
     /// passes.
     pub runtime_version: RuntimeVersion,
+
+    /// For a batch with times, its
+    /// [`Batch::retraction_count`](crate::trace::Batch::retraction_count).
+    ///
+    /// Appended after `runtime_version`, so a trailer written before this
+    /// field existed reads back as 0.  A batch without times leaves it 0.
+    pub retraction_count: u64,
 }
 
 /// File trailer block.

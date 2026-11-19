@@ -3299,6 +3299,7 @@ fn worst_case_trailer_fits() {
             touched_window_count: TouchedWindowCount::new(65_536),
             value_stamp: ValueStampFlag::UPSERT_INDEX,
             runtime_version: RuntimeVersion::new(&"x".repeat(MAX_RUNTIME_VERSION_LEN)),
+            retraction_count: u64::MAX,
         },
     };
     let mut bytes = Cursor::new(Vec::new());

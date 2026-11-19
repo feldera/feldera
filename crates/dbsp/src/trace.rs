@@ -1109,17 +1109,48 @@ where
     /// `u32`, or the batch is empty.
     fn touched_window_count(&self) -> TouchedWindowCount;
 
-    /// The number of tuples with negative weights in the batch.
+    /// Returns an upper bound on the number of tuples with negative weights in
+    /// the batch.
     ///
-    /// This metric is used in merger heuristics. Negative weights are likely to cancel out
-    /// with positive weights when merging the batch with other batches in the spine; therefore the
-    /// merger will merge such batches more aggressively than it otherwise would based on the batch
-    /// size only.
+    /// The bound may exceed the negative weights that a cursor over the batch
+    /// yields but never falls short of them, so `Some(0)` means that the batch
+    /// holds no negative weight.
     ///
-    /// This heuristic is not useful for all batch types, in particular negative weights in batches
-    /// produced by recursive queries do not generally cancel out. For such batches we don't track
-    /// negative weights, and this method returns `None`.
+    /// # Returns
+    ///
+    /// The bound, or `None` if the batch does not count negative weights.
     fn negative_weight_count(&self) -> Option<u64>;
+
+    /// Returns an estimate of the number of records in the batch that will
+    /// likely cancel out when this batch is merged with other batches.
+    ///
+    /// For untimed batches, returns `self.negative_weight_count()`. For
+    /// timed batches, the implementation uses a heuristic.  Not every
+    /// negative weight cancels out during merges: a key/value pair can
+    /// appear with positive and negative weights at different timestamps,
+    /// and such tuples don't cancel out.
+    ///
+    /// Instead, the heuristic returns the number of negative partial sums
+    /// across all key/value pairs in this batch.
+    ///
+    /// A key/value pair's partial sum at time T adds up its weights at that
+    /// time and at the times before it in the batch. A partial sum represents
+    /// a total change to the tuple's multiplicity at the given time.  A
+    /// negative partial sum removes a record that an older batch added, which
+    /// a merge with that batch can cancel once their times are compacted.
+    ///
+    /// The heuristic can both over- and under-approximate the number of
+    /// cancelable weight.
+    ///
+    /// The count is in the unit of [`BatchReader::len_upper_bound`], which is
+    /// the (key, value) pair in some batch types and the (time, weight) tuple
+    /// in others.  In a batch without times, every pair with a negative weight
+    /// counts.
+    ///
+    /// # Returns
+    ///
+    /// The estimate, or 0 if the batch does not count retractions.
+    fn retraction_count(&self) -> u64;
 }
 
 /// Functionality for collecting and batching updates.
