@@ -34,6 +34,51 @@ const HERO: f64 = 2.55;
 const LAND: f64 = 5.35;
 const SWEEP: f64 = 5.15;
 const END: f64 = 6.6;
+/// Landing: how high (dots) the bird hovers over the perch before it lowers
+/// onto the words, how hard it flutters there, and how long after touchdown
+/// it settles into the logo pose.
+const HOVER_HEIGHT: f64 = 2.5;
+const HOVER_AMP: f64 = 0.4;
+const SETTLED: f64 = 0.55;
+/// Hover springs: natural frequency (rad/s) and damping ratio for height and
+/// pitch. Damping below 1 overshoots a little, as a body with weight does.
+const HEIGHT_W: f64 = 10.0;
+const HEIGHT_Z: f64 = 0.5;
+const PITCH_W: f64 = 8.0;
+const PITCH_Z: f64 = 0.45;
+/// How hard a downstroke pushes the body up (dots/s² at full stroke).
+const WING_PUSH: f64 = 1200.0;
+/// Seconds the wings take to finish their stroke and close after touchdown.
+const FOLD: f64 = 0.35;
+/// Where the feet touch the words, in the mark's SVG units: the body tilts here.
+const FEET: Pt = [360.0, 300.0];
+/// How wide the one wingbeat that lowers the bird onto the words is (1 = full).
+const DESCEND_AMP: f64 = 0.85;
+/// Where along the hero pass (0..1) the bird starts down from its hover.
+const DESCEND_FROM: f64 = 0.85;
+/// Where the tail joins the body, in the mark's SVG units: the tail bends here.
+const TAIL_ROOT: Pt = [235.0, 285.0];
+/// Tail spring: natural frequency (rad/s) and damping ratio. On the descent
+/// the tail lowers by TAIL_BRAKE (rad, negative is down). After touchdown it
+/// eases back to level. Damping 1 stops it from swinging up past level.
+const TAIL_W: f64 = 9.0;
+const TAIL_Z: f64 = 1.0;
+const TAIL_BRAKE: f64 = -0.18;
+/// Tail sway in flight. Seen side-on, the tip moves left and right by TAIL_SWAY
+/// of the tail's length, TAIL_SWAY_HZ times per second. It stops before the descent.
+const TAIL_SWAY: f64 = 0.22;
+const TAIL_SWAY_HZ: f64 = 1.4;
+/// Height spring after touchdown. Damping 1 stops a bounce. Pitch uses the same
+/// damping from the descent on, so the body does not rock.
+const SETTLE_W: f64 = 9.0;
+const SETTLE_Z: f64 = 1.0;
+
+/// `p` turned by `angle` radians about `pivot`. Positive turns clockwise on screen.
+fn turn(p: Pt, pivot: Pt, angle: f64) -> Pt {
+    let (s, c) = angle.sin_cos();
+    let (dx, dy) = (p[0] - pivot[0], p[1] - pivot[1]);
+    [pivot[0] + dx * c - dy * s, pivot[1] + dx * s + dy * c]
+}
 
 // Brand palette. The landed logo always ends in the terminal's own text color.
 type Rgb = (u8, u8, u8);
@@ -79,6 +124,42 @@ fn smooth(e0: f64, e1: f64, x: f64) -> f64 {
 
 fn lowpass(cur: f64, target: f64, k: f64) -> f64 {
     cur + (target - cur) * k
+}
+
+/// Seconds the window takes to draw itself.
+const INTRO: f64 = 1.1;
+/// The final wingbeat: its length in seconds, and the wing
+/// position k over it (1 = the logo pose, below 0 = folded under the shoulder).
+const FLAP: f64 = 1.8;
+const FLAP_TOP: f64 = 1.15;
+const FLAP_LOW: f64 = -0.65;
+
+/// Wing position over the final beat, at `tau` from 0 to 1: wind up past the
+/// logo pose, one strong downstroke, then a slow return to the logo pose.
+fn flap_k(tau: f64) -> f64 {
+    let ease = |x: f64| x * x * (3.0 - 2.0 * x);
+    match tau {
+        t if t <= 0.0 => 1.0,
+        t if t < 0.28 => 1.0 + (FLAP_TOP - 1.0) * ease(t / 0.28),
+        t if t < 0.52 => FLAP_TOP + (FLAP_LOW - FLAP_TOP) * ease((t - 0.28) / 0.24),
+        t if t < 1.0 => {
+            let x = (t - 0.52) / 0.48;
+            FLAP_LOW + (1.0 - FLAP_LOW) * (1.0 - (1.0 - x).powi(3))
+        }
+        _ => 1.0,
+    }
+}
+
+/// Wing position at `tau` for a point at distance `u` along the wing. The
+/// point starts `delay + lag * u` late; the beat is stretched by the same
+/// amount, so every point, the last tip too, is back in the logo pose at tau = 1.
+/// How far the final beat's tips trail the shoulder, and how late the far wing starts.
+const NEAR_LAG: f64 = 0.12;
+const FAR_LAG: f64 = 0.1;
+const FAR_DELAY: f64 = 0.04;
+
+fn flap_k_at(tau: f64, delay: f64, lag: f64, u: f64) -> f64 {
+    flap_k(tau * (1.0 + delay + lag) - delay - lag * u)
 }
 
 /// Small xorshift generator: the splash needs noise, not a crypto RNG.
@@ -286,6 +367,23 @@ impl Wing {
     }
 }
 
+impl Wing {
+    /// Wing points with `k_of_u` giving the wing position k for each point,
+    /// by its distance `u` from the shoulder (0) to the tip (1).
+    fn pose_k(&self, k_of_u: impl Fn(f64) -> f64, out: &mut Vec<Pt>) {
+        out.clear();
+        for i in 0..self.s.len() {
+            let k = k_of_u(self.u[i]);
+            let s = self.s[i] - self.sweep * self.dmax * self.u[i] * (1.0 - k) / (1.0 - FLAP_LOW);
+            let d = self.d[i] * k;
+            out.push([
+                self.a[0] + s * self.t[0] + d * self.n[0],
+                self.a[1] + s * self.t[1] + d * self.n[1],
+            ]);
+        }
+    }
+}
+
 /// Cubic Bezier sampled by arc length, so the bird moves at a speed we choose.
 struct Path {
     xy: Vec<Pt>,
@@ -340,6 +438,8 @@ struct Shot<'a> {
     far: &'a [bool],
     bird_color: Option<Rgb>,
     word_band: Option<f64>,
+    /// A wordmark grid to show whole, in place of the reveal.
+    word_full: Option<&'a [bool]>,
     marks: usize,
     hint: bool,
     landed: bool,
@@ -353,6 +453,8 @@ struct Film {
     ld: usize,
     f: f64,
     ox: usize,
+    /// Top of the logo, in dots.
+    oy: usize,
     final_bird: Vec<bool>,
     final_far: Vec<bool>,
     final_word: Vec<bool>,
@@ -361,6 +463,9 @@ struct Film {
     far: Wing,
     tips: Vec<usize>,
     tail: Vec<Pt>,
+    /// Per point of `statics`: how much of the tail bend it takes, 0 at the
+    /// tail root (and on the rest of the body) to 1 at the tail tip.
+    tail_w: Vec<f64>,
     anchor: Pt,
     marks: [(usize, usize); 4],
     vp: Pt,
@@ -520,6 +625,19 @@ impl Film {
         let tips = (0..near.u.len()).filter(|&i| near.u[i] > 0.85).collect();
         let tail_x = svg_px([70.0, 0.0])[0];
         let tail = statics.iter().filter(|p| p[0] < tail_x).cloned().collect();
+        // The tail is the part of the body below and behind its root.
+        let (root, tip_x) = (svg_px(TAIL_ROOT), svg_px([3.0, 0.0])[0]);
+        let tail_w = statics
+            .iter()
+            .map(|p| {
+                if p[0] < root[0] && p[1] > root[1] - 40.0 {
+                    let w = ((root[0] - p[0]) / (root[0] - tip_x)).clamp(0.0, 1.0);
+                    w * w * (3.0 - 2.0 * w)
+                } else {
+                    0.0
+                }
+            })
+            .collect();
         let anchor = [
             (BIRD_PX[0] + BIRD_PX[2]) / 2.0,
             (BIRD_PX[1] + BIRD_PX[3]) / 2.0,
@@ -535,6 +653,7 @@ impl Film {
             ld,
             f,
             ox,
+            oy,
             final_bird,
             final_far,
             final_word,
@@ -543,6 +662,7 @@ impl Film {
             far,
             tips,
             tail,
+            tail_w,
             anchor,
             marks: [(ml, 0), (mr, 0), (mr, h - 1), (ml, h - 1)],
             vp: [0.66 * wdf, 0.40 * hdf],
@@ -631,7 +751,9 @@ impl Film {
 
         // Wordmark: a Violet band sweeps left to right and leaves the letters behind it.
         let (mut word, mut band) = (vec![0u8; self.h * self.w], vec![0u8; self.h * self.w]);
-        if let Some(b) = shot.word_band.filter(|b| *b > 0.0) {
+        if let Some(full) = shot.word_full {
+            word = self.cells(full);
+        } else if let Some(b) = shot.word_band.filter(|b| *b > 0.0) {
             let edge = self.ox as f64 + b * 1.15 * self.ld as f64;
             let visible = |lo: f64| -> Vec<bool> {
                 (0..self.hd * self.wd)
@@ -726,6 +848,7 @@ impl Film {
             far: &self.final_far,
             bird_color: None,
             word_band: Some(9.0),
+            word_full: None,
             marks: 4,
             hint: false,
             landed: true,
@@ -749,6 +872,34 @@ struct Reel {
     prev_pos: Option<Pt>,
     near_buf: Vec<Pt>,
     far_buf: Vec<Pt>,
+    /// Landing springs, from the flare on: height (dots) and its speed, body
+    /// pitch (radians) and its speed.
+    landing: Option<Springs>,
+    /// The descending wingbeat: (phase at its start, phase at its end, start time).
+    descend: Option<(f64, f64, f64)>,
+    /// The wing stroke at touchdown: (phase then, phase where it closes).
+    fold: Option<(f64, f64)>,
+    /// The bob from the wingbeat on the last frame of flight, so the springs
+    /// take over from where the bird is.
+    last_lift: f64,
+    /// Body height offset (dots), tilt (rad) and tail bend (rad) of the last
+    /// hero-pass frame.
+    last_pose: (f64, f64, f64),
+    /// Tail sway: its phase (rad), and its swing on the last hero-pass frame.
+    sway_phase: f64,
+    last_sway: f64,
+}
+
+#[derive(Clone, Copy)]
+struct Springs {
+    y: f64,
+    vy: f64,
+    pitch: f64,
+    vpitch: f64,
+    bend: f64,
+    vbend: f64,
+    /// Height and speed where the descent starts.
+    from: Option<(f64, f64)>,
 }
 
 impl Reel {
@@ -763,6 +914,13 @@ impl Reel {
             prev_pos: None,
             near_buf: Vec::new(),
             far_buf: Vec::new(),
+            landing: None,
+            descend: None,
+            fold: None,
+            last_lift: 0.0,
+            last_pose: (0.0, 0.0, 0.0),
+            sway_phase: 0.0,
+            last_sway: 0.0,
         }
     }
 
@@ -812,32 +970,145 @@ impl Reel {
             });
             self.prev_pos = Some(pos);
             let climb = (-vel[1] / 60.0).clamp(-1.0, 1.0);
-            let flare = smooth(0.74, 0.86, u) * (1.0 - smooth(0.93, 1.0, u));
-            let settle = smooth(0.9, 1.0, u);
+            let flare = smooth(0.74, 0.86, u) * (1.0 - smooth(0.88, 0.94, u));
+            // Hover: after the flare the bird holds just above the perch on
+            // quick, small beats, then lowers straight down onto the words.
+            let hover = smooth(0.88, 0.94, u);
+            let hold = smooth(0.76, 0.86, u);
+            let touched = t > LAND;
+            let dt = SPEED / FPS;
 
-            // Wingbeat follows effort: hard beats to climb, a glide on dives, braking strokes to land.
-            let freq = 2.0 + 1.3 * climb.max(0.0) + 1.6 * flare;
-            let target =
-                (0.45 + 0.55 * climb.max(0.0) - 0.3 * (-climb).max(0.0)) * (1.0 - flare) + flare;
-            self.amp = lowpass(self.amp, target.max(0.15), 0.12) * (1.0 - settle);
-            self.phase += 2.0 * PI * freq * SPEED / FPS;
+            // Wingbeat follows effort: hard beats to climb, a glide on dives,
+            // braking strokes in the flare, a light flutter in the hover.
+            let freq = 2.0 + 1.3 * climb.max(0.0) + 1.6 * flare + 1.8 * hover;
+            let cruise = 0.45 + 0.55 * climb.max(0.0) - 0.3 * (-climb).max(0.0);
+            let target = (cruise * (1.0 - flare) + flare) * (1.0 - hover) + HOVER_AMP * hover;
+            if touched {
+                // The wings finish the stroke they are in and close into the
+                // logo pose: the next whole beat, reached with a soft ease.
+                let (p0, p1) = *self.fold.get_or_insert_with(|| {
+                    let p1 = (self.phase / (2.0 * PI)).ceil() * 2.0 * PI;
+                    (self.phase, p1)
+                });
+                let k = ((t - LAND) / FOLD).min(1.0);
+                self.phase = p0 + (p1 - p0) * (1.0 - (1.0 - k).powi(3));
+                self.amp *= (-dt / 0.3).exp();
+            } else if u >= DESCEND_FROM {
+                // Descent: one slow, full wingbeat lowers the bird onto the
+                // words. It is slow at the top, strong through the downstroke,
+                // and back in the logo pose as the feet touch.
+                let (p0, p1, t0) = *self.descend.get_or_insert_with(|| {
+                    let p1 = (self.phase / (2.0 * PI)).ceil() * 2.0 * PI + 2.0 * PI;
+                    (self.phase, p1, t)
+                });
+                let s = ((t - t0) / (LAND - t0)).clamp(0.0, 1.0);
+                self.phase = p0 + (p1 - p0) * s * s * (3.0 - 2.0 * s);
+                self.amp = lowpass(self.amp, DESCEND_AMP, 0.15);
+            } else {
+                self.amp = lowpass(self.amp, target.max(0.15), 0.12);
+                self.phase += 2.0 * PI * freq * dt;
+            }
 
-            // The body tilts with its heading a beat late; the nose comes up for the flare.
+            // In flight the body tilts with its heading a beat late.
             let heading = vel[1].atan2(vel[0].abs().max(1e-3));
-            let rot_target = (0.5 * heading).clamp(-0.35, 0.35) * (1.0 - flare) - 0.26 * flare;
-            self.rot = lowpass(self.rot, rot_target, 0.14) * (1.0 - settle);
+            let travel = (1.0 - flare) * (1.0 - hover);
+            let rot_target =
+                (0.5 * heading).clamp(-0.35, 0.35) * travel - 0.3 * flare - 0.08 * hover;
+            self.rot = lowpass(self.rot, rot_target, 0.18);
 
             let sc = 1.0 + 0.45 * (1.0 - dist);
-            let lift = -2.2 * sc * self.phase.sin() * self.amp;
-            let td = (t - LAND) / 0.14;
-            let dip = if t > LAND {
-                1.6 * td * (1.0 - td).exp()
+            let (y_off, tilt, bend) = if u < 0.74 {
+                // Flight: the body bobs with each wingbeat.
+                self.last_lift = -2.2 * sc * self.phase.sin() * self.amp;
+                (self.last_lift, self.rot, 0.0)
             } else {
-                0.0
+                // Landing: springs give the body weight. In the hover each
+                // downstroke pushes the body up and it sinks between strokes.
+                let s = self.landing.get_or_insert(Springs {
+                    y: self.last_lift,
+                    vy: 0.0,
+                    pitch: self.rot,
+                    vpitch: 0.0,
+                    bend: 0.0,
+                    vbend: 0.0,
+                    from: None,
+                });
+                let push = if touched {
+                    0.0
+                } else {
+                    -WING_PUSH * self.amp * (self.phase.sin().max(0.0) - 1.0 / PI)
+                };
+                // The tail lowers like an airbrake on the way down, then eases
+                // back to level after touchdown.
+                let bend_target = if touched { 0.0 } else { TAIL_BRAKE * hover };
+                let ab = TAIL_W * TAIL_W * (bend_target - s.bend) - 2.0 * TAIL_Z * TAIL_W * s.vbend;
+                s.vbend += ab * dt;
+                s.bend += s.vbend * dt;
+                let y_target = if self.descend.is_some() {
+                    0.0
+                } else {
+                    -HOVER_HEIGHT * hold
+                };
+                // From the descent on the body eases level, with damping 1 so
+                // it does not rock past level.
+                let (pitch_target, pz) = if self.descend.is_some() {
+                    (0.0, SETTLE_Z)
+                } else {
+                    (rot_target, PITCH_Z)
+                };
+                let (hw, hz) = if touched {
+                    (SETTLE_W, SETTLE_Z)
+                } else {
+                    (HEIGHT_W, HEIGHT_Z)
+                };
+                let ay = hw * hw * (y_target - s.y) - 2.0 * hz * hw * s.vy;
+                let ap =
+                    PITCH_W * PITCH_W * (pitch_target - s.pitch) - 2.0 * pz * PITCH_W * s.vpitch;
+                match self.descend {
+                    Some((_, _, t0)) if !touched => {
+                        // Descent: a slow, even glide down to the perch that
+                        // starts from still and stops at touchdown.
+                        let (y0, v0) = *s.from.get_or_insert((s.y, s.vy.min(0.0)));
+                        let span = LAND - t0;
+                        let x = ((t - t0) / span).clamp(0.0, 1.0);
+                        let m0 = v0 * span;
+                        s.y = y0 * (2.0 * x.powi(3) - 3.0 * x * x + 1.0)
+                            + m0 * (x.powi(3) - 2.0 * x * x + x);
+                        s.vy = (y0 * (6.0 * x * x - 6.0 * x) + m0 * (3.0 * x * x - 4.0 * x + 1.0))
+                            / span;
+                    }
+                    _ => {
+                        s.vy += (ay + push) * dt;
+                        s.y += s.vy * dt;
+                    }
+                }
+                s.vpitch += ap * dt;
+                s.pitch += s.vpitch * dt;
+                (s.y, s.pitch, s.bend)
             };
-            let center = [pos[0], pos[1] + lift + dip];
 
-            if t > LAND + 0.45 {
+            // Tilt about the feet, not the middle of the picture, once the bird
+            // comes in to land; blended in so the switch does not jump.
+            let feet = svg_px(FEET);
+            let k = sc * film.f;
+            let v = [
+                (feet[0] - film.anchor[0]) * k,
+                (feet[1] - film.anchor[1]) * k,
+            ];
+            let (s, c) = tilt.sin_cos();
+            let w = smooth(0.7, 0.8, u);
+            let pivot = [
+                (v[0] - (v[0] * c - v[1] * s)) * w,
+                (v[1] - (v[0] * s + v[1] * c)) * w,
+            ];
+            let center = [pos[0] + pivot[0], pos[1] + y_off + pivot[1]];
+            self.last_pose = (y_off, tilt, bend);
+            // The tail sways in flight and is still by the descent.
+            self.sway_phase += 2.0 * PI * TAIL_SWAY_HZ * dt;
+            let sway = TAIL_SWAY * (1.0 - smooth(0.7, DESCEND_FROM, u)) * self.sway_phase.sin();
+            self.last_sway = sway;
+
+            if t > LAND + SETTLED {
                 body = film.final_bird.clone();
                 far = film.final_far.clone();
                 landed = true;
@@ -845,26 +1116,39 @@ impl Reel {
                 film.near.pose(self.phase, self.amp, &mut self.near_buf);
                 film.far
                     .pose(self.phase + 0.25, self.amp, &mut self.far_buf);
-                body = film.raster(
-                    film.statics.iter().chain(&self.near_buf),
-                    self.rot,
-                    sc,
-                    center,
-                );
-                far = film.raster(self.far_buf.iter(), self.rot, sc, center);
+                // The tail bends and sways from its root, more toward its tip.
+                let root = svg_px(TAIL_ROOT);
+                let statics: Vec<Pt> = if bend == 0.0 && sway == 0.0 {
+                    film.statics.clone()
+                } else {
+                    film.statics
+                        .iter()
+                        .zip(&film.tail_w)
+                        .map(|(p, &w)| {
+                            if w > 0.0 {
+                                let q = turn(*p, root, bend * w);
+                                [root[0] + (q[0] - root[0]) * (1.0 + sway * w), q[1]]
+                            } else {
+                                *p
+                            }
+                        })
+                        .collect()
+                };
+                body = film.raster(statics.iter().chain(&self.near_buf), tilt, sc, center);
+                far = film.raster(self.far_buf.iter(), tilt, sc, center);
                 // Sparks off the wingtips on the downstroke, and a thin stream off the tail.
                 if self.amp > 0.3 && self.phase.sin() > 0.0 && u < 0.85 {
                     for _ in 0..3 {
                         let tip = self.near_buf[film.tips[self.rng.index(film.tips.len())]];
                         let vel = [-self.rng.range(0.3, 0.7), self.rng.range(0.05, 0.2)];
-                        self.spark(film.project(tip, self.rot, sc, center), vel);
+                        self.spark(film.project(tip, tilt, sc, center), vel);
                     }
                 }
                 if u < 0.8 {
                     for _ in 0..2 {
                         let tail = film.tail[self.rng.index(film.tail.len())];
                         let vel = [-self.rng.range(0.1, 0.4), self.rng.range(-0.03, 0.03)];
-                        self.spark(film.project(tail, self.rot, sc, center), vel);
+                        self.spark(film.project(tail, tilt, sc, center), vel);
                     }
                 }
             }
@@ -905,11 +1189,63 @@ impl Reel {
             far: &far,
             bird_color,
             word_band,
+            word_full: None,
             marks: (0..4).filter(|k| t >= 0.05 + 0.08 * *k as f64).count(),
             hint: t < LAND,
             landed,
         };
         film.compose(&shot, &self.sparks, &self.streaks)
+    }
+
+    /// One frame of the final wingbeat on the landed logo, at `tau` from 0 to 1.
+    fn flap_frame(&mut self, film: &Film, tau: f64) -> Vec<String> {
+        // Tips trail the shoulder, so the wing moves like a heavy sail.
+        film.near
+            .pose_k(|u| flap_k_at(tau, 0.0, NEAR_LAG, u), &mut self.near_buf);
+        film.far
+            .pose_k(|u| flap_k_at(tau, FAR_DELAY, FAR_LAG, u), &mut self.far_buf);
+        // The downstroke lifts the body a little; it settles as the wings return.
+        let lift = -3.0 * (PI * ((tau - 0.38) / 0.55).clamp(0.0, 1.0)).sin();
+        let center = [
+            film.ox as f64 + film.anchor[0] * film.f,
+            film.oy as f64 + film.anchor[1] * film.f + lift,
+        ];
+        let body = film.raster(film.statics.iter().chain(&self.near_buf), 0.0, 1.0, center);
+        let far = film.raster(self.far_buf.iter(), 0.0, 1.0, center);
+
+        // The downstroke pushes a stream of dust back out of the tail.
+        if (0.3..0.62).contains(&tau) {
+            for _ in 0..3 {
+                let tail = film.tail[self.rng.index(film.tail.len())];
+                let pos = film.project(tail, 0.0, 1.0, center);
+                let vel = [-self.rng.range(0.5, 1.3), self.rng.range(-0.05, 0.25)];
+                // Start past the Violet ages, so the dust is Steel fading to Stone.
+                self.sparks.push(Particle {
+                    pos,
+                    vel,
+                    prev: pos,
+                    age: 7.0,
+                });
+            }
+        }
+        for s in &mut self.sparks {
+            s.pos = [s.pos[0] + s.vel[0], s.pos[1] + s.vel[1]];
+            s.vel = [s.vel[0] * 0.96, s.vel[1] * 0.96];
+            s.age += 1.0;
+        }
+        self.sparks.retain(|s| s.age < TRAIL[TRAIL.len() - 1].0);
+
+        let shot = Shot {
+            body: &body,
+            far: &far,
+            bird_color: None,
+            word_band: None,
+            word_full: Some(&film.final_word),
+            marks: 4,
+            hint: false,
+            landed: true,
+        };
+        film.compose(&shot, &self.sparks, &[])
     }
 
     fn spark(&mut self, pos: Pt, vel: Pt) {
@@ -1104,6 +1440,76 @@ impl Window {
         rows.push(self.blank());
         rows.extend(self.panel());
         rows.push(self.line(&format!("╰{}╯", "─".repeat(self.inner))));
+        rows
+    }
+}
+
+impl Window {
+    /// The window part-drawn, at `p` from 0 to 1. Registration
+    /// marks land in the four corners, lines run out from them and meet, the
+    /// divider crosses, then the title and the panel appear.
+    fn intro_rows(&self, film_h: usize, p: f64) -> Vec<String> {
+        let c = self.color;
+        let reset = c.reset();
+        let total = Self::FILM_TOP + film_h + Self::BELOW_FILM;
+        let (w, last) = (self.inner + 2, total - 1);
+        let divider = Self::FILM_TOP + film_h + 3;
+        let lines = smooth(0.16, 0.7, p);
+        let cross = smooth(0.55, 0.85, p);
+        let corner_at = [
+            (0, 0, 0.0),
+            (0, w - 1, 0.04),
+            (last, w - 1, 0.08),
+            (last, 0, 0.12),
+        ];
+        let half = |n: usize| n as f64 / 2.0;
+        let mut rows = Vec::with_capacity(total);
+        for r in 0..total {
+            if (r == 0 && p >= 0.78) || (r > divider && r < last && p >= 0.92) {
+                rows.push(self.rows(&vec![" ".repeat(self.inner); film_h], false)[r].clone());
+                continue;
+            }
+            let mut row = String::new();
+            for col in 0..w {
+                let edge = col == 0 || col == w - 1;
+                let from_side = col.min(w - 1 - col) as f64;
+                let from_end = r.min(last - r) as f64;
+                let corner = corner_at.iter().find(|(y, x, _)| *y == r && *x == col);
+                let cell: Option<(char, String)> = if let Some((_, _, at)) = corner {
+                    if p < 0.72 {
+                        (p >= *at).then(|| ('+', c.fg(CLAY)))
+                    } else {
+                        let ch = match (r == 0, col == 0) {
+                            (true, true) => '╭',
+                            (true, false) => '╮',
+                            (false, true) => '╰',
+                            (false, false) => '╯',
+                        };
+                        Some((ch, c.fg(STEEL)))
+                    }
+                } else if (r == 0 || r == last) && lines * half(w) >= from_side {
+                    Some(('─', c.fg(STEEL)))
+                } else if edge && r != divider && lines * half(total) >= from_end {
+                    Some(('│', c.fg(STEEL)))
+                } else if r == divider && cross > 0.0 && (edge || cross * half(w) >= from_side) {
+                    let ch = if col == 0 {
+                        '├'
+                    } else if col == w - 1 {
+                        '┤'
+                    } else {
+                        '─'
+                    };
+                    Some((ch, c.fg(STEEL)))
+                } else {
+                    None
+                };
+                match cell {
+                    Some((ch, style)) => row.push_str(&format!("{style}{ch}{reset}")),
+                    None => row.push(' '),
+                }
+            }
+            rows.push(row);
+        }
         rows
     }
 }
@@ -1354,8 +1760,25 @@ pub fn play(host: &str) {
     let total = Window::FILM_TOP + film.h + Window::BELOW_FILM;
     let blank_film = vec![" ".repeat(inner); film.h];
     let _ = write!(out, "\x1b[?25l");
+    // The window draws itself before the film starts.
+    let _ = write!(out, "{}", "\n".repeat(total));
+    let start = Instant::now();
+    let n = (INTRO * FPS) as usize;
+    for i in 0..=n {
+        if let Some(bytes) = keys.pressed() {
+            skipped = true;
+            interrupted = bytes.contains(&0x03);
+            break;
+        }
+        let rows = window.intro_rows(film.h, i as f64 / n as f64);
+        let _ = writeln!(out, "\x1b[{total}F\x1b[2K{}", rows.join("\n\x1b[2K"));
+        let _ = out.flush();
+        let due = start + Duration::from_secs_f64((i + 1) as f64 / FPS);
+        std::thread::sleep(due.saturating_duration_since(Instant::now()));
+    }
+    let _ = write!(out, "\x1b[{total}F");
     for row in window.rows(&blank_film, false) {
-        let _ = writeln!(out, "{row}");
+        let _ = writeln!(out, "\x1b[2K{row}");
     }
     let draw = |out: &mut std::io::StdoutLock, frame: &[String]| {
         let rows: Vec<String> = frame.iter().map(|l| window.wrap(l)).collect();
@@ -1370,6 +1793,9 @@ pub fn play(host: &str) {
     };
     let start = Instant::now();
     for i in 0..Reel::frame_count() {
+        if skipped {
+            break;
+        }
         if let Some(bytes) = keys.pressed() {
             skipped = true;
             interrupted = bytes.contains(&0x03);
@@ -1400,6 +1826,23 @@ pub fn play(host: &str) {
             }
         }
         let _ = write!(out, "\x1b[{up}E");
+    }
+
+    // One final wingbeat once everything is in place.
+    if !skipped && !interrupted {
+        reel.sparks.clear();
+        let n = (FLAP * FPS) as usize;
+        let start = Instant::now();
+        for i in 0..=n {
+            if let Some(bytes) = keys.pressed() {
+                interrupted = bytes.contains(&0x03);
+                break;
+            }
+            draw(&mut out, &reel.flap_frame(&film, i as f64 / n as f64));
+            let due = start + Duration::from_secs_f64((i + 1) as f64 / FPS);
+            std::thread::sleep(due.saturating_duration_since(Instant::now()));
+        }
+        draw(&mut out, &film.final_frame());
     }
     let _ = out.flush();
     drop(out);
@@ -1714,6 +2157,175 @@ mod tests {
         assert_eq!(Theme::from_osc11(onyx), Some(Theme::Dark));
         assert_eq!(Theme::from_osc11(b"\x1b]11;rgb:ff"), None, "cut-off reply");
         assert_eq!(Theme::from_osc11(b"x"), None);
+    }
+
+    #[test]
+    fn final_wingbeat_starts_and_ends_on_the_logo() {
+        assert_eq!(flap_k(0.0), 1.0);
+        assert_eq!(flap_k(1.0), 1.0);
+        let ks: Vec<f64> = (0..=100).map(|i| flap_k(i as f64 / 100.0)).collect();
+        let top = ks.iter().cloned().fold(f64::MIN, f64::max);
+        let low = ks.iter().cloned().fold(f64::MAX, f64::min);
+        assert!((top - FLAP_TOP).abs() < 1e-9, "no wind-up: {top}");
+        assert!((low - FLAP_LOW).abs() < 1e-9, "no downstroke: {low}");
+        // Smooth: no jump between frames bigger than a fifth of the stroke.
+        let jump = ks
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(jump < 0.2 * (FLAP_TOP - FLAP_LOW), "jerky beat: {jump}");
+
+        // Every point of both wings, shoulder to tip, starts and ends in the logo pose.
+        for (delay, lag) in [(0.0, NEAR_LAG), (FAR_DELAY, FAR_LAG)] {
+            for u in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                assert_eq!(flap_k_at(0.0, delay, lag, u), 1.0);
+                assert_eq!(
+                    flap_k_at(1.0, delay, lag, u),
+                    1.0,
+                    "u={u} not at rest at the end"
+                );
+            }
+        }
+
+        // The last frame of the beat draws the logo exactly.
+        let film = Film::new(80, ColorMode::Off);
+        let mut reel = Reel::new(3);
+        let last = reel.flap_frame(&film, 1.0);
+        let plain = |f: &[String]| f.iter().map(|l| strip(l)).collect::<Vec<_>>();
+        let end = plain(&last);
+        let still = plain(&film.final_frame());
+        let differ: usize = end
+            .iter()
+            .zip(&still)
+            .map(|(a, b)| a.chars().zip(b.chars()).filter(|(x, y)| x != y).count())
+            .sum();
+        // The moving bird is drawn by sampling, the still one by Lanczos: a few
+        // edge cells may differ, nothing more.
+        assert!(differ <= 12, "{differ} cells differ from the still logo");
+    }
+
+    #[test]
+    fn bird_hovers_then_settles_onto_the_words() {
+        let film = Film::new(80, ColorMode::Off);
+        let mut reel = Reel::new(11);
+        // Body height (dots, negative is up), pitch (rad, negative is nose up)
+        // and tail bend (rad, negative is down) through the landing.
+        let (mut high, mut nose_up) = (0.0f64, 0.0f64);
+        // From the descent on: the most nose-down pitch, and after touchdown
+        // the lowest the body sinks below the perch.
+        let (mut nose_down, mut dip) = (f64::MIN, f64::MIN);
+        let (mut tail_down, mut tail_flick) = (0.0f64, f64::MIN);
+        // The descent: its frames' heights, in order.
+        let mut glide = Vec::new();
+        let mut at_rest = None;
+        let mut closed = None;
+        // The wing phase where the descent starts and at touchdown.
+        let (mut descent_from, mut at_touch) = (None, 0.0);
+        let mut descent_amp = f64::MAX;
+        for i in 0..Reel::frame_count() {
+            let t = i as f64 / FPS * SPEED;
+            reel.frame(&film, i);
+            let (y, pitch, bend) = reel.last_pose;
+            let u = (t - HERO) / (LAND - HERO);
+            if (0.86..1.0).contains(&u) {
+                high = high.min(y);
+                nose_up = nose_up.min(pitch);
+                tail_down = tail_down.min(bend);
+            }
+            if u >= DESCEND_FROM && t <= LAND + SETTLED {
+                nose_down = nose_down.max(pitch);
+            }
+            if u >= DESCEND_FROM && t <= LAND {
+                glide.push(y);
+                descent_from.get_or_insert(reel.phase);
+                at_touch = reel.phase;
+                if u >= 0.92 {
+                    descent_amp = descent_amp.min(reel.amp);
+                }
+            }
+            if t > LAND && t <= LAND + SETTLED {
+                dip = dip.max(y);
+                tail_flick = tail_flick.max(bend);
+                at_rest = Some((y, pitch, bend));
+            }
+            if t > LAND + FOLD && closed.is_none() {
+                closed = Some(reel.phase);
+            }
+        }
+        assert!(high <= -1.5, "no hover above the perch: highest {high:.2}");
+        assert!(
+            nose_up >= -0.05,
+            "body tips back on the descent: {nose_up:.2}"
+        );
+        // A gentle landing: the body eases level and never rocks forward
+        // past it, and does not sink below the perch.
+        assert!(nose_down <= 0.02, "body rocks forward: {nose_down:.3}");
+        assert!(dip <= 0.05, "body dips on touchdown: {dip:.2}");
+        // The bird lowers slowly and evenly: from the top of the hover, down
+        // every frame by no more than half a dot, to the perch.
+        let top = (0..glide.len())
+            .min_by(|&a, &b| glide[a].total_cmp(&glide[b]))
+            .unwrap();
+        assert!(glide[top] <= -2.0, "descent starts low: {:.2}", glide[top]);
+        assert!(top <= 2, "descent rises for {top} frames");
+        let steps: Vec<f64> = glide[top..].windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(
+            steps.iter().all(|d| (-1e-9..=0.5).contains(d)),
+            "descent is not a slow glide: {steps:.2?}"
+        );
+        // One full, wide wingbeat lowers the bird: about one turn of the
+        // stroke, not the quick flutter of the hover.
+        let beats = (at_touch - descent_from.unwrap()) / (2.0 * PI);
+        assert!(
+            (0.9..2.0).contains(&beats),
+            "descent is {beats:.2} beats, not one"
+        );
+        assert!(
+            descent_amp >= 0.7,
+            "descent beat too shallow: {descent_amp:.2}"
+        );
+        // The tail lowers on the way down and eases back without a flick up.
+        assert!(tail_down <= -0.1, "tail does not lower: {tail_down:.3}");
+        assert!(
+            tail_flick <= 1e-3,
+            "tail flicks up on touchdown: {tail_flick:.3}"
+        );
+        let (y, pitch, bend) = at_rest.unwrap();
+        assert!(
+            y.abs() < 0.3 && pitch.abs() < 0.03 && bend.abs() < 0.03,
+            "not settled: y {y:.2}, pitch {pitch:.3}, tail {bend:.3}"
+        );
+        // The wings close on a whole stroke: phase is a multiple of 2 pi, the logo pose.
+        let turns = closed.unwrap() / (2.0 * PI);
+        assert!(
+            (turns - turns.round()).abs() < 1e-9,
+            "wings stop mid-stroke: {turns}"
+        );
+    }
+
+    #[test]
+    fn tail_sways_in_flight_and_is_still_on_landing() {
+        let film = Film::new(80, ColorMode::Off);
+        let mut reel = Reel::new(5);
+        let (mut left, mut right, mut landing) = (0.0f64, 0.0f64, 0.0f64);
+        for i in 0..Reel::frame_count() {
+            let t = i as f64 / FPS * SPEED;
+            reel.frame(&film, i);
+            let u = (t - HERO) / (LAND - HERO);
+            if (0.0..0.7).contains(&u) {
+                left = left.min(reel.last_sway);
+                right = right.max(reel.last_sway);
+            }
+            if u >= DESCEND_FROM && t <= LAND + SETTLED {
+                landing = landing.max(reel.last_sway.abs());
+            }
+        }
+        // The tip moves both ways along the tail, by about TAIL_SWAY.
+        assert!(
+            left <= -0.8 * TAIL_SWAY && right >= 0.8 * TAIL_SWAY,
+            "tail does not sway: {left:.3}..{right:.3}"
+        );
+        assert!(landing < 1e-9, "tail still sways on landing: {landing:.3}");
     }
 
     #[test]
