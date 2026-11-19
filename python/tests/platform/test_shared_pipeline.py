@@ -84,6 +84,37 @@ class TestPipeline(SharedTestPipeline):
         p = TEST_CLIENT.get_pipeline(self.pipeline.name, PipelineFieldSelector.ALL)
         assert self.pipeline.name == p.name
 
+    def test_wait_for_condition(self):
+        self.pipeline.start(wait=False)
+        self.pipeline.wait_for_condition(
+            "pipeline is running",
+            lambda p: p.status() == PipelineStatus.RUNNING,
+            timeout_s=120,
+            poll_interval_s=1,
+        )
+        self.assertEqual(self.pipeline.status(), PipelineStatus.RUNNING)
+
+    def test_wait_for_condition_timeout(self):
+        with self.assertRaisesRegex(TimeoutError, "pipeline is running"):
+            self.pipeline.wait_for_condition(
+                "pipeline is running",
+                lambda p: p.status() == PipelineStatus.RUNNING,
+                timeout_s=0.1,
+                poll_interval_s=0.01,
+            )
+
+    def test_wait_for_condition_without_timeout(self):
+        statuses = []
+
+        def read_status_twice(pipeline):
+            statuses.append(pipeline.status())
+            return len(statuses) == 2
+
+        self.pipeline.wait_for_condition(
+            "two status readings", read_status_twice, timeout_s=None
+        )
+        self.assertEqual(statuses, [PipelineStatus.STOPPED, PipelineStatus.STOPPED])
+
     def test_get_pipeline_config(self):
         config = TEST_CLIENT.get_runtime_config(self.pipeline.name)
         assert config is not None

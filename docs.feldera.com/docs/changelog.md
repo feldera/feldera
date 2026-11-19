@@ -10,6 +10,9 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Python SDK: `Pipeline.wait_for_condition()` polls a user-supplied predicate
+  until it succeeds, with an optional timeout.
+
 - Incompatible change (REST API, fda): the endpoint
   `GET /v0/pipelines/{pipeline_name}/circuit_profile`, which returned the
   circuit profile as graphviz `.dot` files in a zip archive, is removed, and so

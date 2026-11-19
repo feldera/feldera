@@ -115,6 +115,38 @@ class Pipeline:
 
             time.sleep(1)
 
+    def wait_for_condition(
+        self,
+        description: str,
+        predicate_func: Callable[["Pipeline"], bool],
+        timeout_s: float | None = None,
+        poll_interval_s: float = 0.1,
+    ) -> None:
+        """
+        Wait until `predicate_func(self)` returns true.
+
+        :param description: Description of the condition for the timeout error.
+        :param predicate_func: Function that checks the condition on this pipeline.
+        :param timeout_s: Maximum wait in seconds. None means wait indefinitely.
+        :param poll_interval_s: Time in seconds between checks. The timeout is
+            checked between calls to the predicate at this interval.
+        :raises TimeoutError: If the condition is not met within the timeout.
+        :raises ValueError: If the poll interval exceeds the timeout.
+        """
+        if timeout_s is not None and poll_interval_s > timeout_s:
+            raise ValueError(
+                f"poll interval ({poll_interval_s}s) cannot be larger than"
+                f" timeout ({timeout_s}s)"
+            )
+
+        start = time.monotonic()
+        while not predicate_func(self):
+            time.sleep(poll_interval_s)
+            if timeout_s is not None and time.monotonic() - start >= timeout_s:
+                raise TimeoutError(
+                    f"timeout ({timeout_s}s) waiting for condition '{description}'"
+                )
+
     def stats(self) -> PipelineStatistics:
         """Gets the pipeline metrics and performance counters."""
 
