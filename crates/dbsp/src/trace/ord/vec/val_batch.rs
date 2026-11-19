@@ -1,8 +1,8 @@
-use crate::ZWeight;
 use crate::storage::file::{FilterStats, TouchedWindowCount};
 use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::merge_batcher::MergeBatcher;
+use crate::trace::ord::retraction_counter::RetractionCounter;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     algebra::Lattice,
@@ -200,6 +200,7 @@ where
     /// Where all the dataz is.
     pub layer: VecValBatchLayer<K, V, T, R, O>,
     touched_window_count: TouchedWindowCount,
+    retraction_count: u64,
 }
 
 impl<K, V, T, R, O> SizeOf for VecValBatch<K, V, T, R, O>
@@ -302,6 +303,7 @@ where
             factories: self.factories.clone(),
             layer: self.layer.clone(),
             touched_window_count: self.touched_window_count,
+            retraction_count: self.retraction_count,
         }
     }
 }
@@ -427,6 +429,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
+    }
+
+    fn retraction_count(&self) -> u64 {
+        self.retraction_count
     }
 
     fn touched_window_count(&self) -> TouchedWindowCount {
@@ -630,8 +636,7 @@ where
     val_offs: Vec<O>,
     times: Box<DynVec<DynDataTyped<T>>>,
     diffs: Box<DynVec<R>>,
-    total_positive_weight: ZWeight,
-    total_negative_weight: ZWeight,
+    retractions: RetractionCounter,
 }
 
 impl<K, V, T, R, O> VecValBuilder<K, V, T, R, O>
@@ -695,8 +700,7 @@ where
             val_offs,
             times,
             diffs,
-            total_positive_weight: 0,
-            total_negative_weight: 0,
+            retractions: RetractionCounter::default(),
         }
     }
 
@@ -721,21 +725,25 @@ where
     fn push_val(&mut self, val: &V) {
         self.vals.push_ref(val);
         self.pushed_val();
+        self.retractions.end_pair();
     }
 
     fn push_val_mut(&mut self, val: &mut V) {
         self.vals.push_val(val);
         self.pushed_val();
+        self.retractions.end_pair();
     }
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.retractions.push(weight);
         self.times.push(time.clone());
         self.diffs.push_ref(weight);
     }
 
     fn push_time_diff_mut(&mut self, time: &mut T, weight: &mut R) {
         debug_assert!(!weight.is_zero());
+        self.retractions.push(weight);
         self.times.push(time.clone());
         self.diffs.push_val(weight);
     }
@@ -759,6 +767,7 @@ where
             ),
             factories: self.factories,
             touched_window_count: TouchedWindowCount::default(),
+            retraction_count: self.retractions.tuples(),
         }
     }
 

@@ -1,6 +1,7 @@
 pub mod fallback;
 pub mod file;
 pub mod merge_batcher;
+pub(crate) mod retraction_counter;
 pub mod vec;
 pub use fallback::{
     indexed_wset::{

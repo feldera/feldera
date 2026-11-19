@@ -4,6 +4,7 @@ use crate::storage::file::{
     collect_roaring_metadata,
 };
 use crate::trace::cursor::Position;
+use crate::trace::ord::retraction_counter::RetractionCounter;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
     dynamic::{
@@ -399,6 +400,10 @@ where
         None
     }
 
+    fn retraction_count(&self) -> u64 {
+        self.file.metadata().retraction_count
+    }
+
     fn touched_window_count(&self) -> TouchedWindowCount {
         self.file.metadata().touched_window_count
     }
@@ -684,6 +689,7 @@ where
     stats: BatchMetadata,
     #[size_of(skip)]
     touched_window_counter: Option<TouchedWindowCounter>,
+    retractions: RetractionCounter,
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -715,6 +721,7 @@ where
             num_tuples: 0,
             stats: BatchMetadata::default(),
             touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            retractions: RetractionCounter::default(),
         }
     }
 
@@ -757,6 +764,7 @@ where
             num_tuples: 0,
             stats: BatchMetadata::default(),
             touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            retractions: RetractionCounter::default(),
         }
     }
 
@@ -767,12 +775,14 @@ where
             self.touched_window_counter = None;
         }
         self.writer.write0((key, &())).unwrap_storage();
+        self.retractions.end_pair();
     }
 
     fn push_val(&mut self, _val: &DynUnit) {}
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.retractions.push(weight);
         self.writer.write1((time, weight)).unwrap_storage();
         self.num_tuples += 1;
     }
@@ -782,6 +792,7 @@ where
             .touched_window_counter
             .map(TouchedWindowCounter::finish)
             .unwrap_or_default();
+        self.stats.retraction_count = self.retractions.tuples();
         let (file, filters) = self.writer.into_reader(self.stats).unwrap_storage();
         let file = Arc::new(file);
         FileKeyBatch::from_parts(self.factories, file, filters)

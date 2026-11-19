@@ -354,6 +354,7 @@ where
             touched_window_count: self.metadata().touched_window_count,
             value_stamp: self.metadata().value_stamp,
             runtime_version: Default::default(),
+            retraction_count: 0,
         };
         let (file, filters) = writer.into_reader(stats).unwrap_storage();
         Self::from_parts(self.factories.clone(), Arc::new(file), filters)
@@ -586,6 +587,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         Some(self.metadata().negative_weight_count)
+    }
+
+    fn retraction_count(&self) -> u64 {
+        self.negative_weight_count().unwrap_or(0)
     }
 
     fn touched_window_count(&self) -> TouchedWindowCount {
