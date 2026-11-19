@@ -928,7 +928,12 @@ export type ConnectorConfig = OutputBufferConfig & {
    *
    * For output endpoints, this setting bounds the number of records that have
    * been produced by the circuit but not yet sent via the output transport endpoint
-   * nor stored in the output buffer (see `enable_output_buffer`).
+   * nor stored in the output buffer (see `enable_output_buffer`).  The circuit
+   * waits only when these records are in two or more batches, so one batch
+   * bigger than the limit, such as the output of a large transaction, does
+   * not stop the circuit while the endpoint writes it.  The endpoint can then
+   * hold up to two such batches in memory, the one that it is writing and
+   * the next one.  With small batches, memory use does not change.
    *
    * Note that this is not a hard bound: there can be a small delay between
    * the backpressure mechanism is triggered and the endpoint is paused, during
