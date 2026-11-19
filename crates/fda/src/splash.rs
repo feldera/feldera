@@ -43,6 +43,7 @@ const LICHEN: Rgb = (0x96, 0x96, 0x64);
 const CLAY: Rgb = (0xAE, 0xA6, 0x8C);
 const STONE: Rgb = (0xD7, 0xD7, 0xCC);
 const LICHEN_TINT: Rgb = (0xDD, 0xDD, 0xC1);
+const LICHEN_SHADE: Rgb = (0x63, 0x63, 0x3D);
 const INK: Rgb = (0x20, 0x1F, 0x1E);
 /// Spark color by age in frames: (max age, color).
 const TRAIL: [(f64, Rgb); 5] = [
@@ -133,10 +134,7 @@ impl ColorMode {
         match self {
             ColorMode::Off => String::new(),
             ColorMode::TrueColor => format!("\x1b[{layer};2;{r};{g};{b}m"),
-            ColorMode::Ansi256 => {
-                let q = |v: u8| (v as f64 / 51.0).round() as u16;
-                format!("\x1b[{layer};5;{}m", 16 + q(r) * 36 + q(g) * 6 + q(b))
-            }
+            ColorMode::Ansi256 => format!("\x1b[{layer};5;{}m", ansi256((r, g, b))),
         }
     }
 
@@ -146,6 +144,81 @@ impl ColorMode {
         } else {
             "\x1b[0m"
         }
+    }
+}
+
+/// The xterm 256-color index nearest to `c`. The 6x6x6 cube's levels are not
+/// evenly spaced, and the gray ramp is often nearer for muted colors.
+fn ansi256(c: Rgb) -> u8 {
+    const LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    let near = |v: u8| {
+        (0..6)
+            .min_by_key(|&i| (LEVELS[i] as i32 - v as i32).abs())
+            .unwrap()
+    };
+    let dist = |a: Rgb, b: Rgb| {
+        let d = |x: u8, y: u8| (x as i32 - y as i32).pow(2);
+        d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)
+    };
+    let (ri, gi, bi) = (near(c.0), near(c.1), near(c.2));
+    let cube = (LEVELS[ri], LEVELS[gi], LEVELS[bi]);
+    let avg = (c.0 as i32 + c.1 as i32 + c.2 as i32) / 3;
+    let k = ((avg - 8 + 5) / 10).clamp(0, 23) as u8;
+    let g = 8 + 10 * k;
+    if dist(c, (g, g, g)) < dist(c, cube) {
+        232 + k
+    } else {
+        (16 + 36 * ri + 6 * gi + bi) as u8
+    }
+}
+
+/// Whether the terminal background is dark or light. Secondary text needs a
+/// different color on each: no one color reads well on both.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Theme {
+    Dark,
+    Light,
+}
+
+impl Theme {
+    /// Color for secondary text (labels, hints, descriptions).
+    fn muted(self) -> Rgb {
+        match self {
+            Theme::Dark => STEEL,
+            Theme::Light => LICHEN_SHADE,
+        }
+    }
+
+    /// From `COLORFGBG` ("fg;bg"), which some terminals set. Background 7 and
+    /// 15 are white; the others are dark.
+    fn from_colorfgbg(v: &str) -> Option<Theme> {
+        let bg: u8 = v.rsplit(';').next()?.trim().parse().ok()?;
+        match bg {
+            7 | 15 => Some(Theme::Light),
+            0..=15 => Some(Theme::Dark),
+            _ => None,
+        }
+    }
+
+    /// From a reply to the OSC 11 background query: `ESC ] 11 ; rgb:RRRR/GGGG/BBBB`.
+    fn from_osc11(reply: &[u8]) -> Option<Theme> {
+        let text = std::str::from_utf8(reply).ok()?;
+        let rgb = &text[text.find("rgb:")? + 4..];
+        let end = rgb.find(['\x07', '\x1b']).unwrap_or(rgb.len());
+        let parts: Vec<f64> = rgb[..end]
+            .split('/')
+            .map(|h| {
+                let max = 16f64.powi(h.len() as i32) - 1.0;
+                u32::from_str_radix(h, 16).ok().map(|v| v as f64 / max)
+            })
+            .collect::<Option<_>>()?;
+        let [r, g, b] = parts[..] else { return None };
+        let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        Some(if luminance > 0.5 {
+            Theme::Light
+        } else {
+            Theme::Dark
+        })
     }
 }
 
@@ -293,6 +366,8 @@ struct Film {
     vp: Pt,
     path: Path,
     color: ColorMode,
+    /// Secondary text color for the terminal's theme.
+    muted: Rgb,
 }
 
 /// Decode the run-length label grid: (width, height, labels).
@@ -478,6 +553,7 @@ impl Film {
                 land,
             ]),
             color,
+            muted: STEEL,
         }
     }
 
@@ -601,7 +677,7 @@ impl Film {
                     ('+', Some(c.fg(CLAY)))
                 } else if shot.hint && y == self.h - 1 && (hint_x..hint_x + hint.len()).contains(&x)
                 {
-                    (hint.as_bytes()[x - hint_x] as char, Some(c.fg(STONE)))
+                    (hint.as_bytes()[x - hint_x] as char, Some(c.fg(self.muted)))
                 } else if bird_bits != 0 {
                     let col = if body[i] != 0 {
                         shot.bird_color.map_or(reset.to_string(), |rgb| c.fg(rgb))
@@ -901,6 +977,8 @@ struct Window {
     inner: usize,
     color: ColorMode,
     host: String,
+    /// Secondary text color for the terminal's theme.
+    muted: Rgb,
 }
 
 impl Window {
@@ -933,7 +1011,7 @@ impl Window {
             .push(" ", "", reset)
             .push("fda", bold, reset)
             .push(" ", "", reset)
-            .push(&version, &c.fg(STEEL), reset)
+            .push(&version, &c.fg(self.muted), reset)
             .push(" ", "", reset);
         let site = " feldera.com ";
         let fill = (self.inner + 2).saturating_sub(4 + left.width + site.len());
@@ -942,7 +1020,7 @@ impl Window {
             self.line("╭─"),
             left.text,
             self.line(&"─".repeat(fill)),
-            c.fg(STEEL),
+            c.fg(self.muted),
             self.line("─╮"),
         )
     }
@@ -967,7 +1045,7 @@ impl Window {
     fn panel(&self) -> [String; 3] {
         let c = self.color;
         let reset = c.reset();
-        let (steel, lichen, clay) = (c.fg(STEEL), c.fg(LICHEN), c.fg(CLAY));
+        let (steel, lichen, clay) = (c.fg(self.muted), c.fg(LICHEN), c.fg(CLAY));
         let (left, desc) = (3, 18);
         let right = (self.inner / 2 + 3).max(desc + 16);
         let value = right + 8;
@@ -1151,6 +1229,31 @@ impl Keys {
     fn pressed(&self) -> Option<Vec<u8>> {
         None
     }
+
+    /// Ask the terminal for its background color (OSC 11) and wait up to
+    /// 150 ms for the reply. Terminals that do not support it stay silent.
+    fn background(&self, out: &mut impl Write) -> Option<Theme> {
+        #[cfg(unix)]
+        self.saved?;
+        #[cfg(not(unix))]
+        return None;
+        let _ = write!(out, "\x1b]11;?\x1b\\");
+        let _ = out.flush();
+        let deadline = Instant::now() + Duration::from_millis(150);
+        let mut reply = Vec::new();
+        while Instant::now() < deadline {
+            match self.pressed() {
+                Some(bytes) => {
+                    reply.extend(bytes);
+                    if let Some(theme) = Theme::from_osc11(&reply) {
+                        return Some(theme);
+                    }
+                }
+                None => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+        None
+    }
 }
 
 impl Drop for Keys {
@@ -1213,11 +1316,15 @@ pub fn play(host: &str) {
     let color = ColorMode::detect();
     let size = terminal_size();
     let inner = inner_width(size.map_or(80, |(cols, _)| cols));
-    let film = Film::new(inner, color);
-    let window = Window {
+    let env_theme = std::env::var("COLORFGBG")
+        .ok()
+        .and_then(|v| Theme::from_colorfgbg(&v));
+    let mut film = Film::new(inner, color);
+    let mut window = Window {
         inner,
         color,
         host: host.to_string(),
+        muted: env_theme.unwrap_or(Theme::Dark).muted(),
     };
     let mut out = stdout().lock();
     // A still print scrolls, so it is safe at any size.
@@ -1234,6 +1341,12 @@ pub fn play(host: &str) {
     let mut reel = Reel::new(seed);
     let keys = Keys::new();
     let cursor = Cursor;
+    // Without COLORFGBG, ask the terminal for its background. Dark if it does not answer.
+    let theme = env_theme
+        .or_else(|| keys.background(&mut out))
+        .unwrap_or(Theme::Dark);
+    film.muted = theme.muted();
+    window.muted = theme.muted();
     let mut interrupted = false;
     let mut skipped = false;
 
@@ -1384,6 +1497,7 @@ mod tests {
                 inner: cols,
                 color: ColorMode::TrueColor,
                 host: "https://try.feldera.com/".to_string(),
+                muted: STEEL,
             };
             let rows = window.rows(&film.final_frame(), true);
             assert_eq!(rows.len(), Window::FILM_TOP + film.h + Window::BELOW_FILM);
@@ -1502,6 +1616,104 @@ mod tests {
                 .fold(0.0, f64::max);
             assert!(worst < 1e-9, "label {label} differs by {worst}");
         }
+    }
+
+    /// WCAG contrast ratio between two sRGB colors.
+    fn contrast(a: Rgb, b: Rgb) -> f64 {
+        let lum = |(r, g, b): Rgb| {
+            let ch = |v: u8| {
+                let c = v as f64 / 255.0;
+                if c <= 0.03928 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+        };
+        let (x, y) = (lum(a), lum(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    /// The RGB value an xterm 256-color index shows.
+    fn xterm_rgb(i: u8) -> Rgb {
+        const LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+        match i {
+            16..=231 => {
+                let i = i - 16;
+                (
+                    LEVELS[(i / 36) as usize],
+                    LEVELS[(i / 6 % 6) as usize],
+                    LEVELS[(i % 6) as usize],
+                )
+            }
+            232..=255 => {
+                let g = 8 + 10 * (i - 232);
+                (g, g, g)
+            }
+            _ => panic!("not a cube or gray index: {i}"),
+        }
+    }
+
+    #[test]
+    fn brand_colors_survive_256_color_terminals() {
+        let dist = |a: Rgb, b: Rgb| {
+            let d = |x: u8, y: u8| (x as i32 - y as i32).pow(2);
+            d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)
+        };
+        let brand = [
+            VIOLET,
+            STEEL,
+            LICHEN,
+            CLAY,
+            STONE,
+            LICHEN_TINT,
+            LICHEN_SHADE,
+            INK,
+        ];
+        for c in brand {
+            // The pick is the nearest of all 240 cube and gray entries.
+            let best = (16..=255u8).map(|i| dist(c, xterm_rgb(i))).min().unwrap();
+            assert_eq!(
+                dist(c, xterm_rgb(ansi256(c))),
+                best,
+                "{c:?} is not mapped to its nearest entry"
+            );
+        }
+        let tint = xterm_rgb(ansi256(LICHEN_TINT));
+        assert!(tint.2 < tint.0, "Lichen tint turned neutral gray: {tint:?}");
+        let violet = xterm_rgb(ansi256(VIOLET));
+        assert!(
+            violet.2 > violet.0 + 40,
+            "Violet turned lavender or gray: {violet:?}"
+        );
+        // The tagline band keeps its contrast: Ink text on the Lichen tint band.
+        let band = contrast(xterm_rgb(ansi256(INK)), tint);
+        assert!(band >= 7.0, "tagline band contrast {band:.1}");
+    }
+
+    #[test]
+    fn secondary_text_reads_on_both_themes() {
+        const PAPER: Rgb = (0xFA, 0xF9, 0xF6);
+        const ONYX: Rgb = (0x0F, 0x10, 0x0E);
+        let light = contrast(Theme::Light.muted(), PAPER);
+        let dark = contrast(Theme::Dark.muted(), ONYX);
+        assert!(light >= 4.5, "light theme: {light:.1}");
+        assert!(dark >= 4.5, "dark theme: {dark:.1}");
+    }
+
+    #[test]
+    fn terminal_theme_is_read_from_the_terminal() {
+        assert_eq!(Theme::from_colorfgbg("15;0"), Some(Theme::Dark));
+        assert_eq!(Theme::from_colorfgbg("0;15"), Some(Theme::Light));
+        assert_eq!(Theme::from_colorfgbg("0;default;7"), Some(Theme::Light));
+        assert_eq!(Theme::from_colorfgbg("nonsense"), None);
+        let white = b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\";
+        let onyx = b"\x1b]11;rgb:0f0f/1010/0e0e\x07";
+        assert_eq!(Theme::from_osc11(white), Some(Theme::Light));
+        assert_eq!(Theme::from_osc11(onyx), Some(Theme::Dark));
+        assert_eq!(Theme::from_osc11(b"\x1b]11;rgb:ff"), None, "cut-off reply");
+        assert_eq!(Theme::from_osc11(b"x"), None);
     }
 
     #[test]
