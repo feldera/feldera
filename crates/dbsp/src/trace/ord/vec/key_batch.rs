@@ -1,6 +1,7 @@
 use crate::storage::file::{FilterStats, TouchedWindowCount};
 use crate::trace::BatchLocation;
 use crate::trace::ord::merge_batcher::MergeBatcher;
+use crate::trace::ord::retraction_counter::RetractionCounter;
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -156,6 +157,7 @@ where
     pub layer: VecKeyBatchLayer<K, T, R, O>,
     factories: VecKeyBatchFactories<K, T, R>,
     touched_window_count: TouchedWindowCount,
+    retraction_count: u64,
 }
 
 impl<K, T, R, O> SizeOf for VecKeyBatch<K, T, R, O>
@@ -242,6 +244,7 @@ where
             layer: self.layer.clone(),
             factories: self.factories.clone(),
             touched_window_count: self.touched_window_count,
+            retraction_count: self.retraction_count,
         }
     }
 }
@@ -362,6 +365,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
+    }
+
+    fn retraction_count(&self) -> u64 {
+        self.retraction_count
     }
 
     fn touched_window_count(&self) -> TouchedWindowCount {
@@ -587,6 +594,7 @@ where
     offs: Vec<O>,
     times: Box<DynVec<DynDataTyped<T>>>,
     diffs: Box<DynVec<R>>,
+    retractions: RetractionCounter,
 }
 
 impl<K, T, R, O> VecKeyBuilder<K, T, R, O>
@@ -633,6 +641,7 @@ where
             offs,
             times,
             diffs,
+            retractions: RetractionCounter::default(),
         }
     }
 
@@ -646,23 +655,27 @@ where
     fn push_key(&mut self, key: &K) {
         self.keys.push_ref(key);
         self.pushed_key();
+        self.retractions.end_pair();
     }
 
     fn push_key_mut(&mut self, key: &mut K) {
         self.keys.push_val(key);
         self.pushed_key();
+        self.retractions.end_pair();
     }
 
     fn push_val(&mut self, _val: &DynUnit) {}
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
+        self.retractions.push(weight);
         self.times.push(time.clone());
         self.diffs.push_ref(weight);
     }
 
     fn push_time_diff_mut(&mut self, time: &mut T, weight: &mut R) {
         debug_assert!(!weight.is_zero());
+        self.retractions.push(weight);
         self.times.push(time.clone());
         self.diffs.push_val(weight);
     }
@@ -681,6 +694,7 @@ where
             ),
             factories: self.factories,
             touched_window_count: TouchedWindowCount::default(),
+            retraction_count: self.retractions.tuples(),
         }
     }
 

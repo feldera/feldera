@@ -1,3 +1,4 @@
+use crate::time::Product;
 use crate::trace::StoragePath;
 use crate::utils::test::CIRCUIT_CASES;
 use feldera_types::size::ConfigSize;
@@ -45,8 +46,8 @@ use crate::{
         },
         test::test_batch::{
             TestBatch, TestBatchFactories, assert_batch_cursors_eq, assert_batch_eq,
-            assert_bounds_match_cursor, assert_negative_weights_counted, assert_trace_eq,
-            test_batch_sampling, test_trace_sampling,
+            assert_bounds_match_cursor, assert_negative_weights_counted,
+            assert_retractions_counted, assert_trace_eq, test_batch_sampling, test_trace_sampling,
         },
     },
     utils::{Tup1, Tup2, Tup3, Tup4},
@@ -230,6 +231,8 @@ fn test_zset_spine<B: ZSet<Key = DynI32>>(
         test_batch_sampling(&batch);
         assert_negative_weights_counted(&batch);
         assert_negative_weights_counted(&batch.neg_by_ref());
+        assert_retractions_counted(&batch);
+        assert_retractions_counted(&batch.neg_by_ref());
 
         assert_batch_eq(&batch, &ref_batch);
 
@@ -246,6 +249,7 @@ fn test_zset_spine<B: ZSet<Key = DynI32>>(
         assert_trace_eq(&trace, &ref_trace);
         for batch in trace.get_batches() {
             assert_negative_weights_counted(&*batch);
+            assert_retractions_counted(&*batch);
         }
 
         kbound = max(kbound, bound);
@@ -291,6 +295,8 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
         test_batch_sampling(&batch);
         assert_negative_weights_counted(&batch);
         assert_negative_weights_counted(&batch.neg_by_ref());
+        assert_retractions_counted(&batch);
+        assert_retractions_counted(&batch.neg_by_ref());
 
         assert_batch_eq(&batch, &ref_batch);
 
@@ -310,6 +316,7 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
         assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
         for batch in trace.get_batches() {
             assert_negative_weights_counted(&*batch);
+            assert_retractions_counted(&*batch);
         }
 
         kbound = max(kbound, key_bound);
@@ -438,6 +445,7 @@ fn test_val_batch_trace_spine<B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>>
 
         assert_batch_eq(&batch, &ref_batch);
         assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+        assert_retractions_counted(&batch);
 
         TOKIO.block_on(ref_trace.insert(ref_batch));
         assert_batch_cursors_eq(
@@ -450,6 +458,9 @@ fn test_val_batch_trace_spine<B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>>
 
         assert_trace_eq(&trace, &ref_trace);
         assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+        for batch in trace.get_batches() {
+            assert_retractions_counted(&*batch);
+        }
 
         kbound = max(kbound, key_bound);
         trace.retain_keys(Filter::new(Box::new(move |key| {
@@ -510,6 +521,7 @@ fn test_val_batch_trace_builder<B>(
 
     assert_batch_eq(&batch, &ref_batch);
     assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+    assert_retractions_counted(&batch);
 }
 
 fn timed_batch_from_tuples<B>(factories: &B::Factories, tuples: &[Tup3<i32, u32, ZWeight>]) -> B
@@ -548,6 +560,7 @@ fn test_key_batch_builder<B>(
 
     assert_batch_eq(&batch, &ref_batch);
     assert_batch_cursors_eq(batch.cursor(), &ref_batch, seed);
+    assert_retractions_counted(&batch);
 }
 
 fn test_key_batch_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
@@ -575,6 +588,7 @@ fn test_key_batch_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
             TestBatch::dyn_from_tuples(&TestBatchFactories::new(), time as u32, &mut erased_tuples);
 
         assert_batch_eq(&batch, &ref_batch);
+        assert_retractions_counted(&batch);
 
         TOKIO.block_on(ref_trace.insert(ref_batch));
         assert_batch_cursors_eq(
@@ -586,6 +600,9 @@ fn test_key_batch_spine<B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>>(
         TOKIO.block_on(trace.insert(batch));
 
         assert_trace_eq(&trace, &ref_trace);
+        for batch in trace.get_batches() {
+            assert_retractions_counted(&*batch);
+        }
 
         kbound = max(bound, kbound);
         trace.retain_keys(Filter::new(Box::new(move |key| {
@@ -684,6 +701,99 @@ fn test_file_indexed_wset_value_stamp_guards_from_path() {
             format!("{err}").contains("stamped"),
             "expected a value-stamp mismatch, got: {err}"
         );
+    });
+}
+
+/// A batch with times counts the records of the (key, value) pairs with a
+/// negative partial sum of weights, in the unit of its `len_upper_bound`, and a
+/// file-backed batch keeps the count when it is reopened.
+#[test]
+fn test_retraction_count_of_batches_with_times() {
+    // Key 1 goes +1 in epoch 0, then -1 at the same iteration of epoch 1, as a
+    // merge leaves the two before its frontier advances: no partial sum is
+    // negative, so it does not count, although its times fall in two epochs.
+    // Key 2 goes +1, then -1 at a later iteration of one epoch: no partial sum
+    // is negative either.  Key 3 goes -1 in epoch 0, then +1 in epoch 1: its
+    // first partial sum is negative.
+    type Time = Product<u32, u32>;
+    let factories = <VecKeyBatchFactories<DynI32, Time, DynZWeight>>::new::<i32, (), ZWeight>();
+    let mut builder =
+        <VecKeyBatch<DynI32, Time, DynZWeight> as Batch>::Builder::with_capacity(&factories, 3, 6);
+    let updates: [(i32, [(u32, u32, ZWeight); 2]); 3] = [
+        (1, [(0, 1, 1), (1, 1, -1)]),
+        (2, [(0, 1, 1), (0, 2, -1)]),
+        (3, [(0, 1, -1), (1, 1, 1)]),
+    ];
+    for (key, times) in updates {
+        for (epoch, iteration, weight) in times {
+            builder.push_time_diff(&Product::new(epoch, iteration), &weight);
+        }
+        builder.push_val(&());
+        builder.push_key(&key);
+    }
+    assert_eq!(builder.done().retraction_count(), 2);
+
+    // Key 1 with value 10 goes +1, then -1: no partial sum is negative.  Key 1
+    // with value 20 goes -1, then +1, and key 2 with value 10 holds a single
+    // -2: both have a negative partial sum.
+    let val_tuples = [
+        Tup4(1, 10, 0, 1),
+        Tup4(1, 10, 1, -1),
+        Tup4(1, 20, 0, -1),
+        Tup4(1, 20, 1, 1),
+        Tup4(2, 10, 3, -2),
+    ];
+    // The same three shapes for batches of keys.
+    let key_tuples = [
+        Tup3(1, 0, 1),
+        Tup3(1, 1, -1),
+        Tup3(2, 0, -1),
+        Tup3(2, 1, 1),
+        Tup3(3, 3, -2),
+    ];
+
+    run_in_circuit_with_storage(move || {
+        // Counted in (time, weight) tuples: 2 for key 1 with value 20, 1 for
+        // key 2.
+        let factories =
+            <VecValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = val_batch_from_tuples::<VecValBatch<DynI32, DynI32, u32, DynZWeight>>(
+            &factories,
+            &val_tuples,
+        );
+        assert_eq!(batch.retraction_count(), 3);
+
+        // Counted in (key, value) pairs.
+        let factories =
+            <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = val_batch_from_tuples::<FileValBatch<DynI32, DynI32, u32, DynZWeight>>(
+            &factories,
+            &val_tuples,
+        );
+        assert_eq!(batch.retraction_count(), 2);
+        let path = batch.file_reader().unwrap().path().to_string().into();
+        let reopened =
+            FileValBatch::<DynI32, DynI32, u32, DynZWeight>::from_path(&factories, &path).unwrap();
+        assert_eq!(reopened.retraction_count(), 2);
+
+        // Counted in (time, weight) tuples, by both kinds of batch.
+        let factories = <VecKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+        let batch = timed_batch_from_tuples::<VecKeyBatch<DynI32, u32, DynZWeight>>(
+            &factories,
+            &key_tuples,
+        );
+        assert_eq!(batch.retraction_count(), 3);
+
+        let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
+        let batch = timed_batch_from_tuples::<FileKeyBatch<DynI32, u32, DynZWeight>>(
+            &factories,
+            &key_tuples,
+        );
+        assert_eq!(batch.retraction_count(), 3);
+        let path = batch.file_reader().unwrap().path().to_string().into();
+        let reopened =
+            FileKeyBatch::<DynI32, u32, DynZWeight>::from_path(&factories, &path).unwrap();
+        assert_eq!(reopened.retraction_count(), 3);
     });
 }
 

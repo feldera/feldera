@@ -526,6 +526,10 @@ where
         Some(self.negative_weight_count)
     }
 
+    fn retraction_count(&self) -> u64 {
+        self.negative_weight_count().unwrap_or(0)
+    }
+
     fn touched_window_count(&self) -> TouchedWindowCount {
         self.touched_window_count
     }

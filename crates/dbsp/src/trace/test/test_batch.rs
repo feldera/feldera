@@ -507,6 +507,63 @@ where
     );
 }
 
+/// Panics if `batch` reports a retraction count other than the one that its
+/// cursor yields.
+///
+/// Recounts, from a cursor over `batch`, the (key, value) pairs with a
+/// negative partial sum of weights in the cursor's time order, summed with
+/// saturation as the count is, and expects [`Batch::retraction_count`] to
+/// report them in the unit of [`BatchReader::len_upper_bound`]: their (time,
+/// weight) tuples if the bound counts tuples, and the pairs themselves if it
+/// counts pairs.
+///
+/// # Arguments
+///
+/// * `batch` - the batch to check.  Its `len_upper_bound` must be exact.
+pub fn assert_retractions_counted<B>(batch: &B)
+where
+    B: Batch<R = DynZWeight>,
+{
+    let (mut tuples, mut pairs) = (0u64, 0u64);
+    let (mut retracting_tuples, mut retracting_pairs) = (0u64, 0u64);
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            let (mut partial_sum, mut min_partial_sum, mut pair_tuples) = (0i64, 0, 0u64);
+            cursor.map_times(&mut |_time, weight| {
+                partial_sum = partial_sum.saturating_add(**weight);
+                min_partial_sum = min_partial_sum.min(partial_sum);
+                pair_tuples += 1;
+            });
+            tuples += pair_tuples;
+            pairs += 1;
+            if min_partial_sum < 0 {
+                retracting_tuples += pair_tuples;
+                retracting_pairs += 1;
+            }
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+
+    let len = batch.len_upper_bound() as u64;
+    let expected = if len == tuples {
+        retracting_tuples
+    } else if len == pairs {
+        retracting_pairs
+    } else {
+        panic!(
+            "len_upper_bound() is {len}, but the cursor yields {pairs} pairs and {tuples} tuples"
+        )
+    };
+    assert_eq!(
+        batch.retraction_count(),
+        expected,
+        "retraction_count() disagrees with the cursor, which yields {retracting_pairs} retracting \
+         pairs holding {retracting_tuples} tuples"
+    );
+}
+
 /// Panic if `batch1` and `batch2` contain different tuples, or if either one's
 /// size bounds or emptiness disagree with its cursor.
 pub fn assert_batch_eq<B1, B2>(batch1: &B1, batch2: &B2)
@@ -1491,6 +1548,10 @@ where
 
     fn negative_weight_count(&self) -> Option<u64> {
         None
+    }
+
+    fn retraction_count(&self) -> u64 {
+        0
     }
 
     fn touched_window_count(&self) -> crate::storage::file::TouchedWindowCount {
