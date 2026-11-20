@@ -75,7 +75,7 @@ fn encode(
         encoder
             .encode(engine.output_batch(relation, rows, weights).unwrap())
             .unwrap();
-        encoder.consumer().batch_end();
+        encoder.consumer().batch_end().unwrap();
     }
     buffer
         .lock()

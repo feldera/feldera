@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-use crate::format::OutputConsumer;
+use crate::format::{BatchNotDelivered, OutputConsumer};
 use crate::transport::{OutputBatchType, Step};
 use std::sync::{Arc, Mutex};
 
@@ -92,5 +92,7 @@ impl OutputConsumer for MockOutputConsumer {
                 .collect::<Vec<_>>(),
         ))
     }
-    fn batch_end(&mut self) {}
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered> {
+        Ok(())
+    }
 }

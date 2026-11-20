@@ -13,8 +13,8 @@ use crate::integrated::delta_table::{WriteError, register_storage_handlers, tabl
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
-    ControllerError, Encoder, OutputConsumer, OutputEndpoint, OutputEndpointCallbacks,
-    RecordFormat, SerCursor,
+    BatchNotDelivered, ControllerError, Encoder, OutputConsumer, OutputEndpoint,
+    OutputEndpointCallbacks, RecordFormat, SerCursor,
 };
 use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::array::{Int64Array, RecordBatch, StringArray};
@@ -1611,17 +1611,17 @@ impl OutputConsumer for DeltaTableWriter {
         unreachable!()
     }
 
-    fn batch_end(&mut self) {
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered> {
         // A distributed part keeps its files for the leader, in `steps_processed`.
         if self.part.is_some() {
-            return;
+            return Ok(());
         }
 
         // Merge mode applied and committed the batch in `encode`, and reported it there.
         // Its progress count still ends here, so an idle endpoint does not read as busy.
         if self.merge.is_some() || self.pending_actions.is_empty() {
             self.inner.records_written.store(0, Ordering::Relaxed);
-            return;
+            return Ok(());
         }
 
         let _span = info_span!(
@@ -1654,7 +1654,7 @@ impl OutputConsumer for DeltaTableWriter {
                     Some("delta_batch_end"),
                 )
             };
-            return;
+            return Err(BatchNotDelivered);
         }
 
         self.inner.records_written.store(0, Ordering::Relaxed);
@@ -1664,6 +1664,7 @@ impl OutputConsumer for DeltaTableWriter {
                 .status
                 .output_buffer(self.inner.endpoint_id, num_bytes, num_rows);
         }
+        Ok(())
     }
 
     fn steps_processed(&mut self, count: Step) {
@@ -3539,7 +3540,7 @@ pub mod parallel {
             endpoint.encode(batch.clone()).is_err(),
             "the fixture did not fail the batch"
         );
-        endpoint.consumer().batch_end();
+        let _ = endpoint.consumer().batch_end();
     }
 
     /// The batch after a commit whose reload failed must see what that commit wrote.
@@ -4148,7 +4149,7 @@ pub mod parallel {
     fn encode_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatchReader>) {
         endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint.encode(batch.clone()).unwrap();
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
     }
 
     /// Returns the rows of every Parquet file of the table, with the columns the connector adds
@@ -4637,7 +4638,7 @@ pub mod parallel {
                 .encode(batch)
                 .expect("the write itself must succeed");
             let _ = written.send(());
-            endpoint.consumer().batch_end();
+            let _ = endpoint.consumer().batch_end();
             let _ = done.send(());
         });
 
@@ -5626,7 +5627,7 @@ pub mod parallel {
             .encode(build_insert_batch(engine, &records))
             .unwrap();
         assert_eq!(records_written(&endpoint), 10, "ten rows appended");
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
 
         // Deleting supersedes the row in the table without appending one.
@@ -5639,7 +5640,7 @@ pub mod parallel {
             4,
             "a delete-only flush must report the rows it tombstoned"
         );
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
     }
 
@@ -5656,7 +5657,7 @@ pub mod parallel {
         endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint.encode(batch.clone()).unwrap();
         assert_eq!(records_written(&endpoint), 100);
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
     }
 
@@ -5672,7 +5673,7 @@ pub mod parallel {
         endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint.encode(batch.clone()).unwrap();
         assert_eq!(records_written(&endpoint), 100);
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
     }
 
@@ -5687,7 +5688,7 @@ pub mod parallel {
         endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint.encode(batch.clone()).unwrap();
         assert_eq!(records_written(&endpoint), 0);
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
     }
 
@@ -5704,7 +5705,7 @@ pub mod parallel {
         endpoint.consumer().batch_start(0, OutputBatchType::Delta);
         endpoint.encode(batch1.clone()).unwrap();
         assert_eq!(records_written(&endpoint), 50);
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
 
         // Batch 2: 30 records (ids 50..80).
@@ -5713,7 +5714,7 @@ pub mod parallel {
         endpoint.consumer().batch_start(1, OutputBatchType::Delta);
         endpoint.encode(batch2.clone()).unwrap();
         assert_eq!(records_written(&endpoint), 30);
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
     }
 
@@ -5827,7 +5828,7 @@ pub mod parallel {
         assert_eq!(records_written(&endpoint), num as u64);
 
         // Verify data was written correctly.
-        endpoint.consumer().batch_end();
+        endpoint.consumer().batch_end().unwrap();
         assert_eq!(records_written(&endpoint), 0);
         let output = read_output(&table_uri);
         assert_eq!(output.len(), num);

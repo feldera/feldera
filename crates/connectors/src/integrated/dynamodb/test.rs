@@ -377,7 +377,7 @@ fn stage_batch(worker: &mut DynamoDBWorker, batch: &Arc<dyn SerBatchReader>) {
 fn encode_endpoint_batch(endpoint: &mut DynamoDBOutputEndpoint, batch: &Arc<dyn SerBatchReader>) {
     endpoint.consumer().batch_start(0, OutputBatchType::Delta);
     endpoint.encode(batch.clone()).unwrap();
-    endpoint.consumer().batch_end();
+    endpoint.consumer().batch_end().unwrap();
 }
 
 pub(super) fn attr_s<'a>(item: &'a HashMap<String, AttributeValue>, field: &str) -> &'a str {
@@ -829,7 +829,7 @@ fn encoder_progress_counter_resets_at_batch_start_and_end() {
     assert_eq!(records_written.load(Ordering::Relaxed), 0);
 
     records_written.store(88, Ordering::Relaxed);
-    endpoint.consumer().batch_end();
+    endpoint.consumer().batch_end().unwrap();
     assert_eq!(records_written.load(Ordering::Relaxed), 0);
 }
 
@@ -1893,7 +1893,7 @@ fn progress_basic(engine: &dyn ConnectorTestEngine, threads: usize) {
     endpoint.consumer().batch_start(0, OutputBatchType::Delta);
     assert_eq!(records_written(&endpoint), 0);
     endpoint.encode(batch.clone()).unwrap();
-    endpoint.consumer().batch_end();
+    endpoint.consumer().batch_end().unwrap();
     // Counter resets to 0 at the end of every batch.
     assert_eq!(records_written(&endpoint), 0);
 
@@ -1923,7 +1923,7 @@ pub fn dynamodb_progress_counter_empty_batch(engine: &dyn ConnectorTestEngine) {
     endpoint.consumer().batch_start(0, OutputBatchType::Delta);
     endpoint.encode(build_batch(engine, vec![])).unwrap();
     assert_eq!(records_written(&endpoint), 0);
-    endpoint.consumer().batch_end();
+    endpoint.consumer().batch_end().unwrap();
     assert_eq!(records_written(&endpoint), 0);
 }
 
@@ -1958,7 +1958,7 @@ fn progress_advances_mid_batch(engine: &dyn ConnectorTestEngine, threads: usize)
         "records_written {mid_count} exceeds total {num_records}"
     );
 
-    endpoint.consumer().batch_end();
+    endpoint.consumer().batch_end().unwrap();
     assert_eq!(records_written(&endpoint), 0);
 
     assert_eq!(scan_table(&client, &table).len(), num_records);
@@ -1992,7 +1992,7 @@ fn dynamodb_progress_counter_batch_start_resets() {
     assert_eq!(records_written(&endpoint), 0);
 
     // Close cleanly so the worker does not leak an open state.
-    endpoint.consumer().batch_end();
+    endpoint.consumer().batch_end().unwrap();
 }
 
 #[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]

@@ -69,6 +69,79 @@ it have been written to all connected data sinks.  It returns `"inprogress"` oth
 The response also carries `step`: the number of steps the pipeline completes
 before the token is complete.
 
+## Output that a connector did not deliver
+
+If an output connector cannot write a batch of output to its data sink, it
+reports an error and the pipeline continues with the next batch. The pipeline
+does not send the batch again. A token for input that caused this output
+cannot become `"complete"`. For such a token, `/completion_status` returns an
+error with HTTP status 500 and the error code `OutputNotDelivered`:
+
+```json
+{
+  "message": "output connector 'price_changes.postgres' did not deliver all of its output for step 12, ...",
+  "error_code": "OutputNotDelivered",
+  "details": {
+    "endpoint_name": "price_changes.postgres",
+    "first_step": 12,
+    "last_step": 12
+  }
+}
+```
+
+The message gives the name of the connector. The errors of the connector, in
+its [status](/api/get-output-status) and in the pipeline log, give the cause.
+The token gives this error each time. The pipeline does not send the output
+again: correct the cause, then repair the data in the sink. Send the input
+again only if the pipeline and each data sink give the same result when they
+get the same input two times. In the Python SDK, the methods that wait for a
+token raise `FelderaAPIError`.
+
+| Source of the token | The token reports output that a connector dropped for |
+|---|---|
+| `/ingress` | The records of that request. |
+| `/completion_token` | The records that the input connector received after the previous token for the same connector. The first token covers the records that the connector received after the pipeline started or resumed from a checkpoint. |
+
+The report has these limits:
+
+* The steps in `details` can include input from other connectors. The pipeline
+  does not know which records caused the output that the connector dropped, so
+  a token can report a failure that did not affect its own records.
+* When two `/ingress` requests send data to the same table at the same time,
+  the token of one request can report output that was dropped for the records
+  of the other request.
+* A token does not report output that was dropped before the pipeline stopped
+  and resumed.
+* If you ask for a token again and the connector received no new record, you
+  get the same token with the same result.
+* Ask for the status of a token soon after you get the token. After 1024 or
+  more later tokens of the same connector are complete, the token can also
+  report output that was dropped for a later token.
+* The pipeline keeps 1024 ranges of dropped steps for each output connector.
+  When a connector has more, the pipeline joins the two oldest ranges, and a
+  token for a step between them reports a failure too.
+* When an output connector is removed from a running pipeline, for example
+  when the client of an HTTP output stream disconnects, the pipeline keeps the
+  record of the output that the connector dropped. It keeps the records of
+  the last 64 removed connectors that dropped output. A failure of a batch
+  that the connector writes while it is removed is not reported.
+* A token reports a batch as dropped when the data sink did not confirm the
+  write, although the sink can have the data. An example is a Delta Lake
+  commit whose response is lost, when the connector has no retry left.
+* A [paused output connector](/connectors/orchestration) discards the output
+  that the pipeline produces during the pause. A token does not report this
+  output.
+* The PostgreSQL, DynamoDB and Delta Lake output connectors report a batch
+  that they drop, and so does a connector whose write to the data sink
+  returns an error. These failures are not reported:
+  * A row that a connector skips, for example a row with a duplicate key in
+    the PostgreSQL connector, or an item that is too large for DynamoDB.
+  * A message that the Kafka output connector cannot deliver.
+  * Output that an HTTP output stream without `backpressure` drops when the
+    client falls behind.
+  * A failure of one part of a distributed Delta Lake connector.
+  * A failure on a different host of a multihost pipeline.
+
 ## Waiting for output on an HTTP stream
 
 For an [HTTP output connector](/connectors/sinks/http), "written to the

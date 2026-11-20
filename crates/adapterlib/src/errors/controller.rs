@@ -899,6 +899,15 @@ pub enum ControllerError {
         endpoint_id: u64,
     },
 
+    /// An output endpoint did not deliver all of its output for steps
+    /// `first_step` to `last_step`, and the completion token covers one or
+    /// more of these steps.
+    OutputNotDelivered {
+        endpoint_name: String,
+        first_step: Step,
+        last_step: Step,
+    },
+
     /// Error fetching checkpoint from remote object storage.
     CheckpointFetchError {
         error: String,
@@ -974,6 +983,7 @@ impl ResponseError for ControllerError {
             Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineRestarted { .. } => StatusCode::GONE,
             Self::UnknownEndpointInCompletionToken { .. } => StatusCode::GONE,
+            Self::OutputNotDelivered { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::TransactionInProgress => StatusCode::CONFLICT,
             Self::NoTransactionInProgress => StatusCode::BAD_REQUEST,
             Self::TransactionIdMismatch { .. } => StatusCode::CONFLICT,
@@ -1116,6 +1126,7 @@ impl DetailedError for ControllerError {
             Self::UnknownEndpointInCompletionToken { .. } => {
                 Cow::from("UnknownEndpointInCompletionToken")
             }
+            Self::OutputNotDelivered { .. } => Cow::from("OutputNotDelivered"),
             Self::CheckpointFetchError { .. } => Cow::from("CheckpointFetchError"),
             Self::CheckpointPushError { .. } => Cow::from("CheckpointPushError"),
             Self::TransactionInProgress => Cow::from("TransactionInProgress"),
@@ -1304,6 +1315,21 @@ impl Display for ControllerError {
                 write!(
                     f,
                     "completion token specifies input endpoint id {endpoint_id}, which doesn't exist; this indicates that the input connector was deleted after the completion token was generated"
+                )
+            }
+            Self::OutputNotDelivered {
+                endpoint_name,
+                first_step,
+                last_step,
+            } => {
+                let steps = if first_step == last_step {
+                    format!("step {first_step}")
+                } else {
+                    format!("steps {first_step} to {last_step}")
+                };
+                write!(
+                    f,
+                    "output connector '{endpoint_name}' did not deliver all of its output for {steps}, and the completion token covers input of that range; the errors of the connector, in its status and in the pipeline log, give the cause; the pipeline does not send this output again, so correct the cause, then repair the data in the sink"
                 )
             }
             Self::CheckpointFetchError { error } => {
@@ -1746,6 +1772,14 @@ impl ControllerError {
         Self::UnknownEndpointInCompletionToken { endpoint_id }
     }
 
+    pub fn output_not_delivered(endpoint_name: &str, first_step: Step, last_step: Step) -> Self {
+        Self::OutputNotDelivered {
+            endpoint_name: endpoint_name.to_string(),
+            first_step,
+            last_step,
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::IoError { io_error, .. } => io_error.kind(),
@@ -1784,6 +1818,7 @@ impl ControllerError {
             | Self::NotImplemented(_)
             | Self::UnexpectedJsonStructure { .. }
             | Self::UnknownEndpointInCompletionToken { .. }
+            | Self::OutputNotDelivered { .. }
             | Self::CheckpointFetchError { .. }
             | Self::CheckpointPushError { .. }
             | Self::PipelineRestarted { .. }

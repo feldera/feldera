@@ -177,7 +177,8 @@ pub use catalog::{
     CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch, SerCursor,
 };
 pub use feldera_adapterlib::format::{
-    Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser,
+    BatchNotDelivered, Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError,
+    Parser,
 };
 
 pub use controller::{

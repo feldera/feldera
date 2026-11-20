@@ -2252,7 +2252,10 @@ pub(crate) async fn completion_token(
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
         ),
-        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "An output connector did not deliver all of the output for the inputs associated with the provided completion token. The error code is `OutputNotDelivered` and the message gives the name of the connector. Other internal errors also use this status."
+            , body = ErrorResponse,
+        ),
     ),
     tag = "Input Connectors"
 )]

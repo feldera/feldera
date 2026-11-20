@@ -12,7 +12,7 @@ use crate::{
     catalog::{RecordFormat, SerBatchReader, SerCursor},
     controller::{ControllerInner, EndpointId, MAX_CONNECTOR_ERROR_LEN},
     flush_op,
-    format::{Encoder, OutputConsumer},
+    format::{BatchNotDelivered, Encoder, OutputConsumer},
     transport::OutputEndpoint,
     util::{IndexedOperationType, truncate_ellipse},
 };
@@ -1345,7 +1345,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         unreachable!()
     }
 
-    fn batch_end(&mut self) {
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered> {
         let result = self.broadcast_and_collect(BroadcastCommand::BatchEnd);
         // Reset progress on every batch_end, regardless of outcome: on success
         // the records have been committed; on failure the counter would
@@ -1362,7 +1362,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         let num_rows = std::mem::take(&mut self.num_rows);
         let Some(controller) = self.controller.upgrade() else {
             tracing::warn!("controller is shutting down: aborting");
-            return;
+            return result.map_err(|_| BatchNotDelivered);
         };
         controller
             .status
@@ -1373,6 +1373,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                 tracing::debug!(
                     "postgres: flushed {num_rows} rows and {num_bytes} bytes in {elapsed:?}",
                 );
+                Ok(())
             }
             // A stop of the pipeline ends the wait of a worker that writes a
             // batch again. That is not a fault of the endpoint.
@@ -1380,6 +1381,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                 tracing::debug!(
                     "postgres: the pipeline stopped before the batch was written: {err:#}"
                 );
+                Err(BatchNotDelivered)
             }
             Err(err) => {
                 controller.output_transport_error(
@@ -1389,6 +1391,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                     anyhow!("failed to commit changes to Postgres: {err:#}"),
                     Some("pg_batch_end"),
                 );
+                Err(BatchNotDelivered)
             }
         }
     }
@@ -1972,7 +1975,7 @@ pub mod tests {
         fn encode_batch(endpoint: &mut PostgresOutputEndpoint, batch: &Arc<dyn SerBatchReader>) {
             endpoint.consumer().batch_start(0, OutputBatchType::Delta);
             endpoint.encode(batch.clone()).unwrap();
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
         }
 
         fn query_all(client: &mut postgres::Client) -> Vec<Value> {
@@ -2521,7 +2524,7 @@ pub mod tests {
             endpoint.consumer().batch_start(0, OutputBatchType::Delta);
             assert_eq!(records_written(&endpoint), 0);
             endpoint.encode(batch.clone()).unwrap();
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
             // Counter resets to 0 at the end of every batch.
             assert_eq!(records_written(&endpoint), 0);
 
@@ -2551,7 +2554,7 @@ pub mod tests {
             endpoint.consumer().batch_start(0, OutputBatchType::Delta);
             endpoint.encode(batch.clone()).unwrap();
             assert_eq!(records_written(&endpoint), 0);
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
             assert_eq!(records_written(&endpoint), 0);
         }
 
@@ -2577,7 +2580,7 @@ pub mod tests {
                 records_written(&endpoint)
             );
 
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
             assert_eq!(records_written(&endpoint), 0);
         }
 
@@ -2596,7 +2599,7 @@ pub mod tests {
             assert_eq!(records_written(&endpoint), 0);
 
             // Close out cleanly so the worker transaction doesn't leak.
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
         }
 
         #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
@@ -2645,7 +2648,7 @@ pub mod tests {
             assert!(mid > 0, "expected mid-batch progress, got 0");
             assert!(mid <= 100, "counter exceeds total records: {mid}");
 
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
             assert_eq!(records_written(&endpoint), 0);
 
             // Final state in postgres matches all input records.

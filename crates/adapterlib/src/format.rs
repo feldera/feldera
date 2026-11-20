@@ -728,6 +728,13 @@ pub trait Encoder: Send {
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()>;
 }
 
+/// The sink did not get all of the records of a batch.
+///
+/// The consumer reports the cause as an error of the endpoint, so this value
+/// carries none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BatchNotDelivered;
+
 #[doc(hidden)]
 pub trait OutputConsumer: Send {
     /// Maximum buffer size that this transport can transmit.
@@ -747,7 +754,13 @@ pub trait OutputConsumer: Send {
         headers: &[(&str, Option<&[u8]>)],
         num_records: usize,
     );
-    fn batch_end(&mut self);
+
+    /// Ends the batch.
+    ///
+    /// Returns [`BatchNotDelivered`] if the sink did not get all of the batch.
+    /// The pipeline then reports the failure to a client that waits for the
+    /// input of the batch with a completion token.
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered>;
 
     /// See OutputEndpoint::steps_processed.
     fn steps_processed(&mut self, _count: Step) {}
@@ -778,6 +791,8 @@ pub struct PostprocessedConsumer {
     inner: Box<dyn OutputConsumer>,
     postprocessor: Box<dyn Postprocessor>,
     error_cb: PostprocessorErrorCallback,
+    /// The postprocessor dropped a record of the current batch.
+    dropped_record: bool,
 }
 
 impl PostprocessedConsumer {
@@ -790,7 +805,13 @@ impl PostprocessedConsumer {
             inner,
             postprocessor,
             error_cb,
+            dropped_record: false,
         }
+    }
+
+    fn postprocessor_error(&mut self, error: anyhow::Error) {
+        self.dropped_record = true;
+        (self.error_cb)(error);
     }
 }
 
@@ -800,6 +821,7 @@ impl OutputConsumer for PostprocessedConsumer {
     }
 
     fn batch_start(&mut self, step: Step, batch_type: OutputBatchType) {
+        self.dropped_record = false;
         self.postprocessor.batch_start(step, batch_type);
         self.inner.batch_start(step, batch_type);
     }
@@ -807,7 +829,7 @@ impl OutputConsumer for PostprocessedConsumer {
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {
         match self.postprocessor.push_buffer(buffer) {
             Ok(transformed) => self.inner.push_buffer(&transformed, num_records),
-            Err(e) => (self.error_cb)(e),
+            Err(e) => self.postprocessor_error(e),
         }
     }
 
@@ -825,13 +847,17 @@ impl OutputConsumer for PostprocessedConsumer {
                 self.inner
                     .push_key(k.as_deref(), v.as_deref(), &h_refs, num_records);
             }
-            Err(e) => (self.error_cb)(e),
+            Err(e) => self.postprocessor_error(e),
         }
     }
 
-    fn batch_end(&mut self) {
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered> {
         self.postprocessor.batch_end();
-        self.inner.batch_end();
+        self.inner.batch_end()?;
+        if self.dropped_record {
+            return Err(BatchNotDelivered);
+        }
+        Ok(())
     }
 
     fn steps_processed(&mut self, count: Step) {
@@ -1166,7 +1192,54 @@ mod test {
     use std::hash::Hasher;
     use std::sync::{Arc, Mutex};
 
-    use super::{BufferSize, InputBuffer};
+    use super::{
+        BatchNotDelivered, BufferSize, InputBuffer, OutputConsumer, PostprocessedConsumer,
+    };
+    use crate::postprocess::Postprocessor;
+    use crate::test::MockOutputConsumer;
+    use crate::transport::OutputBatchType;
+    use anyhow::{Result as AnyResult, bail};
+
+    /// A postprocessor that fails each buffer that starts with `!`.
+    struct PickyPostprocessor;
+
+    impl Postprocessor for PickyPostprocessor {
+        fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<Vec<u8>> {
+            if buffer.starts_with(b"!") {
+                bail!("the postprocessor rejected the buffer");
+            }
+            Ok(buffer.to_vec())
+        }
+
+        fn fork(&self) -> Box<dyn Postprocessor> {
+            Box::new(PickyPostprocessor)
+        }
+    }
+
+    /// A batch is not delivered if the postprocessor dropped one of its
+    /// records.  The next batch starts clean.
+    #[test]
+    fn postprocessed_consumer_reports_dropped_record() {
+        let errors = Arc::new(Mutex::new(0));
+        let mut consumer = PostprocessedConsumer::new(
+            Box::new(MockOutputConsumer::new()),
+            Box::new(PickyPostprocessor),
+            Box::new({
+                let errors = errors.clone();
+                move |_| *errors.lock().unwrap() += 1
+            }),
+        );
+
+        consumer.batch_start(0, OutputBatchType::Delta);
+        consumer.push_buffer(b"good", 1);
+        consumer.push_buffer(b"!bad", 1);
+        assert_eq!(consumer.batch_end(), Err(BatchNotDelivered));
+        assert_eq!(*errors.lock().unwrap(), 1);
+
+        consumer.batch_start(1, OutputBatchType::Delta);
+        consumer.push_buffer(b"good", 1);
+        assert_eq!(consumer.batch_end(), Ok(()));
+    }
 
     const BYTES_PER_RECORD: usize = 10;
 

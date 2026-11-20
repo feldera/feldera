@@ -1593,6 +1593,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param pipeline_name: The name of the pipeline
         :param token: The token to check for completion
+        :raises FelderaAPIError: If an output connector did not deliver all of
+            the output for the inputs of the token (error code
+            ``OutputNotDelivered``).  The message gives the name of the connector.
         """
 
         params = {
@@ -1620,6 +1623,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param pipeline_name: The name of the pipeline
         :param token: The token to check for completion
         :return: True if the pipeline has finished processing all inputs represented by the token, False otherwise
+        :raises FelderaAPIError: If an output connector did not deliver all of
+            the output for the inputs of the token (error code
+            ``OutputNotDelivered``).
         """
 
         status: str = self.completion_status(pipeline_name, token)["status"]
@@ -1636,6 +1642,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param token: The token to check for completion
         :param timeout_s: The amount of time in seconds to wait for the pipeline
             to process these records.
+        :raises FelderaAPIError: If an output connector did not deliver all of
+            the output for the inputs of the token (error code
+            ``OutputNotDelivered``).
         """
 
         start = time.monotonic()

@@ -209,7 +209,7 @@ pub fn output(engine: &dyn ConnectorTestEngine) {
         .unwrap();
     encoder.consumer().batch_start(0, OutputBatchType::Delta);
     encoder.encode(batch.clone()).unwrap();
-    encoder.consumer().batch_end();
+    encoder.consumer().batch_end().unwrap();
 
     let bytes: Vec<u8> = buffer
         .lock()
@@ -259,7 +259,7 @@ pub fn output_in_buffers(engine: &dyn ConnectorTestEngine) {
                 .unwrap(),
         )
         .unwrap();
-    encoder.consumer().batch_end();
+    encoder.consumer().batch_end().unwrap();
 
     let files: Vec<Vec<u8>> = buffer
         .lock()

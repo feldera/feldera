@@ -8582,6 +8582,9 @@ export type CompletionStatusErrors = {
    * Completion token was created by a previous incarnation of the pipeline and is not valid for the current incarnation. This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.
    */
   410: ErrorResponse
+  /**
+   * An output connector did not deliver all of the output for the inputs associated with the provided completion token. The error code is `OutputNotDelivered` and the message gives the name of the connector. Other internal errors also use this status.
+   */
   500: ErrorResponse
   503: ErrorResponse
 }

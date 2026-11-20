@@ -74,7 +74,7 @@ fn flush(
 ) {
     writer.consumer().batch_start(0, OutputBatchType::Delta);
     writer.encode(batch.clone().arc_as_batch_reader()).unwrap();
-    writer.consumer().batch_end();
+    writer.consumer().batch_end().unwrap();
 }
 
 /// Seed a merge-mode table with `TABLE_ROWS` rows spread over `files` data files.

@@ -10,6 +10,18 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Behavior change (REST API, Python SDK, fda): a completion token no longer
+  reports `complete` when an output connector dropped output for the input of
+  the token. `GET /v0/pipelines/{pipeline_name}/completion_status` then
+  returns HTTP status 500 with the error code `OutputNotDelivered`, and the
+  message gives the name of the connector. In the Python SDK, the methods that
+  wait for a token, which include `input_json` with its default `wait=True`,
+  raise `FelderaAPIError`. A client that waits for a token must handle this
+  error: before, it got `complete` although the data sink did not have the
+  output. See [completion
+  tokens](/connectors/completion-tokens#output-that-a-connector-did-not-deliver)
+  and [issue 8014](https://github.com/feldera/feldera/issues/8014).
+
 - The PostgreSQL output connector now connects again and writes the batch
   again when a connection pooler, such as PgBouncer, ends the session with
   an error of its own (SQLSTATE `08P01`). Before, it dropped the batch. It

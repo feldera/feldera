@@ -1467,6 +1467,14 @@ pub enum OutputBatchType {
 /// short enough to sit inside a shutdown, and a retry budget measured in
 /// minutes does not.
 ///
+/// # An error means that the batch did not reach the sink
+///
+/// An error from `batch_start`, `push_buffer`, `push_key` or `batch_end` tells
+/// the controller that the sink did not get all of the current batch.  The
+/// controller does not send the batch again.  It reports the failure to a
+/// client that waits for the input of the batch with a completion token.  An
+/// endpoint that can still deliver the batch must do so and return `Ok`.
+///
 /// # Initialization must not wait for another host
 ///
 /// In a multihost pipeline, an endpoint must not wait for another host while

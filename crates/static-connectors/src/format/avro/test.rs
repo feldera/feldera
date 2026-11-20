@@ -237,7 +237,7 @@ fn run_avro_encoder_spine_snapshot_indexed<V>(
 
     encoder.consumer().batch_start(0, OutputBatchType::Delta);
     encoder.encode(snapshot).unwrap();
-    encoder.consumer().batch_end();
+    encoder.consumer().batch_end().unwrap();
 
     let val_schema = encoder.value_avro_schema().clone();
     let actual_output = consumer_data

@@ -106,7 +106,7 @@ fn bench_encode_iter(
             endpoint
                 .encode(batch.clone().arc_as_batch_reader())
                 .unwrap();
-            endpoint.consumer().batch_end();
+            endpoint.consumer().batch_end().unwrap();
         },
         || {
             let truncated = truncate_bench_table(pg_client);

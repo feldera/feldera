@@ -43,6 +43,7 @@ use feldera_types::size::ConfigSize;
 use feldera_types::{
     adapter_stats::{ConnectorHealth, ExternalOutputEndpointMetrics},
     checkpoint::CheckpointMetadata,
+    completion_token::CompletionStatus,
     config::{
         DynamicConfig, DynamicResources, FormatConfig, FtModel, InputEndpointConfig,
         OutputEndpointConfig, PipelineConfig,
@@ -3351,7 +3352,7 @@ fn wait_for_completion(controller: &Controller, token: &CompletionToken) {
         || {
             matches!(
                 controller.completion_status(token),
-                Ok(Some(step)) if controller.status().global_metrics.total_completed_steps() >= step
+                Ok(response) if response.status == CompletionStatus::Complete
             )
         },
         default_timeout_ms(),
@@ -6373,6 +6374,113 @@ pub fn output_endpoint_error_at_shutdown_is_not_reported(engine: &dyn PipelineTe
 
     let errors = errors.lock().unwrap();
     assert!(errors.is_empty(), "{errors:?}");
+}
+
+/// An output endpoint that fails `push_buffer` while `fail` is set.
+struct DroppingOutputEndpoint {
+    fail: Arc<AtomicBool>,
+}
+
+impl OutputEndpoint for DroppingOutputEndpoint {
+    fn connect(
+        &mut self,
+        _callbacks: Arc<dyn OutputEndpointCallbacks>,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
+    fn push_buffer(&mut self, _buffer: &[u8]) -> Result<(), anyhow::Error> {
+        if self.fail.load(Ordering::Acquire) {
+            return Err(anyhow!("the sink is down"));
+        }
+        Ok(())
+    }
+
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> Result<(), anyhow::Error> {
+        unreachable!("the test uses a format that pushes buffers, not keys")
+    }
+
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+/// A completion token reports the output that an output endpoint dropped.  A
+/// token for later input, whose output the endpoint delivered, completes.
+#[engine_test]
+pub fn completion_token_reports_dropped_output(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {},
+        "outputs": {},
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|_error, _tag| ()),
+        )
+        .unwrap();
+
+    let fail = Arc::new(AtomicBool::new(true));
+    let endpoint_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": { "name": "null_output" },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    controller
+        .add_output_endpoint(
+            "test_output1",
+            &endpoint_config,
+            Box::new(DroppingOutputEndpoint { fail: fail.clone() }),
+            None,
+        )
+        .unwrap();
+    controller.start();
+
+    let token = ingress_rows(&controller, "dropped", 0..10);
+
+    // The first result that is not `inprogress` must be the error: a token
+    // that is complete first and reports the error later is wrong too.
+    let mut result = None;
+    wait(
+        || {
+            let status = controller.completion_status(&token);
+            let in_progress = matches!(
+                &status,
+                Ok(response) if response.status == CompletionStatus::InProgress
+            );
+            result = Some(status);
+            !in_progress
+        },
+        default_timeout_ms(),
+    )
+    .expect("the token stayed in progress");
+    match result {
+        Some(Err(ControllerError::OutputNotDelivered { endpoint_name, .. })) => {
+            assert_eq!(endpoint_name, "test_output1")
+        }
+        status => panic!("the token did not report the dropped output: {status:?}"),
+    }
+
+    fail.store(false, Ordering::Release);
+    let token = ingress_rows(&controller, "delivered", 10..20);
+    wait_for_completion(&controller, &token);
+    controller.stop().unwrap();
 }
 
 /// The UUIDs in the checkpoint catalog, oldest first, or an empty list if the
@@ -11155,6 +11263,7 @@ fn test_output_progress_counter_waits_for_owed_output() {
             total_processed_steps: 1,
         }),
         2,
+        Ok(()),
         &unparker,
     );
     assert_eq!(processed(1), RESTORED_RECORDS);
@@ -11223,7 +11332,13 @@ fn test_removing_a_lagging_output_endpoint_republishes_completion() {
         total_processed_input_records: STEP_RECORDS,
         total_processed_steps: 1,
     };
-    status.output_batch(0, Some(step_processed), STEP_RECORDS as usize, &unparker);
+    status.output_batch(
+        0,
+        Some(step_processed),
+        STEP_RECORDS as usize,
+        Ok(()),
+        &unparker,
+    );
 
     assert_eq!(
         status.global_metrics.total_completed_steps(),
@@ -11330,12 +11445,19 @@ fn test_output_endpoint_reports_totals_at_the_checkpoint() {
         0,
         Some(processed(FIRST_BATCH as u64, 1)),
         FIRST_BATCH,
+        Ok(()),
         &unparker,
     );
 
     // The second batch takes it to the checkpoint.
     status.output_buffer(0, 4096, SECOND_BATCH);
-    status.output_batch(0, Some(processed(TOTAL, 2)), SECOND_BATCH, &unparker);
+    status.output_batch(
+        0,
+        Some(processed(TOTAL, 2)),
+        SECOND_BATCH,
+        Ok(()),
+        &unparker,
+    );
     assert_eq!(transmitted(), TOTAL);
 
     // The circuit keeps running while the checkpoint commits. What the endpoint
@@ -11348,6 +11470,7 @@ fn test_output_endpoint_reports_totals_at_the_checkpoint() {
         0,
         Some(processed(TOTAL + AFTERWARDS as u64, 3)),
         AFTERWARDS,
+        Ok(()),
         &unparker,
     );
     assert_eq!(transmitted(), TOTAL + AFTERWARDS as u64);
@@ -11383,6 +11506,7 @@ fn test_idle_output_endpoint_reports_at_once() {
             total_processed_steps: 1,
         }),
         RECORDS,
+        Ok(()),
         &unparker,
     );
 
@@ -11479,6 +11603,7 @@ fn test_output_endpoint_reports_totals_under_concurrency() {
                             total_processed_steps: 0,
                         }),
                         BATCH,
+                        Ok(()),
                         &unparker,
                     );
                 }
@@ -12102,6 +12227,7 @@ fn test_removing_last_output_endpoint_mid_step_keeps_the_frontier() {
             total_processed_steps: 1,
         }),
         10,
+        Ok(()),
         &unparker,
     );
     assert_eq!(status.global_metrics.total_completed_steps(), 1);
@@ -12224,7 +12350,7 @@ fn test_caught_up_output_endpoint_does_not_hold_back_the_frontier() {
     status.add_output(&1, "egress", &output_config, None, true);
 
     // The slow connector delivers the step it owed.
-    status.output_batch(0, Some(step), 10, &unparker);
+    status.output_batch(0, Some(step), 10, Ok(()), &unparker);
 
     assert_eq!(
         status.global_metrics.total_completed_steps(),

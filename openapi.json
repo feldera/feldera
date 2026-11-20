@@ -3760,7 +3760,7 @@
             }
           },
           "500": {
-            "description": "",
+            "description": "An output connector did not deliver all of the output for the inputs associated with the provided completion token. The error code is `OutputNotDelivered` and the message gives the name of the connector. Other internal errors also use this status.",
             "content": {
               "application/json": {
                 "schema": {
