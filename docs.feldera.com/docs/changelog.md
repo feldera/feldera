@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.385.0
+
 - Security: pipeline diagnostics replace registered Secret values with their
   references in the pipeline log, in `/status`, and in the connector errors of
   `/stats`. Connector errors, debug log lines, and compile errors that printed
