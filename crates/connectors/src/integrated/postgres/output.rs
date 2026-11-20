@@ -82,7 +82,8 @@ struct PendingBatch {
 enum TransactionState {
     /// Every statement has succeeded, so the transaction can commit.
     Open,
-    /// The connection dropped, taking the transaction and every row it held.
+    /// The connection dropped, taking the transaction and every row it held,
+    /// or the transaction could not start.
     ///
     /// Any rows written as part of this transaction are lost and must be written again.
     Lost,
@@ -455,14 +456,17 @@ These statements were successfully prepared before reconnecting. Does the table 
         Ok(())
     }
 
-    fn retry_connecting_with_backoff(&mut self) {
-        let backoff = 1000;
+    /// Reconnects, and waits for as long as the failures are temporary.
+    ///
+    /// Returns whether the worker has a connection. It has none after a
+    /// permanent failure, which this reports, or when the pipeline is stopping.
+    fn retry_connecting_with_backoff(&mut self) -> bool {
         let mut n_retries = 1;
 
         loop {
             if self.shutting_down() {
                 tracing::warn!("controller is shutting down: aborting");
-                return;
+                return false;
             }
 
             tracing::info!(
@@ -470,7 +474,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                 self.worker_idx
             );
             match self.retry_connecting() {
-                Ok(_) => return,
+                Ok(_) => return true,
                 Err(e) => {
                     // Only a failure that ends the loop leaves the endpoint
                     // unable to reach postgres.
@@ -485,19 +489,22 @@ These statements were successfully prepared before reconnecting. Does the table 
                         );
                     }
                     if !retry {
-                        return;
+                        return false;
                     }
                 }
             }
 
-            if !self.backoff_unless_shutdown(
-                Duration::from_millis(backoff * n_retries).min(Duration::from_secs(60)),
-            ) {
+            if !self.backoff_unless_shutdown(Self::backoff_after(n_retries)) {
                 tracing::warn!("controller is shutting down: aborting");
-                return;
+                return false;
             }
             n_retries += 1;
         }
+    }
+
+    /// How long to wait before the next attempt, after `failures` in a row.
+    fn backoff_after(failures: u32) -> Duration {
+        Duration::from_secs(failures.into()).min(Duration::from_secs(60))
     }
 
     /// Whether the pipeline has been asked to stop.
@@ -531,6 +538,36 @@ These statements were successfully prepared before reconnecting. Does the table 
             remaining -= slice;
         }
         true
+    }
+
+    /// Opens the transaction for a new batch.
+    ///
+    /// A batch whose transaction does not open is not lost here. This marks
+    /// the transaction [`TransactionState::Lost`], so that the worker runs no
+    /// statement for the batch, and [`Self::write_batch`] writes the batch from
+    /// the start when the batch ends. `write_batch` opens the connection again
+    /// if that is necessary, and it limits the number of attempts.
+    ///
+    /// This does not wait and does not connect again. The endpoint waits for
+    /// the reply of each worker before it gives rows to any of them, so a wait
+    /// here holds the transactions that the other workers opened.
+    ///
+    /// Returns the failure, if there is one to report.
+    fn start_batch(&mut self) -> Option<anyhow::Error> {
+        let error = self.batch_start_inner().err()?;
+        self.transaction_state = TransactionState::Lost;
+
+        // A pipeline that is stopping has no use for the transaction.
+        if self.shutting_down() {
+            tracing::warn!(
+                "controller is shutting down: abandoning the transaction that \
+                 worker-thread-{} could not start: {}",
+                self.worker_idx,
+                error.inner()
+            );
+            return None;
+        }
+        Some(error.inner())
     }
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
@@ -579,8 +616,8 @@ These statements were successfully prepared before reconnecting. Does the table 
             self.num_bytes = 0;
             self.num_rows = 0;
             return Err(BackoffError::Temporary(anyhow!(
-                "the connection to PostgreSQL dropped before the rows for table {:?} \
-                 could be committed",
+                "the connection to PostgreSQL dropped, or the transaction did not start, \
+                 before the rows for table {:?} could be committed",
                 self.table
             )));
         }
@@ -638,18 +675,63 @@ These statements were successfully prepared before reconnecting. Does the table 
     /// set of rows. Duplicates are the lesser evil for an event log, and this
     /// connector does not claim to be fault tolerant either way.
     fn write_batch(&mut self) -> AnyResult<(usize, usize)> {
+        // A worker that got no rows of this batch has nothing to write again,
+        // so its lost transaction is not a failure of the batch. The other
+        // workers can have committed all the rows.
+        if self.transaction_state == TransactionState::Lost && !self.has_pending_rows() {
+            self.transaction = None;
+
+            // One attempt to have a connection for the next batch. If it
+            // fails, the worker connects again when a batch gives it rows.
+            if let Err(e) = self.retry_connecting() {
+                tracing::warn!(
+                    "postgres: worker-thread-{} has no rows in this batch and could not \
+                     open its connection again: {}",
+                    self.worker_idx,
+                    e.inner()
+                );
+            }
+            return Ok((0, 0));
+        }
+
         let mut last_error = None;
 
         for attempt in 0..MAX_BATCH_WRITE_ATTEMPTS {
             if attempt > 0 {
-                self.retry_connecting_with_backoff();
+                // Without a connection, the attempts that are left would each
+                // fail in the same way.
+                if !self.retry_connecting_with_backoff() {
+                    if self.shutting_down() {
+                        return Err(anyhow!(
+                            "the pipeline stopped before the rows for table {:?} could be \
+                             written again; the last failure was: {}",
+                            self.table,
+                            last_error.expect("an attempt failed before this one")
+                        ));
+                    }
+                    return Err(anyhow!(
+                        "gave up writing to table {:?} because the connection to PostgreSQL \
+                         cannot be opened again, so these rows were dropped; make sure that \
+                         the server accepts connections with the URI and the credentials of \
+                         this connector; the last failure was: {}",
+                        self.table,
+                        last_error.expect("an attempt failed before this one")
+                    ));
+                }
 
                 // The connection can drop again while restarting, which is just
                 // another attempt rather than the end of the batch.
                 match self.restart_batch() {
                     Ok(()) => (),
                     Err(e) if e.should_retry() => {
-                        last_error = Some(e.inner());
+                        let error = e.inner();
+                        tracing::error!(
+                            "postgres: worker-thread-{} could not start a batch again \
+                             (attempt {} of {MAX_BATCH_WRITE_ATTEMPTS}): {error}",
+                            self.worker_idx,
+                            attempt + 1,
+                        );
+                        last_error = Some(error);
                         continue;
                     }
                     Err(e) => return Err(e.inner()),
@@ -678,6 +760,18 @@ These statements were successfully prepared before reconnecting. Does the table 
             self.table,
             last_error.expect("the loop records a failure before it gives up")
         ))
+    }
+
+    /// Whether the worker has rows of the current batch to write. A worker
+    /// can get no part of a batch, or a part that has no rows.
+    fn has_pending_rows(&self) -> bool {
+        self.pending_batch.as_ref().is_some_and(|pending| {
+            // A cursor that does not open is for the write to report.
+            pending
+                .range
+                .cursor()
+                .map_or(true, |cursor| cursor.key_valid())
+        })
     }
 
     /// Open a fresh transaction and encode the retained batch into it again.
@@ -855,55 +949,29 @@ impl PostgresWorker {
     ) {
         while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
-                WorkerCommand::Broadcast(BroadcastCommand::BatchStart) => loop {
-                    match self.batch_start_inner() {
-                        Ok(()) => {
-                            let _ = result_tx.send(WorkerResult::Ok {
-                                num_bytes: 0,
-                                num_rows: 0,
-                            });
-                            break;
-                        }
-                        // A pipeline that is stopping has no use for a
-                        // transaction, and `retry_connecting_with_backoff`
-                        // declines to reconnect once it is, so retrying would
-                        // spin. Answer the endpoint, which is waiting for a
-                        // reply, and go back to the command queue for the
-                        // shutdown already in it. This arm comes first because
-                        // the one below would otherwise take these errors.
-                        Err(e) if self.shutting_down() => {
-                            tracing::warn!(
-                                "controller is shutting down: abandoning the transaction that \
-                                 worker-thread-{} could not start: {}",
-                                self.worker_idx,
-                                e.inner()
-                            );
-                            let _ = result_tx.send(WorkerResult::Ok {
-                                num_bytes: 0,
-                                num_rows: 0,
-                            });
-                            break;
-                        }
-                        Err(e) if e.should_retry() => {
-                            tracing::error!(
-                                "error when trying to start transaction, retrying with backoff: {}",
-                                e.inner()
-                            );
-                            self.retry_connecting_with_backoff();
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(WorkerResult::Err(e.inner()));
-                            break;
-                        }
-                    }
-                },
+                WorkerCommand::Broadcast(BroadcastCommand::BatchStart) => {
+                    let _ = result_tx.send(match self.start_batch() {
+                        None => WorkerResult::Ok {
+                            num_bytes: 0,
+                            num_rows: 0,
+                        },
+                        Some(e) => WorkerResult::Err(e),
+                    });
+                }
                 WorkerCommand::Encode(range) => {
                     let extra_columns = self.extra_columns.read().clone();
-                    let result = match range.cursor() {
-                        Ok(mut cursor) => {
-                            self.encode_cursor(cursor.as_mut(), extra_columns.clone())
+                    let result = if self.transaction_state == TransactionState::Lost {
+                        // The transaction did not start, so there is nothing to
+                        // encode into: `write_batch` encodes the batch when it
+                        // has a transaction.
+                        Ok(())
+                    } else {
+                        match range.cursor() {
+                            Ok(mut cursor) => {
+                                self.encode_cursor(cursor.as_mut(), extra_columns.clone())
+                            }
+                            Err(e) => Err(e),
                         }
-                        Err(e) => Err(e),
                     };
                     // Hold on to the batch: if the connection drops before the
                     // transaction commits, `write_batch` encodes it again.
@@ -1240,11 +1308,26 @@ impl OutputConsumer for PostgresOutputEndpoint {
                     tracing::warn!("controller is shutting down: aborting");
                     return;
                 };
+                // A worker thread that ended cannot write the batch again.
+                let worker_ended = self
+                    .handles
+                    .iter()
+                    .any(|handle| handle.thread.as_ref().is_none_or(|t| t.is_finished()));
+                let error = if worker_ended {
+                    anyhow!("failed to start Postgres transaction(s): {err:#}")
+                } else {
+                    // Not fatal: the worker writes the batch again when the
+                    // batch ends, and reports there if it gives up.
+                    anyhow!(
+                        "failed to start Postgres transaction(s), the batch will be \
+                         written again: {err:#}"
+                    )
+                };
                 controller.output_transport_error(
                     self.endpoint_id,
                     &self.endpoint_name,
-                    true,
-                    anyhow!("failed to start Postgres transaction(s): {err:#}"),
+                    worker_ended,
+                    error,
                     Some("pg_batch_start"),
                 );
             }
@@ -1292,6 +1375,13 @@ impl OutputConsumer for PostgresOutputEndpoint {
             Ok(()) => {
                 tracing::debug!(
                     "postgres: flushed {num_rows} rows and {num_bytes} bytes in {elapsed:?}",
+                );
+            }
+            // A stop of the pipeline ends the wait of a worker that writes a
+            // batch again. That is not a fault of the endpoint.
+            Err(err) if controller.shutdown_token().is_cancelled() => {
+                tracing::debug!(
+                    "postgres: the pipeline stopped before the batch was written: {err:#}"
                 );
             }
             Err(err) => {
