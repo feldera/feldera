@@ -28,6 +28,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    time::{Duration, Instant},
 };
 use tempfile::NamedTempFile;
 
@@ -1711,6 +1712,18 @@ enum PoolerFault {
     /// a client log in and fails each statement to prepare, as for
     /// `ServerDown`.
     IdleSessionDown(usize),
+    /// The session that runs the next statement is on a server that became
+    /// read-only, as the old primary is after a failover. The server rejects
+    /// each statement of that session and the session stays open. This fault
+    /// selects one session and then clears itself, so a new session can write.
+    ReadOnlySession,
+    /// Each session is on a read-only server, until the server has rejected
+    /// this number of statements.
+    ReadOnlyServer(usize),
+    /// A different transaction holds a lock on the table for a long time. The
+    /// statement timeout of the server cancels each statement that writes to
+    /// the table and each statement to prepare. The session stays open.
+    LockedTable,
 }
 
 /// The state of one session of a [`FaultyPooler`].
@@ -1719,6 +1732,8 @@ struct PoolerSession {
     number: usize,
     /// How many prepared statements the session has run (Bind messages).
     statements: usize,
+    /// Set when `PoolerFault::ReadOnlySession` selects this session.
+    read_only: bool,
 }
 
 /// An error that ends a session: severity, SQLSTATE and message. PgBouncer
@@ -1733,6 +1748,12 @@ struct PoolerCounts {
     prepares: AtomicUsize,
     /// Sessions ended at a statement that ran in a transaction.
     statements: AtomicUsize,
+    /// The time of each statement that a read-only server rejected.
+    rejected_writes: Mutex<Vec<Instant>>,
+    /// Statements that wrote to a locked table.
+    cancelled_writes: AtomicUsize,
+    /// Statements to prepare that waited for a locked table.
+    cancelled_prepares: AtomicUsize,
 }
 
 /// A TCP proxy between the connector and postgres that fails in the way
@@ -1814,6 +1835,7 @@ impl FaultyPooler {
         let session = PoolerSession {
             number,
             statements: 0,
+            read_only: false,
         };
         let _ = Self::forward_client_messages(&mut client, &mut server, fault, counts, session);
         let _ = client.shutdown(Shutdown::Both);
@@ -1851,6 +1873,28 @@ impl FaultyPooler {
             let mut body = vec![0u8; length - 4];
             client.read_exact(&mut body)?;
 
+            if let Some((sqlstate, message)) = Self::reject(header[0], fault, counts, &mut session)
+            {
+                // The server does not get the statement. Skip the rest of the
+                // request, which ends with a Sync message, and answer it as
+                // the server does: an error, then ReadyForQuery. A statement
+                // that runs (Bind) is in a transaction, which has now failed.
+                let transaction_status = if header[0] == b'B' { b'E' } else { b'I' };
+                while header[0] != b'S' {
+                    client.read_exact(&mut header)?;
+                    let length = u32::from_be_bytes(header[1..].try_into().unwrap()) as usize;
+                    client.read_exact(&mut vec![0u8; length - 4])?;
+                }
+                client.write_all(&Self::error_response(&[
+                    (b'S', "ERROR"),
+                    (b'V', "ERROR"),
+                    (b'C', sqlstate),
+                    (b'M', message),
+                ]))?;
+                client.write_all(&[b'Z', 0, 0, 0, 5, transaction_status])?;
+                continue;
+            }
+
             if let Some(error) = Self::fail(header[0], &body, fault, counts, &mut session) {
                 // The session ends here, and the server rolls back what it held.
                 client.write_all(&Self::error_response(&error))?;
@@ -1885,6 +1929,52 @@ impl FaultyPooler {
             server.write_all(&header)?;
             server.write_all(&body)?;
         }
+    }
+
+    /// Returns the SQLSTATE and the message of the error that the server
+    /// answers to this message, if the fault selects the message. The server
+    /// does not run the statement, and the session stays open.
+    fn reject(
+        message_type: u8,
+        fault: &Mutex<PoolerFault>,
+        counts: &PoolerCounts,
+        session: &mut PoolerSession,
+    ) -> Option<(&'static str, &'static str)> {
+        const READ_ONLY: (&str, &str) =
+            ("25006", "cannot execute INSERT in a read-only transaction");
+        const CANCELLED: (&str, &str) = ("57014", "canceling statement due to statement timeout");
+
+        let mut fault = fault.lock().unwrap();
+        match (&mut *fault, message_type) {
+            // Bind: the connector runs a prepared statement.
+            (PoolerFault::LockedTable, b'B') => {
+                counts.cancelled_writes.fetch_add(1, Ordering::Relaxed);
+                return Some(CANCELLED);
+            }
+            // Parse: the connector prepares its statements after it logs in.
+            (PoolerFault::LockedTable, b'P') => {
+                counts.cancelled_prepares.fetch_add(1, Ordering::Relaxed);
+                return Some(CANCELLED);
+            }
+            (PoolerFault::ReadOnlySession, b'B') => {
+                *fault = PoolerFault::None;
+                session.read_only = true;
+            }
+            (PoolerFault::ReadOnlyServer(left), b'B') => {
+                *left -= 1;
+                if *left == 0 {
+                    *fault = PoolerFault::None;
+                }
+                counts.rejected_writes.lock().unwrap().push(Instant::now());
+                return Some(READ_ONLY);
+            }
+            _ => (),
+        }
+        if session.read_only && message_type == b'B' {
+            counts.rejected_writes.lock().unwrap().push(Instant::now());
+            return Some(READ_ONLY);
+        }
+        None
     }
 
     /// Returns the error that ends the session at this message, if the fault
@@ -1966,6 +2056,38 @@ impl FaultyPooler {
     }
 }
 
+/// A role that can have one connection at a time. The role goes away with
+/// this value.
+struct OneConnectionRole {
+    name: String,
+    client: postgres::Client,
+}
+
+impl OneConnectionRole {
+    const PASSWORD: &str = "feldera";
+
+    fn new(url: &str) -> Self {
+        let name = unique_pg_name("test_pg_one_connection");
+        let mut client = pg_connect(url, &None);
+        client
+            .batch_execute(&format!(
+                "CREATE ROLE {name} LOGIN PASSWORD '{}' CONNECTION LIMIT 1",
+                Self::PASSWORD
+            ))
+            .expect("failed to create the role");
+        Self { name, client }
+    }
+}
+
+impl Drop for OneConnectionRole {
+    fn drop(&mut self) {
+        let _ = self.client.batch_execute(&format!(
+            "DROP OWNED BY {name}; DROP ROLE {name}",
+            name = self.name
+        ));
+    }
+}
+
 /// A pipeline that writes one batch of rows to a new table through a
 /// [`FaultyPooler`].
 struct PoolerTest {
@@ -1993,8 +2115,20 @@ impl PoolerTest {
         records: usize,
         threads: usize,
     ) -> Self {
+        Self::build(engine, name, records, threads, None)
+    }
+
+    /// Builds the pipeline and does not start it. With a `role`, the
+    /// connector logs in as that role.
+    fn build(
+        engine: &dyn PipelineTestEngine,
+        name: &str,
+        records: usize,
+        threads: usize,
+        role: Option<&OneConnectionRole>,
+    ) -> Self {
         let url = postgres_url();
-        let pooler = FaultyPooler::start(&url);
+        let mut pooler = FaultyPooler::start(&url);
         let table_name = unique_pg_name(name);
 
         let mut data: Vec<Value> = random_records(records);
@@ -2002,6 +2136,14 @@ impl PoolerTest {
             datum["bigint_"] = Value::from(i as i64);
         }
         let input = write_records_to_temp_file(&data);
+        if let Some(role) = role {
+            let mut pooler_url = url::Url::parse(&pooler.url).unwrap();
+            pooler_url.set_username(&role.name).unwrap();
+            pooler_url
+                .set_password(Some(OneConnectionRole::PASSWORD))
+                .unwrap();
+            pooler.url = pooler_url.to_string();
+        }
         let config = pg_output_test_config(
             input.path(),
             &pooler.url,
@@ -2010,7 +2152,13 @@ impl PoolerTest {
             Some(records),
         );
 
-        let table = TempPgTable::new(&table_name, url.clone(), true, &None);
+        let mut table = TempPgTable::new(&table_name, url.clone(), true, &None);
+        if let Some(role) = role {
+            table
+                .client
+                .batch_execute(&format!("GRANT ALL ON TABLE {table_name} TO {}", role.name))
+                .expect("failed to grant the table to the role");
+        }
 
         // The connector logs in and prepares its statements while the
         // controller is built, so the proxy must have no fault yet.
@@ -2214,6 +2362,131 @@ pub fn idle_worker_without_a_session_does_not_hold_the_batch(engine: &dyn Pipeli
     );
 
     test.assert_batch_arrived("08P01");
+}
+
+/// A session on a server that became read-only loses the transaction, not the
+/// batch.
+///
+/// After a failover, a pooler can hold a session on the old primary. The
+/// server rejects each write with SQLSTATE 25006 and the session stays open.
+/// The connector took this for a statement that the server rejected, and
+/// dropped the batch. It must open a new session: the old one continues to
+/// answer, and each new attempt on it fails in the same way.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn read_only_session_does_not_lose_the_batch(engine: &dyn PipelineTestEngine) {
+    let test = PoolerTest::new(engine, "test_pg_pooler_read_only", 3000);
+
+    test.pooler.set_fault(PoolerFault::ReadOnlySession);
+    test.controller.start();
+
+    wait(|| test.batch_processed(), 180_000)
+        .expect("timeout: connector did not finish handling the input");
+
+    // The read-only session rejects each statement that it gets, so more than
+    // one rejected statement means that the connector used the session again.
+    assert_eq!(
+        test.pooler.counts.rejected_writes.lock().unwrap().len(),
+        1,
+        "the connector must use the read-only session for one statement only"
+    );
+
+    test.assert_batch_arrived("25006");
+}
+
+/// A new connection must not need a second connection slot.
+///
+/// The server or a pooler can limit the connections of the role of the
+/// connector. If the worker logs in again while its old session is open, the
+/// server refuses the login for as long as the old session stays, and the
+/// worker waits for a connection with no end.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn reconnect_needs_no_second_connection_slot(engine: &dyn PipelineTestEngine) {
+    let role = OneConnectionRole::new(&postgres_url());
+    let test = PoolerTest::build(engine, "test_pg_pooler_one_slot", 3000, 1, Some(&role));
+
+    test.pooler.set_fault(PoolerFault::ReadOnlySession);
+    test.controller.start();
+
+    wait(|| test.batch_processed(), 60_000)
+        .expect("timeout: the connector did not get a new connection");
+
+    test.assert_batch_arrived("25006");
+}
+
+/// A server that stays read-only must be waited out.
+///
+/// Each new session is read-only too, so a new connection alone does not
+/// help. Without a wait between the attempts, the connector uses its 10
+/// attempts in a few seconds, which is less than a failover takes.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn read_only_server_is_waited_out(engine: &dyn PipelineTestEngine) {
+    /// The first attempt and three new attempts.
+    const REJECTED_ATTEMPTS: usize = 4;
+
+    let test = PoolerTest::new(engine, "test_pg_pooler_read_only_wait", 3000);
+
+    test.pooler
+        .set_fault(PoolerFault::ReadOnlyServer(REJECTED_ATTEMPTS));
+    test.controller.start();
+
+    wait(|| test.batch_processed(), 180_000)
+        .expect("timeout: connector did not finish handling the input");
+
+    // An attempt stops at the first statement that the server rejects. The
+    // connector waits 0, 1 and 2 seconds before the three new attempts.
+    let rejected = test.pooler.counts.rejected_writes.lock().unwrap().clone();
+    assert_eq!(rejected.len(), REJECTED_ATTEMPTS);
+    let waited = rejected[REJECTED_ATTEMPTS - 1] - rejected[0];
+    assert!(
+        waited >= Duration::from_secs(3),
+        "the connector made {REJECTED_ATTEMPTS} attempts in {waited:?}, so it did not \
+         wait between them"
+    );
+
+    test.assert_batch_arrived("25006");
+}
+
+/// A server that answers and does not prepare the statements uses the attempts
+/// to write the batch, so the worker gives up at the limit.
+///
+/// The worker waits with no limit for a server or a pooler that is not
+/// available. A server that cancels each statement is available, so a wait
+/// with no limit would hold the output of the pipeline for as long as the
+/// cause stays, for example a lock that is never released.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn prepare_failure_on_an_open_session_uses_the_attempts(engine: &dyn PipelineTestEngine) {
+    let test = PoolerTest::new(engine, "test_pg_pooler_locked", 100);
+
+    test.pooler.set_fault(PoolerFault::LockedTable);
+    test.controller.start();
+
+    // The waits between the 10 attempts add up to 36 seconds.
+    wait(|| test.batch_processed(), 120_000)
+        .expect("timeout: the connector did not give up on the batch");
+
+    let fatal_error = {
+        let status = test.controller.status();
+        let outputs = status.output_status();
+        outputs
+            .values()
+            .next()
+            .expect("output endpoint")
+            .fatal_error()
+    };
+    let _ = test.controller.stop();
+
+    // The first attempt runs one statement. Each of the 9 new attempts stops
+    // at the first statement that the server does not prepare.
+    let counts = &test.pooler.counts;
+    assert_eq!(counts.cancelled_writes.load(Ordering::Relaxed), 1);
+    assert_eq!(counts.cancelled_prepares.load(Ordering::Relaxed), 9);
+
+    let fatal_error = fatal_error.expect("the connector must report the batch that it dropped");
+    assert!(
+        fatal_error.contains("after 10 attempts") && fatal_error.contains("E57014"),
+        "the error must give the number of attempts and the cause: {fatal_error}"
+    );
+    assert_eq!(pg_row_count(&test.url, &test.table.name), 0);
 }
 
 #[engine_test(serial, requires(PostgresRendering), services(Postgres))]
