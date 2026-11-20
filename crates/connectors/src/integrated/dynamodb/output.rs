@@ -19,7 +19,7 @@ use tracing::{debug, info, info_span, warn};
 use crate::ControllerError;
 use crate::catalog::{RecordFormat, SerBatchReader, SerCursor, SerKeyRange};
 use crate::controller::{ControllerInner, EndpointId};
-use crate::format::{Encoder, OutputConsumer};
+use crate::format::{BatchNotDelivered, Encoder, OutputConsumer};
 use crate::transport::OutputEndpoint;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 
@@ -832,8 +832,9 @@ impl OutputConsumer for DynamoDBOutputEndpoint {
         unreachable!("dynamodb integrated endpoint encodes batches via encode(), not push_key")
     }
 
-    fn batch_end(&mut self) {
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered> {
         let result = self.broadcast_and_collect(BroadcastCommand::BatchEnd);
+        let delivered = result.is_ok();
 
         // The chunks that landed count whether or not another chunk of the
         // step gave up.
@@ -895,6 +896,12 @@ impl OutputConsumer for DynamoDBOutputEndpoint {
 
         self.records_written.store(0, Ordering::Relaxed);
         self.bytes_written.store(0, Ordering::Relaxed);
+
+        if delivered {
+            Ok(())
+        } else {
+            Err(BatchNotDelivered)
+        }
     }
 }
 

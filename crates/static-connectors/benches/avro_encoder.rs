@@ -55,7 +55,7 @@ fn bench_indexed_encode(c: &mut Criterion) {
                 b.iter(|| {
                     encoder.consumer().batch_start(0, OutputBatchType::Delta);
                     encoder.encode(batch.clone().arc_as_batch_reader()).unwrap();
-                    encoder.consumer().batch_end();
+                    encoder.consumer().batch_end().unwrap();
                 });
             },
         );
@@ -82,7 +82,7 @@ fn bench_indexed_encode_scaling(c: &mut Criterion) {
                     b.iter(|| {
                         encoder.consumer().batch_start(0, OutputBatchType::Delta);
                         encoder.encode(batch.clone().arc_as_batch_reader()).unwrap();
-                        encoder.consumer().batch_end();
+                        encoder.consumer().batch_end().unwrap();
                     });
                 },
             );

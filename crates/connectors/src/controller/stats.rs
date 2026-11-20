@@ -49,7 +49,7 @@ use cpu_time::ProcessTime;
 use crossbeam::sync::Unparker;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
-    format::{BufferSize, ParseError},
+    format::{BatchNotDelivered, BufferSize, ParseError},
     metrics::ConnectorMetrics,
     preprocess::PreprocessorWatchdog,
     transport::{InputReader, Resume, Step, Watermark},
@@ -66,6 +66,7 @@ use feldera_types::{
         ExternalOutputEndpointStatus, ShortEndpointConfig,
     },
     checkpoint::CheckpointActivity,
+    completion_token::CompletionStatusResponse,
     config::{FtModel, PipelineConfig},
     coordination::Completion,
     memory_pressure::MemoryPressure,
@@ -79,6 +80,7 @@ use size_of::HumanBytes;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::Display,
+    ops::Range,
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -125,6 +127,11 @@ pub struct CompletionToken {
 
     /// Position the input stream that this token is associated with.
     count: u64,
+
+    /// The first step, as a step number, that can hold input that this token
+    /// covers.  The token reports output that the pipeline dropped in this
+    /// step or a later one, and not in an earlier one.
+    first_step: Step,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -132,14 +139,17 @@ struct ApiCompletionToken {
     u: Uuid,
     e: EndpointId,
     c: u64,
+    #[serde(default)]
+    s: Step,
 }
 
 impl CompletionToken {
-    pub fn new(incarnation: Uuid, endpoint_id: EndpointId, count: u64) -> Self {
+    pub fn new(incarnation: Uuid, endpoint_id: EndpointId, count: u64, first_step: Step) -> Self {
         Self {
             incarnation,
             endpoint_id,
             count,
+            first_step,
         }
     }
 
@@ -149,6 +159,7 @@ impl CompletionToken {
             u: self.incarnation,
             e: self.endpoint_id,
             c: self.count,
+            s: self.first_step,
         };
         let json = serde_json::to_string(&api).unwrap();
         BASE64_URL_SAFE_NO_PAD.encode(json)
@@ -164,6 +175,7 @@ impl CompletionToken {
                 incarnation: api.u,
                 endpoint_id: api.e,
                 count: api.c,
+                first_step: api.s,
             }),
             Err(e) => Err(anyhow!("error parsing completion token: {e}")),
         }
@@ -505,6 +517,20 @@ impl GlobalControllerMetrics {
         self.total_initiated_steps.load(Ordering::Acquire)
     }
 
+    /// The earliest step, as a step number, that can ingest a record that an
+    /// input endpoint receives after this call: the next step, or the step in
+    /// progress, which can be past its input.
+    pub fn earliest_input_step(&self) -> Step {
+        // Read the initiated steps first.  If the last of them is committed,
+        // it is over, whatever starts after this read.
+        let initiated = self.total_initiated_steps();
+        if self.total_committed_steps() >= initiated {
+            initiated
+        } else {
+            initiated.saturating_sub(1)
+        }
+    }
+
     pub fn num_total_committed_records(&self) -> u64 {
         self.total_committed_records.load(Ordering::Acquire)
     }
@@ -620,6 +646,10 @@ pub struct ControllerStatus {
     /// Output endpoint configs and metrics.
     outputs: OutputsStatus,
 
+    /// The name and the dropped steps of each output endpoint that was
+    /// removed after it dropped output.
+    dropped_by_removed_outputs: Mutex<VecDeque<(String, DroppedSteps)>>,
+
     /// Input that reached the circuit but has no endpoint left to report it.
     ///
     /// An endpoint hands records to the circuit with [`Self::extended`], which
@@ -685,6 +715,7 @@ impl ControllerStatus {
             checkpoint_notifier,
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
+            dropped_by_removed_outputs: Mutex::new(VecDeque::new()),
             orphaned_input: Mutex::new(BufferSize::empty()),
             input_completion_notify: Arc::new(Notify::new()),
         }
@@ -959,7 +990,18 @@ impl ControllerStatus {
     }
 
     pub fn remove_output(&self, endpoint_id: &EndpointId) {
-        self.outputs.write().remove(endpoint_id);
+        // Keep what the endpoint dropped: a token that reported the failure
+        // must not change to complete when the endpoint goes away.
+        if let Some(endpoint) = self.outputs.write().remove(endpoint_id) {
+            let dropped = endpoint.dropped_steps.into_inner().unwrap();
+            if !dropped.ranges.is_empty() {
+                let mut removed = self.dropped_by_removed_outputs.lock().unwrap();
+                removed.push_back((endpoint.endpoint_name, dropped));
+                if removed.len() > MAX_REMOVED_OUTPUTS_WITH_DROPPED_STEPS {
+                    removed.pop_front();
+                }
+            }
+        }
 
         // `total_completed_records` and `total_completed_steps` are the minimum
         // over the registered output endpoints, and this endpoint may have been
@@ -998,6 +1040,7 @@ impl ControllerStatus {
         // distributing it claims that step and then receives its output anyway, so the frontier
         // can count the step before this endpoint delivers it. That window is the one the record
         // count has always had, and it closes as soon as the endpoint delivers the batch.
+        let first_step = self.committed().total_processed_steps;
         let committed = if caught_up {
             self.committed()
         } else {
@@ -1005,8 +1048,26 @@ impl ControllerStatus {
         };
         self.outputs.write().insert(
             *endpoint_id,
-            OutputEndpointStatus::new(endpoint_name, config, committed, initial_statistics),
+            OutputEndpointStatus::new(
+                endpoint_name,
+                config,
+                committed,
+                first_step,
+                initial_statistics,
+            ),
         );
+    }
+
+    /// The output endpoint now gets the output of the circuit.
+    ///
+    /// The endpoint does not answer for the steps that the circuit committed
+    /// before this call.  Its status exists earlier, from [`Self::add_output`],
+    /// and the circuit can commit steps between the two calls.
+    pub fn output_joined(&self, endpoint_id: &EndpointId) {
+        let first_step = self.committed().total_processed_steps;
+        if let Some(endpoint) = self.output_status().get(endpoint_id) {
+            endpoint.first_step.store(first_step, Ordering::Release);
+        }
     }
 
     /// Total number of records currently buffered by all input endpoints.
@@ -1319,32 +1380,60 @@ impl ControllerStatus {
     }
 
     /// Generate completion token for an endpoint based on the current number of records ingested by this endpoint.
+    ///
+    /// `first_step` is the first step that can hold input that the token
+    /// covers, if the caller knows it: see [`Self::earliest_input_step`].
+    /// Without it, the token covers the input that the endpoint received
+    /// after the previous token for this endpoint.
     pub fn completion_token(
         &self,
         endpoint_name: &str,
         endpoint_id: EndpointId,
+        first_step: Option<Step>,
     ) -> Result<CompletionToken, ControllerError> {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
-            let num_input_records = endpoint_stats.completion_token(&self.global_metrics);
+            let (num_input_records, first_step) =
+                endpoint_stats.completion_token(&self.global_metrics, first_step);
             Ok(CompletionToken::new(
                 self.global_metrics.incarnation_uuid,
                 endpoint_id,
                 num_input_records,
+                first_step,
             ))
         } else {
             Err(ControllerError::unknown_input_endpoint(endpoint_name))
         }
     }
 
+    /// The earliest step, as a step number, that can ingest a record that an
+    /// input endpoint receives after this call.
+    pub fn earliest_input_step(&self) -> Step {
+        self.global_metrics.earliest_input_step()
+    }
+
+    /// The first output endpoint that dropped output of one of `steps`, with
+    /// the steps that it dropped together.
+    fn dropped_output(&self, steps: &Range<Step>) -> Option<(String, Range<Step>)> {
+        let live = self.output_status().values().find_map(|endpoint| {
+            let dropped = endpoint.dropped_steps.lock().unwrap().overlap(steps)?;
+            Some((endpoint.endpoint_name.clone(), dropped))
+        });
+        live.or_else(|| {
+            let removed = self.dropped_by_removed_outputs.lock().unwrap();
+            removed
+                .iter()
+                .find_map(|(name, dropped)| Some((name.clone(), dropped.overlap(steps)?)))
+        })
+    }
+
     /// Check completion status of `completion_token`.
     ///
-    /// Returns `None` if the token is definitely incomplete, `Some(step)` if it
-    /// is complete once `GlobalControllerMetrics::total_completed_steps`
-    /// reaches `step`, or an error if the token is invalid.
+    /// Returns an error if the token is invalid, or if an output endpoint
+    /// dropped output of a step that the token covers.
     pub fn completion_status(
         &self,
         completion_token: &CompletionToken,
-    ) -> Result<Option<Step>, ControllerError> {
+    ) -> Result<CompletionStatusResponse, ControllerError> {
         if completion_token.incarnation != self.global_metrics.incarnation_uuid {
             return Err(ControllerError::pipeline_restarted(&format!(
                 "Completion token was created by a previous incarnation of the pipeline (incarnation uuid: {}) and is not valid for the current incarnation ({}). This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.",
@@ -1352,13 +1441,32 @@ impl ControllerStatus {
             )));
         }
 
-        if let Some(endpoint_stats) = self.input_status().get(&completion_token.endpoint_id) {
-            Ok(endpoint_stats.completion_status(completion_token.count))
-        } else {
-            Err(ControllerError::unknown_endpoint_in_completion_token(
+        let Some(step) = self
+            .input_status()
+            .get(&completion_token.endpoint_id)
+            .map(|endpoint_stats| endpoint_stats.completion_status(completion_token.count))
+        else {
+            return Err(ControllerError::unknown_endpoint_in_completion_token(
                 completion_token.endpoint_id,
-            ))
+            ));
+        };
+
+        // Read the count before the dropped steps.  An output endpoint records
+        // the steps that it dropped before it counts them as processed, so a
+        // count that completes the token implies that each failure is visible.
+        let total_completed_steps = self.global_metrics.total_completed_steps();
+        if let Some(step) = step
+            && let Some((endpoint_name, dropped)) =
+                self.dropped_output(&(completion_token.first_step..step))
+        {
+            return Err(ControllerError::output_not_delivered(
+                &endpoint_name,
+                dropped.start,
+                dropped.end - 1,
+            ));
         }
+
+        Ok(CompletionStatusResponse::new(step, total_completed_steps))
     }
 
     /// Update the global counters after receiving a new input batch.
@@ -1520,18 +1628,20 @@ impl ControllerStatus {
 
     /// `processed` is statistics about records processed by the circuit before
     /// this output batch was produced or `None` if the circuit is executing a
-    /// transaction.
+    /// transaction.  `delivered` is an error if the endpoint dropped some of
+    /// the batch.
     pub fn output_batch(
         &self,
         endpoint_id: EndpointId,
         processed: Option<ProcessedRecords>,
         num_records: usize,
+        delivered: Result<(), BatchNotDelivered>,
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let threshold = endpoint_stats.config.connector_config.max_queued_records();
 
-            let old = endpoint_stats.output_batch(processed, num_records);
+            let old = endpoint_stats.output_batch(processed, num_records, delivered);
 
             let new = old - (num_records as u64);
             if (old >= threshold && new <= threshold) || new == 0 {
@@ -1550,9 +1660,19 @@ impl ControllerStatus {
         }
     }
 
-    pub fn output_buffered_batches(&self, endpoint_id: EndpointId, processed: ProcessedRecords) {
+    /// `delivered` is an error if the endpoint dropped some of the buffer.
+    /// `uncounted_output` tells that the buffer also held output of steps
+    /// that `processed` does not include, which are the steps of an open
+    /// transaction.
+    pub fn output_buffered_batches(
+        &self,
+        endpoint_id: EndpointId,
+        processed: ProcessedRecords,
+        delivered: Result<(), BatchNotDelivered>,
+        uncounted_output: bool,
+    ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.output_buffered_batches(processed);
+            endpoint_stats.output_buffered_batches(processed, delivered, uncounted_output);
         }
         self.update_total_completed_records();
     }
@@ -2055,6 +2175,14 @@ impl TryFrom<StepResults> for InputLog {
 
 const MAX_TOKENLIST_LEN: usize = 1_000_000;
 
+/// The number of completed tokens that the list keeps.
+///
+/// A token whose entry is gone gets the last step of a newer token.  It then
+/// also reports output that an output connector dropped for the newer token,
+/// so the list keeps the entries of the tokens that clients are likely to
+/// ask about again.
+const MAX_COMPLETED_TOKENS: usize = 1024;
+
 /// Tracks the set of tokens issued by the connector and the state needed to report
 /// completion status for these tokens.
 ///
@@ -2069,6 +2197,17 @@ const MAX_TOKENLIST_LEN: usize = 1_000_000;
 ///
 /// 2. Wait until all of the records output for the labeled step have been sent
 ///    to the output connector, by watching the `total_completed_steps` counter.
+///
+/// # Dropped output
+///
+/// A token also has a first step, which it carries itself: see
+/// [`CompletionToken::first_step`].  The steps from the first step to the
+/// labeled step are the steps that can hold input that the token covers.  If
+/// an output connector dropped output of one of them, the token reports it.
+///
+/// Without a first step from the caller, a token covers the input that the
+/// connector received after the previous token.  The list finds the first
+/// step from what the steps report in [`TokenListInner::ingested`].
 ///
 /// # Garbage collection
 ///
@@ -2091,12 +2230,55 @@ struct TokenList(Mutex<TokenListInner>);
 struct TokenListInner {
     /// List of (token, step) mappings.
     token_list: VecDeque<(u64, Option<Step>)>,
+
+    /// The number of records from the connector that the circuit ingested, as
+    /// of the last step that reported input in [`Self::ingested`].
+    circuit_input_records: u64,
+
+    /// `total_initiated_steps` of the last step that reported input.
+    last_input_step: Step,
+
+    /// The newest token.  It stays when the token leaves the list.
+    newest_token: u64,
+
+    /// The first step of the newest token, as a step number.
+    newest_first_step: Step,
+
+    /// The step, as a step number, that ingested the first record after
+    /// `newest_token`, or `None` if no step reported such a record.
+    next_first_step: Option<Step>,
 }
 
 impl TokenListInner {
-    fn new() -> Self {
+    /// `circuit_input_records` is the number of records from the connector
+    /// that the circuit ingested before the pipeline started: the records of
+    /// the checkpoint that the pipeline resumed from, which no token of this
+    /// run covers.
+    fn new(circuit_input_records: u64) -> Self {
         Self {
             token_list: VecDeque::new(),
+            circuit_input_records,
+            last_input_step: 0,
+            newest_token: circuit_input_records,
+            newest_first_step: 0,
+            next_first_step: None,
+        }
+    }
+
+    /// A step reports the records that it ingested from the connector.
+    ///
+    /// # Arguments
+    ///
+    /// * `connector_circuit_input_records` - total number of inputs **from this connector** ingested by the circuit.
+    /// * `total_initiated_steps` - Number of steps that have been initiated, the reporting step included.
+    fn ingested(&mut self, connector_circuit_input_records: u64, total_initiated_steps: Step) {
+        if connector_circuit_input_records <= self.circuit_input_records {
+            return;
+        }
+        self.circuit_input_records = connector_circuit_input_records;
+        self.last_input_step = total_initiated_steps;
+        if self.next_first_step.is_none() && connector_circuit_input_records > self.newest_token {
+            self.next_first_step = Some(total_initiated_steps.saturating_sub(1));
         }
     }
 
@@ -2127,7 +2309,11 @@ impl TokenListInner {
             .partition_point(|(_token, label)| label.is_some());
 
         for (token, label) in self.token_list.range_mut(first_unlabeled..) {
-            if *token <= connector_circuit_input_records {
+            if *token <= self.circuit_input_records {
+                // A step reported the last record of the token, so the exact
+                // step is known.  The current step can be much later.
+                *label = Some(self.last_input_step)
+            } else if *token <= connector_circuit_input_records {
                 *label = Some(total_initiated_steps)
             } else {
                 break;
@@ -2142,8 +2328,9 @@ impl TokenListInner {
                 false
             }
         });
-        if first_completed > 0 {
-            self.token_list.drain(0..first_completed - 1);
+        if first_completed > MAX_COMPLETED_TOKENS {
+            self.token_list
+                .drain(0..first_completed - MAX_COMPLETED_TOKENS);
         }
 
         // If we've overflowed, delete the newest ones so that the old ones have
@@ -2157,17 +2344,40 @@ impl TokenListInner {
     ///
     /// * `token_input_records` - the number of records queued by the connector so far
     ///   (not all of these record have been pushed to the circuit).
-    fn add_token(&mut self, token_input_records: u64) {
+    /// * `earliest_input_step` - [`GlobalControllerMetrics::earliest_input_step`],
+    ///   read before `token_input_records`.
+    ///
+    /// Returns the first step of the token, for a token that covers the
+    /// records after the previous token.
+    fn add_token(&mut self, token_input_records: u64, earliest_input_step: Step) -> Step {
+        if token_input_records > self.newest_token {
+            // If no step reported a record after the previous token, the first
+            // such record goes into the step in progress or a later step.  It
+            // is a later step if the step in progress already has its input
+            // from the connector: `last_input_step` is the number of the next
+            // step after the last one that reported records.
+            self.newest_first_step = self
+                .next_first_step
+                .unwrap_or(earliest_input_step.max(self.last_input_step));
+            self.newest_token = token_input_records;
+            // If a step already reported a record after this token, the old
+            // value stays: it is a lower bound for the next token.
+            if self.circuit_input_records <= token_input_records {
+                self.next_first_step = None;
+            }
+        }
+
         // Don't track more than one token for the same offset.
         if let Some((token, _label)) = self.token_list.back() {
             // The number of ingested records grows monotonically.
             debug_assert!(*token <= token_input_records);
             if *token >= token_input_records {
-                return;
+                return self.newest_first_step;
             }
         }
 
         self.token_list.push_back((token_input_records, None));
+        self.newest_first_step
     }
 
     /// Check completion status of `token`, an offset in the connector's input stream.
@@ -2191,8 +2401,8 @@ impl TokenListInner {
 }
 
 impl TokenList {
-    fn new() -> Self {
-        Self(Mutex::new(TokenListInner::new()))
+    fn new(circuit_input_records: u64) -> Self {
+        Self(Mutex::new(TokenListInner::new(circuit_input_records)))
     }
     fn update(
         &self,
@@ -2207,8 +2417,33 @@ impl TokenList {
         );
     }
 
-    fn add_token(&self, token_input_records: u64) {
-        self.0.lock().unwrap().add_token(token_input_records);
+    /// A step reports its input, then [`Self::update`].
+    fn extended(
+        &self,
+        connector_circuit_input_records: u64,
+        total_initiated_steps: Step,
+        total_completed_steps: Step,
+    ) {
+        let mut inner = self.0.lock().unwrap();
+        inner.ingested(connector_circuit_input_records, total_initiated_steps);
+        inner.update(
+            connector_circuit_input_records,
+            total_initiated_steps,
+            total_completed_steps,
+        );
+    }
+
+    /// Adds a token for the current value of `total_records`.  Returns the
+    /// token and its first step.
+    ///
+    /// This reads the offset with the list locked, so that the list gets
+    /// the tokens in the order of their offsets.  A token that came after a
+    /// newer one would take the first step of the newer one.
+    fn add_token(&self, total_records: &AtomicU64, earliest_input_step: Step) -> (u64, Step) {
+        let mut inner = self.0.lock().unwrap();
+        let token_input_records = total_records.load(Ordering::Acquire);
+        let first_step = inner.add_token(token_input_records, earliest_input_step);
+        (token_input_records, first_step)
     }
 
     /// Check completion status of `token`, an offset in the connector's input stream.
@@ -2586,6 +2821,10 @@ pub struct InputEndpointStatus {
     /// Runs inside [Self::completion_token] just before the token is added.
     #[cfg(test)]
     completion_token_hook: Mutex<Option<CompletionTokenHook>>,
+
+    /// Runs inside [Self::extended] just before the token list gets the step.
+    #[cfg(test)]
+    extended_hook: Mutex<Option<CompletionTokenHook>>,
 }
 
 #[cfg(test)]
@@ -2671,15 +2910,19 @@ impl InputEndpointStatus {
             records: config.connector_config.max_queued_records() as usize,
             bytes: config.connector_config.max_queued_bytes() as usize,
         };
+        let metrics = initial_statistics
+            .map_or(InputEndpointMetrics::default(), |initial_statistics| {
+                initial_statistics.into()
+            });
+        // A checkpoint is complete, and so are the records that it restores.
+        let completion_tokens =
+            TokenList::new(metrics.circuit_input_records.load(Ordering::Acquire));
         Self {
             endpoint_name: endpoint_name.to_string(),
             configured_max_queued,
             max_queued: configured_max_queued,
             config,
-            metrics: initial_statistics
-                .map_or(InputEndpointMetrics::default(), |initial_statistics| {
-                    initial_statistics.into()
-                }),
+            metrics,
             fatal_error: Mutex::new(None),
             transport_errors: Mutex::new(transport_errors),
             parse_errors: Mutex::new(parse_errors),
@@ -2693,10 +2936,12 @@ impl InputEndpointStatus {
             reader: None,
             fault_tolerance,
             custom_metrics: None,
-            completion_tokens: TokenList::new(),
+            completion_tokens,
             completed_frontier: WatermarkTracker::new(),
             #[cfg(test)]
             completion_token_hook: Mutex::new(None),
+            #[cfg(test)]
+            extended_hook: Mutex::new(None),
         }
     }
 
@@ -2870,7 +3115,6 @@ impl InputEndpointStatus {
                 })
                 .record();
         }
-        *self.progress.lock().unwrap() = Some(step_results);
         // Keep the size of the last batch that has data, so that an idle
         // connector shows its last real batch.
         if num_records > 0 || num_bytes > 0 {
@@ -2894,21 +3138,41 @@ impl InputEndpointStatus {
             .metrics
             .circuit_input_records
             .fetch_add(num_records, Ordering::AcqRel);
-        self.completion_tokens.update(
+        #[cfg(test)]
+        if let Some(hook) = self.extended_hook.lock().unwrap().take() {
+            hook(self);
+        }
+        self.completion_tokens.extended(
             old_circuit_input_records + num_records,
             total_initiated_steps,
             total_completed_steps,
         );
         self.completed_frontier
             .append(watermarks, total_circuit_input_records);
+
+        // Publish the input last.  The circuit takes it from here and can
+        // then commit the step.  A token that is made after that commit
+        // takes the next step as its first step, unless the token list
+        // already has this step.
+        *self.progress.lock().unwrap() = Some(step_results);
     }
 
     /// Push a new completion token that corresponds to the current input offset to the
     /// `completion_tokens` queue.
     ///
-    /// Returns the input offset that can be used to build `CompletionToken`.
-    fn completion_token(&self, global_metrics: &GlobalControllerMetrics) -> u64 {
-        let token_input_records = self.metrics.total_records.load(Ordering::Acquire);
+    /// `first_step` is the first step that can hold input that the token
+    /// covers, if the caller knows it.
+    ///
+    /// Returns the input offset and the first step that can be used to build
+    /// `CompletionToken`.
+    fn completion_token(
+        &self,
+        global_metrics: &GlobalControllerMetrics,
+        first_step: Option<Step>,
+    ) -> (u64, Step) {
+        // Read the step before the offset: a record that arrives after the
+        // offset then goes into this step or a later one.
+        let earliest_input_step = global_metrics.earliest_input_step();
 
         #[cfg(test)]
         if let Some(hook) = self.completion_token_hook.lock().unwrap().take() {
@@ -2917,7 +3181,9 @@ impl InputEndpointStatus {
 
         // To avoid a race, we add a token _before_ reading the circuit_input_records
         // metric and using it to update the token list.
-        self.completion_tokens.add_token(token_input_records);
+        let (token_input_records, tracked_first_step) = self
+            .completion_tokens
+            .add_token(&self.metrics.total_records, earliest_input_step);
 
         let connector_circuit_input_records =
             self.metrics.circuit_input_records.load(Ordering::Acquire);
@@ -2930,7 +3196,10 @@ impl InputEndpointStatus {
             global_metrics.total_initiated_steps(),
             global_metrics.total_completed_steps(),
         );
-        token_input_records
+        (
+            token_input_records,
+            first_step.unwrap_or(tracked_first_step),
+        )
     }
 
     /// Check completion status of `token`, an offset in the connector's input stream.
@@ -3284,6 +3553,65 @@ pub struct OutputEndpointStatus {
     /// this latch instead, and the endpoint takes the reading itself the
     /// moment it gets there.
     checkpoint_latch: Mutex<Option<CheckpointLatch>>,
+
+    /// The steps whose output this endpoint dropped, in part or in full.  A
+    /// completion token that covers one of them reports the failure.
+    dropped_steps: Mutex<DroppedSteps>,
+
+    /// The number of steps that the pipeline had committed when the endpoint
+    /// started to get the output of the circuit.  The endpoint does not
+    /// answer for these steps.
+    first_step: AtomicU64,
+}
+
+/// The most ranges that [`DroppedSteps`] keeps.
+const MAX_DROPPED_STEP_RANGES: usize = 1024;
+
+/// The most removed output endpoints whose dropped steps the pipeline keeps.
+const MAX_REMOVED_OUTPUTS_WITH_DROPPED_STEPS: usize = 64;
+
+/// The steps whose output an output endpoint did not deliver in full, as
+/// ranges of step numbers in increasing order.
+#[derive(Default)]
+struct DroppedSteps {
+    ranges: VecDeque<Range<Step>>,
+
+    /// The endpoint dropped output of steps that it has not yet counted as
+    /// processed.
+    pending: bool,
+}
+
+impl DroppedSteps {
+    /// Adds `steps`, which start at or after the end of each range added
+    /// before.
+    fn push(&mut self, steps: Range<Step>) {
+        match self.ranges.back_mut() {
+            Some(last) if last.end == steps.start => last.end = steps.end,
+            _ => self.ranges.push_back(steps),
+        }
+        // Join the two oldest ranges instead of forgetting one.  A token can
+        // then report a failure of a step between them, but never misses one.
+        if self.ranges.len() > MAX_DROPPED_STEP_RANGES
+            && let Some(oldest) = self.ranges.pop_front()
+            && let Some(next) = self.ranges.front_mut()
+        {
+            next.start = oldest.start;
+        }
+    }
+
+    /// The first range that has a step in common with `steps`.
+    fn overlap(&self, steps: &Range<Step>) -> Option<Range<Step>> {
+        if steps.is_empty() {
+            return None;
+        }
+        let first = self
+            .ranges
+            .partition_point(|range| range.end <= steps.start);
+        self.ranges
+            .get(first)
+            .filter(|range| range.start < steps.end)
+            .cloned()
+    }
 }
 
 /// What an output endpoint had put on the transport at a particular moment.
@@ -3419,6 +3747,7 @@ impl OutputEndpointStatus {
         endpoint_name: &str,
         config: &OutputEndpointConfig,
         committed: ProcessedRecords,
+        first_step: Step,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Self {
         // error lists are restored from the checkpoint if present, empty otherwise
@@ -3440,6 +3769,8 @@ impl OutputEndpointStatus {
             custom_metrics: None,
             paused: AtomicBool::new(config.connector_config.paused),
             checkpoint_latch: Mutex::new(None),
+            dropped_steps: Mutex::new(DroppedSteps::default()),
+            first_step: AtomicU64::new(first_step),
         }
     }
 
@@ -3460,9 +3791,61 @@ impl OutputEndpointStatus {
         self.metrics.queued_batches.fetch_add(1, Ordering::AcqRel);
     }
 
+    /// Records the steps whose output the endpoint dropped.
+    ///
+    /// `delivered` is the result of the output that the endpoint just
+    /// processed.  `total_processed_steps` is the new value of
+    /// [OutputEndpointMetrics::total_processed_steps], if that output ends one
+    /// or more steps.
+    ///
+    /// Call before the store of the new count: a reader that sees the count
+    /// must also see the dropped steps that the count includes.
+    ///
+    /// `uncounted_output` tells that the output also holds output of steps
+    /// that `total_processed_steps` does not include: the output buffer can
+    /// hold output of an open transaction.
+    fn note_delivery(
+        &self,
+        delivered: Result<(), BatchNotDelivered>,
+        total_processed_steps: Option<Step>,
+        uncounted_output: bool,
+    ) {
+        let dropped = delivered.is_err();
+        let mut dropped_steps = self.dropped_steps.lock().unwrap();
+        match total_processed_steps {
+            Some(end) => {
+                // An endpoint that is added to a running pipeline starts at
+                // zero.  It does not answer for the steps before it was added.
+                let start = self
+                    .num_total_processed_steps()
+                    .max(self.first_step.load(Ordering::Acquire));
+                if start < end {
+                    if dropped_steps.pending || dropped {
+                        dropped_steps.push(start..end);
+                    }
+                    dropped_steps.pending = false;
+                }
+                // Otherwise the count gives no step that the endpoint answers
+                // for, so there is no step to record for this output.  An
+                // example is the first snapshot of a new endpoint.  A failure
+                // of an open transaction stays pending.
+                dropped_steps.pending |= dropped && uncounted_output;
+            }
+            // The steps of an open transaction have no count yet: the commit
+            // gives it, and the dropped output is part of the transaction.
+            None => dropped_steps.pending |= dropped,
+        }
+    }
+
     /// A batch has been pushed to the output transport directly from the queue,
     /// bypassing the buffer.
-    fn output_batch(&self, processed: Option<ProcessedRecords>, num_records: usize) -> u64 {
+    fn output_batch(
+        &self,
+        processed: Option<ProcessedRecords>,
+        num_records: usize,
+        delivered: Result<(), BatchNotDelivered>,
+    ) -> u64 {
+        self.note_delivery(delivered, processed.map(|p| p.total_processed_steps), false);
         if let Some(processed) = processed {
             self.metrics
                 .total_processed_input_records
@@ -3507,7 +3890,17 @@ impl OutputEndpointStatus {
     ///
     /// * `processed` - the output of the endpoint is now up to speed with the
     ///   output of the circuit after processing these records.
-    fn output_buffered_batches(&self, processed: ProcessedRecords) {
+    fn output_buffered_batches(
+        &self,
+        processed: ProcessedRecords,
+        delivered: Result<(), BatchNotDelivered>,
+        uncounted_output: bool,
+    ) {
+        self.note_delivery(
+            delivered,
+            Some(processed.total_processed_steps),
+            uncounted_output,
+        );
         self.metrics.buffered_records.store(0, Ordering::Release);
         self.metrics.buffered_batches.store(0, Ordering::Release);
 
@@ -3583,18 +3976,22 @@ impl OutputEndpointStatus {
 #[cfg(test)]
 mod test {
     use super::{
-        ConnectorError, ConnectorErrorList, ControllerStatus, GlobalControllerMetrics,
-        InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults,
+        CompletionToken, ConnectorError, ConnectorErrorList, ControllerStatus, DroppedSteps,
+        GlobalControllerMetrics, InputEndpointMetrics, InputEndpointStatus,
+        MAX_CONNECTOR_ERROR_LEN, MAX_DROPPED_STEP_RANGES, ProcessedRecords, StepResults,
         bound_error_message, secret_redactor,
     };
-    use crate::format::BufferSize;
+    use crate::controller::checkpoint::CheckpointInputEndpointMetrics;
+    use crate::format::{BatchNotDelivered, BufferSize};
     use anyhow::anyhow;
     use chrono::Utc;
     use crossbeam::sync::Parker;
-    use feldera_types::config::InputEndpointConfig;
+    use feldera_adapterlib::{errors::journal::ControllerError, transport::Step};
+    use feldera_types::completion_token::CompletionStatus;
     use feldera_types::config::PipelineConfig;
+    use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig};
     use serde_json::json;
-    use std::sync::{Arc, atomic::Ordering};
+    use std::sync::{Arc, Mutex, atomic::Ordering};
     use uuid::Uuid;
 
     /// A completion token must be labeled with the step that ingests its
@@ -3631,12 +4028,550 @@ mod test {
             }
         }));
 
-        let token = endpoint.completion_token(&global);
+        let (token, first_step) = endpoint.completion_token(&global, None);
         assert_eq!(token, 3);
+        assert_eq!(first_step, 5);
 
         // The records are in step 5, so the token completes only once
         // `total_completed_steps` reaches 6.
         assert_eq!(endpoint.completion_status(token), Some(6));
+    }
+
+    #[test]
+    fn dropped_steps_overlap() {
+        let mut dropped = DroppedSteps::default();
+        assert_eq!(dropped.overlap(&(0..100)), None);
+
+        dropped.push(3..5);
+        dropped.push(5..6);
+        dropped.push(9..10);
+        // Ranges that touch become one range.
+        assert_eq!(dropped.ranges, [3..6, 9..10]);
+
+        assert_eq!(dropped.overlap(&(0..3)), None);
+        assert_eq!(dropped.overlap(&(0..4)), Some(3..6));
+        assert_eq!(dropped.overlap(&(5..6)), Some(3..6));
+        assert_eq!(dropped.overlap(&(6..9)), None);
+        assert_eq!(dropped.overlap(&(6..20)), Some(9..10));
+        assert_eq!(dropped.overlap(&(10..20)), None);
+        // A range with no step, also one that starts in a dropped range.
+        assert_eq!(dropped.overlap(&(4..4)), None);
+        let (start, end) = (5, 4);
+        assert_eq!(dropped.overlap(&(start..end)), None);
+    }
+
+    /// At the limit, the two oldest ranges become one range, so no dropped
+    /// step is lost.
+    #[test]
+    fn dropped_steps_are_bounded() {
+        let mut dropped = DroppedSteps::default();
+        let ranges = MAX_DROPPED_STEP_RANGES as Step + 1;
+        for i in 0..ranges {
+            dropped.push(2 * i..2 * i + 1);
+        }
+        assert_eq!(dropped.ranges.len(), MAX_DROPPED_STEP_RANGES);
+        assert_eq!(dropped.ranges[0], 0..3);
+        assert_eq!(dropped.overlap(&(0..1)), Some(0..3));
+        assert_eq!(
+            dropped.overlap(&(2 * ranges - 2..2 * ranges)),
+            Some(2 * ranges - 2..2 * ranges - 1)
+        );
+    }
+
+    /// A pipeline with the input endpoint `source` and the output endpoint
+    /// `sink`.  The test does the steps of the pipeline.
+    struct TokenPipeline {
+        status: ControllerStatus,
+        parker: Parker,
+        /// The number of records that the circuit ingested.
+        ingested: u64,
+    }
+
+    impl TokenPipeline {
+        fn new() -> Self {
+            let status = ControllerStatus::new(
+                serde_json::from_value::<PipelineConfig>(json!({"name": "test"})).unwrap(),
+                0,
+                None,
+                Uuid::nil(),
+            );
+            let input_config = serde_json::from_value(json!({
+                "stream": "t",
+                "transport": {"name": "datagen", "config": {}},
+            }))
+            .unwrap();
+            status.inputs.write().insert(
+                0,
+                InputEndpointStatus::new("source", input_config, None, None, None),
+            );
+            status.add_output(&0, "sink", &Self::output_config(), None, true);
+            Self {
+                status,
+                parker: Parker::new(),
+                ingested: 0,
+            }
+        }
+
+        fn amt(records: usize) -> BufferSize {
+            BufferSize {
+                records,
+                bytes: records,
+            }
+        }
+
+        /// The input endpoint receives `records` records.
+        fn receive(&self, records: usize) {
+            self.status
+                .input_batch_from_endpoint(0, Self::amt(records), self.parker.unparker());
+        }
+
+        /// A step starts and ingests `records` records from the input endpoint.
+        fn start_step(&mut self, records: usize) {
+            let unparker = self.parker.unparker();
+            self.status
+                .global_metrics
+                .total_initiated_steps
+                .fetch_add(1, Ordering::AcqRel);
+            let results = StepResults {
+                amt: Self::amt(records),
+                resume: None,
+            };
+            self.status
+                .extended(0, results, Vec::new(), unparker, unparker);
+            self.ingested += records as u64;
+        }
+
+        fn output_config() -> OutputEndpointConfig {
+            serde_json::from_value(json!({
+                "stream": "v",
+                "transport": {"name": "file_output", "config": {"path": "/dev/null"}},
+                "format": {"name": "csv", "config": {}},
+            }))
+            .unwrap()
+        }
+
+        /// The circuit commits the steps that started.
+        fn commit(&self) -> ProcessedRecords {
+            let processed = ProcessedRecords {
+                total_processed_input_records: self.ingested,
+                total_processed_steps: self.status.global_metrics.total_initiated_steps(),
+            };
+            self.status.set_committed(processed);
+            processed
+        }
+
+        /// The step ends and the output endpoint processes its output, with
+        /// the result `delivered`.  With `commit`, the circuit commits the
+        /// step, which is what a step outside a transaction does.
+        fn end_step(&self, commit: bool, delivered: Result<(), BatchNotDelivered>) {
+            let processed = commit.then(|| self.commit());
+            self.status.enqueue_batch(0, 1);
+            self.status
+                .output_batch(0, processed, 1, delivered, self.parker.unparker());
+        }
+
+        /// One step outside a transaction.
+        fn step(&mut self, records: usize, delivered: Result<(), BatchNotDelivered>) {
+            self.start_step(records);
+            self.end_step(true, delivered);
+        }
+
+        fn token(&self, first_step: Option<Step>) -> CompletionToken {
+            self.status
+                .completion_token("source", 0, first_step)
+                .unwrap()
+        }
+
+        /// The status of `token`, or the steps of the output that `sink`
+        /// dropped.
+        fn check(&self, token: &CompletionToken) -> Result<CompletionStatus, (Step, Step)> {
+            match self.status.completion_status(token) {
+                Ok(response) => Ok(response.status),
+                Err(ControllerError::OutputNotDelivered {
+                    endpoint_name,
+                    first_step,
+                    last_step,
+                }) => {
+                    assert_eq!(endpoint_name, "sink");
+                    Err((first_step, last_step))
+                }
+                Err(error) => panic!("unexpected error: {error}"),
+            }
+        }
+    }
+
+    /// A token reports output that an output endpoint dropped for its input.
+    /// A token for later input does not.
+    #[test]
+    fn completion_token_reports_dropped_output() {
+        let mut pipeline = TokenPipeline::new();
+
+        pipeline.receive(3);
+        let dropped = pipeline.token(None);
+        assert_eq!(pipeline.check(&dropped), Ok(CompletionStatus::InProgress));
+        pipeline.step(3, Err(BatchNotDelivered));
+        assert_eq!(pipeline.check(&dropped), Err((0, 0)));
+
+        pipeline.receive(2);
+        let delivered = pipeline.token(None);
+        pipeline.step(2, Ok(()));
+        assert_eq!(pipeline.check(&delivered), Ok(CompletionStatus::Complete));
+
+        // The first token still reports the failure.
+        assert_eq!(pipeline.check(&dropped), Err((0, 0)));
+    }
+
+    /// A token that was complete stays complete when the output for a later
+    /// token is dropped, also after the steps that follow.
+    #[test]
+    fn completed_token_does_not_report_a_later_failure() {
+        let mut pipeline = TokenPipeline::new();
+
+        pipeline.receive(1);
+        let delivered = pipeline.token(None);
+        pipeline.step(1, Ok(()));
+        pipeline.receive(1);
+        let dropped = pipeline.token(None);
+        pipeline.step(1, Err(BatchNotDelivered));
+
+        // These steps let the list remove the entries of old tokens.
+        pipeline.step(0, Ok(()));
+        pipeline.step(0, Ok(()));
+        assert_eq!(pipeline.check(&delivered), Ok(CompletionStatus::Complete));
+        assert_eq!(pipeline.check(&dropped), Err((1, 1)));
+    }
+
+    /// The circuit cannot take the input of a step, and commit the step,
+    /// before the token list has the step.  If it could, a token that is made
+    /// between the two would take the next step as its first step, and would
+    /// not report output dropped in the step that has its records.
+    #[test]
+    fn step_input_is_published_after_the_token_list_has_the_step() {
+        let global = Arc::new(GlobalControllerMetrics::new(0, None, Uuid::nil()));
+
+        // Step 10 is in progress.
+        global.total_initiated_steps.store(11, Ordering::Release);
+        global.total_committed_steps.store(10, Ordering::Release);
+
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+        }))
+        .unwrap();
+        let endpoint = InputEndpointStatus::new("test_endpoint", config, None, None, None);
+        let amt = BufferSize {
+            records: 1,
+            bytes: 10,
+        };
+        endpoint.add_buffered(amt);
+
+        // The reader stops just before it gives the step to the token list.
+        // If the circuit already has the input of the step, it commits the
+        // step now.  Then a client asks for a token.
+        let token = Arc::new(Mutex::new(None));
+        *endpoint.extended_hook.lock().unwrap() = Some(Box::new({
+            let global = global.clone();
+            let token = token.clone();
+            move |endpoint: &InputEndpointStatus| {
+                if endpoint.progress.lock().unwrap().is_some() {
+                    global.total_committed_steps.store(11, Ordering::Release);
+                }
+                *token.lock().unwrap() = Some(endpoint.completion_token(&global, None));
+            }
+        }));
+        endpoint.extended(StepResults { amt, resume: None }, Vec::new(), 1, 11, 10);
+
+        let (token, first_step) = token.lock().unwrap().unwrap();
+        assert_eq!((token, first_step), (1, 10));
+        assert_eq!(endpoint.completion_status(token), Some(11));
+    }
+
+    /// After a restore, the token list starts at the records of the
+    /// checkpoint.  A step with no input from the endpoint is then not the
+    /// step of these records.
+    #[test]
+    fn token_list_starts_at_the_restored_records() {
+        let global = GlobalControllerMetrics::new(0, None, Uuid::nil());
+        global.total_initiated_steps.store(4, Ordering::Release);
+
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+        }))
+        .unwrap();
+        let restored = CheckpointInputEndpointMetrics {
+            circuit_input_records: 5,
+            ..Default::default()
+        };
+        let endpoint =
+            InputEndpointStatus::new("test_endpoint", config, None, Some(&restored), None);
+
+        // Step 3 has no input from the endpoint.
+        let results = StepResults {
+            amt: BufferSize::empty(),
+            resume: None,
+        };
+        endpoint.extended(results, Vec::new(), 5, 4, 3);
+
+        // The token covers the records of the checkpoint only, and these are
+        // complete.
+        let (token, _first_step) = endpoint.completion_token(&global, None);
+        assert_eq!(token, 5);
+        assert_eq!(endpoint.completion_status(token), Some(0));
+    }
+
+    /// The output buffer can hold output of an open transaction when a flush
+    /// fails.  The token for the transaction reports the failure.
+    #[test]
+    fn failed_flush_with_output_of_an_open_transaction() {
+        let mut pipeline = TokenPipeline::new();
+
+        // Step 0 is committed, and its output stays in the buffer.
+        pipeline.receive(1);
+        pipeline.token(None);
+        pipeline.start_step(1);
+        let step_0 = pipeline.commit();
+
+        // Step 1 opens a transaction.  Its output goes into the buffer too.
+        pipeline.receive(1);
+        let token = pipeline.token(None);
+        pipeline.start_step(1);
+
+        // The flush fails.  The buffer has the count of step 0 only.
+        pipeline
+            .status
+            .output_buffered_batches(0, step_0, Err(BatchNotDelivered), true);
+
+        // Step 2 commits the transaction, and the next flush is delivered.
+        pipeline.start_step(0);
+        let step_2 = pipeline.commit();
+        pipeline
+            .status
+            .output_buffered_batches(0, step_2, Ok(()), false);
+        assert_eq!(pipeline.check(&token), Err((0, 2)));
+    }
+
+    /// A token that reported dropped output does not change to complete when
+    /// the output endpoint is removed.
+    #[test]
+    fn dropped_steps_stay_when_the_output_endpoint_is_removed() {
+        let mut pipeline = TokenPipeline::new();
+
+        pipeline.receive(1);
+        let token = pipeline.token(None);
+        pipeline.step(1, Err(BatchNotDelivered));
+        assert_eq!(pipeline.check(&token), Err((0, 0)));
+
+        pipeline.status.remove_output(&0);
+        assert_eq!(pipeline.check(&token), Err((0, 0)));
+    }
+
+    /// An output endpoint that is added to a running pipeline does not answer
+    /// for the steps before it was added.
+    #[test]
+    fn late_output_endpoint_does_not_answer_for_earlier_steps() {
+        let mut pipeline = TokenPipeline::new();
+
+        pipeline.receive(1);
+        let token = pipeline.token(None);
+        pipeline.step(1, Ok(()));
+        assert_eq!(pipeline.check(&token), Ok(CompletionStatus::Complete));
+
+        // The new endpoint starts with the state of its view, which is the
+        // result of step 0, and fails to send it.
+        let status = &pipeline.status;
+        status.add_output(&1, "late", &TokenPipeline::output_config(), None, false);
+        let step_0 = ProcessedRecords {
+            total_processed_input_records: 1,
+            total_processed_steps: 1,
+        };
+        status.enqueue_batch(1, 1);
+        status.output_batch(
+            1,
+            Some(step_0),
+            1,
+            Err(BatchNotDelivered),
+            pipeline.parker.unparker(),
+        );
+        assert_eq!(pipeline.check(&token), Ok(CompletionStatus::Complete));
+
+        // The failure is not kept for the next step, which both endpoints
+        // deliver.
+        pipeline.receive(1);
+        let next = pipeline.token(None);
+        pipeline.start_step(1);
+        let step_1 = pipeline.commit();
+        let status = &pipeline.status;
+        for endpoint in [0, 1] {
+            status.enqueue_batch(endpoint, 1);
+            status.output_batch(
+                endpoint,
+                Some(step_1),
+                1,
+                Ok(()),
+                pipeline.parker.unparker(),
+            );
+        }
+        assert_eq!(pipeline.check(&next), Ok(CompletionStatus::Complete));
+    }
+
+    /// An output endpoint answers for the steps from the time when it gets
+    /// the output of the circuit, not from the time when its status is made.
+    #[test]
+    fn late_output_endpoint_answers_from_the_step_that_it_joins() {
+        let mut pipeline = TokenPipeline::new();
+        let unparker = pipeline.parker.unparker().clone();
+
+        // The status of the new endpoint exists from step 0.  The endpoint
+        // gets output from step 2.
+        pipeline
+            .status
+            .add_output(&1, "late", &TokenPipeline::output_config(), None, true);
+        pipeline.receive(2);
+        pipeline.step(1, Ok(()));
+        let before = pipeline.token(None);
+        pipeline.step(1, Ok(()));
+        pipeline.status.output_joined(&1);
+
+        // Step 2: the first output of the new endpoint, which it drops.
+        pipeline.receive(1);
+        let after = pipeline.token(None);
+        pipeline.start_step(1);
+        let step_2 = pipeline.commit();
+        let status = &pipeline.status;
+        for (endpoint, delivered) in [(0, Ok(())), (1, Err(BatchNotDelivered))] {
+            status.enqueue_batch(endpoint, 1);
+            status.output_batch(endpoint, Some(step_2), 1, delivered, &unparker);
+        }
+
+        assert_eq!(pipeline.check(&before), Ok(CompletionStatus::Complete));
+        assert!(matches!(
+            status.completion_status(&after),
+            Err(ControllerError::OutputNotDelivered { endpoint_name, first_step: 2, last_step: 2 })
+                if endpoint_name == "late"
+        ));
+    }
+
+    /// A record that the connector receives while a step is in progress goes
+    /// into a later step, if the step already has its input from the
+    /// connector.  The token for that record does not report output that the
+    /// step in progress drops.
+    #[test]
+    fn token_after_the_input_of_the_step_in_progress() {
+        let mut pipeline = TokenPipeline::new();
+
+        pipeline.receive(1);
+        let first = pipeline.token(None);
+        pipeline.start_step(1);
+
+        pipeline.receive(1);
+        let second = pipeline.token(None);
+
+        pipeline.end_step(true, Err(BatchNotDelivered));
+        pipeline.step(1, Ok(()));
+
+        assert_eq!(pipeline.check(&first), Err((0, 0)));
+        assert_eq!(pipeline.check(&second), Ok(CompletionStatus::Complete));
+    }
+
+    /// A token does not report output dropped in a step before its first
+    /// input, or after its last input.
+    #[test]
+    fn completion_token_reports_only_its_steps() {
+        let mut pipeline = TokenPipeline::new();
+
+        // Steps 0 and 3 have no input from the endpoint.
+        pipeline.step(0, Err(BatchNotDelivered));
+        pipeline.receive(3);
+        pipeline.step(2, Ok(()));
+        pipeline.step(1, Ok(()));
+        pipeline.step(0, Err(BatchNotDelivered));
+
+        // The token is the first for the endpoint and comes after the steps:
+        // it covers steps 1 and 2.
+        let token = pipeline.token(None);
+        assert_eq!(pipeline.check(&token), Ok(CompletionStatus::Complete));
+        assert_eq!(
+            pipeline.status.completion_status(&token).unwrap().step,
+            Some(3)
+        );
+
+        // A second token for the same input is the same.
+        pipeline.step(0, Err(BatchNotDelivered));
+        assert_eq!(
+            pipeline.check(&pipeline.token(None)),
+            Ok(CompletionStatus::Complete)
+        );
+
+        // A token for later input covers step 5 only.
+        pipeline.receive(1);
+        let token = pipeline.token(None);
+        pipeline.step(1, Ok(()));
+        assert_eq!(pipeline.check(&token), Ok(CompletionStatus::Complete));
+
+        // A token for input in a step with dropped output reports the step.
+        pipeline.receive(1);
+        pipeline.step(1, Err(BatchNotDelivered));
+        assert_eq!(pipeline.check(&pipeline.token(None)), Err((6, 6)));
+    }
+
+    /// Two requests send records to one endpoint at the same time.  Each
+    /// gives the step at its start, and each token reports the output dropped
+    /// for its own records.
+    #[test]
+    fn completion_tokens_of_concurrent_requests() {
+        let mut pipeline = TokenPipeline::new();
+
+        // Request A starts.  Step 0 ingests its first records, and the output
+        // endpoint drops the output.
+        let first_step_a = pipeline.status.earliest_input_step();
+        pipeline.receive(2);
+        pipeline.step(2, Err(BatchNotDelivered));
+
+        // Request B starts and ends.
+        let first_step_b = pipeline.status.earliest_input_step();
+        pipeline.receive(1);
+        let token_b = pipeline.token(Some(first_step_b));
+        pipeline.step(1, Ok(()));
+
+        // Request A ends.
+        pipeline.receive(1);
+        let token_a = pipeline.token(Some(first_step_a));
+        pipeline.step(1, Ok(()));
+
+        assert_eq!((first_step_a, first_step_b), (0, 1));
+        assert_eq!(pipeline.check(&token_a), Err((0, 0)));
+        assert_eq!(pipeline.check(&token_b), Ok(CompletionStatus::Complete));
+    }
+
+    /// The step in progress can ingest a new record.  A step that the circuit
+    /// committed cannot.
+    #[test]
+    fn earliest_input_step() {
+        let mut pipeline = TokenPipeline::new();
+        assert_eq!(pipeline.status.earliest_input_step(), 0);
+        pipeline.start_step(0);
+        assert_eq!(pipeline.status.earliest_input_step(), 0);
+        pipeline.end_step(true, Ok(()));
+        assert_eq!(pipeline.status.earliest_input_step(), 1);
+    }
+
+    /// The steps of an open transaction have no count.  The token reports
+    /// output dropped in one of them when the commit counts the steps.
+    #[test]
+    fn completion_token_reports_output_dropped_in_transaction() {
+        let mut pipeline = TokenPipeline::new();
+
+        pipeline.receive(3);
+        let token = pipeline.token(None);
+        pipeline.start_step(3);
+        pipeline.end_step(false, Err(BatchNotDelivered));
+        assert_eq!(pipeline.check(&token), Ok(CompletionStatus::InProgress));
+
+        // The commit.
+        pipeline.start_step(0);
+        pipeline.end_step(true, Ok(()));
+        assert_eq!(pipeline.check(&token), Err((0, 1)));
     }
 
     /// The latest batch gauges show the size of the last non-empty batch

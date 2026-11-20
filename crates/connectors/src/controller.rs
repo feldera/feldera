@@ -43,8 +43,8 @@ use crate::util::{
     LongOperationWarning, MemoryUseReporter, missing_pipeline_identity_message, run_on_thread_pool,
 };
 use crate::{
-    CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
-    PipelineError, PipelineState, TransportInputEndpoint,
+    BatchNotDelivered, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
+    ParseError, PipelineError, PipelineState, TransportInputEndpoint,
 };
 use crate::{PipelinePhase, create_integrated_output_endpoint};
 use anyhow::{Context, Error as AnyError, anyhow};
@@ -85,6 +85,7 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::{CheckpointActivity, HostInfo};
 use feldera_types::circuit::Layout;
+use feldera_types::completion_token::CompletionStatusResponse;
 use feldera_types::config::dev_tweaks::ViewIntegralsLayout;
 use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
@@ -2507,25 +2508,45 @@ impl Controller {
     /// by the endpoint, including records buffered in its input queue. It can be passed to
     /// `completion_status` to determine whether all these records have been processed to
     /// completion.
+    ///
+    /// If an output connector drops output, the token reports it for the
+    /// records that the endpoint received after its previous token.
     pub fn completion_token(
         &self,
         endpoint_name: &str,
     ) -> Result<CompletionToken, ControllerError> {
         let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
 
-        self.status().completion_token(endpoint_name, endpoint_id)
+        self.status()
+            .completion_token(endpoint_name, endpoint_id, None)
+    }
+
+    /// Like [`Self::completion_token`], for a caller that knows where the
+    /// records of interest start: `first_step` is the value of
+    /// [`ControllerStatus::earliest_input_step`] before the endpoint received
+    /// the first of them.  If an output connector drops output, the token
+    /// reports it for these records, also when other callers get tokens for
+    /// the same endpoint at the same time.
+    pub fn completion_token_from_step(
+        &self,
+        endpoint_name: &str,
+        first_step: Step,
+    ) -> Result<CompletionToken, ControllerError> {
+        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
+
+        self.status()
+            .completion_token(endpoint_name, endpoint_id, Some(first_step))
     }
 
     /// Check whether all records identified by the completion token
     /// have been fully processed by the pipeline.
     ///
-    /// Returns `None` if the token is definitely incomplete, `Some(step)` if it
-    /// is complete once `GlobalControllerMetrics::completed_steps` reaches
-    /// `step`, or an error if the token is invalid.
+    /// Returns an error if the token is invalid, or if an output connector
+    /// dropped output of a step that the token covers.
     pub fn completion_status(
         &self,
         token: &CompletionToken,
-    ) -> Result<Option<Step>, ControllerError> {
+    ) -> Result<CompletionStatusResponse, ControllerError> {
         self.status().completion_status(token)
     }
 
@@ -7692,6 +7713,10 @@ struct OutputBuffer {
     /// It is used for watermarks, completion tokens, and to determine when the
     /// circuit has run to completion.
     buffered_processed_records: ProcessedRecords,
+
+    /// The buffer holds output of steps that `buffered_processed_records`
+    /// does not include: the steps of an open transaction.
+    uncounted_output: bool,
 }
 
 impl OutputBuffer {
@@ -7704,6 +7729,7 @@ impl OutputBuffer {
             buffered_transaction: 0,
             buffer_since: Instant::now(),
             buffered_processed_records: ProcessedRecords::default(),
+            uncounted_output: false,
         }
     }
 
@@ -7726,6 +7752,11 @@ impl OutputBuffer {
         transaction: u64,
         processed_records: Option<ProcessedRecords>,
     ) {
+        match processed_records {
+            Some(_) => self.uncounted_output = false,
+            // A step of the transaction that has no output adds nothing.
+            None => self.uncounted_output |= batch.as_ref().is_some_and(|batch| !batch.is_empty()),
+        }
         if let Some(batch) = batch {
             if let Some(buffer) = &mut self.buffer {
                 buffer.backpressure_wait();
@@ -9812,6 +9843,9 @@ impl ControllerInner {
         outputs.insert(endpoint_id, endpoint_descr, || {
             self.transaction_number_after_enable()
         })?;
+        // With the lock held: the circuit gives the output of a step to the
+        // endpoints with this lock, after it commits the step.
+        self.status.output_joined(&endpoint_id);
         drop(outputs);
 
         // We succeeded, cancel removal of the endpoint.
@@ -9957,6 +9991,8 @@ impl ControllerInner {
         endpoint.unparker.unpark();
     }
 
+    /// Returns [`BatchNotDelivered`] if the encoder or the endpoint dropped
+    /// some of `batch`.
     fn push_batch_to_encoder(
         batch: Arc<dyn SerBatchReader>,
         batch_type: OutputBatchType,
@@ -9965,9 +10001,9 @@ impl ControllerInner {
         encoder: &mut dyn Encoder,
         transaction: u64,
         controller: &ControllerInner,
-    ) {
+    ) -> Result<(), BatchNotDelivered> {
         encoder.consumer().batch_start(transaction, batch_type);
-        encoder.encode(batch).unwrap_or_else(|e| {
+        let encoded = encoder.encode(batch).map_err(|e| {
             // An encoder that a shutdown cut short reports the abort as an
             // error, and a teardown is not an endpoint fault: reporting it
             // would log at ERROR and bump the endpoint's error count on every
@@ -9978,8 +10014,9 @@ impl ControllerInner {
             } else {
                 controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"));
             }
+            BatchNotDelivered
         });
-        encoder.consumer().batch_end();
+        encoder.consumer().batch_end().and(encoded)
     }
 
     /// Main loop for the output thread. Drains batches from the endpoint's
@@ -10041,7 +10078,7 @@ impl ControllerInner {
                 // There is no point in continue to merge batches in the output buffer at this point,
                 // so we convert the spine to a snapshot to avoid wasting CPU, I/O, and memory on
                 // background merging.
-                Self::push_batch_to_encoder(
+                let delivered = Self::push_batch_to_encoder(
                     output_buffer.take_buffer().unwrap().snapshot(),
                     OutputBatchType::Delta,
                     endpoint_id,
@@ -10057,9 +10094,12 @@ impl ControllerInner {
                         .buffered_processed_records
                         .total_processed_steps,
                 );
-                controller
-                    .status
-                    .output_buffered_batches(endpoint_id, output_buffer.buffered_processed_records);
+                controller.status.output_buffered_batches(
+                    endpoint_id,
+                    output_buffer.buffered_processed_records,
+                    delivered,
+                    std::mem::take(&mut output_buffer.uncounted_output),
+                );
                 controller.circuit_thread_unparker.unpark()
             } else if let Some(BatchQueueEntry {
                 step,
@@ -10098,6 +10138,8 @@ impl ControllerInner {
                         controller.status.output_buffered_batches(
                             endpoint_id,
                             output_buffer.buffered_processed_records,
+                            Ok(()),
+                            false,
                         );
                     }
                 } else {
@@ -10105,7 +10147,7 @@ impl ControllerInner {
                     // output batch, because fault-tolerant output dedup keys on
                     // the transaction and requires strictly increasing ids. Empty
                     // in-progress steps of a transaction produce no output.
-                    if let Some(data) = data
+                    let delivered = if let Some(data) = data
                         && num_records > 0
                     {
                         Self::push_batch_to_encoder(
@@ -10116,8 +10158,10 @@ impl ControllerInner {
                             encoder.as_mut(),
                             transaction,
                             &controller,
-                        );
-                    }
+                        )
+                    } else {
+                        Ok(())
+                    };
 
                     // The steps of an open transaction carry no count; they
                     // are reported with the commit, after its output.
@@ -10134,6 +10178,7 @@ impl ControllerInner {
                         endpoint_id,
                         processed_records,
                         num_records,
+                        delivered,
                         &controller.circuit_thread_unparker,
                     );
                 }
@@ -11348,6 +11393,8 @@ struct OutputProbe {
     endpoint_name: String,
     endpoint: Box<dyn OutputEndpoint>,
     controller: Arc<ControllerInner>,
+    /// The endpoint failed a call for the current batch.
+    batch_failed: bool,
 }
 
 impl OutputProbe {
@@ -11362,13 +11409,16 @@ impl OutputProbe {
             endpoint_name: endpoint_name.to_owned(),
             endpoint,
             controller,
+            batch_failed: false,
         }
     }
 
-    /// Reports an error from the endpoint, unless the pipeline is shutting
-    /// down.  An endpoint that a shutdown cuts short fails its current
-    /// batch, which is not an endpoint fault: see `push_batch_to_encoder`.
-    fn endpoint_error(&self, error: AnyError, tag: &str) {
+    /// Marks the current batch as failed and reports an error from the
+    /// endpoint, unless the pipeline is shutting down.  An endpoint that a
+    /// shutdown cuts short fails its current batch, which is not an endpoint
+    /// fault: see `push_batch_to_encoder`.
+    fn endpoint_error(&mut self, error: AnyError, tag: &str) {
+        self.batch_failed = true;
         if self.controller.shutdown_token().is_cancelled() {
             debug!(
                 "{}: endpoint gave up on the shutdown: {error}",
@@ -11392,11 +11442,10 @@ impl OutputConsumer for OutputProbe {
     }
 
     fn batch_start(&mut self, step: Step, batch_type: OutputBatchType) {
-        self.endpoint
-            .batch_start(step, batch_type)
-            .unwrap_or_else(|e| {
-                self.endpoint_error(e, "outprobe_batch_start");
-            })
+        self.batch_failed = false;
+        if let Err(e) = self.endpoint.batch_start(step, batch_type) {
+            self.endpoint_error(e, "outprobe_batch_start");
+        }
     }
 
     fn steps_processed(&mut self, count: Step) {
@@ -11440,10 +11489,14 @@ impl OutputConsumer for OutputProbe {
         }
     }
 
-    fn batch_end(&mut self) {
-        self.endpoint.batch_end().unwrap_or_else(|e| {
+    fn batch_end(&mut self) -> Result<(), BatchNotDelivered> {
+        if let Err(e) = self.endpoint.batch_end() {
             self.endpoint_error(e, "outprobe_batch_end");
-        })
+        }
+        if self.batch_failed {
+            return Err(BatchNotDelivered);
+        }
+        Ok(())
     }
 
     fn memory(&self) -> usize {

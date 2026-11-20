@@ -79,7 +79,7 @@ fn bench_indexed_encode(c: &mut Criterion) {
                     |(mut writer, _table_dir)| {
                         writer.consumer().batch_start(0, OutputBatchType::Delta);
                         writer.encode(batch.clone().arc_as_batch_reader()).unwrap();
-                        writer.consumer().batch_end();
+                        writer.consumer().batch_end().unwrap();
                     },
                 );
             },

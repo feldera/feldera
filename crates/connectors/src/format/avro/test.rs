@@ -1435,7 +1435,7 @@ fn encode(
 ) -> Vec<Message> {
     encoder.consumer().batch_start(0, OutputBatchType::Delta);
     encoder.encode(batch).unwrap();
-    encoder.consumer().batch_end();
+    encoder.consumer().batch_end().unwrap();
     output.lock().unwrap().drain(..).collect()
 }
 
@@ -1663,7 +1663,7 @@ pub fn non_unique_keys(engine: &dyn ConnectorTestEngine) {
             error.to_string().contains(expected_error),
             "expected '{expected_error}' in '{error}'"
         );
-        encoder.consumer().batch_end();
+        encoder.consumer().batch_end().unwrap();
     }
 }
 

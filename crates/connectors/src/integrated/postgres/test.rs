@@ -1,5 +1,5 @@
 use crate::{
-    Controller,
+    Controller, ControllerError,
     controller::MAX_CONNECTOR_ERROR_LEN,
     integrated::postgres::test::pg::{TempPgTable, TempTestStruct, pg_connect, test_circuit},
     test::{
@@ -1372,6 +1372,47 @@ pub fn transmitted_records_excludes_rolled_back_rows(engine: &dyn PipelineTestEn
         0,
         "the table should have rejected every row"
     );
+}
+
+/// A completion token reports a batch that Postgres rejected: the connector
+/// dropped the batch, so the input of the token is not complete.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
+pub fn completion_token_reports_rejected_batch(engine: &dyn PipelineTestEngine) {
+    let table_name = unique_pg_name("test_pg_token");
+    let url = postgres_url();
+
+    let data: Vec<Value> = random_records(100);
+    let temp_file = write_records_to_temp_file(&data);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name, 1, None);
+
+    // Each INSERT fails: see `transmitted_records_excludes_rolled_back_rows`.
+    let _table = TempPgTable::new_with_extra_columns(
+        &table_name,
+        url,
+        true,
+        &None,
+        "freshness_timestamp TIMESTAMP NOT NULL",
+    );
+
+    let (controller, _err_receiver) = test_circuit(engine, config);
+    controller.start();
+    wait(
+        || pg_total_processed_input_records(&controller) >= data.len() as u64,
+        60_000,
+    )
+    .expect("timeout: connector did not finish handling the input");
+
+    // The first token for an input connector covers all of its records.
+    let token = controller.completion_token("ins").unwrap();
+    let status = controller.completion_status(&token);
+    let _ = controller.stop();
+
+    match status {
+        Err(ControllerError::OutputNotDelivered { endpoint_name, .. }) => {
+            assert_eq!(endpoint_name, "test_output1")
+        }
+        status => panic!("the token did not report the rejected batch: {status:?}"),
+    }
 }
 
 /// Records reported by the `... statement for N record(s)` context that the

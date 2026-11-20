@@ -736,7 +736,7 @@ pub mod test {
                 .consumer()
                 .batch_start(step as u64, OutputBatchType::Delta);
             encoder.encode(batch.clone()).unwrap();
-            encoder.consumer().batch_end();
+            encoder.consumer().batch_end().unwrap();
 
             let bytes: Vec<u8> = output
                 .lock()
@@ -994,7 +994,7 @@ pub mod test {
                         );
                         break;
                     }
-                    encoder.consumer().batch_end();
+                    encoder.consumer().batch_end().unwrap();
 
                     let mut bytes = Vec::new();
                     for (key, value, _headers) in output.lock().unwrap().drain(..) {
@@ -1152,7 +1152,7 @@ pub mod test {
             .unwrap();
         encoder.consumer().batch_start(0, OutputBatchType::Delta);
         encoder.encode(batch)?;
-        encoder.consumer().batch_end();
+        encoder.consumer().batch_end().unwrap();
         let messages = output
             .lock()
             .unwrap()

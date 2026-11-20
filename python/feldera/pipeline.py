@@ -196,6 +196,8 @@ class Pipeline:
 
         :returns: The completion token of the last chunk pushed, which also covers
             the earlier chunks, or None if the DataFrame is empty and nothing was pushed.
+            If an output connector does not deliver output, the token reports
+            it for the last chunk only.
 
         :raises ValueError: If the table does not exist in the pipeline.
         :raises RuntimeError: If the pipeline is not in a valid state to push data.
@@ -275,6 +277,8 @@ class Pipeline:
 
         :raises ValueError: If the update format is invalid.
         :raises FelderaAPIError: If the pipeline is not in a valid state to push data.
+            With `wait`, also if an output connector did not deliver all of the
+            output for this input (error code ``OutputNotDelivered``).
         :raises RuntimeError: If the pipeline is paused and `force` is not set to `True`.
         """
 
@@ -2371,6 +2375,10 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
     def completion_token_status(self, token: str) -> CompletionTokenStatus:
         """
         Returns the status of the completion token.
+
+        :raises FelderaAPIError: If an output connector did not deliver all of
+            the output for the inputs of the token (error code
+            ``OutputNotDelivered``).  The message gives the name of the connector.
         """
 
         if self.client.completion_token_processed(self.name, token):
@@ -2385,6 +2393,10 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         The pipeline has then handed the resulting changes to every output
         connector.  A handle from :meth:`listen` may still be receiving them;
         :meth:`.OutputHandler.wait_for_token` waits until it has.
+
+        :raises FelderaAPIError: If an output connector did not deliver all of
+            the output for the inputs of the token (error code
+            ``OutputNotDelivered``).  The message gives the name of the connector.
         """
 
         self.client.wait_for_token(self.name, token)

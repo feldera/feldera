@@ -156,7 +156,9 @@ failed thread had. The other threads commit their parts.
 
 The connector reports each error that drops a batch in its
 [status](/api/get-output-status). The pipeline log also has the errors that
-the connector recovered from.
+the connector recovered from. A [completion
+token](/connectors/completion-tokens#output-that-a-connector-did-not-deliver)
+for the input of a batch that the connector dropped also reports the failure.
 
 In CDC mode, when a commit fails because the connection drops, the connector
 cannot know whether PostgreSQL applied the commit. It writes the batch again,

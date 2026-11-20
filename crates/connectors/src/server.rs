@@ -66,9 +66,7 @@ use feldera_types::checkpoint::{
     HostInfo,
 };
 use feldera_types::circuit::Layout;
-use feldera_types::completion_token::{
-    CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
-};
+use feldera_types::completion_token::{CompletionStatusArgs, CompletionTokenResponse};
 use feldera_types::config::{
     DynamicConfig, PipelineIdentity, SyncConfig, ignored::ignored_settings,
 };
@@ -5126,6 +5124,11 @@ async fn input_endpoint(
         }
     };
 
+    // The records of this request go into this step or a later one.  With it,
+    // the token reports dropped output for this request, also when other
+    // requests send records to the same endpoint at the same time.
+    let first_step = state.controller()?.status().earliest_input_step();
+
     // Call endpoint to complete request.
     endpoint
         .complete_request(payload, args.force, connector_metadata)
@@ -5134,7 +5137,7 @@ async fn input_endpoint(
 
     let token = state
         .controller()?
-        .completion_token(endpoint.name())?
+        .completion_token_from_step(endpoint.name(), first_step)?
         .encode();
     Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(token)))
 }
@@ -5448,12 +5451,11 @@ async fn completion_status(
     })?;
 
     let controller = state.controller()?;
-    Ok(HttpResponse::Ok().json(CompletionStatusResponse::new(
+    Ok(HttpResponse::Ok().json(
         controller
             .completion_status(&token)
             .map_err(|e| state.maybe_missing_controller_error(e))?,
-        controller.status().global_metrics.total_completed_steps(),
-    )))
+    ))
 }
 
 #[post("/rebalance")]
