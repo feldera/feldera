@@ -914,6 +914,15 @@ public class AggTests extends PostBaseTests {
     }
 
     @Test
+    public void groupingFilter() {
+        // Postgres rejects this query too
+        this.queryFailingInCompilation("""
+                select deptno, grouping(deptno) filter (where gender = 'F') as g
+                from emp group by rollup(deptno)""",
+                "FILTER cannot be applied to GROUPING");
+    }
+
+    @Test
     public void testAgg() {
         this.qst("""
                 -- [CALCITE-1781] Allow expression in CUBE and ROLLUP

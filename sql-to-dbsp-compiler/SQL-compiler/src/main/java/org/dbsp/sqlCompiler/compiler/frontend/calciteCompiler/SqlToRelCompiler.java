@@ -889,6 +889,23 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    /** Rejects FILTER on an aggregate function that does not allow it, such as GROUPING.
+     * The Calcite validator accepts such a call, but SqlToRelConverter cannot convert it. */
+    private class RejectFilter extends SqlBasicVisitor<Void> {
+        @Override
+        public Void visit(SqlCall call) {
+            if (call.getKind() == SqlKind.FILTER) {
+                SqlCall aggregate = SqlValidatorUtil.flatten(call).aggregateCall;
+                if (aggregate.getOperator() instanceof SqlAggFunction function && !function.allowsFilter()) {
+                    SqlParserPos position = SqlToRelCompiler.this.sourcePositionRemap.apply(call.getParserPosition());
+                    throw new CompilationError(new SourcePositionRange(position), "Illegal expression",
+                            "FILTER cannot be applied to " + function.getName());
+                }
+            }
+            return super.visit(call);
+        }
+    }
+
     SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
@@ -2137,6 +2154,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 () -> this.getValidator().validate(wrappedStringLiterals));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
+        validated.accept(new RejectFilter());
         return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
     }
 
