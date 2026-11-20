@@ -936,7 +936,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             int i = 0;
             for (int globalIndex : aggregate.getGroupSet()) {
                 if (localKeys.get(globalIndex)) {
-                    reindexFields[globalIndex] = reindexVar
+                    reindexFields[i] = reindexVar
                             .field(0)
                             .deref()
                             .field(localIndex)
