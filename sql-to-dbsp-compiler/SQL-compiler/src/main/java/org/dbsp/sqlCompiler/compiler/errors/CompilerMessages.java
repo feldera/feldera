@@ -24,11 +24,28 @@ public class CompilerMessages {
     static String messageWithoutPosition(SqlParseException e) {
         String message = Objects.requireNonNullElse(e.getMessage(), "");
         SqlParserPos pos = e.getPos();
+        if (pos == null)
+            // Calcite reports no position when the parser fails with an Error
+            return message;
         String position = " at line " + pos.getLineNum() + ", column " + pos.getColumnNum();
         int index = message.indexOf(position);
         if (index < 0)
             return message;
         return message.substring(0, index) + message.substring(index + position.length());
+    }
+
+    static final String STACK_OVERFLOW = "Stack overflow";
+    static final String STACK_OVERFLOW_MESSAGE =
+            "The compiler ran out of stack space. This happens when a query is nested too deeply. " +
+            "Simplify the query, for example by splitting it into several views.";
+
+    /** True if 'e' or one of its causes is a StackOverflowError */
+    static boolean isStackOverflow(Throwable e) {
+        for (Throwable current = e; current != null; current = current.getCause()) {
+            if (current instanceof StackOverflowError)
+                return true;
+        }
+        return false;
     }
 
     public class Message implements IHasSourcePositionRange {
@@ -52,7 +69,9 @@ public class CompilerMessages {
         }
 
         Message(SourcePositionRange context, SqlParseException e) {
-            this(context, new SourcePositionRange(e.getPos()), false, false, "Error parsing SQL", messageWithoutPosition(e));
+            this(context, new SourcePositionRange(e.getPos()), false, false,
+                    isStackOverflow(e) ? STACK_OVERFLOW : "Error parsing SQL",
+                    isStackOverflow(e) ? STACK_OVERFLOW_MESSAGE : messageWithoutPosition(e));
         }
 
         Message(SourcePositionRange context, CalciteContextException e) {
@@ -73,7 +92,9 @@ public class CompilerMessages {
 
         Message(SourcePositionRange context, Throwable e) {
             this(context, SourcePositionRange.INVALID, false, false,
+                    isStackOverflow(e) ? STACK_OVERFLOW :
                     "This is a bug in the compiler (please report it to the developers)",
+                    isStackOverflow(e) ? STACK_OVERFLOW_MESSAGE :
                     e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
 

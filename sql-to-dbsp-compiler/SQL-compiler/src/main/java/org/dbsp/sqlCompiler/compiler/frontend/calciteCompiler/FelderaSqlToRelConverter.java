@@ -6,6 +6,8 @@ import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.hint.Hintable;
 import org.apache.calcite.rel.hint.RelHint;
+import org.apache.calcite.rel.logical.LogicalIntersect;
+import org.apache.calcite.rel.logical.LogicalUnion;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
@@ -13,6 +15,7 @@ import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql2rel.SqlRexConvertletTable;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.util.Linq;
 
 import java.util.Collections;
 import java.util.List;
@@ -26,6 +29,19 @@ public class FelderaSqlToRelConverter extends SqlToRelConverter {
             Prepare.CatalogReader catalogReader, RelOptCluster cluster,
             SqlRexConvertletTable convertletTable, Config config) {
         super(viewExpander, validator, catalogReader, cluster, convertletTable, config);
+    }
+
+    /** Converts a balanced tree built by {@link BalanceSetOperations} to one set operation
+     * with all the queries of the chain as inputs, the plan that UNION_MERGE builds from a short chain. */
+    @Override
+    protected RelNode convertSetOp(SqlCall call) {
+        if (!(call.getOperator() instanceof BalanceSetOperations.BalancedSetOperator balanced))
+            return super.convertSetOp(call);
+        List<SqlNode> operands = BalanceSetOperations.chainOperands(call);
+        List<RelNode> inputs = Linq.map(operands, o -> this.convertQueryRecursive(o, false, null).project());
+        if (call.getKind() == SqlKind.UNION)
+            return LogicalUnion.create(inputs, balanced.isAll());
+        return LogicalIntersect.create(inputs, balanced.isAll());
     }
 
     @Override

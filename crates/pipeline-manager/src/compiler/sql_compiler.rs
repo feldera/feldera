@@ -792,6 +792,8 @@ pub(crate) async fn perform_sql_compilation(
     // the program_config field of the pipeline.
     let mut command = Command::new("java");
     command
+        // Thread stack size: the SQL compiler recurses once per level of a nested query
+        .arg("-Xss512m")
         .arg("-jar")
         .arg(&sql_compiler_executable_file_path)
         .arg(input_sql_file_path.as_os_str())
