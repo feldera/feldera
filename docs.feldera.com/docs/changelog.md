@@ -10,6 +10,14 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- The PostgreSQL output connector now connects again and writes the batch
+  again when a connection pooler, such as PgBouncer, ends the session with
+  an error of its own (SQLSTATE `08P01`). Before, it dropped the batch. It
+  still drops a batch that fails in 10 attempts. See [connection loss and
+  connection
+  poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers)
+  and [issue 8014](https://github.com/feldera/feldera/issues/8014).
+
 - Security: pipeline diagnostics replace registered Secret values with their
   references in the pipeline log, in `/status`, and in the connector errors of
   `/stats`. Connector errors, debug log lines, and compile errors that printed

@@ -129,6 +129,39 @@ CREATE MATERIALIZED VIEW v1 WITH (
 CREATE INDEX v1_idx ON v1(id);
 ```
 
+### Connection loss and connection poolers
+
+Each worker thread writes its part of a batch of changes in one transaction.
+If the thread loses the connection to PostgreSQL before the commit, PostgreSQL
+rolls the transaction back. The thread then connects again and writes its part
+of the batch again from the start.
+
+| Event | What the connector does |
+|---|---|
+| The connection drops, or the server restarts or is not reachable. | Connects again. The wait between attempts grows to a maximum of 60 seconds. Then writes the batch again. |
+| A connection pooler, such as PgBouncer, reports an error and ends the session. An example is a pooler that cannot log in to the server. | The same. |
+| The same batch fails 10 times because the connection drops or the transaction cannot start. | Reports an error and drops the batch. |
+| The server rejects the credentials, or the database does not exist. | Reports an error and drops the batch. |
+| The server rejects a statement, for example because of a constraint. | Reports an error and drops the batch. A new connection cannot correct this failure. |
+
+The wait for a connection has no limit: the thread waits for as long as the
+server or the pooler is not available. The limit of 10 is for the attempts to
+write a batch through a connection that opens.
+
+This section applies to a pipeline that runs. A pipeline that starts while the
+server or the pooler is not available fails at start.
+
+With more than one thread, a failure drops the part of the batch that the
+failed thread had. The other threads commit their parts.
+
+The connector reports each error that drops a batch in its
+[status](/api/get-output-status). The pipeline log also has the errors that
+the connector recovered from.
+
+In CDC mode, when a commit fails because the connection drops, the connector
+cannot know whether PostgreSQL applied the commit. It writes the batch again,
+so the table can then contain the rows of that batch more than one time.
+
 ## Data type mapping
 
 :::info
