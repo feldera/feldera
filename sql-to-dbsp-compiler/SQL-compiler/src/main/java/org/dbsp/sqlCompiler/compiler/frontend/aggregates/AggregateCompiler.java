@@ -283,8 +283,9 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         // Always non-linear (result can not be zero).
+        // The () row of an empty input has the same mask.
         this.setResult(new NonLinearAggregate(
-                this.node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+                this.node, zero, this.makeRowClosure(increment, accumulator), increment, semigroup));
     }
 
     boolean fp() {
