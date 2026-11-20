@@ -18,6 +18,17 @@ Source edition can be found on github.
   poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers)
   and [issue 8014](https://github.com/feldera/feldera/issues/8014).
 
+- The PostgreSQL output connector now writes a batch again when the server
+  cannot write through the session of the connector, for example on a
+  read-only server after a failover (SQLSTATE `25006`), or when a statement
+  fails for a cause on the server side: a cancelled statement, a lock that
+  is not available, a deadlock, a serialization failure, a shortage of disk
+  space or memory, a system error or an internal error. Each new attempt
+  uses a new connection. The connector makes at most 10 attempts, the first
+  one included, and then drops the batch. See [connection loss and
+  connection
+  poolers](/connectors/sinks/postgresql#connection-loss-and-connection-poolers).
+
 ## v0.391.0
 
 - Security: with client certificates (`mtls.enabled`), a pipeline admits

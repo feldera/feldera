@@ -54,7 +54,14 @@ enum WorkerResult {
 /// This bounds repeated failures once a connection has come back; waiting for
 /// postgres to return happens inside each attempt, in
 /// [`PostgresWorker::retry_connecting_with_backoff`], and is not bounded.
+///
+/// The second attempt starts at once. Each later attempt waits one second
+/// longer than the one before it, so the waits add up to 36 seconds. See
+/// [`PostgresWorker::write_attempt_wait`].
 const MAX_BATCH_WRITE_ATTEMPTS: usize = 10;
+
+/// Maximum length of the cause of a lost transaction in an error message.
+const MAX_LOST_CAUSE_LEN: usize = 1024;
 
 /// The partition of a batch assigned to a worker, retained until the batch
 /// commits so that the worker can write it again.
@@ -91,13 +98,36 @@ enum TransactionState {
     Rejected,
 }
 
+/// What [`PostgresWorker::retry_connecting_with_backoff`] did.
+enum Reconnect {
+    /// The worker has a new connection, with its statements prepared.
+    Connected,
+    /// The server answered and did not prepare the statements, for a cause
+    /// that can go away. This uses one attempt to write the batch.
+    Failed(anyhow::Error),
+    /// The worker has no connection: the failure is permanent, and was
+    /// reported, or the pipeline is stopping.
+    GaveUp,
+}
+
+/// A failure of [`PostgresWorker::retry_connecting`].
+struct ReconnectError {
+    error: BackoffError,
+    /// The worker logged in, and the session did not prepare the statements.
+    /// A failure to log in has no session that can stay open, whatever the
+    /// severity of the error.
+    prepare: bool,
+}
+
 /// A single postgres worker that owns a connection and runs on a dedicated thread.
 struct PostgresWorker {
     worker_idx: usize,
     endpoint_id: EndpointId,
     endpoint_name: String,
     table: String,
-    client: postgres::Client,
+    /// The connection. `None` after a reconnect that failed, until the next
+    /// attempt to write a batch connects again.
+    client: Option<postgres::Client>,
     config: PostgresWriterConfig,
     extra_columns: Arc<RwLock<BTreeMap<String, Option<serde_json::Value>>>>,
     transaction: Option<postgres::Transaction<'static>>,
@@ -129,6 +159,9 @@ struct PostgresWorker {
     /// What has become of [`Self::transaction`], which decides whether the `pending_batch`
     /// commits, is written again, or is dropped.
     transaction_state: TransactionState,
+    /// Why the transaction is [`TransactionState::Lost`], for the error that
+    /// reports the batch if the worker cannot write it.
+    lost_cause: Option<String>,
     /// The batch being written, kept for as long as it may need writing again.
     pending_batch: Option<PendingBatch>,
     /// Shared counter of records sent to postgres in the current batch.
@@ -149,8 +182,6 @@ impl Drop for PostgresWorker {
         self.transaction = None;
     }
 }
-
-const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client, BackoffError> {
     let pgcnf = postgres::Config::from_str(&config.uri).map_err(|e| {
@@ -200,7 +231,7 @@ impl PostgresWorker {
             table,
             config: config.clone(),
             extra_columns,
-            client,
+            client: Some(client),
             transaction: None,
             prepared_statements,
             key_schema: key_schema.clone(),
@@ -208,6 +239,7 @@ impl PostgresWorker {
             num_bytes: 0,
             batch_rows: 0,
             transaction_state: TransactionState::Open,
+            lost_cause: None,
             pending_batch: None,
             inserts: 0,
             upserts: 0,
@@ -306,6 +338,7 @@ impl PostgresWorker {
             // give the prefix only the room the error chain leaves over.
             const ERRMSG_HEADROOM_BYTES: usize = 512;
             let error = BackoffError::from(e);
+            let cause = error.message();
             let payload_prefix_budget = MAX_CONNECTOR_ERROR_LEN
                 .saturating_sub(error.message_len() + ERRMSG_HEADROOM_BYTES)
                 .min(MAX_RECORD_LEN_IN_ERRMSG);
@@ -317,6 +350,7 @@ impl PostgresWorker {
 
             // Transaction state is decided by whether the error is retry-able.
             self.transaction_state = if error.should_retry() {
+                self.lost_cause = Some(cause);
                 TransactionState::Lost
             } else {
                 TransactionState::Rejected
@@ -414,36 +448,52 @@ impl PostgresWorker {
         self.flush_upsert();
     }
 
-    fn retry_connecting(&mut self) -> Result<(), BackoffError> {
+    /// Opens a new connection and prepares the statements on it.
+    ///
+    /// This replaces a session that still answers too. Such a session can be
+    /// of no use: after a failover, a pooler can hold a session on the old
+    /// primary, which accepts queries and rejects each write.
+    ///
+    /// On an error, the worker has no connection.
+    fn retry_connecting(&mut self) -> Result<(), ReconnectError> {
         if self.controller.upgrade().is_none() {
             tracing::warn!("controller is shutting down: aborting");
             return Ok(());
         };
-        if self.client.is_valid(PG_CONNECTION_VALIDITY_TIMEOUT).is_ok() {
-            return Ok(());
-        };
 
-        // Losing the connection rolled back the open transaction, so drop what
-        // it had written from the count. `batch_end_inner` fails for the rest of
-        // this batch, since there is no transaction left to commit.
+        // The transaction is lost, so drop what it had written from the
+        // count. Release it before the client that it borrows goes away.
         self.transaction = None;
         self.num_bytes = 0;
         self.num_rows = 0;
-        self.client = connect(&self.config, &self.endpoint_name)?;
 
+        // Close the old session before the new one logs in. The server or a
+        // pooler can limit the connections of the role, and the old session
+        // then holds the slot that the new one needs.
+        self.client = None;
+        let mut client =
+            connect(&self.config, &self.endpoint_name).map_err(|error| ReconnectError {
+                error,
+                prepare: false,
+            })?;
+
+        // Keep the client only together with its statements: the statements
+        // of the old session do not exist in the new one.
         self.prepared_statements = PreparedStatements::new(
             &self.key_schema,
             &self.value_schema,
             &self.config,
-            &mut self.client,
+            &mut client,
         )
-        .map_err(|e| {
-            e.context(format!(
+        .map_err(|e| ReconnectError {
+            error: e.context(format!(
                 "postgres: error preparing statements after reconnecting to postgres
 These statements were successfully prepared before reconnecting. Does the table {} still exist?",
                 self.table
-            ))
+            )),
+            prepare: true,
         })?;
+        self.client = Some(client);
 
         tracing::info!(
             "postgres: worker-thread-{} successfully reconnected to postgres",
@@ -453,17 +503,15 @@ These statements were successfully prepared before reconnecting. Does the table 
         Ok(())
     }
 
-    /// Reconnects, and waits for as long as the failures are temporary.
-    ///
-    /// Returns whether the worker has a connection. It has none after a
-    /// permanent failure, which this reports, or when the pipeline is stopping.
-    fn retry_connecting_with_backoff(&mut self) -> bool {
+    /// Reconnects, and waits for as long as the server or the pooler is not
+    /// available.
+    fn retry_connecting_with_backoff(&mut self) -> Reconnect {
         let mut n_retries = 1;
 
         loop {
             if self.shutting_down() {
                 tracing::warn!("controller is shutting down: aborting");
-                return false;
+                return Reconnect::GaveUp;
             }
 
             tracing::info!(
@@ -471,29 +519,39 @@ These statements were successfully prepared before reconnecting. Does the table 
                 self.worker_idx
             );
             match self.retry_connecting() {
-                Ok(_) => return true,
+                Ok(_) => return Reconnect::Connected,
                 Err(e) => {
                     // Only a failure that ends the loop leaves the endpoint
                     // unable to reach postgres.
-                    let retry = e.should_retry();
+                    let retry = e.error.should_retry();
+                    let server_answered = e.prepare && e.error.session_stays_open();
+                    let error = e.error.inner();
+                    let reported = anyhow!("{error}");
                     if let Some(controller) = self.controller.upgrade() {
                         controller.output_transport_error(
                             self.endpoint_id,
                             &self.endpoint_name,
                             !retry,
-                            e.inner(),
+                            reported,
                             Some("pg_conn_retry"),
                         );
                     }
                     if !retry {
-                        return false;
+                        return Reconnect::GaveUp;
+                    }
+                    // The server is there and did not prepare a statement,
+                    // for example because of a lock on the table. A wait here
+                    // for the server to come back has no end, so the failure
+                    // counts as an attempt to write the batch.
+                    if server_answered {
+                        return Reconnect::Failed(error);
                     }
                 }
             }
 
             if !self.backoff_unless_shutdown(Self::backoff_after(n_retries)) {
                 tracing::warn!("controller is shutting down: aborting");
-                return false;
+                return Reconnect::GaveUp;
             }
             n_retries += 1;
         }
@@ -502,6 +560,16 @@ These statements were successfully prepared before reconnecting. Does the table 
     /// How long to wait before the next attempt, after `failures` in a row.
     fn backoff_after(failures: u32) -> Duration {
         Duration::from_secs(failures.into()).min(Duration::from_secs(60))
+    }
+
+    /// How long to wait before attempt number `attempt` to write a batch,
+    /// where 0 is the first attempt.
+    ///
+    /// The first new attempt does not wait: a lost connection or a deadlock is
+    /// usually gone at once. A failure on a session that stays open, such as a
+    /// server that is read-only after a failover, needs time to go away.
+    fn write_attempt_wait(attempt: usize) -> Duration {
+        Self::backoff_after(attempt.saturating_sub(1) as u32)
     }
 
     /// Whether the pipeline has been asked to stop.
@@ -553,6 +621,7 @@ These statements were successfully prepared before reconnecting. Does the table 
     fn start_batch(&mut self) -> Option<anyhow::Error> {
         let error = self.batch_start_inner().err()?;
         self.transaction_state = TransactionState::Lost;
+        self.lost_cause = Some(error.message());
 
         // A pipeline that is stopping has no use for the transaction.
         if self.shutting_down() {
@@ -581,7 +650,13 @@ These statements were successfully prepared before reconnecting. Does the table 
         // overlapping.
         self.transaction = None;
 
-        let txn = self.client.transaction()?;
+        let client = self.client.as_mut().ok_or_else(|| {
+            BackoffError::Temporary(anyhow!(
+                "the worker has no connection to PostgreSQL, because it could not open \
+                 one again after an earlier failure"
+            ))
+        })?;
+        let txn = client.transaction()?;
 
         // SAFETY: The transaction borrows `self.client`. Both live on this
         // worker's dedicated thread and never move. The borrow ends before the
@@ -612,10 +687,18 @@ These statements were successfully prepared before reconnecting. Does the table 
             self.transaction = None;
             self.num_bytes = 0;
             self.num_rows = 0;
+            let cause = self.lost_cause.take();
             return Err(BackoffError::Temporary(anyhow!(
-                "the connection to PostgreSQL dropped, or the transaction did not start, \
-                 before the rows for table {:?} could be committed",
-                self.table
+                "the transaction was lost before the rows for table {:?} could be \
+                 committed: {}",
+                self.table,
+                truncate_ellipse(
+                    cause
+                        .as_deref()
+                        .unwrap_or("the connection to PostgreSQL dropped"),
+                    MAX_LOST_CAUSE_LEN,
+                    "..."
+                )
             )));
         }
 
@@ -653,13 +736,16 @@ These statements were successfully prepared before reconnecting. Does the table 
     }
 
     /// Write the current batch, and write it again from the start if the
-    /// connection drops partway.
+    /// transaction is lost partway: the connection drops, or a statement fails
+    /// with an error that [`BackoffError`] classifies as temporary.
     ///
-    /// Losing the connection rolls the transaction back, so the rows it held are
+    /// Losing the transaction rolls it back, so the rows it held are
     /// gone and the payloads that carried them have been drained from the
     /// buffers. Writing the batch again from [`Self::pending_batch`] is what
     /// keeps it from being lost, and is safe precisely because the rollback
     /// returned the table to its pre-batch state.
+    ///
+    /// Each new attempt uses a new connection, see [`Self::retry_connecting`].
     ///
     /// A failure that is not retryable ends the batch: rewriting it would hit
     /// the same error, so the caller reports it instead.
@@ -677,6 +763,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         // workers can have committed all the rows.
         if self.transaction_state == TransactionState::Lost && !self.has_pending_rows() {
             self.transaction = None;
+            self.lost_cause = None;
 
             // One attempt to have a connection for the next batch. If it
             // fails, the worker connects again when a batch gives it rows.
@@ -685,7 +772,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                     "postgres: worker-thread-{} has no rows in this batch and could not \
                      open its connection again: {}",
                     self.worker_idx,
-                    e.inner()
+                    e.error.inner()
                 );
             }
             return Ok((0, 0));
@@ -695,10 +782,21 @@ These statements were successfully prepared before reconnecting. Does the table 
 
         for attempt in 0..MAX_BATCH_WRITE_ATTEMPTS {
             if attempt > 0 {
-                // Without a connection, the attempts that are left would each
-                // fail in the same way.
-                if !self.retry_connecting_with_backoff() {
-                    if self.shutting_down() {
+                let reconnect = if self.backoff_unless_shutdown(Self::write_attempt_wait(attempt)) {
+                    self.retry_connecting_with_backoff()
+                } else {
+                    Reconnect::GaveUp
+                };
+
+                match reconnect {
+                    Reconnect::Connected => (),
+                    Reconnect::Failed(error) => {
+                        last_error = Some(error);
+                        continue;
+                    }
+                    // Without a connection, the attempts that are left would
+                    // each fail in the same way.
+                    Reconnect::GaveUp if self.shutting_down() => {
                         return Err(anyhow!(
                             "the pipeline stopped before the rows for table {:?} could be \
                              written again; the last failure was: {}",
@@ -706,14 +804,16 @@ These statements were successfully prepared before reconnecting. Does the table 
                             last_error.expect("an attempt failed before this one")
                         ));
                     }
-                    return Err(anyhow!(
-                        "gave up writing to table {:?} because the connection to PostgreSQL \
-                         cannot be opened again, so these rows were dropped; make sure that \
-                         the server accepts connections with the URI and the credentials of \
-                         this connector; the last failure was: {}",
-                        self.table,
-                        last_error.expect("an attempt failed before this one")
-                    ));
+                    Reconnect::GaveUp => {
+                        return Err(anyhow!(
+                            "gave up writing to table {:?} because the connection to \
+                             PostgreSQL cannot be opened again, so these rows were dropped; \
+                             make sure that the server accepts connections with the URI and \
+                             the credentials of this connector; the last failure was: {}",
+                            self.table,
+                            last_error.expect("an attempt failed before this one")
+                        ));
+                    }
                 }
 
                 // The connection can drop again while restarting, which is just
@@ -740,7 +840,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                 Err(e) if e.should_retry() => {
                     let error = e.inner();
                     tracing::error!(
-                        "postgres: worker-thread-{} lost its connection while writing a batch \
+                        "postgres: worker-thread-{} lost its transaction while writing a batch \
                          (attempt {} of {MAX_BATCH_WRITE_ATTEMPTS}), writing it again: {error}",
                         self.worker_idx,
                         attempt + 1,
@@ -2026,6 +2126,19 @@ pub mod tests {
 
         fn make_records(n: usize) -> Vec<Value> {
             (0..n as i32).map(numbered_record).collect()
+        }
+
+        /// The second attempt to write a batch starts at once, and each later
+        /// attempt waits one second longer than the one before it.
+        #[test]
+        fn write_attempts_wait_longer_each_time() {
+            use crate::integrated::postgres::output::{MAX_BATCH_WRITE_ATTEMPTS, PostgresWorker};
+
+            let waits: Vec<u64> = (0..MAX_BATCH_WRITE_ATTEMPTS)
+                .map(|attempt| PostgresWorker::write_attempt_wait(attempt).as_secs())
+                .collect();
+            assert_eq!(waits, [0, 0, 1, 2, 3, 4, 5, 6, 7, 8]);
+            assert_eq!(waits.iter().sum::<u64>(), 36);
         }
 
         /// A worker that cannot open a transaction while the pipeline is

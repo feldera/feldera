@@ -71,6 +71,29 @@ impl BackoffError {
         }
     }
 
+    /// Whether the server answered with an error and left the session open.
+    ///
+    /// This separates a server that is there and did not run a statement from
+    /// a server or a pooler that is not available.
+    ///
+    /// A connection error (class 08) ends the session whatever its severity:
+    /// PgBouncer before 1.16 sends its own errors as ERROR and then closes
+    /// the session.
+    pub fn session_stays_open(&self) -> bool {
+        let (BackoffError::Temporary(error) | BackoffError::Permanent(error)) = self;
+        error.downcast_ref::<postgres::Error>().is_some_and(|e| {
+            !e.is_closed()
+                && e.as_db_error()
+                    .is_some_and(|db| !session_ended(db) && !db.code().code().starts_with("08"))
+        })
+    }
+
+    /// The error and everything it is chained to, as one line of text.
+    pub fn message(&self) -> String {
+        let (BackoffError::Temporary(error) | BackoffError::Permanent(error)) = self;
+        format!("{error:#}")
+    }
+
     pub fn context(self, context: String) -> Self {
         match self {
             BackoffError::Temporary(error) => BackoffError::Temporary(error.context(context)),
@@ -79,16 +102,35 @@ impl BackoffError {
     }
 }
 
-/// Whether a statement that failed on an established connection can succeed on
-/// a new one.
+/// SQLSTATE classes of a failure that the statement and its rows usually do
+/// not cause. The server cannot run the statement now. It can usually run it
+/// later, or through a different session.
+///
+/// Some errors in these classes come back each time, for example a statement
+/// that is always slower than the statement timeout, or an internal error that
+/// a trigger raises. The limit on the attempts to write a batch bounds the
+/// cost of such an error.
+///
+/// | Class | Meaning | Examples |
+/// |---|---|---|
+/// | 08 | Connection exception | PgBouncer reports each error of its own as 08P01, such as a server that it cannot log in to |
+/// | 40 | Transaction rollback | Serialization failure, deadlock |
+/// | 53 | Insufficient resources | Disk full, out of memory, too many connections |
+/// | 57 | Operator intervention | Shutdown, startup, a query that an operator or a timeout cancelled |
+/// | 58 | System error | I/O error |
+/// | XX | Internal error | Some managed services report "server unavailable" as XX000 |
+const TRANSIENT_SQLSTATE_CLASSES: [&str; 6] = ["08", "40", "53", "57", "58", "XX"];
+
+/// Whether a statement that failed on an established connection can succeed
+/// when the worker writes the batch again.
 ///
 /// `closed` is [`postgres::Error::is_closed`], `code` is the SQLSTATE of the
 /// error, and `session_ended` is [`session_ended`].
 ///
-/// The rule is about the session, not about the statement: when the session is
-/// gone, so is its transaction, and the same rows can be written again through
-/// a new session. A statement that the server rejected in a healthy session
-/// fails the same way each time, so it is not transient.
+/// The rule is about the session and the server, not about the statement. The
+/// transaction is gone in each of these cases, and the worker writes the same
+/// rows again through a new session. A statement that the server rejected for
+/// its rows fails the same way each time, so it is not transient.
 fn is_transient(closed: bool, code: Option<&SqlState>, session_ended: bool) -> bool {
     // The error has no SQLSTATE when the OS refused or dropped the connection.
     let Some(code) = code else {
@@ -97,18 +139,15 @@ fn is_transient(closed: bool, code: Option<&SqlState>, session_ended: bool) -> b
 
     closed
         || session_ended
-        // Class 08, connection exception. A connection pooler in front of the
-        // server is one source of these: PgBouncer reports each error of its
-        // own as 08P01, such as a server that it cannot log in to, or a server
-        // connection that died under a transaction.
-        || code.code().starts_with("08")
-        // The server is stopping, restarting after a crash, or starting up.
-        || [
-            SqlState::ADMIN_SHUTDOWN,
-            SqlState::CRASH_SHUTDOWN,
-            SqlState::CANNOT_CONNECT_NOW,
-        ]
-        .contains(code)
+        || TRANSIENT_SQLSTATE_CLASSES
+            .iter()
+            .any(|class| code.code().starts_with(class))
+        // The session cannot write. After a failover, a pooler can hold a
+        // session on the old primary, which is then a read-only replica. The
+        // session stays open, so only a new session can correct this.
+        || *code == SqlState::READ_ONLY_SQL_TRANSACTION
+        // A different transaction held a lock for longer than `lock_timeout`.
+        || *code == SqlState::LOCK_NOT_AVAILABLE
 }
 
 /// Whether the sender of `error` ended the session with it.
@@ -119,8 +158,9 @@ fn is_transient(closed: bool, code: Option<&SqlState>, session_ended: bool) -> b
 fn session_ended(error: &DbError) -> bool {
     match error.parsed_severity() {
         Some(severity) => matches!(severity, Severity::Fatal | Severity::Panic),
-        // Only the localizable severity is present: the sender is a server
-        // older than 9.6, or a pooler, and poolers do not localize.
+        // Only the localizable severity is present. The sender is a pooler:
+        // PgBouncer sends no other severity field, and it does not localize.
+        // A PostgreSQL server older than 9.6 also sends only this field.
         None => matches!(error.severity(), "FATAL" | "PANIC"),
     }
 }
@@ -167,8 +207,12 @@ mod tests {
         for code in [
             SqlState::UNIQUE_VIOLATION,
             SqlState::NOT_NULL_VIOLATION,
+            SqlState::FOREIGN_KEY_VIOLATION,
+            SqlState::INVALID_TEXT_REPRESENTATION,
+            SqlState::INSUFFICIENT_PRIVILEGE,
             SqlState::UNDEFINED_TABLE,
             SqlState::SYNTAX_ERROR,
+            SqlState::IN_FAILED_SQL_TRANSACTION,
         ] {
             assert!(!is_transient(false, Some(&code), false), "{code:?}");
         }
@@ -184,6 +228,32 @@ mod tests {
             SqlState::CRASH_SHUTDOWN,
             SqlState::ADMIN_SHUTDOWN,
             SqlState::CONNECTION_FAILURE,
+        ] {
+            assert!(is_transient(false, Some(&code), false), "{code:?}");
+        }
+    }
+
+    /// A session that stays open and cannot write is transient: a new session
+    /// can reach a server that accepts writes.
+    #[test]
+    fn read_only_session_is_transient() {
+        let code = SqlState::READ_ONLY_SQL_TRANSACTION;
+        assert!(is_transient(false, Some(&code), false));
+    }
+
+    /// A failure of the server, or a conflict with a different transaction,
+    /// is transient also when the session stays open.
+    #[test]
+    fn server_failures_and_conflicts_are_transient() {
+        for code in [
+            SqlState::T_R_SERIALIZATION_FAILURE,
+            SqlState::T_R_DEADLOCK_DETECTED,
+            SqlState::LOCK_NOT_AVAILABLE,
+            SqlState::DISK_FULL,
+            SqlState::OUT_OF_MEMORY,
+            SqlState::QUERY_CANCELED,
+            SqlState::IO_ERROR,
+            SqlState::INTERNAL_ERROR,
         ] {
             assert!(is_transient(false, Some(&code), false), "{code:?}");
         }
