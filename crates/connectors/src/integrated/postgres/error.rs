@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use feldera_types::library_error::LibraryError;
-use postgres::error::SqlState;
+use postgres::error::{DbError, Severity, SqlState};
 
 pub(super) enum BackoffError {
     Temporary(anyhow::Error),
@@ -86,6 +86,52 @@ impl BackoffError {
     }
 }
 
+/// Whether a statement that failed on an established connection can succeed on
+/// a new one.
+///
+/// `closed` is [`postgres::Error::is_closed`], `code` is the SQLSTATE of the
+/// error, and `session_ended` is [`session_ended`].
+///
+/// The rule is about the session, not about the statement: when the session is
+/// gone, so is its transaction, and the same rows can be written again through
+/// a new session. A statement that the server rejected in a healthy session
+/// fails the same way each time, so it is not transient.
+fn is_transient(closed: bool, code: Option<&SqlState>, session_ended: bool) -> bool {
+    // The error has no SQLSTATE when the OS refused or dropped the connection.
+    let Some(code) = code else {
+        return true;
+    };
+
+    closed
+        || session_ended
+        // Class 08, connection exception. A connection pooler in front of the
+        // server is one source of these: PgBouncer reports each error of its
+        // own as 08P01, such as a server that it cannot log in to, or a server
+        // connection that died under a transaction.
+        || code.code().starts_with("08")
+        // The server is stopping, restarting after a crash, or starting up.
+        || [
+            SqlState::ADMIN_SHUTDOWN,
+            SqlState::CRASH_SHUTDOWN,
+            SqlState::CANNOT_CONNECT_NOW,
+        ]
+        .contains(code)
+}
+
+/// Whether the sender of `error` ended the session with it.
+///
+/// FATAL ends the session of the client and PANIC ends all sessions. The
+/// SQLSTATE cannot stand in for this: a session can end for a timeout, a
+/// conflict with recovery, or a reason that only a pooler knows.
+fn session_ended(error: &DbError) -> bool {
+    match error.parsed_severity() {
+        Some(severity) => matches!(severity, Severity::Fatal | Severity::Panic),
+        // Only the localizable severity is present: the sender is a server
+        // older than 9.6, or a pooler, and poolers do not localize.
+        None => matches!(error.severity(), "FATAL" | "PANIC"),
+    }
+}
+
 /// Classifies a statement failing on an established connection.
 ///
 /// Use [`BackoffError::connecting`] for a failure to open the connection in the
@@ -96,19 +142,11 @@ impl BackoffError {
 impl From<postgres::Error> for BackoffError {
     fn from(value: postgres::Error) -> Self {
         let code = value.code().cloned();
-        let temporary = value.is_closed()
-            || code.as_ref().is_some_and(|c| {
-                [
-                    SqlState::CONNECTION_FAILURE,
-                    SqlState::CONNECTION_DOES_NOT_EXIST,
-                    SqlState::CONNECTION_EXCEPTION,
-                    SqlState::SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION,
-                    SqlState::ADMIN_SHUTDOWN,
-                ]
-                .contains(c)
-            })
-            // value.code() is none when connection is refused by the OS
-            || code.is_none();
+        let temporary = is_transient(
+            value.is_closed(),
+            code.as_ref(),
+            value.as_db_error().is_some_and(session_ended),
+        );
 
         // Keep the postgres error as the source instead of interpolating it:
         // `Display for postgres::Error` reports only the kind ("db error"), and
@@ -132,7 +170,8 @@ impl From<postgres::Error> for BackoffError {
 
 #[cfg(test)]
 mod tests {
-    use super::BackoffError;
+    use super::{BackoffError, is_transient};
+    use postgres::error::SqlState;
 
     /// The driver's own message survives the wrapper, so the report still
     /// says what went wrong.
@@ -147,5 +186,48 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("port"), "{text}");
+    }
+
+    /// A statement that the server rejects in a healthy session is permanent.
+    #[test]
+    fn rejected_statement_is_permanent() {
+        for code in [
+            SqlState::UNIQUE_VIOLATION,
+            SqlState::NOT_NULL_VIOLATION,
+            SqlState::UNDEFINED_TABLE,
+            SqlState::SYNTAX_ERROR,
+        ] {
+            assert!(!is_transient(false, Some(&code), false), "{code:?}");
+        }
+    }
+
+    /// PgBouncer reports its own errors as 08P01. One of them repeats the
+    /// 57P03 of a server that is starting up.
+    #[test]
+    fn pooler_and_startup_errors_are_transient() {
+        for code in [
+            SqlState::PROTOCOL_VIOLATION,
+            SqlState::CANNOT_CONNECT_NOW,
+            SqlState::CRASH_SHUTDOWN,
+            SqlState::ADMIN_SHUTDOWN,
+            SqlState::CONNECTION_FAILURE,
+        ] {
+            assert!(is_transient(false, Some(&code), false), "{code:?}");
+        }
+    }
+
+    /// An error that ends the session is transient, whatever its SQLSTATE: a
+    /// session timeout is one example.
+    #[test]
+    fn error_that_ends_the_session_is_transient() {
+        let code = SqlState::IDLE_IN_TRANSACTION_SESSION_TIMEOUT;
+        assert!(!is_transient(false, Some(&code), false));
+        assert!(is_transient(false, Some(&code), true));
+    }
+
+    #[test]
+    fn closed_connection_is_transient() {
+        assert!(is_transient(true, Some(&SqlState::UNIQUE_VIOLATION), false));
+        assert!(is_transient(false, None, false));
     }
 }
