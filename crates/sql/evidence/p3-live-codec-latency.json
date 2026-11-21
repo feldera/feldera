@@ -1,0 +1,42 @@
+{
+  "scope": "Rust live graph construction on the frozen Nexmark fanout input. The timer starts after the graph rewrite and ends before JSON serialization and JNI reply packaging.",
+  "pinned_linux_cpu": 12,
+  "alternating_pairs": 8,
+  "calls_per_process": 16,
+  "warmup_calls_per_process": 2,
+  "round_median_ms": {
+    "before": [
+      20.8714655,
+      19.44632,
+      21.600277,
+      20.3635485,
+      17.920821,
+      18.1020085,
+      17.742509,
+      18.949362
+    ],
+    "after": [
+      9.5578895,
+      9.7525765,
+      10.8182635,
+      10.561596999999999,
+      8.909431999999999,
+      8.979993499999999,
+      9.099765,
+      8.953056499999999
+    ]
+  },
+  "paired_round_mean_ratio": 0.49469111604048394,
+  "paired_round_mean_ratio_95pct_bootstrap_interval": [
+    0.4810806708833256,
+    0.506609279924664
+  ],
+  "input_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "equal_live_output_sha256": "8a7652ae39865109a86538a0f3c4a80067ebfe83d7feb11c3c268032e6c47796",
+  "output_bytes": 621760,
+  "binary_sha256": {
+    "before": "6970f55d84aa1e15d85253cdc80bc3f487d21556ef9d4b12ae7ff54c5fb96166",
+    "after": "edc9d42477ae08ed53efc459d157014fcaf4f66117f6b12d1d4a988f0ad62379"
+  },
+  "workspace_archive": ".bench-results/p3-live-codec/2026-21-11-02-22-2fb3d"
+}

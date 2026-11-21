@@ -97,13 +97,6 @@ fn transform(
             .map(|(name, position)| json!({"name":name, "position":position}));
         return Ok(json!({"connector_call":call, "next_generated_name":next}));
     }
-    let publish = |result: &Circuit, input: &Circuit| {
-        if live.is_some() {
-            result.changed_live_graph(input)
-        } else {
-            result.changed_graph(input)
-        }
-    };
     if let Some(pass) = pass.strip_prefix("Expressions/") {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -404,16 +397,27 @@ fn transform(
         return Ok(json!({"annotations": edits, "next_generated_name": next}));
     }
     let original = Circuit::from_json(wire)?;
+    // Move the encoded graph into the reply. Passing it through json! would
+    // traverse and allocate the entire graph again on every changed pass.
+    let publish = |output: &Circuit, mut reply: Value| {
+        let graph = if live.is_some() {
+            output.changed_live_graph(&original)
+        } else {
+            output.changed_graph(&original)
+        };
+        reply["circuit"] = graph.unwrap_or(Value::Null);
+        reply
+    };
     let circuit = original.clone();
     if pass == "RemoveUselessLeftJoinsVisitor" {
         let keyed: Vec<u64> = serde_json::from_slice(state)?;
         let keyed = keyed.into_iter().map(NodeId::Outer).collect();
         let (result, removed) =
             feldera_sql_opt::remove_useless_left_joins(circuit, &keyed, &mut next)?;
-        return Ok(
-            json!({"circuit": publish(&result, &original), "removed_left_joins": operator_numbers(removed),
-            "unused_sources": [], "next_generated_name": next}),
-        );
+        return Ok(publish(&result, json!({
+            "removed_left_joins": operator_numbers(removed), "unused_sources": [],
+            "next_generated_name": next
+        })));
     }
     if pass == "BuildNestedOperators" {
         let result = feldera_sql_opt::build_nested_operators(circuit, &mut next)?;
@@ -421,11 +425,10 @@ fn transform(
             .diagnostics
             .late_column
             .map(|(id, column)| json!({"operator":operator_number(id), "column":column}));
-        return Ok(
-            json!({"circuit":publish(&result.circuit, &original), "next_generated_name":next,
-            "unused_sources":[], "unused_declarations":operator_numbers(result.diagnostics.unused_declarations),
-            "late_column":late}),
-        );
+        return Ok(publish(&result.circuit, json!({
+            "next_generated_name":next, "unused_sources":[],
+            "unused_declarations":operator_numbers(result.diagnostics.unused_declarations), "late_column":late
+        })));
     }
     let mut unused_sources = Vec::new();
     let result = match pass {
@@ -543,10 +546,10 @@ fn transform(
                     })
                 })
                 .collect();
-            return Ok(
-                json!({"circuit":publish(&output, &original), "diagnostics":warnings, "weight_node":weight,
-                "next_generated_name":next, "unused_sources":[]}),
-            );
+            return Ok(publish(&output, json!({
+                "diagnostics":warnings, "weight_node":weight, "next_generated_name":next,
+                "unused_sources":[]
+            })));
         }
         "RemoveIdentityOperators" => {
             feldera_sql_opt::remove_identity_operators(circuit, &mut next)?
@@ -612,8 +615,9 @@ fn transform(
         "RemoveDeindexOperators" => feldera_sql_opt::remove_deindex_operators(circuit, &mut next)?,
         other => return Err(format!("unknown optimizer pass {other}").into()),
     };
-    let changed = publish(&result, &original);
-    Ok(json!({"circuit": changed, "next_generated_name": next, "unused_sources": unused_sources}))
+    Ok(publish(&result, json!({
+        "next_generated_name": next, "unused_sources": unused_sources
+    })))
 }
 
 // SAFETY: the export name is unique to the matching static native method in

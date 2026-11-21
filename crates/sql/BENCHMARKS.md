@@ -45,6 +45,12 @@ Six alternating pairs on one pinned Linux CPU gave a 95% bootstrap interval of
 output. The timer covered only the Rust fixed-point rewrite.
 [Isolated fanout rewrite](evidence/p3-fanout-rewrite-latency.json)
 
+On the same fanout input, checking shared field maps by identity and moving the
+encoded graph into its reply reduced the median time to construct the live
+graph from 19.20 ms to 9.33 ms (median of eight process medians). Both binaries
+produced the same 621,760 bytes. These timings exclude the JNI envelope and
+SQL compilation. [Live graph construction](evidence/p3-live-codec-latency.json)
+
 In a separate Nexmark run on the 18-pass compiler, Java Flight Recorder captured 1,054 main-thread
 stack samples. Of those, 340 were inside a Rust JNI call, 170 were encoding
 or applying pass results in Java and 386 were in the Java Rust printer.

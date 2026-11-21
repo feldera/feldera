@@ -1,8 +1,18 @@
 //! Encode a changed circuit for the JVM that supplied its input. Live inner
 //! objects can be shared across passes, including closure parameters and types.
 use crate::{Circuit, Field, NodeId};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
+use std::sync::Arc;
+
+fn has_outer_edge(field: &Field) -> bool {
+    match field {
+        Field::Reference(NodeId::Outer(_)) | Field::Definition(NodeId::Outer(_)) => true,
+        Field::Object(fields) => fields.values().any(has_outer_edge),
+        Field::Array(fields) => fields.iter().any(has_outer_edge),
+        _ => false,
+    }
+}
 
 /// A definition can move to an earlier reader without changing the object.
 /// Inner objects with a reference to an outer operator require a full replay.
@@ -25,7 +35,7 @@ impl Circuit {
     /// Return an in-process reply. A standalone checkpoint still needs the
     /// definitions of every object reachable from its root.
     pub fn changed_live_graph(&self, previous: &Self) -> Option<Value> {
-        if std::sync::Arc::ptr_eq(&self.nodes.0, &previous.nodes.0) {
+        if Arc::ptr_eq(&self.nodes.0, &previous.nodes.0) {
             return None;
         }
         // Check every surviving input object before retaining any of them.
@@ -33,6 +43,9 @@ impl Circuit {
         // descendant that kept its number.
         let can_share = self.nodes.range(NodeId::Inner(0)..).all(|(id, node)| {
             previous.node(*id).is_none_or(|old| {
+                if Arc::ptr_eq(&old.fields.0, &node.fields.0) {
+                    return old.class() == node.class() && !node.fields.values().any(has_outer_edge);
+                }
                 old.class() == node.class()
                     && old.fields.len() == node.fields.len()
                     && node
@@ -64,6 +77,13 @@ impl Circuit {
             }
             false
         });
-        Some(json!({"graph":graph,"retained_inner":retained}))
+        Some(Value::Object(
+            [
+                ("graph".into(), graph),
+                ("retained_inner".into(), retained.into_iter().collect()),
+            ]
+            .into_iter()
+            .collect(),
+        ))
     }
 }
