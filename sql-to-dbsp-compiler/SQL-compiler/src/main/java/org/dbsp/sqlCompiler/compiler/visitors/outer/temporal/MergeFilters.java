@@ -35,6 +35,8 @@ public class MergeFilters extends CircuitCloneVisitor {
         BooleanExpression fe = f.get(0);
         if (!fe.is(TemporalFilter.class))
             return false;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return NativeTemporalComparisons.canMerge(this.compiler, s, fe.to(TemporalFilter.class));
         // The source may hold several such bounds.
         for (BooleanExpression se : s) {
             if (!se.is(TemporalFilter.class) || !se.compatible(fe))

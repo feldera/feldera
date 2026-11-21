@@ -1,0 +1,36 @@
+{
+  "compiler": {
+    "profile": "Linux ARM64, offline Maven package and release Rust tools",
+    "pass_kinds": 103,
+    "jar_sha256": "27f12abcd5b29172820d419a8eb740a7605d32dfeb2e5ea0274727833f703636",
+    "driver_sha256": "5a1f0e65004735465715b533632499d88c4969488c62a8be9156cd3628ad66ad",
+    "optimizer_library_sha256": "7abefd061f2b5386197685d4700da6e8141f759c429378f920817ae983236a81"
+  },
+  "scope": "Rust groups temporal bounds and residual predicates and checks compatible adjacent filters. Java supplies monotonicity facts and compares keys outside the Rust equivalence implementation.",
+  "pass_comparisons": {
+    "classic": {
+      "MergeFilters": {
+        "invocations": 71,
+        "reference_gzip_sha256": "f59d63529d8a7d9c8067b1807dbf73090517361327553ac090f08d3a3763647e",
+        "hybrid_gzip_sha256": "b10a2e21dbe5faa23140b4f3a06ae24b76b605f2c30f048213765489b5694258"
+      },
+      "RewriteNow": {
+        "invocations": 71,
+        "reference_gzip_sha256": "465c55801b26d8242d326860b5550919e60115f8c89e7dc163f98a7a1f8277d2",
+        "hybrid_gzip_sha256": "f5ee6b7e04a572485305550e849dbef9d2f620ab9109ac79761eea2f4998a5f9"
+      }
+    },
+    "gen2": {
+      "MergeFilters": {
+        "invocations": 62,
+        "reference_gzip_sha256": "5d1a5856ab670c75b619625be2242c0cd768d016ac8d7ab3f6c936aa8667d1af",
+        "hybrid_gzip_sha256": "354c60b70ee6c5a347ab9bb9c9fe0709ce147e17f320873c86f0a0fa85c9d4ad"
+      },
+      "RewriteNow": {
+        "invocations": 62,
+        "reference_gzip_sha256": "b62e2a194cf768e03cd8b91afdbc339f3c228e82206f6acebe63679389e58676",
+        "hybrid_gzip_sha256": "2dc2fe5a32731285c5a20e3f369877146d19cb202210f25bea08ed6c5c0550a4"
+      }
+    }
+  }
+}

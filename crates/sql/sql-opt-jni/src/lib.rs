@@ -279,6 +279,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 "lower_inclusive": window.lower_inclusive, "upper_inclusive": window.upper_inclusive,
                 "lower_unbounded": window.lower_unbounded}));
         }
+        ("TemporalGroups" | "MergeTemporalBounds", roots) => {
+            return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
+        }
         ("TemporalComparisons", [body]) => return temporal::classify(&arena, &mut edit, *body, state),
         ("WindowGroups/ReorderPredicate", [body]) => {
             #[derive(serde::Deserialize)]
@@ -570,7 +573,7 @@ fn transform(
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
-        | "TemporalComparisons" | "WindowGroups/ReorderPredicate"
+        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ReorderPredicate"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"

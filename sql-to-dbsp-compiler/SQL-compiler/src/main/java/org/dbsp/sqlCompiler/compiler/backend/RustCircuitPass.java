@@ -871,6 +871,39 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public record TemporalGroup(int first, int count, @Nullable DBSPExpression expression) {}
+
+    @Nullable
+    public static List<TemporalGroup> groupTemporalFilters(DBSPCompiler compiler, List<String> kinds,
+                                                            List<IDBSPInnerNode> roots) {
+        var reply = temporalGroupRequest(compiler, "TemporalGroups", kinds, roots);
+        if (reply.value.isNull())
+            return null;
+        var decoder = expressionDecoder(reply.writer);
+        var groups = new ArrayList<TemporalGroup>();
+        for (var group : reply.value) {
+            var value = group.required("expression");
+            groups.add(new TemporalGroup(group.required("first").intValue(), group.required("count").intValue(),
+                    value.isNull() ? null : decoder.decodeInner(value, DBSPExpression.class)));
+        }
+        return groups;
+    }
+
+    @Nullable
+    public static Boolean acceptsTemporalBound(DBSPCompiler compiler, List<String> kinds, List<IDBSPInnerNode> roots) {
+        var value = temporalGroupRequest(compiler, "MergeTemporalBounds", kinds, roots).value;
+        return value.isNull() ? null : value.booleanValue();
+    }
+
+    private static LoweringReply temporalGroupRequest(DBSPCompiler compiler, String pass,
+                                                       List<String> kinds, List<IDBSPInnerNode> roots) {
+        try {
+            return invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(kinds), roots.toArray(IDBSPInnerNode[]::new));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode temporal filter groups", error);
+        }
+    }
+
     public record TemporalCandidate(String fingerprint, int conjunct) {}
     public record TemporalBound(String fingerprint, boolean lower) {}
 

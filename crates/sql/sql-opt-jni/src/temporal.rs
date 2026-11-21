@@ -52,3 +52,63 @@ pub(super) fn classify(
             .collect(),
     ))
 }
+
+/// A bound supplies its declaring parameter and key. A residual supplies just
+/// its Boolean expression. Consecutive roots share the request's node table.
+pub(super) fn groups(
+    input: &Circuit,
+    edit: &mut CircuitEditor,
+    roots: &[NodeId],
+    state: &[u8],
+    merge: bool,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    use feldera_sql_opt::{TemporalBoundKey, WindowTerm};
+    let kinds: Vec<String> = serde_json::from_slice(state)?;
+    let mut roots = roots.iter().copied();
+    let mut terms = Vec::with_capacity(kinds.len());
+    for kind in kinds {
+        let root = roots.next().ok_or("missing temporal predicate")?;
+        terms.push(match kind.as_str() {
+            "NoNow" => WindowTerm::NoNow(edit.expression(root)?),
+            "Residual" => WindowTerm::Residual(edit.expression(root)?),
+            _ => WindowTerm::Bound(TemporalBoundKey {
+                comparison: serde_json::from_value(Value::String(kind))?,
+                parameter: root,
+                key: edit.expression(roots.next().ok_or("missing temporal comparison key")?)?,
+            }),
+        });
+    }
+    if roots.next().is_some() {
+        return Err("extra temporal predicate roots".into());
+    }
+    if merge {
+        let (target, upstream) = terms
+            .split_last()
+            .ok_or("missing downstream temporal filter")?;
+        return Ok(serde_json::to_value(
+            feldera_sql_opt::accepts_temporal_bound(edit, upstream, *target)?,
+        )?);
+    }
+    let Some(groups) = feldera_sql_opt::group_temporal_filters(edit, &terms)? else {
+        return Ok(Value::Null);
+    };
+    let expressions = groups
+        .iter()
+        .filter_map(|g| g.predicate)
+        .collect::<Vec<_>>();
+    let mut encoded = edit
+        .circuit()
+        .additional_expressions(input, &expressions)?
+        .into_iter();
+    Ok(Value::Array(
+        groups
+            .into_iter()
+            .map(|g| {
+                let expression = g
+                    .predicate
+                    .map(|_| encoded.next().expect("one expression per residual group"));
+                json!({"first":g.first,"count":g.count,"expression":expression})
+            })
+            .collect(),
+    ))
+}

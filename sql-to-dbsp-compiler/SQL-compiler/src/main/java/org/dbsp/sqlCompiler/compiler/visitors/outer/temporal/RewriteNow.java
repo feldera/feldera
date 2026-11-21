@@ -528,7 +528,8 @@ public class RewriteNow extends CircuitCloneVisitor {
 
         function = function.ensureTree(this.compiler).to(DBSPClosureExpression.class);
         List<BooleanExpression> filters = this.findTemporalFilters(operator, function);
-        filters = combineExpressions(filters);
+        filters = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? NativeTemporalComparisons.combine(this.compiler, filters) : combineExpressions(filters);
         Utilities.enforce(!filters.isEmpty());
         DBSPSimpleOperator result = this.implementTemporalFilters(operator, filters);
         // If the last value in the list is a NonTemporalFilter, implement that as well

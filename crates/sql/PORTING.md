@@ -1022,8 +1022,11 @@ diagnostics and pass state. [Projection composition comparisons](evidence/p3-pro
 For compatible adjacent temporal filters, Rust constructs one predicate with a
 shared row parameter and reduces both calls. All 71 classic and 62 Gen-2
 pass comparisons matched Java. The executable classic cases passed all 181
-input commands. Java still decides which adjacent bounds are compatible.
-[Temporal predicate comparisons](evidence/p3-temporal-predicate-merge.json)
+input commands. Rust now groups adjacent bounds by row expression, direction and
+inclusivity. It preserves the position of residual predicates. Java resolves key
+equivalence for expression classes outside the Rust comparator. Both temporal
+passes matched Java on the 133 active programs.
+[Temporal predicate comparisons](evidence/p3-temporal-predicate-merge.json) · [Filter grouping](evidence/p3-temporal-filter-groups.json)
 
 Rust lowers a fused join, filter and optional map to a single closure. The
 unprojected form binds the joined row once. The projected form applies the map

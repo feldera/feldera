@@ -57,6 +57,18 @@ fn classify_binary(
     Ok(TemporalPredicate::Residual(id))
 }
 
+pub(super) fn conjoin(
+    edit: &mut CircuitEditor,
+    left: ExpressionId,
+    right: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    let nullable = edit.nullable(edit.expression_type(left)?)?
+        || edit.nullable(edit.expression_type(right)?)?;
+    let ty = edit.bool_type(left.into(), nullable)?;
+    let and = edit.binary_expression(left.into(), ty, BinaryOp::And, left, right)?;
+    edit.wrap_bool_if_needed(and)
+}
+
 /// Once a residual interrupts the prefix, consume each pending right subtree as
 /// a whole. The first clock-dependent residual absorbs all following predicates.
 pub fn classify_temporal_predicates(
@@ -90,12 +102,7 @@ pub fn classify_temporal_predicates(
                 _ => None,
             };
             if let Some(previous) = previous {
-                let nullable = edit.nullable(edit.expression_type(*previous)?)?
-                    || edit.nullable(edit.expression_type(id)?)?;
-                let ty = edit.bool_type((*previous).into(), nullable)?;
-                let and =
-                    edit.binary_expression((*previous).into(), ty, BinaryOp::And, *previous, id)?;
-                *previous = edit.wrap_bool_if_needed(and)?;
+                *previous = conjoin(edit, *previous, id)?;
                 continue;
             }
         }
