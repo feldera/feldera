@@ -182,9 +182,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.active.put("dedup_keys", this.compiler.options.ioOptions.gen2);
             this.active.put("lazy_upsert", this.compiler.metadata.lazyUpsert());
         }
-        if (pass instanceof LowerCircuitVisitor || this.passClass.equals("Fuse") || this.passClass.equals("ExpandStreamAggregates") || this.passClass.equals("Simplify") || this.passClass.equals("PropagateConstants")
-                || this.passClass.equals("PullFilterVisitor") || this.passClass.equals("OptimizeProjectionVisitor"))
-            this.diagnostics = this.active.putArray("diagnostics");
+        this.diagnostics = this.active.putArray("diagnostics");
         if (pass instanceof ExpandAggregates.ExpandStreamAggregates expand) {
             this.active.set("append_only_inputs", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(expand.appendOnlyInputs()));

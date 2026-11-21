@@ -9,14 +9,32 @@ mod corpus_files;
 mod diagnostic_comparison;
 mod files;
 mod optimizer_trace;
+mod pass_observations;
 mod probe_files;
 mod roundtrip;
 use files::{read, Error};
 use probe_files::DiagnosticPolicy;
 
 fn main() -> ExitCode {
-    const USAGE: &str = "Usage: sql-difftest [--envelope|--final-s3|--zsets] EXPECTED.json ACTUAL.json\n       sql-difftest --directories EXPECTED_DIR ACTUAL_DIR\n       sql-difftest [--validate-corpus|--validate-portable-outputs] CORPUS_DIR\n       sql-difftest --portable-output-zset ZSET.json\n       sql-difftest --summarize-optimizer TRACE.jsonl\n       sql-difftest --validate-probes GOLDEN_DIR\n       sql-difftest [--compare-probes|--compare-probes-c0] EXPECTED_DIR ACTUAL_DIR\n       sql-difftest [--canonicalize-stream|--verify-ir-stream]\n       sql-difftest --roundtrip-circuit INPUT.json";
+    const USAGE: &str = "Usage: sql-difftest [--envelope|--final-s3|--zsets] EXPECTED.json ACTUAL.json\n       sql-difftest --directories EXPECTED_DIR ACTUAL_DIR\n       sql-difftest [--validate-corpus|--validate-portable-outputs] CORPUS_DIR\n       sql-difftest --portable-output-zset ZSET.json\n       sql-difftest --compare-pass PASS POPULATION.jsonl CONTROL.jsonl CANDIDATE.jsonl\n       sql-difftest --summarize-optimizer TRACE.jsonl\n       sql-difftest --validate-probes GOLDEN_DIR\n       sql-difftest [--compare-probes|--compare-probes-c0] EXPECTED_DIR ACTUAL_DIR\n       sql-difftest [--canonicalize-stream|--verify-ir-stream]\n       sql-difftest --roundtrip-circuit INPUT.json";
     let mut args: Vec<_> = env::args_os().skip(1).collect();
+    if args.len() == 5 && args[0] == "--compare-pass" {
+        let Some(pass) = args[1].to_str() else {
+            return failure(Error::Input("pass name must be valid UTF-8".into()));
+        };
+        return match pass_observations::compare(
+            pass,
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+            Path::new(&args[4]),
+        ) {
+            Ok(report) => {
+                println!("{report}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => failure(error),
+        };
+    }
     if args.len() == 2 && args[0] == "--roundtrip-circuit" {
         return match roundtrip::run(Path::new(&args[1])) {
             Ok(()) => ExitCode::SUCCESS,

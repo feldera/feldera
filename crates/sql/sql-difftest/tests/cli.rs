@@ -216,3 +216,53 @@ fn standalone_s3_capture_checks_metadata_and_file_identity() {
     assert_eq!(run().status.code(), Some(1));
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn paired_pass_replay_requires_the_same_checkpoint_state_and_population() {
+    let directory =
+        std::env::temp_dir().join(format!("sql-difftest-paired-{}", std::process::id()));
+    fs::create_dir(&directory).unwrap();
+    let population = directory.join("population");
+    let control = directory.join("control");
+    let candidate = directory.join("candidate");
+    let digest = "ab".repeat(32);
+    let source = json!({"id":"case", "input_sha256":digest, "options":{"ioOptions":{"gen2":true}}});
+    let circuit = json!({"class":"DBSPCircuit","id":1,"allOperators":[],"declarations":[]});
+    let baseline = json!({"id":"case","input_sha256":digest,"s2_sha256":digest,"gen2":true,"pass":"Lower",
+        "invocations":[{"container":"Optimizer","index":0,"iteration":0,"instance":0,
+            "names_before":0,"names_after":1,"diagnostics":[],"extra_state":[1],
+            "before":circuit,"after":circuit}]});
+    fs::write(&population, source.to_string()).unwrap();
+    fs::write(&control, baseline.to_string()).unwrap();
+    let compare = |candidate_text: &str| {
+        fs::write(&candidate, candidate_text).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_sql-difftest"))
+            .args(["--compare-pass", "Lower"])
+            .args([&population, &control, &candidate])
+            .output()
+            .unwrap()
+            .status
+            .code()
+    };
+    let mut renumbered = baseline.clone();
+    renumbered["invocations"][0]["after"]["id"] = json!(20);
+    assert_eq!(compare(&renumbered.to_string()), Some(0));
+    for (field, change) in [
+        ("/s2_sha256", json!("cd".repeat(32))),
+        ("/pass", json!("Other")),
+        ("/invocations/0/before/declarations", json!([null])),
+        ("/invocations/0/after/class", json!("Other")),
+        ("/invocations/0/instance", json!(1)),
+        ("/invocations/0/names_after", json!(2)),
+        ("/invocations/0/extra_state", json!([])),
+        ("/invocations/0/diagnostics", json!(["warning"])),
+        ("/invocations", json!([])),
+    ] {
+        let mut changed = baseline.clone();
+        *changed.pointer_mut(field).unwrap() = change;
+        assert_eq!(compare(&changed.to_string()), Some(1), "{field}");
+    }
+    assert_eq!(compare(""), Some(1));
+    assert_eq!(compare(&format!("{baseline}\n{baseline}")), Some(1));
+    fs::remove_dir_all(directory).unwrap();
+}

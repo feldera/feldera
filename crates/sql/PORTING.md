@@ -822,6 +822,7 @@ for rust in false true; do
     java -ea -Djava.library.path="$NATIVE_LIB_DIR" -Dfeldera.optimizer.compareRustJoinFilterMap="$rust" \
         -cp "$JAVA_TEST_CLASSPATH" "$oracle" "$POPULATION" LowerCircuitVisitor "$NEW_S2_DIR" > "lower-$rust.jsonl"
 done
+target/release/sql-difftest --compare-pass LowerCircuitVisitor "$POPULATION" lower-false.jsonl lower-true.jsonl
 ```
 
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
