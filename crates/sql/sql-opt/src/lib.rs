@@ -189,7 +189,7 @@ pub use identity::{identity_closure, remove_identity_operators};
 pub use incrementalize::incrementalize;
 pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
 pub use integrate::remove_redundant_integrates;
-pub use left_joins::{remove_useless_left_joins, substitute_left_joins};
+pub use left_joins::{empty_right_join_closure, remove_useless_left_joins, substitute_left_joins};
 pub use linear_retention::{linear_postprocess_retain_keys, linear_retention_order};
 pub use merge_gc::{
     merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup, SharedTraceInputs,

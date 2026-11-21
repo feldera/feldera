@@ -145,12 +145,10 @@ pub enum EmptyStreamEdit {
     Constant(StreamKind),
     Forward(OutputPort),
     Sum(Vec<OutputPort>),
+    LeftJoin(OutputPort),
 }
 
-/// A left join with an empty right side needs the typed closure rewrite.
-pub fn empty_stream_edits(
-    circuit: &Circuit,
-) -> Result<Option<BTreeMap<NodeId, EmptyStreamEdit>>, Error> {
+pub fn empty_stream_edits(circuit: &Circuit) -> Result<BTreeMap<NodeId, EmptyStreamEdit>, Error> {
     let mut clocks = OutputClocks::new(circuit)?;
     let propagation = plan(circuit, empty_literal_flag, |port| clocks.get(port))?;
     let mut edits = propagation
@@ -162,11 +160,11 @@ pub fn empty_stream_edits(
         let edit = match change {
             Rewrite::Empty(clock) => EmptyStreamEdit::Constant(clock),
             Rewrite::Sum(ports) => EmptyStreamEdit::Sum(ports),
-            Rewrite::LeftJoin(_) => return Ok(None),
+            Rewrite::LeftJoin(left) => EmptyStreamEdit::LeftJoin(left),
         };
         edits.insert(id, edit);
     }
-    Ok(Some(edits))
+    Ok(edits)
 }
 
 pub fn propagate_empty_sources(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
@@ -186,7 +184,11 @@ pub fn propagate_empty_sources(circuit: Circuit, next: &mut u64) -> Result<Circu
                 edit.replace_stream_inputs(id, &inputs, ty)?;
             }
             Rewrite::LeftJoin(left) => {
-                crate::left_joins::left_join_for_empty_right(&mut edit, id, left, &mut counter)?
+                let function = edit.node(id)?.edge("function")?;
+                let indexed = input_type(&edit, left)?;
+                let closure =
+                    crate::empty_right_join_closure(&mut edit, function, indexed, &mut counter)?;
+                edit.left_join_as_map(id, left, closure)?;
             }
         }
     }

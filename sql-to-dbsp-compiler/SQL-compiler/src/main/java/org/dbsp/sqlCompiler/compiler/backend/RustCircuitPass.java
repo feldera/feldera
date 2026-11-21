@@ -1400,6 +1400,12 @@ public final class RustCircuitPass implements CircuitTransform {
                     case "Delta" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.DELTA));
                     case "Collection" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.COLLECTION));
                     case "Forward" -> this.map(op.outputPort(), this.input(edit.required("inputs").required(0)), false);
+                    case "LeftJoin" -> {
+                        var left = this.input(edit.required("inputs").required(0));
+                        var function = lowerFunction(RustCircuitPass.this.compiler, "EmptyRightJoin",
+                                op.getClosureFunction(), left.outputType(), DBSPClosureExpression.class);
+                        this.map(op, new DBSPMapOperator(op.getRelNode(), function, left));
+                    }
                     case "Sum" -> {
                         var inputs = new ArrayList<OutputPort>();
                         edit.required("inputs").forEach(port -> inputs.add(this.input(port)));

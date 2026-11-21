@@ -7,6 +7,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
@@ -22,6 +24,7 @@ import java.util.List;
 public final class EmptyRightJoinOracle extends FrozenCircuitObserver {
     private final DBSPCompiler compiler;
     private final ArrayNode invocations;
+    private ArrayNode diagnostics;
 
     private EmptyRightJoinOracle(DBSPCompiler compiler, ObjectNode record) {
         super(compiler, record);
@@ -36,13 +39,21 @@ public final class EmptyRightJoinOracle extends FrozenCircuitObserver {
             return;
         for (var operator : circuit.getAllOperators()) {
             if (operator instanceof DBSPLeftJoinOperator) {
-                this.observeEmptyRight(circuit);
+                this.observeEmptyRight(circuit, container, index, iteration);
                 return;
             }
         }
     }
 
-    private void observeEmptyRight(DBSPCircuit circuit) {
+    @Override
+    void diagnostic(org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange range, boolean warning,
+                    boolean continuation, String type, String message) {
+        if (this.diagnostics != null)
+            this.diagnostics.addObject().put("warning", warning).put("continuation", continuation)
+                    .put("error_type", type).put("message", message).set("range", range.asJson());
+    }
+
+    private void observeEmptyRight(DBSPCircuit circuit, String container, int index, int iteration) {
         long saved = DBSPVariablePath.nextGeneratedName();
         try {
             var input = new CircuitCloneVisitor(this.compiler, false) {
@@ -57,12 +68,18 @@ public final class EmptyRightJoinOracle extends FrozenCircuitObserver {
                 }
             }.apply(circuit);
             var record = this.invocations.addObject();
+            record.put("container", container).put("index", index).put("iteration", iteration).put("instance", 0);
+            this.diagnostics = record.putArray("diagnostics");
             record.put("names_before", DBSPVariablePath.nextGeneratedName());
             record.set("before", this.snapshot(input));
-            var output = new PropagateEmptySources(this.compiler).apply(input);
+            CircuitTransform pass = new PropagateEmptySources(this.compiler);
+            if (Boolean.getBoolean("feldera.optimizer.compareRustEmptySources"))
+                pass = new RustCircuitPass(this.compiler, pass, new OptimizerSnapshots(this.compiler));
+            var output = pass.apply(input);
             record.put("names_after", DBSPVariablePath.nextGeneratedName());
             record.set("after", this.snapshot(output));
         } finally {
+            this.diagnostics = null;
             DBSPVariablePath.restoreGeneratedNames(saved);
         }
     }
@@ -78,8 +95,8 @@ public final class EmptyRightJoinOracle extends FrozenCircuitObserver {
     }
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 1)
-            throw new IllegalArgumentException("Expected a frozen left-join population file");
-        run(Path.of(args[0]), EmptyRightJoinOracle::new);
+        if (args.length < 1 || args.length > 2)
+            throw new IllegalArgumentException("Expected POPULATION.jsonl [S2_DIRECTORY]");
+        run(Path.of(args[0]), EmptyRightJoinOracle::new, args.length == 2 ? Path.of(args[1]) : null);
     }
 }

@@ -4,7 +4,7 @@ use crate::stream_rewrites::body_members;
 use feldera_sql_expr::reduce_closure_body;
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
-    OperatorKind as Op, OutputPort,
+    OperatorKind as Op, OutputPort, TypeId,
 };
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 fn unmatched_arguments(
     edit: &mut CircuitEditor,
     function: NodeId,
-    left: OutputPort,
+    indexed: TypeId,
     next: &mut u64,
 ) -> Result<(ExpressionId, [NodeId; 3]), Error> {
     let params = edit.node(function)?.edges("parameters")?;
@@ -21,7 +21,6 @@ fn unmatched_arguments(
     };
     let right_ref = edit.node(*right)?.edge("type")?;
     let nullable_right = edit.type_id(edit.node(right_ref)?.edge("type")?)?;
-    let indexed = input_type(edit, left)?;
     let key = edit.type_id(edit.node(indexed.into())?.edge("keyType")?)?;
     let row = edit.type_id(edit.node(indexed.into())?.edge("elementType")?)?;
     let key_ref = edit.reference_type(key)?;
@@ -40,14 +39,14 @@ fn unmatched_arguments(
     Ok((var, [key, row, edit.borrow_value(absent)?.into()]))
 }
 
-pub(super) fn left_join_for_empty_right(
+/// Specialize the original join function for a left row with no matching right row.
+pub fn empty_right_join_closure(
     edit: &mut CircuitEditor,
-    join: NodeId,
-    left: OutputPort,
+    function: NodeId,
+    indexed: TypeId,
     next: &mut u64,
-) -> Result<(), Error> {
-    let function = edit.node(join)?.edge("function")?;
-    let (var, args) = unmatched_arguments(edit, function, left, next)?;
+) -> Result<ExpressionId, Error> {
+    let (var, args) = unmatched_arguments(edit, function, indexed, next)?;
     let callable = edit.node(function)?.edge("type")?;
     let result = edit.type_id(edit.node(callable)?.edge("resultType")?)?;
     let call = edit.empty_origin_node(
@@ -62,8 +61,7 @@ pub(super) fn left_join_for_empty_right(
             ),
         ],
     )?;
-    let closure = edit.closure_from_variables(edit.expression(call)?, &[var])?;
-    edit.left_join_as_map(join, left, closure)
+    edit.closure_from_variables(edit.expression(call)?, &[var])
 }
 
 pub fn substitute_left_joins(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
@@ -111,7 +109,7 @@ pub fn substitute_left_joins(circuit: Circuit, next: &mut u64) -> Result<Circuit
             &inputs,
             [("outputType", Field::Reference(left_type.into()))],
         )?;
-        let (var, args) = unmatched_arguments(&mut edit, function, inputs[0], &mut counter)?;
+        let (var, args) = unmatched_arguments(&mut edit, function, left_type, &mut counter)?;
         let closure = edit.node(function)?;
         let body_expr = closure.edge("body")?;
         let params = closure.edges("parameters")?;
