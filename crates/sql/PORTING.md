@@ -812,9 +812,11 @@ and generated-name counters matched at all 1,872 projection iterations on the
 296 selected inputs. Of those iterations, 770 changed the graph.
 [Projection field comparisons](evidence/p3-projection-fields.json)
 
-Rust composes ordinary and indexed map closures. When an indexed producer is
-expensive, the unrestricted pass can bind the result once and reuse its key
-and value. All 86,472 projection invocations matched Java across 8,571 classic
+Rust composes ordinary maps, indexed maps and join output closures. It also
+splits an antijoin projection into a value projection before the join and a key
+projection after it. When an indexed producer is expensive, the unrestricted
+pass can bind the result once and reuse its key and value.
+All 86,472 projection invocations matched Java across 8,571 classic
 and 8,527 Gen-2 programs. The comparison checked the entry and exit graphs,
 including type sharing and source positions, as well as the allocator,
 diagnostics and pass state. [Projection composition comparisons](evidence/p3-projection-composition.json)
