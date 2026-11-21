@@ -111,6 +111,8 @@ mod stream_rewrites;
 mod sums;
 mod temporal_comparisons;
 mod temporal_equality;
+mod window_projection;
+pub use window_projection::{window_projection, TemporalWindowProjection};
 mod temporal_filters;
 mod terms;
 mod topk_projection;

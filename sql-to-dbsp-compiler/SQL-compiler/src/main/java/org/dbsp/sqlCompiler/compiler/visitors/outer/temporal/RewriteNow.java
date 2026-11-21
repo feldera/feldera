@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -366,27 +367,12 @@ public class RewriteNow extends CircuitCloneVisitor {
             source = filter;
         }
 
-        // Index input by the temporal key.  When the key is a column, the value omits
-        // that column, and the map after the window puts it back from the key.
-        int keyColumn = bounds.keyColumn(param);
-        DBSPExpression value;
-        if (keyColumn < 0) {
-            value = param.asVariable().deref().applyClone();
-        } else {
-            List<DBSPExpression> valueFields = new ArrayList<>();
-            for (int i = 0; i < inputType.size(); i++)
-                if (i != keyColumn)
-                    valueFields.add(param.asVariable().deref().field(i).applyCloneIfNeeded());
-            value = new DBSPTupleExpression(valueFields, false);
-        }
-        DBSPClosureExpression indexFunction =
-                new DBSPRawTupleExpression(
-                        common.cast(common.getNode(), windowKeyType,
-                                DBSPCastExpression.CastType.SqlUnsafe),
-                        value).closure(param);
-        DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(),
-                windowKeyType,
-                value.getType());
+        WindowProjection projection = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.windowProjection(this.compiler, param, inputType, common, windowKeyType)
+                : windowProjection(bounds, param, inputType, windowKeyType);
+        DBSPClosureExpression indexFunction = projection.index();
+        var valueType = indexFunction.getResultType().to(DBSPTypeRawTuple.class).getFieldType(1);
+        DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(), windowKeyType, valueType);
         DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(),
                 indexFunction, ix, source.outputPort());
         this.addOperator(index);
@@ -409,29 +395,54 @@ public class RewriteNow extends CircuitCloneVisitor {
         this.addOperator(winInt);
 
         DBSPSimpleOperator deindex;
-        if (keyColumn < 0) {
-            // Deindex result of window
+        if (projection.restore() == null)
             deindex = new DBSPDeindexOperator(relNode, window.getFunctionNode(), winInt.outputPort());
-        } else {
-            // Restore the columns and drop the key
-            DBSPVariablePath var = ix.getKVRefType().var();
-            DBSPExpression[] fields = new DBSPExpression[inputType.size()];
-            for (int i = 0; i < inputType.size(); i++) {
-                if (i == keyColumn) {
-                    // The key has the column's type, except that it cannot be NULL
-                    fields[i] = var.field(0).deref().applyCloneIfNeeded()
-                            .cast(common.getNode(), inputType.getFieldType(i),
-                                    DBSPCastExpression.CastType.SqlUnsafe);
-                } else {
-                    int valueField = i < keyColumn ? i : i - 1;
-                    fields[i] = var.field(1).deref().field(valueField).applyCloneIfNeeded();
-                }
-            }
-            DBSPClosureExpression rebuild = inputType.makeTuple(fields).closure(var);
-            deindex = new DBSPMapOperator(relNode, rebuild, new DBSPTypeZSet(inputType), winInt.outputPort());
-        }
+        else
+            deindex = new DBSPMapOperator(relNode, projection.restore(), new DBSPTypeZSet(inputType), winInt.outputPort());
         this.addOperator(deindex);
         return deindex;
+    }
+
+    public record WindowProjection(DBSPClosureExpression index, @Nullable DBSPClosureExpression restore) {}
+
+    private static WindowProjection windowProjection(WindowBounds bounds, DBSPParameter param,
+            DBSPTypeTupleBase inputType, DBSPType windowKeyType) {
+        DBSPExpression common = bounds.common();
+        // Index input by the temporal key.  When the key is a column, the value omits
+        // that column, and the map after the window puts it back from the key.
+        int keyColumn = bounds.keyColumn(param);
+        DBSPExpression value;
+        if (keyColumn < 0) {
+            value = param.asVariable().deref().applyClone();
+        } else {
+            List<DBSPExpression> valueFields = new ArrayList<>();
+            for (int i = 0; i < inputType.size(); i++)
+                if (i != keyColumn)
+                    valueFields.add(param.asVariable().deref().field(i).applyCloneIfNeeded());
+            value = new DBSPTupleExpression(valueFields, false);
+        }
+        DBSPClosureExpression indexFunction =
+                new DBSPRawTupleExpression(
+                        common.cast(common.getNode(), windowKeyType,
+                                DBSPCastExpression.CastType.SqlUnsafe),
+                        value).closure(param);
+        if (keyColumn < 0)
+            return new WindowProjection(indexFunction, null);
+        DBSPVariablePath var = new DBSPTypeRawTuple(windowKeyType.ref(), value.getType().ref()).var();
+        DBSPExpression[] fields = new DBSPExpression[inputType.size()];
+        for (int i = 0; i < inputType.size(); i++) {
+            if (i == keyColumn) {
+                // The key has the column's type, except that it cannot be NULL
+                fields[i] = var.field(0).deref().applyCloneIfNeeded()
+                        .cast(common.getNode(), inputType.getFieldType(i),
+                                DBSPCastExpression.CastType.SqlUnsafe);
+            } else {
+                int valueField = i < keyColumn ? i : i - 1;
+                fields[i] = var.field(1).deref().field(valueField).applyCloneIfNeeded();
+            }
+        }
+        DBSPClosureExpression rebuild = inputType.makeTuple(fields).closure(var);
+        return new WindowProjection(indexFunction, rebuild);
     }
 
     /**

@@ -181,6 +181,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("RewriteNow/WindowProjection", [parameter, row, key, key_type]) => {
+            let row = edit.type_id(*row)?;
+            let key = edit.expression(*key)?;
+            let key_type = edit.type_id(*key_type)?;
+            let projection = feldera_sql_opt::window_projection(&mut edit, *parameter, row, key, key_type, &mut next)?;
+            let roots: Vec<_> = std::iter::once(projection.index).chain(projection.restore).collect();
+            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
+            return Ok(json!({"functions":functions, "next_generated_name":next}));
+        }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
@@ -460,7 +469,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

@@ -58,6 +58,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTable;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
@@ -77,6 +78,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsu
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -577,6 +579,19 @@ public final class RustCircuitPass implements CircuitTransform {
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid function from Rust pass " + pass, error);
         }
+    }
+
+    public static RewriteNow.WindowProjection windowProjection(DBSPCompiler compiler, DBSPParameter parameter,
+            DBSPType row, DBSPExpression key, DBSPType keyType) {
+        var reply = invokeLowering(compiler, "RewriteNow/WindowProjection", parameter, row, key, keyType);
+        var functions = reply.value.required("functions");
+        if (!functions.isArray() || functions.isEmpty() || functions.size() > 2)
+            throw new IllegalStateException("Expected a window index and an optional restore closure");
+        var decoder = expressionDecoder(reply.writer);
+        var index = decoder.decodeInner(functions.required(0), DBSPClosureExpression.class);
+        var restore = functions.size() == 2 ? decoder.decodeInner(functions.required(1), DBSPClosureExpression.class) : null;
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return new RewriteNow.WindowProjection(index, restore);
     }
 
     public static DBSPClosureExpression mergeTemporalPredicates(DBSPCompiler compiler,

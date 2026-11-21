@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | The opt-in mixed optimizer executed 100 Rust pass kinds in the verified replay. Detached S2 replay matched direct Java on all 8,571 classic and 8,527 Gen-2 programs through final S3, persistent-ID inputs and engine output. [Pass comparisons](#p3-optimizer-replay) | Port the remaining Java passes, including temporal filter rewriting, monotonicity analysis and limiter insertion. Verify its S4 boundaries and run the phase gates on that complete build. The latency ceiling and field-shadow window remain open. |
+| P3 | The opt-in mixed optimizer executed 101 Rust pass kinds in the verified replay. Detached S2 replay matched direct Java on all 8,571 classic and 8,527 Gen-2 programs through final S3, persistent-ID inputs and engine output. [Pass comparisons](#p3-optimizer-replay) | Port the remaining Java passes, including temporal filter rewriting, monotonicity analysis and limiter insertion. Verify its S4 boundaries and run the phase gates on that complete build. The latency ceiling and field-shadow window remain open. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -811,6 +811,12 @@ window bound. The first residual condition constrains how the remaining predicat
 can be grouped. Scan, Reorder, MergeFilters and RewriteNow matched at all 532
 observed invocations, including 35 merges and 133 clock rewrites.
 [Temporal comparison replay](evidence/p3-temporal-comparisons.json)
+
+Rust builds the index and output projections for temporal windows. A timestamp
+column moves into the index key and returns to its original position after the
+window. A computed key retains the full row as its value. All 133 active
+`RewriteNow` invocations matched the preceding Java build on both engines.
+[Temporal window projections](evidence/p3-temporal-window-projections.json)
 
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including

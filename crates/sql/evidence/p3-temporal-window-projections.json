@@ -1,0 +1,25 @@
+{
+  "scope": "Index a temporal window by a scalar column or a computed expression. Restore an omitted column from the index key in its original position and type.",
+  "comparison": "Compare the direct and hybrid RewriteNow entry and exit circuits and generated names against the Java package from before the port. All three runs resumed the same detached S2.",
+  "java_reference_commit": "54c227440",
+  "compiler_jar_sha256": "af2b050af4456baf12d2946eb41e2eea6cd9acf96a36f087a2f2cfcbc4deaa0c",
+  "optimizer_library_sha256": "9e0e22c6cea2114aa58af6d647c074de328b50bc3c0b3efc92ada251f3831a5a",
+  "populations": {
+    "classic": {
+      "cases": 71,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "reference_sha256": "ddd0078d5b87eb0f7d71bde39b908f9fe307e5c7544c7f9498807c8adbb87c04",
+      "java_sha256": "0ea000d31d3b081c916e2a278788daeccb93a66ccf354b61c821dc37cb1e856b",
+      "hybrid_sha256": "dcfe39a9a25bc56c7004cd5aef2c4fb6944352f21f4bbe59cd1f4bb8af2924a3"
+    },
+    "gen2": {
+      "cases": 62,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "reference_sha256": "a7a01e1e395f5ab65667052aa069dbe064eace19e1ec0d5abdb7dd49948a7cab",
+      "java_sha256": "15a2a53971c683d5ef7807eb839e1e99cfb28fd1299f7a0f7e56ce1f9f294a30",
+      "hybrid_sha256": "93b2b4e79e2d170e4a46590cc87f5428886f670be1327f71ca429ef59587152d"
+    }
+  }
+}
