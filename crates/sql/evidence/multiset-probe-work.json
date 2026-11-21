@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "base_commit": "c6ede756d398e09ba241f1cd5f57154ef2021234",
+  "experiment": "P0 spike 2: multiset analysis, restricted dead-code removal, and Rust-written S2/S3 replay",
+  "completion_certificate": "multiset-probe.json",
+  "agent_work": {
+    "started_utc": "2026-11-13T14:35:30+00:00",
+    "validated_utc": "2026-11-13T15:03:56+00:00",
+    "elapsed_minutes": 28.43,
+    "includes": [
+      "implementation",
+      "author review",
+      "repairs",
+      "test and experiment execution"
+    ],
+    "measurement_kind": "agent wall-clock interval; not human engineering hours"
+  },
+  "human_hours": {
+    "port": null,
+    "independent_review": null,
+    "repair": null
+  },
+  "independent_reviewer": null,
+  "review_accepted": false,
+  "productivity_gain": null,
+  "defects": [
+    {
+      "finding": "The initial empty-relation fixture used WHERE without FROM, which the Java parser rejects.",
+      "repair": "Use a VALUES-derived table with WHERE FALSE.",
+      "evidence": "$SCRATCH/p0-multiset-v1/classic-S2-0.log"
+    },
+    {
+      "finding": "Nested annotation objects could enter the inner-node table and shadow a real definition.",
+      "discovery": "author source review",
+      "repair": "Exclude annotations and provenance at every level.",
+      "regression": "annotations_cannot_replace_inner_node_definitions"
+    },
+    {
+      "finding": "The first decoder expected row and weight arrays on indexed constants; Java represents only empty indexed constants and omits these arrays.",
+      "discovery": "author source review",
+      "repair": "Handle the empty indexed encoding explicitly and reject invented row arrays.",
+      "regression": "only_empty_indexed_constants_have_an_encoding"
+    },
+    {
+      "finding": "Python equality treats integers 0/1 as equal to booleans, which could hide malformed analysis reports.",
+      "discovery": "author source review",
+      "repair": "Require boolean arrays on both sides and unique case identities.",
+      "regression": "test_comparison_detects_missing_ports_and_mixed_up_cases"
+    }
+  ],
+  "validation": {
+    "rust_tests": 15,
+    "rust_test_failures": 0,
+    "clippy_warnings_denied": true,
+    "python_tests": 26,
+    "workflow_lint": true,
+    "remote_ci_run": false,
+    "runtime_execution": false
+  },
+  "raw_artifacts": "$SCRATCH/p0-multiset-v6",
+  "frozen_probe": "$SCRATCH/p0-multiset-tools-v6/probe",
+  "java_oracle": "$SCRATCH/p0-multiset-oracle-v4",
+  "remaining_spike_2": [
+    "complete typed lossless IR subset",
+    "remaining Rust optimizer prefix",
+    "independent maintainer review",
+    "human port/review/repair hours and productivity re-estimate"
+  ],
+  "p0_complete": false
+}

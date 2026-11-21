@@ -87,7 +87,11 @@ public class ParameterFieldUse {
      * Note: you cannot mutate the finder; it and the rewrite share state. */
     public RewriteFields getFieldRewriter(DBSPCompiler compiler, int depth) {
         Substitution<DBSPParameter, DBSPParameter> newParam = new Substitution<>();
-        for (DBSPParameter param: this.getParameters()) {
+        Iterable<DBSPParameter> parameters = this.getParameters();
+        if (compiler.usesCircuitSeam())
+            parameters = this.paramMap.keySet().stream()
+                    .sorted(java.util.Comparator.comparingLong(DBSPParameter::getId)).toList();
+        for (DBSPParameter param: parameters) {
             FieldUseMap map = this.get(param);
             DBSPType newType = Objects.requireNonNull(map.compressedType(depth));
             newParam.substitute(param, new DBSPParameter(param.getNode(), param.name, newType));

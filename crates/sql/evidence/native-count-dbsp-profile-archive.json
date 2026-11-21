@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-count-dbsp-profile-20261118.tar.gz",
+  "bytes": 48113563,
+  "sha256": "acf3a9e97ef1584eb2f4744a3ac8ea6dbf984566f33dd692030974220d9d2cd5",
+  "manifest_sha256": "85f0aca3311588052399bec11b1da0edcd2ceae14bdc0a0f32c7bf8585d1b566",
+  "verified_files": 21,
+  "all_members_verified": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-merge-sums-20261118-v1.tar.gz",
+  "bytes": 7453757,
+  "sha256": "37de094a0afab18c792462c9974693235ced975948d1b775343babe68bd8742c",
+  "manifest_sha256": "93580840b9b9ce1d85046c9ec32a7b166e33a7d84b109ff12ff31a84dd2ac9bd",
+  "verified_files": 467,
+  "all_members_verified": true
+}

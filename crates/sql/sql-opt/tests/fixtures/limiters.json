@@ -1,0 +1,49 @@
+{
+  "simple": {
+    "sql": "CREATE TABLE t(x INT); CREATE VIEW v AS SELECT x FROM t;"
+  },
+  "source": {
+    "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 5, y TIMESTAMP LATENESS INTERVAL '3' MINUTE); CREATE VIEW v AS SELECT * FROM t;"
+  },
+  "sum": {
+    "sql": "CREATE TABLE a(x INT NOT NULL LATENESS 2); CREATE TABLE b(x INT NOT NULL LATENESS 4); CREATE VIEW v AS SELECT * FROM a UNION ALL SELECT * FROM b;"
+  },
+  "viewLatenessMergesWithInherited": {
+    "sql": "CREATE TABLE t(ts INT NOT NULL LATENESS 1);\nLATENESS v.ts 10;\nCREATE LOCAL VIEW v AS SELECT ts FROM t;\nCREATE VIEW w AS SELECT * FROM v;"
+  },
+  "viewLatenessKeepsInheritedWaterline": {
+    "sql": "CREATE TABLE t(ts INT NOT NULL LATENESS 2, x INT NOT NULL);\nLATENESS v.x 1;\nCREATE LOCAL VIEW v AS SELECT ts, x FROM t;\nCREATE VIEW w AS SELECT * FROM v;"
+  },
+  "viewLatenessTimestampMerge": {
+    "sql": "CREATE TABLE t(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);\nLATENESS v.ts INTERVAL 1 DAY;\nLATENESS v.x 1;\nCREATE LOCAL VIEW v AS SELECT ts, x FROM t;\nCREATE VIEW w AS SELECT * FROM v;"
+  },
+  "gcKeyLateness": {
+    "sql": "CREATE TABLE t (\n    ts BIGINT NOT NULL PRIMARY KEY LATENESS 100,\n    v INT\n);\nCREATE VIEW vw AS SELECT * FROM t;",
+    "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+  },
+  "gcCompositeKeyLateness": {
+    "sql": "CREATE TABLE t (\n    id INT NOT NULL,\n    ts BIGINT NOT NULL LATENESS 100,\n    extra BIGINT NOT NULL LATENESS 100,\n    v INT,\n    PRIMARY KEY (id, ts)\n);\nCREATE VIEW vw AS SELECT * FROM t;",
+    "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+  },
+  "keynonlate": {
+    "sql": "CREATE TABLE T (id INT NOT NULL PRIMARY KEY, ts INT LATENESS 3); CREATE VIEW v AS SELECT * FROM t;",
+    "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+  },
+  "keymaterialized": {
+    "sql": "CREATE TABLE T (id INT NOT NULL PRIMARY KEY LATENESS 3) WITH ('materialized' = 'true'); CREATE VIEW v AS SELECT * FROM t;",
+    "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+  },
+  "viewWithoutDeclaration": {
+    "sql": "SET FELDERA_DISABLE_OPTIMIZATIONS = 'RemoveViewOperators'; CREATE TABLE t(x INT NOT NULL LATENESS 5); CREATE LOCAL VIEW v AS SELECT * FROM t; CREATE VIEW w AS SELECT * FROM v;"
+  },
+  "viewWithoutUpstreamBound": {
+    "sql": "CREATE TABLE t(x INT); LATENESS v.x 1; CREATE LOCAL VIEW v AS SELECT * FROM t; CREATE VIEW w AS SELECT * FROM v;"
+  },
+  "twofields": {
+    "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 2, y INT NOT NULL LATENESS 2); CREATE VIEW w AS SELECT * FROM t UNION ALL SELECT * FROM t;"
+  },
+  "collectionStream": {
+    "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 5, y TIMESTAMP LATENESS INTERVAL '3' MINUTE); CREATE VIEW v AS SELECT * FROM t;",
+    "incremental": false
+  }
+}

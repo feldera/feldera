@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-gen2-corpus-skip-disposition-20261118-v1.tar.gz",
+  "bytes": 1322587,
+  "sha256": "4952ee0640bc26f01f35c95e3fe01cd7d2f3a99c24c52e310ac12b0478db2f72",
+  "manifest_sha256": "e7009209dfd538e178c0d375d13c4f20af0ef4c421ce3384084913c8f383de9e",
+  "verified_files": 1144,
+  "all_members_verified": true
+}

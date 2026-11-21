@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-seams-v28",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v28/classes": "31b1bd6819d17762fe82a12c7ac860564dd8659daa58559a6c03fbf12d5a69b9",
+    "$SCRATCH/p0-seam-tools-v28/test-classes": "d826c530c55192a56eb5cb2df838f5074358e3469bfff28c45c9c1b507a1b936",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+  "input_sha256": "11de3e7be80f4c2724d2c989c0c710387c6c536d40f51654432145ca8c6f168b",
+  "source_class": null,
+  "cases": 2,
+  "stage": "S2",
+  "execution_order": [
+    "replay-s2",
+    "capture"
+  ],
+  "keep_going": true,
+  "artifact_contract": "seam-v1",
+  "runtime_executed": false,
+  "limits": {
+    "heap_mib": 1024,
+    "output_mib": 512,
+    "min_free_mib": 512,
+    "timeout_seconds_per_jvm": 1200
+  },
+  "equal": true,
+  "observations": 941,
+  "capture_transparency": false,
+  "dataflow_contract": "all-engines-v1",
+  "observation_contract": "full-prefix-v1",
+  "artifact_byte_differences": [
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowEquality/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowEqualityReversed/0"
+  ],
+  "differences": [],
+  "failed_cases": {
+    "expected": [],
+    "actual": []
+  },
+  "exported_schema_differences": [],
+  "exported_diagnostic_differences": [],
+  "jvm_runs": 2
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "scheduled-optimizer-benchmark-archive.json",
+  "engine_modes": ["classic", "gen2"],
+  "workloads": ["integer-union", "lateness", "two-tables"],
+  "variants": ["direct", "java", "rust"],
+  "scheduled_placements": 24,
+  "measured_triples_per_workload_and_engine": 31,
+  "warmup_triples_per_workload_and_engine": 6,
+  "measured_compilations": 558,
+  "warmup_compilations": 108,
+  "graph_and_diagnostic_comparisons": 444,
+  "differences": 0,
+  "rust_over_direct_p95_range": [38.113, 52.916],
+  "scope": "Pinned single-CPU warm-JVM S3 compilation. The Java codec control records and decodes the same intermediate graphs as the Rust replay. Timed Rust runs also include subprocess startup at each replaced pass. The run verifies final S3 graphs and diagnostics outside the timed interval. Generated artifact emission and the production hybrid remain separate measurements."
+}

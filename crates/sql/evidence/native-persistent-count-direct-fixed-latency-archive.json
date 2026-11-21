@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-persistent-count-direct-fixed-latency-20261119.tar.gz",
+  "bytes": 48186370,
+  "sha256": "f93a2656ef2a02b198e74707ee0d695bb8560bc0c05b7d00421ee4b20dce6d0b",
+  "manifest_sha256": "79fad9364a51bbd013dbc4fd04c6f067eec2f22fc605590a7ba4e01868cac76a",
+  "verified_files": 700,
+  "all_members_verified": true
+}

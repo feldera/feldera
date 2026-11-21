@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "reviewed": false,
+  "source": {
+    "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+    "sha256": "dc3a00c8f095bd5eb0fde47f91f4d0ec4ee66fdcca2c99ec3afba06f55edfe55"
+  },
+  "scope": "Stage-purpose classification and ordering/state constraints for every configured rule placement; not a translation-versus-rewrite decision",
+  "common_contract": [
+    "Preserve SQL options, metadata, expression and correlation identities, source positions, hints, type/nullability and ordered rule configurations.",
+    "Stage 0 and 1 failures abort compilation. Other stages log and skip failed transformations; preserve the original input and failure trace.",
+    "Dynamic HEP program builders append rules during apply. Repeated placements and successive view compilations retain their actual step-object lifetimes.",
+    "Every configured rule stays in the initial parity scope, including rules with zero measured productions."
+  ],
+  "steps": [
+    {
+      "index": 0,
+      "step": "Remove sub-queries",
+      "family": "subquery_lowering",
+      "kind": "hep",
+      "abort_on_error": true,
+      "contract": "RexSubQuery is replaced by Correlate/Join forms; literal aggregate cleanup shares this stage. Every later stage expects these forms.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 1,
+      "step": "Reject unsupported plans",
+      "family": "semantic_validation",
+      "kind": "direct",
+      "abort_on_error": true,
+      "contract": "Reject unsupported ROW comparisons, window frames and aggregates before later rewrites erase their source shapes.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 2,
+      "step": "Reduce table function arguments",
+      "family": "constant_evaluation",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Reduce arguments before table-function rewrites; retain constant-evaluator policy and diagnostics.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 3,
+      "step": "Rewrite SESSION",
+      "family": "table_function_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Rewrite SESSION before RexOver expansion; generated window expressions feed stage 22.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 4,
+      "step": "Constant fold",
+      "family": "constant_evaluation",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 5,
+      "step": "Remove empty relations",
+      "family": "relational_simplification",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 6,
+      "step": "Move Correlate projections",
+      "family": "correlation_normalization",
+      "kind": "direct",
+      "abort_on_error": false,
+      "contract": "The retained CorrelateProjectExtractor moves projections while preserving correlation identity and field references.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 7,
+      "step": "Convert UNCOLLECT",
+      "family": "table_function_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Only when UNCOLLECT occurs, transpose project/filter, move correlate filters, remove identity projects and merge correlate/uncollect.",
+      "program_builder_mutates_during_apply": true,
+      "shared_instance_with": null
+    },
+    {
+      "index": 8,
+      "step": "Convert complex aggregates",
+      "family": "aggregate_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Keep MaxCaseToCount before case-to-filter, then NOW filters and MODE-to-ARG_MAX. Filter rewrites must precede MODE handling.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 9,
+      "step": "Simplify set operations",
+      "family": "set_operation_rewrite",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Merge compatible UNION/INTERSECT/MINUS and combine filtered set operations; retain ALL versus DISTINCT and branch order.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 10,
+      "step": "Useless sort removal",
+      "family": "relational_simplification",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Remove redundant sorts and constant keys under ordering and fetch constraints.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 11,
+      "step": "Simplify correlates",
+      "family": "correlation_normalization",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Transpose correlate projects and filters while updating correlation field dependencies.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 12,
+      "step": "Merge identical operations",
+      "family": "relational_simplification",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Merge adjacent project, aggregate and set operations; this same step instance returns at stage 30.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": 30
+    },
+    {
+      "index": 13,
+      "step": "Right joins to left joins",
+      "family": "join_normalization",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Commute right joins to left joins with a projection that preserves output column order.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 14,
+      "step": "Join order",
+      "family": "join_search",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback.",
+      "program_builder_mutates_during_apply": true,
+      "shared_instance_with": 26
+    },
+    {
+      "index": 15,
+      "step": "Decorrelate UNNEST",
+      "family": "decorrelation",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Level-2 UNNEST decorrelation; retain correlation scopes and optional project forms.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 16,
+      "step": "Decorrelate inner queries 1",
+      "family": "decorrelation",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "First InnerDecorrelator application; preserve empty-input and correlated aggregate semantics.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 17,
+      "step": "Correlate/Union",
+      "family": "correlation_normalization",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Move correlation across UNION before the second inner-query decorrelation.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 18,
+      "step": "Decorrelate inner queries 2",
+      "family": "decorrelation",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Repeat InnerDecorrelator after Correlate/Union; do not collapse the two placements.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 19,
+      "step": "Desugar EXCEPT",
+      "family": "set_operation_rewrite",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Level-2 EXCEPT rewrite; preserve multiplicities and NULL equality.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 20,
+      "step": "Rewrite INTERSECT/EXCEPT ALL",
+      "family": "set_operation_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Merge set-operation shapes before ExceptAllFold; ALL multiplicities remain observable.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 21,
+      "step": "Decorrelate",
+      "family": "decorrelation",
+      "kind": "direct",
+      "abort_on_error": false,
+      "contract": "Call RelDecorrelator after the preceding correlation and set-operation rewrites. Unremoved Correlate shapes remain part of the measured inventory.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 22,
+      "step": "Expand windows",
+      "family": "window_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Run OVER SUM-to-SUM0 before project-to-project/window expansion; preserve empty sums, constants, frames and window ordering.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 23,
+      "step": "Window ROWS to RANGE",
+      "family": "window_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Convert eligible ROWS frames after window expansion without changing peer or boundary semantics.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 24,
+      "step": "Isolate DISTINCT aggregates",
+      "family": "aggregate_lowering",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Retain both DISTINCT-expansion configurations and their order; descriptions alone do not identify configurations.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 25,
+      "step": "Hypergraph",
+      "family": "join_search",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Run only without Correlate or join hints and with more than one join; convert joins to a hypergraph before Dphyp search.",
+      "program_builder_mutates_during_apply": true,
+      "shared_instance_with": null
+    },
+    {
+      "index": 26,
+      "step": "Join order",
+      "family": "join_search",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list.",
+      "program_builder_mutates_during_apply": true,
+      "shared_instance_with": 14
+    },
+    {
+      "index": 27,
+      "step": "Move projections",
+      "family": "projection_filter_normalization",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Transpose windows, set operations and filters. Do not re-enable the commented correlate/join project transposes.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    },
+    {
+      "index": 28,
+      "step": "Simple Join conditions",
+      "family": "join_normalization",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Repeat expression pushdown after moving projections, in bottom-up match order.",
+      "program_builder_mutates_during_apply": true,
+      "shared_instance_with": null
+    },
+    {
+      "index": 29,
+      "step": "Pushdown",
+      "family": "projection_filter_normalization",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Bottom-up join/filter/disjunction rewrites; retain repeated rules and match ordering.",
+      "program_builder_mutates_during_apply": true,
+      "shared_instance_with": null
+    },
+    {
+      "index": 30,
+      "step": "Merge identical operations",
+      "family": "relational_simplification",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Reuse the stage-12 step after pushdown, preserving ordered rule instances.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": 12
+    },
+    {
+      "index": 31,
+      "step": "Remove dead code",
+      "family": "relational_simplification",
+      "kind": "hep",
+      "abort_on_error": false,
+      "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions.",
+      "program_builder_mutates_during_apply": false,
+      "shared_instance_with": null
+    }
+  ]
+}

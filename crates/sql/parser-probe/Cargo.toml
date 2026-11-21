@@ -1,0 +1,34 @@
+[package]
+name = "feldera-parser-probe"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+default-run = "feldera-parser-probe"
+
+# This disposable P0 experiment pins competing parser versions independently of
+# the production workspace and DataFusion's parser dependency.
+[workspace]
+exclude = ["vendor/sqlparser"]
+
+[features]
+binder-probe = [
+    "dep:feldera-sql-binder",
+    "dep:feldera-sql-rel-model",
+]
+
+[[bin]]
+name = "a-binder-probe"
+path = "src/bin/a-binder-probe.rs"
+required-features = ["binder-probe"]
+
+[dependencies]
+feldera-sql-parser = { path = "../sql-parser" }
+feldera-sql-binder = { path = "../sql-binder", optional = true }
+feldera-sql-rel-model = { path = "../sql-rel-model", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlparser_062 = { package = "sqlparser", version = "=0.62.0", default-features = false, features = ["std"] }
+sqlparser_stock_064 = { package = "sqlparser", version = "=0.64.0", default-features = false, features = ["std"] }
+sqlparser_064 = { package = "sqlparser", path = "vendor/sqlparser", version = "=0.64.0", default-features = false, features = ["std", "visitor"] }

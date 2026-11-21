@@ -31,8 +31,10 @@ import org.apache.calcite.util.JsonBuilder;
 import org.apache.calcite.util.Pair;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.util.Utilities;
+import org.locationtech.jts.geom.Point;
 
-/** Reimplementation of RelJsonWriter from Calcite which exposes the RelIdMap. */
+/** Reimplementation of RelJsonWriter from Calcite.
+ * Feldera changes expose RelIdMap and retain point literals in diagnostic plans. */
 public class RelJsonWriter implements RelWriter {
     protected final JsonBuilder jsonBuilder;
     private final Map<RelNode, Integer> relIdMap;
@@ -40,6 +42,47 @@ public class RelJsonWriter implements RelWriter {
     protected final List<@Nullable Object> relList;
     private final List<Pair<String, @Nullable Object>> values;
     public final int verbosity;
+
+    /** Calcite's generic value serializer lacks the Point values produced by
+     * folding ST_POINT. This is diagnostic-plan JSON, not the S1 replay format.
+     * Preserve all ordinates and SRID rather than relying on a 2D WKT display. */
+    private static final class PointRelJson extends RelJson {
+        private final JsonBuilder builder;
+
+        @SuppressWarnings("deprecation") // Calcite exposes no other subclass constructor.
+        PointRelJson(JsonBuilder builder) {
+            super(builder);
+            this.builder = builder;
+        }
+
+        @Override public @Nullable Object toJson(@Nullable Object value) {
+            if (!(value instanceof Point point))
+                return super.toJson(value);
+            var sequence = point.getCoordinateSequence();
+            Map<String, Object> result = this.builder.map();
+            result.put("geometry_type", "Point");
+            result.put("srid", point.getSRID());
+            result.put("dimension", sequence.getDimension());
+            result.put("measures", sequence.getMeasures());
+            List<Object> coordinates = this.builder.list();
+            for (int index = 0; index < sequence.size(); index++) {
+                List<Object> ordinates = this.builder.list();
+                for (int ordinate = 0; ordinate < sequence.getDimension(); ordinate++) {
+                    double coordinate = sequence.getOrdinate(index, ordinate);
+                    // JSON has no non-finite numbers; use Calcite's convention.
+                    ordinates.add(Double.isFinite(coordinate) ? coordinate : Double.toString(coordinate));
+                }
+                coordinates.add(ordinates);
+            }
+            result.put("coordinates", coordinates);
+            return result;
+        }
+    }
+
+    public static RelJsonWriter forReplay(Map<RelNode, Integer> relIdMap, int verbosity) {
+        JsonBuilder builder = new JsonBuilder();
+        return new RelJsonWriter(builder, ignored -> new PointRelJson(builder), relIdMap, verbosity);
+    }
 
     public RelJsonWriter(Map<RelNode, Integer> relIdMap, int verbosity) {
         this(new JsonBuilder(), relIdMap, verbosity);

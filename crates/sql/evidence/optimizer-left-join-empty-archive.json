@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-left-join-empty-20261118-v1.tar.gz",
+  "bytes": 797756,
+  "sha256": "5609c8ea827da47b5f2607cc5c54a02e6e191207004d5b805094fa26d2409973",
+  "manifest_sha256": "a1e62dc8fc97751d36f3d2f2b82f34fdab1fb8632c7ba45843ace96d5e4d3436",
+  "verified_files": 38,
+  "all_members_verified": true
+}

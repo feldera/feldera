@@ -1,0 +1,1608 @@
+{
+  "schema_version": 1,
+  "status": "local_implementation_dispositions",
+  "archive_index": "rule-port-approaches-archive.json",
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "inputs": {
+    "rule_port_inventory_sha256": "2930d58994b59cfdd6b06fce07513c6e9309c41743f2a96428c85b3b5c66f70d",
+    "optimizer_stage_contracts_sha256": "55a13dffc62d05f2899178493176fc40c373018756a599a67ae8bdc35075a3ba",
+    "calcite_jar_sha256": "5386d205ca6398145107f07ae20641c595c997cb068538c3980e2e2d94525504",
+    "feldera_jar_sha256": "4b50d094f6e4a99acdb9cdb36f0c626790927798ca54ab65031a2e04f89cd950"
+  },
+  "strategy": {
+    "translate": "Keep selection, guards and transformations faithful while using Rust IR, storage and traversal.",
+    "rewrite": "Implement the stated behavior directly with typed Rust operators and verify placement against the same Java input."
+  },
+  "rule_descriptions": 80,
+  "implementation_classes": 71,
+  "approach_counts": {
+    "translate": 51,
+    "rewrite": 20
+  },
+  "classes": [
+    {
+      "implementation": "org.apache.calcite.rel.rules.AggregateCaseToFilterRule",
+      "class_sha256": "e6bcd59b3d6bd26a4deb4414f723b1bf981239ff010e0fb0f2e63542f30fcdc5",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateCaseToFilterRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 8,
+          "failure": "log_and_keep_input",
+          "contract": "Keep MaxCaseToCount before case-to-filter, then NOW filters and MODE-to-ARG_MAX. Filter rewrites must precede MODE handling."
+        }
+      ],
+      "checks": [
+        "Preserve FILTER, DISTINCT, empty-input behavior, result types and operator order.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.AggregateExpandDistinctAggregatesRule",
+      "class_sha256": "18bd15593443f6be11a738c2964ce4ff49b23f9d534f77bae898f4b041820af2",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateExpandDistinctAggregatesRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 24,
+          "failure": "log_and_keep_input",
+          "contract": "Retain both DISTINCT-expansion configurations and their order; descriptions alone do not identify configurations."
+        }
+      ],
+      "checks": [
+        "Preserve FILTER, DISTINCT, empty-input behavior, result types and operator order.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.AggregateMergeRule",
+      "class_sha256": "e59d321dd2a64559f3f5b48215eaf855f161015b3c92a2fdeed656a766e4d88c",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateMergeRule"
+      ],
+      "targeted_activation_required": [
+        "AggregateMergeRule"
+      ],
+      "placements": [
+        {
+          "index": 12,
+          "failure": "log_and_keep_input",
+          "contract": "Merge adjacent project, aggregate and set operations; this same step instance returns at stage 30."
+        },
+        {
+          "index": 30,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-12 step after pushdown, preserving ordered rule instances."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.AggregateRemoveLiteralAggRule",
+      "class_sha256": "d816476f2a3d2cd1a1e5493b602b83cf046b3198c52478f3e74a61c10926a691",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateRemoveLiteralAggRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 0,
+          "failure": "abort",
+          "contract": "RexSubQuery is replaced by Correlate/Join forms; literal aggregate cleanup shares this stage. Every later stage expects these forms."
+        }
+      ],
+      "checks": [
+        "Preserve three-valued logic, correlated bindings and scalar cardinality checks.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.AggregateRemoveRule",
+      "class_sha256": "f602bbac25526d0c5647072b660069dfd1bbbd82b605196f49b639f487cbe2e6",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateRemoveRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 31,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.AggregateValuesRule",
+      "class_sha256": "e20e0f45c68f78a1e537ce4a3c30df1d62b01b800f23c109f3f0484fcbe962ef",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateValuesRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Preserve evaluator policy, NULLs, overflow and source diagnostics.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.CoerceInputsRule",
+      "class_sha256": "031f55a4b01ac6efe6e96c5d92a863a37e428510826e0fbcee23f7444d3ad35f",
+      "approach": "translate",
+      "descriptions": [
+        "CoerceInputsRule:org.apache.calcite.rel.RelNode"
+      ],
+      "targeted_activation_required": [
+        "CoerceInputsRule:org.apache.calcite.rel.RelNode"
+      ],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Preserve evaluator policy, NULLs, overflow and source diagnostics.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.CorrelateUncollectMergeRule",
+      "class_sha256": "b2beb6dc2b33812b9003e149839305764e9d5b9242907a400f487fbb5b4ca268",
+      "approach": "translate",
+      "descriptions": [
+        "CorrelateUncollectMergeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 7,
+          "failure": "log_and_keep_input",
+          "contract": "Only when UNCOLLECT occurs, transpose project/filter, move correlate filters, remove identity projects and merge correlate/uncollect."
+        }
+      ],
+      "checks": [
+        "Maintain argument ordinals, multiplicities, nullability and surrounding correlation structure.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.DphypJoinReorderRule",
+      "class_sha256": "9a068289ea887d0f64c53ac6976623969a6c3b6eadb7aeb8932d857330ae6a5c",
+      "approach": "translate",
+      "descriptions": [
+        "DphypJoinReorderRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 25,
+          "failure": "log_and_keep_input",
+          "contract": "Run only without Correlate or join hints and with more than one join; convert joins to a hypergraph before Dphyp search."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ExpandDisjunctionForTableRule",
+      "class_sha256": "c99e2ebc16b61fc921b021345afcbdba26959528dd39e3556828908cdc1e3ee9",
+      "approach": "translate",
+      "descriptions": [
+        "ExpandDisjunctionForTableRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        },
+        {
+          "index": 29,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up join/filter/disjunction rewrites; retain repeated rules and match ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.FilterAggregateTransposeRule",
+      "class_sha256": "b771b023bbcbf28a90fdaaf20a9fd218f5c35d45296890cd67b1488d72790eaa",
+      "approach": "translate",
+      "descriptions": [
+        "FilterAggregateTransposeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 27,
+          "failure": "log_and_keep_input",
+          "contract": "Transpose windows, set operations and filters. Do not re-enable the commented correlate/join project transposes."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.FilterCorrelateRule",
+      "class_sha256": "3bde9cfb9ea1ca0c426e892d5d29cf9a7d668fbc96c7632fe2246178c1a8708b",
+      "approach": "translate",
+      "descriptions": [
+        "FilterCorrelateRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 7,
+          "failure": "log_and_keep_input",
+          "contract": "Only when UNCOLLECT occurs, transpose project/filter, move correlate filters, remove identity projects and merge correlate/uncollect."
+        },
+        {
+          "index": 11,
+          "failure": "log_and_keep_input",
+          "contract": "Transpose correlate projects and filters while updating correlation field dependencies."
+        }
+      ],
+      "checks": [
+        "Preserve correlation IDs, null extension and explicit field remaps.",
+        "Maintain argument ordinals, multiplicities, nullability and surrounding correlation structure.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.FilterMergeRule",
+      "class_sha256": "e6f3c8f31158bcbb5989950f2ae40327db7e700355c44c49ec3190257b969c59",
+      "approach": "rewrite",
+      "descriptions": [
+        "FilterMergeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        }
+      ],
+      "checks": [
+        "Keep filter composition order, predicate nullability and nondeterministic calls."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.FilterProjectTransposeRule",
+      "class_sha256": "d30d4a5aa6b0223c7e835fc2cf466501c25d5738b28857cfb9453f8574f47591",
+      "approach": "translate",
+      "descriptions": [
+        "FilterProjectTransposeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 27,
+          "failure": "log_and_keep_input",
+          "contract": "Transpose windows, set operations and filters. Do not re-enable the commented correlate/join project transposes."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.JoinCommuteRule",
+      "class_sha256": "bef161dda8404c2f7dccebae138d50625ffeab800103b5598c3da726aab19a46",
+      "approach": "translate",
+      "descriptions": [
+        "JoinCommuteRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 13,
+          "failure": "log_and_keep_input",
+          "contract": "Commute right joins to left joins with a projection that preserves output column order."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.JoinExpandOrToUnionRule",
+      "class_sha256": "42432a5f610f85ecdb17beb37e5731b38215a2fb27cf5cf54262d5ae9820ff03",
+      "approach": "translate",
+      "descriptions": [
+        "JoinExpandOrToUnionRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        },
+        {
+          "index": 29,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up join/filter/disjunction rewrites; retain repeated rules and match ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.JoinPushExpressionsRule",
+      "class_sha256": "15c0bf38d4d1db3551128440d5561919250257ccd857823287c1985d6c7ff4d1",
+      "approach": "translate",
+      "descriptions": [
+        "JoinPushExpressionsRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        },
+        {
+          "index": 28,
+          "failure": "log_and_keep_input",
+          "contract": "Repeat expression pushdown after moving projections, in bottom-up match order."
+        },
+        {
+          "index": 29,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up join/filter/disjunction rewrites; retain repeated rules and match ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.JoinToHyperGraphRule",
+      "class_sha256": "ddf5496183f471079b28f8798256262cecdb2ae5aecb848e73902415dd1f2a25",
+      "approach": "translate",
+      "descriptions": [
+        "JoinToHyperGraphRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 25,
+          "failure": "log_and_keep_input",
+          "contract": "Run only without Correlate or join hints and with more than one join; convert joins to a hypergraph before Dphyp search."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.JoinToMultiJoinRule",
+      "class_sha256": "567a0266f38b724e271a8850780c0e3633ece35d8d32a4242f51469b692764c3",
+      "approach": "translate",
+      "descriptions": [
+        "JoinToMultiJoinRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.LoptOptimizeJoinRule",
+      "class_sha256": "2ebd1f934c7a77380869e592516c27e2d75489faa2367907415de79e35f9e817",
+      "approach": "translate",
+      "descriptions": [
+        "LoptOptimizeJoinRule"
+      ],
+      "targeted_activation_required": [
+        "LoptOptimizeJoinRule"
+      ],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.MultiJoinOptimizeBushyRule",
+      "class_sha256": "d7ebbdbe109aa6365e83bc220c2f594a52746111c38eaf502545edf6cd055dcb",
+      "approach": "translate",
+      "descriptions": [
+        "MultiJoinOptimizeBushyRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectCorrelateTransposeRule",
+      "class_sha256": "8857efc091d561d154bf138d86e80cebd3ee084a6ac1b4d6ad0ac7048ea14d8e",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectCorrelateTransposeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 11,
+          "failure": "log_and_keep_input",
+          "contract": "Transpose correlate projects and filters while updating correlation field dependencies."
+        }
+      ],
+      "checks": [
+        "Preserve correlation IDs, null extension and explicit field remaps.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectFilterTransposeRule",
+      "class_sha256": "c6dcea2ce73d1dac90cffc6d6eda85c909df8357b5ad59b7bc4b2acbf07f9cde",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectFilterTransposeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 7,
+          "failure": "log_and_keep_input",
+          "contract": "Only when UNCOLLECT occurs, transpose project/filter, move correlate filters, remove identity projects and merge correlate/uncollect."
+        }
+      ],
+      "checks": [
+        "Maintain argument ordinals, multiplicities, nullability and surrounding correlation structure.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectJoinJoinRemoveRule",
+      "class_sha256": "b6259904dc70f634ed7df362deaf9ec2c08611d49967edafa8749d6cb8f342c9",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectJoinJoinRemoveRule"
+      ],
+      "targeted_activation_required": [
+        "ProjectJoinJoinRemoveRule"
+      ],
+      "placements": [
+        {
+          "index": 31,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectJoinRemoveRule",
+      "class_sha256": "f8e17c75cd6798ee33d19e04b5ed37be6ccd1e4bac3c2f88fa96d3a345adf525",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectJoinRemoveRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 31,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectMergeRule",
+      "class_sha256": "09e92bbeef1e25dc0710a3cd295854eae79ff558a08a0408d207ea64282dcfea",
+      "approach": "rewrite",
+      "descriptions": [
+        "ProjectMergeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 12,
+          "failure": "log_and_keep_input",
+          "contract": "Merge adjacent project, aggregate and set operations; this same step instance returns at stage 30."
+        },
+        {
+          "index": 30,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-12 step after pushdown, preserving ordered rule instances."
+        }
+      ],
+      "checks": [
+        "Preserve substitution order, the bloat guard, output field names and traits."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectMultiJoinMergeRule",
+      "class_sha256": "615d875706674e095800f3683393a7347981a44ea4361038422b4553f9fb78f8",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectMultiJoinMergeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectOverSumToSum0Rule",
+      "class_sha256": "0cb57a45650e2041d94383f1ff6abcbc40b98252531248dc0ffba81089a5d2d2",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectOverSumToSum0Rule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 22,
+          "failure": "log_and_keep_input",
+          "contract": "Run OVER SUM-to-SUM0 before project-to-project/window expansion; preserve empty sums, constants, frames and window ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectRemoveRule",
+      "class_sha256": "67ba161fca111a3feddd79fd00c3ea88c862192b5fab3b0690a948e6353cdb2e",
+      "approach": "rewrite",
+      "descriptions": [
+        "ProjectRemoveRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 7,
+          "failure": "log_and_keep_input",
+          "contract": "Only when UNCOLLECT occurs, transpose project/filter, move correlate filters, remove identity projects and merge correlate/uncollect."
+        },
+        {
+          "index": 31,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions."
+        }
+      ],
+      "checks": [
+        "Prove the project is an identity and retain required field names and traits."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectSetOpTransposeRule",
+      "class_sha256": "afb8d56a26f4fd6615ba1fd5fb0438762bc93b918350235866b1d2426ee6de39",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectSetOpTransposeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 27,
+          "failure": "log_and_keep_input",
+          "contract": "Transpose windows, set operations and filters. Do not re-enable the commented correlate/join project transposes."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectToWindowRule$ProjectToLogicalProjectAndWindowRule",
+      "class_sha256": "53c05f72200295ee80f21b64addfaf5b42ee9c42b51b6ad76e4bfb4f9ed69384",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectToWindowRule:project"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 22,
+          "failure": "log_and_keep_input",
+          "contract": "Run OVER SUM-to-SUM0 before project-to-project/window expansion; preserve empty sums, constants, frames and window ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.ProjectWindowTransposeRule",
+      "class_sha256": "3e56885e15d0212f26da84d114fd31f9096bb94021c7cb639826ef86de0d8421",
+      "approach": "translate",
+      "descriptions": [
+        "ProjectWindowTransposeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 27,
+          "failure": "log_and_keep_input",
+          "contract": "Transpose windows, set operations and filters. Do not re-enable the commented correlate/join project transposes."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$IntersectEmptyPruneRuleConfig$1",
+      "class_sha256": "275389362afaa3b056992a4344aea4b347360e357696c27857a9e9b9d6905a38",
+      "approach": "rewrite",
+      "descriptions": [
+        "Intersect"
+      ],
+      "targeted_activation_required": [
+        "Intersect"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "An empty operand empties INTERSECT. Retain the result row type."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$JoinLeftEmptyRuleConfig$1",
+      "class_sha256": "32a546a3bde54160b42820b41c2ca541991ed771e85371d94e6c6481c0bb3f20",
+      "approach": "rewrite",
+      "descriptions": [
+        "PruneEmptyJoin(left)"
+      ],
+      "targeted_activation_required": [
+        "PruneEmptyJoin(left)"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "Retain the surviving outer side and the correct nullable fields for each join kind."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$JoinRightEmptyRuleConfig$1",
+      "class_sha256": "148bb6ea47d28b7e490c646d1ec2685e720ace220ce2181e696595f5fd442b20",
+      "approach": "rewrite",
+      "descriptions": [
+        "PruneEmptyJoin(right)"
+      ],
+      "targeted_activation_required": [
+        "PruneEmptyJoin(right)"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "Retain the surviving outer side and the correct nullable fields for each join kind."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$MinusEmptyPruneRuleConfig$1",
+      "class_sha256": "5dd6cdc2e8eae3161e1ac184f964bcc83b57e385a5b908e836a874c5fc3840df",
+      "approach": "rewrite",
+      "descriptions": [
+        "Minus"
+      ],
+      "targeted_activation_required": [
+        "Minus"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "Handle minuend and subtrahend separately. Preserve ALL, DISTINCT and remaining operand order."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$RemoveEmptySingleRule",
+      "class_sha256": "1371ba9deac20f4a70bf3d91f61d39534d754159850f75b7cc5dda6743f57b77",
+      "approach": "rewrite",
+      "descriptions": [
+        "PruneEmptyAggregate",
+        "PruneEmptyFilter",
+        "PruneEmptyProject",
+        "PruneEmptySort"
+      ],
+      "targeted_activation_required": [
+        "PruneEmptyFilter",
+        "PruneEmptySort"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "Use explicit per-operator empty input policies, including grouped versus global aggregates."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$SortFetchZeroRuleConfig$1",
+      "class_sha256": "5b7fc4dea988a39625c060bc145bbcccee57a7740a657209e600d273104ea311",
+      "approach": "rewrite",
+      "descriptions": [
+        "PruneSortLimit0"
+      ],
+      "targeted_activation_required": [
+        "PruneSortLimit0"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "Match Calcite's typed zero-fetch check and preserve the empty row type."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$UnionEmptyPruneRuleConfig$1",
+      "class_sha256": "5126f54ce2fcbee1a571b6386477b220f88bd52f2c90daea78cfd5bd8f749161",
+      "approach": "rewrite",
+      "descriptions": [
+        "Union"
+      ],
+      "targeted_activation_required": [
+        "Union"
+      ],
+      "placements": [
+        {
+          "index": 5,
+          "failure": "log_and_keep_input",
+          "contract": "Prune empty inputs with join-side, aggregate-empty-input and set-operation semantics intact."
+        }
+      ],
+      "checks": [
+        "Preserve ALL and DISTINCT when empty inputs disappear or leave a single operand."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SetOpToFilterRule",
+      "class_sha256": "155a5318f135b39c32b54dc6c83565f313fa8ef923d38aaaf2e8a9e4b4eb78cc",
+      "approach": "translate",
+      "descriptions": [
+        "SetOpToFilterRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 9,
+          "failure": "log_and_keep_input",
+          "contract": "Merge compatible UNION/INTERSECT/MINUS and combine filtered set operations; retain ALL versus DISTINCT and branch order."
+        }
+      ],
+      "checks": [
+        "Preserve operand order, output types and signed ALL or DISTINCT multiplicities.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinLeftSingleRuleConfig$1",
+      "class_sha256": "2b8bd8f37d0a97c626cb1fcf7b6ef49f167b11f825b79b5b54763246df06d0b3",
+      "approach": "translate",
+      "descriptions": [
+        "PruneJoinSingleValueRule(left)"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Preserve evaluator policy, NULLs, overflow and source diagnostics.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinLeftSingleValueRuleWithExprConfig$1",
+      "class_sha256": "a4b43ac8211cdf8b9bf4a4123c7b6ec3e7940520bc40abafca44d5daf520d0ed",
+      "approach": "translate",
+      "descriptions": [
+        "PruneJoinSingleValueRuleWithExpr(left)"
+      ],
+      "targeted_activation_required": [
+        "PruneJoinSingleValueRuleWithExpr(left)"
+      ],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Preserve evaluator policy, NULLs, overflow and source diagnostics.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinRightSingleRuleConfig$1",
+      "class_sha256": "1445958b6502553027cb5ff7a062f3170e4cbfb2475080fcb7b4ee00e3ccd9be",
+      "approach": "translate",
+      "descriptions": [
+        "PruneJoinSingleValue(right)"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Preserve evaluator policy, NULLs, overflow and source diagnostics.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinRightSingleValueRuleWithExprConfig$1",
+      "class_sha256": "fe6135db5dfae1d51834ded834f373e2631a8601c39906398e6c9ab8fc8f0de3",
+      "approach": "translate",
+      "descriptions": [
+        "PruneJoinSingleValueRuleWithExpr(right)"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Preserve evaluator policy, NULLs, overflow and source diagnostics.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SortRemoveConstantKeysRule",
+      "class_sha256": "8f8ffecd9081f7ca6987673aee66de5ea3502483f0666b797ff90ffb9287c229",
+      "approach": "rewrite",
+      "descriptions": [
+        "SortRemoveConstantKeysRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 10,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant sorts and constant keys under ordering and fetch constraints."
+        }
+      ],
+      "checks": [
+        "Use proven constant keys and retain the collation and positional limits."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SortRemoveRedundantRule",
+      "class_sha256": "96ebae5cabe0fe9e7a9e10139281311e6d92faab3b1ca8a8ed243f883759ee74",
+      "approach": "rewrite",
+      "descriptions": [
+        "SortRemoveRedundantRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 10,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant sorts and constant keys under ordering and fetch constraints."
+        }
+      ],
+      "checks": [
+        "Preserve the stage's collation, predicate and limit eligibility checks."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SortRemoveRule",
+      "class_sha256": "78077f4a18c5f3eb739c2d69838a5b8f8ca3d6c3c9aecb703051775ee29fb2a1",
+      "approach": "rewrite",
+      "descriptions": [
+        "SortRemoveRule"
+      ],
+      "targeted_activation_required": [
+        "SortRemoveRule"
+      ],
+      "placements": [
+        {
+          "index": 10,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant sorts and constant keys under ordering and fetch constraints."
+        }
+      ],
+      "checks": [
+        "Prove the input satisfies the required collation and retain OFFSET and FETCH behavior."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.SubQueryRemoveRule",
+      "class_sha256": "3f2966d85de3209aac089394ec35814eb4872d97c2f1f542c9e40d0a1250335e",
+      "approach": "translate",
+      "descriptions": [
+        "SubQueryRemoveRule:Filter",
+        "SubQueryRemoveRule:Join",
+        "SubQueryRemoveRule:Project"
+      ],
+      "targeted_activation_required": [
+        "SubQueryRemoveRule:Join"
+      ],
+      "placements": [
+        {
+          "index": 0,
+          "failure": "abort",
+          "contract": "RexSubQuery is replaced by Correlate/Join forms; literal aggregate cleanup shares this stage. Every later stage expects these forms."
+        }
+      ],
+      "checks": [
+        "Preserve three-valued logic, correlated bindings and scalar cardinality checks.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.UnionEliminatorRule",
+      "class_sha256": "d4467170deef47be58d5532d3a6c8f0f0f23a8830ac17c5a475292c1c3654825",
+      "approach": "translate",
+      "descriptions": [
+        "UnionEliminatorRule"
+      ],
+      "targeted_activation_required": [
+        "UnionEliminatorRule"
+      ],
+      "placements": [
+        {
+          "index": 31,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.UnionMergeRule",
+      "class_sha256": "600f26cf0a1176bab843fcdcb2f35a3e1af99e143abcbf0ab85520fc42ef4a77",
+      "approach": "translate",
+      "descriptions": [
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "UnionMergeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 9,
+          "failure": "log_and_keep_input",
+          "contract": "Merge compatible UNION/INTERSECT/MINUS and combine filtered set operations; retain ALL versus DISTINCT and branch order."
+        },
+        {
+          "index": 12,
+          "failure": "log_and_keep_input",
+          "contract": "Merge adjacent project, aggregate and set operations; this same step instance returns at stage 30."
+        },
+        {
+          "index": 20,
+          "failure": "log_and_keep_input",
+          "contract": "Merge set-operation shapes before ExceptAllFold; ALL multiplicities remain observable."
+        },
+        {
+          "index": 30,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-12 step after pushdown, preserving ordered rule instances."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve operand order, output types and signed ALL or DISTINCT multiplicities.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.apache.calcite.rel.rules.UnnestDecorrelateRule",
+      "class_sha256": "1a32661d11852fe5cc40e27d75967a917e968ffcd9c1bdd9433c69754141d386",
+      "approach": "translate",
+      "descriptions": [
+        "UnnestDecorrelateRule"
+      ],
+      "targeted_activation_required": [
+        "UnnestDecorrelateRule"
+      ],
+      "placements": [
+        {
+          "index": 15,
+          "failure": "log_and_keep_input",
+          "contract": "Level-2 UNNEST decorrelation; retain correlation scopes and optional project forms."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.AggregateNowFilterRule",
+      "class_sha256": "cc7b0bb55ca7fb53bfb5799ceb881ba55ad430f8547d2eaa3416e4cd7fae6ffa",
+      "approach": "translate",
+      "descriptions": [
+        "AggregateNowFilterRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 8,
+          "failure": "log_and_keep_input",
+          "contract": "Keep MaxCaseToCount before case-to-filter, then NOW filters and MODE-to-ARG_MAX. Filter rewrites must precede MODE handling."
+        }
+      ],
+      "checks": [
+        "Preserve FILTER, DISTINCT, empty-input behavior, result types and operator order.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.AntiJoinDistinctRemoveRule",
+      "class_sha256": "22ed70a6c8532d95e12a322361cbc55d778a6e1857b8dc4ad8019439bba0a3b3",
+      "approach": "translate",
+      "descriptions": [
+        "AntiJoinDistinctRemoveRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 31,
+          "failure": "log_and_keep_input",
+          "contract": "Remove redundant aggregates, anti-join distincts, unions, projects and eligible joins under their metadata preconditions."
+        }
+      ],
+      "checks": [
+        "Preserve row typing, collations, evaluation behavior and pruning eligibility.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CorrelateUnionSwap",
+      "class_sha256": "fabc954e6abdfd52d71d06808446166def1cf836664448629a6ca98c827debcf",
+      "approach": "translate",
+      "descriptions": [
+        "CorrelateUnionSwap"
+      ],
+      "targeted_activation_required": [
+        "CorrelateUnionSwap"
+      ],
+      "placements": [
+        {
+          "index": 17,
+          "failure": "log_and_keep_input",
+          "contract": "Move correlation across UNION before the second inner-query decorrelation."
+        }
+      ],
+      "checks": [
+        "Preserve correlation IDs, null extension and explicit field remaps.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ExceptAllFoldRule",
+      "class_sha256": "81a7c18105e9db342cc839797a4ec43ee83f47266f70d7f2dded6db38aafc2c6",
+      "approach": "translate",
+      "descriptions": [
+        "ExceptAllFoldRule"
+      ],
+      "targeted_activation_required": [
+        "ExceptAllFoldRule"
+      ],
+      "placements": [
+        {
+          "index": 20,
+          "failure": "log_and_keep_input",
+          "contract": "Merge set-operation shapes before ExceptAllFold; ALL multiplicities remain observable."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ExceptOptimizerRule",
+      "class_sha256": "2de1d07cab93c744f0c0e697376bfdbf2e3d6af83c3b69173934fbe4915ec05e",
+      "approach": "translate",
+      "descriptions": [
+        "ExceptOptimizerRule"
+      ],
+      "targeted_activation_required": [
+        "ExceptOptimizerRule"
+      ],
+      "placements": [
+        {
+          "index": 19,
+          "failure": "log_and_keep_input",
+          "contract": "Level-2 EXCEPT rewrite; preserve multiplicities and NULL equality."
+        }
+      ],
+      "checks": [
+        "Preserve operand order, output types and signed ALL or DISTINCT multiplicities.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.FilterJoinRule$FilterIntoJoinRule",
+      "class_sha256": "681952a51f6039a3df8771e274416612ce3c93f2bebc291ca5f1e5ab4e8b8260",
+      "approach": "translate",
+      "descriptions": [
+        "FilterIntoJoinRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        },
+        {
+          "index": 29,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up join/filter/disjunction rewrites; retain repeated rules and match ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.FilterJoinRule$JoinConditionPushRule",
+      "class_sha256": "8475743ec87ab2bead8f5f60ec3a70173cb46d60b885f416e1687348ffa94bdc",
+      "approach": "translate",
+      "descriptions": [
+        "JoinConditionPushRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 14,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up predicate/expression rewrites precede MultiJoin and bushy search; outer joins or fewer than three joins bypass that search. Lopt remains the fallback."
+        },
+        {
+          "index": 26,
+          "failure": "log_and_keep_input",
+          "contract": "Reuse the stage-14 instance after hypergraph rewriting, including its existing program builder and configured-rule list."
+        },
+        {
+          "index": 29,
+          "failure": "log_and_keep_input",
+          "contract": "Bottom-up join/filter/disjunction rewrites; retain repeated rules and match ordering."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.InnerDecorrelator",
+      "class_sha256": "7930fcc24a7a3465e2a1a1caeacddfdb38c4259523e4f8a614f7690eb0357847",
+      "approach": "translate",
+      "descriptions": [
+        "InnerDecorrelator"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 16,
+          "failure": "log_and_keep_input",
+          "contract": "First InnerDecorrelator application; preserve empty-input and correlated aggregate semantics."
+        },
+        {
+          "index": 18,
+          "failure": "log_and_keep_input",
+          "contract": "Repeat InnerDecorrelator after Correlate/Union; do not collapse the two placements."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.MaxCaseToCountRule",
+      "class_sha256": "ef23b0816f7b839e7d409635c5e87f01c13c7149d8ace00bf6580d048f760eea",
+      "approach": "translate",
+      "descriptions": [
+        "MaxCaseToCountRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 8,
+          "failure": "log_and_keep_input",
+          "contract": "Keep MaxCaseToCount before case-to-filter, then NOW filters and MODE-to-ARG_MAX. Filter rewrites must precede MODE handling."
+        }
+      ],
+      "checks": [
+        "Preserve FILTER, DISTINCT, empty-input behavior, result types and operator order.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ModeToArgMaxRule",
+      "class_sha256": "ee27e23b02087572ea951e0b33f0de5aa129d011faf07c8e6832de02bb38acde",
+      "approach": "translate",
+      "descriptions": [
+        "ModeToArgMaxRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 8,
+          "failure": "log_and_keep_input",
+          "contract": "Keep MaxCaseToCount before case-to-filter, then NOW filters and MODE-to-ARG_MAX. Filter rewrites must precede MODE handling."
+        }
+      ],
+      "checks": [
+        "Preserve FILTER, DISTINCT, empty-input behavior, result types and operator order.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$CalcReduceExpressionsRule",
+      "class_sha256": "99771280eb19202f4bc81d17d7dfacf815da643da218a0b9f7a9d3a79e220c63",
+      "approach": "rewrite",
+      "descriptions": [
+        "ReduceExpressionsRule(Calc)"
+      ],
+      "targeted_activation_required": [
+        "ReduceExpressionsRule(Calc)"
+      ],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder with the Calc stage's substitution and diagnostic contract."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$FilterReduceExpressionsRule",
+      "class_sha256": "25bdf79dc100886185b5fbf44076755221a9a8886c7d470206b06d85a622ce2e",
+      "approach": "rewrite",
+      "descriptions": [
+        "ReduceExpressionsRule(Filter)"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder with filter truth semantics and the same warning policy."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$JoinReduceExpressionsRule",
+      "class_sha256": "b720278b389e72338bd9ea7bbe22bc2ffdcd354c8988f6b0b941d7e133437aa0",
+      "approach": "rewrite",
+      "descriptions": [
+        "ReduceExpressionsRule(Join)"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder while preserving join condition truth and outer-side nullability."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$ProjectReduceExpressionsRule",
+      "class_sha256": "de3190a47770aa877a5c03684db3034d51dc1120f0fdb7ebcf59d5243fb57316",
+      "approach": "rewrite",
+      "descriptions": [
+        "ReduceExpressionsRule(Project)"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder and preserve every field type and the projection order."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$WindowReduceExpressionsRule",
+      "class_sha256": "47e5466686e377591af26141671eaa0b85a76b71d6f910a0d47f08851c2ab624",
+      "approach": "rewrite",
+      "descriptions": [
+        "ReduceExpressionsRule(Window)"
+      ],
+      "targeted_activation_required": [
+        "ReduceExpressionsRule(Window)"
+      ],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder and preserve frame bounds, node references and placement."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.RowsToRangeRule",
+      "class_sha256": "b7e27e77774713b084d612cb2cf88f073c5d4f8e022d1ebe703d9e9c4e4624ec",
+      "approach": "translate",
+      "descriptions": [
+        "RowsToRangeRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 23,
+          "failure": "log_and_keep_input",
+          "contract": "Convert eligible ROWS frames after window expansion without changing peer or boundary semantics."
+        }
+      ],
+      "checks": [
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.SessionRewriteRule",
+      "class_sha256": "9d64b1d3e8a191dd2fca2254e0f94ef9d055a0a38493489bd82a198cfdc88ff3",
+      "approach": "translate",
+      "descriptions": [
+        "SessionRewriteRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 3,
+          "failure": "log_and_keep_input",
+          "contract": "Rewrite SESSION before RexOver expansion; generated window expressions feed stage 22."
+        }
+      ],
+      "checks": [
+        "Maintain argument ordinals, multiplicities, nullability and surrounding correlation structure.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.SetopOptimizerRule",
+      "class_sha256": "c135253f7638a023027f66bd0db2b0675e3d5e9bc8d90eccfe58d40879c10252",
+      "approach": "translate",
+      "descriptions": [
+        "SetopOptimizerRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 9,
+          "failure": "log_and_keep_input",
+          "contract": "Merge compatible UNION/INTERSECT/MINUS and combine filtered set operations; retain ALL versus DISTINCT and branch order."
+        }
+      ],
+      "checks": [
+        "Preserve operand order, output types and signed ALL or DISTINCT multiplicities.",
+        "Preserve the source rule's guard order, bindings and candidate selection in typed FRel."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.TableFunctionReduceExpressionsRule",
+      "class_sha256": "abf065e6aad290f7d259456e3161871053ab3e42ab783a1c0fc2d5ca8b55dfcc",
+      "approach": "rewrite",
+      "descriptions": [
+        "TableFunctionReduceExpressionsRule"
+      ],
+      "targeted_activation_required": [],
+      "placements": [
+        {
+          "index": 2,
+          "failure": "log_and_keep_input",
+          "contract": "Reduce arguments before table-function rewrites; retain constant-evaluator policy and diagnostics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder before table-function lowering. Preserve its failure behavior and locations."
+      ]
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ValuesReduceRule",
+      "class_sha256": "b672e7080a0595acc0af3ed287e42f5e80aac8340b472914ad32966103d58a96",
+      "approach": "rewrite",
+      "descriptions": [
+        "ValuesReduceRule",
+        "ValuesReduceRule(Project)",
+        "ValuesReduceRule(Project-Filter)"
+      ],
+      "targeted_activation_required": [
+        "ValuesReduceRule",
+        "ValuesReduceRule(Project-Filter)"
+      ],
+      "placements": [
+        {
+          "index": 4,
+          "failure": "log_and_keep_input",
+          "contract": "At level 2, reduce scalar expressions and Values, coerce inputs and simplify joins with single-row inputs. Preserve NULL, overflow and evaluator semantics."
+        }
+      ],
+      "checks": [
+        "Use the shared typed folder while preserving the three configurations, row order, types and rejected evaluations."
+      ]
+    }
+  ],
+  "direct_steps": [
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer$1",
+      "class_sha256": "4c25da2f8758cb0c3e58c1a26b192e2462d512003aa8971ff43088535ed57a10",
+      "index": 1,
+      "failure": "abort",
+      "contract": "Reject unsupported ROW comparisons, window frames and aggregates before later rewrites erase their source shapes.",
+      "approach": "rewrite",
+      "check": "Run typed unsupported-plan checks before rewrites and preserve C0 diagnostics."
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer$2",
+      "class_sha256": "64a566e7d1c60fc7fd363191a5ab5ae6be806f5bc414d564f98ae76ae3835d66",
+      "index": 6,
+      "failure": "log_and_keep_input",
+      "contract": "The retained CorrelateProjectExtractor moves projections while preserving correlation identity and field references.",
+      "approach": "translate",
+      "check": "Preserve CorrelateProjectExtractor's binding, ordinal remapping and source origins."
+    },
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer$5",
+      "class_sha256": "2b95b3dbe8f24a5135384d1193e218bc5be0825f711e2ad529f5488f200d314e",
+      "index": 21,
+      "failure": "log_and_keep_input",
+      "contract": "Call RelDecorrelator after the preceding correlation and set-operation rewrites. Unremoved Correlate shapes remain part of the measured inventory.",
+      "approach": "translate",
+      "check": "Preserve Calcite decorrelation and reject unresolved correlations before circuit lowering."
+    }
+  ]
+}

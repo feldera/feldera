@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.merkle;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
 
@@ -19,18 +18,17 @@ import java.util.Map;
  * <p>The hashes come from a first {@link MerkleOuter} round: a GC operator reads the operator,
  * so the global hash of the GC operator depends on the global hash of the operator.  The hashes
  * are sorted, so the prefix does not depend on the order in which the GC operators are found. */
-public class GcHashPrefixes extends CircuitVisitor {
-    /** The pass that computed the global hashes, without prefixes. */
-    final MerkleOuter firstRound;
-    /** Maps an operator to the prefix of its global hash. */
-    final Map<DBSPOperator, String> prefixes;
+public class GcHashPrefixes extends HashPrefixPass {
+    @Override
+    boolean readsHash(DBSPOperator operator) {
+        return operator instanceof IGCOperator;
+    }
+
     /** Maps an operator to the first-round hashes of the GC operators that garbage-collect its integral. */
     final Map<DBSPOperator, List<String>> gcHashes;
 
     public GcHashPrefixes(DBSPCompiler compiler, MerkleOuter firstRound, Map<DBSPOperator, String> prefixes) {
-        super(compiler);
-        this.firstRound = firstRound;
-        this.prefixes = prefixes;
+        super(compiler, firstRound, prefixes);
         this.gcHashes = new HashMap<>();
     }
 

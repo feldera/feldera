@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-constant-program-archive.json",
+  "scope": "Rust builds complete statement-program-v5 constant views over a compiler-generated system prelude captured with an empty user input.",
+  "selected_original_cases": [9286, 9290],
+  "directed_cases": ["literal-0", "literal-1"],
+  "matched_classic_s2_circuits": 4,
+  "full_prefix": {
+    "classic": {"cases": 4, "matching_observations": 1480},
+    "gen2": {"cases": 4, "matching_observations": 1488}
+  },
+  "original_schema_differences": 0,
+  "original_diagnostic_differences": 0,
+  "artifact_byte_differences": 0,
+  "generated_binder_control": {"records": 59264, "byte_equal": true},
+  "runtime_execution": false,
+  "untouched_holdout": false
+}

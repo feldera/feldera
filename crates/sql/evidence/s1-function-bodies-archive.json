@@ -1,0 +1,30 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T16:48:47.608217+00:00",
+  "archive": ".p0-artifacts/p0-s1-function-bodies-20261117-v1.tar.gz",
+  "sha256": "019b45c1557be23a9e6ae9561f9f6f8be02c0ed906ec9e50a063cc8471c9fb04",
+  "bytes": 116471422,
+  "certificates": [
+    "s1-function-bodies.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-function-bodies.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-function-bodies-v7/source-snapshot/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-function-bodies.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "SQL function bodies and full exported optimized-project populations; whole-program S1 remains open",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-function-bodies-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 1000,
+  "verified_source_hashes": 82,
+  "verified_classpath_hashes": 5
+}

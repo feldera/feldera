@@ -50,7 +50,7 @@ public class RelSequence extends CalciteRelNode {
     }
 
     @Override
-    public CalciteRelNode remove(RelNode node) {
+    public CalciteRelNode remove(RelReference node) {
         List<CalciteRelNode> nodes = Linq.map(this.nodes, n -> n.remove(node));
         nodes = Linq.where(nodes, n -> !n.isEmpty());
         if (nodes.isEmpty())
@@ -59,7 +59,7 @@ public class RelSequence extends CalciteRelNode {
     }
 
     @Override
-    public boolean contains(RelNode node) {
+    public boolean contains(RelReference node) {
         return Linq.any(this.nodes, n -> n.contains(node));
     }
 
@@ -103,6 +103,12 @@ public class RelSequence extends CalciteRelNode {
         return new RelSequence(nodes);
     }
 
+    /** Stable text for generated comments; debug toString retains allocation ids. */
+    @Override
+    public String toInternalString() {
+        return "Sequence(" + String.join(", ", Linq.map(this.nodes, CalciteObject::toInternalString)) + ")";
+    }
+
     @Override
     public String toString() {
         return this.getId() + " Sequence(" + String.join(",", Linq.map(this.nodes, CalciteObject::toString)) + ")";
@@ -114,10 +120,10 @@ public class RelSequence extends CalciteRelNode {
     }
 
     @Override
-    public List<RelNode> getRelNodes() {
-        List<RelNode> result = new ArrayList<>();
+    public List<RelReference> getReferences() {
+        List<RelReference> result = new ArrayList<>();
         for (CalciteRelNode node : this.nodes)
-            result.addAll(node.getRelNodes());
+            result.addAll(node.getReferences());
         return result;
     }
 }

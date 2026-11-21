@@ -24,6 +24,16 @@ members = [
   "crates/feldera-types",
   "crates/pipeline-manager",
   "crates/sqllib",
+  "crates/sql/sql-binder",
+  "crates/sql/sql-difftest",
+  "crates/sql/sql-ir",
+  "crates/sql/sql-lower",
+  "crates/sql/sql-expr",
+  "crates/sql/sql-opt",
+  "crates/sql/sql-opt-jni",
+  "crates/sql/sql-parser",
+  "crates/sql/sql-source",
+  "crates/sql/sql2dbsp",
   "sql-to-dbsp-compiler/lib/readers",
   "crates/datagen",
   "crates/iceberg",
@@ -37,6 +47,10 @@ members = [
   "crates/samply"
 ]
 exclude = [
+  "crates/sql/parser-probe/vendor/sqlparser",
+  "crates/sql/fold-probe",
+  "crates/sql/sql-rel-model",
+  "crates/sql/type-derivation-probe",
   "sql-to-dbsp-compiler/temp",
   "sql-to-dbsp-compiler/experiments",
   "sql-to-dbsp-compiler/multi",

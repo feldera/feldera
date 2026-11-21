@@ -1,0 +1,29 @@
+{
+  "scope": "Copy shared scalar expression occurrences before monotonicity analysis, preserving binding identity, node sharing, source ranges and generated-name counters.",
+  "comparator_sha256": "970d42a9af8c99f5de03e85e00aca0b91bdf08b6599d4904b32c6fffdac4f61a",
+  "optimizer_library_sha256": "5aeef6af055e9169bb870b990ae8e246d41b6b583c82c14e16fade033ceafed9",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "836dc8f6a256d4e9122880d30784778bc27968083388ebe3da61c9f08b717584"
+    ],
+    "pass": "EnsureExpressionTrees",
+    "invocations": 8571,
+    "changed": 2200,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "b62b1a6c4d6e06702d18c6706b55e446effec44516bc6baa8d4eb0f0e38e516d"
+    ],
+    "pass": "EnsureExpressionTrees",
+    "invocations": 8527,
+    "changed": 2179,
+    "cases_without_placement": 0
+  }
+}

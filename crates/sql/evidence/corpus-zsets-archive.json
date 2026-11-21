@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-corpus-zsets-20261118-v2.tar.gz",
+  "bytes": 19114,
+  "sha256": "aa6e360649e3acb397b763afe79ad567affd42bfe793eb581c1ed55195927638",
+  "manifest_sha256": "9e553ec69e775a57c5d579c0dd96549b493c7a0292e1644a747fc6523d66cb98",
+  "verified_files": 23,
+  "all_members_verified": true
+}

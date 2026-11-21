@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-fold-site-review-20261118-v1.tar.gz",
+  "sha256": "2a5a609e6ced735732a166ec4b88bec808d1fe7c3ac76244eb334b4efb922f3e",
+  "bytes": 61175392,
+  "certificates": [
+    "fold-consumer-sites-s3.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "fold-consumer-sites-s3.json": [
+      {
+        "source_prefix": "compiled/",
+        "archive_prefix": "$SCRATCH/p0-fold-consumer-review-v3/compiled-sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "fold-consumer-sites-s3.json": "path-null-binary-sha256"
+  },
+  "scope": "Regex and ROW/keyword folded-literal review, original failure reproductions, repaired targeted and full focused S3 runs, compiled sources/classes and dependencies",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/fold-site-review-archive.json"
+}

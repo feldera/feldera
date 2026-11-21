@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-delta-expansion-archive.json",
+  "scope": "Analysis-only delta expansion in the original monotonicity stage. Decompose distinctness and positive weights, expand the binary join and preserve the original-to-expanded correspondence.",
+  "strict_replay_codec_graphs_and_name_counters_equal": {"classic": 50, "gen2": 50},
+  "raw_observations_equal": {"classic": 49, "gen2": 49},
+  "raw_observation_difference": "The observation-only serializer omits sourceEmpty on rebuilt noop expressions. The full replay codec carries that field and matches all cases.",
+  "composed_placements": 71,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "downstream_java_analysis": ["Monotonicity", "InsertLimiters"]
+}

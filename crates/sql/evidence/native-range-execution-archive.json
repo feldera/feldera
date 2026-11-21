@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-range-execution-20261118-v1.tar.gz",
+  "bytes": 44197132,
+  "sha256": "8ec3e6083cc4d6deafbdb525080b4e23dcfdd3ee520e188e59f6420ee2ee2477",
+  "manifest_sha256": "46e59f00539ace3f92b7b1ad934c9da7802afbc93b3186356528d88b82c1f182",
+  "verified_files": 50,
+  "all_members_verified": true
+}

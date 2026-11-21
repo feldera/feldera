@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.annotation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.util.IJson;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
 
@@ -31,6 +32,15 @@ public class JoinStrategy extends Annotation {
 
     @Override
     public void asJson(JsonStream stream) {
+        this.writeJson(stream, false);
+    }
+
+    @Override
+    public void asReplayJson(JsonStream stream) {
+        this.writeJson(stream, true);
+    }
+
+    private void writeJson(JsonStream stream, boolean replayMetadata) {
         stream.beginObject()
                 .appendClass(this)
                 .label("strategy")
@@ -38,8 +48,12 @@ public class JoinStrategy extends Annotation {
                 .label("input")
                 .append(this.input)
                 .label("inputName")
-                .append(this.inputName)
-                .endObject();
+                .append(this.inputName);
+        if (replayMetadata && this.position.isValid()) {
+            stream.label("position");
+            IJson.toJsonStream(this.position.asJson(), stream);
+        }
+        stream.endObject();
     }
 
     public SourcePositionRange getPosition() {
@@ -65,6 +79,8 @@ public class JoinStrategy extends Annotation {
         Strategy strategy = Strategy.valueOf(Utilities.getStringProperty(node, "strategy"));
         int input = Utilities.getIntProperty(node, "input");
         String inputName = Utilities.getStringProperty(node, "inputName");
-        return new JoinStrategy(SourcePositionRange.INVALID, strategy, input, inputName);
+        SourcePositionRange position = node.has("position")
+                ? SourcePositionRange.fromJson(node.get("position")) : SourcePositionRange.INVALID;
+        return new JoinStrategy(position, strategy, input, inputName);
     }
 }

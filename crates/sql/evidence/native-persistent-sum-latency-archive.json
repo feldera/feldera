@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-persistent-sum-latency-20261118.tar.gz",
+  "bytes": 6516039,
+  "sha256": "4feea1188af16dba66307884f0488af421b4b1ecb4535c122ab56acc4ace9c26",
+  "manifest_sha256": "2cb1d9ba5a06140e3c580cb1416342a283f2e9358a19b3f6cea953663476c12c",
+  "verified_files": 459,
+  "all_members_verified": true
+}

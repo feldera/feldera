@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-small-integer-20261118-v1.tar.gz",
+  "bytes": 11621833,
+  "sha256": "99ada3916ec8eb83e7732abc33c19e90cf812ef9b83bdc7ca33f8f083e3915ab",
+  "manifest_sha256": "1ea81202a5311c1499ce2a3902ae497705d5905edb31012c6303f7b08be843bf",
+  "verified_files": 1246,
+  "all_members_verified": true
+}

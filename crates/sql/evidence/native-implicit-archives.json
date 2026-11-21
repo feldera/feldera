@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-implicit-archive-index.json",
+  "archive_shapes": [
+    "Tup3<i64, i64, i64>",
+    "Tup2<Tup2<i128, i64>, Tup2<i64, i64>>",
+    "Tup2<Tup0, Tup2<u64, Option<Tup1<i64>>>>"
+  ],
+  "exact_archive_comparisons": 9,
+  "rust_archive_tests_passed": 12,
+  "focused_clippy_passed": true,
+  "shared_discriminant_followup": {
+    "archive_index": "native-shared-options-archive.json",
+    "shape": "Option<Tup3<i64, i64, i64>>",
+    "exact_archive_comparisons": 4,
+    "inconsistent_presence_rejections": 2,
+    "rust_archive_tests_passed": 28,
+    "focused_clippy_passed": true
+  },
+  "scope": "Fixed archive payloads from the selected nullable SUM, COUNT and COUNT DISTINCT, and rolling COUNT construction. The tests verify complete bytes and typed decoding after unloading the encoder. Checkpoint restoration with these internal serializers remains open."
+}

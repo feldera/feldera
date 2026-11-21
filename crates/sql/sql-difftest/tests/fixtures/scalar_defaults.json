@@ -1,0 +1,556 @@
+{
+  "nullable_bigint_default_null": {
+    "before": {
+      "class": "DBSPCastExpression",
+      "id": 163,
+      "source": {
+        "class": "DBSPNullLiteral",
+        "id": 162,
+        "type": { "class": "DBSPTypeNull", "id": 161, "code": "NULL", "mayBeNull": true }
+      },
+      "type": { "class": "DBSPTypeInteger", "id": 160, "width": 64, "signed": true, "code": "INT64", "mayBeNull": true },
+      "safe": "SqlUnsafe"
+    },
+    "after": {
+      "class": "DBSPI64Literal",
+      "id": 219,
+      "type": { "class": "DBSPTypeInteger", "id": 218, "width": 64, "signed": true, "code": "INT64", "mayBeNull": true }
+    }
+  },
+  "connector_metadata": {
+    "before": {
+      "class": "DBSPCastExpression",
+      "id": 16992,
+      "sourceEmpty": false,
+      "position": {
+        "start_line_number": 0,
+        "start_column": 0,
+        "end_line_number": 0,
+        "end_column": 0
+      },
+      "source": {
+        "class": "DBSPCloneExpression",
+        "id": 16991,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "expression": {
+          "class": "DBSPBinaryExpression",
+          "id": 16990,
+          "sourceEmpty": false,
+          "position": {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0
+          },
+          "type": {
+            "class": "DBSPTypeVariant",
+            "id": 16982,
+            "sourceEmpty": false,
+            "position": {
+              "start_line_number": 0,
+              "start_column": 0,
+              "end_line_number": 0,
+              "end_column": 0
+            },
+            "code": "VARIANT",
+            "mayBeNull": true
+          },
+          "left": {
+            "class": "DBSPApplyExpression",
+            "id": 16987,
+            "sourceEmpty": false,
+            "position": {
+              "start_line_number": 0,
+              "start_column": 0,
+              "end_line_number": 0,
+              "end_column": 0
+            },
+            "type": {
+              "class": "DBSPTypeVariant",
+              "id": 16983,
+              "sourceEmpty": false,
+              "position": {
+                "start_line_number": 0,
+                "start_column": 0,
+                "end_line_number": 0,
+                "end_column": 0
+              },
+              "code": "VARIANT",
+              "mayBeNull": true
+            },
+            "function": {
+              "class": "DBSPPathExpression",
+              "id": 16986,
+              "sourceEmpty": true,
+              "type": {
+                "class": "DBSPTypeAny",
+                "id": 72,
+                "sourceEmpty": true,
+                "singleton": true,
+                "code": "ANY",
+                "mayBeNull": false
+              },
+              "path": {
+                "class": "DBSPPath",
+                "id": 16985,
+                "sourceEmpty": true,
+                "components": [
+                  {
+                    "class": "DBSPSimplePathSegment",
+                    "id": 16984,
+                    "sourceEmpty": true,
+                    "genericArgs": [],
+                    "identifier": "connector_metadata"
+                  }
+                ]
+              }
+            },
+            "arguments": []
+          },
+          "right": {
+            "class": "DBSPStringLiteral",
+            "id": 16989,
+            "sourceEmpty": true,
+            "type": {
+              "class": "DBSPTypeString",
+              "id": 16988,
+              "sourceEmpty": false,
+              "position": {
+                "start_line_number": 0,
+                "start_column": 0,
+                "end_line_number": 0,
+                "end_column": 0
+              },
+              "fixed": true,
+              "precision": 5,
+              "code": "STRING",
+              "mayBeNull": false
+            },
+            "value": "topic",
+            "charset": "UTF-8"
+          },
+          "opcode": "VARIANT_INDEX"
+        },
+        "type": {
+          "node": 16982
+        }
+      },
+      "type": {
+        "class": "DBSPTypeString",
+        "id": 16981,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "fixed": false,
+        "precision": -1,
+        "code": "STRING",
+        "mayBeNull": true
+      },
+      "safe": "SqlSafe"
+    },
+    "after": {
+      "class": "DBSPHandleErrorExpression",
+      "id": 17062,
+      "sourceEmpty": false,
+      "position": {
+        "start_line_number": 0,
+        "start_column": 0,
+        "end_line_number": 0,
+        "end_column": 0
+      },
+      "source": {
+        "class": "DBSPCastExpression",
+        "id": 17045,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "source": {
+          "class": "DBSPCloneExpression",
+          "id": 16991,
+          "sourceEmpty": false,
+          "position": {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0
+          },
+          "expression": {
+            "class": "DBSPBinaryExpression",
+            "id": 16990,
+            "sourceEmpty": false,
+            "position": {
+              "start_line_number": 0,
+              "start_column": 0,
+              "end_line_number": 0,
+              "end_column": 0
+            },
+            "type": {
+              "class": "DBSPTypeVariant",
+              "id": 16982,
+              "sourceEmpty": false,
+              "position": {
+                "start_line_number": 0,
+                "start_column": 0,
+                "end_line_number": 0,
+                "end_column": 0
+              },
+              "code": "VARIANT",
+              "mayBeNull": true
+            },
+            "left": {
+              "class": "DBSPApplyExpression",
+              "id": 16987,
+              "sourceEmpty": false,
+              "position": {
+                "start_line_number": 0,
+                "start_column": 0,
+                "end_line_number": 0,
+                "end_column": 0
+              },
+              "type": {
+                "class": "DBSPTypeVariant",
+                "id": 16983,
+                "sourceEmpty": false,
+                "position": {
+                  "start_line_number": 0,
+                  "start_column": 0,
+                  "end_line_number": 0,
+                  "end_column": 0
+                },
+                "code": "VARIANT",
+                "mayBeNull": true
+              },
+              "function": {
+                "class": "DBSPPathExpression",
+                "id": 16986,
+                "sourceEmpty": true,
+                "type": {
+                  "class": "DBSPTypeAny",
+                  "id": 72,
+                  "sourceEmpty": true,
+                  "singleton": true,
+                  "code": "ANY",
+                  "mayBeNull": false
+                },
+                "path": {
+                  "class": "DBSPPath",
+                  "id": 16985,
+                  "sourceEmpty": true,
+                  "components": [
+                    {
+                      "class": "DBSPSimplePathSegment",
+                      "id": 16984,
+                      "sourceEmpty": true,
+                      "genericArgs": [],
+                      "identifier": "connector_metadata"
+                    }
+                  ]
+                }
+              },
+              "arguments": []
+            },
+            "right": {
+              "class": "DBSPStringLiteral",
+              "id": 16989,
+              "sourceEmpty": true,
+              "type": {
+                "class": "DBSPTypeString",
+                "id": 16988,
+                "sourceEmpty": false,
+                "position": {
+                  "start_line_number": 0,
+                  "start_column": 0,
+                  "end_line_number": 0,
+                  "end_column": 0
+                },
+                "fixed": true,
+                "precision": 5,
+                "code": "STRING",
+                "mayBeNull": false
+              },
+              "value": "topic",
+              "charset": "UTF-8"
+            },
+            "opcode": "VARIANT_INDEX"
+          },
+          "type": {
+            "node": 16982
+          }
+        },
+        "type": {
+          "class": "DBSPTypeSqlResult",
+          "id": 17044,
+          "sourceEmpty": false,
+          "position": {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0
+          },
+          "typeArgs": [
+            {
+              "class": "DBSPTypeString",
+              "id": 16981,
+              "sourceEmpty": false,
+              "position": {
+                "start_line_number": 0,
+                "start_column": 0,
+                "end_line_number": 0,
+                "end_column": 0
+              },
+              "fixed": false,
+              "precision": -1,
+              "code": "STRING",
+              "mayBeNull": true
+            }
+          ],
+          "name": "SqlResult",
+          "code": "RESULT",
+          "mayBeNull": false
+        },
+        "safe": "RustCast"
+      },
+      "type": {
+        "node": 16981
+      },
+      "runtimeBehavior": "ReturnNone",
+      "index": 0,
+      "hasSourcePosition": false
+    }
+  },
+  "integer": {
+    "before": {
+      "class": "DBSPCastExpression",
+      "id": 19455,
+      "sourceEmpty": true,
+      "source": {
+        "class": "DBSPI32Literal",
+        "id": 19454,
+        "sourceEmpty": true,
+        "type": {
+          "class": "DBSPTypeInteger",
+          "id": 19453,
+          "sourceEmpty": true,
+          "width": 32,
+          "signed": true,
+          "code": "INT32",
+          "mayBeNull": false
+        },
+        "value": "12"
+      },
+      "type": {
+        "class": "DBSPTypeInteger",
+        "id": 19451,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "width": 32,
+        "signed": true,
+        "code": "INT32",
+        "mayBeNull": true
+      },
+      "safe": "SqlUnsafe"
+    },
+    "after": {
+      "class": "DBSPI32Literal",
+      "id": 19543,
+      "sourceEmpty": true,
+      "type": {
+        "class": "DBSPTypeInteger",
+        "id": 19542,
+        "sourceEmpty": true,
+        "width": 32,
+        "signed": true,
+        "code": "INT32",
+        "mayBeNull": true
+      },
+      "value": "12"
+    }
+  },
+  "addition": {
+    "before": {
+      "class": "DBSPCastExpression",
+      "id": 19887,
+      "sourceEmpty": false,
+      "position": {
+        "start_line_number": 1,
+        "start_column": 30,
+        "end_line_number": 1,
+        "end_column": 36
+      },
+      "source": {
+        "class": "DBSPBinaryExpression",
+        "id": 19886,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 1,
+          "start_column": 30,
+          "end_line_number": 1,
+          "end_column": 36
+        },
+        "type": {
+          "class": "DBSPTypeInteger",
+          "id": 19879,
+          "sourceEmpty": false,
+          "position": {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0
+          },
+          "width": 32,
+          "signed": true,
+          "code": "INT32",
+          "mayBeNull": false
+        },
+        "left": {
+          "class": "DBSPI32Literal",
+          "id": 19882,
+          "sourceEmpty": true,
+          "type": {
+            "class": "DBSPTypeInteger",
+            "id": 19881,
+            "sourceEmpty": true,
+            "width": 32,
+            "signed": true,
+            "code": "INT32",
+            "mayBeNull": false
+          },
+          "value": "2"
+        },
+        "right": {
+          "class": "DBSPI32Literal",
+          "id": 19885,
+          "sourceEmpty": true,
+          "type": {
+            "class": "DBSPTypeInteger",
+            "id": 19884,
+            "sourceEmpty": true,
+            "width": 32,
+            "signed": true,
+            "code": "INT32",
+            "mayBeNull": false
+          },
+          "value": "3"
+        },
+        "opcode": "ADD"
+      },
+      "type": {
+        "class": "DBSPTypeInteger",
+        "id": 19878,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "width": 32,
+        "signed": true,
+        "code": "INT32",
+        "mayBeNull": true
+      },
+      "safe": "SqlUnsafe"
+    },
+    "after": {
+      "class": "DBSPI32Literal",
+      "id": 19942,
+      "sourceEmpty": true,
+      "type": {
+        "class": "DBSPTypeInteger",
+        "id": 19941,
+        "sourceEmpty": true,
+        "width": 32,
+        "signed": true,
+        "code": "INT32",
+        "mayBeNull": true
+      },
+      "value": "5"
+    }
+  },
+  "varchar": {
+    "before": {
+      "class": "DBSPCastExpression",
+      "id": 19891,
+      "sourceEmpty": true,
+      "source": {
+        "class": "DBSPStringLiteral",
+        "id": 19890,
+        "sourceEmpty": true,
+        "type": {
+          "class": "DBSPTypeString",
+          "id": 19889,
+          "sourceEmpty": false,
+          "position": {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0
+          },
+          "fixed": true,
+          "precision": 5,
+          "code": "STRING",
+          "mayBeNull": false
+        },
+        "value": "ready",
+        "charset": "UTF-8"
+      },
+      "type": {
+        "class": "DBSPTypeString",
+        "id": 19888,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "fixed": false,
+        "precision": -1,
+        "code": "STRING",
+        "mayBeNull": true
+      },
+      "safe": "SqlUnsafe"
+    },
+    "after": {
+      "class": "DBSPStringLiteral",
+      "id": 19945,
+      "sourceEmpty": true,
+      "type": {
+        "class": "DBSPTypeString",
+        "id": 19888,
+        "sourceEmpty": false,
+        "position": {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0
+        },
+        "fixed": false,
+        "precision": -1,
+        "code": "STRING",
+        "mayBeNull": true
+      },
+      "value": "ready",
+      "charset": "UTF-8"
+    }
+  }
+}

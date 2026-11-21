@@ -183,6 +183,41 @@ public class CompilerMessages {
         this.errorContext = range;
     }
 
+    /** Successful front-end diagnostics, including suppression identity and continuation
+     * state that the public diagnostic JSON does not expose. */
+    public ObjectNode replaySnapshot() {
+        if (this.exitCode != 0 || this.reported.size() != this.messages.size())
+            throw new IllegalArgumentException("S2 replay does not support failed or cleared diagnostic histories");
+        ObjectNode result = Utilities.deterministicObjectMapper().createObjectNode();
+        result.set("context", this.errorContext.asJson());
+        ArrayNode messages = result.putArray("messages");
+        for (Message message: this.messages) {
+            ObjectNode saved = messages.addObject();
+            saved.set("context", message.context.asJson());
+            saved.set("range", message.range.asJson());
+            saved.put("warning", message.warning);
+            saved.put("continuation", message.continuation);
+            saved.put("type", message.errorType);
+            saved.put("message", message.message);
+        }
+        return result;
+    }
+
+    public void restoreSnapshot(JsonNode snapshot) {
+        if (!this.messages.isEmpty() || !this.reported.isEmpty() || !snapshot.path("messages").isArray())
+            throw new IllegalArgumentException("Diagnostic replay requires a fresh compiler and a messages array");
+        this.errorContext = SourcePositionRange.fromJson(Utilities.getProperty(snapshot, "context"));
+        for (JsonNode saved: snapshot.get("messages")) {
+            if (!Utilities.getBooleanProperty(saved, "warning"))
+                throw new IllegalArgumentException("Cannot resume a failed front end");
+            this.reportError(new Message(
+                    SourcePositionRange.fromJson(Utilities.getProperty(saved, "context")),
+                    SourcePositionRange.fromJson(Utilities.getProperty(saved, "range")), true,
+                    Utilities.getBooleanProperty(saved, "continuation"),
+                    Utilities.getStringProperty(saved, "type"), Utilities.getStringProperty(saved, "message")));
+        }
+    }
+
     public void clear() {
         this.messages.clear();
     }

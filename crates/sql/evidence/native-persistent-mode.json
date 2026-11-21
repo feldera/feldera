@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-persistent-mode-archive.json",
+  "scope": "DBSP persistent-mode checkpoint interchange for selected classic-generated and native circuits.",
+  "aggregate_interchange": {
+    "direction": "classic to native to relinked native to classic",
+    "signed_outputs_and_errors_match": true,
+    "runs": [
+      {
+        "workers": 1,
+        "aggregate": "count_distinct",
+        "archive_writes": 2,
+        "archive_reads": 11,
+        "relinked_reads": 4
+      },
+      {
+        "workers": 1,
+        "aggregate": "sum",
+        "archive_writes": 2,
+        "archive_reads": 11,
+        "relinked_reads": 4
+      },
+      {
+        "workers": 4,
+        "aggregate": "count_distinct",
+        "archive_writes": 4,
+        "archive_reads": 13,
+        "relinked_reads": 5
+      },
+      {
+        "workers": 4,
+        "aggregate": "sum",
+        "archive_writes": 8,
+        "archive_reads": 36,
+        "relinked_reads": 22
+      }
+    ]
+  },
+  "rolling_interchange": {
+    "direction": "classic to native to relinked native",
+    "fingerprint": "d6e8b48239a993e5",
+    "archive_writes": 16,
+    "archive_reads": 49,
+    "searches": 8,
+    "signed_outputs_match": true
+  }
+}

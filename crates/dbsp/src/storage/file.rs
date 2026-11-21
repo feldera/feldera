@@ -118,6 +118,8 @@ pub use filter::TrackingRoaringBitmap;
 pub use filter::{FilterKind, FilterStats, TrackingFilterStats};
 pub(crate) use filter::{TouchedWindowCounter, collect_roaring_metadata};
 pub use format::TouchedWindowCount;
+#[cfg(feature = "native-abi")]
+pub use item::RefTup2;
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 /// Default false-positive rate for Bloom filters in newly created files.
@@ -667,3 +669,5 @@ where
 
 #[cfg(test)]
 mod test;
+#[cfg(all(test, feature = "native-abi"))]
+mod test_native_abi;

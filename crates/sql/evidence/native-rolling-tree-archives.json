@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-rolling-tree-archives-archive.json",
+  "scope": "Actual partitioned rolling COUNT file-backed radix-tree row, including both optional child pointers",
+  "fixtures": 5,
+  "native_bytes_equal": 5,
+  "typed_deserializations_equal": 5,
+  "archive_tests_passed": 14,
+  "clippy_warnings_denied": true,
+  "native_radix_checkpoint_writer_exercised": false
+}

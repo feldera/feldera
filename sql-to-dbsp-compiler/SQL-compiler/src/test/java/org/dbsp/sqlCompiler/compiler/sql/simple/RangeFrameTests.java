@@ -2,6 +2,8 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -266,7 +268,7 @@ public class RangeFrameTests extends SqlIoTest {
         if (compiler.messages.exitCode == 0)
             return false;
         String messages = compiler.messages.toString();
-        Assert.assertTrue(messages, messages.contains("A RANGE window frame with a PRECEDING or FOLLOWING offset"));
+        DiagnosticAssertions.assertContains(Target.RENDERED, "A RANGE window frame with a PRECEDING or FOLLOWING offset", messages);
         return true;
     }
 

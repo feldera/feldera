@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-inactive-replays-archive.json",
+  "scope": "Prove the absence of candidates for the selected recursive, left-join, star-join, hop, ASOF and aggregate rewrites in the frozen suite. The unused-left-join group still runs dead-code pruning.",
+  "guarded_stages": [
+    "RecursiveComponents",
+    "LeftJoinChains",
+    "RemoveUselessLeftJoins",
+    "RemoveStarJoins",
+    "ExpandHop",
+    "LowerAsof",
+    "ExpandAggregates"
+  ],
+  "composed_placements": 77,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "nested_stage_replaced": "ValidateRecursiveOperators#1 is included in the RecursiveComponents guard."
+}

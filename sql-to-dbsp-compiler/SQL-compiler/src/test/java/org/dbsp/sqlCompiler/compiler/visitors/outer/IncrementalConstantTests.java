@@ -85,7 +85,7 @@ public class IncrementalConstantTests {
         ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(compiler, 1);
         visitor.apply(circuit);
         JsonNode parsed = Utilities.deterministicObjectMapper().readTree(visitor.getJsonString());
-        JsonDecoder decoder = new JsonDecoder(compiler.sqlToRelCompiler.typeFactory);
+        JsonDecoder decoder = new JsonDecoder();
         DBSPCircuit decoded = decoder.decodeOuter(parsed, DBSPCircuit.class);
         DBSPIncrementalConstantOperator constant = single(decoded, DBSPIncrementalConstantOperator.class);
         Assert.assertTrue(EquivalenceContext.equiv(rows(), constant.getFunction()));

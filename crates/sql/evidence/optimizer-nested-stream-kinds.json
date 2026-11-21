@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-nested-stream-kinds-archive.json",
+  "scope": "Independent original Java optimizer captures of four recursive programs in classic and Gen-2 modes.",
+  "exact_graphs": 752,
+  "graphs_featuring_nested_regions": 696,
+  "nested_region_observations": 870,
+  "no_input_region_observations": 34,
+  "port_annotations_equal": 15582,
+  "flat_control_graphs_equal": 17960,
+  "grouped_early_set_graphs_equal": 90,
+  "directed_missing_output_and_invalid_import": "passed",
+  "rust_tests_passed": 36,
+  "clippy": "passed"
+}

@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InputProducers",
+  "type": "object",
+  "required": [
+    "function_rows",
+    "relations",
+    "roots",
+    "schema_version"
+  ],
+  "properties": {
+    "function_rows": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/InputProducer"
+      }
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    },
+    "schema_version": {
+      "$ref": "#/definitions/ProducerVersion"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "InputProducer": {
+      "type": "object",
+      "required": [
+        "constants",
+        "form",
+        "inputs",
+        "row"
+      ],
+      "properties": {
+        "constants": {
+          "description": "Window constants follow ordinary input fields in slot numbering.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "form": {
+          "$ref": "#/definitions/RelationForm"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProducerVersion": {
+      "type": "string",
+      "enum": [
+        "input-producers-v0"
+      ]
+    },
+    "RelationForm": {
+      "type": "string",
+      "enum": [
+        "LogicalTableScan",
+        "JdbcTableScan",
+        "LogicalValues",
+        "LogicalProject",
+        "LogicalFilter",
+        "LogicalUnion",
+        "LogicalIntersect",
+        "LogicalMinus",
+        "LogicalJoin",
+        "LogicalAsofJoin",
+        "LogicalAggregate",
+        "LogicalWindow",
+        "LogicalSort",
+        "Uncollect",
+        "Collect",
+        "LogicalTableFunctionScan",
+        "LogicalCorrelate"
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-chains-20261118-v2.tar.gz",
+  "bytes": 745650,
+  "sha256": "f3fdd43b33b1619ce6b276a1d5464cab0a5162943553c69d0286c47b8a081a4c",
+  "manifest_sha256": "5db022fd5f3157b4fa07c694e7b767ceeaa6a6b54229284794b7f251eb24e24a",
+  "verified_files": 19,
+  "all_members_verified": true
+}

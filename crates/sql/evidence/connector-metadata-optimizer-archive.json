@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-connector-metadata-optimizer-20261118-v1.tar.gz",
+  "bytes": 38277307,
+  "sha256": "f187ca6b574d79c53f2612bd1d0abb16077705944d34528db893cdd32cc6d9ee",
+  "manifest_sha256": "fd38632e933beaeede01e6b4f851e25efdc2d2a4186dc99f50c4e76cb075c1a3",
+  "verified_files": 12473,
+  "all_members_verified": true
+}

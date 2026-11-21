@@ -102,6 +102,8 @@ pub use partitioned_tree_aggregate::{
     PartitionedRadixTreeBatch,
 };
 pub use prefix::{DynPrefix, Prefix};
+#[cfg(feature = "native-abi")]
+pub use treenode::archive_testing;
 pub use treenode::{
     ChildPtr, DynChildPtr, DynTreeNode, DynTreeNodeUpdate, TreeNode, TreeNodeUpdate,
 };

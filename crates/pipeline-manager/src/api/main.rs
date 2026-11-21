@@ -357,6 +357,7 @@ It contains the following fields:
         crate::db::types::program::SqlCompilationInfo,
         crate::db::types::program::RustCompilationInfo,
         crate::db::types::program::ProgramConfig,
+        crate::db::types::program::CompilerFamily,
         crate::db::types::program::ProgramInfo,
         crate::api::endpoints::pipeline_management::PartialProgramInfo,
 

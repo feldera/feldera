@@ -48,6 +48,7 @@ import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
+import org.dbsp.sqlCompiler.compiler.backend.CircuitDumps;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -81,6 +82,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -154,11 +156,42 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         API,
     }
 
-    /** Variable that refers to the weight of the row in the z-set. */
-    public final DBSPVariablePath weightVar;
+    /** Row weight shared by front-end aggregates and their later expansion. Restored from
+     * the decoded circuit when resuming at an internal file boundary. */
+    public DBSPVariablePath weightVar;
 
-    public final SqlToRelCompiler sqlToRelCompiler;
-    final CalciteToDBSPCompiler relToDBSPCompiler;
+    /** SQL compilation owns Calcite state; circuit replay restores its results instead. */
+    private record FrontEnd(SqlToRelCompiler sql, CalciteToDBSPCompiler relational) { }
+    private enum FrontEndMode {
+        SQL, DEFER_UNTIL_SQL_INPUT, REPLAY
+    }
+    private final FrontEndMode frontEndMode;
+    @Nullable private FrontEnd frontEnd;
+    private FrontEnd createFrontEnd() {
+        return new FrontEnd(new SqlToRelCompiler(this.options, this),
+                new CalciteToDBSPCompiler(this.options, this, this.metadata));
+    }
+
+    private FrontEnd frontEnd() {
+        if (this.frontEndMode == FrontEndMode.REPLAY)
+            throw new IllegalStateException("SQL front end is unavailable during circuit replay");
+        if (this.frontEnd == null)
+            this.frontEnd = this.createFrontEnd();
+        return this.frontEnd;
+    }
+
+    public SqlToRelCompiler getSqlToRelCompiler() {
+        return this.frontEnd().sql();
+    }
+
+    /** Expression construction is also needed when lowering already resolved input. */
+    public org.apache.calcite.rex.RexBuilder getRexBuilder() {
+        return this.getSqlToRelCompiler().getRexBuilder();
+    }
+
+    private CalciteToDBSPCompiler getRelToDBSPCompiler() {
+        return this.frontEnd().relational();
+    }
     public final CompilerOptions options;
     public final CompilerMessages messages;
     public final SourceFileContents sources;
@@ -171,21 +204,144 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     @Nullable
     public Consumer<CircuitOptimizer> optimizerHook = null;
 
+    /** Test-only synchronous observer of each statement at entry to relational
+     * lowering. Production leaves this unset. The observer runs before mutation. */
+    @Nullable public Consumer<RelStatement> relationalObservationHook = null;
+
+    /** Test-only boundaries for separating frontend diagnostics from lowering
+     * diagnostics. Observers must not modify compilation state. */
+    @Nullable public Runnable relationalCompletionHook = null;
+    @Nullable public Runnable bindingCompletionHook = null;
+
+    /** Test-only streaming alternative to dump files. Receives compact observation JSON. */
+    @Nullable public Consumer<String> circuitObservationHook = null;
+
+    /** Test-only observer of exact pre-hash strings; production leaves this unset. */
+    @Nullable public java.util.function.BiConsumer<String, String> hashInputHook = null;
+
+    public boolean usesCircuitSeam() {
+        CompilerOptions.IO io = this.options.ioOptions;
+        return this.circuitObservationHook != null || !io.dumpCircuits.isEmpty()
+                || !io.writeS2.isEmpty() || !io.writeS3.isEmpty() || io.readS2 || io.readS3
+                || io.rustOptimizerPasses;
+    }
+
+    public void observeHashInput(String kind, String text) {
+        if (this.hashInputHook != null)
+            this.hashInputHook.accept(kind, text);
+    }
+
+    @Nullable private CircuitDumps circuitDumps = null;
+    private int dumpedCompilations = 0;
+
+    /** Test-only read-only observation of pass instances and their side data.
+     * Implementations must not mutate passes, evaluate predicates, or retain
+     * compiler objects beyond the compilation under observation. */
+    public interface StateObserver {
+        void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit);
+        void after(String container, int index, int iteration, CircuitTransform pass,
+                   @Nullable DBSPCircuit circuit, boolean completed);
+        default void inPlace(String container, int index, String operation, DBSPCircuit circuit) { }
+    }
+
+    @Nullable public StateObserver stateObserver;
+
+    /** Run a pass with optional test observation; production calls allocate no dump state. */
+    public DBSPCircuit applyObservedPass(String container, int index, int iteration,
+                                        CircuitTransform pass, DBSPCircuit circuit) {
+        if (this.stateObserver == null)
+            return this.circuitDumps == null ? pass.apply(circuit)
+                    : this.circuitDumps.apply(container, index, iteration, pass, circuit);
+        this.stateObserver.before(container, index, iteration, pass, circuit);
+        DBSPCircuit result = null;
+        boolean completed = false;
+        try {
+            result = this.circuitDumps == null ? pass.apply(circuit)
+                    : this.circuitDumps.apply(container, index, iteration, pass, circuit);
+            completed = true;
+            return result;
+        } finally {
+            this.stateObserver.after(container, index, iteration, pass, result, completed);
+        }
+    }
+
+    /** Record an in-place circuit operation when differential-test capture is enabled. */
+    public void observeCircuit(String container, int index, String operation, DBSPCircuit circuit) {
+        if (this.circuitDumps != null && !this.hasErrors())
+            this.circuitDumps.observe(container, index, operation, circuit);
+        if (this.stateObserver != null)
+            this.stateObserver.inPlace(container, index, operation, circuit);
+    }
+
+    /** Keep the capture open through the caller's final checks and clear it on every exit. */
+    @Nullable private DBSPCircuit withCircuitDumps(Supplier<DBSPCircuit> compilation) {
+        try {
+            DBSPCircuit circuit = compilation.get();
+            if (circuit != null && !this.hasErrors() && this.circuitDumps != null)
+                this.circuitDumps.complete(this.options.ioOptions.inputCircuit ? "S2" : "S3");
+            return circuit;
+        } finally {
+            this.circuitDumps = null;
+        }
+    }
+
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
     // For each view the list of columns declared with lateness
     final Map<ProgramIdentifier, Map<ProgramIdentifier, SqlLateness>> viewLateness = new HashMap<>();
 
+    /** A late warning needs the view spelling and source range, not a live SQL AST. */
+    public record UnresolvedViewLateness(String quotedView, SourcePositionRange range) { }
+    @Nullable private List<UnresolvedViewLateness> replayedViewLateness;
+
+    public List<UnresolvedViewLateness> unresolvedViewLateness() {
+        if (this.replayedViewLateness != null)
+            return this.replayedViewLateness;
+        List<UnresolvedViewLateness> result = new ArrayList<>();
+        for (var entry: this.viewLateness.entrySet()) {
+            if (!this.views.containsKey(entry.getKey())) {
+                for (SqlLateness late: entry.getValue().values())
+                    result.add(new UnresolvedViewLateness(entry.getKey().singleQuote(),
+                            new SourcePositionRange(late.getParserPosition())));
+            }
+        }
+        return result;
+    }
+
+    public void restoreUnresolvedViewLateness(List<UnresolvedViewLateness> pending) {
+        Utilities.enforce(this.replayedViewLateness == null && this.viewLateness.isEmpty()
+                && this.views.isEmpty(), () -> "Pending LATENESS checks require a fresh compiler");
+        this.replayedViewLateness = List.copyOf(pending);
+    }
+
     final Map<ProgramIdentifier, CreateViewStatement> views = new HashMap<>();
     final Map<ProgramIdentifier, CreateIndexStatement> indexes = new HashMap<>();
 
     public DBSPCompiler(CompilerOptions options) {
+        this(options, false);
+    }
+
+    /** Construct a context for S2/S3 replay without initializing the SQL front end. */
+    public static DBSPCompiler forCircuitReplay(CompilerOptions options) {
+        return new DBSPCompiler(options, true);
+    }
+
+    /** Read and validate the CLI input before allocating the Calcite front end. */
+    public static DBSPCompiler forSqlInput(CompilerOptions options) {
+        return new DBSPCompiler(options, FrontEndMode.DEFER_UNTIL_SQL_INPUT);
+    }
+
+    protected DBSPCompiler(CompilerOptions options, boolean replay) {
+        this(options, replay ? FrontEndMode.REPLAY : FrontEndMode.SQL);
+    }
+
+    private DBSPCompiler(CompilerOptions options, FrontEndMode mode) {
         this.options = options;
         // Setting these first allows errors to be reported
         this.messages = new CompilerMessages(this);
         this.metadata = new ProgramMetadata();
-        this.sqlToRelCompiler = new SqlToRelCompiler(options, this);
-        this.relToDBSPCompiler = new CalciteToDBSPCompiler(options, this, this.metadata);
+        this.frontEndMode = mode;
+        this.frontEnd = mode == FrontEndMode.SQL ? this.createFrontEnd() : null;
         this.sources = new SourceFileContents();
         this.typeCompiler = new TypeCompiler(this);
         this.weightVar = DBSPTypeWeight.INSTANCE.var();
@@ -208,8 +364,21 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         result.newline().decrease().append("}");
     }
 
+    @Nullable private String replayPlans;
+
+    /** Carry the front-end plan without reconstructing executable Calcite objects. */
+    public void restorePlans(String plans) {
+        if (this.replayPlans != null || !this.views.isEmpty())
+            throw new IllegalStateException("Plan restoration requires a fresh compiler");
+        this.replayPlans = plans;
+    }
+
     /** Write the plans to the specified appendable.  Return a Map that renumbers RelNodes */
     public Map<RelNode, Integer> getPlans(IIndentStream stream) {
+        if (this.replayPlans != null) {
+            stream.append(this.replayPlans);
+            return Map.of();
+        }
         stream.append("{").increase();
         boolean first = true;
         List<ProgramIdentifier> sorted = Linq.list(this.views.keySet());
@@ -224,7 +393,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             stream.append("\"").append(Utilities.escapeDoubleQuotes(e.name())).append("\"");
             stream.append(": ");
             RelNode rel = cv.getRel();
-            RelJsonWriter planWriter = new RelJsonWriter(result, options.ioOptions.verbosity);
+            RelJsonWriter planWriter = this.usesCircuitSeam()
+                    ? RelJsonWriter.forReplay(result, options.ioOptions.verbosity)
+                    : new RelJsonWriter(result, options.ioOptions.verbosity);
             rel.explain(planWriter);
             String json = planWriter.asString();
             stream.appendIndentedStrings(json);
@@ -292,7 +463,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     public CustomFunctions getCustomFunctions() {
-        return this.sqlToRelCompiler.getCustomFunctions();
+        return this.getSqlToRelCompiler().getCustomFunctions();
     }
 
     @Override
@@ -335,9 +506,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             if (node.statement().getKind() != SqlKind.SET_OPTION)
                 continue;
             this.setErrorContext(node);
-            RelStatement set = this.sqlToRelCompiler.compile(node, this.sources);
+            RelStatement set = this.getSqlToRelCompiler().compile(node, this.sources);
             if (set != null)
-                this.relToDBSPCompiler.compile(set);
+                this.getRelToDBSPCompiler().compile(set);
         }
         this.setErrorContext(SourcePositionRange.INVALID);
     }
@@ -393,10 +564,20 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     /** Add a new source which can provide schema information about input tables */
     public void addSchemaSource(String name, Schema schema) {
-        this.sqlToRelCompiler.addSchemaSource(name, schema);
+        this.getSqlToRelCompiler().addSchemaSource(name, schema);
     }
 
     record SqlStatements(String statement, boolean many, boolean visible) {}
+
+    /** API submission boundaries affect parsing and source positions. The joined
+     * source text alone cannot reproduce a sequence of single-statement calls. */
+    public record SourceSubmission(String sql, boolean many, int batch) {}
+    private final List<SourceSubmission> sourceSubmissions = new ArrayList<>();
+    private int parsedBatches = 0;
+
+    public List<SourceSubmission> getSourceSubmissions() {
+        return List.copyOf(this.sourceSubmissions);
+    }
 
     final List<SqlStatements> toCompile = new ArrayList<>();
 
@@ -407,6 +588,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      *                        Otherwise, it's a "preamble" generated internally.
      */
     private void compileInternal(String statements, boolean many, boolean appendToSource) {
+        if (appendToSource)
+            this.sourceSubmissions.add(new SourceSubmission(statements, many, this.parsedBatches));
         if (this.inputSources != InputSource.File) {
             // If we read from file we already have read the entire data.
             // Otherwise, we append the statements to the sources.
@@ -515,18 +698,18 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     /** Parse using Calcite. */
     List<ParsedStatement> runParser() {
+        this.parsedBatches++;
         List<ParsedStatement> parsed = new ArrayList<>();
         for (SqlStatements stat : this.toCompile) {
             try {
                 if (stat.many) {
                     if (stat.statement.isEmpty()) {
-                        this.sqlToRelCompiler.emptyStatement();
+                        this.getSqlToRelCompiler().emptyStatement();
                         continue;
                     }
-                    parsed.addAll(this.sqlToRelCompiler.parseStatements(stat.statement, stat.visible, false));
+                    parsed.addAll(this.getSqlToRelCompiler().parseStatements(stat.statement, stat.visible, false));
                 } else {
-                    SqlNode node = this.sqlToRelCompiler.parse(stat.statement, stat.visible, false);
-                    parsed.add(new ParsedStatement(node, stat.visible));
+                    parsed.add(this.getSqlToRelCompiler().parseStatement(stat.statement, stat.visible));
                 }
                 if (this.hasErrors())
                     break;
@@ -562,7 +745,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         ProgramIdentifier refersTo = statement.refersTo;
         if (this.metadata.hasTable(refersTo)) {
             this.reportWarning(
-                    new SourcePositionRange(statement.createIndex.name.getParserPosition()),
+                    new SourcePositionRange(statement.namePosition),
                     "Indexed table",
                     "INDEX " + statement.indexName.singleQuote() + " refers to TABLE " +
                     statement.refersTo.singleQuote() + "; this has no effect.");
@@ -570,7 +753,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
         if (!this.metadata.hasView(refersTo)) {
             this.reportError(
-                    new SourcePositionRange(statement.createIndex.indexed.getParserPosition()),
+                    new SourcePositionRange(statement.targetPosition),
                     "Indexed object not found",
                         "Object with name " + statement.refersTo.singleQuote() +
                     " used in CREATE INDEX statement "  + statement.indexName.singleQuote() +
@@ -580,7 +763,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         CreateViewStatement view = Utilities.getExists(this.views, statement.refersTo);
         if (view.emitFinalColumn() >= 0) {
             this.reportError(
-                    new SourcePositionRange(statement.createIndex.indexed.getParserPosition()),
+                    new SourcePositionRange(statement.targetPosition),
                     UnsupportedException.KIND,
                     "View " + view.relationName.singleQuote() + " has an 'emit_final' property, " +
                             "so it cannot have INDEX " + statement.indexName.singleQuote() + ".");
@@ -590,9 +773,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         for (ProgramIdentifier col: statement.columns) {
             int index = view.getColumnIndex(col);
             if (index < 0) {
-                SqlNode sqlNode = statement.createIndex.columns.get(i);
                 this.reportError(
-                        new SourcePositionRange(sqlNode.getParserPosition()),
+                        new SourcePositionRange(statement.columnParserPosition(i)),
                         "Column not found",
                         "Column " + col.singleQuote() +
                                 " used in CREATE INDEX statement "  + statement.indexName.singleQuote() +
@@ -605,7 +787,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         List<RelDataTypeField> keyColumns = Linq.map(statement.columns,
                 col -> view.columns.get(view.getColumnIndex(col)).field);
         WarnFloatingPointEquality.checkColumns(this,
-                new SourcePositionRange(statement.createIndex.getParserPosition()), "CREATE INDEX", keyColumns);
+                new SourcePositionRange(statement.getParserPosition()), "CREATE INDEX", keyColumns);
         return true;
     }
 
@@ -663,22 +845,22 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     List<RelStatement> compileCreateView(ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness) {
         @Nullable List<ParsedStatement> parts = null;
         if (this.options.languageOptions.cteViews)
-            parts = this.sqlToRelCompiler.hoistCtes(node);
+            parts = this.getSqlToRelCompiler().hoistCtes(node);
         if (parts == null) {
             try {
-                RelStatement fe = this.sqlToRelCompiler.compileCreateView(
+                RelStatement fe = this.getSqlToRelCompiler().compileCreateView(
                         node, lateness, this.sources, /* retry */ true);
                 return fe == null ? Linq.list() : Linq.list(fe);
             } catch (CteToLocalViews.Retry retry) {
                 Logger.INSTANCE.belowLevel(this, 1)
                         .append("Could not decorrelate query; retrying with CTEs as local views")
                         .newline();
-                parts = this.sqlToRelCompiler.hoistCtes(node);
+                parts = this.getSqlToRelCompiler().hoistCtes(node);
             }
             if (parts == null) {
                 // The rewrite turned out not to apply; compile again without
                 // retry, so the real error surfaces.
-                RelStatement fe = this.sqlToRelCompiler.compileCreateView(
+                RelStatement fe = this.getSqlToRelCompiler().compileCreateView(
                         node, lateness, this.sources, /* retry */ false);
                 return fe == null ? Linq.list() : Linq.list(fe);
             }
@@ -694,6 +876,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     @Nullable DBSPCircuit runAllCompilerStages() {
+        return this.withCircuitDumps(this::compileStages);
+    }
+
+    @Nullable private DBSPCircuit compileStages() {
         List<ParsedStatement> parsed = timed("Parse", this::runParser);
         if (this.hasErrors())
             return null;
@@ -703,7 +889,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             // so they are compiled before the other statements are even validated:
             // validation emits warnings which the settings may silence or turn into errors.
             this.compileSqlSettings(parsed);
-            parsed = Linq.map(parsed, this.sqlToRelCompiler::postParsingProcess);
+            parsed = Linq.map(parsed, this.getSqlToRelCompiler()::postParsingProcess);
             if (this.hasErrors())
                 return null;
 
@@ -727,16 +913,16 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .newline();
                 SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_TYPE) {
-                    RelStatement fe = timed("Calcite", () -> this.sqlToRelCompiler.compileCreateType(node));
+                    RelStatement fe = timed("Calcite", () -> this.getSqlToRelCompiler().compileCreateType(node));
                     if (fe == null)
                         // error during compilation
                         continue;
-                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(fe));
+                    timedRun("RelToDBSP", () -> this.getRelToDBSPCompiler().compile(fe));
                     continue;
                 }
                 if (kind == SqlKind.OTHER && node.statement() instanceof SqlCreateAggregate) {
-                    CreateAggregateStatement stat = timed("Calcite", () -> this.sqlToRelCompiler.compileCreateAggregate(node, this.sources));
-                    boolean exists = this.sqlToRelCompiler.functionExists(stat.function.getName());
+                    CreateAggregateStatement stat = timed("Calcite", () -> this.getSqlToRelCompiler().compileCreateAggregate(node, this.sources));
+                    boolean exists = this.getSqlToRelCompiler().functionExists(stat.function.getName());
                     if (exists) {
                         throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
                                 " is already predefined, or the name is reserved.\nPlease consider using a " +
@@ -744,11 +930,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                                 stat.getCalciteObject());
                     }
                     aggregateFunctions.add(stat.function);
-                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(stat));
+                    timedRun("RelToDBSP", () -> this.getRelToDBSPCompiler().compile(stat));
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    CreateFunctionStatement stat = timed("Calcite", () -> this.sqlToRelCompiler.compileCreateFunction(node, this.sources));
-                    boolean exists = this.sqlToRelCompiler.functionExists(stat.function.getName());
+                    CreateFunctionStatement stat = timed("Calcite", () -> this.getSqlToRelCompiler().compileCreateFunction(node, this.sources));
+                    boolean exists = this.getSqlToRelCompiler().functionExists(stat.function.getName());
                     if (exists) {
                         throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
                                 " is already predefined, or the name is reserved.\nPlease consider using a " +
@@ -763,9 +949,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         // This allows the functions to be used in other function definitions.
                         // There should be a better way to do this.
                         SqlOperatorTable newFunctions = SqlOperatorTables.of(Linq.list(function));
-                        this.sqlToRelCompiler.addOperatorTable(newFunctions);
+                        this.getSqlToRelCompiler().addOperatorTable(newFunctions);
                     }
-                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(stat));
+                    timedRun("RelToDBSP", () -> this.getRelToDBSPCompiler().compile(stat));
                 }
                 if (node.statement() instanceof SqlLateness lateness) {
                     ProgramIdentifier view = ProgramIdentifier.fromSqlId(lateness.getView());
@@ -788,9 +974,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 // Reload the operator table to include the newly defined Rust function.
                 // These we can load all at the end, since they can't depend on each other.
                 SqlOperatorTable newFunctions = SqlOperatorTables.of(rustFunctions);
-                this.sqlToRelCompiler.addOperatorTable(newFunctions);
+                this.getSqlToRelCompiler().addOperatorTable(newFunctions);
                 SqlOperatorTable newAggregates = SqlOperatorTables.of(aggregateFunctions);
-                this.sqlToRelCompiler.addOperatorTable(newAggregates);
+                this.getSqlToRelCompiler().addOperatorTable(newAggregates);
             }
 
             // Compile all statements which do not define functions, types, or settings
@@ -808,7 +994,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     Map<ProgramIdentifier, SqlLateness> lateness = this.viewLateness.getOrDefault(viewName, new HashMap<>());
                     compiled = timed("Calcite", () -> this.compileCreateView(node, lateness));
                 } else {
-                    RelStatement single = timed("Calcite", () -> this.sqlToRelCompiler.compile(node, this.sources));
+                    RelStatement single = timed("Calcite", () -> this.getSqlToRelCompiler().compile(node, this.sources));
                     compiled = single == null
                             // error during compilation
                             ? Linq.list()
@@ -829,23 +1015,33 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                             return null;
                         Utilities.putNew(this.indexes, ct.getName(), ct);
                     }
-                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(fe));
+                    timedRun("RelToDBSP", () -> this.getRelToDBSPCompiler().compile(fe));
                 }
             }
             this.setErrorContext(SourcePositionRange.INVALID);
 
-            timedRun("Calcite", () -> this.sqlToRelCompiler.endCompilation(this.compiler()));
-            DBSPCircuit circuit = this.relToDBSPCompiler.getFinalCircuit();
+            timedRun("Calcite", () -> this.getSqlToRelCompiler().endCompilation(this.compiler()));
+            if (this.bindingCompletionHook != null)
+                this.bindingCompletionHook.run();
+            DBSPCircuit circuit = this.getRelToDBSPCompiler().getFinalCircuit();
             if (circuit == null)
                 return null;
             if (this.getDebugLevel() > 0)
                 ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", circuit);
 
             this.validateForeignKeys(circuit, foreignKeys);
+            if (this.messages.exitCode == 0 && (!this.options.ioOptions.dumpCircuits.isEmpty()
+                    || this.circuitObservationHook != null)) {
+                this.circuitDumps = new CircuitDumps(this, this.dumpedCompilations++);
+            }
+            if (this.circuitDumps != null)
+                this.circuitDumps.write("S2", circuit);
             if (!this.options.ioOptions.inputCircuit) {
                 DBSPCircuit unoptimized = circuit;
                 circuit = timed("Optimizer", () -> this.optimize(unoptimized));
             }
+            if (this.circuitDumps != null && !this.hasErrors() && !this.options.ioOptions.inputCircuit)
+                this.circuitDumps.write("S3", circuit);
             return circuit;
         } catch (CalciteContextException e) {
             CompilationError e0 = this.improveErrorMessage(e);
@@ -929,10 +1125,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public ObjectNode getIOMetadataAsJson() {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
-        for (IHasSchema input: this.metadata.inputTables.values())
+        for (ProgramSchema input: this.metadata.inputTables.values())
             inputs.add(input.asJson(false));
         ArrayNode outputs = mapper.createArrayNode();
-        for (IHasSchema output: this.metadata.outputViews.values())
+        for (ProgramSchema output: this.metadata.outputViews.values())
             outputs.add(output.asJson(false));
         ObjectNode ios = mapper.createObjectNode();
         ios.set("inputs", inputs);
@@ -953,9 +1149,50 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return optimizer.optimize(circuit);
     }
 
+    /** Run the full optimizer prefix after an experimental S2 import. Analyses
+     * and their consumers share one compiler and optimizer lifetime, as in SQL
+     * compilation; no isolated S4 checkpoint is accepted. */
+    @Nullable public DBSPCircuit optimizeFromS2(DBSPCircuit circuit) {
+        Utilities.enforce(circuit.metadata == this.metadata,
+                () -> "A resumed circuit must share its compiler's metadata");
+        return this.withCircuitDumps(() -> {
+            if (!this.options.ioOptions.dumpCircuits.isEmpty() || this.circuitObservationHook != null)
+                this.circuitDumps = new CircuitDumps(this, this.dumpedCompilations++);
+            if (this.circuitDumps != null)
+                this.circuitDumps.write("S2", circuit);
+            DBSPCircuit result = this.optimize(circuit);
+            if (result != null && !this.hasErrors())
+                new org.dbsp.sqlCompiler.compiler.visitors.outer.ValidateStreamKinds(this).apply(result);
+            if (this.circuitDumps != null && result != null && !this.hasErrors())
+                this.circuitDumps.write("S3", result);
+            if (result != null)
+                this.postCompilationChecks();
+            return result;
+        });
+    }
+
+    /** Resume an optimized circuit at the Java tail. Recompute hashes from the
+     * decoded objects: copied annotations are not evidence of hash-input parity. */
+    @Nullable public DBSPCircuit finishFromS3(DBSPCircuit circuit) {
+        Utilities.enforce(circuit.metadata == this.metadata,
+                () -> "A resumed circuit must share its compiler's metadata");
+        return this.withCircuitDumps(() -> {
+            new org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleHashes(this).apply(circuit);
+            if (this.hasErrors())
+                return null;
+            if (!this.options.ioOptions.dumpCircuits.isEmpty() || this.circuitObservationHook != null) {
+                this.circuitDumps = new CircuitDumps(this, this.dumpedCompilations++);
+                this.circuitDumps.write("S3", circuit);
+            }
+            return circuit;
+        });
+    }
+
     public void removeTable(ProgramIdentifier name) {
         this.metadata.removeTable(name);
-        this.relToDBSPCompiler.getTableContents().removeTable(name);
+        // Only SQL compilation accumulates INSERT/DELETE contents for runtime tests.
+        if (this.frontEnd != null)
+            this.frontEnd.relational().getTableContents().removeTable(name);
     }
 
     public void submitStatementForCompilation(String statement) {
@@ -984,15 +1221,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Perform checks that can only be made after all the statements have been compiled */
     void postCompilationChecks() {
         // Check that all views mentioned in LATENESS statements exist
-        for (ProgramIdentifier view: this.viewLateness.keySet()) {
-            if (!this.views.containsKey(view)) {
-                for (SqlLateness late : this.viewLateness.get(view).values()) {
-                    this.compiler().reportWarning(
-                            new SourcePositionRange(late.getParserPosition()), "No such view",
-                            "View " + view.singleQuote() + " used in LATENESS statement not found");
-                }
-            }
-        }
+        for (UnresolvedViewLateness late: this.unresolvedViewLateness())
+            this.compiler().reportWarning(late.range(), "No such view",
+                    "View " + late.quotedView() + " used in LATENESS statement not found");
     }
 
     private static long compileStartTime = 0;
@@ -1006,9 +1237,15 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Run all compilation stages.
      * Get the circuit generated by compiling the statements to far. */
     @Nullable public DBSPCircuit getFinalCircuit(boolean temporary) {
+        return this.withCircuitDumps(() -> this.finishCircuit(temporary));
+    }
+
+    @Nullable private DBSPCircuit finishCircuit(boolean temporary) {
         compileStartTime = System.currentTimeMillis();
-        DBSPCircuit circuit = this.runAllCompilerStages();
-        if (circuit != null)
+        DBSPCircuit circuit = this.compileStages();
+        // S2 is before the optimizer and these final checks. Replay carries the
+        // pending checks and reports them after the optimizer, in the same order.
+        if (circuit != null && !this.options.ioOptions.inputCircuit)
             this.postCompilationChecks();
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Compilation time ")
@@ -1031,12 +1268,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Get the contents of the tables as a result of all the INSERT statements compiled. */
     public TableContents getTableContents() {
         this.runAllCompilerStages();
-        return this.relToDBSPCompiler.getTableContents();
+        return this.getRelToDBSPCompiler().getTableContents();
     }
 
     /** Empty the contents of all tables that were populated by INSERT or DELETE statements */
     public void clearTables() {
-        this.relToDBSPCompiler.clearTables();
+        this.getRelToDBSPCompiler().clearTables();
     }
 
     public void showErrors(PrintStream stream) {

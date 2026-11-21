@@ -1,0 +1,495 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "explicit field policies for upstream Query, Select, Fetch, Insert, Update and Delete AST structs",
+  "raw_directory": "$SCRATCH/p0-parser-fields-matrix-v2",
+  "binary": {
+    "path": "$SCRATCH/p0-parser-fields-matrix-v2/feldera-parser-probe",
+    "sha256": "e34879ccd782bf0bb8228bf6051ffc9b93735fc4f53cece46b926d28c03b962e"
+  },
+  "build": {
+    "path": "$SCRATCH/p0-parser-fields-build-v2/build.json",
+    "sha256": "f8b0fbed5526ede4af522690f825dc447e4b2949aadb9e7226841aecee3fbb8f"
+  },
+  "comparisons": {
+    "corpus": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-fields-matrix-v2/corpus-comparison.json",
+        "sha256": "49bd2690a79a3b5857713e7294ecf47e6e92affadc766f658c6ecd87026788ed"
+      },
+      "cases": 8571,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 31127,
+          "accepted_submissions": 31127,
+          "accepted_cases": 5807,
+          "java_only": 2888,
+          "rejected_submissions": 2888,
+          "rejected_cases": 2764
+        },
+        "0.62.0/generic": {
+          "both_accept": 31317,
+          "accepted_submissions": 31317,
+          "accepted_cases": 5978,
+          "java_only": 2698,
+          "rejected_submissions": 2698,
+          "rejected_cases": 2593
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 33923,
+          "accepted_submissions": 33923,
+          "accepted_cases": 8479,
+          "java_only": 92,
+          "rejected_submissions": 92,
+          "rejected_cases": 92
+        },
+        "0.64.0/generic": {
+          "both_accept": 33308,
+          "accepted_submissions": 33308,
+          "accepted_cases": 7876,
+          "java_only": 707,
+          "rejected_submissions": 707,
+          "rejected_cases": 695
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {},
+        "0.62.0/generic": {},
+        "0.64.0/feldera_prototype": {},
+        "0.64.0/generic": {}
+      }
+    },
+    "keywords": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-fields-matrix-v2/keywords-comparison.json",
+        "sha256": "f27b640c4d588c6e81e666ca1bffe88606ff147d16f9774b31d2d63c3845067b"
+      },
+      "cases": 13660,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13651,
+          "accepted_cases": 13651,
+          "rust_only": 504,
+          "java_only": 3,
+          "rejected_submissions": 9,
+          "rejected_cases": 9,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13147,
+          "accepted_cases": 13147,
+          "both_reject": 510,
+          "rejected_submissions": 513,
+          "rejected_cases": 513,
+          "java_only": 3
+        },
+        "0.64.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 504,
+          "different": 6
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "different": 410,
+          "equal": 100
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        }
+      }
+    },
+    "diagnostics": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-fields-matrix-v2/diagnostics-comparison.json",
+        "sha256": "670a53daed5cdd1b4c0bd586bb27b71c2b8f7a6deced3f6d37ad538f8866d7af"
+      },
+      "cases": 1143,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "java_only": 677,
+          "rejected_submissions": 683,
+          "rejected_cases": 682,
+          "both_accept": 1355,
+          "accepted_submissions": 1363,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "java_only": 676,
+          "rejected_submissions": 682,
+          "rejected_cases": 682,
+          "both_accept": 1356,
+          "accepted_submissions": 1364,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 2023,
+          "accepted_submissions": 2023,
+          "accepted_cases": 1120,
+          "java_only": 9,
+          "rejected_submissions": 23,
+          "rejected_cases": 23,
+          "both_reject": 14
+        },
+        "0.64.0/generic": {
+          "java_only": 639,
+          "rejected_submissions": 645,
+          "rejected_cases": 645,
+          "both_accept": 1393,
+          "accepted_submissions": 1401,
+          "accepted_cases": 498,
+          "rust_only": 8,
+          "both_reject": 6
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "java_position_missing": 2,
+          "equal": 10,
+          "different": 2
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        }
+      }
+    },
+    "adversarial": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-fields-matrix-v2/adversarial-comparison.json",
+        "sha256": "c3ebac6348fdc0dae296d174263b304fc9cc9b2553567e52c00764d0d3fc2a2f"
+      },
+      "cases": 745,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 214,
+          "accepted_submissions": 400,
+          "accepted_cases": 400,
+          "rust_only": 186,
+          "java_only": 179,
+          "rejected_submissions": 345,
+          "rejected_cases": 345,
+          "both_reject": 166
+        },
+        "0.62.0/generic": {
+          "both_accept": 259,
+          "accepted_submissions": 470,
+          "accepted_cases": 470,
+          "rust_only": 211,
+          "java_only": 134,
+          "rejected_submissions": 275,
+          "rejected_cases": 275,
+          "both_reject": 141
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 359,
+          "accepted_submissions": 359,
+          "accepted_cases": 359,
+          "java_only": 34,
+          "rejected_submissions": 386,
+          "rejected_cases": 386,
+          "both_reject": 352
+        },
+        "0.64.0/generic": {
+          "both_accept": 265,
+          "accepted_submissions": 485,
+          "accepted_cases": 485,
+          "rust_only": 220,
+          "java_only": 128,
+          "rejected_submissions": 260,
+          "rejected_cases": 260,
+          "both_reject": 132
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 352,
+          "rust_accepts": 186,
+          "equal": 35,
+          "different": 122,
+          "java_position_missing": 1,
+          "rust_position_missing": 8
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 352,
+          "rust_accepts": 211,
+          "equal": 31,
+          "different": 100,
+          "rust_position_missing": 9,
+          "java_position_missing": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 352,
+          "different": 190,
+          "equal": 159,
+          "java_position_missing": 3
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 352,
+          "rust_accepts": 220,
+          "equal": 28,
+          "different": 94,
+          "rust_position_missing": 9,
+          "java_position_missing": 1
+        }
+      }
+    },
+    "mutations": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-fields-matrix-v2/mutations-comparison.json",
+        "sha256": "9cab166cd28e80e072e3f7cf61b431652ed62a0019616e96a79166f3e41e3f64"
+      },
+      "cases": 27760,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 9067,
+          "accepted_submissions": 9413,
+          "accepted_cases": 9413,
+          "both_reject": 16880,
+          "rejected_submissions": 18347,
+          "rejected_cases": 18347,
+          "java_only": 1467,
+          "rust_only": 346
+        },
+        "0.62.0/generic": {
+          "both_accept": 9275,
+          "accepted_submissions": 9638,
+          "accepted_cases": 9638,
+          "both_reject": 16863,
+          "rejected_submissions": 18122,
+          "rejected_cases": 18122,
+          "java_only": 1259,
+          "rust_only": 363
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 10260,
+          "accepted_submissions": 10260,
+          "accepted_cases": 10260,
+          "both_reject": 17226,
+          "rejected_submissions": 17500,
+          "rejected_cases": 17500,
+          "java_only": 274
+        },
+        "0.64.0/generic": {
+          "both_accept": 9415,
+          "accepted_submissions": 9810,
+          "accepted_cases": 9810,
+          "both_reject": 16831,
+          "rejected_submissions": 17950,
+          "rejected_cases": 17950,
+          "java_only": 1119,
+          "rust_only": 395
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 17226,
+          "equal": 7714,
+          "different": 9080,
+          "rust_position_missing": 86,
+          "rust_accepts": 346
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 17226,
+          "equal": 7749,
+          "different": 9024,
+          "rust_position_missing": 90,
+          "rust_accepts": 363
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 17226,
+          "equal": 10370,
+          "different": 6856
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 17226,
+          "equal": 7753,
+          "different": 8984,
+          "rust_position_missing": 94,
+          "rust_accepts": 395
+        }
+      }
+    },
+    "fields": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-fields-matrix-v2/fields-comparison.json",
+        "sha256": "c79d9d865bbf43c9f3706e8d22d3fadf248ea8d015d19879abeb745e0ff12a1f"
+      },
+      "cases": 48,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "rust_only": 26,
+          "accepted_submissions": 34,
+          "accepted_cases": 34,
+          "both_reject": 13,
+          "rejected_submissions": 14,
+          "rejected_cases": 14,
+          "both_accept": 8,
+          "java_only": 1
+        },
+        "0.62.0/generic": {
+          "rust_only": 35,
+          "accepted_submissions": 44,
+          "accepted_cases": 44,
+          "both_accept": 9,
+          "both_reject": 4,
+          "rejected_submissions": 4,
+          "rejected_cases": 4
+        },
+        "0.64.0/feldera_prototype": {
+          "both_reject": 39,
+          "rejected_submissions": 40,
+          "rejected_cases": 40,
+          "both_accept": 8,
+          "accepted_submissions": 8,
+          "accepted_cases": 8,
+          "java_only": 1
+        },
+        "0.64.0/generic": {
+          "rust_only": 37,
+          "accepted_submissions": 46,
+          "accepted_cases": 46,
+          "both_accept": 9,
+          "both_reject": 2,
+          "rejected_submissions": 2,
+          "rejected_cases": 2
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 39,
+          "rust_accepts": 26,
+          "different": 6,
+          "equal": 7
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 39,
+          "rust_accepts": 35,
+          "equal": 3,
+          "different": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 39,
+          "different": 33,
+          "equal": 6
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 39,
+          "rust_accepts": 37,
+          "equal": 1,
+          "different": 1
+        }
+      }
+    }
+  },
+  "initial_field_matrix": {
+    "record": {
+      "path": "$SCRATCH/p0-parser-field-policy-v1/comparison.json",
+      "sha256": "3a53d0bfcb25cbd4bff8ea2d49d2ec349bf72fc319fd1c58273c6cffaaaf78be"
+    },
+    "counts": {
+      "rust_only": 27,
+      "accepted_submissions": 35,
+      "accepted_cases": 35,
+      "both_reject": 12,
+      "rejected_submissions": 13,
+      "rejected_cases": 13,
+      "both_accept": 8,
+      "java_only": 1
+    }
+  },
+  "preservation": {
+    "record": {
+      "path": "$SCRATCH/p0-parser-fields-matrix-v1/preservation.json",
+      "sha256": "d65baaad2ee046ac48dac0a004f8c8fa9da1bc1a1f5520815b71ac06ae827819"
+    },
+    "summary": {
+      "corpus": {
+        "cases": 8571,
+        "all_measurements_and_AST_equal": true
+      },
+      "keywords": {
+        "cases": 13660,
+        "all_measurements_and_AST_equal": true
+      },
+      "diagnostics": {
+        "cases": 1143,
+        "all_measurements_and_AST_equal": true
+      },
+      "mutations": {
+        "cases": 27760,
+        "all_measurements_and_AST_equal": true
+      }
+    },
+    "final_metadata_rebuild_records_identical": true
+  },
+  "rust_tests": 57,
+  "clippy": true,
+  "test_log": {
+    "path": "$SCRATCH/p0-parser-fields-build-v2/command-0.log",
+    "sha256": "26137142a021242735d6d1737590b0b0d9efc11b7b016c5e595722aedcbf331b"
+  },
+  "clippy_log": {
+    "path": "$SCRATCH/p0-parser-fields-build-v2/command-1.log",
+    "sha256": "4a3af6c977fd9679f103dc01bf4610070c7c530f19eb17f1ab14bc57e975c02f"
+  },
+  "sources": {
+    "crates/sql/parser-probe/src/v064/ast_fields.rs": "eeaa3090704851d0038a3de33c68541bb6bb2eb707346e47f83b8fe61ff6aa89",
+    "crates/sql/parser-probe/src/v064/reject.rs": "6d423169b4b74ccf0a66b545bca9194d219e63542980aebfff38f678e4e49c65",
+    "crates/sql/parser-probe/adversarial.jsonl": "2234115849abd1b4643ed05dcc42b1205095938cfd5b55526c4cb33103d73557"
+  },
+  "limitations": [
+    "This enumerates fields of the six named structs, not every AST family or every nested option.",
+    "S1 parity, complete AST spans and independent parser maintenance review remain open.",
+    "All 92 positive corpus refusals remain; the focused field matrix retains one Java-only LIMIT comma form."
+  ]
+}

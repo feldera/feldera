@@ -598,13 +598,22 @@ public class RecursiveTests extends BaseSQLTests {
 
         // Declared recursive view not used anywhere
         sql = "DECLARE RECURSIVE VIEW V(v INT);";
-        this.shouldWarn(sql, "Unused view declaration");
+        this.shouldWarn(sql, new Warning("Unused view declaration", 1, 1, """
+                        1|DECLARE RECURSIVE VIEW V(v INT);
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    """),
+                new Warning("View is not recursive", 0, 0, ""));
 
         // Recursive view is not recursive
         sql = """
                 DECLARE RECURSIVE VIEW V(v INT NOT NULL);
                 CREATE VIEW V AS SELECT 1 AS v;""";
-        this.shouldWarn(sql, "is declared recursive, but is not used in any recursive computation");
+        this.shouldWarn(sql, new Warning("View is not recursive", 0, 0, ""),
+                new Warning("View is constant", 2, 1, """
+                        1|DECLARE RECURSIVE VIEW V(v INT NOT NULL);
+                        2|CREATE VIEW V AS SELECT 1 AS v;
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    """));
     }
 
     @Test

@@ -1,0 +1,603 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-count-transaction-latency-archive.json",
+  "scope": "Paired forced-spill COUNT DISTINCT on four Linux ARM64 development-container workers.",
+  "timed_transactions": {
+    "default_profiling": 7440,
+    "profiling_disabled": 7440,
+    "candidate_triples": 7560
+  },
+  "profiles": {
+    "default_profiling": {
+      "schema_version": 1,
+      "cpus": [
+        0,
+        1,
+        6,
+        7
+      ],
+      "workers": 4,
+      "pairs_per_size": 31,
+      "binary_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+      "results": {
+        "256": {
+          "classic": {
+            "init_ns": {
+              "p50": 6943467,
+              "p95": 9836217
+            },
+            "step_latency_ns": {
+              "p50": 27498594.475,
+              "p95": 36446429.3625
+            },
+            "checkpoint_ns": {
+              "p50": 25381107,
+              "p95": 51131902
+            },
+            "rows_per_second": {
+              "p50": 9309.566721046021,
+              "p95": 11774.509839228866
+            },
+            "peak_rss_kib": {
+              "p50": 101004,
+              "p95": 101356
+            },
+            "checkpoint_bytes": {
+              "p50": 324888,
+              "p95": 324888
+            },
+            "transaction_latency_ns": {
+              "p50": 24927387.5,
+              "p95": 44008497
+            }
+          },
+          "native": {
+            "init_ns": {
+              "p50": 17823241,
+              "p95": 26960550
+            },
+            "step_latency_ns": {
+              "p50": 30736188.8625,
+              "p95": 42346405.775
+            },
+            "checkpoint_ns": {
+              "p50": 27388025,
+              "p95": 53674322
+            },
+            "rows_per_second": {
+              "p50": 8328.944136347867,
+              "p95": 10102.752785006449
+            },
+            "peak_rss_kib": {
+              "p50": 109032,
+              "p95": 109296
+            },
+            "checkpoint_bytes": {
+              "p50": 324799,
+              "p95": 324799
+            },
+            "transaction_latency_ns": {
+              "p50": 29578908.5,
+              "p95": 53179681
+            }
+          }
+        },
+        "2048": {
+          "classic": {
+            "init_ns": {
+              "p50": 6035925,
+              "p95": 8483343
+            },
+            "step_latency_ns": {
+              "p50": 24176415.7,
+              "p95": 34456023.35
+            },
+            "checkpoint_ns": {
+              "p50": 34952499,
+              "p95": 41565382
+            },
+            "rows_per_second": {
+              "p50": 84710.65460708471,
+              "p95": 97695.03099817301
+            },
+            "peak_rss_kib": {
+              "p50": 109288,
+              "p95": 109500
+            },
+            "checkpoint_bytes": {
+              "p50": 428928,
+              "p95": 428928
+            },
+            "transaction_latency_ns": {
+              "p50": 23502798.5,
+              "p95": 35235665
+            }
+          },
+          "native": {
+            "init_ns": {
+              "p50": 15340851,
+              "p95": 24709029
+            },
+            "step_latency_ns": {
+              "p50": 27470679.7,
+              "p95": 38716287.775
+            },
+            "checkpoint_ns": {
+              "p50": 35309666,
+              "p95": 57868692
+            },
+            "rows_per_second": {
+              "p50": 74552.21430141752,
+              "p95": 88327.26358700062
+            },
+            "peak_rss_kib": {
+              "p50": 121092,
+              "p95": 121364
+            },
+            "checkpoint_bytes": {
+              "p50": 428839,
+              "p95": 428839
+            },
+            "transaction_latency_ns": {
+              "p50": 26245759.0,
+              "p95": 43118300
+            }
+          }
+        }
+      }
+    },
+    "profiling_disabled": {
+      "schema_version": 1,
+      "cpus": [
+        0,
+        1,
+        6,
+        7
+      ],
+      "workers": 4,
+      "pairs_per_size": 31,
+      "binary_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+      "results": {
+        "256": {
+          "classic": {
+            "init_ns": {
+              "p50": 5362475,
+              "p95": 6533686
+            },
+            "step_latency_ns": {
+              "p50": 23394805.1875,
+              "p95": 27407248.875
+            },
+            "checkpoint_ns": {
+              "p50": 23440196,
+              "p95": 33768935
+            },
+            "rows_per_second": {
+              "p50": 10942.60020326147,
+              "p95": 12825.538099239748
+            },
+            "peak_rss_kib": {
+              "p50": 99136,
+              "p95": 99488
+            },
+            "checkpoint_bytes": {
+              "p50": 324888,
+              "p95": 324888
+            },
+            "transaction_latency_ns": {
+              "p50": 21031168.0,
+              "p95": 31968763
+            }
+          },
+          "native": {
+            "init_ns": {
+              "p50": 14784127,
+              "p95": 28900122
+            },
+            "step_latency_ns": {
+              "p50": 24462841.6625,
+              "p95": 30145669.1375
+            },
+            "checkpoint_ns": {
+              "p50": 23705571,
+              "p95": 38843283
+            },
+            "rows_per_second": {
+              "p50": 10464.851284731647,
+              "p95": 11572.460117081428
+            },
+            "peak_rss_kib": {
+              "p50": 106932,
+              "p95": 107060
+            },
+            "checkpoint_bytes": {
+              "p50": 324799,
+              "p95": 324799
+            },
+            "transaction_latency_ns": {
+              "p50": 23439612.0,
+              "p95": 34210670
+            }
+          }
+        },
+        "2048": {
+          "classic": {
+            "init_ns": {
+              "p50": 5219308,
+              "p95": 5931682
+            },
+            "step_latency_ns": {
+              "p50": 21033169.55,
+              "p95": 22930499.475
+            },
+            "checkpoint_ns": {
+              "p50": 33592214,
+              "p95": 40974984
+            },
+            "rows_per_second": {
+              "p50": 97370.01335588054,
+              "p95": 98750.56450979594
+            },
+            "peak_rss_kib": {
+              "p50": 107128,
+              "p95": 107316
+            },
+            "checkpoint_bytes": {
+              "p50": 428928,
+              "p95": 428928
+            },
+            "transaction_latency_ns": {
+              "p50": 21136372.0,
+              "p95": 25107358
+            }
+          },
+          "native": {
+            "init_ns": {
+              "p50": 14133996,
+              "p95": 16004293
+            },
+            "step_latency_ns": {
+              "p50": 23232122.275,
+              "p95": 25588481.55
+            },
+            "checkpoint_ns": {
+              "p50": 32624515,
+              "p95": 38129740
+            },
+            "rows_per_second": {
+              "p50": 88153.80600005903,
+              "p95": 89117.75985104802
+            },
+            "peak_rss_kib": {
+              "p50": 118536,
+              "p95": 118708
+            },
+            "checkpoint_bytes": {
+              "p50": 428839,
+              "p95": 428839
+            },
+            "transaction_latency_ns": {
+              "p50": 23614500.0,
+              "p95": 28146283
+            }
+          }
+        }
+      }
+    },
+    "candidate_triples": {
+      "schema_version": 1,
+      "cpus": [
+        0,
+        1,
+        6,
+        7
+      ],
+      "workers": 4,
+      "triples_per_size": 21,
+      "baseline_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+      "candidate_sha256": "57bcf9e7bf77a33f1ed3ee82e456e97d7fd10dc79cfd2027a538a463aa126fb7",
+      "results": {
+        "256": {
+          "classic": {
+            "init_ns": {
+              "p50": 5376801,
+              "p95": 6148386
+            },
+            "step_latency_ns": {
+              "p50": 21123656.9,
+              "p95": 22242340.075
+            },
+            "checkpoint_ns": {
+              "p50": 22711708,
+              "p95": 25032545
+            },
+            "rows_per_second": {
+              "p50": 12119.113712739767,
+              "p95": 12875.20670569131
+            },
+            "peak_rss_kib": {
+              "p50": 99204,
+              "p95": 99456
+            },
+            "checkpoint_bytes": {
+              "p50": 324888,
+              "p95": 324888
+            },
+            "transaction_latency_ns": {
+              "p50": 20351182.5,
+              "p95": 26733090
+            }
+          },
+          "baseline": {
+            "init_ns": {
+              "p50": 13976109,
+              "p95": 15047861
+            },
+            "step_latency_ns": {
+              "p50": 23995444.3125,
+              "p95": 24534409.8875
+            },
+            "checkpoint_ns": {
+              "p50": 22746999,
+              "p95": 27177591
+            },
+            "rows_per_second": {
+              "p50": 10668.691801078314,
+              "p95": 11622.429268182505
+            },
+            "peak_rss_kib": {
+              "p50": 106776,
+              "p95": 107060
+            },
+            "checkpoint_bytes": {
+              "p50": 324799,
+              "p95": 324799
+            },
+            "transaction_latency_ns": {
+              "p50": 22775083.0,
+              "p95": 29352220
+            }
+          },
+          "candidate": {
+            "init_ns": {
+              "p50": 14328568,
+              "p95": 15262152
+            },
+            "step_latency_ns": {
+              "p50": 23392166.6875,
+              "p95": 24782110.8125
+            },
+            "checkpoint_ns": {
+              "p50": 23117500,
+              "p95": 25306170
+            },
+            "rows_per_second": {
+              "p50": 10943.834464756868,
+              "p95": 11586.89781995997
+            },
+            "peak_rss_kib": {
+              "p50": 106868,
+              "p95": 107036
+            },
+            "checkpoint_bytes": {
+              "p50": 324799,
+              "p95": 324799
+            },
+            "transaction_latency_ns": {
+              "p50": 22569665.5,
+              "p95": 28874594
+            }
+          }
+        },
+        "2048": {
+          "classic": {
+            "init_ns": {
+              "p50": 5074218,
+              "p95": 5376218
+            },
+            "step_latency_ns": {
+              "p50": 20798182.225,
+              "p95": 22973482.075
+            },
+            "checkpoint_ns": {
+              "p50": 32627808,
+              "p95": 38128444
+            },
+            "rows_per_second": {
+              "p50": 98470.14406567928,
+              "p95": 99154.14914222686
+            },
+            "peak_rss_kib": {
+              "p50": 107116,
+              "p95": 107324
+            },
+            "checkpoint_bytes": {
+              "p50": 428928,
+              "p95": 428928
+            },
+            "transaction_latency_ns": {
+              "p50": 20064286.0,
+              "p95": 24272877
+            }
+          },
+          "baseline": {
+            "init_ns": {
+              "p50": 13366233,
+              "p95": 14489109
+            },
+            "step_latency_ns": {
+              "p50": 23099435.325,
+              "p95": 24319543.85
+            },
+            "checkpoint_ns": {
+              "p50": 32156641,
+              "p95": 36037689
+            },
+            "rows_per_second": {
+              "p50": 88660.17593873802,
+              "p95": 89877.94929959426
+            },
+            "peak_rss_kib": {
+              "p50": 118564,
+              "p95": 118712
+            },
+            "checkpoint_bytes": {
+              "p50": 428839,
+              "p95": 428839
+            },
+            "transaction_latency_ns": {
+              "p50": 22395019.5,
+              "p95": 26547339
+            }
+          },
+          "candidate": {
+            "init_ns": {
+              "p50": 13303066,
+              "p95": 14946444
+            },
+            "step_latency_ns": {
+              "p50": 23061796.775,
+              "p95": 23335355.675
+            },
+            "checkpoint_ns": {
+              "p50": 31529848,
+              "p95": 39443071
+            },
+            "rows_per_second": {
+              "p50": 88804.87587246983,
+              "p95": 89776.55388351557
+            },
+            "peak_rss_kib": {
+              "p50": 119024,
+              "p95": 119176
+            },
+            "checkpoint_bytes": {
+              "p50": 428839,
+              "p95": 428839
+            },
+            "transaction_latency_ns": {
+              "p50": 22392623.5,
+              "p95": 26258214
+            }
+          }
+        }
+      }
+    }
+  },
+  "candidate_bootstrap": {
+    "schema_version": 1,
+    "seed": 281174,
+    "draws": 4000,
+    "results": {
+      "256": {
+        "pairs": 21,
+        "comparisons": {
+          "baseline_over_classic": {
+            "transaction_p95": {
+              "ratio": 1.0979733356675192,
+              "interval_95": [
+                1.0848522742037008,
+                1.1131368965329718
+              ]
+            },
+            "process_median": {
+              "ratio": 1.1359512430113368,
+              "interval_95": [
+                1.0618520352328493,
+                1.1488278019228764
+              ]
+            }
+          },
+          "candidate_over_classic": {
+            "transaction_p95": {
+              "ratio": 1.0801068638155933,
+              "interval_95": [
+                1.0684699292093063,
+                1.0986178859790563
+              ]
+            },
+            "process_median": {
+              "ratio": 1.1073919065358424,
+              "interval_95": [
+                1.030792415052895,
+                1.144680386756329
+              ]
+            }
+          },
+          "candidate_over_baseline": {
+            "transaction_p95": {
+              "ratio": 0.9837277725500831,
+              "interval_95": [
+                0.9698432061394272,
+                1.0006011649952307
+              ]
+            },
+            "process_median": {
+              "ratio": 0.9748586599546426,
+              "interval_95": [
+                0.9290046202687158,
+                1.0406749217925046
+              ]
+            }
+          }
+        }
+      },
+      "2048": {
+        "pairs": 21,
+        "comparisons": {
+          "baseline_over_classic": {
+            "transaction_p95": {
+              "ratio": 1.093703848950415,
+              "interval_95": [
+                1.063956879963053,
+                1.1063933648218038
+              ]
+            },
+            "process_median": {
+              "ratio": 1.1106468380315384,
+              "interval_95": [
+                1.1030274597260128,
+                1.1178497095128241
+              ]
+            }
+          },
+          "candidate_over_classic": {
+            "transaction_p95": {
+              "ratio": 1.0817924055726893,
+              "interval_95": [
+                1.058596709434686,
+                1.0988397520237978
+              ]
+            },
+            "process_median": {
+              "ratio": 1.1088371342029626,
+              "interval_95": [
+                1.0989120009048903,
+                1.1181072830106984
+              ]
+            }
+          },
+          "candidate_over_baseline": {
+            "transaction_p95": {
+              "ratio": 0.9891090779380939,
+              "interval_95": [
+                0.9783578071683404,
+                1.0070318973984205
+              ]
+            },
+            "process_median": {
+              "ratio": 0.9983705857104106,
+              "interval_95": [
+                0.9902651431776012,
+                1.0073530161985949
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "candidate_disposition": "Reverted. Candidate and baseline confidence intervals include equal p95 at both batch sizes.",
+  "generated_rust_default_profiling": true,
+  "track_status": "open"
+}

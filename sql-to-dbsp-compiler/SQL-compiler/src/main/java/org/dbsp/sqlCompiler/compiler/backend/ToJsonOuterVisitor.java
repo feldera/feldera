@@ -1,5 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
+import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelReference;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -32,10 +35,14 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IJson;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
+import org.dbsp.util.NullIndentStream;
+import org.apache.calcite.rel.RelNode;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
@@ -45,6 +52,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 
 /** Serializes an outer node as a JSON string */
 public class ToJsonOuterVisitor extends CircuitVisitor {
+    @Nullable private ProvenanceCodec.Encoder provenance;
+    private boolean retainProgramMetadata;
     public final JsonStream stream;
     final int verbosity;
     final Set<Long> serialized;
@@ -59,10 +68,56 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     }
 
     public static ToJsonOuterVisitor create(DBSPCompiler compiler, int verbosity) {
+        return create(compiler, verbosity, false);
+    }
+
+    /** Internal seam encoding. Do not use this for Gen-2 payloads or Merkle hashes. */
+    public static ToJsonOuterVisitor createForReplay(DBSPCompiler compiler) {
+        return createForReplay(compiler, new HashMap<>());
+    }
+
+    /** Calcite allocates correlation names while printing SQL. A series of snapshots must
+     * reuse the rendering of each relation to preserve its provenance between passes. */
+    public static ToJsonOuterVisitor createForReplay(DBSPCompiler compiler, Map<RelReference, String> renderedSql) {
+        return createForReplay(compiler, compiler.getPlans(new NullIndentStream()), renderedSql);
+    }
+
+    static ToJsonOuterVisitor createForReplay(DBSPCompiler compiler, Map<RelNode, Integer> plans,
+                                               Map<RelReference, String> renderedSql) {
+        ToJsonOuterVisitor writer = create(compiler, 1, true);
+        writer.provenance = new ProvenanceCodec.Encoder(compiler, plans, renderedSql);
+        return writer;
+    }
+
+    /** The front end has finished building the SQL plans before this optimizer starts.
+     * Keep their numbering and SQL rendering for the lifetime of that one optimization.
+     * Each graph still has its own inner, outer, and provenance identity tables. */
+    public static final class OptimizerSnapshots {
+        private final DBSPCompiler compiler;
+        private final Map<RelReference, String> renderedSql = new HashMap<>();
+        @Nullable private Map<RelNode, Integer> plans;
+
+        public OptimizerSnapshots(DBSPCompiler compiler) {
+            this.compiler = compiler;
+        }
+
+        public ToJsonOuterVisitor writer() {
+            if (this.plans == null)
+                this.plans = this.compiler.getPlans(new NullIndentStream());
+            var inner = new ToJsonInnerVisitor(this.compiler, JsonStream.compactCircuit(), 1, true);
+            var writer = new ToJsonOuterVisitor(this.compiler, 1, inner);
+            writer.retainProgramMetadata = true;
+            writer.innerVisitor.liveShuffles = new HashMap<>();
+            writer.provenance = new ProvenanceCodec.Encoder(this.compiler, this.plans, this.renderedSql);
+            return writer;
+        }
+    }
+
+    private static ToJsonOuterVisitor create(DBSPCompiler compiler, int verbosity, boolean replayMetadata) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.setIndentAmount(1);
-        JsonStream json = new JsonStream(stream);
-        ToJsonInnerVisitor inner = new ToJsonInnerVisitor(compiler, json, 1);
+        JsonStream json = new JsonStream(stream, replayMetadata);
+        ToJsonInnerVisitor inner = new ToJsonInnerVisitor(compiler, json, 1, replayMetadata);
         return new ToJsonOuterVisitor(compiler, verbosity, inner);
     }
 
@@ -133,8 +188,21 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPOperator operator) {
         if (this.preorder(operator.to(IDBSPOuterNode.class)).stop())
             return VisitDecision.STOP;
+        if (this.provenance != null) {
+            this.label("provenance");
+            IJson.toJsonStream(this.provenance.encode(operator.getRelNode()), this.stream);
+        } else if (this.innerVisitor.replayMetadata) {
+            this.stream.label("sourceEmpty").append(operator.getRelNode().isEmpty());
+            this.label("sourcePosition");
+            IJson.toJsonStream(operator.getNode().getPositionRange().asJson(), this.stream);
+            this.label("sourcePositions");
+            this.stream.beginArray();
+            for (var position: operator.getSourcePositions())
+                IJson.toJsonStream(position.asJson(), this.stream);
+            this.stream.endArray();
+        }
         this.label("annotations");
-        operator.annotations.asJson(this.stream);
+        operator.annotations.asJson(this.stream, this.innerVisitor.replayMetadata);
         this.label("inputs");
         this.stream.beginArray();
         for (OutputPort port: operator.inputs) {
@@ -202,11 +270,10 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
             return VisitDecision.STOP;
         this.property("viewName");
         this.asJsonInner(operator.viewName);
-        /*
-        ignore deliberately
-        this.property("query");
-        this.stream.append(operator.query);
-         */
+        if (this.innerVisitor.replayMetadata) {
+            this.property("query");
+            this.stream.append(operator.query);
+        }
         this.property("metadata");
         this.asJsonInner(operator.metadata);
         return VisitDecision.CONTINUE;
@@ -245,6 +312,11 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPSourceTableOperator operator) {
         if (this.preorder(operator.to(DBSPSourceBaseOperator.class)).stop())
             return VisitDecision.STOP;
+        if (this.innerVisitor.replayMetadata) {
+            this.label("sourceNamePosition");
+            IJson.toJsonStream(operator.sourceName.getPositionRange().asJson(), this.stream);
+            this.stream.label("sourceNameEmpty").append(operator.sourceName.isEmpty());
+        }
         this.label("metadata");
         this.asJsonInner(operator.metadata);
         return VisitDecision.CONTINUE;
@@ -414,7 +486,12 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         super.preorder(circuit);
         this.preorder(circuit.to(IDBSPOuterNode.class));
         this.property("metadata");
-        this.asJsonInner(circuit.metadata);
+        // The live JVM owns the schema throughout each graph rewrite. RemoveTable
+        // exchanges selected input IDs separately when it needs to edit the schema.
+        if (this.retainProgramMetadata)
+            this.stream.appendNull();
+        else
+            this.asJsonInner(circuit.metadata);
         this.property("incremental");
         this.stream.append(circuit.incremental);
         return VisitDecision.CONTINUE;

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-advance-archive.json",
+  "scope": "Descriptor-backed sequential ordinal reads reuse the parsed current block and index path in the normal layer reader and stop at the current row group. The descriptor-owned list-merger fixture now uses that scan.",
+  "tests": {
+    "owned-context": 9,
+    "default": 53,
+    "frozen": 10,
+    "storage": 63,
+    "list-merger": 6
+  },
+  "all_target_clippy": true,
+  "nested_group_end_checks": 153,
+  "signed_updates": 1024,
+  "compacted_nonzero_rows": 448,
+  "runtime_decimal_rows": 513,
+  "further_evidence": "native-context-decimal.json",
+  "storage_test_workspace_lock_sha256": "741a5ae34ea54fc64d3ee8cbb8e97e9e0c42f6460410b0393dabeef92c0dcfac"
+}

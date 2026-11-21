@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "archive_index": "java-pipeline-baseline-archive.json",
+  "compiler_reference_archive_index": "java-baseline-archive.json",
+  "incremental_cli_baseline": {
+    "workloads": 8,
+    "modes": ["classic", "gen2"],
+    "process_lifetimes": ["cold", "warm"],
+    "samples_per_workload_mode_and_lifetime": 31,
+    "warmups_per_workload_mode_and_lifetime": 5,
+    "verified_compilations": 1152,
+    "smoke_compilations": 192,
+    "artifact_schema_diagnostic_and_dataflow_mismatches": 0,
+    "raw_result": "p0-java-baseline-pipeline-full-v1/summary.json"
+  },
+  "cold_worker_pilot": {
+    "verified_compilations": 96,
+    "workers": [1, 2, 4],
+    "successful_process_group_cancellations": 12,
+    "raw_result": "p0-compile-workers-v1/complete.json"
+  },
+  "runtime_executed": false,
+  "production_budget_approved": false
+}

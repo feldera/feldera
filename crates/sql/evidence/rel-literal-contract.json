@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "draft exact literal payload contract and bounded payload validation; not complete S1",
+  "raw_directory": "$SCRATCH/p0-rel-literals-v3",
+  "rust_tests": 16,
+  "clippy": true,
+  "test_log": {
+    "path": "$SCRATCH/p0-rel-literals-v3/test.log",
+    "sha256": "467fb70fe991d6a49a9cb2bbdd4c01e21e7fd5f092dbeae8a630bd04803ab9c9"
+  },
+  "clippy_log": {
+    "path": "$SCRATCH/p0-rel-literals-v3/clippy.log",
+    "sha256": "f19569f1e3a543d39a5d8a5d01b7d6dac04f2375d89ebbc1c45b2b271194d193"
+  },
+  "sources": {
+    "crates/sql/sql-rel-model/Cargo.toml": "0934756c44aa55b59137db244c464a13c7eacf6b5ef1eff4386e8df40d0721e9",
+    "crates/sql/sql-rel-model/Cargo.lock": "4982e4bf63010a1e9b946adec2f502b6443f46b0f936318bfcee03f6506312fd",
+    "crates/sql/sql-rel-model/src/literals.rs": "1ebae7cdbabb6e2eb2714d0aaa85405d4ae652c0fa5c5f208a021f999b66205e",
+    "crates/sql/sql-rel-model/src/types.rs": "dc6ded4754370e0344860a0b99b7c98d0bf9298981253f0aa5969efe5407c413",
+    "crates/sql/sql-rel-model/src/lib.rs": "9740d2a59e0068f9312a76b0706fbfd58a9a72f78bd2c3c7dfc1e7f8c2bb9463",
+    "crates/sql/sql-rel-model/src/literal_validation.rs": "23568f928763527eefb10cc19ca36543dc43269cf44beae9a5b8f4f3d26d8534",
+    "crates/sql/sql-rel-model/src/source.rs": "f7e3dbc7578dd8c9603e69462d5d80ebeba2ef0bc629d9fb03fb220420e7ef3b",
+    "crates/sql/sql-rel-model/src/validate.rs": "baca52cab65a3bc86222fd3ab5c86bd9f7a4bcdbd81da920364ebdcb5d947177",
+    "crates/sql/sql-rel-model/tests/type_contract.rs": "74620a6f63ebee4832179344e7bc5f2601f519f35f6e2ccb7aefdf2c6d3c6343",
+    "crates/sql/sql-rel-model/examples/type_schema.rs": "ee8a8c1e076f5aa64ba8f7b4e247158387aabe363b540c481ca2c89cae248629",
+    "crates/sql/sql-rel-model/examples/literal_schema.rs": "0b398d16d14b93bc108b952097f2b8ba5a59f1b07a123424eea71cba86b70384",
+    "crates/sql/sql-rel-model/literal-schema.json": "fb449de00b424cc6cda59f2bbd2f12833f3892bd2024a37d66614639f3bc5095"
+  },
+  "limitations": [
+    "No Calcite literal projection or round-trip measurement is included.",
+    "Payload validation does not resolve source/type references or prove SQL type/value compatibility.",
+    "Geometry and VARIANT payloads remain unsupported.",
+    "The relational, expression and statement contracts and full S1 importer/exporter remain open."
+  ]
+}

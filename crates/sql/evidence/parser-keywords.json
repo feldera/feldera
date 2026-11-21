@@ -1,0 +1,511 @@
+{
+  "schema_version": 1,
+  "cases": 13660,
+  "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+  "rust_build": {
+    "ast_reject_pass": false,
+    "cases": 13660,
+    "complete": true,
+    "counts": {
+      "0.62.0/feldera_prototype": {
+        "accepted_cases": 13651,
+        "accepted_submissions": 13651,
+        "rejected_cases": 9,
+        "rejected_submissions": 9,
+        "statements_in_accepted_submissions": 13651
+      },
+      "0.62.0/generic": {
+        "accepted_cases": 13647,
+        "accepted_submissions": 13647,
+        "rejected_cases": 13,
+        "rejected_submissions": 13,
+        "statements_in_accepted_submissions": 13647
+      },
+      "0.64.0/feldera_prototype": {
+        "accepted_cases": 13651,
+        "accepted_submissions": 13651,
+        "rejected_cases": 9,
+        "rejected_submissions": 9,
+        "statements_in_accepted_submissions": 13651
+      },
+      "0.64.0/generic": {
+        "accepted_cases": 13647,
+        "accepted_submissions": 13647,
+        "rejected_cases": 13,
+        "rejected_submissions": 13,
+        "statements_in_accepted_submissions": 13647
+      }
+    },
+    "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+    "executable_sha256": "855f39f306f4a59296ca4c378c2c58d31d385f4c4df2ab39bd5fb26b7e62d40c",
+    "include_ast": false,
+    "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+    "s1_equivalence_checked": false,
+    "schema_version": 1,
+    "token_rewrites": false
+  },
+  "java_build": {
+    "schema_version": 1,
+    "stage": "raw_parser",
+    "cases": 13660,
+    "accepted_cases": 13150,
+    "rejected_cases": 510,
+    "accepted_submissions": 13150,
+    "rejected_submissions": 510,
+    "statements_in_accepted_submissions": 13150,
+    "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+    "producer": "c6ede756d-p0-parser",
+    "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+    "complete": true
+  },
+  "semantic_equivalence_checked": false,
+  "counts": {
+    "0.62.0/feldera_prototype": {
+      "both_accept": 13147,
+      "accepted_submissions": 13651,
+      "accepted_cases": 13651,
+      "rust_only": 504,
+      "java_only": 3,
+      "rejected_submissions": 9,
+      "rejected_cases": 9,
+      "both_reject": 6
+    },
+    "0.62.0/generic": {
+      "both_accept": 13144,
+      "accepted_submissions": 13647,
+      "accepted_cases": 13647,
+      "rust_only": 503,
+      "java_only": 6,
+      "rejected_submissions": 13,
+      "rejected_cases": 13,
+      "both_reject": 7
+    },
+    "0.64.0/feldera_prototype": {
+      "both_accept": 13147,
+      "accepted_submissions": 13651,
+      "accepted_cases": 13651,
+      "rust_only": 504,
+      "java_only": 3,
+      "rejected_submissions": 9,
+      "rejected_cases": 9,
+      "both_reject": 6
+    },
+    "0.64.0/generic": {
+      "both_accept": 13144,
+      "accepted_submissions": 13647,
+      "accepted_cases": 13647,
+      "rust_only": 503,
+      "java_only": 6,
+      "rejected_submissions": 13,
+      "rejected_cases": 13,
+      "both_reject": 7
+    }
+  },
+  "disagreement_group_count": 830,
+  "java_only_groups": [
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: INTEGER at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CHECK/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: PRIMARY, UNIQUE, FOREIGN, or CHECK, found: ) at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CONSTRAINT/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: a list of columns in parentheses, found: ) at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/UNIQUE/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: INTEGER at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CHECK/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: PRIMARY, UNIQUE, FOREIGN, or CHECK, found: ) at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CONSTRAINT/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: a list of columns in parentheses, found: ) at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "keyword/FULLTEXT/bare/column",
+          "submission": 0
+        },
+        {
+          "id": "keyword/KEY/bare/column",
+          "submission": 0
+        },
+        {
+          "id": "keyword/SPATIAL/bare/column",
+          "submission": 0
+        },
+        {
+          "id": "keyword/UNIQUE/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: INTEGER at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CHECK/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: PRIMARY, UNIQUE, FOREIGN, CHECK, or EXCLUDE, found: ) at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CONSTRAINT/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: a list of columns in parentheses, found: ) at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/UNIQUE/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: INTEGER at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CHECK/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: PRIMARY, UNIQUE, FOREIGN, CHECK, or EXCLUDE, found: ) at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "keyword/CONSTRAINT/bare/column",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: a list of columns in parentheses, found: ) at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "keyword/FULLTEXT/bare/column",
+          "submission": 0
+        },
+        {
+          "id": "keyword/KEY/bare/column",
+          "submission": 0
+        },
+        {
+          "id": "keyword/SPATIAL/bare/column",
+          "submission": 0
+        },
+        {
+          "id": "keyword/UNIQUE/bare/column",
+          "submission": 0
+        }
+      ]
+    }
+  ],
+  "inventory": {
+    "schema_version": 1,
+    "cases": 13660,
+    "keywords": 1366,
+    "contexts": [
+      "table",
+      "column",
+      "view",
+      "qualified_reference",
+      "alias"
+    ],
+    "calcite_declared": 730,
+    "feldera_reserved": [
+      "ANY",
+      "ASOF",
+      "CALL",
+      "CASE",
+      "CREATE",
+      "CROSS",
+      "CURRENT",
+      "CURSOR",
+      "DATE",
+      "DATEADD",
+      "DATEDIFF",
+      "DATEPART",
+      "DATETIME",
+      "DATE_PART",
+      "DEFAULT",
+      "DEFINE",
+      "DELETE",
+      "DESCRIBE",
+      "DISTINCT",
+      "DROP",
+      "END-EXEC",
+      "EXCEPT",
+      "EXPLAIN",
+      "FETCH",
+      "FOREIGN",
+      "FRIDAY",
+      "FROM",
+      "FULL",
+      "GROUP",
+      "GROUPING",
+      "HAVING",
+      "IN",
+      "INDEX",
+      "INNER",
+      "INSERT",
+      "INTERSECT",
+      "INTERVAL",
+      "INTO",
+      "JOIN",
+      "LATENESS",
+      "LATERAL",
+      "LEFT",
+      "LIMIT",
+      "MATCH_CONDITION",
+      "MATCH_RECOGNIZE",
+      "MATERIALIZED",
+      "MEASURE",
+      "MERGE",
+      "MINUS",
+      "MONDAY",
+      "NATURAL",
+      "NEW",
+      "NEXT",
+      "NULL",
+      "OFFSET",
+      "ON",
+      "ORDER",
+      "ORDINAL",
+      "OUTER",
+      "OVER",
+      "PARTITION",
+      "PATTERN",
+      "PRIMARY",
+      "QUALIFY",
+      "RANGE",
+      "REMOVE",
+      "RIGHT",
+      "ROLLUP",
+      "ROW",
+      "ROWS",
+      "SAFE_CAST",
+      "SAFE_OFFSET",
+      "SAFE_ORDINAL",
+      "SATURDAY",
+      "SELECT",
+      "SEMI",
+      "SET",
+      "SKIP",
+      "SOME",
+      "STREAM",
+      "SUNDAY",
+      "TABLE",
+      "TABLESAMPLE",
+      "THEN",
+      "THURSDAY",
+      "TIME",
+      "TIMESTAMP",
+      "TRY_CAST",
+      "TUESDAY",
+      "UNION",
+      "UNNEST",
+      "UNSIGNED",
+      "UPDATE",
+      "USING",
+      "UUID",
+      "VALUES",
+      "VARIANT",
+      "WEDNESDAY",
+      "WHEN",
+      "WHERE",
+      "WINDOW",
+      "WITH"
+    ],
+    "documented_reserved": [
+      "ANY",
+      "ASOF",
+      "CALL",
+      "CASE",
+      "CREATE",
+      "CROSS",
+      "CURRENT",
+      "CURSOR",
+      "DATE",
+      "DATEADD",
+      "DATEDIFF",
+      "DATEPART",
+      "DATETIME",
+      "DATE_PART",
+      "DEFAULT",
+      "DEFINE",
+      "DELETE",
+      "DESCRIBE",
+      "DISTINCT",
+      "DROP",
+      "END-EXEC",
+      "EXCEPT",
+      "EXPLAIN",
+      "FETCH",
+      "FOREIGN",
+      "FRIDAY",
+      "FROM",
+      "FULL",
+      "GROUP",
+      "GROUPING",
+      "HAVING",
+      "IN",
+      "INDEX",
+      "INNER",
+      "INSERT",
+      "INTERSECT",
+      "INTERVAL",
+      "INTO",
+      "JOIN",
+      "LATENESS",
+      "LATERAL",
+      "LEFT",
+      "LIMIT",
+      "MATCH_CONDITION",
+      "MATCH_RECOGNIZE",
+      "MATERIALIZED",
+      "MEASURE",
+      "MERGE",
+      "MINUS",
+      "MONDAY",
+      "NATURAL",
+      "NEW",
+      "NEXT",
+      "NULL",
+      "OFFSET",
+      "ON",
+      "ORDER",
+      "ORDINAL",
+      "OUTER",
+      "OVER",
+      "PARTITION",
+      "PATTERN",
+      "PRIMARY",
+      "QUALIFY",
+      "RANGE",
+      "REMOVE",
+      "RIGHT",
+      "ROLLUP",
+      "ROW",
+      "ROWS",
+      "SAFE_CAST",
+      "SAFE_OFFSET",
+      "SAFE_ORDINAL",
+      "SATURDAY",
+      "SELECT",
+      "SEMI",
+      "SET",
+      "SKIP",
+      "SOME",
+      "STREAM",
+      "SUNDAY",
+      "TABLE",
+      "TABLESAMPLE",
+      "THEN",
+      "THURSDAY",
+      "TIME",
+      "TIMESTAMP",
+      "TRY_CAST",
+      "TUESDAY",
+      "UNION",
+      "UNNEST",
+      "UNSIGNED",
+      "UPDATE",
+      "USING",
+      "UUID",
+      "VALUES",
+      "VARIANT",
+      "WEDNESDAY",
+      "WHEN",
+      "WHERE",
+      "WINDOW",
+      "WITH"
+    ],
+    "reserved_only_in_code": [],
+    "reserved_only_in_docs": [],
+    "upstream_counts": {
+      "0.62.0": 1092,
+      "0.64.0": 1139
+    },
+    "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+    "source_sha256": {
+      "$REPO/sql-to-dbsp-compiler/check-keyword-drift.py": "50628740c660cb61dbcbce9d40cfef07b28242d6e180dabcfa8ec05dc7c0de3e",
+      "$REPO/sql-to-dbsp-compiler/SQL-compiler/src/main/codegen/config.fmpp": "9860589971a342ffbfac0124d9c096f13674888c28d0c2213b178c090875e1c4",
+      "$SCRATCH/p0-parser-calcite/core/src/main/codegen/templates/Parser.jj": "90fb231cc86c4b3c4d07d45eb1df39d568c12e5cf414ca6fedbbd38aa5b92650",
+      "$REPO/docs.feldera.com/docs/sql/grammar.md": "8622c91f5469f2862bfeff9521023dcf1991e6bb21c7efa5973588970386ee7c",
+      "$REPO/sql-to-dbsp-compiler/SQL-compiler/src/main/codegen/includes/parserImpls.ftl": "1a098ee448081f3ba318eba9aec98c3ad0121ee7fb3c59278b07c1cd32fbfd77"
+    }
+  },
+  "full_report": "$SCRATCH/p0-parser-keyword-comparison.json"
+}

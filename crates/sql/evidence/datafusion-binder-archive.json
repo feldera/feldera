@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-datafusion-binder-20261118-v1.tar.gz",
+  "bytes": 52357563,
+  "sha256": "0199643d2bc823b9a24d6e6622ba8c2248a187ef197a418cf2fb927c6678125e",
+  "manifest_sha256": "f90345d984ea9300cb89618c6c5296865aa1c9e514243d9910a17c9c45c08233",
+  "verified_files": 56,
+  "all_members_verified": true
+}

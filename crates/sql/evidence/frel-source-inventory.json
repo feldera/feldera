@@ -1,0 +1,6017 @@
+{
+  "schema_version": 1,
+  "scope": "Lowering dispatch and static model references in every configured rule implementation, plus converter/decorrelator utilities",
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "independently_reviewed": false,
+  "lowering_rel_classes": [
+    "LogicalCorrelate",
+    "LogicalTableScan",
+    "JdbcTableScan",
+    "LogicalProject",
+    "LogicalUnion",
+    "LogicalMinus",
+    "LogicalFilter",
+    "LogicalValues",
+    "LogicalAggregate",
+    "LogicalJoin",
+    "LogicalIntersect",
+    "LogicalWindow",
+    "LogicalSort",
+    "Uncollect",
+    "LogicalTableFunctionScan",
+    "LogicalAsofJoin",
+    "Collect"
+  ],
+  "lowering_rex_visitors": [
+    {
+      "method": "visitInputRef",
+      "class": "RexInputRef"
+    },
+    {
+      "method": "visitCorrelVariable",
+      "class": "RexCorrelVariable"
+    },
+    {
+      "method": "visitLiteral",
+      "class": "RexLiteral"
+    },
+    {
+      "method": "visitFieldAccess",
+      "class": "RexFieldAccess"
+    },
+    {
+      "method": "visitCall",
+      "class": "RexCall"
+    },
+    {
+      "method": "visitLambdaRef",
+      "class": "RexLambdaRef"
+    },
+    {
+      "method": "visitLambda",
+      "class": "RexLambda"
+    }
+  ],
+  "lowering_statement_classes": [
+    "CreateViewStatement",
+    "CreateTableStatement",
+    "DropTableStatement",
+    "TableModifyStatement",
+    "CreateTypeStatement",
+    "CreateFunctionStatement",
+    "DeclareViewStatement",
+    "CreateIndexStatement",
+    "CreateAggregateStatement",
+    "SetOptionStatement"
+  ],
+  "source_count": 66,
+  "sources": [
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+      "sha256": "1deb69ffc7dffb59686065c9779a3328814aa9b7b5353cd5d08acdec311e017c",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+      "sha256": "d2c9308861254dd0f36cd70b09a5ebb4005237d5e928b9794fa4ee4421a6fef5",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAggregate",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateMergeRule.java",
+      "sha256": "49b13af7cf0c47066f57957aa6a09e1c381108f7ba90c8cf54240cba9a1c2363",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveLiteralAggRule.java",
+      "sha256": "b93f7d08eaa58c1f46f2f77112d44168a2f537f11092160a0d5f78411d7202e2",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAggregate",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+      "sha256": "187e16a31ae8f081f7cb5e83687915e6cf10b91ee760d7254f1f1d4fab03ffb8",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAggregate",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+      "sha256": "3e4bd4e82d32c86cb88a26645f234d38648a9f6a2f208ecb7ae90719dd6efbb2",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 21
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Values",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/CoerceInputsRule.java",
+      "sha256": "daabd837502a5c88726e8d23673cd85c865d169a5c98b2ffcfd7429b0af3cbb3",
+      "imports": []
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+      "sha256": "559882b0bd57e022a4ee4eb72fdf7ced6e8f0969e96e210dd550b74b854a91f1",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Uncollect",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/DphypJoinReorderRule.java",
+      "sha256": "e7bd413de243c53b854f223bd37576f48f8fd36dbb01a2b158e0596a1ed13ab2",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+      "sha256": "37f34e21dfac88a194884a88ec3432542d98e2edfb34ecaec8818f443fb5ed95",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexTableInputRef",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+      "sha256": "4763ec338fa1c6bccf5d6a772cdf1f69a10ff8c1647bf73a2ec170b803d1a898",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+      "sha256": "11628afb525b09fd9af06b7ffba269d8c1079d1c730ae4dc207cef6cd0bcbb44",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterMergeRule.java",
+      "sha256": "4fb79e1c8e54c3c0f39a69bf367baab411620be69af582486d5e90e0a03d73a4",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+      "sha256": "6f118fbda858bfe7446795838aed9ca84bda2db5960a49af8bde1992ba47a130",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSimplify",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 32
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+      "sha256": "a994fb52bb9e388c60a547987f80704528aac7148a3737a66d1ba60057d58119",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+      "sha256": "fb195ccdb81a10e0dd7fd8a7777ec7f5bfeea3985477b4f5abcc4690d07c2f64",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinPushExpressionsRule.java",
+      "sha256": "6d174df5865bb7bca5c7f94e1fafc82904d32901df96b711c5123b6f042a8612",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToHyperGraphRule.java",
+      "sha256": "d55888f5cad225f393256627e68c881898292377be099028131e8a987fd93b5e",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+      "sha256": "a2e3b163422637a475851f9bdf93ea05c2aa858c7046ce9bd4e3691dda37bea2",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+      "sha256": "63a98d8a3fbd66490a156fd67b4905052643a247a2fcaee30fa0bcaff01f10a0",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinInfo",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 40
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+      "sha256": "90ab99fa38910ca2aa48ea3f815cb58d10428221b7685d8e417a3657696f27ce",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexPermuteInputsShuttle",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitor",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+      "sha256": "b038db8e3472757faf0d5e83c221d6fd3d10a1bc7ff336b1a03df16ed0b3950a",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexOver",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+      "sha256": "4fba7ff4c161cd67605947356b731cc2fd50cb1a6025ee64aaf2448a73a443bf",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalFilter",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+      "sha256": "161eef56b96d44623b20ad555cd36856bc956a8eedd4cb94b65727be027289d1",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+      "sha256": "621ebdd02b903ba3412f99d45a39d965bc3abb7078b1f30f64c67c6640d0d731",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMergeRule.java",
+      "sha256": "f8e2f39e52b4bfcff97757e61c8f660faa05f12d7c5cf226772c2eb2f609a840",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMultiJoinMergeRule.java",
+      "sha256": "6a5509c4a90809928a8c81a844eabdf958bb1cf37d274a42eeac9e442e041a22",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectOverSumToSum0Rule.java",
+      "sha256": "995f42ab896393813278ce77a81ededb33a85415cac6f3eb40ced9a6563c3960",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 21
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectRemoveRule.java",
+      "sha256": "46255e0f533e38afd62d204cc0c33bace55fab3cf2c200833b766614713aed0a",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+      "sha256": "96c82af34318e555a39b06d033bf1213d8557c3e2447419199e0c17ccaf1607e",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rex.RexOver",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+      "sha256": "6c6715bce2f74d0cbf3a6e125da932001502c2c2cdc74fd168bdd2e986c81533",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Calc",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalCalc",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalWindow",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBiVisitorImpl",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexDynamicParam",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLocalRef",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rex.RexOver",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rex.RexProgram",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindow",
+          "line": 40
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+      "sha256": "f5b340ed6ae8d7e49a68f8ec3c2c2746d8a761cfad506bef1ec8344edc7593c3",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Window",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalWindow",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBound",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+      "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Calc",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Intersect",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Minus",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableScan",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Values",
+          "line": 40
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Window",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 45
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 46
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+      "sha256": "0cbf5be3c35ada1ba163bcb3cccbcbd10d02a505a41c8bdfcc91c1ffe663f8a1",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Intersect",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Minus",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+      "sha256": "8d32eabf27821ee6ea3dbca29b646d79e5454040205306f637391ae96b8507f0",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.AsofJoin",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Values",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 33
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveConstantKeysRule.java",
+      "sha256": "3de33da3345afb71fda560320ee952f40ae34f99bfd0013c787c5086dbe03731",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRedundantRule.java",
+      "sha256": "d92bd3f55e8380a35d3ca56c5337d1783be5968bb36ad9efcdf8207be10c290f",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRule.java",
+      "sha256": "3bc00671ac4bde262c0a1e0bb384ea26b176b1e3acb20deddd497c3396f92a22",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+      "sha256": "ea5ee9552e4806efde1e7bb0d91cbb5e160c55e6cce44dfdb0d15121ed164c55",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Collect",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableFunctionScan",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalCorrelate",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.LogicVisitor",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 40
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSubQuery",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 43
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+      "sha256": "8ed66f1b09585a5f4c86f299ed739ea5d15793b3b26f177abcaf8453debd4eba",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Intersect",
+          "line": 21
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Minus",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalIntersect",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalMinus",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalUnion",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+      "sha256": "d801a8fb13d671d0736bcdc6b1c3670a00c2eda81bb3b5cae75c7cbf5ff290f6",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Intersect",
+          "line": 22
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Minus",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalIntersect",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalMinus",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalUnion",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+      "sha256": "31aaf1768651c1491db229198cf820847fab1b97b7df9d78b4b0dd8fb86e8291",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Uncollect",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 33
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/rex/RexSimplify.java",
+      "sha256": "7d4f52443758f87bcbe67d7b3615608d1c28512995e58f268e74c67c5d5bffb2",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+      "sha256": "111b0ab303f7d636452a1500ac854d99ed7a496f6fd01d4c14365cd1b3f42b2f",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AsofJoin",
+          "line": 40
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 43
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 44
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 45
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 46
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 47
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 48
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 49
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAggregate",
+          "line": 50
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalCorrelate",
+          "line": 51
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalFilter",
+          "line": 52
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 53
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 54
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalSnapshot",
+          "line": 55
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableFunctionScan",
+          "line": 56
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 67
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 68
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 69
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 70
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 71
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 72
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 73
+        },
+        {
+          "name": "org.apache.calcite.rex.RexOver",
+          "line": 74
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 75
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSubQuery",
+          "line": 76
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 77
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 78
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBounds",
+          "line": 79
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+      "sha256": "6b21d759d3e12d50fc9f238db6c6eca23dc900e32b4969b062dc7a18c47265e6",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AsofJoin",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Calc",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Exchange",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sample",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 40
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Snapshot",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SortExchange",
+          "line": 43
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableScan",
+          "line": 44
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalCorrelate",
+          "line": 45
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableFunctionScan",
+          "line": 46
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableModify",
+          "line": 47
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 48
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 54
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 55
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 56
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 57
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 58
+        },
+        {
+          "name": "org.apache.calcite.rex.RexPermuteInputsShuttle",
+          "line": 59
+        },
+        {
+          "name": "org.apache.calcite.rex.RexProgram",
+          "line": 60
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSubQuery",
+          "line": 61
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 62
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitor",
+          "line": 63
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+      "sha256": "f8fa86308a40f8c09b8159a66aec1b716a946991944579afc4f1f788e760f275",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 45
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 46
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Collect",
+          "line": 47
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 48
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 49
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 50
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 51
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 52
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 53
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 54
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableModify",
+          "line": 55
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAggregate",
+          "line": 59
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalCorrelate",
+          "line": 60
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalFilter",
+          "line": 61
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalIntersect",
+          "line": 62
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 63
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalMatch",
+          "line": 64
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalMinus",
+          "line": 65
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 66
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalSort",
+          "line": 67
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableFunctionScan",
+          "line": 68
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableModify",
+          "line": 69
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableScan",
+          "line": 70
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 71
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 80
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 81
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 82
+        },
+        {
+          "name": "org.apache.calcite.rex.RexDynamicParam",
+          "line": 83
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 84
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldCollation",
+          "line": 85
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 86
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLambdaRef",
+          "line": 87
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 88
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 89
+        },
+        {
+          "name": "org.apache.calcite.rex.RexPatternFieldRef",
+          "line": 90
+        },
+        {
+          "name": "org.apache.calcite.rex.RexRangeRef",
+          "line": 91
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 92
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSimplify",
+          "line": 93
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSubQuery",
+          "line": 94
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 95
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBound",
+          "line": 96
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBounds",
+          "line": 97
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowExclusion",
+          "line": 98
+        }
+      ]
+    },
+    {
+      "owner": "calcite",
+      "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+      "sha256": "5b83e6a47b954bb78117730425efa251840637d01acbcfe3c4aebbda6512c0eb",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Combine",
+          "line": 40
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 43
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Intersect",
+          "line": 44
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 45
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 46
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Match",
+          "line": 47
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Minus",
+          "line": 48
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 49
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RelFactories",
+          "line": 50
+        },
+        {
+          "name": "org.apache.calcite.rel.core.RepeatUnion",
+          "line": 51
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sample",
+          "line": 52
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Snapshot",
+          "line": 53
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Sort",
+          "line": 54
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Spool",
+          "line": 55
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableFunctionScan",
+          "line": 56
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableScan",
+          "line": 57
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableSpool",
+          "line": 58
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Uncollect",
+          "line": 59
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 60
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Values",
+          "line": 61
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAsofJoin",
+          "line": 64
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalFilter",
+          "line": 65
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 66
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 75
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 76
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCallBinding",
+          "line": 77
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 78
+        },
+        {
+          "name": "org.apache.calcite.rex.RexDynamicParam",
+          "line": 79
+        },
+        {
+          "name": "org.apache.calcite.rex.RexExecutor",
+          "line": 80
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldCollation",
+          "line": 81
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 82
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 83
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 84
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 85
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSimplify",
+          "line": 86
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSubQuery",
+          "line": 87
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUnknownAs",
+          "line": 88
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 89
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 90
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBound",
+          "line": 91
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBounds",
+          "line": 92
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowExclusion",
+          "line": 93
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+      "sha256": "d953e9e4b9a599e0335bd9c9e5f5948449823e48184177bee3f68967d42a397f",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Collect",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 39
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 40
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rel.core.TableScan",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Uncollect",
+          "line": 43
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Window",
+          "line": 44
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAggregate",
+          "line": 46
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAsofJoin",
+          "line": 47
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalCorrelate",
+          "line": 48
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalFilter",
+          "line": 49
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalIntersect",
+          "line": 50
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalJoin",
+          "line": 51
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalMinus",
+          "line": 52
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 53
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalSort",
+          "line": 54
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableFunctionScan",
+          "line": 55
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableScan",
+          "line": 56
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalUnion",
+          "line": 57
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 58
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalWindow",
+          "line": 59
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 63
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 64
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 65
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 66
+        },
+        {
+          "name": "org.apache.calcite.rex.RexOver",
+          "line": 67
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+      "sha256": "843fefd6e3c832a1fae576150ab7586a8f1aad02ec1fc390575d135bc159528c",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLambda",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLambdaRef",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 38
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 39
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/TypeCompiler.java",
+      "sha256": "f372eeaafda96198cc56002db77b7931804a210d114e8518c502a7d54dfa22d4",
+      "imports": []
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+      "sha256": "8e60631b048e1f9fb2332974a93a9b2480d450a16cc5e61c84115262e75511d0",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 6
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 8
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 11
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 12
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 13
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+      "sha256": "d75942d8656aaf39099810e7c873a50f53144808d7a948e56aee4fea016e6073",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 8
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 12
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 13
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+      "sha256": "27ba114337665fb8fdf40bf7a3f2ab3ac1ef1fcaa499d2dab566e08ea95db8f8",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 11
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Uncollect",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+      "sha256": "35a5f28a50eebac79ea7d76be53e939da3b5651bf6c57bf76a3c9bbd63e13c8b",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 6
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 8
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 13
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 14
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 15
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 16
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptAllFoldRule.java",
+      "sha256": "726a40fa60db973d0aee3316cef75a02ef0468e6a7ea3a82c4bcc78926609bdc",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Minus",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+      "sha256": "fd96d8f81a8c00ac1ed8bcddc3746fcc22dfc6b86ee273155befb586cc43ecc4",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 6
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rel.core.CorrelationId",
+          "line": 8
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 11
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 14
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 15
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 16
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 17
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+      "sha256": "fb775154cb23352db64c6fb18ddbaef1ebc00b3378a57c4118e37db0dac480a4",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 36
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/InnerDecorrelator.java",
+      "sha256": "a3793039a63346a4c425e79d321fbf513c13fb8d7cfb0c73ecfb56b6fae5f566",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Correlate",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+      "sha256": "04220fdec01884b8eacf72f920a16d1baaa1558a303d8df73eace7f398159209",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 11
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 14
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 15
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 16
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 17
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ModeToArgMaxRule.java",
+      "sha256": "f45c20d965c379d60e6f53aab5b95502394b30a6698ac33b203ebb6aa115d13a",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Aggregate",
+          "line": 8
+        },
+        {
+          "name": "org.apache.calcite.rel.core.AggregateCall",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+      "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Calc",
+          "line": 29
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 30
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Join",
+          "line": 31
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 32
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Window",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalAsofJoin",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalWindow",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 41
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 42
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCorrelVariable",
+          "line": 43
+        },
+        {
+          "name": "org.apache.calcite.rex.RexDynamicParam",
+          "line": 44
+        },
+        {
+          "name": "org.apache.calcite.rex.RexExecutor",
+          "line": 45
+        },
+        {
+          "name": "org.apache.calcite.rex.RexFieldAccess",
+          "line": 46
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 47
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLambda",
+          "line": 48
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLambdaRef",
+          "line": 49
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 50
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLocalRef",
+          "line": 51
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 52
+        },
+        {
+          "name": "org.apache.calcite.rex.RexOver",
+          "line": 53
+        },
+        {
+          "name": "org.apache.calcite.rex.RexProgram",
+          "line": 54
+        },
+        {
+          "name": "org.apache.calcite.rex.RexProgramBuilder",
+          "line": 55
+        },
+        {
+          "name": "org.apache.calcite.rex.RexRangeRef",
+          "line": 56
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 57
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSimplify",
+          "line": 58
+        },
+        {
+          "name": "org.apache.calcite.rex.RexSubQuery",
+          "line": 59
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUnknownAs",
+          "line": 60
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 61
+        },
+        {
+          "name": "org.apache.calcite.rex.RexVisitorImpl",
+          "line": 62
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindow",
+          "line": 63
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBound",
+          "line": 64
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+      "sha256": "e6e5f38fac64cec4db1a31d22f10d96ded09d9393c26a847256e1b997ac2f6da",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Window",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalWindow",
+          "line": 11
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 16
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 17
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 18
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 19
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBound",
+          "line": 20
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBounds",
+          "line": 21
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowExclusion",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+      "sha256": "2fbd83199d3b5dbe8c874df1ba027902b584600fc28746ea8cd5a2e02facdd4f",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.JoinRelType",
+          "line": 6
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableFunctionScan",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rex.RexCall",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 11
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 12
+        },
+        {
+          "name": "org.apache.calcite.rex.RexWindowBounds",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+      "sha256": "db717d6bc8d592d64f045e6b6fe450f647a2a1f5515b3d16679988e09d998f10",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 6
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Intersect",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 8
+        },
+        {
+          "name": "org.apache.calcite.rel.core.SetOp",
+          "line": 9
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Union",
+          "line": 10
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 12
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 13
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/TableFunctionReduceExpressionsRule.java",
+      "sha256": "801209257d9b85696a4ba576ad400eb23e187df31e28d7f4d4c877f18cf37180",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalTableFunctionScan",
+          "line": 7
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "owner": "feldera",
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+      "sha256": "00c3f9a519d9eabdb42a07376929a02c14f9f98a7a6cdce3b0aecfe8f917020f",
+      "imports": [
+        {
+          "name": "org.apache.calcite.rel.core.Filter",
+          "line": 23
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Project",
+          "line": 24
+        },
+        {
+          "name": "org.apache.calcite.rel.core.Values",
+          "line": 25
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalFilter",
+          "line": 26
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalProject",
+          "line": 27
+        },
+        {
+          "name": "org.apache.calcite.rel.logical.LogicalValues",
+          "line": 28
+        },
+        {
+          "name": "org.apache.calcite.rex.RexBuilder",
+          "line": 33
+        },
+        {
+          "name": "org.apache.calcite.rex.RexInputRef",
+          "line": 34
+        },
+        {
+          "name": "org.apache.calcite.rex.RexLiteral",
+          "line": 35
+        },
+        {
+          "name": "org.apache.calcite.rex.RexNode",
+          "line": 36
+        },
+        {
+          "name": "org.apache.calcite.rex.RexShuttle",
+          "line": 37
+        },
+        {
+          "name": "org.apache.calcite.rex.RexUtil",
+          "line": 38
+        }
+      ]
+    }
+  ],
+  "referenced_forms": {
+    "org.apache.calcite.rel.core.Aggregate": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateMergeRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveLiteralAggRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+        "line": 21
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 38
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 45
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 38
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 6
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 7
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 6
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 6
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 9
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ModeToArgMaxRule.java",
+        "line": 8
+      }
+    ],
+    "org.apache.calcite.rel.core.AggregateCall": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateMergeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveLiteralAggRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 39
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 46
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 39
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 37
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 7
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ModeToArgMaxRule.java",
+        "line": 9
+      }
+    ],
+    "org.apache.calcite.rel.core.Project": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMergeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMultiJoinMergeRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectOverSumToSum0Rule.java",
+        "line": 21
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectRemoveRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 36
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rex/RexSimplify.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 46
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 37
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 52
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 49
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 41
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 9
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 9
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 11
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 11
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 32
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 8
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 24
+      }
+    ],
+    "org.apache.calcite.rex.RexBuilder": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 36
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveConstantKeysRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 36
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 67
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 54
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 80
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 75
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 29
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 11
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 13
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 32
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 14
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 41
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 16
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 33
+      }
+    ],
+    "org.apache.calcite.rex.RexCall": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 37
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 68
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 81
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 76
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 63
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 30
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 12
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 12
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 14
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 33
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 15
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 42
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 9
+      }
+    ],
+    "org.apache.calcite.rex.RexLiteral": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 35
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 45
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRedundantRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 39
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 72
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 57
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 88
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 83
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 65
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 36
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 17
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 50
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 12
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 35
+      }
+    ],
+    "org.apache.calcite.rex.RexNode": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveLiteralAggRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinPushExpressionsRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToHyperGraphRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 39
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMergeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectOverSumToSum0Rule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 37
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 46
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 40
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 73
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 58
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 89
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 84
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 66
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 37
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 13
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 14
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 16
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 18
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 35
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 18
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ModeToArgMaxRule.java",
+        "line": 13
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 52
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 18
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 11
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 13
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/TableFunctionReduceExpressionsRule.java",
+        "line": 9
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 36
+      }
+    ],
+    "org.apache.calcite.rel.core.JoinRelType": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToHyperGraphRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 45
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 36
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 51
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 46
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 40
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 8
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 29
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ModeToArgMaxRule.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 6
+      }
+    ],
+    "org.apache.calcite.rel.core.RelFactories": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterMergeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinPushExpressionsRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 47
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 38
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 53
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 50
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalAggregate": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveLiteralAggRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 50
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 59
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 46
+      }
+    ],
+    "org.apache.calcite.rex.RexInputRef": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 38
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 38
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 71
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 86
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 82
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 64
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 33
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 13
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 17
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 34
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "line": 16
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 47
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 17
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 34
+      }
+    ],
+    "org.apache.calcite.rel.core.Values": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 40
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 61
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 25
+      }
+    ],
+    "org.apache.calcite.rel.core.Correlate": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 41
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 41
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 7
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 7
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/InnerDecorrelator.java",
+        "line": 6
+      }
+    ],
+    "org.apache.calcite.rel.core.CorrelationId": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 42
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 48
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 42
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 8
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 8
+      }
+    ],
+    "org.apache.calcite.rel.core.Uncollect": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 59
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 43
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+        "line": 12
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalValues": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 42
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 48
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 71
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 58
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 28
+      }
+    ],
+    "org.apache.calcite.rex.RexCorrelVariable": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 37
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 69
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 55
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 82
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 78
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 31
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 14
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 15
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 43
+      }
+    ],
+    "org.apache.calcite.rex.RexFieldAccess": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 70
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 56
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 84
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 32
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 15
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 16
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 46
+      }
+    ],
+    "org.apache.calcite.rex.RexUtil": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 40
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMergeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectRemoveRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 43
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 77
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 62
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 95
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 89
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 38
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 36
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 61
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 12
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 14
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 38
+      }
+    ],
+    "org.apache.calcite.rel.core.Join": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/DphypJoinReorderRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinPushExpressionsRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToHyperGraphRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 44
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 35
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 50
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 45
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 9
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+        "line": 11
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 28
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 31
+      }
+    ],
+    "org.apache.calcite.rel.core.Filter": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterMergeRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 43
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 49
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 43
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 39
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "line": 8
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "line": 9
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "line": 27
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 30
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 6
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 23
+      }
+    ],
+    "org.apache.calcite.rex.RexTableInputRef": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "line": 29
+      }
+    ],
+    "org.apache.calcite.rex.RexSimplify": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 93
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 86
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 58
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalJoin": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToHyperGraphRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 53
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 63
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 51
+      }
+    ],
+    "org.apache.calcite.rex.RexShuttle": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectOverSumToSum0Rule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 41
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 75
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 92
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 85
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 17
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 57
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 19
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 37
+      }
+    ],
+    "org.apache.calcite.rex.RexVisitorImpl": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 78
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 90
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 39
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "line": 14
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 62
+      }
+    ],
+    "org.apache.calcite.rel.core.JoinInfo": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "line": 26
+      }
+    ],
+    "org.apache.calcite.rex.RexPermuteInputsShuttle": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 59
+      }
+    ],
+    "org.apache.calcite.rex.RexVisitor": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 63
+      }
+    ],
+    "org.apache.calcite.rex.RexOver": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 38
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 74
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 67
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 53
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalFilter": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 52
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 61
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 65
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 49
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 26
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalProject": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMultiJoinMergeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 54
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 66
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 66
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 53
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "line": 27
+      }
+    ],
+    "org.apache.calcite.rel.core.SetOp": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 48
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 40
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 9
+      }
+    ],
+    "org.apache.calcite.rel.core.Calc": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 29
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 31
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 29
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalCalc": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 28
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalWindow": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 30
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 59
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 35
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 11
+      }
+    ],
+    "org.apache.calcite.rex.RexBiVisitorImpl": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 31
+      }
+    ],
+    "org.apache.calcite.rex.RexDynamicParam": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 33
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 83
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 79
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 44
+      }
+    ],
+    "org.apache.calcite.rex.RexLocalRef": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 36
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 51
+      }
+    ],
+    "org.apache.calcite.rex.RexProgram": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 39
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 60
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 54
+      }
+    ],
+    "org.apache.calcite.rex.RexWindow": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "line": 40
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 63
+      }
+    ],
+    "org.apache.calcite.rel.core.Window": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 41
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 44
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 33
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 10
+      }
+    ],
+    "org.apache.calcite.rex.RexWindowBound": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "line": 34
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 96
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 91
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 64
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 20
+      }
+    ],
+    "org.apache.calcite.rel.core.Intersect": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 21
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 44
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 7
+      }
+    ],
+    "org.apache.calcite.rel.core.Minus": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 35
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 48
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptAllFoldRule.java",
+        "line": 6
+      }
+    ],
+    "org.apache.calcite.rel.core.Sort": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 37
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveConstantKeysRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRedundantRule.java",
+        "line": 22
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 49
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 42
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 54
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 54
+      }
+    ],
+    "org.apache.calcite.rel.core.TableScan": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 38
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 44
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 57
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 42
+      }
+    ],
+    "org.apache.calcite.rel.core.Union": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "line": 39
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 60
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "line": 10
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "line": 10
+      }
+    ],
+    "org.apache.calcite.rel.core.AsofJoin": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "line": 23
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 40
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 30
+      }
+    ],
+    "org.apache.calcite.rel.core.Collect": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 24
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 47
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 38
+      }
+    ],
+    "org.apache.calcite.rel.core.TableFunctionScan": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 31
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 56
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalCorrelate": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 32
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 51
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 45
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 60
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 48
+      }
+    ],
+    "org.apache.calcite.rex.LogicVisitor": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 35
+      }
+    ],
+    "org.apache.calcite.rex.RexSubQuery": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "line": 42
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 76
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 61
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 94
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 87
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 59
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalIntersect": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 25
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 62
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 50
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalMinus": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 26
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 28
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 65
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 52
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalUnion": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "line": 27
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "line": 29
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 57
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalSnapshot": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 55
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalTableFunctionScan": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 56
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 46
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 68
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 55
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 7
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/TableFunctionReduceExpressionsRule.java",
+        "line": 7
+      }
+    ],
+    "org.apache.calcite.rex.RexWindowBounds": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelDecorrelator.java",
+        "line": 79
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 97
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 92
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 21
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "line": 13
+      }
+    ],
+    "org.apache.calcite.rel.core.Exchange": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 33
+      }
+    ],
+    "org.apache.calcite.rel.core.Sample": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 39
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 52
+      }
+    ],
+    "org.apache.calcite.rel.core.Snapshot": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 41
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 53
+      }
+    ],
+    "org.apache.calcite.rel.core.SortExchange": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 43
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalTableModify": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/RelFieldTrimmer.java",
+        "line": 47
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 69
+      }
+    ],
+    "org.apache.calcite.rel.core.TableModify": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 55
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalMatch": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 64
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalSort": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 67
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 54
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalTableScan": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 70
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 56
+      }
+    ],
+    "org.apache.calcite.rex.RexFieldCollation": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 85
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 81
+      }
+    ],
+    "org.apache.calcite.rex.RexLambdaRef": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 87
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 35
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 49
+      }
+    ],
+    "org.apache.calcite.rex.RexPatternFieldRef": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 90
+      }
+    ],
+    "org.apache.calcite.rex.RexRangeRef": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 91
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 56
+      }
+    ],
+    "org.apache.calcite.rex.RexWindowExclusion": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/sql2rel/SqlToRelConverter.java",
+        "line": 98
+      },
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 93
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "line": 22
+      }
+    ],
+    "org.apache.calcite.rel.core.Combine": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 40
+      }
+    ],
+    "org.apache.calcite.rel.core.Match": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 47
+      }
+    ],
+    "org.apache.calcite.rel.core.RepeatUnion": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 51
+      }
+    ],
+    "org.apache.calcite.rel.core.Spool": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 55
+      }
+    ],
+    "org.apache.calcite.rel.core.TableSpool": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 58
+      }
+    ],
+    "org.apache.calcite.rel.logical.LogicalAsofJoin": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 64
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java",
+        "line": 47
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 34
+      }
+    ],
+    "org.apache.calcite.rex.RexCallBinding": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 77
+      }
+    ],
+    "org.apache.calcite.rex.RexExecutor": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 80
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 45
+      }
+    ],
+    "org.apache.calcite.rex.RexUnknownAs": [
+      {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/tools/RelBuilder.java",
+        "line": 88
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 60
+      }
+    ],
+    "org.apache.calcite.rex.RexLambda": [
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+        "line": 34
+      },
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 48
+      }
+    ],
+    "org.apache.calcite.rex.RexProgramBuilder": [
+      {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "line": 55
+      }
+    ]
+  },
+  "limits": [
+    "Imports are references, not proof that a rule constructs or retains the form.",
+    "Helper bodies and generated rule configuration require further semantic analysis.",
+    "This inventory does not establish a lossless S1 schema or importer."
+  ]
+}

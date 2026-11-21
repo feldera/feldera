@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "archive": ".bench-results/java-baseline/2026-18-11-06-52-c6ede/raw.tar.gz",
+  "bytes": 53626371,
+  "sha256": "2d7c3537eb96add1b0e763427a75e8f480c2de9b32b9747f1634c9c46cd51e3f",
+  "manifest_sha256": "666c1ebf15dca87d7998deb706697d4603fe94613fbdac2711dd76c64e598616",
+  "verified_files": 9661,
+  "all_members_verified": true
+}

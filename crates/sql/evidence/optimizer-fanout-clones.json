@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-fanout-clones-archive.json",
+  "engines": ["classic", "gen2"],
+  "flat_programs_per_engine": 50,
+  "scheduled_placements": 35,
+  "same_input_pass_comparisons": 3444,
+  "rust_final_compiler_comparisons": 100,
+  "java_codec_final_compiler_controls": 100,
+  "fanout_pass_invocations": 102,
+  "active_fanout_changes_in_flat_matrix": 0,
+  "directed_graph_comparisons": 6,
+  "directed_graphs_with_clones": 3,
+  "directed_cloned_operators": 6,
+  "differences": 0,
+  "scope": "Rust selects consumers using original fanout and the Java expression-cost rules. Java constructs the selected clones. The directed graphs exercise cheap expressions, one consumer, an external call, the tumble prefix, exactly 100 terms and more than 100 terms. The flat set-output matrix retains intervening Java passes and has no active clones."
+}

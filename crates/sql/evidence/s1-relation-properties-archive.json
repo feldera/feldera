@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-relation-properties-20261117-v1.tar.gz",
+  "sha256": "ed00e1ebdc13509c964432c02cc0d083872e1707bc8cf935baa13801cd159446",
+  "bytes": 43083645,
+  "certificates": [
+    "s1-relation-properties.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-relation-properties.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-relation-properties-v6/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-relation-properties.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Typed relational descriptors, aggregate operator identities, traits and hints with producer topology and shared input uses",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-relation-properties-archive.json"
+}

@@ -86,9 +86,17 @@ public class Annotations {
     }
 
     public void asJson(JsonStream stream) {
+        this.asJson(stream, false);
+    }
+
+    public void asJson(JsonStream stream, boolean replayMetadata) {
         stream.beginArray();
-        for (Annotation annotation: this.annotations)
-            annotation.asJson(stream);
+        for (Annotation annotation: this.annotations) {
+            if (replayMetadata)
+                annotation.asReplayJson(stream);
+            else
+                annotation.asJson(stream);
+        }
         stream.endArray();
     }
 

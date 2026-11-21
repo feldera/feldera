@@ -1,0 +1,49 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "full_crate_check_tests": true,
+  "shadow_module": {
+    "passed": 5,
+    "failed": 0,
+    "ignored": 1
+  },
+  "real_java_integration": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  "ui": "WEBCONSOLE_BUILD_DIR=$SCRATCH/p0-shadow-review-static-assets; minimal static-assets fixture, no UI test",
+  "cargo": "offline locked; two build jobs; default features",
+  "first_attempt": "build-script failure resolving local Bun workspace packages; retained",
+  "source_hashes": {
+    "Cargo.toml": "308160ef6289a92d973a2b32b70189e7802b1a2e38fffe1f82ade214d7bcc339",
+    "Cargo.lock": "04c4d4d22dacf1823df9e0d9a703d122cce4ed75c454a006b6cff580dfb2f2e0",
+    "crates/pipeline-manager/Cargo.toml": "36829611ecb600a77da59424332b0515ad972850045de4615be58c899f6b4b1d",
+    "crates/pipeline-manager/build.rs": "284f94f6f0455ea940033d323f975687a7cf999145a87e97f1a4eefb65521fb9",
+    "crates/pipeline-manager/src/compiler/shadow.rs": "1a99ce30d03d5de31c90475ad4528f3048d3c47c9e990226a7d5a31fc0c05e62",
+    "crates/pipeline-manager/src/compiler/sql_compiler.rs": "def5d3b5592d069b6e6656f0f15c4027827a1e97b9023e936004dd53b3c242c7",
+    "crates/pipeline-manager/src/compiler/util.rs": "4e8e546f892d86479743d2ec948310c26e12f160170b9bd13c65b838e03eceb0"
+  },
+  "binary": {
+    "path": "$SCRATCH/p0-pipeline-manager-review-target/debug/deps/pipeline_manager-99f861caeaa87110",
+    "sha256": "70b99fda5b6a41d852874026717f8985822dcd47c3a2f6559804aaacd059c2bc"
+  },
+  "artifacts": {
+    "p0-pipeline-manager-review-check-v1.log": "bce73f8cd05dfe21ca96dd531bd88820810caf85da514421042d2a39c10996b1",
+    "p0-pipeline-manager-review-check-v2.log": "f1fc3d8b6a327478538e9cd9f324a077312cbc35c8c186d5e3001d01cd19fa38",
+    "p0-pipeline-manager-review-tests-v1.log": "0281f08d197966929bd7d4caa969f34660a054bcaf23e65481e71c527afbe0a0",
+    "p0-pipeline-manager-review-java-v1.log": "5a903fbf78181b2567afb9b88aef95d1303aa47c5ca6ea162eea2f2a19aed56c",
+    "p0-shadow-review-compiler-provenance.json": "09863cc762cbb05df5180a49255e04e80fd8390e7211d9dff77736902f1f56dc",
+    "p0-shadow-review-compiler.jar": "8c19db0b9f1ac4c6d6ffdd221b11b2369be6e6471f528ae95c93805d2991e555"
+  },
+  "java_sources_and_classes_unchanged": true,
+  "all_pipeline_manager_tests_run": false,
+  "P0_complete": false,
+  "archive": {
+    "path": ".p0-artifacts/p0-shadow-supervision-integration-20261118-v1.tar.gz",
+    "sha256": "8b8f30fb0fa206bc19af89335b5bebae57971ab8fa37dc7c32cb625cf166bb4a",
+    "bytes": 28270676,
+    "verified_sources": 7,
+    "verified_artifacts": 6
+  }
+}

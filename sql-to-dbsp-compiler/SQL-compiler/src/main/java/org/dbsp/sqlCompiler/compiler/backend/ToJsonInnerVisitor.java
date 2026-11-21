@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
@@ -58,6 +59,9 @@ import org.dbsp.util.Utilities;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
+import java.util.Map;
+import org.dbsp.util.Shuffle;
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Set;
 
@@ -67,14 +71,24 @@ import java.util.Set;
  * Every expression gets a "type" property. */
 public class ToJsonInnerVisitor extends InnerVisitor {
     public final JsonStream stream;
+    /** Include source metadata needed by the experimental replay boundary.
+     * Public Gen-2 JSON and persistent-id serialization leave this disabled. */
+    public final boolean replayMetadata;
     final int verbosity;
     final Set<Long> serialized;
+    @Nullable Map<Long, Shuffle> liveShuffles;
+    @Nullable Map<Long, IDBSPInnerNode> liveNodes;
     /** One entry for each node in the visitor context: true when the JSON object of the node
      * already has a "type" property. */
     final List<Boolean> hasType;
 
     public ToJsonInnerVisitor(DBSPCompiler compiler, JsonStream stream, int verbosity) {
+        this(compiler, stream, verbosity, false);
+    }
+
+    public ToJsonInnerVisitor(DBSPCompiler compiler, JsonStream stream, int verbosity, boolean replayMetadata) {
         super(compiler);
+        this.replayMetadata = replayMetadata;
         this.stream = stream;
         this.verbosity = verbosity;
         this.serialized = new HashSet<>();
@@ -119,10 +133,17 @@ public class ToJsonInnerVisitor extends InnerVisitor {
             this.property("id");
             this.stream.append(node.getId());
             this.serialized.add(node.getId());
+            if (this.liveNodes != null)
+                this.liveNodes.put(node.getId(), node);
+            if (this.replayMetadata) {
+                this.stream.label("sourceEmpty").append(node.getNode().isEmpty());
+                if (node instanceof DBSPType type && ReplayTypes.isSingleton(type))
+                    this.stream.label("singleton").append(true);
+            }
 
             if (this.verbosity > 0) {
                 SourcePositionRange range = node.getNode().getPositionRange();
-                if (range.isValid()) {
+                if (range.isValid() || (this.replayMetadata && !node.getNode().isEmpty())) {
                     this.property("position");
                     this.stream.append(range);
                 }
@@ -158,6 +179,12 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPAggregateList node) {
+        if (this.replayMetadata) {
+            // Later expansion reuses this cached tuple and its type. Rebuilding
+            // an equal tuple would lose sharing with types already in the graph.
+            this.property("cachedEmptySetResult");
+            node.getEmptySetResult().accept(this);
+        }
         this.stream.endObject();
     }
 
@@ -240,6 +267,8 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPFlatmap node) {
+        if (this.liveShuffles != null)
+            this.liveShuffles.put(node.id, node.shuffle);
         this.startArrayProperty("passthroughIndexes");
         int index = 0;
         for (int i: node.passthroughIndexes) {
@@ -533,6 +562,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
         this.stream.append(node.fixed);
         this.property("precision");
         this.stream.append(node.precision);
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(DBSPTypeTuple node) {
+        if (this.replayMetadata && node.originalStruct != null) {
+            this.property("originalStruct");
+            node.originalStruct.accept(this);
+        }
         super.postorder(node);
     }
 

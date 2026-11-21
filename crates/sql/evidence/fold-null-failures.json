@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "cases": 236,
+  "compiler_bug_cases": 16,
+  "examples": [
+    {
+      "input": {
+        "id": "focused/lead/5/promote=False/suppress=False",
+        "program": "CREATE TABLE t(x INT, ts TIMESTAMP);\nCREATE VIEW v AS SELECT LEAD(x, CAST(NULL AS INTEGER)) OVER (ORDER BY ts) AS y FROM t;"
+      },
+      "accepted": false,
+      "compiler_bug": true,
+      "diagnostics": [
+        {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0,
+          "warning": false,
+          "error_type": "This is a bug in the compiler (please report it to the developers)",
+          "message": "NullPointerException",
+          "snippet": ""
+        }
+      ]
+    },
+    {
+      "input": {
+        "id": "focused/lag/5/promote=False/suppress=False",
+        "program": "CREATE TABLE t(x INT, ts TIMESTAMP);\nCREATE VIEW v AS SELECT LAG(x, CAST(NULL AS INTEGER)) OVER (ORDER BY ts) AS y FROM t;"
+      },
+      "accepted": false,
+      "compiler_bug": true,
+      "diagnostics": [
+        {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0,
+          "warning": false,
+          "error_type": "This is a bug in the compiler (please report it to the developers)",
+          "message": "NullPointerException",
+          "snippet": ""
+        }
+      ]
+    },
+    {
+      "input": {
+        "id": "focused/rows/4/promote=False/suppress=False",
+        "program": "CREATE TABLE t(x INT, ts TIMESTAMP);\nCREATE VIEW v AS SELECT SUM(x) OVER (ORDER BY x ROWS BETWEEN CAST(NULL AS INTEGER) PRECEDING AND CURRENT ROW) AS y FROM t;"
+      },
+      "accepted": false,
+      "compiler_bug": true,
+      "diagnostics": [
+        {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0,
+          "warning": false,
+          "error_type": "Compiler error",
+          "message": "Assertion failed\norg.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal.gt0(DBSPI32Literal.java:71)\norg.dbsp.sqlCompiler.compiler.frontend.aggregates.RangeAggregates.compileWindowBound(RangeAggregates.java:138)\norg.dbsp.sqlCompiler.compiler.frontend.aggregates.RangeAggregates.implement(RangeAggregates.java:282)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visitWindow(CalciteToDBSPCompiler.java:2600)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visitIfMatches(CalciteToDBSPCompiler.java:339)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visit(CalciteToDBSPCompiler.java:2866)\norg.apache.calcite.rel.SingleRel.childrenAccept(SingleRel.java:72)\norg.apache.calcite.rel.RelVisitor.visit(RelVisitor.java:46)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visit(CalciteToDBSPCompiler.java:2850)\norg.apache.calcite.rel.SingleRel.childrenAccept(SingleRel.java:72)\norg.apache.calcite.rel.RelVisitor.visit(RelVisitor.java:46)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visit(CalciteToDBSPCompiler.java:2850)\norg.apache.calcite.rel.RelVisitor.go(RelVisitor.java:63)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.compileCreateView(CalciteToDBSPCompiler.java:2905)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.compile(CalciteToDBSPCompiler.java:3363)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$compileStages$10(DBSPCompiler.java:902)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.timedRun(DBSPCompiler.java:314)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.compileStages(DBSPCompiler.java:902)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.finishCircuit(DBSPCompiler.java:1129)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$getFinalCircuit$17(DBSPCompiler.java:1124)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.withCircuitDumps(DBSPCompiler.java:205)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.getFinalCircuit(DBSPCompiler.java:1124)\norg.dbsp.sqlCompiler.compiler.sql.tools.FoldProbe.main(FoldProbe.java:62)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues",
+          "snippet": ""
+        }
+      ]
+    },
+    {
+      "input": {
+        "id": "focused/range/4/promote=False/suppress=False",
+        "program": "CREATE TABLE t(x INT, ts TIMESTAMP);\nCREATE VIEW v AS SELECT SUM(x) OVER (ORDER BY x RANGE BETWEEN CAST(NULL AS INTEGER) PRECEDING AND CURRENT ROW) AS y FROM t;"
+      },
+      "accepted": false,
+      "compiler_bug": true,
+      "diagnostics": [
+        {
+          "start_line_number": 2,
+          "start_column": 25,
+          "end_line_number": 2,
+          "end_column": 30,
+          "warning": false,
+          "error_type": "Not supported",
+          "message": "A RANGE window frame with a PRECEDING or FOLLOWING offset requires an ORDER BY expression that cannot be NULL; consider filtering out the NULL values, for example with 'WHERE column IS NOT NULL'.\nSee https://docs.feldera.com/sql/unsupported-operations#range-frames-with-offsets-over-nullable-columns",
+          "snippet": "    1|CREATE TABLE t(x INT, ts TIMESTAMP);\n    2|CREATE VIEW v AS SELECT SUM(x) OVER (ORDER BY x RANGE BETWEEN CAST(NULL AS INTEGER) PRECEDING AND CURRENT ROW) AS y FROM t;\n                              ^^^^^^\n"
+        },
+        {
+          "start_line_number": 0,
+          "start_column": 0,
+          "end_line_number": 0,
+          "end_column": 0,
+          "warning": false,
+          "error_type": "Compiler error",
+          "message": "Assertion failed\norg.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal.gt0(DBSPI32Literal.java:71)\norg.dbsp.sqlCompiler.compiler.frontend.aggregates.RangeAggregates.compileWindowBound(RangeAggregates.java:138)\norg.dbsp.sqlCompiler.compiler.frontend.aggregates.RangeAggregates.implement(RangeAggregates.java:282)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visitWindow(CalciteToDBSPCompiler.java:2600)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visitIfMatches(CalciteToDBSPCompiler.java:339)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visit(CalciteToDBSPCompiler.java:2866)\norg.apache.calcite.rel.SingleRel.childrenAccept(SingleRel.java:72)\norg.apache.calcite.rel.RelVisitor.visit(RelVisitor.java:46)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.visit(CalciteToDBSPCompiler.java:2850)\norg.apache.calcite.rel.RelVisitor.go(RelVisitor.java:63)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.compileCreateView(CalciteToDBSPCompiler.java:2905)\norg.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler.compile(CalciteToDBSPCompiler.java:3363)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$compileStages$10(DBSPCompiler.java:902)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.timedRun(DBSPCompiler.java:314)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.compileStages(DBSPCompiler.java:902)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.finishCircuit(DBSPCompiler.java:1129)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$getFinalCircuit$17(DBSPCompiler.java:1124)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.withCircuitDumps(DBSPCompiler.java:205)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.getFinalCircuit(DBSPCompiler.java:1124)\norg.dbsp.sqlCompiler.compiler.sql.tools.FoldProbe.main(FoldProbe.java:62)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues",
+          "snippet": ""
+        }
+      ]
+    }
+  ],
+  "raw_artifacts": {
+    "$SCRATCH/p0-fold-focused-v1/input.jsonl": "ce408d59188ae827e87997bc0d299ab059984c7fb314e484c99e9ad82e5aad2d",
+    "$SCRATCH/p0-fold-focused-v1/java-cases.jsonl": "4fa1705995eadf62ece9e459ac15cc64b651c6e398669e993b43f1ce1270de20"
+  },
+  "fixed_by": "Explicit non-null checks before extracting LEAD/LAG offsets and comparing window bounds; located diagnostics at optimization levels 0 and 2.",
+  "allowlisted": false
+}

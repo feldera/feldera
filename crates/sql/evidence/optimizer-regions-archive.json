@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-regions-20261118-v1.tar.gz",
+  "bytes": 27061833,
+  "sha256": "a609390ee0ad01b93ce746b42d84c2c9f8571dbe0e70f2063f12cfc3805c8f71",
+  "manifest_sha256": "e2e43cb37079e1f7bc37b1a1683428f3ad1b0409f1ab1ee566aebf56845ad616",
+  "verified_files": 13521,
+  "all_members_verified": true
+}

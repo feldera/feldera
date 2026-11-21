@@ -1,0 +1,288 @@
+{
+  "scope": "Comparison with Java at each streaming detection, trace collection, boundedness propagation and unbounded-state diagnosis placement. Both propagation scans start with the Java facts visible at entry.",
+  "passes": {
+    "DetectStreamingOperations": {
+      "comparator_sha256": "b58c73fbf2b9c0941f58e121a0ceeed5825ee829e1e4b188c4c65f944a97ca79",
+      "oracle_jar_sha256": "a7808b920d8ec065f3fd99264eca3447b017fac6c4e505586c17abc0f83c6e23",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "69b99f6f570bf0c4dcd265e7d73d11d5bbc17e04013ad1de7355dc7e528ca360"
+        ],
+        "pass": "DetectStreamingOperations",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "a61f8ecfa2ba0dd593c44b6c8dad92f0c1d52105dcdb6c5315c9cc63c95513eb"
+        ],
+        "pass": "DetectStreamingOperations",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "FindGCedStreams": {
+      "comparator_sha256": "b58c73fbf2b9c0941f58e121a0ceeed5825ee829e1e4b188c4c65f944a97ca79",
+      "oracle_jar_sha256": "a7808b920d8ec065f3fd99264eca3447b017fac6c4e505586c17abc0f83c6e23",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "442cc61d379694b7e15177657f93ef8698cc2f5b19e3c8a8ae167a996b17aef3"
+        ],
+        "pass": "FindGCedStreams",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "057f0e3fe6ea0e0faa5012f37d03c25f8d89649102592a2b99a3d1250bd026bf"
+        ],
+        "pass": "FindGCedStreams",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "FindBounded": {
+      "comparator_sha256": "21276a3fbda47eb6eaae9bb7455e58ae29a5b2299d5a97ed5a37c7c76c620a95",
+      "oracle_jar_sha256": "c8d7d81d820e0dc890bd13b921bfb8e8ff69249d437e711cf36444ef5611927c",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "1a96c5c8a8bbaf52a1cb5992451624b5ba7c1c40d11e0c1d43434a7049848599"
+        ],
+        "pass": "FindBounded",
+        "invocations": 17142,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "08c44fc72bd818b438f9837fbf06af61b0cbc5f559114659e37a89f97a6adcd6"
+        ],
+        "pass": "FindBounded",
+        "invocations": 17054,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "CollectUnbounded": {
+      "comparator_sha256": "4cd4719bf18cc29c44c3575ee2c1df364637d94180e7c3640ea3d6e5008c535e",
+      "oracle_jar_sha256": "b2a6f235f57bb7406c55ec28acaf2b245414f21a33373f68d8ab384d944ea856",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "81adb9f42525bdd491c617ce91f64aeb46ff4523e5e196efda1021a4ee4f625b"
+        ],
+        "pass": "CollectUnbounded",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "0303a3d42a4c5054b98f117c17766c3f38cca293549607d36e80ccfb452eab28"
+        ],
+        "pass": "CollectUnbounded",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    }
+  },
+  "directed_artifacts": {
+    "classic": {
+      "cases": 200,
+      "mismatches": 0,
+      "population_sha256": "f922ae2816322c0f54b8cebe074a7db8c1ba2ec02276c3ee2ef3314e3a184538",
+      "rust_pass_invocations": {
+        "AdjustSqlIndex": 200,
+        "AppendOnly": 200,
+        "BalancedJoins": 200,
+        "BreakFilters": 5,
+        "BuildNestedOperators": 200,
+        "CSE": 1172,
+        "ChainVisitor": 400,
+        "CheckHints": 200,
+        "CheckRetain": 200,
+        "CircuitStatistics": 200,
+        "CloneOperatorsWithFanout": 200,
+        "CollapseSharedChains": 200,
+        "CollectUnbounded": 200,
+        "CompactNames": 200,
+        "ComparatorDeclarations": 200,
+        "ConstantViews": 200,
+        "ContainsNow": 204,
+        "CreateRuntimeErrorWrappers": 200,
+        "DeadCode": 5226,
+        "DecomposeExpensiveFilters": 200,
+        "DesugarNowEquality": 4,
+        "DetectStreamingOperations": 200,
+        "DeterministicFunctions": 200,
+        "DuplicateSharedIndexes": 200,
+        "EnsureDistinctOutputs": 200,
+        "EnsureExpressionTrees": 200,
+        "ExpandAggregateZero": 200,
+        "ExpandHop": 200,
+        "ExpandMetadataCasts": 200,
+        "ExpandSafeCasts": 209,
+        "ExpandUnsafeCasts": 266,
+        "FilterJoinVisitor": 400,
+        "FindBounded": 400,
+        "FindGCedStreams": 200,
+        "FindMapChains": 200,
+        "FindWindowGroups": 200,
+        "FixupViewReferences": 200,
+        "FuseIntoArrayAgg": 400,
+        "ImplementJoins": 200,
+        "ImplementWindowGroups": 200,
+        "IncrementalizeVisitor": 12,
+        "LinearPostprocessRetainKeys": 200,
+        "MergeSums": 200,
+        "MultisetAnalysis": 800,
+        "NoConnectorMetadata": 200,
+        "NoIntegralVisitor": 12,
+        "OptimizeDistinctVisitor": 200,
+        "OptimizeIncrementalVisitor": 400,
+        "OrderErrorConsumers": 200,
+        "PropagateEmptySources": 600,
+        "PushDifferentialsUp": 200,
+        "RemoveConstantFilters": 200,
+        "RemoveDeindexOperators": 200,
+        "RemoveIAfterD": 200,
+        "RemoveIdentityOperators": 200,
+        "RemoveNoops": 400,
+        "RemoveTable": 396,
+        "RemoveUselessLeftJoinsVisitor": 200,
+        "RemoveViewOperators": 400,
+        "SeparateIntegrators": 12,
+        "ShareOutputIntegrators": 200,
+        "SimplifyWaterline": 200,
+        "StrayGC": 200,
+        "SubstituteLeftJoins": 200,
+        "TagRegions": 200,
+        "UDFInliner": 200,
+        "ValidateRecursiveOperators": 400
+      },
+      "shards": [
+        {
+          "manifest_sha256": "e3dff38d9a9d76b9d81f98419e88e5f49755f40ae34f7b7d83485a790cfb9a1a",
+          "records_sha256": "3af2d81c78bb43923b81d8969d356458aeae07113de55f89521bf450011d45d9"
+        },
+        {
+          "manifest_sha256": "77b1a1b8bcc4bbed836b23f74bd426cacb9c708178dc27d862cb214e31a31d2d",
+          "records_sha256": "db7aceeecd900c5eedd188852b0da50a68480caa33f5f49cf2b82f743e5455bd"
+        }
+      ]
+    },
+    "gen2": {
+      "cases": 199,
+      "mismatches": 0,
+      "population_sha256": "af6df95684e90f36ad08d8660cd3cf26775891449969005924a0b6af01cac123",
+      "rust_pass_invocations": {
+        "AdjustSqlIndex": 199,
+        "AppendOnly": 199,
+        "BalancedJoins": 199,
+        "BreakFilters": 2,
+        "BuildNestedOperators": 199,
+        "CSE": 1189,
+        "ChainVisitor": 398,
+        "CheckHints": 199,
+        "CheckRetain": 199,
+        "CircuitStatistics": 199,
+        "CloneOperatorsWithFanout": 199,
+        "CollapseSharedChains": 199,
+        "CollectUnbounded": 199,
+        "CompactNames": 199,
+        "ComparatorDeclarations": 199,
+        "ConstantViews": 199,
+        "ContainsNow": 201,
+        "CreateRuntimeErrorWrappers": 199,
+        "DeadCode": 5205,
+        "DecomposeExpensiveFilters": 199,
+        "DesugarNowEquality": 2,
+        "DetectStreamingOperations": 199,
+        "DeterministicFunctions": 199,
+        "DuplicateSharedIndexes": 199,
+        "EnsureDistinctOutputs": 199,
+        "EnsureExpressionTrees": 199,
+        "ExpandAggregateZero": 199,
+        "ExpandHop": 199,
+        "ExpandMetadataCasts": 199,
+        "ExpandSafeCasts": 212,
+        "ExpandUnsafeCasts": 269,
+        "FilterJoinVisitor": 404,
+        "FindBounded": 398,
+        "FindGCedStreams": 199,
+        "FindMapChains": 199,
+        "FindWindowGroups": 199,
+        "FixupViewReferences": 199,
+        "FuseIntoArrayAgg": 398,
+        "Gen2Passes": 199,
+        "ImplementJoins": 199,
+        "ImplementWindowGroups": 199,
+        "IncrementalizeVisitor": 199,
+        "LinearPostprocessRetainKeys": 199,
+        "MergeSums": 199,
+        "MultisetAnalysis": 796,
+        "NoConnectorMetadata": 199,
+        "NoIntegralVisitor": 199,
+        "OptimizeDistinctVisitor": 199,
+        "OptimizeIncrementalVisitor": 398,
+        "OrderErrorConsumers": 199,
+        "PropagateEmptySources": 597,
+        "PushDifferentialsUp": 199,
+        "RemoveConstantFilters": 199,
+        "RemoveDeindexOperators": 199,
+        "RemoveIAfterD": 199,
+        "RemoveIdentityOperators": 199,
+        "RemoveNoops": 398,
+        "RemoveTable": 397,
+        "RemoveUselessLeftJoinsVisitor": 199,
+        "RemoveViewOperators": 398,
+        "SeparateIntegrators": 199,
+        "ShareOutputIntegrators": 199,
+        "SimplifyWaterline": 199,
+        "StrayGC": 199,
+        "SubstituteLeftJoins": 199,
+        "TagRegions": 199,
+        "UDFInliner": 199,
+        "ValidateRecursiveOperators": 398
+      },
+      "shards": [
+        {
+          "manifest_sha256": "4b2ef28e5db6116f8047bddfa6f0e0bc8b16f96326b44d78dc2c9d131cc0766c",
+          "records_sha256": "2425cf4161ca4a229fc33e9af8d86e38c6fe0bc0c757ce8f3dea67dbb10d5c36"
+        },
+        {
+          "manifest_sha256": "3e29518de338b18b15a37b35cdf2c59f4666bc592019d93d33411349cd36f646",
+          "records_sha256": "46d8d32298117a7b974ecd7e69264477a0ac137cefd2ed2e39a5798009cb875a"
+        }
+      ]
+    }
+  }
+}

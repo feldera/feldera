@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "seed": 724861,
+  "replicates": 10000,
+  "pairs_per_circular_block": 4,
+  "proposed_ratio_limit": 1.2,
+  "definition": "Separate confidence interval for each observed run, resampling paired process means in circular four-pair blocks. Quantile is nearest rank.",
+  "results": {
+    "samples": {
+      "256": {
+        "process_pairs": 31,
+        "p95_ratio": 1.0567555024288435,
+        "p95_ratio_bootstrap_interval": [
+          1.0270022048667617,
+          1.1323185062557526
+        ],
+        "median_paired_step_ratio": 1.1101990928888692,
+        "median_paired_step_interval": [
+          1.1021396307961078,
+          1.1160486944129373
+        ],
+        "bootstrap_fraction_above_proposed_limit": 0.0002
+      },
+      "2048": {
+        "process_pairs": 31,
+        "p95_ratio": 1.208604436194147,
+        "p95_ratio_bootstrap_interval": [
+          0.934575749042962,
+          1.208604436194147
+        ],
+        "median_paired_step_ratio": 1.1109057202884687,
+        "median_paired_step_interval": [
+          1.1028581193354134,
+          1.1156803104513042
+        ],
+        "bootstrap_fraction_above_proposed_limit": 0.3278
+      }
+    },
+    "replication": {
+      "256": {
+        "process_pairs": 31,
+        "p95_ratio": 1.094556919455858,
+        "p95_ratio_bootstrap_interval": [
+          0.8879958464315683,
+          1.183880372315954
+        ],
+        "median_paired_step_ratio": 1.1091042756858092,
+        "median_paired_step_interval": [
+          1.1047624673285656,
+          1.1202833858680656
+        ],
+        "bootstrap_fraction_above_proposed_limit": 0.0087
+      },
+      "2048": {
+        "process_pairs": 31,
+        "p95_ratio": 1.0912530287077475,
+        "p95_ratio_bootstrap_interval": [
+          1.0734224166784934,
+          1.1195698824035512
+        ],
+        "median_paired_step_ratio": 1.108479420807706,
+        "median_paired_step_interval": [
+          1.1055333411218973,
+          1.113183150064159
+        ],
+        "bootstrap_fraction_above_proposed_limit": 0.0
+      }
+    }
+  },
+  "archive_index": "native-count-paired-uncertainty-archive.json",
+  "scope": "Both archived four-worker ARM64 optimized COUNT DISTINCT runs under the same binary, CPU set and forced-spill protocol.",
+  "interpretation": "The median of paired process latency ratios is stable near 1.11. The original 2,048-row p95 ratio interval spans the proposed limit, while the replication interval stays below it."
+}

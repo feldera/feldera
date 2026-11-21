@@ -1,0 +1,34 @@
+{
+  "scope": "Nexmark CloneOperatorsWithFanout on the recorded 86-pass input circuit. Times cover the Rust fixed-point rewrite. Encoding, decoding, and execution of other passes are outside the measured interval.",
+  "pass": "CloneOperatorsWithFanout",
+  "rounds": 6,
+  "measured_calls_per_round": 7,
+  "warmup_calls_per_round": 1,
+  "pinned_linux_cpu": 12,
+  "alternating_order": true,
+  "median_ms": {
+    "before": 441.18591,
+    "after": 322.269422
+  },
+  "paired_round_median_ratios": [
+    0.7307506564808018,
+    0.7259451175582454,
+    0.6940957000057764,
+    0.7945953260728111,
+    0.6660437665935939,
+    0.6950773192695495
+  ],
+  "mean_paired_ratio_95pct_bootstrap_interval": [
+    0.6897475841916704,
+    0.7549619855567834
+  ],
+  "input_bytes": 3143639,
+  "input_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "live_output_sha256": "8a7652ae39865109a86538a0f3c4a80067ebfe83d7feb11c3c268032e6c47796",
+  "binary_sha256": {
+    "before": "c8acf061866d0c727b828e8dee8a44e2d067ce1dcb76e22940d344594b02f556",
+    "after": "fb2ba132e470517a66bc9e7a68213b1c708e33093a581f84d56e0e3ca821346e"
+  },
+  "workspace_archive": ".bench-results/p3-fanout/2026-21-11-01-18-c6ede",
+  "raw_sha256": "554b6162a9aac1db3fc7d688ad3863cbcad199c11252f7fdcb3a7ca0eaa9a1d8"
+}

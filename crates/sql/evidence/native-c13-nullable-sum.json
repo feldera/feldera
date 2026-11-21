@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "scope": "Optimized forced-spill nullable SUM over the unchanged classic generated graph and the same graph with a Cranelift archive writer for its accumulator.",
+  "environment": "Linux ARM64 local devcontainer, release profile, CPU 0, one DBSP worker, offline locked Cargo.",
+  "source_test": "simple.OptimizedIncrementalTests#optionAggregateTest/0",
+  "paired_processes": 124,
+  "oracle": "Each engine checked the full expected signed output Z-set and an empty error stream at initialization and every warmup and measured step.",
+  "state_size": "All pairs had identical spill file lengths and total checkpoint directory size.",
+  "latency_definition": "Mean transaction and output-drain time per process with equality checks outside the measured interval. Fresh processes are paired and engine order alternates.",
+  "archive_index": "native-c13-nullable-sum-archive.json",
+  "cpu": 0,
+  "pairs_per_size": 31,
+  "binary_sha256": "1b2c47d77043a0b3f1e1c1ea7501437f542361babf9e7911d1d4ea6234a5ba41",
+  "results": {
+    "256": {
+      "classic": {
+        "init_ns": {
+          "p50": 3549744,
+          "p95": 3923243
+        },
+        "step_latency_ns": {
+          "p50": 2279311.2375,
+          "p95": 2333274.2375
+        },
+        "checkpoint_ns": {
+          "p50": 4328742,
+          "p95": 5009615
+        },
+        "rows_per_second": {
+          "p50": 112314.63074818451,
+          "p95": 113402.55895089166
+        },
+        "peak_rss_kib": {
+          "p50": 24156,
+          "p95": 24164
+        },
+        "checkpoint_bytes": {
+          "p50": 10721,
+          "p95": 10721
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 9197565,
+          "p95": 9991106
+        },
+        "step_latency_ns": {
+          "p50": 2286219.525,
+          "p95": 2348133.0375
+        },
+        "checkpoint_ns": {
+          "p50": 4315117,
+          "p95": 4742033
+        },
+        "rows_per_second": {
+          "p50": 111975.24874607132,
+          "p95": 113372.71344868424
+        },
+        "peak_rss_kib": {
+          "p50": 25448,
+          "p95": 25448
+        },
+        "checkpoint_bytes": {
+          "p50": 10721,
+          "p95": 10721
+        }
+      },
+      "paired_native_classic_latency_ratio": {
+        "median": 1.0015069381659,
+        "bootstrap_95_percent": [
+          0.996028725795564,
+          1.0073943036643562
+        ],
+        "bootstrap_resamples": 10000
+      },
+      "spill_file_sizes": [
+        152,
+        1536,
+        1536,
+        1536,
+        1536,
+        1536,
+        1536
+      ]
+    },
+    "2048": {
+      "classic": {
+        "init_ns": {
+          "p50": 3428035,
+          "p95": 3898076
+        },
+        "step_latency_ns": {
+          "p50": 2536472.225,
+          "p95": 2627671.125
+        },
+        "checkpoint_ns": {
+          "p50": 4289325,
+          "p95": 4746657
+        },
+        "rows_per_second": {
+          "p50": 807420.6292560527,
+          "p95": 819731.3334557193
+        },
+        "peak_rss_kib": {
+          "p50": 27944,
+          "p95": 28072
+        },
+        "checkpoint_bytes": {
+          "p50": 10721,
+          "p95": 10721
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 9186941,
+          "p95": 9344982
+        },
+        "step_latency_ns": {
+          "p50": 2537375.25,
+          "p95": 2576307.475
+        },
+        "checkpoint_ns": {
+          "p50": 4282450,
+          "p95": 4691741
+        },
+        "rows_per_second": {
+          "p50": 807133.2767985342,
+          "p95": 815281.7477674123
+        },
+        "peak_rss_kib": {
+          "p50": 29288,
+          "p95": 29288
+        },
+        "checkpoint_bytes": {
+          "p50": 10721,
+          "p95": 10721
+        }
+      },
+      "paired_native_classic_latency_ratio": {
+        "median": 1.001708482965037,
+        "bootstrap_95_percent": [
+          0.9968421349804185,
+          1.0084940333663461
+        ],
+        "bootstrap_resamples": 10000
+      },
+      "spill_file_sizes": [
+        152,
+        1536,
+        1536,
+        1536,
+        1536,
+        1536,
+        1536
+      ]
+    }
+  }
+}

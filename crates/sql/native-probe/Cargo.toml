@@ -1,0 +1,18 @@
+[package]
+name = "feldera-native-probe"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Disposable P0 N1 experiment; not linked into the production compiler.
+[workspace]
+
+[dependencies]
+cranelift-codegen = "=0.125.0"
+cranelift-frontend = "=0.125.0"
+cranelift-module = "=0.125.0"
+cranelift-native = "=0.125.0"
+cranelift-object = "=0.125.0"
+dlopen2 = "=0.8.2"
+tempfile = "3"

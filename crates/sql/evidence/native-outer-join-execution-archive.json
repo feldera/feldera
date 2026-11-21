@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-outer-join-execution-20261118-v1.tar.gz",
+  "bytes": 50226999,
+  "sha256": "868a67380dda43fe173abdb35ff92233eaf5ea2ae0f913758900916788d65762",
+  "manifest_sha256": "104ba95e3dd4c79ec00febbfc6c2fdf09744a90e1b5330440d7ab0a60052bd5b",
+  "verified_files": 55,
+  "all_members_verified": true
+}

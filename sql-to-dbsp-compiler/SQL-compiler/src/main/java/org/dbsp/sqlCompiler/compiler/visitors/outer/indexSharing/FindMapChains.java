@@ -16,7 +16,7 @@ import java.util.List;
  * Finds chains of operators in the graph that end in an input whose index may be shared,
  * and are formed only of Map and MapIndex
  */
-class FindMapChains extends CircuitVisitor {
+public final class FindMapChains extends CircuitVisitor {
     final List<MapChain> chains;
 
     protected FindMapChains(DBSPCompiler compiler) {
@@ -43,6 +43,24 @@ class FindMapChains extends CircuitVisitor {
             if (!chain.isEmpty())
                 // The chain is empty when compiling without -i and the input is an integrator
                 this.chains.add(new MapChain(chain));
+        }
+    }
+
+    public List<List<Long>> chainIds() {
+        return this.chains.stream().map(chain -> chain.operators.stream().map(op -> op.id).toList()).toList();
+    }
+
+    /** The following Java rewrite consumes these lists and may reverse them in place. */
+    public void appendChains(long[][] ordered, java.util.function.LongFunction<DBSPOperator> lookup) {
+        for (var ids : ordered) {
+            var operators = new ArrayList<DBSPUnaryOperator>(ids.length);
+            for (long id : ids) {
+                var op = lookup.apply(id);
+                if (!(op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator))
+                    throw new IllegalStateException("Map chain contains a non-projection " + id);
+                operators.add((DBSPUnaryOperator) op);
+            }
+            this.chains.add(new MapChain(operators));
         }
     }
 

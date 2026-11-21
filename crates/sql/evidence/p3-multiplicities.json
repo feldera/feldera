@@ -1,0 +1,56 @@
+{
+  "scope": "All published ports at each scheduled MultisetAnalysis, including the analysis consumed by MerkleHashes. Java and Rust must agree on each port, preserve circuit identity and leave the generated-name counter unchanged.",
+  "optimizer_library_sha256": "0f68480104641d9147718db4f795738b1d45e520af932d6b60ae85b082a245fa",
+  "jar_sha256": "ee58c51a3ea7cd76b5c996142a9679587dde0084a9ba16d5b4e4a45823300036",
+  "oracle_sha256": "4a8d80b485c3e6e4ea478acd7c5f2b4470c2894fc83749eb4feb7d7b58592d4d",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "invocations": 25713,
+    "sets": 78738,
+    "multisets": 206498,
+    "secondary": 594,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_sha256": "3065545bef1c5f8d8a1c4fcdbd895bced37bec2c5dd1c24fb27a64db6124281c",
+    "set_outputs_replay": {
+      "cases": 200,
+      "mismatches": 0,
+      "population_sha256": "f922ae2816322c0f54b8cebe074a7db8c1ba2ec02276c3ee2ef3314e3a184538",
+      "shards": [
+        {
+          "manifest_sha256": "e3dff38d9a9d76b9d81f98419e88e5f49755f40ae34f7b7d83485a790cfb9a1a",
+          "records_sha256": "3af2d81c78bb43923b81d8969d356458aeae07113de55f89521bf450011d45d9"
+        },
+        {
+          "manifest_sha256": "77b1a1b8bcc4bbed836b23f74bd426cacb9c708178dc27d862cb214e31a31d2d",
+          "records_sha256": "819062a71000a026ba05cb0d3d43de80e2d69927afa5b4d2b5fa48caab0970d4"
+        }
+      ]
+    }
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "invocations": 25581,
+    "sets": 69298,
+    "multisets": 209580,
+    "secondary": 533,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_sha256": "a14cacc998c2af7df6a474a18047a1b201a5332c49f6c7a64ced4111e24f9c80",
+    "set_outputs_replay": {
+      "cases": 199,
+      "mismatches": 0,
+      "population_sha256": "af6df95684e90f36ad08d8660cd3cf26775891449969005924a0b6af01cac123",
+      "shards": [
+        {
+          "manifest_sha256": "4b2ef28e5db6116f8047bddfa6f0e0bc8b16f96326b44d78dc2c9d131cc0766c",
+          "records_sha256": "2425cf4161ca4a229fc33e9af8d86e38c6fe0bc0c757ce8f3dea67dbb10d5c36"
+        },
+        {
+          "manifest_sha256": "3e29518de338b18b15a37b35cdf2c59f4666bc592019d93d33411349cd36f646",
+          "records_sha256": "d4ecf8982e444d0ffe18f331f6ee6480ce1e7155c2ba2072132014c4739d327e"
+        }
+      ]
+    }
+  }
+}

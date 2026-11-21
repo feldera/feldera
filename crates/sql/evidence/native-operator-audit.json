@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-operator-audit-archive.json",
+  "frozen_programs": 10,
+  "operator_occurrences": 109,
+  "operator_classes": 18,
+  "operators": [
+    {
+      "operator": "DBSPAggregateLinearPostprocessOperator",
+      "occurrences": 3,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/aggregate.rs",
+      "entry_point": "fn dyn_aggregate_linear_generic",
+      "source_line": 521,
+      "source_sha256": "034add3ecbcd27b4780d45ae5e3e467601b15f78b73fa1a6adde1eba67c45915"
+    },
+    {
+      "operator": "DBSPAntiJoinOperator",
+      "occurrences": 2,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/join.rs",
+      "entry_point": "fn dyn_antijoin",
+      "source_line": 753,
+      "source_sha256": "16f0bdadeda7074aca6290f00abf7d4cf8e19db0e46f0b489a88549d56517ca3"
+    },
+    {
+      "operator": "DBSPAtomicSumOperator",
+      "occurrences": 2,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/concat.rs",
+      "entry_point": "fn dyn_accumulate_concat",
+      "source_line": 66,
+      "source_sha256": "000e602961c479f4ba8f0ef64b24501e37e160d65b32c2698b432016187652d2"
+    },
+    {
+      "operator": "DBSPConstantOperator",
+      "occurrences": 5,
+      "kind": "requires_explicit_empty_batch",
+      "source": "crates/dbsp/src/operator/generator.rs",
+      "entry_point": "impl<T> SourceOperator<T> for ConstantGenerator<T>",
+      "source_line": 219,
+      "source_sha256": "b772b4d19ef0da1a5253837e0b3846ac480a39eee20216a568abbda9a06b82b4"
+    },
+    {
+      "operator": "DBSPFilterOperator",
+      "occurrences": 1,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/filter_map.rs",
+      "entry_point": "fn dyn_filter_mono",
+      "source_line": 60,
+      "source_sha256": "6c42f806135eb3e2483e1db2b363a5fa77e6ab1db79ae54b81a1661221cab2e8"
+    },
+    {
+      "operator": "DBSPFlatMapIndexOperator",
+      "occurrences": 7,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/filter_map.rs",
+      "entry_point": "fn dyn_flat_map_index_mono",
+      "source_line": 92,
+      "source_sha256": "6c42f806135eb3e2483e1db2b363a5fa77e6ab1db79ae54b81a1661221cab2e8"
+    },
+    {
+      "operator": "DBSPFlatMapOperator",
+      "occurrences": 3,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/filter_map.rs",
+      "entry_point": "fn dyn_flat_map_mono",
+      "source_line": 83,
+      "source_sha256": "6c42f806135eb3e2483e1db2b363a5fa77e6ab1db79ae54b81a1661221cab2e8"
+    },
+    {
+      "operator": "DBSPIncrementalConstantOperator",
+      "occurrences": 7,
+      "kind": "requires_explicit_empty_batch",
+      "source": "crates/dbsp/src/operator/generator.rs",
+      "entry_point": "impl<T> SourceOperator<T> for IncrementalConstantGenerator<T>",
+      "source_line": 328,
+      "source_sha256": "b772b4d19ef0da1a5253837e0b3846ac480a39eee20216a568abbda9a06b82b4"
+    },
+    {
+      "operator": "DBSPJoinOperator",
+      "occurrences": 2,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/join.rs",
+      "entry_point": "fn dyn_join_generic_balanced",
+      "source_line": 866,
+      "source_sha256": "16f0bdadeda7074aca6290f00abf7d4cf8e19db0e46f0b489a88549d56517ca3"
+    },
+    {
+      "operator": "DBSPLeftJoinOperator",
+      "occurrences": 1,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/outer_join.rs",
+      "entry_point": "fn dyn_left_join",
+      "source_line": 73,
+      "source_sha256": "23daab0599bf85d878fb6dc5e72c92564f73ad8123de5eaf57c8a318965c5905"
+    },
+    {
+      "operator": "DBSPMapIndexOperator",
+      "occurrences": 9,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/filter_map.rs",
+      "entry_point": "fn dyn_map_index_mono",
+      "source_line": 74,
+      "source_sha256": "6c42f806135eb3e2483e1db2b363a5fa77e6ab1db79ae54b81a1661221cab2e8"
+    },
+    {
+      "operator": "DBSPMapOperator",
+      "occurrences": 12,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/filter_map.rs",
+      "entry_point": "fn dyn_map_mono",
+      "source_line": 65,
+      "source_sha256": "6c42f806135eb3e2483e1db2b363a5fa77e6ab1db79ae54b81a1661221cab2e8"
+    },
+    {
+      "operator": "DBSPNegateOperator",
+      "occurrences": 2,
+      "kind": "generic_erased_batch",
+      "source": "crates/dbsp/src/operator/neg.rs",
+      "entry_point": "fn neg",
+      "source_line": 20,
+      "source_sha256": "bf44902312c1be0b9cd59f62c253c552f7d45769f5ca691aee8df7a19f500eb1"
+    },
+    {
+      "operator": "DBSPPartitionedRollingAggregateOperator",
+      "occurrences": 1,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/time_series/rolling_aggregate.rs",
+      "entry_point": "fn dyn_partitioned_rolling_aggregate",
+      "source_line": 498,
+      "source_sha256": "73ee5576fee01e4c7821ee0ed57debfea321fd90490ed9283754cd5ad3316885"
+    },
+    {
+      "operator": "DBSPSinkOperator",
+      "occurrences": 21,
+      "kind": "accumulation_requires_typed_facade",
+      "source": "crates/dbsp/src/operator/output.rs",
+      "entry_point": "fn accumulate_output",
+      "source_line": 86,
+      "source_sha256": "8932678fd49d24d180b47d59d7a09b319fa1bb01c9d252b028925b08b213db40"
+    },
+    {
+      "operator": "DBSPSourceMultisetOperator",
+      "occurrences": 26,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/input.rs",
+      "entry_point": "fn dyn_add_input_zset",
+      "source_line": 301,
+      "source_sha256": "8c6ae6449e398b52e653f038bcd953a1832ea624664eb56f0eb98294eccf6027"
+    },
+    {
+      "operator": "DBSPStreamJoinOperator",
+      "occurrences": 4,
+      "kind": "dynamic",
+      "source": "crates/dbsp/src/operator/dynamic/join.rs",
+      "entry_point": "fn dyn_stream_join",
+      "source_line": 345,
+      "source_sha256": "16f0bdadeda7074aca6290f00abf7d4cf8e19db0e46f0b489a88549d56517ca3"
+    },
+    {
+      "operator": "DBSPSumOperator",
+      "occurrences": 1,
+      "kind": "generic_erased_batch",
+      "source": "crates/dbsp/src/operator/sum.rs",
+      "entry_point": "fn sum",
+      "source_line": 28,
+      "source_sha256": "a1c19392d7ec2cc7f338500bf53a7b470380b3fadfb92c4d2d17e8c7cf695191"
+    }
+  ],
+  "runtime_witness": {
+    "erased_negation_and_sum": true,
+    "direct_erased_output": true,
+    "accumulated_output_through_typed_facade": true
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-chains-archive.json",
+  "scope": "Rust chain formation inside both original Java Repeat placements, with Java retaining graph scheduling, dead-code cleanup and chain closure collapse.",
+  "strict_pass_iterations_equal": 438,
+  "strict_generated_name_counters_equal": 438,
+  "productive_iterations": 34,
+  "stream_group_controls_equal": 282,
+  "final_s3_equal_by_profile": {
+    "incremental": {
+      "classic": 55,
+      "gen2": 55
+    },
+    "snapshot": {
+      "classic": 46,
+      "gen2": 46
+    },
+    "incremental-composed": {
+      "classic": 50,
+      "gen2": 50
+    }
+  },
+  "composed_arithmetic_witness_exclusions": 5
+}

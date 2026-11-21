@@ -1,0 +1,943 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-count-storage-sensitivity-archive.json",
+  "profile_archive_index": "native-count-dbsp-profile-archive.json",
+  "scope": "Storage sensitivity of one selected native COUNT DISTINCT workload with four pinned ARM64 workers.",
+  "baseline_executable_source": "native-count-transaction-latency-archive.json",
+  "runtime_profile": {
+    "profiled/2048-classic": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.0509149889999998,
+        "scheduler": 0.0,
+        "storage_metadata": 5.315552782,
+        "storage_read": 0.070871188,
+        "storage_sync": 0.0,
+        "storage_write": 0.5513964699999999,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 0.9052449060000001,
+        "circuit_runtime_seconds": 8.260761328000001
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 1.90577031,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.457455059,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.1044710540000002,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 0.9085344790000001,
+        "Upsert": 0.477258289,
+        "MapIndexedZSet @ s/lib.rs:441:72": 0.405487238,
+        "FlatMap @ s/lib.rs:396:72": 0.35440963999999997,
+        "Input @ s/o/d/input.rs:318:17": 0.328422954,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.091822084,
+        "AccumulateConcat": 0.045207265999999996,
+        "AggregateIncremental": 0.030065015999999996,
+        "MapIndexedZSet @ s/lib.rs:478:64": 0.029900573000000003,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.015222374999999996,
+        "AccumulateTraceAppend": 0.004547646000000001,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.0023807830000000005,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.001124784,
+        "AccumulateOutput": 0.0011087519999999997,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.0010829260000000001,
+        "Z1 (trace)": 0.001016286,
+        "MapIndexedZSet @ s/lib.rs:493:64": 0.000964536,
+        "UnaryMinus": 0.000829054,
+        "Z1 (trace) (output)": 0.0008200360000000001,
+        "IncrementalConstantGenerator": 0.0006658609999999999,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.00044545699999999996,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.000316752
+      }
+    },
+    "profiled/2048-native": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.061022258,
+        "scheduler": 0.0,
+        "storage_metadata": 5.925915673,
+        "storage_read": 0.07083652600000001,
+        "storage_sync": 0.0,
+        "storage_write": 0.626604305,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 1.010225623,
+        "circuit_runtime_seconds": 9.110896623
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 1.8728751660000003,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.454731022,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.058115086,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 0.9020629400000003,
+        "Apply @ w/f/c/s/n/s/integer_input.rs:46:11": 0.49497523200000004,
+        "Upsert": 0.485876742,
+        "FlatMap @ w/f/c/s/n/s/aggregate.rs:91:10": 0.4524593,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:96:10": 0.39669186599999995,
+        "Map @ w/f/c/s/n/s/aggregate.rs:89:23": 0.34624931200000003,
+        "Input @ s/o/d/input.rs:318:17": 0.32643049999999996,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.08645512999999999,
+        "AccumulateConcat": 0.045506854,
+        "AggregateIncremental": 0.029908092000000004,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:121:28": 0.028545764,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.013120236000000002,
+        "AccumulateTraceAppend": 0.004509072,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.002301048,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:120:36": 0.001157299,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.001100466,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.001057344,
+        "Z1 (trace)": 0.0010254949999999997,
+        "Z1 (trace) (output)": 0.0008068259999999999,
+        "UnaryMinus": 0.0007464539999999999,
+        "IncrementalConstantGenerator": 0.000668986,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.00044735,
+        "Output": 0.000415549,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.00029686899999999995
+      }
+    },
+    "profiled/256-classic": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.046167542,
+        "scheduler": 0.0,
+        "storage_metadata": 5.167161318,
+        "storage_read": 0.067265299,
+        "storage_sync": 0.0,
+        "storage_write": 0.510934638,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 0.699270352,
+        "circuit_runtime_seconds": 7.848807095
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 1.8088819530000002,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.4117756750000001,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.0171434459999997,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 0.866198297,
+        "Upsert": 0.439883639,
+        "MapIndexedZSet @ s/lib.rs:441:72": 0.38807366200000004,
+        "FlatMap @ s/lib.rs:396:72": 0.328845869,
+        "Input @ s/o/d/input.rs:318:17": 0.30352329,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.08913115699999999,
+        "AccumulateConcat": 0.041951879000000004,
+        "MapIndexedZSet @ s/lib.rs:478:64": 0.029134406,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.014458901000000001,
+        "AggregateIncremental": 0.009183242000000001,
+        "AccumulateTraceAppend": 0.004473324999999999,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.002259486,
+        "AccumulateOutput": 0.0012018849999999998,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.0011176670000000001,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.001088401,
+        "Z1 (trace)": 0.000997369,
+        "MapIndexedZSet @ s/lib.rs:493:64": 0.0008721780000000001,
+        "UnaryMinus": 0.00075029,
+        "IncrementalConstantGenerator": 0.000718325,
+        "Z1 (trace) (output)": 0.0006900799999999999,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.00041849199999999996,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.000284511
+      }
+    },
+    "profiled/256-native": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.07389298,
+        "scheduler": 0.0,
+        "storage_metadata": 5.868782942999999,
+        "storage_read": 0.068437051,
+        "storage_sync": 0.0,
+        "storage_write": 0.5692190579999999,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 0.7750946,
+        "circuit_runtime_seconds": 8.764349168
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 1.79777759,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.428947119,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 0.9792335849999998,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 0.873576766,
+        "Apply @ w/f/c/s/n/s/integer_input.rs:46:11": 0.48128608700000003,
+        "FlatMap @ w/f/c/s/n/s/aggregate.rs:91:10": 0.44340634900000003,
+        "Upsert": 0.43063264200000007,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:96:10": 0.385916547,
+        "Map @ w/f/c/s/n/s/aggregate.rs:89:23": 0.32493328899999996,
+        "Input @ s/o/d/input.rs:318:17": 0.306108796,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.08707186900000001,
+        "AccumulateConcat": 0.044600769,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:121:28": 0.028866751,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.012629089999999999,
+        "AggregateIncremental": 0.009282653999999998,
+        "AccumulateTraceAppend": 0.004512761,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.002297777,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.001176449,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:120:36": 0.001090915,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.001080491,
+        "Z1 (trace)": 0.001007689,
+        "Z1 (trace) (output)": 0.000828234,
+        "UnaryMinus": 0.000711988,
+        "IncrementalConstantGenerator": 0.0006245520000000001,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.000421612,
+        "Output": 0.000385933,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.00029643400000000004
+      }
+    },
+    "unprofiled/2048-classic": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.194359721,
+        "scheduler": 0.0,
+        "storage_metadata": 5.933261321,
+        "storage_read": 0.094647213,
+        "storage_sync": 0.0,
+        "storage_write": 0.6095753260000001,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 0.970637833,
+        "circuit_runtime_seconds": 9.245715786
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 2.064091703,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.618562701,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.245376588,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 1.0947815370000002,
+        "Upsert": 0.536800831,
+        "MapIndexedZSet @ s/lib.rs:441:72": 0.441941556,
+        "FlatMap @ s/lib.rs:396:72": 0.388426998,
+        "Input @ s/o/d/input.rs:318:17": 0.37170021799999997,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.096590695,
+        "AccumulateConcat": 0.050370597999999996,
+        "AggregateIncremental": 0.031256693,
+        "MapIndexedZSet @ s/lib.rs:478:64": 0.031152571,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.017019903,
+        "AccumulateTraceAppend": 0.00491548,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.0027474910000000003,
+        "AccumulateOutput": 0.001389045,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.001305896,
+        "Z1 (trace)": 0.0012602249999999998,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.001221298,
+        "MapIndexedZSet @ s/lib.rs:493:64": 0.0009527030000000001,
+        "Z1 (trace) (output)": 0.0009481170000000001,
+        "UnaryMinus": 0.000830958,
+        "IncrementalConstantGenerator": 0.000795587,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.000517823,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.000346704
+      }
+    },
+    "unprofiled/2048-native": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.239955518,
+        "scheduler": 0.0,
+        "storage_metadata": 6.911100545000001,
+        "storage_read": 0.114537901,
+        "storage_sync": 0.0,
+        "storage_write": 0.701581414,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 1.073273444,
+        "circuit_runtime_seconds": 10.567890843
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 2.068503685,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.663823076,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.1964533199999998,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 1.131705815,
+        "Apply @ w/f/c/s/n/s/integer_input.rs:46:11": 0.6117175109999999,
+        "Upsert": 0.5621584009999999,
+        "FlatMap @ w/f/c/s/n/s/aggregate.rs:91:10": 0.544844374,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:96:10": 0.447178882,
+        "Map @ w/f/c/s/n/s/aggregate.rs:89:23": 0.413160103,
+        "Input @ s/o/d/input.rs:318:17": 0.39215184200000003,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.10430923,
+        "AccumulateConcat": 0.050652258,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:121:28": 0.032622147,
+        "AggregateIncremental": 0.030550919,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.014542401000000002,
+        "AccumulateTraceAppend": 0.00494155,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.0027570919999999996,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:120:36": 0.001282712,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.0012782450000000001,
+        "Z1 (trace)": 0.0012448090000000001,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.00122725,
+        "Z1 (trace) (output)": 0.0009355370000000002,
+        "UnaryMinus": 0.0008265449999999999,
+        "IncrementalConstantGenerator": 0.000759622,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.00048674000000000005,
+        "Output": 0.00046836,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.00033637300000000005
+      }
+    },
+    "unprofiled/256-classic": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.0769447300000001,
+        "scheduler": 0.0,
+        "storage_metadata": 5.22998191,
+        "storage_read": 0.067515511,
+        "storage_sync": 0.0,
+        "storage_write": 0.5409341,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 0.683831591,
+        "circuit_runtime_seconds": 7.960109272
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 1.841575965,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.4270333640000001,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.043476703,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 0.8786454880000001,
+        "Upsert": 0.43913771100000004,
+        "MapIndexedZSet @ s/lib.rs:441:72": 0.38392741999999996,
+        "FlatMap @ s/lib.rs:396:72": 0.32810945,
+        "Input @ s/o/d/input.rs:318:17": 0.305423927,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.08776595899999999,
+        "AccumulateConcat": 0.042629848000000005,
+        "MapIndexedZSet @ s/lib.rs:478:64": 0.02925646,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.013797354000000001,
+        "AggregateIncremental": 0.008861663,
+        "AccumulateTraceAppend": 0.0043359060000000005,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.002197349,
+        "AccumulateOutput": 0.001111293,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.001063744,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.0010223699999999999,
+        "Z1 (trace)": 0.000983804,
+        "MapIndexedZSet @ s/lib.rs:493:64": 0.000866922,
+        "UnaryMinus": 0.000842757,
+        "Z1 (trace) (output)": 0.000751469,
+        "IncrementalConstantGenerator": 0.000667083,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.00041607600000000003,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.0002860079999999999
+      }
+    },
+    "unprofiled/256-native": {
+      "workers": 4,
+      "sum_wait_seconds": {
+        "merge_backpressure": 0.0,
+        "network": 0.0,
+        "operator_pending": 0.0,
+        "peers": 1.217610644,
+        "scheduler": 0.0,
+        "storage_metadata": 6.493212926,
+        "storage_read": 0.08976231800000001,
+        "storage_sync": 0.0,
+        "storage_write": 0.641014951,
+        "unattributed": 0.0
+      },
+      "sum_circuit_seconds": {
+        "circuit_cpu_time_seconds": 0.8407308339999999,
+        "circuit_runtime_seconds": 9.767888436
+      },
+      "sum_operator_inclusive_seconds": {
+        "ExchangeSender @ s/o/d/aggregate.rs:488:26": 1.9599830850000002,
+        "ExchangeSender @ s/o/d/input.rs:346:18": 1.5538645880000002,
+        "Weigh @ s/o/d/aggregate.rs:580:14": 1.096013966,
+        "merge shards @ s/o/d/c/shard.rs:136:30": 1.0146157009999999,
+        "Apply @ w/f/c/s/n/s/integer_input.rs:46:11": 0.538146055,
+        "FlatMap @ w/f/c/s/n/s/aggregate.rs:91:10": 0.50146104,
+        "Upsert": 0.491820858,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:96:10": 0.417367656,
+        "Map @ w/f/c/s/n/s/aggregate.rs:89:23": 0.365356972,
+        "Input @ s/o/d/input.rs:318:17": 0.344876486,
+        "ExchangeSender @ s/o/c/shard.rs:72:22": 0.097099361,
+        "AccumulateConcat": 0.050054271,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:121:28": 0.031486318,
+        "Accumulator @ s/o/d/accumulator.rs:173:68": 0.013817525,
+        "AggregateIncremental": 0.010609827999999998,
+        "AccumulateTraceAppend": 0.005073817,
+        "ExchangeReceiver @ s/o/d/aggregate.rs:488:26": 0.002657006,
+        "ExchangeReceiver @ s/o/d/input.rs:346:18": 0.001395129,
+        "MapIndexedZSet @ w/f/c/s/n/s/aggregate.rs:120:36": 0.001389992,
+        "Z1 (trace)": 0.00126491,
+        "ExchangeReceiver @ s/o/c/shard.rs:72:22": 0.0011950289999999998,
+        "UnaryMinus": 0.000891251,
+        "Z1 (trace) (output)": 0.0008391970000000001,
+        "IncrementalConstantGenerator": 0.0008070029999999999,
+        "Recorder @ s/o/d/accumulate_trace.rs:207:21": 0.000504833,
+        "Output": 0.00045028099999999997,
+        "Recorder @ s/o/d/upsert.rs:158:13": 0.000331594
+      }
+    }
+  },
+  "measurements": {
+    "tmpfs": {
+      "profiled": {
+        "schema_version": 1,
+        "cpus": [
+          0,
+          1,
+          6,
+          7
+        ],
+        "workers": 4,
+        "pairs_per_size": 21,
+        "binary_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+        "results": {
+          "256": {
+            "classic": {
+              "init_ns": {
+                "p50": 3323873,
+                "p95": 3785539
+              },
+              "step_latency_ns": {
+                "p50": 1456553.925,
+                "p95": 1569014.2875
+              },
+              "checkpoint_ns": {
+                "p50": 1380790,
+                "p95": 1568624
+              },
+              "rows_per_second": {
+                "p50": 175757.31018678212,
+                "p95": 178642.0049983126
+              },
+              "peak_rss_kib": {
+                "p50": 101072,
+                "p95": 101280
+              },
+              "checkpoint_bytes": {
+                "p50": 324888,
+                "p95": 324888
+              },
+              "transaction_latency_ns": {
+                "p50": 1168853.0,
+                "p95": 2748416
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 11907952,
+                "p95": 13626618
+              },
+              "step_latency_ns": {
+                "p50": 1546427.9125,
+                "p95": 1606341.375
+              },
+              "checkpoint_ns": {
+                "p50": 1410082,
+                "p95": 1531999
+              },
+              "rows_per_second": {
+                "p50": 165542.7957104984,
+                "p95": 172461.43400655017
+              },
+              "peak_rss_kib": {
+                "p50": 109008,
+                "p95": 109128
+              },
+              "checkpoint_bytes": {
+                "p50": 324799,
+                "p95": 324799
+              },
+              "transaction_latency_ns": {
+                "p50": 1228478.5,
+                "p95": 2803123
+              }
+            }
+          },
+          "2048": {
+            "classic": {
+              "init_ns": {
+                "p50": 3246331,
+                "p95": 3513081
+              },
+              "step_latency_ns": {
+                "p50": 2297548.75,
+                "p95": 2368668.525
+              },
+              "checkpoint_ns": {
+                "p50": 8473245,
+                "p95": 11421619
+              },
+              "rows_per_second": {
+                "p50": 891384.785632949,
+                "p95": 932030.9596291791
+              },
+              "peak_rss_kib": {
+                "p50": 109056,
+                "p95": 109252
+              },
+              "checkpoint_bytes": {
+                "p50": 428928,
+                "p95": 428928
+              },
+              "transaction_latency_ns": {
+                "p50": 2085207.5,
+                "p95": 3539998
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 12078036,
+                "p95": 13844617
+              },
+              "step_latency_ns": {
+                "p50": 2427021.575,
+                "p95": 2541278.775
+              },
+              "checkpoint_ns": {
+                "p50": 9195328,
+                "p95": 13081576
+              },
+              "rows_per_second": {
+                "p50": 843832.6305360511,
+                "p95": 861829.771913679
+              },
+              "peak_rss_kib": {
+                "p50": 121004,
+                "p95": 121248
+              },
+              "checkpoint_bytes": {
+                "p50": 428839,
+                "p95": 428839
+              },
+              "transaction_latency_ns": {
+                "p50": 2313894.5,
+                "p95": 3737415
+              }
+            }
+          }
+        }
+      },
+      "unprofiled": {
+        "schema_version": 1,
+        "cpus": [
+          0,
+          1,
+          6,
+          7
+        ],
+        "workers": 4,
+        "pairs_per_size": 21,
+        "binary_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+        "results": {
+          "256": {
+            "classic": {
+              "init_ns": {
+                "p50": 2992415,
+                "p95": 3396873
+              },
+              "step_latency_ns": {
+                "p50": 1424955.475,
+                "p95": 1495591.4375
+              },
+              "checkpoint_ns": {
+                "p50": 1410541,
+                "p95": 1547874
+              },
+              "rows_per_second": {
+                "p50": 179654.73622956534,
+                "p95": 184495.6669958431
+              },
+              "peak_rss_kib": {
+                "p50": 99308,
+                "p95": 99476
+              },
+              "checkpoint_bytes": {
+                "p50": 324888,
+                "p95": 324888
+              },
+              "transaction_latency_ns": {
+                "p50": 1129124.5,
+                "p95": 2719415
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 12037327,
+                "p95": 12844702
+              },
+              "step_latency_ns": {
+                "p50": 1509936.575,
+                "p95": 1558616.3875
+              },
+              "checkpoint_ns": {
+                "p50": 1380541,
+                "p95": 1523791
+              },
+              "rows_per_second": {
+                "p50": 169543.5452313618,
+                "p95": 174232.90348567386
+              },
+              "peak_rss_kib": {
+                "p50": 106740,
+                "p95": 106932
+              },
+              "checkpoint_bytes": {
+                "p50": 324799,
+                "p95": 324799
+              },
+              "transaction_latency_ns": {
+                "p50": 1191582.5,
+                "p95": 2829956
+              }
+            }
+          },
+          "2048": {
+            "classic": {
+              "init_ns": {
+                "p50": 2961706,
+                "p95": 3257665
+              },
+              "step_latency_ns": {
+                "p50": 2232107.25,
+                "p95": 2274591.525
+              },
+              "checkpoint_ns": {
+                "p50": 9095829,
+                "p95": 13262909
+              },
+              "rows_per_second": {
+                "p50": 917518.6362572856,
+                "p95": 935102.9532713233
+              },
+              "peak_rss_kib": {
+                "p50": 106996,
+                "p95": 107176
+              },
+              "checkpoint_bytes": {
+                "p50": 428928,
+                "p95": 428928
+              },
+              "transaction_latency_ns": {
+                "p50": 2078895.0,
+                "p95": 3434457
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 11591827,
+                "p95": 12479993
+              },
+              "step_latency_ns": {
+                "p50": 2380283.1,
+                "p95": 2450818.375
+              },
+              "checkpoint_ns": {
+                "p50": 9941578,
+                "p95": 15271159
+              },
+              "rows_per_second": {
+                "p50": 860401.8572412668,
+                "p95": 890775.7560763694
+              },
+              "peak_rss_kib": {
+                "p50": 118364,
+                "p95": 118516
+              },
+              "checkpoint_bytes": {
+                "p50": 428839,
+                "p95": 428839
+              },
+              "transaction_latency_ns": {
+                "p50": 2171977.5,
+                "p95": 3591415
+              }
+            }
+          }
+        }
+      }
+    },
+    "overlay": {
+      "profiled": {
+        "schema_version": 1,
+        "cpus": [
+          0,
+          1,
+          6,
+          7
+        ],
+        "workers": 4,
+        "pairs_per_size": 21,
+        "binary_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+        "results": {
+          "256": {
+            "classic": {
+              "init_ns": {
+                "p50": 3193420,
+                "p95": 3686380
+              },
+              "step_latency_ns": {
+                "p50": 3383142.025,
+                "p95": 3480199.4625
+              },
+              "checkpoint_ns": {
+                "p50": 2815920,
+                "p95": 2973587
+              },
+              "rows_per_second": {
+                "p50": 75669.30330097508,
+                "p95": 77772.58909882049
+              },
+              "peak_rss_kib": {
+                "p50": 100764,
+                "p95": 101028
+              },
+              "checkpoint_bytes": {
+                "p50": 324888,
+                "p95": 324888
+              },
+              "transaction_latency_ns": {
+                "p50": 3029087.0,
+                "p95": 4979298
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 12062056,
+                "p95": 13805350
+              },
+              "step_latency_ns": {
+                "p50": 3719027.3375,
+                "p95": 3810630.575
+              },
+              "checkpoint_ns": {
+                "p50": 2875087,
+                "p95": 7038383
+              },
+              "rows_per_second": {
+                "p50": 68835.20253230727,
+                "p95": 71363.66837243373
+              },
+              "peak_rss_kib": {
+                "p50": 108728,
+                "p95": 108956
+              },
+              "checkpoint_bytes": {
+                "p50": 324799,
+                "p95": 324799
+              },
+              "transaction_latency_ns": {
+                "p50": 3362462.5,
+                "p95": 5181215
+              }
+            }
+          },
+          "2048": {
+            "classic": {
+              "init_ns": {
+                "p50": 3370921,
+                "p95": 3975672
+              },
+              "step_latency_ns": {
+                "p50": 3796286.75,
+                "p95": 3952676.65
+              },
+              "checkpoint_ns": {
+                "p50": 11690723,
+                "p95": 16567853
+              },
+              "rows_per_second": {
+                "p50": 539474.5273127748,
+                "p95": 555550.0285380597
+              },
+              "peak_rss_kib": {
+                "p50": 109024,
+                "p95": 109312
+              },
+              "checkpoint_bytes": {
+                "p50": 428928,
+                "p95": 428928
+              },
+              "transaction_latency_ns": {
+                "p50": 3432796.5,
+                "p95": 5234131
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 12309306,
+                "p95": 14281101
+              },
+              "step_latency_ns": {
+                "p50": 4052617.35,
+                "p95": 4251495.7
+              },
+              "checkpoint_ns": {
+                "p50": 11575222,
+                "p95": 16254436
+              },
+              "rows_per_second": {
+                "p50": 505352.4236626979,
+                "p95": 516324.814091553
+              },
+              "peak_rss_kib": {
+                "p50": 120880,
+                "p95": 121072
+              },
+              "checkpoint_bytes": {
+                "p50": 428839,
+                "p95": 428839
+              },
+              "transaction_latency_ns": {
+                "p50": 3747713.0,
+                "p95": 5507090
+              }
+            }
+          }
+        }
+      },
+      "unprofiled": {
+        "schema_version": 1,
+        "cpus": [
+          0,
+          1,
+          6,
+          7
+        ],
+        "workers": 4,
+        "pairs_per_size": 21,
+        "binary_sha256": "aca2f87c72827354be39d4981525c1273dbc6e91bface85f959630a6352f3d6b",
+        "results": {
+          "256": {
+            "classic": {
+              "init_ns": {
+                "p50": 3527505,
+                "p95": 4238088
+              },
+              "step_latency_ns": {
+                "p50": 3573513.025,
+                "p95": 3754131.5375
+              },
+              "checkpoint_ns": {
+                "p50": 2777712,
+                "p95": 3010462
+              },
+              "rows_per_second": {
+                "p50": 71638.18858614627,
+                "p95": 77803.5758766609
+              },
+              "peak_rss_kib": {
+                "p50": 98892,
+                "p95": 99308
+              },
+              "checkpoint_bytes": {
+                "p50": 324888,
+                "p95": 324888
+              },
+              "transaction_latency_ns": {
+                "p50": 3224337.0,
+                "p95": 5163548
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 12783724,
+                "p95": 14557684
+              },
+              "step_latency_ns": {
+                "p50": 3868270.275,
+                "p95": 4254195.1625
+              },
+              "checkpoint_ns": {
+                "p50": 3014670,
+                "p95": 3444087
+              },
+              "rows_per_second": {
+                "p50": 66179.45019366569,
+                "p95": 70723.78542431128
+              },
+              "peak_rss_kib": {
+                "p50": 106552,
+                "p95": 106800
+              },
+              "checkpoint_bytes": {
+                "p50": 324799,
+                "p95": 324799
+              },
+              "transaction_latency_ns": {
+                "p50": 3546400.0,
+                "p95": 5521173
+              }
+            }
+          },
+          "2048": {
+            "classic": {
+              "init_ns": {
+                "p50": 3397046,
+                "p95": 4008047
+              },
+              "step_latency_ns": {
+                "p50": 3915957.85,
+                "p95": 4349379.125
+              },
+              "checkpoint_ns": {
+                "p50": 10333221,
+                "p95": 12476015
+              },
+              "rows_per_second": {
+                "p50": 522988.26454426727,
+                "p95": 543912.0111839783
+              },
+              "peak_rss_kib": {
+                "p50": 107000,
+                "p95": 107172
+              },
+              "checkpoint_bytes": {
+                "p50": 428928,
+                "p95": 428928
+              },
+              "transaction_latency_ns": {
+                "p50": 3606045.5,
+                "p95": 5404715
+              }
+            },
+            "native": {
+              "init_ns": {
+                "p50": 13036182,
+                "p95": 15555602
+              },
+              "step_latency_ns": {
+                "p50": 4197331.0,
+                "p95": 4279224.925
+              },
+              "checkpoint_ns": {
+                "p50": 10105887,
+                "p95": 12452223
+              },
+              "rows_per_second": {
+                "p50": 487929.11495424114,
+                "p95": 499792.86538607517
+              },
+              "peak_rss_kib": {
+                "p50": 118384,
+                "p95": 118556
+              },
+              "checkpoint_bytes": {
+                "p50": 428839,
+                "p95": 428839
+              },
+              "transaction_latency_ns": {
+                "p50": 3861796.5,
+                "p95": 5602590
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

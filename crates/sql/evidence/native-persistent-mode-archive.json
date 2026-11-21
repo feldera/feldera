@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-persistent-mode-20261118.tar.gz",
+  "bytes": 32071141,
+  "sha256": "48633f9669a294e5fd5722fe52b8d180317c08fd719848d1af42401bfb2b47dd",
+  "manifest_sha256": "1dadcdcc01abd2904b123a88d341b98811e53a046ba6af6c131bc486cd33a5aa",
+  "verified_files": 480,
+  "all_members_verified": true
+}

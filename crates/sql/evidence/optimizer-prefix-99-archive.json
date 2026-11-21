@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-prefix-99.tar.gz",
+  "bytes": 89035646,
+  "sha256": "0e720e04eebce21743f470e18e91e828240ff7e08f2f87f50710079c7b437dca",
+  "manifest_sha256": "d027775e79abc73bf04bd51385b2ba60e9780b088a907aae1444f9acad969256",
+  "verified_files": 97447,
+  "all_members_verified": true
+}

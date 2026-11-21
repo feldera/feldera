@@ -2,6 +2,8 @@ package org.dbsp.sqlCompiler.compiler.frontend.connectors;
 
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+
 /**
  * Validation interface for connector config POJOs.  The reporter carries the
  * JSON/source-position start of the validated document
@@ -18,8 +20,8 @@ public interface IValidateConfig {
      */
     boolean validate(ConfigReporter reporter);
 
-    default boolean checkNonEmpty(ConfigReporter reporter, String property, String propertyName) {
-        if (property.isBlank()) {
+    default boolean checkNonEmpty(ConfigReporter reporter, @Nullable String property, String propertyName) {
+        if (property == null || property.isBlank()) {
             reporter.warnPath(propertyName, "Invalid configuration",
                     "required field " + Utilities.doubleQuote(propertyName, false) + " is missing or empty");
             return false;

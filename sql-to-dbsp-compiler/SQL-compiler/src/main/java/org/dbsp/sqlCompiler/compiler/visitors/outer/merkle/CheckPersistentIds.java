@@ -59,8 +59,12 @@ public class CheckPersistentIds extends CircuitVisitor {
         HashString inputId = Objects.requireNonNull(OperatorHash.getHash(input.operator, true));
         DBSPSinkOperator previous = this.sinkByInput.putIfAbsent(inputId + ":" + input.outputNumber, sink);
         if (previous != null)
-            this.compiler.reportWarning(sink.getSourcePosition(), "Identical views",
-                    "View " + sink.viewName.singleQuote() + " always has the same contents as view " +
-                            previous.viewName.singleQuote());
+            reportIdenticalViews(this.compiler, sink, previous);
+    }
+
+    public static void reportIdenticalViews(DBSPCompiler compiler, DBSPSinkOperator sink, DBSPSinkOperator previous) {
+        compiler.reportWarning(sink.getSourcePosition(), "Identical views",
+                "View " + sink.viewName.singleQuote() + " always has the same contents as view " +
+                        previous.viewName.singleQuote());
     }
 }

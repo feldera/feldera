@@ -1,0 +1,823 @@
+{
+  "comparison_path": "$SCRATCH/p0-parser-remaining-positions-v1/corpus-comparison.json",
+  "comparison_sha256": "1a10ee066990ce0e82a6b00c1458578929cbd7b5c41f0cdb38f4d6ae1a0b6052",
+  "groups": [
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: FOREIGN at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2004/0",
+          "submission": 0
+        }
+      ],
+      "category": "inline_foreign_key",
+      "proposed_repair": "Extend the scoped column-option parser for FOREIGN KEY REFERENCES, preserving referenced columns and spans.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: AS at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#calcite7784/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/1",
+          "submission": 0
+        }
+      ],
+      "category": "named_row_fields",
+      "proposed_repair": "Represent AS names on ROW constructor fields; do not convert them to query aliases.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: EXCLUDE at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue5398/0",
+          "submission": 0
+        }
+      ],
+      "category": "row_wildcard_exclusion",
+      "proposed_repair": "Preserve qualified wildcard exclusions inside ROW expressions, including nested ROWs.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: NOT at Line: N, Column: N",
+      "count": 6,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3744/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#issue1922/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StructTests#issue3671/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5120/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5120/1",
+          "submission": 0
+        }
+      ],
+      "category": "row_field_nullability",
+      "proposed_repair": "Retain NOT NULL in ROW field types, separately from outer record nullability.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: NULL at Line: N, Column: N",
+      "count": 3,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5390/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StructTests#issue7037/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5484/0",
+          "submission": 0
+        }
+      ],
+      "category": "type_field_nullability",
+      "proposed_repair": "Retain explicit NULL on CREATE TYPE fields.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: T at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#testMapSubquery/0",
+          "submission": 0
+        }
+      ],
+      "category": "map_subquery",
+      "proposed_repair": "Add a distinct MAP subquery node; a function call or flat MAP constructor cannot represent it.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: not at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#issue1755_2/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#issue1755/0",
+          "submission": 0
+        }
+      ],
+      "category": "type_field_nullability",
+      "proposed_repair": "Retain NOT NULL on CREATE TYPE fields.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: sets at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/20",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/21",
+          "submission": 1
+        }
+      ],
+      "category": "nested_grouping_sets",
+      "proposed_repair": "Parse nested GROUPING SETS recursively and preserve duplicate and empty grouping sets.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: AND, found: 2 at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/2",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/3",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/4",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/5",
+          "submission": 0
+        }
+      ],
+      "category": "between_symmetric",
+      "proposed_repair": "Represent SYMMETRIC/ASYMMETRIC on BETWEEN; do not drop the modifier.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: AS, found: YEAR at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TimeArithmeticTests#datetimeDifferenceCountsFieldUnits/0",
+          "submission": 0
+        }
+      ],
+      "category": "qualified_datetime_difference",
+      "proposed_repair": "Add a typed datetime-difference qualifier with its source range before CAST parsing consumes AS.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ENUM, RANGE, or '(' after AS, found: INTEGER at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2651/0",
+          "submission": 0
+        }
+      ],
+      "category": "type_alias",
+      "proposed_repair": "Add scalar/array CREATE TYPE aliases as a distinct declaration form.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: HOURS at Line: N, Column: N",
+      "count": 3,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/1",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/2",
+          "submission": 0
+        }
+      ],
+      "category": "qualified_datetime_difference",
+      "proposed_repair": "Retain datetime-difference qualifiers inside window ORDER BY expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: MONTHS at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/1",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/2",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/0",
+          "submission": 0
+        }
+      ],
+      "category": "qualified_datetime_difference",
+      "proposed_repair": "Retain datetime-difference qualifiers inside window ORDER BY expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: SECONDS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/1",
+          "submission": 0
+        }
+      ],
+      "category": "qualified_datetime_difference",
+      "proposed_repair": "Retain datetime-difference qualifiers inside window ORDER BY expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: SELECT, VALUES, or a subquery in the query body, found: e at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/10",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/11",
+          "submission": 1
+        }
+      ],
+      "category": "wildcard_exclusion",
+      "proposed_repair": "Disambiguate EXCEPT wildcard exclusions from query set operators; retain qualified excluded names.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: an SQL statement, found: / at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0",
+          "submission": 0
+        }
+      ],
+      "category": "slash_comments",
+      "proposed_repair": "Recognize Calcite double-slash comments in the tokenizer while preserving original coordinates.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: an expression, found: EOF at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/14",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/15",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/16",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/17",
+          "submission": 1
+        }
+      ],
+      "category": "rlike_null",
+      "proposed_repair": "Handle RLIKE followed by NULL as a binary pattern predicate; keep NULL distinct from null-treatment syntax.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: an expression, found: ROW at Line: N, Column: N",
+      "count": 5,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/2",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/3",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/4",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/5",
+          "submission": 0
+        }
+      ],
+      "category": "named_row_fields",
+      "proposed_repair": "Retain named ROW constructor fields inside arrays and chained subscripts.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: identifier, found: ( at Line: N, Column: N",
+      "count": 9,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/0",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/1",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/6",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/7",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/8",
+          "submission": 1
+        }
+      ],
+      "category": "multi_column_unpivot",
+      "proposed_repair": "Represent multi-column UNPIVOT inputs, aliases and FOR columns without flattening their grouping.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: identifier, found: - at Line: N, Column: N",
+      "count": 6,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/0",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/1",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/2",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/3",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/4",
+          "submission": 1
+        }
+      ],
+      "category": "scalar_values_rows",
+      "proposed_repair": "Extend VALUES parsing to scalar rows; preserve row boundaries and distinguish ROW-valued scalar expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: joined table, found: , at Line: N, Column: N",
+      "count": 6,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/1",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/2",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/3",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/4",
+          "submission": 0
+        }
+      ],
+      "category": "scalar_values_rows",
+      "proposed_repair": "Extend VALUES parsing to scalar rows; preserve row boundaries and distinguish ROW-valued scalar expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: joined table, found: 0 at Line: N, Column: N",
+      "count": 14,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#simpleTests/4",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#simpleTests/5",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/6",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/7",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/8",
+          "submission": 1
+        }
+      ],
+      "category": "scalar_values_rows",
+      "proposed_repair": "Extend VALUES parsing to scalar rows; preserve row boundaries and distinguish ROW-valued scalar expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: joined table, found: 1 at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/32",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/33",
+          "submission": 1
+        }
+      ],
+      "category": "scalar_values_rows",
+      "proposed_repair": "Extend VALUES parsing to scalar rows; preserve row boundaries and distinguish ROW-valued scalar expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: joined table, found: 4 at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ReduceExpressionsTests#correlatedFilterOverValues/0",
+          "submission": 0
+        }
+      ],
+      "category": "scalar_values_rows",
+      "proposed_repair": "Extend VALUES parsing to scalar rows; preserve row boundaries and distinguish ROW-valued scalar expressions.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Invalid hex digit in escaped unicode string: ' at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#backslashWithSpacesTest/0",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#backslashWithSpacesTest/1",
+          "submission": 1
+        }
+      ],
+      "category": "unicode_escape",
+      "proposed_repair": "Process UESCAPE before decoding a Unicode string; backslash is ordinary text when a different escape is selected.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Invalid unicode character: d83d at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpLiterals/2",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpLiterals/3",
+          "submission": 0
+        }
+      ],
+      "category": "unicode_escape",
+      "proposed_repair": "Decode valid UTF-16 surrogate pairs together; retain explicit refusal or a lossless representation for lone surrogates.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected end of statement, found: '!' at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#unicodeNewEscapeTest/0",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#unicodeNewEscapeTest/1",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5087/4",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5087/5",
+          "submission": 0
+        }
+      ],
+      "category": "unicode_escape",
+      "proposed_repair": "Retain per-literal UESCAPE for strings and quoted identifiers; preserve original spelling and coordinates.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected end of statement, found: , at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSort/28",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSort/29",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSortOffset/2",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSortOffset/3",
+          "submission": 1
+        }
+      ],
+      "category": "limit_comma",
+      "proposed_repair": "Enable the scoped LIMIT offset,count form and verify that normalization preserves the first operand as offset and the second as count.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected end of statement, found: AS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#rollingInterval/0",
+          "submission": 0
+        }
+      ],
+      "category": "qualified_datetime_difference",
+      "proposed_repair": "Retain qualified datetime differences before parsing the SELECT-item alias.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: qualified datetime differences are unsupported at Line: N, Column: N",
+      "count": 22,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3030/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3083/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3461/0",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/2",
+          "submission": 0
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/3",
+          "submission": 0
+        }
+      ],
+      "category": "qualified_datetime_difference",
+      "proposed_repair": "Add the missing typed qualified-difference node and preserve its singular/plural unit spelling and source span.",
+      "repair_verified": false
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: reserved word distinct requires quoting at Line: N, Column: N",
+      "count": 4,
+      "examples": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testCornerCases/4",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testCornerCases/5",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testRollup/22",
+          "submission": 1
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testRollup/23",
+          "submission": 1
+        }
+      ],
+      "category": "group_by_distinct",
+      "proposed_repair": "Represent the GROUP BY DISTINCT quantifier; do not reinterpret DISTINCT as an identifier.",
+      "repair_verified": false
+    }
+  ],
+  "schema_version": 1,
+  "classification_basis": "Source inspection and representative failing SQL from every diagnostic group; proposed repairs are not verified fixes.",
+  "cases": 8571,
+  "rejected_cases": 121,
+  "group_count": 31,
+  "category_counts": {
+    "between_symmetric": 4,
+    "group_by_distinct": 4,
+    "inline_foreign_key": 1,
+    "limit_comma": 4,
+    "map_subquery": 1,
+    "multi_column_unpivot": 9,
+    "named_row_fields": 7,
+    "nested_grouping_sets": 2,
+    "qualified_datetime_difference": 32,
+    "rlike_null": 4,
+    "row_field_nullability": 6,
+    "row_wildcard_exclusion": 1,
+    "scalar_values_rows": 29,
+    "slash_comments": 1,
+    "type_alias": 1,
+    "type_field_nullability": 5,
+    "unicode_escape": 8,
+    "wildcard_exclusion": 2
+  },
+  "adapter_sources": {
+    "crates/sql/parser-probe/src/lib.rs": {
+      "sha256": "2089cc57ee69c624b7c6454b871e122519ffda5d409e9bd8a773ea21b19633f8",
+      "physical_lines_including_tests": 121
+    },
+    "crates/sql/parser-probe/src/main.rs": {
+      "sha256": "dc26d2ab9a0fd6a981cc4972ffd416770914de2b3d8a15bd29caa99b982b7485",
+      "physical_lines_including_tests": 230
+    },
+    "crates/sql/parser-probe/src/v062.rs": {
+      "sha256": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+      "physical_lines_including_tests": 57
+    },
+    "crates/sql/parser-probe/src/v064/aggregate_tests.rs": {
+      "sha256": "07d30b47326fa3c10e507fe291e922849c371b11173fcd782b3b90136d800d39",
+      "physical_lines_including_tests": 146
+    },
+    "crates/sql/parser-probe/src/v064/attributes.rs": {
+      "sha256": "bc3606de84bbd52381a8d858fe7ae79b8e8596c5c43373d768c791ced225c2d1",
+      "physical_lines_including_tests": 149
+    },
+    "crates/sql/parser-probe/src/v064/collections.rs": {
+      "sha256": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01",
+      "physical_lines_including_tests": 146
+    },
+    "crates/sql/parser-probe/src/v064/diagnostic.rs": {
+      "sha256": "3074f0b4db3ee0385d827ad833c5f1daa79f3b97c9e9d4fd4297d6ab07ee5354",
+      "physical_lines_including_tests": 7
+    },
+    "crates/sql/parser-probe/src/v064/functions.rs": {
+      "sha256": "9d82246249c7453c83ba80b0fca1c7c537bc241f8f3777b1ff8d749c5d5c9472",
+      "physical_lines_including_tests": 165
+    },
+    "crates/sql/parser-probe/src/v064/lateness.rs": {
+      "sha256": "eb24b6816e7e362b94a31e17f2a9138a35f529f50779d948ba12a801bca70a01",
+      "physical_lines_including_tests": 165
+    },
+    "crates/sql/parser-probe/src/v064/reject.rs": {
+      "sha256": "4e747fd34a64b821bbf19c3307a0c3d1c0679d5860feaf58eda1a8b35104b89f",
+      "physical_lines_including_tests": 307
+    },
+    "crates/sql/parser-probe/src/v064/relations.rs": {
+      "sha256": "8b7a9d8245edce5e336ccb944d46594e84459a356a0c6920c99ed8f7e5b543ad",
+      "physical_lines_including_tests": 197
+    },
+    "crates/sql/parser-probe/src/v064/reserved.rs": {
+      "sha256": "0a1abb3c8a0b6e1b146d8de43f9ee43c6cdbedec48ffc9da2c6ec7c0053cc497",
+      "physical_lines_including_tests": 303
+    },
+    "crates/sql/parser-probe/src/v064/settings.rs": {
+      "sha256": "8b209e3786a4380bb5af8b9d154b4c8c4221a5de8b28b440bee93cd200a12c2a",
+      "physical_lines_including_tests": 77
+    },
+    "crates/sql/parser-probe/src/v064/statements.rs": {
+      "sha256": "ae0af7f9b973ceb05b126bdc9eaf226811e2a9ddf9539c305e2bec757b983aee",
+      "physical_lines_including_tests": 245
+    },
+    "crates/sql/parser-probe/src/v064/temporal_types.rs": {
+      "sha256": "f1fc7f3651fbaaaaa44acd7130c48c2e4197c579f388b9cdeec7c2a06db3b0a2",
+      "physical_lines_including_tests": 232
+    },
+    "crates/sql/parser-probe/src/v064/trim.rs": {
+      "sha256": "9772d783d8e35d7ceeb0a4043aed287bf86ed5ddc400d9b62af42487878e810e",
+      "physical_lines_including_tests": 102
+    },
+    "crates/sql/parser-probe/src/v064/unicode.rs": {
+      "sha256": "64181f2d145e532f035fd5ba46f2707446c7e027c921befeec24caab0c27911f",
+      "physical_lines_including_tests": 201
+    },
+    "crates/sql/parser-probe/src/v064.rs": {
+      "sha256": "6c1f28b7cb84e37ebce5c6a2745b567825f57523f7a49124777a902198997230",
+      "physical_lines_including_tests": 377
+    }
+  },
+  "adapter_physical_lines_including_tests": 3227,
+  "modified_vendor_files": [
+    "src/parser/mod.rs",
+    "src/ast/spans.rs",
+    "src/ast/query.rs",
+    "src/ast/mod.rs",
+    "src/dialect/mod.rs"
+  ],
+  "vendor_patch_sha256": "dae7531e946863d7762a686d6b078379e42372096ebcfca2ee0118a0c94023af",
+  "vendor_patch_physical_lines": 181,
+  "maintenance_estimate": {
+    "routine_upgrade_engineer_days": [
+      3,
+      6
+    ],
+    "disruptive_upgrade_engineer_days": [
+      6,
+      12
+    ],
+    "basis": "Engineering judgment; no new upstream rebase or human port-time measurement performed.",
+    "approved": false
+  },
+  "s1_equivalence_proven": false,
+  "exhaustive_rejection_proven": false,
+  "v064_physical_lines_including_tests": 2819
+}

@@ -1,0 +1,21 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s4-fields-20261118-v1.tar.gz",
+  "sha256": "d94e096104f188799bb9f55a3704dd2a351d605d9f5b17ac8d44aa9c2f953b37",
+  "bytes": 29955777,
+  "certificates": [
+    "s4-fields.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s4-fields.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s4-fields-v2/sources/"
+      }
+    ]
+  },
+  "scope": "S4 field declarations, explicit manual-composite state and source coverage",
+  "P0_complete": false
+}

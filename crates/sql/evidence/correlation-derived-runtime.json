@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "archive_index": "correlation-derived-runtime-archive.json",
+  "scope": "Original compile-only SQL and compiler options with newly seeded classic differential fixtures.",
+  "original_expected_runtime_oracle": false,
+  "cases": 8,
+  "correlate_occurrences": 16,
+  "transactions": 15,
+  "outputs": 104,
+  "nonempty_classic_outputs": 27,
+  "classic_and_rust_outputs_equal": true,
+  "typed_fragments_match_frozen_capture": true,
+  "comparison_evidence_sha256": "e9e1ba204a8df4a945caed49946059e612c4757ec75cbbf65eb863ee30694479",
+  "case_evidence": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#testCrossApply/0",
+      "case": "9",
+      "transactions": 1,
+      "outputs": 2,
+      "nonempty_classic_outputs": 1,
+      "correlate_occurrences": 1,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#testCrossApply/0/correlation-stage/1"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0",
+      "case": "22",
+      "transactions": 2,
+      "outputs": 44,
+      "nonempty_classic_outputs": 7,
+      "correlate_occurrences": 7,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0/correlation-stage/16",
+        "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0/correlation-stage/19",
+        "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0/correlation-stage/2",
+        "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0/correlation-stage/20",
+        "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0/correlation-stage/21",
+        "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0/correlation-stage/4"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue3918/0",
+      "case": "27",
+      "transactions": 3,
+      "outputs": 6,
+      "nonempty_classic_outputs": 3,
+      "correlate_occurrences": 1,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue3918/0/correlation-stage/1"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue2555a/0",
+      "case": "42",
+      "transactions": 1,
+      "outputs": 2,
+      "nonempty_classic_outputs": 1,
+      "correlate_occurrences": 1,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue2555a/0/correlation-stage/1"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#calciteIssue6978/0",
+      "case": "48",
+      "transactions": 3,
+      "outputs": 6,
+      "nonempty_classic_outputs": 3,
+      "correlate_occurrences": 1,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#calciteIssue6978/0/correlation-stage/1"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testEmptyAggregate/0",
+      "case": "49",
+      "transactions": 1,
+      "outputs": 2,
+      "nonempty_classic_outputs": 1,
+      "correlate_occurrences": 1,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testEmptyAggregate/0/correlation-stage/1"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/0",
+      "case": "54",
+      "transactions": 2,
+      "outputs": 20,
+      "nonempty_classic_outputs": 5,
+      "correlate_occurrences": 2,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/0/correlation-stage/2",
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/0/correlation-stage/4"
+      ],
+      "differences": []
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/1",
+      "case": "55",
+      "transactions": 2,
+      "outputs": 22,
+      "nonempty_classic_outputs": 6,
+      "correlate_occurrences": 2,
+      "invocations": [
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/1/correlation-stage/2",
+        "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/1/correlation-stage/4"
+      ],
+      "differences": []
+    }
+  ]
+}

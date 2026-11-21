@@ -38,6 +38,7 @@ static UNSTABLE_FEATURES: OnceLock<HashSet<&'static str>> = OnceLock::new();
 /// Initialization function to set the platform's unstable feature gate.
 pub fn platform_enable_unstable(requested_features: &str) {
     let all_features: HashSet<&'static str> = HashSet::from_iter(vec![
+        "compiler_selection",
         "runtime_version",
         "testing",
         "rust_compiler_full_cleanup",

@@ -1085,6 +1085,7 @@ metrics"""
         self,
         program_code: Optional[str] = None,
         runtime_version: Optional[str] = None,
+        program_config: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Compute the diff between this pipeline's current program and a proposed
@@ -1104,7 +1105,12 @@ metrics"""
 
         :param runtime_version: Runtime version to compile the new program with:
             a version tag (``vX.Y.Z``) or a 40-character git SHA. If ``None``
-            (the default), the platform's default runtime is used.
+            (the default), use the runtime from the selected program configuration.
+            An explicit value overrides that configuration's runtime version.
+
+        :param program_config: Compilation configuration for the proposed program.
+            ``None`` and ``{}`` use the platform defaults. To use the pipeline's
+            settings, pass its program configuration.
 
         :return: The pipeline diff as a dict (see the ``PipelineDiff`` schema).
 
@@ -1117,6 +1123,7 @@ metrics"""
             self.name,
             program_code=program_code,
             runtime_version=runtime_version,
+            program_config=program_config,
         )
 
     def start_transaction(self) -> int:

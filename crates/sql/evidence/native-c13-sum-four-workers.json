@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "cpus": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "workers": 4,
+  "pairs_per_size": 31,
+  "binary_sha256": "868f60a768ed5cfda6405febb5cceecefe3f485a824f901c2c300e45c803a129",
+  "results": {
+    "256": {
+      "classic": {
+        "init_ns": {
+          "p50": 6519244,
+          "p95": 7185786
+        },
+        "step_latency_ns": {
+          "p50": 13297223.0625,
+          "p95": 15013974.8125
+        },
+        "checkpoint_ns": {
+          "p50": 14205863,
+          "p95": 15077654
+        },
+        "rows_per_second": {
+          "p50": 19252.13999921196,
+          "p95": 19497.951808709982
+        },
+        "peak_rss_kib": {
+          "p50": 55568,
+          "p95": 55772
+        },
+        "checkpoint_bytes": {
+          "p50": 1514,
+          "p95": 1514
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 12688031,
+          "p95": 13291738
+        },
+        "step_latency_ns": {
+          "p50": 13289395.0625,
+          "p95": 13680477.9625
+        },
+        "checkpoint_ns": {
+          "p50": 14261197,
+          "p95": 15007654
+        },
+        "rows_per_second": {
+          "p50": 19263.480301099673,
+          "p95": 19397.67627545021
+        },
+        "peak_rss_kib": {
+          "p50": 56928,
+          "p95": 56996
+        },
+        "checkpoint_bytes": {
+          "p50": 1514,
+          "p95": 1514
+        }
+      }
+    },
+    "2048": {
+      "classic": {
+        "init_ns": {
+          "p50": 6411161,
+          "p95": 7458036
+        },
+        "step_latency_ns": {
+          "p50": 13632583.225,
+          "p95": 18620609.325
+        },
+        "checkpoint_ns": {
+          "p50": 14286030,
+          "p95": 18920734
+        },
+        "rows_per_second": {
+          "p50": 150228.31448733003,
+          "p95": 152178.19164169344
+        },
+        "peak_rss_kib": {
+          "p50": 68484,
+          "p95": 68660
+        },
+        "checkpoint_bytes": {
+          "p50": 1514,
+          "p95": 1514
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 12615239,
+          "p95": 14757612
+        },
+        "step_latency_ns": {
+          "p50": 13675824.925,
+          "p95": 17835929.75
+        },
+        "checkpoint_ns": {
+          "p50": 14278613,
+          "p95": 18785443
+        },
+        "rows_per_second": {
+          "p50": 149753.306380529,
+          "p95": 151824.84587285414
+        },
+        "peak_rss_kib": {
+          "p50": 69860,
+          "p95": 70020
+        },
+        "checkpoint_bytes": {
+          "p50": 1514,
+          "p95": 1514
+        }
+      }
+    }
+  },
+  "archive_index": "native-c13-sum-four-workers-archive.json",
+  "scope": "Four-worker ARM64 optimized nullable SUM with forced spill, using the generated classic graph and native accumulator adapter.",
+  "measured_fresh_process_samples": 124,
+  "pilot_fresh_process_samples": 8,
+  "signed_bag_and_error_assertions": "passed on every transaction",
+  "spill_file_lengths_equal_in_all_pairs": true,
+  "checkpoint_directory_bytes_equal_in_all_pairs": true,
+  "step_latency_summary": "Percentiles across each process average step latency",
+  "spill_file_lengths_by_batch": {
+    "256": [
+      [
+        151
+      ]
+    ],
+    "2048": [
+      [
+        151
+      ]
+    ]
+  },
+  "scope_limits": [
+    "Single nullable SUM shape and forced-spill workload",
+    "Same DBSP circuit scheduler for both paths",
+    "No production compilation or end-to-end deployment measurement"
+  ]
+}

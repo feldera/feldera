@@ -1,0 +1,85 @@
+{
+  "scope": "Every S2, S3 and S4 observation generated from the two frozen SQL export populations in the Linux devcontainer.",
+  "check": "Decode with feldera-sql-ir, validate provenance, encode, compare graph structure and every JSON field and definition site, then fingerprint the observation.",
+  "verifier_argument": "--verify-ir-stream",
+  "verifier_sha256": "e901dd527d5a4f73b7b581bc9a2c5a6e3804465235f168e373ec0e15c15bd79c",
+  "capture_driver_sha256": "e7387e64f48c218061d762b39cbd78cc623a58233c88c6ecda5d45eb61c6db1d",
+  "java_driver_classes": {
+    "CorpusDeterminism$Canonicalizer.class": "224f2ca10a43fc8c01c4fc53de9d892e2ae8aa7b24d0c87017d263c0fb9cff3a",
+    "CorpusDeterminism$Fingerprint.class": "47047c208b884738df45c013d633b27b148b00fc56edd6f41dd53eb54b0ae71f",
+    "CorpusDeterminism$Gen2Artifacts.class": "0e88820349e2d7b271200208cb1d0a5ed5c8324bf6ed201e72f43c9cd2cc8271",
+    "CorpusDeterminism$Observations.class": "06bdc71be96471ac1a14868bf91ade3d681d3da74d9dcfa5bc66be0aa1215ac9",
+    "CorpusDeterminism.class": "5f0633b6507019636981c116c7d6b4362f4b3df4aa0d7bb2facb634277cb6dd2"
+  },
+  "producer_label": "p1",
+  "runtime_label": "p1",
+  "provenance_note": "These four JVMs started before the completion manifest gained verify_ir. The capture command set feldera.determinism.verifyIr=true on every JVM. The four live verifier executables had the same SHA-256.",
+  "populations": {
+    "classic": {
+      "input": "p0-determinism-v3-input.jsonl",
+      "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "cases": 8571,
+      "failed_cases": 0,
+      "observations": {
+        "S2": 8571,
+        "S3": 8571,
+        "S4": 3486078
+      },
+      "canonical_bytes": {
+        "S2": 420472509,
+        "S3": 357763785,
+        "S4": 156568355959
+      },
+      "shards": [
+        {
+          "index": 0,
+          "cases": 4286,
+          "input_sha256": "b4338b5b6140a4140a25aa840e6343db5ec487fc329191f6aacea35f196da5eb",
+          "records_sha256": "823497f866ec4deb87c37b354006367bc7650ae0ecdaf291657e9fba64aaa1fd",
+          "completion_sha256": "253800d8d6976f9562795edc71c050bbb89f311ae3d43db86133562f091a54c7"
+        },
+        {
+          "index": 1,
+          "cases": 4285,
+          "input_sha256": "dc173c35f469b11872a79432adebeff7faabff9ca4dd365ae6fe6de3be459d01",
+          "records_sha256": "78650b26fbfbfdb4a5ac5fc5138ddd00925af6eab2481d8aba6a10d459da1d1f",
+          "completion_sha256": "8bbca2e316737bca9b2247356303cdaf7481960a3b54d3d04ef5ca929da42d93"
+        }
+      ]
+    },
+    "gen2": {
+      "input": "p0-gen2-exported-input.jsonl",
+      "input_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "cases": 8527,
+      "failed_cases": 0,
+      "observations": {
+        "S2": 8527,
+        "S3": 8527,
+        "S4": 3510660
+      },
+      "canonical_bytes": {
+        "S2": 418110282,
+        "S3": 344017983,
+        "S4": 158159810329
+      },
+      "shards": [
+        {
+          "index": 0,
+          "cases": 4264,
+          "input_sha256": "1c7748dddb65f1a1827b939175297e45f8fe536d61cdf09ea190bbedd0aa2574",
+          "records_sha256": "594c8f892fe4a7cec767abc8c17734992316da431667d2acc7e3ef223bb9f1cf",
+          "completion_sha256": "510ee8ddf7fdd4f393fb0337a1888017053aad46a6fb03367d320cccdbea1c9b"
+        },
+        {
+          "index": 1,
+          "cases": 4263,
+          "input_sha256": "b4774f827621dfc5f78464a5eeba14f2f4c1921ebf33f53a44f0fe685fb0e6b3",
+          "records_sha256": "6dd6515106539850542fd0d2a47f473597bb00cee10fe8e1b95abeb9317cc301",
+          "completion_sha256": "ec2f6ff9c4db4be90b7cdb0ab81cd8956287e298eedc90d283fcd24668776b36"
+        }
+      ]
+    }
+  },
+  "total_cases": 17098,
+  "total_observations": 7030934
+}

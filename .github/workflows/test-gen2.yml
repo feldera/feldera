@@ -1,0 +1,111 @@
+name: Measure Gen-2 SQL Compatibility
+
+on:
+  # The plan owner must decide what Forge data can be disclosed before scheduling this job.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
+  FORGE_REVISION: d4879df7cded0fefb176aebd2a9890caa8877665
+  FORGE_PLATFORM_REVISION: 43f386f2022e9c112cf9bc2aea326b0bd3178bcd
+
+jobs:
+  measure:
+    runs-on: [gke-runners-amd64]
+    timeout-minutes: 120
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-a112fd877176bba0f4e5f3475853f918b276d1ef
+    steps:
+      - name: Checkout compiler under test
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      # Forge is internal. Limit the existing CI app token to this one repo and
+      # read-only contents; do not expose it to builds or persist it in git.
+      - name: Read-only Forge checkout token
+        id: forge-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.CI_ACCESS_APP_ID }}
+          private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
+          owner: feldera
+          repositories: forge
+          permission-contents: read
+
+      - name: Checkout pinned engine and platform
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: feldera/forge
+          ref: ${{ env.FORGE_REVISION }}
+          path: gen2-engine-source
+          submodules: true
+          token: ${{ steps.forge-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Build pinned engine
+        working-directory: gen2-engine-source
+        run: |
+          test "$(git rev-parse HEAD)" = "$FORGE_REVISION"
+          test "$(git -C feldera rev-parse HEAD)" = "$FORGE_PLATFORM_REVISION"
+          cargo build --release --locked -p crucible --bin pipeline -p ir-expander --bin ir-expander
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          def digest(path):
+              with path.open('rb') as stream:
+                  return hashlib.file_digest(stream, 'sha256').hexdigest()
+          result = {
+              'forge_commit': os.environ['FORGE_REVISION'],
+              'forge_platform_commit': os.environ['FORGE_PLATFORM_REVISION'],
+              'cargo_lock_sha256': digest(Path('Cargo.lock')),
+              'binaries_sha256': {name: digest(Path('target/release') / name)
+                                 for name in ('pipeline', 'ir-expander')},
+          }
+          (Path(os.environ['RUNNER_TEMP']) / 'gen2-engine.json').write_text(json.dumps(result, indent=2) + '\n')
+          PY
+
+      - name: Build current compiler
+        working-directory: sql-to-dbsp-compiler
+        env:
+          CALCITE_BUILD_DIR: ./calcite
+          GRADLE_HOME: /home/ubuntu/.gradle
+        run: bash build.sh -pl SQL-compiler
+
+      - name: Measure the complete current suite
+        run: |
+          source sql-to-dbsp-compiler/calcite_version.env
+          if [[ "$CALCITE_BUILD_NEXT" == "y" ]]; then
+            calcite_revision="$CALCITE_NEXT_COMMIT"
+          else
+            calcite_revision="release:$CALCITE_CURRENT"
+          fi
+          python3 -m unittest discover -s crates/sql/scripts -p 'test_*gen2*.py'
+          python3 crates/sql/scripts/run_gen2_probe.py "$RUNNER_TEMP/gen2-measurement" \
+            --compiler sql-to-dbsp-compiler \
+            --engine gen2-engine-source/target/release \
+            --engine-provenance "$RUNNER_TEMP/gen2-engine.json" \
+            --calcite-revision "$calcite_revision"
+
+      # Failed tests are measurements, not approved deviations. The summary
+      # includes both denominators and the unchanged 80% criterion. Missing or
+      # inconsistent reports fail the job. Never upload the internal binaries.
+      - name: Retain compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gen2-current-compiler-measurement
+          path: |
+            ${{ runner.temp }}/gen2-engine.json
+            ${{ runner.temp }}/gen2-measurement
+          if-no-files-found: error
+          retention-days: 1

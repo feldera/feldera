@@ -81,7 +81,13 @@ public class TestCase {
      * input and tests the produced output, plus the code for functions that generate
      * new inputs. */
     List<DBSPFunction> createTesterCode(
-            int testNumber, String codeDirectory, String executionDirectory,
+            int testNumber, @Nullable String codeDirectory, String executionDirectory,
+            Map<Long, DBSPFunction> changeFunction) throws IOException {
+        return this.createTesterCode(testNumber, "test" + testNumber, codeDirectory, executionDirectory, changeFunction);
+    }
+
+    List<DBSPFunction> createTesterCode(
+            int testNumber, String rustTestName, @Nullable String codeDirectory, String executionDirectory,
             Map<Long, DBSPFunction> changeFunction) throws IOException {
         List<DBSPFunction> result = new ArrayList<>();
 
@@ -258,7 +264,7 @@ public class TestCase {
         annotations.add("#[test]");
         if (this.message != null)
             annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message, true) + ")]");
-        result.add(new DBSPFunction(CalciteObject.EMPTY, "test" + testNumber, new ArrayList<>(),
+        result.add(new DBSPFunction(CalciteObject.EMPTY, rustTestName, new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, annotations));
         return result;
     }

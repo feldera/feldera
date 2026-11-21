@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "cause": "S2 property encoding omitted key/value ranges; emit_final window provenance fell back to the view",
+  "before_full_audit_complete": false,
+  "before_shards": [
+    {
+      "path": "$SCRATCH/p0-gen2-s2-full-v1/shard-000/complete.json",
+      "sha256": "1e4a3847a1cbdc82bc66ec690817a943d0469e57b734baca0cd1c8b01d3b4250",
+      "cases": 2132,
+      "observations": 887064,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#leftLateness/0",
+          "fields": [
+            "gen2"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#iceTFTest/0",
+          "fields": [
+            "gen2"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessKeepsInheritedWaterline/0",
+          "fields": [
+            "gen2"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.EmitFinalIncrementalTests#nullIsNeverEmitted/0",
+          "fields": [
+            "gen2"
+          ]
+        }
+      ],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-gen2-s2-full-v1/shard-001/complete.json",
+      "sha256": "41b6a48add46859231ce03d51b9324dab7ce9974f137d038764f1fd40e2fd72e",
+      "cases": 2132,
+      "observations": 877937,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testEmitFinalStarJoin/0",
+          "fields": [
+            "gen2"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2822/0",
+          "fields": [
+            "gen2"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2846/0",
+          "fields": [
+            "gen2"
+          ]
+        }
+      ],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      }
+    }
+  ],
+  "repaired_focused": {
+    "schema_version": 1,
+    "producer": "c6ede756d-p0-seams-v25",
+    "runtime": "c6ede756d",
+    "classpath": {
+      "$SCRATCH/p0-seam-tools-v25/classes": "e62c4399fff62835b278dbff6bef3ccb17ee8cb46f0d41467e0cf5e2f4ec11b6",
+      "$SCRATCH/p0-seam-tools-v25/test-classes": "86ac19bbaead5e629d91d4327833ed712f3d25dfc99c9099946dc2f8e84f747f",
+      "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+    "input_sha256": "d1806522115a19b99f3b56eebe22d1e5ec423940910b6bd61381afc297e243cf",
+    "source_class": null,
+    "cases": 7,
+    "stage": "S2",
+    "execution_order": [
+      "replay-s2",
+      "capture"
+    ],
+    "keep_going": true,
+    "artifact_contract": "seam-v1",
+    "runtime_executed": false,
+    "limits": {
+      "heap_mib": 1024,
+      "output_mib": 512,
+      "min_free_mib": 512,
+      "timeout_seconds_per_jvm": 1200
+    },
+    "equal": true,
+    "observations": 3115,
+    "capture_transparency": false,
+    "dataflow_contract": "all-engines-v1",
+    "observation_contract": "full-prefix-v1",
+    "artifact_byte_differences": [
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#leftLateness/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#iceTFTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessKeepsInheritedWaterline/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.EmitFinalIncrementalTests#nullIsNeverEmitted/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testEmitFinalStarJoin/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2822/0",
+      "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2846/0"
+    ],
+    "differences": [],
+    "failed_cases": {
+      "expected": [],
+      "actual": []
+    },
+    "exported_schema_differences": [],
+    "exported_diagnostic_differences": [],
+    "jvm_runs": 2
+  },
+  "validation": {
+    "java_tests": 42,
+    "before_regression_tests": 1,
+    "before_regression_failures": 1,
+    "rust_multiset_tests": 15,
+    "python_tests": 46,
+    "ruff": "pass"
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/util/Properties.java": "80b294170427bf7465b9c9dec283d4f55143569be30ff4232479c835dc94f033",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/CircuitReplay.java": "806011c387619747569799624c0e6b9c5437b82fc2dc5c6c4e60429e230ff6f2",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/InsertLimiters.java": "f0f5a4c478e9d074d71eff98a1b06f97b30c977b2d0057cb90a6ae15e4eaa2bc",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/CircuitReplayTests.java": "4485288718162ca813b915719ac7fb8d6df0cd86056ed9d953f54edbc927ebf6",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/ProgramMetadataReplayTests.java": "7132b75c971ebb9c0153cc8b677544b1a61dd98c61e318bc67e9a400d3c3aba9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/CorpusDeterminism.java": "46fb47590c695de928eba237b07aa4d84aed03d9fb75fa36f500bfebc12b42b8",
+    "crates/sql/scripts/determinism.py": "17ed7d3efa59a254278c0058e5a06d18d102f948354f7beacdb5c45e426f2752",
+    "crates/sql/scripts/test_determinism.py": "da0cb82e306810415363cd14b091898a32ee22ee2a1e44204be9df394bf144cd",
+    "crates/sql/multiset-probe/src/main.rs": "876f339041aeb1dd354bb7d9c3ab49f7d2d26118176f6b56f5a37aa83c9c5f7a"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-emit-final-before.log": "3e6f863092a44db87e0b7e4fbe46d2ac0392f687085f107a371fcc8e510a25fb",
+    "$SCRATCH/p0-gen2-s2-diagnosis-v1/emit-final-before.xml": "90c78dca276fe3ba4faf1559c18769e6443a45523da74e22e69da99c92e270ca",
+    "$SCRATCH/p0-emit-final-repaired.log": "f4a84e91f5ebe882bf0d8bd802aa47c598b32b95e335234aad234294749857c7",
+    "$SCRATCH/p0-emit-final-v4-focused/s2/complete.json": "c55a66e29cccfe56df70553c81ca4d0833d808532d6a6f56d4b1039896a51f77"
+  },
+  "runtime_executed": false,
+  "independent_review": false,
+  "full_repaired_audit_complete": false
+}

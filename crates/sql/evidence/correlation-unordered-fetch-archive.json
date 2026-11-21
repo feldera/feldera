@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-correlation-unordered-fetch-20261119.tar.gz",
+  "bytes": 1667876,
+  "sha256": "ad147700fa2169c8ade336aeb07e7d4fc128964fd4535a250c3370a0d7aea884",
+  "manifest_sha256": "cf028f669b24ba2cb9a8cda3670bc3feb88f7aa506acc2caded086fcf637c4b5",
+  "verified_files": 39,
+  "all_members_verified": true
+}

@@ -1,0 +1,379 @@
+{
+  "schema_version": 1,
+  "runtime_executed": false,
+  "purpose": "Compile/export Gen-2 corpus with effective options",
+  "counts": {
+    "tests": 2797,
+    "failures": 21,
+    "errors": 40,
+    "skipped": 71
+  },
+  "failures": [
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#testOver",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'table_name' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.MetadataTests#nullKey",
+      "kind": "error",
+      "type": "java.lang.ArrayIndexOutOfBoundsException",
+      "message": "Index 0 out of bounds for length 0"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.MetadataTests#lazyInputMapSurvivesMetadataRebuilds",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'late_t' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.MetadataTests#lazyUpsertChangesTheIdOnlyWithTheMap",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'late_t' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.MetadataTests#lazyUpsertDecidesForEveryKeyedTable",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'late_t' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.SerializationTests#testLargeProgram",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'orders' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testOneArgMin",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#failingLambdaCases",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "Program was expected to fail: CREATE VIEW VV AS SELECT array_exists(array(), x -> true)"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#testSharedIndexGC",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815a",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815b",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815c",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#failInLateness",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#integerTemporalFilterWithLowerBound",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#integerTemporalFilterWithUpperBound",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2039",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2043",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2881",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue4694",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue4899",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#dateTemporalFilterWithLowerBound",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#dateTemporalFilterWithUpperBound",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#asof3Test",
+      "kind": "error",
+      "type": "java.lang.RuntimeException",
+      "message": "No circuit produced"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testFpAggNonLinear",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4053",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<3> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4577",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<7> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4729",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5299",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'a' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#checkNowChainAggregateHash",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+      "message": "Assertion failed\norg.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$1.postorder(Regression2Tests.java:98)\norg.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator.accept(DBSPChainAggregateOperator.java:67)\norg.dbsp.sqlCompiler.circuit.DBSPCircuit.accept(DBSPCircuit.java:253)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor.apply(CircuitVisitor.java:124)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit.visit(CompilerCircuit.java:33)\norg.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests.checkNowChainAggregateHash(Regression2Tests.java:90)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\norg.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)\norg.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)\norg.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)\norg.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests$2.evaluate(BaseSQLTests.java:266)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)\norg.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)\norg.junit.runners.ParentRunner$4.run(ParentRunner.java:331)\norg.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)\norg.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)\norg.junit.runners.ParentRunner.access$100(ParentRunner.java:66)\norg.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)\norg.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)\norg.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.ParentRunner.run(ParentRunner.java:413)\norg.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:316)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:240)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:214)\norg.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:155)\norg.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)\norg.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)\norg.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)\norg.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testHints",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testThreeWayJoinHints",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<2> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue2998",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": ""
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5989",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'ee' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541a",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541b",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.IncrementalUnboundedStateTests#emitFinalWaterlineBound",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcUpsertBoundary",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcMaterializedNoRetain",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcKeyLateness",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testNow4",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'transactions' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testOver",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'table_name' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcUpsertOldRow",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcUpsertOldRowLongLag",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcDeleteOldRow",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowEquality",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+      "message": "Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.<init>(DBSPLetExpression.java:25)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:1090)\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.accept(DBSPLetExpression.java:58)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.transform(InnerRewriteVisitor.java:176)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:993)\norg.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression.accept(DBSPClosureExpression.java:142)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:118)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:97)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.transform(CircuitRewriter.java:134)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.postorder(CircuitRewriter.java:880)\norg.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator.accept(DBSPApplyOperator.java:75)\norg.dbsp.sqlCompiler.circuit.DBSPCircuit.accept(DBSPCircuit.java:253)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:627)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:51)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:38)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:26)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:10)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer.optimize(CircuitOptimizer.java:267)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.optimize(DBSPCompiler.java:1018)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$compileStages$12(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.timed(DBSPCompiler.java:292)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.compileStages(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.finishCircuit(DBSPCompiler.java:1079)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$getFinalCircuit$13(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.withCircuitDumps(DBSPCompiler.java:205)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.getFinalCircuit(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.sql.tools.Gen2Runner.getFinalCircuit(Gen2Runner.java:102)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCircuit(BaseSQLTests.java:501)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit.<init>(CompilerCircuit.java:24)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream.<init>(CompilerCircuitStream.java:46)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream.<init>(CompilerCircuitStream.java:33)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCCS(BaseSQLTests.java:100)\norg.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests.nowEquality(StreamingTests.java:2603)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\norg.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)\norg.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)\norg.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)\norg.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests$2.evaluate(BaseSQLTests.java:266)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)\norg.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)\norg.junit.runners.ParentRunner$4.run(ParentRunner.java:331)\norg.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)\norg.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)\norg.junit.runners.ParentRunner.access$100(ParentRunner.java:66)\norg.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)\norg.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)\norg.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.ParentRunner.run(ParentRunner.java:413)\norg.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:316)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:240)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:214)\norg.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:155)\norg.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)\norg.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)\norg.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)\norg.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2004",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'auction' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2852",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcTwoLatenessColumns",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowEqualityReversed",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+      "message": "Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.<init>(DBSPLetExpression.java:25)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:1090)\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.accept(DBSPLetExpression.java:58)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.transform(InnerRewriteVisitor.java:176)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:993)\norg.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression.accept(DBSPClosureExpression.java:142)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:118)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:97)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.transform(CircuitRewriter.java:134)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.postorder(CircuitRewriter.java:880)\norg.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator.accept(DBSPApplyOperator.java:75)\norg.dbsp.sqlCompiler.circuit.DBSPCircuit.accept(DBSPCircuit.java:253)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:627)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:51)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:38)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:26)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:10)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer.optimize(CircuitOptimizer.java:267)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.optimize(DBSPCompiler.java:1018)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$compileStages$12(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.timed(DBSPCompiler.java:292)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.compileStages(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.finishCircuit(DBSPCompiler.java:1079)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$getFinalCircuit$13(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.withCircuitDumps(DBSPCompiler.java:205)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.getFinalCircuit(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.sql.tools.Gen2Runner.getFinalCircuit(Gen2Runner.java:102)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCircuit(BaseSQLTests.java:501)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit.<init>(CompilerCircuit.java:24)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream.<init>(CompilerCircuitStream.java:46)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream.<init>(CompilerCircuitStream.java:33)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCCS(BaseSQLTests.java:100)\norg.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests.nowEqualityReversed(StreamingTests.java:2637)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\norg.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)\norg.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)\norg.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)\norg.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests$2.evaluate(BaseSQLTests.java:266)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)\norg.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)\norg.junit.runners.ParentRunner$4.run(ParentRunner.java:331)\norg.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)\norg.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)\norg.junit.runners.ParentRunner.access$100(ParentRunner.java:66)\norg.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)\norg.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)\norg.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.ParentRunner.run(ParentRunner.java:413)\norg.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:316)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:240)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:214)\norg.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:155)\norg.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)\norg.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)\norg.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)\norg.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#gcCompositeKeyLateness",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.UpsertLatenessIncrementalTests#issue7530",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.UpsertLatenessIncrementalTests#issue7530a",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.UpsertLatenessIncrementalTests#latenessOutsideKey",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'n' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.sql.streaming.UpsertLatenessIncrementalTests#twoLatenessKeyColumns",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.UnimplementedException",
+      "message": "LATENESS on the primary-key table 'k' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySourcesTests#testLag",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "View 'v' over an empty input did not collapse to a constant"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySourcesTests#testFlatMap",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "View 'v' over an empty input did not collapse to a constant"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySourcesTests#testAsofJoin",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "View 'v' over an empty input did not collapse to a constant"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySourcesTests#testIndexedTopK",
+      "kind": "failure",
+      "type": "java.lang.AssertionError",
+      "message": "View 'v' over an empty input did not collapse to a constant"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#equalityHoistedToShare",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+      "message": "Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.<init>(DBSPLetExpression.java:25)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:1090)\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.accept(DBSPLetExpression.java:58)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.transform(InnerRewriteVisitor.java:176)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:993)\norg.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression.accept(DBSPClosureExpression.java:142)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:118)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:97)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.transform(CircuitRewriter.java:134)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.postorder(CircuitRewriter.java:880)\norg.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator.accept(DBSPApplyOperator.java:75)\norg.dbsp.sqlCompiler.circuit.DBSPCircuit.accept(DBSPCircuit.java:253)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:627)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:51)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:38)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:26)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:10)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer.optimize(CircuitOptimizer.java:267)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.optimize(DBSPCompiler.java:1018)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$compileStages$12(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.timed(DBSPCompiler.java:292)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.compileStages(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.finishCircuit(DBSPCompiler.java:1079)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$getFinalCircuit$13(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.withCircuitDumps(DBSPCompiler.java:205)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.getFinalCircuit(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.sql.tools.Gen2Runner.getFinalCircuit(Gen2Runner.java:102)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCircuit(BaseSQLTests.java:501)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit.<init>(CompilerCircuit.java:24)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCC(BaseSQLTests.java:118)\norg.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests.equalityHoistedToShare(ShareWindowIntegralsTests.java:66)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\norg.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)\norg.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)\norg.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)\norg.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests$2.evaluate(BaseSQLTests.java:266)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)\norg.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)\norg.junit.runners.ParentRunner$4.run(ParentRunner.java:331)\norg.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)\norg.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)\norg.junit.runners.ParentRunner.access$100(ParentRunner.java:66)\norg.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)\norg.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)\norg.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.ParentRunner.run(ParentRunner.java:413)\norg.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:316)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:240)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:214)\norg.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:155)\norg.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)\norg.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)\norg.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)\norg.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues"
+    },
+    {
+      "test": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#equalitySharesWithInequality",
+      "kind": "error",
+      "type": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+      "message": "Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.<init>(DBSPLetExpression.java:25)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:1090)\norg.dbsp.sqlCompiler.ir.expression.DBSPLetExpression.accept(DBSPLetExpression.java:58)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.transform(InnerRewriteVisitor.java:176)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.preorder(InnerRewriteVisitor.java:993)\norg.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression.accept(DBSPClosureExpression.java:142)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:118)\norg.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor.apply(InnerRewriteVisitor.java:97)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.transform(CircuitRewriter.java:134)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter.postorder(CircuitRewriter.java:880)\norg.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator.accept(DBSPApplyOperator.java:75)\norg.dbsp.sqlCompiler.circuit.DBSPCircuit.accept(DBSPCircuit.java:253)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:627)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor.apply(CircuitCloneVisitor.java:51)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:38)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:26)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Conditional.apply(Conditional.java:10)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.applyObservedPass(DBSPCompiler.java:192)\norg.dbsp.sqlCompiler.compiler.visitors.outer.Passes.apply(Passes.java:96)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer.optimize(CircuitOptimizer.java:267)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.optimize(DBSPCompiler.java:1018)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$compileStages$12(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.timed(DBSPCompiler.java:292)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.compileStages(DBSPCompiler.java:910)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.finishCircuit(DBSPCompiler.java:1079)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.lambda$getFinalCircuit$13(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.withCircuitDumps(DBSPCompiler.java:205)\norg.dbsp.sqlCompiler.compiler.DBSPCompiler.getFinalCircuit(DBSPCompiler.java:1074)\norg.dbsp.sqlCompiler.compiler.sql.tools.Gen2Runner.getFinalCircuit(Gen2Runner.java:102)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCircuit(BaseSQLTests.java:501)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit.<init>(CompilerCircuit.java:24)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests.getCC(BaseSQLTests.java:118)\norg.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests.equalitySharesWithInequality(ShareWindowIntegralsTests.java:76)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\norg.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)\norg.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)\norg.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)\norg.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests$2.evaluate(BaseSQLTests.java:266)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)\norg.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)\norg.junit.runners.ParentRunner$4.run(ParentRunner.java:331)\norg.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)\norg.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)\norg.junit.runners.ParentRunner.access$100(ParentRunner.java:66)\norg.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)\norg.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)\norg.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.ParentRunner.run(ParentRunner.java:413)\norg.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:316)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:240)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:214)\norg.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:155)\norg.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)\norg.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)\norg.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)\norg.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues"
+    }
+  ]
+}

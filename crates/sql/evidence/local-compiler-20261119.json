@@ -1,0 +1,718 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-19",
+  "scope": "Local compiler implementation and validation before P5 exit",
+  "parser": {
+    "inputs_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "positives": {
+      "accepted_cases": 8571,
+      "accepted_submissions": 34015,
+      "rejected_cases": 0,
+      "rejected_submissions": 0,
+      "statements_in_accepted_submissions": 101870
+    },
+    "semantic_comparison_current_java": {
+      "cases": 8571,
+      "mismatches": 2,
+      "original_java_failures": [
+        "TypeCoercionRuntimeTests#intersectAllWidensNullableInput/0",
+        "TypeCoercionRuntimeTests#exceptAllWidensNullableInput/0"
+      ],
+      "coercion_class_sha256": "f4ec70c90a40cf788bb6244d7a50d728fb9a34f78eb287120388d0c14bb2fd98"
+    },
+    "semantic_comparison_with_archived_coercion": {
+      "coercion_class_sha256": "64f3b7e09a7dfe299621f3d22a4b035369892ea288b1fb89a3e7942f99ff5aec",
+      "semantic_mismatches": 0,
+      "strict_typed_s1_differences": 0,
+      "cases": 8571
+    },
+    "adversarial": {
+      "input_sha256": "3dc785207b4e8a890eae9ea8df91b035e805eee093ba1733874dac1aaf13009a",
+      "cases": 2136,
+      "verdicts": {
+        "both_accept": 1029,
+        "accepted_submissions": 1029,
+        "accepted_cases": 1029,
+        "both_reject": 1061,
+        "rejected_submissions": 1107,
+        "rejected_cases": 1107,
+        "java_only": 46
+      },
+      "shared_rejection_positions": {
+        "java_rejected_submissions": 1061,
+        "different": 382,
+        "equal": 672,
+        "java_position_missing": 3,
+        "rust_position_missing": 4
+      },
+      "shared_acceptance_ast_mismatches": 0
+    }
+  },
+  "circuit": {
+    "s3_profiler_reports_equal": 100,
+    "focused_replay": {
+      "S2": {
+        "cases": 16,
+        "observations": 6174
+      },
+      "S3": {
+        "cases": 16,
+        "observations": 16
+      }
+    },
+    "tail_passes": {
+      "equal": true,
+      "graphs": 6174,
+      "cases": [
+        {
+          "mode": "classic",
+          "name": "constant",
+          "graphs": 375,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "projection",
+          "graphs": 425,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "decimal",
+          "graphs": 382,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "settings",
+          "graphs": 373,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "union",
+          "graphs": 375,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "nested",
+          "graphs": 375,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "provenance",
+          "graphs": 393,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "classic",
+          "name": "lateness",
+          "graphs": 381,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "constant",
+          "graphs": 377,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "projection",
+          "graphs": 427,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "decimal",
+          "graphs": 384,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "settings",
+          "graphs": 375,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "union",
+          "graphs": 377,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "nested",
+          "graphs": 377,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "provenance",
+          "graphs": 395,
+          "compact_names": 1,
+          "tag_regions": 1
+        },
+        {
+          "mode": "gen2",
+          "name": "lateness",
+          "graphs": 383,
+          "compact_names": 1,
+          "tag_regions": 1
+        }
+      ]
+    },
+    "region_conflict": {
+      "equal": true,
+      "removed": [
+        2,
+        10
+      ],
+      "survived": [
+        99
+      ]
+    }
+  },
+  "rust_lowering": {
+    "scope": "Default Gen-2 profile; independent Java S2 envelope and canonical graph, continued through final artifacts",
+    "cases": [
+      "two_constants",
+      "table_and_constant",
+      "folded_tangent",
+      "zero_tangent",
+      "constant",
+      "character_date",
+      "string_projection",
+      "repeated_column",
+      "catalog",
+      "identity",
+      "early_view",
+      "shared",
+      "projection",
+      "two_projections",
+      "filtered_projection",
+      "nullable_filter",
+      "column_comparison",
+      "shared_filters",
+      "bool_projection",
+      "float_projection",
+      "reverse_reads",
+      "two_tables"
+    ]
+  },
+  "structured_sql_syntax_diagnostics": {
+    "cases": 1061,
+    "equal": 659,
+    "different": 402,
+    "fields": [
+      "warning",
+      "error_type",
+      "start_line_number",
+      "start_column",
+      "snippet"
+    ]
+  },
+  "fresh_process_benchmarks": {
+    "identity": {
+      "source": "CREATE TABLE sensors(x INT NOT NULL, y BIGINT);\nCREATE VIEW visible AS SELECT * FROM sensors;",
+      "scope": "Fresh process per stage, warmed filesystem, Gen-2 default nonincremental options",
+      "lowering": "Rust",
+      "optimizer": "Java",
+      "architecture": "aarch64",
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "tail": "sql2dbsp --s3-worker",
+      "driver_sha256": "df12c69b3e3e3da6ce557508e0bdae9e8e00adffdda94f2f4aa1ce64b20cd5fc",
+      "warmups": 3,
+      "results": {
+        "direct_java": {
+          "samples": 20,
+          "p50_seconds": 1.0935648845000001,
+          "empirical_p95_seconds": 1.234184572
+        },
+        "mixed": {
+          "samples": 20,
+          "p50_seconds": 0.5571124860000001,
+          "empirical_p95_seconds": 0.591466687
+        }
+      }
+    },
+    "projection": {
+      "source": "CREATE TABLE sensors(id INT, x INT NOT NULL, y BIGINT);\nCREATE VIEW visible AS SELECT y AS reading, id FROM sensors;",
+      "scope": "Fresh process per stage, warmed filesystem, Gen-2 default nonincremental options",
+      "lowering": "Rust",
+      "optimizer": "Java",
+      "architecture": "aarch64",
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "tail": "sql2dbsp --s3-worker",
+      "driver_sha256": "df12c69b3e3e3da6ce557508e0bdae9e8e00adffdda94f2f4aa1ce64b20cd5fc",
+      "warmups": 3,
+      "results": {
+        "direct_java": {
+          "samples": 20,
+          "p50_seconds": 1.11958863,
+          "empirical_p95_seconds": 1.150963845
+        },
+        "mixed": {
+          "samples": 20,
+          "p50_seconds": 0.5803368085,
+          "empirical_p95_seconds": 0.607234764
+        }
+      }
+    },
+    "filtered_projection": {
+      "source": "CREATE TABLE readings (sensor INTEGER NOT NULL, temperature INTEGER NOT NULL);\nCREATE VIEW hot AS SELECT sensor FROM readings WHERE temperature > 20;",
+      "scope": "Fresh process per stage, warmed filesystem, Gen-2 default nonincremental options",
+      "lowering": "Rust",
+      "optimizer": "Java",
+      "architecture": "aarch64",
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "tail": "sql2dbsp --s3-worker",
+      "driver_sha256": "df12c69b3e3e3da6ce557508e0bdae9e8e00adffdda94f2f4aa1ce64b20cd5fc",
+      "warmups": 3,
+      "results": {
+        "direct_java": {
+          "samples": 20,
+          "p50_seconds": 1.1422419504999999,
+          "empirical_p95_seconds": 1.185870256
+        },
+        "mixed": {
+          "samples": 20,
+          "p50_seconds": 0.5747217125,
+          "empirical_p95_seconds": 0.595847947
+        }
+      }
+    },
+    "character_date": {
+      "source": "CREATE TABLE records(id INT NOT NULL, day DATE, label VARCHAR(24), tag CHAR(3));\nCREATE VIEW result AS SELECT label, day, tag FROM records WHERE id > 2;",
+      "scope": "Fresh process per stage, warmed filesystem, Gen-2 default nonincremental options",
+      "lowering": "Rust",
+      "optimizer": "Java",
+      "architecture": "aarch64",
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "tail": "sql2dbsp --s3-worker",
+      "driver_sha256": "df12c69b3e3e3da6ce557508e0bdae9e8e00adffdda94f2f4aa1ce64b20cd5fc",
+      "warmups": 3,
+      "results": {
+        "direct_java": {
+          "samples": 20,
+          "p50_seconds": 1.158504737,
+          "empirical_p95_seconds": 1.191699936
+        },
+        "mixed": {
+          "samples": 20,
+          "p50_seconds": 0.5876071165000001,
+          "empirical_p95_seconds": 0.598418661
+        }
+      }
+    },
+    "grouped": {
+      "source": "CREATE TABLE meters (sensor INT NOT NULL, reading INT);\nCREATE VIEW totals AS SELECT sensor, SUM(reading) AS total FROM meters GROUP BY sensor;",
+      "scope": "Fresh process per stage, warmed filesystem, Gen-2 default nonincremental options",
+      "lowering": "Java",
+      "optimizer": "Java",
+      "architecture": "aarch64",
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "tail": "sql2dbsp --s3-worker",
+      "driver_sha256": "df12c69b3e3e3da6ce557508e0bdae9e8e00adffdda94f2f4aa1ce64b20cd5fc",
+      "warmups": 3,
+      "results": {
+        "direct_java": {
+          "samples": 20,
+          "p50_seconds": 1.1899286610000002,
+          "empirical_p95_seconds": 1.28998107
+        },
+        "mixed": {
+          "samples": 20,
+          "p50_seconds": 0.955634412,
+          "empirical_p95_seconds": 1.006860609
+        }
+      }
+    }
+  },
+  "forge": {
+    "forge_revision": "d4879df7cded0fefb176aebd2a9890caa8877665",
+    "platform_revision": "43f386f2022e9c112cf9bc2aea326b0bd3178bcd",
+    "boundary": "Program::from_ir_json reader",
+    "operator_counts": {
+      "character_date": 5,
+      "constant": 4,
+      "count": 14,
+      "count_star": 14,
+      "distinct": 16,
+      "empty_filter": 4,
+      "filter": 5,
+      "filtered_count_star": 14,
+      "grouped": 9,
+      "multiline_constant": 4,
+      "multiple_tables": 7,
+      "reordered": 5,
+      "repeated_column": 5,
+      "string_projection": 5,
+      "sum": 14,
+      "table_only": 2,
+      "two_views": 7
+    },
+    "rust_lowered_operator_counts": {
+      "bool_projection": 5,
+      "catalog": 2,
+      "character_date": 5,
+      "column_comparison": 5,
+      "constant": 4,
+      "early_view": 4,
+      "filtered_projection": 5,
+      "float_projection": 5,
+      "folded_tangent": 4,
+      "identity": 4,
+      "nullable_filter": 5,
+      "projection": 5,
+      "repeated_column": 5,
+      "reverse_reads": 6,
+      "shared": 5,
+      "shared_filters": 7,
+      "string_projection": 5,
+      "table_and_constant": 4,
+      "two_constants": 6,
+      "two_projections": 7,
+      "two_tables": 6,
+      "zero_tangent": 4
+    },
+    "incremental_tail_comparison": [
+      {
+        "case": "anti_join",
+        "java": {
+          "exit": 0,
+          "out": "11 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "11 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "except_all",
+        "java": {
+          "exit": 1,
+          "out": "",
+          "err": "Error: Ir(\"operator `s6` has unknown class `DBSPPositiveOperator`\")"
+        },
+        "rust": {
+          "exit": 1,
+          "out": "",
+          "err": "Error: Ir(\"operator `s6` has unknown class `DBSPPositiveOperator`\")"
+        }
+      },
+      {
+        "case": "grouped_min",
+        "java": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "inner_join",
+        "java": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "intersection",
+        "java": {
+          "exit": 0,
+          "out": "14 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "14 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "lag",
+        "java": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "left_join",
+        "java": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "rolling",
+        "java": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "three_way",
+        "java": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        }
+      },
+      {
+        "case": "top_k",
+        "java": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        }
+      }
+    ]
+  },
+  "raw_sql_with_java_lowering": {
+    "cases": [
+      "character_date",
+      "string_projection",
+      "repeated_column",
+      "sum",
+      "count",
+      "count_star",
+      "filtered_count_star",
+      "grouped",
+      "distinct",
+      "filter",
+      "reordered",
+      "multiline_constant",
+      "constant",
+      "multiple_tables",
+      "table_only",
+      "empty_filter",
+      "two_views"
+    ],
+    "equal": true
+  },
+  "s3_worker": {
+    "equal": true,
+    "cases": [
+      "two_constants",
+      "table_and_constant",
+      "folded_tangent",
+      "zero_tangent",
+      "constant",
+      "character_date",
+      "string_projection",
+      "repeated_column",
+      "catalog",
+      "identity",
+      "early_view",
+      "shared",
+      "projection",
+      "two_projections",
+      "filtered_projection",
+      "nullable_filter",
+      "column_comparison",
+      "shared_filters",
+      "bool_projection",
+      "float_projection",
+      "reverse_reads",
+      "two_tables"
+    ],
+    "wrong_identity": true,
+    "sql_error_preserved": true,
+    "concurrent_attempt_excluded": true,
+    "interrupted_attempt_unpublished": true
+  },
+  "corpus_binding": {
+    "scope": "Default Gen-2 options, original submission boundaries; availability before Java comparison",
+    "corpus_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "compiler_sha256": "6fa31815ae43b515e90407f3fba16ce6490ae801254acca15dc7e0b697b53b4e",
+    "cases": 8571,
+    "bound": 75,
+    "lowered": 23,
+    "binder_refusals_by_category": {
+      "outside_scope": 8476,
+      "unresolved_column": 20
+    }
+  },
+  "corpus_downstream": {
+    "scope": "Original submission boundaries, default Gen-2 profile; all captured downstream observations",
+    "cases": 75,
+    "matched": 75,
+    "mismatches": []
+  },
+  "corpus_detached_lowering": {
+    "scope": "Detached lowering of all available cases in the default Gen-2 submission audit",
+    "equal": true,
+    "cases": [
+      "org.dbsp.sqlCompiler.compiler.sql.OtherTests#testRemove/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#projectTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testTan/2",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testTan/3",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testTan/10",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testTan/11",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.TimeTests#timestampTableTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#idTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#projectNullTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#idTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#zero/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testEmbeddedDb/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#projectTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#idTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#constantFoldTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#zero/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#projectTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#projectNullTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#projectNullTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#constantFoldTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#zero/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.MultiViewTests#twoViewTest/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#constantFoldTest/0"
+    ]
+  },
+  "incremental_tail": {
+    "equal": true,
+    "cases": [
+      {
+        "case": "inner_join",
+        "source_sha256": "84a0655792a66883de6f83623710d5954d7c077d30843580e37e6392e0a22a0b"
+      },
+      {
+        "case": "left_join",
+        "source_sha256": "239d31541d07a986f7678785575d6144c99ebbe17e9de31ad861f238c849c53b"
+      },
+      {
+        "case": "anti_join",
+        "source_sha256": "ad6815dd6fa0eeda8946a842ca2f7fba3cc2c33d70769c44a3dbbe7eda60c57f"
+      },
+      {
+        "case": "except_all",
+        "source_sha256": "d5071c086a29cc8d193fbc3979a6788f00ad611bb5c84a7a7da9552af1cf9645"
+      },
+      {
+        "case": "intersection",
+        "source_sha256": "20c68a8a7ebf9157c6b2c033e75e77ea161de2de0b09a5d3949a918266ceaacc"
+      },
+      {
+        "case": "lag",
+        "source_sha256": "2c4501009926f20c9f6cca7719ac861b768e87747a25dfdb0ad3794d4abfaa8e"
+      },
+      {
+        "case": "rolling",
+        "source_sha256": "7ccd660f47f8aaaa0180f38e58e4d4b1c437a1be42a7c45570963300d874b39f"
+      },
+      {
+        "case": "top_k",
+        "source_sha256": "b7feb4e2f00a36ce0a257b4d76d7a27e3bbd6b35a175c7aa91ed8a21dac97722"
+      },
+      {
+        "case": "grouped_min",
+        "source_sha256": "10ec567c5e63de502a9fba829e51ee9ac49258d0e73776f590f167e20ab8ead4"
+      },
+      {
+        "case": "three_way",
+        "source_sha256": "48e0a086694626e14f7c4d90e0ab0c422839286cbcc401f18f7d4b098966d869"
+      }
+    ]
+  },
+  "local_evidence_root": ".bench-results/p1-p5",
+  "local_file_sha256": {
+    "shift-alias/positives/complete.json": "8f1268398e5822cce6146231aa0983055cdf9f14992299223b21e0d1cda887dc",
+    "shift-alias/comparison.json": "d23f7840a241bd61a020075ef94881996cf65a3843d1293e81d7fee7b990cc19",
+    "shift-alias/semantics/complete.json": "0b9e290504dd42f6041a18a38f19b79dbe65973e570290d1f15c879606b14c03",
+    "full-parser/semantic/complete.json": "87206ca6881e2a052a5ce32b27e03aa27196378bc5ba47cb80913c7acf2f0590",
+    "full-parser/pinned-coercion/complete.json": "d175ff8b19d6b75c932d937536aa21202afc4af6c24d380d3a8704972e428f91",
+    "full-parser/s1-coercion/complete.json": "831cb45c2a363968e1a60bb484e3d7d422c37d36bfb0876249aef0dac436dc3f",
+    "mir-release.json": "dfbec007ca60cc44feaab81582a7b52d435ca274bdc6e5a2fd97f95fc0fb0ab3",
+    "final-S2/complete.json": "cc2ed7265d2554e0a96725d32a2ce7331db9337def8b7924919968de0e81e1c0",
+    "final-S3/complete.json": "0b25c6ad71d59a494bb81fb31dc1981b1e83f4bdf6be1084596e33f988d3c8df",
+    "final-lower/complete.json": "5dbee28d43c0e308404875d3436f38e377725d8224f8a18cfda62a83aa0e8045",
+    "full-bound/complete.json": "5f7081fd794a00b6ddcc4b774dcb1228a07483456f24370e10f0f9e5a7072af8",
+    "declaration-lowering/complete.json": "2b24d0b7025c9e27f65858d414fd442d2c1179258968f9090a554d6ac278954b",
+    "declaration-worker/complete.json": "7743b48da6e93d37fded5286cf37459eaff128151b391f5165015cd075ea9333",
+    "paired-final/complete.json": "6c7655b19195e023a6fa6f7e7cc44577cce27bcaf5ba1eca108e485522a2f207",
+    "paired-final/bound.jsonl": "7e9f7ded87c593a5836c80a5a2d22aa4f3a5bf8f99608f2608316b076d8f776b",
+    "paired-final/accepted.jsonl": "673a958fb4e661cba3c2546b02737447eb88e12ec9cca84c5c1627ebc302f0d9",
+    "paired-final/cases.jsonl": "d17de2b08682cfa3817b73599e36a0342791cf66d9ce82918fcbe80310ac383c",
+    "declaration-submissions-compared/direct/cases.jsonl": "9252bd02155ec87bc7af7d3e4c7b4b859ec551f91e45f8bf52d1ba0b727560e0",
+    "declaration-submissions-compared/bound/cases.jsonl": "9252bd02155ec87bc7af7d3e4c7b4b859ec551f91e45f8bf52d1ba0b727560e0",
+    "declaration-submissions-compared/complete.json": "5365d889a7aece1d48457c681d1e9d8db8b67752aeb42a2cd1d518f37b5a5ff9",
+    "paired-s2/complete.json": "c8e010ae10c50bcc9d984648bc9ecdc512310ab604f4301b8b4415c813e4597c",
+    "checked-tail-passes.json": "2385916d2e3f6a01e66f0721356a3fe48c11b319e46d4abce2e2b9d63bb2e2e7",
+    "region-conflict/complete.json": "6f778c7278f159c16ebfea939f1f4cdedc239c2c1c8460d9324cd40a7e1618b0",
+    "full-bench-identity/profile.json": "a3abad47cd52e4ec6148b5990777f011fbbb7bb7ae2b3abfd11bfcb5c07b0a18",
+    "full-bench-identity/complete.json": "737ce2fb16fad2b445141fc14816705c254312d91d97cc9df3fb86eb88255d8d",
+    "full-bench-identity/samples.jsonl": "bc3f49d18cbb4a60d93316d414820487da2f03ed0f6fe3a16c01bf97c5cb9aba",
+    "full-bench-projection/profile.json": "9629e7434cc37493b772e4d1377380dfad9efe392783aece94dcd1be5d659089",
+    "full-bench-projection/complete.json": "9c8db149282a7606191d73e033ca1a3e07c1dc093215b88718d18d08530933f6",
+    "full-bench-projection/samples.jsonl": "7965374c7f07e1749876f1c943d59b42e06d10f3cf5e19d3e2d5a854916d0c06",
+    "full-bench-filtered_projection/profile.json": "0dbfb5f9ea83af2d16250f594286f8520620815e98452c741f7e09534a9467a5",
+    "full-bench-filtered_projection/complete.json": "33fc45bed471357931a713a371a1b4865bce8bd4dc31ce5647c3c41823d23a0c",
+    "full-bench-filtered_projection/samples.jsonl": "4754cf00789a65c233a3699616b461b03f4d83e1753b4d34939d1f48a1b4b8a1",
+    "full-bench-character_date/profile.json": "db5e046290656edcc4efc4ea665a5f2d585f4e895fc40398b3ebe43ff09e2f74",
+    "full-bench-character_date/complete.json": "3f891d18be2507acc10939fd421e05136a8c3e6c5b1a8db2d82cc2ddf52e34fe",
+    "full-bench-character_date/samples.jsonl": "5b0350bc530fba56d79102cd6032aae6a604fbbd0f0e1f1d64da6c83eff42c88",
+    "full-bench-grouped/profile.json": "6494ed3b69cb8d34abb78993034839098dcd88dd242f1f24d40cacd091721be6",
+    "full-bench-grouped/complete.json": "da50bdccbeb9c5a2cf5c5eb51b0cea811fc53c54c67876a8aba3e13e1ba40d5a",
+    "full-bench-grouped/samples.jsonl": "b4b430e16e6a8173598baef616e9c465b6116ed87b19ae06542a584329bf6b24",
+    "shift-alias/diagnostics/complete.json": "aa6da70792f6da0f8558040c4d2ba7ca19419a0268512ce3a8534cf0af5962f6",
+    "shift-alias/controls/complete.json": "ad4e08993f3e5d9fcb7b3ffdd9425486c27ccf1865227f4de1195be6b58720f4",
+    "joined-tail/complete.json": "bbc08fcf32ed52e357f5c9bf9122b3ea03146b55bfad77876a48951a0682b6c4",
+    "compared-forge.json": "80b18b62f4604b178d1f7832c05195289862ad41cd9119d90ca17e3c5f9743cf"
+  }
+}

@@ -1,0 +1,760 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "P0_complete": false,
+  "archive_index": "type-binding-predictions-archive.json",
+  "binary_sha256": "ece539752ba19a93f7c3068b6d5b2aadfd7c0d24787b298125f4aecb6573779a",
+  "binding_comparison": {
+    "boundary": "validated_sql",
+    "compared": [
+      "SQL acceptance",
+      "selected operator registry identity",
+      "full result type",
+      "original and coerced operand types",
+      "inferred cast chains and operand positions",
+      "TRIM default values and types"
+    ],
+    "complete": true,
+    "counts": {
+      "rewritten_binding": {
+        "equal": 42880
+      },
+      "translated_binding": {
+        "equal": 42880
+      }
+    },
+    "full_C9_verified": false,
+    "functions": {
+      "ABS": 64,
+      "ACOS": 64,
+      "ASCII": 64,
+      "ASIN": 64,
+      "ATAN": 64,
+      "ATAN2": 4096,
+      "CBRT": 64,
+      "CEIL": 64,
+      "CHAR_LENGTH": 64,
+      "COALESCE": 4096,
+      "CONCAT": 4096,
+      "COS": 64,
+      "COT": 64,
+      "DEGREES": 64,
+      "EXP": 64,
+      "FLOOR": 64,
+      "INITCAP": 64,
+      "LEFT": 4096,
+      "LENGTH": 64,
+      "LN": 64,
+      "LOG": 4096,
+      "LOG10": 64,
+      "LOWER": 64,
+      "MD5": 64,
+      "MOD": 4096,
+      "NULLIF": 4096,
+      "OCTET_LENGTH": 64,
+      "POWER": 4096,
+      "RADIANS": 64,
+      "REPEAT": 4096,
+      "REVERSE": 64,
+      "RIGHT": 4096,
+      "ROUND": 64,
+      "SIGN": 64,
+      "SIN": 64,
+      "SQRT": 64,
+      "TAN": 64,
+      "TRIM": 64,
+      "TRUNCATE": 64,
+      "UPPER": 64
+    },
+    "java_sha256": "43a3f026187108d163975b719891bcf0f678346b4c9a663b150579adfd7d1f09",
+    "not_compared": [
+      "literal parsing",
+      "source positions",
+      "S2 cast/function lowering",
+      "runtime values"
+    ],
+    "outside_function_slice": 41344,
+    "records": 84224,
+    "runtime_verified": false,
+    "rust_sha256": "6dc368571aa3130d978f95d61481383303beabb2a567d0d9949d441a9609d2ca",
+    "schema_version": 1,
+    "shared_binding_encoder": true
+  },
+  "external_java_oracle": {
+    "archive": ".p0-artifacts/p0-type-binding-evidence-20261118-v1.tar.gz",
+    "archive_sha256": "9a7e2cd2aff46c049b334101f55f1556bd5c683a81add94e47d7961f394c59f0",
+    "bytes": 1787511500,
+    "member": "p0-type-binding-evidence-20261118-v1/runs/p0-type-binding-full-v1/bindings.jsonl",
+    "member_sha256": "43a3f026187108d163975b719891bcf0f678346b4c9a663b150579adfd7d1f09",
+    "source_and_classes": "Same external archive retains the complete frozen composite classpath and sources."
+  },
+  "full_C9_verified": false,
+  "independence": "Separate translated and rewritten type/coercion strategies; shared binding encoder. Shared encoding is not a second lowering implementation.",
+  "review_repairs": [
+    "COALESCE preserves original numeric/character operands when result inference succeeds without coercion; only the mixed character/noncharacter case inserts a cast into the noncharacter operand.",
+    "Comparator rejects boolean IDs/schema versions, mismatched runtime flags and integer/boolean type-metadata substitutions."
+  ],
+  "runtime_verified": false,
+  "schema_version": 1,
+  "scope": "Rust validated-SQL binding predictions, not S2 or runtime C9",
+  "spike_5_complete": false,
+  "type_comparison": {
+    "compared": [
+      "SQL acceptance",
+      "result SQL type including nullability and parameters"
+    ],
+    "counts": {
+      "additional": {
+        "equal": 41344,
+        "unsupported": 42880
+      },
+      "rewritten": {
+        "equal": 42880,
+        "unsupported": 41344
+      },
+      "translated": {
+        "equal": 42880,
+        "unsupported": 41344
+      }
+    },
+    "full_c9_verified": false,
+    "java_source_sha256": "43a3f026187108d163975b719891bcf0f678346b4c9a663b150579adfd7d1f09",
+    "not_compared": [
+      "diagnostic parity",
+      "inserted casts",
+      "resolved function identity",
+      "runtime values"
+    ],
+    "operations": {
+      "*": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "+": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "-": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "/": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "<": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "=": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "ABS": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "ACOS": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "ARRAY_AGG": {
+        "additional": {
+          "equal": 64
+        },
+        "rewritten": {
+          "unsupported": 64
+        },
+        "translated": {
+          "unsupported": 64
+        }
+      },
+      "ASCII": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "ASIN": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "ATAN": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "ATAN2": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "AVG": {
+        "additional": {
+          "equal": 64
+        },
+        "rewritten": {
+          "unsupported": 64
+        },
+        "translated": {
+          "unsupported": 64
+        }
+      },
+      "CASE": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "CBRT": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "CEIL": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "CHAR_LENGTH": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "COALESCE": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "CONCAT": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "COS": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "COT": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "COUNT": {
+        "additional": {
+          "equal": 64
+        },
+        "rewritten": {
+          "unsupported": 64
+        },
+        "translated": {
+          "unsupported": 64
+        }
+      },
+      "DEGREES": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "EXCEPT ALL": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "EXP": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "FLOOR": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "INITCAP": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "INTERSECT ALL": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "LEFT": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "LENGTH": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "LN": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "LOG": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "LOG10": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "LOWER": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "MAX": {
+        "additional": {
+          "equal": 64
+        },
+        "rewritten": {
+          "unsupported": 64
+        },
+        "translated": {
+          "unsupported": 64
+        }
+      },
+      "MD5": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "MIN": {
+        "additional": {
+          "equal": 64
+        },
+        "rewritten": {
+          "unsupported": 64
+        },
+        "translated": {
+          "unsupported": 64
+        }
+      },
+      "MOD": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "NULLIF": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "OCTET_LENGTH": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "POWER": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "RADIANS": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "REPEAT": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "REVERSE": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "RIGHT": {
+        "additional": {
+          "unsupported": 4096
+        },
+        "rewritten": {
+          "equal": 4096
+        },
+        "translated": {
+          "equal": 4096
+        }
+      },
+      "ROUND": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "SIGN": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "SIN": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "SQRT": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "SUM": {
+        "additional": {
+          "equal": 64
+        },
+        "rewritten": {
+          "unsupported": 64
+        },
+        "translated": {
+          "unsupported": 64
+        }
+      },
+      "TAN": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "TRIM": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "TRUNCATE": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      },
+      "UNION ALL": {
+        "additional": {
+          "equal": 4096
+        },
+        "rewritten": {
+          "unsupported": 4096
+        },
+        "translated": {
+          "unsupported": 4096
+        }
+      },
+      "UPPER": {
+        "additional": {
+          "unsupported": 64
+        },
+        "rewritten": {
+          "equal": 64
+        },
+        "translated": {
+          "equal": 64
+        }
+      }
+    },
+    "probes": 84224,
+    "runtime_verified": false,
+    "rust_outcomes_sha256": "6dc368571aa3130d978f95d61481383303beabb2a567d0d9949d441a9609d2ca",
+    "schema_version": 1,
+    "strategy_outcome_differences": 0,
+    "uncovered_probes": 0
+  },
+  "validation": {
+    "clippy_all_targets_warnings_denied": true,
+    "devcontainer_rust_tests": 28,
+    "fmt": true,
+    "python_tests": 28,
+    "remote_ci_run": false,
+    "workflow_lint": true
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "complete": false,
+  "raw_evidence_retained": true,
+  "interrupted": [
+    "$SCRATCH/p0-seam-regression-corpus-v3",
+    "$SCRATCH/p0-fold-final-s3-v4",
+    "$SCRATCH/p0-s2-full-v6",
+    "$SCRATCH/p0-s3-full-v4"
+  ],
+  "cause": "The devcontainer VM filesystem reached 100% usage. Maven encountered ENOSPC and bounded audit runners cancelled at their free-space floor.",
+  "recovery": "Removed only $SCRATCH/sql-to-dbsp-compiler/multi/target (156 GB of regenerable Cargo artifacts). Sources, test evidence, and the other container were retained.",
+  "additional_failure": {
+    "path": "$SCRATCH/p0-fold-final-s3-v5",
+    "cause": "Expected runtime panic diagnostics on stderr were merged into stdout, so strict JSONL decoding failed. The runner now retains stderr separately. No completion certificate was emitted."
+  },
+  "fresh_runs": [
+    "$SCRATCH/p0-seam-regression-corpus-v4",
+    "$SCRATCH/p0-fold-final-s3-v6",
+    "$SCRATCH/p0-s2-full-v7",
+    "$SCRATCH/p0-s3-full-v5"
+  ],
+  "logs": [
+    {
+      "path": "$SCRATCH/p0-seam-full-java-tests-v3.log",
+      "exists": true,
+      "sha256": "aa0bb2b91d8da2171d737f713fd84387d5ff522c6ad7e0461ffc3640c1fa15fd"
+    },
+    {
+      "path": "$SCRATCH/p0-fold-final-s3-v4.log",
+      "exists": true,
+      "sha256": "76ecc6edcba9bf12cfd6be85e130f6d458614483e6e81e44ef79d2ac492f8cd7"
+    },
+    {
+      "path": "$SCRATCH/p0-s2-full-v6/process-results.json",
+      "exists": true,
+      "sha256": "a783098159022099a1c63b8f48b9c7bee0e35c70820136cd770232af72b3f1ea"
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v4/process-results.json",
+      "exists": true,
+      "sha256": "0f5f9c2502e84bc35b2990419fedcc591143b61ada5bf3e6e77adc38eace89ae"
+    },
+    {
+      "path": "$SCRATCH/p0-fold-final-s3-v5.log",
+      "exists": true,
+      "sha256": "e45caf39355b14dc75ab3b1518444b3b4ce5b3cd1c95ec6588d32bfd31093666"
+    }
+  ]
+}

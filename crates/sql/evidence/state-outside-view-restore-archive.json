@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-outside-view-restore-20261118.tar.gz",
+  "bytes": 10480673,
+  "sha256": "d6068fbcf3ec77d5fd5b59bfb1147271badd42d51784e7c77078a3669c8ab55c",
+  "manifest_sha256": "19ff988f02d6ff267cde27b86245048e5d47dc9e43b5d195f39b1e47ff6d5003",
+  "verified_files": 50,
+  "all_members_verified": true
+}

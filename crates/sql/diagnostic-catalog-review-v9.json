@@ -1,0 +1,1270 @@
+{
+  "schema_version": 1,
+  "scope": "Java v9 shared helpers and separately reviewed direct assertions; Python and platform remain outside this catalog",
+  "reviewer": "independent agent source review",
+  "counting_rule": "One diagnostic-body root per reviewed source literal/parameter sequence, Calcite resource identity, or named formatter branch. Duplicate emissions and instances count once. Forwarding wrappers, constructor tails, and parameter-formatting expressions are graph dependencies, not additional body roots. A mandatory witness must match body text without a non-body alternative, or be a reviewed composite span.",
+  "approved_source_ids": [
+    "00d3b6f3fc3723e5f15cff0f709cbb2b78e4f397c0337de13f13ec0797aae8e1",
+    "027c7b311c19c0ecf12a0a821d1c36eb87a47fca549e179aa8ea906c6a4bbe81",
+    "03b9a84083e81049accedc0fe938eb4a01c0a96d0194d419d6bb33f7ab058575",
+    "04fe4db70f66ccde7d9fd209f193192fe9dcfa6c957d6758468f31111ff68c6b",
+    "05d4fb10730999b8f5b96f860c25fbb25330b8483d15899e1a5b0452b78c0ab4",
+    "09553d5eca5ed0b74771f4653d0c977d13a03f079a7c7220bf487b4bebd80f7e",
+    "09db35403db7f408d1f71de71bc50ab1a30c1f280f5772ca54039f52944f9d1a",
+    "0b4c7dc85d1afc14ab263ac2ad6d5fbc306531bc285de1de05d9e9c162b13589",
+    "0d2f077ab5e77c8376fdb104ba36b5db151c523a45829564249179d29d0c8705",
+    "0f5f578066f0a2a656a3132329644538732f45285d50d6d4aefb8b43aa61ecdb",
+    "0f77e1abaf69bd8fa34d2b0aa681cd52d1edd1e69822c460b720032a13af7bfd",
+    "1210ece0b8b36f4bea92cc30cb086b69f47a1056ac333a4b6eed50de432f6648",
+    "12c5cf949c98d076e9ed19357bd20db502555eb9f0ae7e7988cc4506306dc1e6",
+    "12f2b7a55357d6e0f97e9daf9b29d2bb3e86c48877cb58fc9be6fe95f52a0738",
+    "12fdaf7d1b55a6e226c897c1112c94df8194ab1ec3dce225ab9211749ad077b9",
+    "131098503223201dc999ab8a830cb7c34e609d332440a0216611414cc284c733",
+    "13e070280425b6a2585f041c5d121d431b7820f8f71346ba7a222e98ee6906eb",
+    "13f30345704c4f385b7522a48fe0654a3b51d19ab56368e9466710aa5680cf89",
+    "151842f47c8f194a7c76e8011e91113ec3ff85daee62df0266a6156b1da6398a",
+    "155b9e57478510bb840cd43b6458b3aa6aababfa12cc71e14208ee4629ee869e",
+    "193d11c5ae2957e476284fa3fe4314a6b5b1e741ec507cb1bfe35ba970edc8e8",
+    "194449f2d46be188a290390f7ef901156d2d3efea28acb53797dfc5685e02106",
+    "1a1a55d3795a588130b96f0ffbe5ccb8f8c91447e547346a6089ad2f124876e3",
+    "1dc8af2b2a88943d18b1154b2e3db470f42dd4ffdc2c730dde87067800033cc1",
+    "1de4658d327a3b44a2932bd49bb6db04a6cbe0f9b1a7fb67e613ac8d1ba34bf7",
+    "1de7bb94ca42c7a837f80b5922c1c6a3ff1106b8ae3ed3e8a75675394a64a218",
+    "1e90bb35b27bbe02ce96009935c87ec6f3b17487615abd7f16a9967f60a14260",
+    "1eb5d5357b2a7ab5998001d6c7bdfb506d6a75af513ae16a2f7dd4d39e3cc6d0",
+    "1f00fea9501c7a6144dfe9bad7f14e3c33dced88b5947d6830d17bf06039b9ff",
+    "1fbf663126a7e3a02b151bfb835666d07895156630aeaf1f462b4acd521fad26",
+    "226a9cee1b893e599b5ca932ef9baa87c7da9b815669fe8208d7a12b168db9dc",
+    "24b14ad313c772ae809dadcfd5f13489a40ddc0cc1f74f27eddd8d5427c16331",
+    "250810b396d273c9ba8846f0dd2500e4a6327d2d38866228f31b6cc486c397f9",
+    "2b0897bee999d3d2702ffeeabe480ca8726a75ee7b791a546155fc5bad288f15",
+    "2cb1500d4ed6376a98602e82d80913fd3e7cc6451aca889db38e846cddd83156",
+    "324d7139c941af53c33509a8c920d5820801bc441daa8b3a8b997d16f0603fac",
+    "3425011b86b2a9e3840c84fcc1a7be248e53d79c4e59ed06fa4fc02f0f236a15",
+    "34eab56d3f9ed61ad9a2f22983fd8e740df3992242c9b68da5b83cf3375c4319",
+    "350f6e6ac11ad65f967c5f6079b2a09353cd835167bc178b23d1adb3cae06526",
+    "354d12cd779df5ab8bb88601b656048f80ff13c0bc0655721046368cf2be3acd",
+    "35c63c6149e4b1048da89c007bfebef60bc82414fbd83e7fed78aea6fc1c0621",
+    "366f0481bbaa9b940d1601cd8a6e5d837a26b445f4c3bf6ce658457687b60c03",
+    "36f473e42218096914f534e962fbe549d43ef36cca46e59d53b26ca9430ca944",
+    "39edb338680b6fa91663abaec3778537a4cd98f72000520f7f4fab9e824d36e0",
+    "3f026462d6f15e3fb78712c79f7ad56f57c330d525dcfe79866a1253dfecfc9d",
+    "4057cbaa21a4cb035242480cf396f5eadd5e8bed7f4b0a67672e4ce319a93d4e",
+    "40ab4fe98cb17c78ad8fd3e11892a2f495201f7110cebeb97466506bccd30c0e",
+    "432a54fa960cc7193759655d4f1dd3ef82646f3e5bec98633c9b8da486dec3e9",
+    "44c593bac4dcfd2516b358e8ea2a7379d237f533c295dc8d578aa1a326266bb5",
+    "464433dbcc8e1a0c72b91ab05655a1a2ce2e4f81932fb5bef9c4b94af4b87969",
+    "47b1f5b0cf156b17dd775c25ee9b357c6c5ed54c94836b543dbfada3a463272c",
+    "4a9b721f346874e9b9ecf4033a5f61d704f91161799407cb52871cac802db2ea",
+    "4b5b97627a908027b50c31114ae3c9284bfacb33e0833bd49b2392fc672cd8a1",
+    "4c863398771cd74f1f5185b2399a8c819fef939741f17851314067609980d6c0",
+    "4d5d786e2afeaca138c56a4c0a1a8b8bf2060a61520810a22da41735432e6839",
+    "50009f6b2fcc2f7028f5134488a131e93c84fad2415d8c9bc3961a0d5bc54cf5",
+    "51531ebd7b9c701d8b91eabf626232e74c4fa3108823bcf1063343fbaf87c4e4",
+    "516ae50b3c4e05ad0ec850152a24e35195d65efa378dbf512ac7c027cb37f24f",
+    "52599f2b0c8e699b4f8d35a815056c7d29a58f28a6d1f83da40a1ed10819e208",
+    "57532ee0524035fc17c36f210da4387fa5803863dc9e2e8b846c3b53953d8020",
+    "576ff227c7433861a21c9cb1aeb4451aacb2e74ea2e2664b31a284cfc7d5d5b0",
+    "58fb9401ee2b47d802df3caf828c351713b07035b3fee376af1a77f6afdaaeda",
+    "591cec08e603dfe23482491316001b38290404e05d8e8bbed8510e7fc24aac93",
+    "5edb5da996dc9c69dcc07a419199e2dec9ff3ef4582170fb8fc3ba278fcd0619",
+    "6018462f8b2214159a23e94baf81e18a07d9d250784e4ced6bbe09551fcfb894",
+    "60b86fa704e69cd1a10c8d3354f2ca9deb8f31189a6316c1ca81e232e42f5d0b",
+    "6111982acdb58342bc5c661c2d9663157ddb580b3bac1f849524345d62c9a462",
+    "64e6f763b2a1ba2b179fd8afd54d62c8bf6b95567448b013cffb64220e455db8",
+    "6671157dd8f693acc97373e6147082be19dacf6ac055d21351fd78135673b8ba",
+    "6687273c9ba5aec2e7caeaf7599a04eface882401d30e6c5fd059e34e6dda781",
+    "691e085bfe208033a2c02f8f6f9a3afc733b02709020ba2b4d973f953f9cba72",
+    "69ac4ef9ff78d621c391f7b48b701885a057d66c74a4b2721e506f628f963ec1",
+    "6a07754dd19cfc0c7b29c0c576ffc6678b14df0d0e046eff689040c7a7c711aa",
+    "6a79ed6c776e320a20317973f0afa68938f836d2744688dc22599bd3baa92545",
+    "6be358d5eb9a84a9361118431e11a171c541ccc763f4f0a479412c1bc7c75537",
+    "6ca107ff9c771b2377d2305cb29b83feb7bf880f1ce802c3e18ac78543ef7a23",
+    "6ce5020607988dbed6a5fdc086595bb11cb8fa943d5f29885b50d4948fafacfb",
+    "6d3f2567e254ad10c4b0ca27a4b2d3ccc0d03e108575d8356bdaab4f5f64b6e7",
+    "6f0d7b1057104b9a5bba5f9ebd04b684ad8d48757b1759ccd14198b57c7d4fdc",
+    "70449ef7bde9d402899065db4803890510f0a1880271e434d8b9801dc79971f4",
+    "74c28689efeecd9318be4143e72125116c9450ee6a7f9aa3f05e1ebe22e80b86",
+    "75429f957046d164d884c90b849fb1c86ea6e4ac966b8ee6916980a973dd9270",
+    "776da11e394b46f4d2b6c79693062dffcc754a6cfbeb5018aec2ae1e14f0aa5c",
+    "7c01b4c9c0d739d360085d82f4da91eae14e1bf6efe9e8de9e10ef5151ed94d2",
+    "7d354e05e04cdb724b1cb0f87ead1fcdf663353f118eaf28ec83ce059ac1011d",
+    "7d5fa554b5ca650629a50ce424d7046c0e91a5f2b9e19ee6bbed7b1e96bddcff",
+    "7f7c5a7fd7d5b9623ee85ea8685b39b5f9c15b812d0ec5195bcd44c7601216cf",
+    "812cd10fc0268ff78fd496a5098c344dc12a05e7fb51f4dd7efdaaf65a5bc5ee",
+    "828f9f048c71dad03bcdc4288005bd99b06a4f384d97a6c3743075d60c257bc5",
+    "83368a7d9c516126c57dd600ecde012342f52b514533dc667cbecd4ebecb2b65",
+    "83879f3515eeaa4a476309682c880c5b980e11f9affe810c0318b6565454c6f5",
+    "83a43d40ea5e2de970a1ed8df33c11369fd80d627ab2482c5840213f15d4cd72",
+    "85eb0308815600ec13a10146564e0d36d192aa609e80a5b0dabf48288a2644d1",
+    "875770b4a3caece27d93dc85d19487571f69b1f3132c928dc3a8e054c15def4b",
+    "8939963b32f90252d1b8fa415327d52f71b897f173f03a8497d02e0b89263288",
+    "89492e39badef4392cb5fb0eada7d1d7999323612b74ee1d10964b0b13daebbe",
+    "8bc1694e46d090f4f7d02486567783c1a57f6e1e1dfa806ae557875439969233",
+    "954329c0f925a265d1fa6292de028788f2c91c15f20ebfb0bae321b8b9f16171",
+    "95c56cfe5be027bde00d5bcef858db36d93e989019ae11e5814770b59b79e515",
+    "99695d945852093211c579aef8543366a5453d7e15dae69b9b3aa67cf4d4c532",
+    "9b39f89e44ab7c75d0b73471334180dc8e93c11ba2434cbfc79cd592a9527ce8",
+    "9b50a655244515fdf68a8335c7128a3e355c74c33fae7a0975af5084d6bf1f42",
+    "9dbf74b3875f654799846ceab34973589f87390dafec2e05b9b4a37da21842fc",
+    "9e7bd09781387d7fd2d6a0f84fb4700b01fec47329ea1e2aa6fee947b5a80d3a",
+    "9f2b5084ead76becbde0410776a5216b7b975ca5b44473e8a33487dbbd7c8f2c",
+    "a009e25a249bd161c719a6b62e550f3ab6d74b05a7a22a749154e0e718bae62b",
+    "a28837f8c65bcc4e79c040ac96cbf875fa5e2509e18f821770e3b4c91062b76e",
+    "a2ca0d86721446f96cfd3a64d85f8cb1175992f52646ade5be58651bbfe50978",
+    "a2f081c78b0d2d3792549731bc9231348dd3c5a5375d22a3d75d4fc322acb848",
+    "a9b4eaf1a2907b4bbf4b4d7fb85501181e5a3f6faf2262e3be19b71728bed8e1",
+    "a9b516e2217c9a449e783fd3f56fe4cc2a1dd670bcc9852066848768df3d6e1e",
+    "ab0c5fc244de85670bf2370f1b8b96b7b355f9acaa11296a3faba21fef74c798",
+    "ac0551224cdf8fd25c315aed5a3ec3f8dfb8867431a36a5df1b45c49d075b390",
+    "ad819e8c5e2fbf7a659dceb84870d4bd368c76fff887ede1d92308b6adb8650a",
+    "b010d1059c9575fbd5718682cb27aea676050d39109ce40a462c2c884397eaf2",
+    "b043ac5c57270fb0a07ae21509f80c34a08ca98654a5b3444edd1c2c967424a7",
+    "b07d0b33cf8ac958a9e31a3476d6f522590b6e18f5174022d1c6c0e87381a7ea",
+    "b0e2e6c312865eb517bdf6e23f80bf9cf538828fd134cc7a5702124cc6e93667",
+    "b1191c232c93cbe9a15709b98c6b90afb8589db5457c24f8f32e1f6fbca74b17",
+    "b1795b66de5f4efac876913ec62afa47135a29435b7bc92f4e9a705714a5ae7e",
+    "b1d51c0c7a3c664b972a79e80ceb4e0efd29ad31238f5a16fe9b9502980c3c6e",
+    "b25ba945f5ac6c031b565b4a632d9a4876b93f2f487c815113568422e108ed6c",
+    "b26929b6d32961d391288dd7c8f67e06eb51d8832f333873f9f87ebcf8cc8084",
+    "b4638aef82bf2755b5cd6c5fb884f64b21153911d194f75b1a7064d0e0a4e3d7",
+    "b49a5d29015d59ebc8feff4700f370046f47d1a34925448e7ec3e36a29e0017d",
+    "b58e7206fe36690db1b99ef49da0d0dd3570fce8ab8d5e1ecf11704479250ad7",
+    "b5a8cb71e2bcb46349c4a797bc3c6ebec8df034ac7fd4471c1e0991313f0afdf",
+    "b63ae3fbbc24ba632197c642b0dba814887e1d8af5f095d5a43abb179120a62c",
+    "b9ad9664c55a2d5cb502cd41d9933c5495d6de2e4234671994ed2c6c61f77f5a",
+    "b9ce0a1be3e0b94db6158ff9fdf7a06b38afafabea5e5041b5de154327350f2f",
+    "b9d4ad427d4132a73f699cc987fc6cccdfc95e817b3d3d5d448941c257f94a7b",
+    "ba7eaad9d2f0edcbaf0f312366f74ce928878acd7563533c44e4c9ff57371cd3",
+    "bb2d7c936b20e189e9664dec51a6c3f7c9e93bb696fbbaaee0e3f705b5f0131f",
+    "bdfc13c4ecfcee052aa531c658f610a7f5803adc562c8fbbebcf51c46c886a8c",
+    "c02b0cd4a92fb5cd5d97da9170d50cedacaa8e09a8243d32d4000976977ad742",
+    "c0af9ee1591e7d12c1cf86b046326a30bd37515e91218a4af266afd9dbfae9ea",
+    "c259482ad4fba5813094ce5d835cfd26100c2dbd3854cea702545846f3478137",
+    "c5cd980cb5352fbbe5a54b67e9e08b17afbc068c25592540ca1665b9d455380a",
+    "c61af500f026735a0813308a6e3e3ad8b6be3fa2a6eef37d9f48ef449bb92679",
+    "c7442722a39fbb5ca485669eb9faf4340175f861b926fccda559634853d36274",
+    "c81fb804a7f084ec1ac55c4660b45509d538b5e07dcfb4b5679993ea571bd321",
+    "c92b655427607d8567d61faa837d217af7dd2ace1b4e7d1e865eaf6911702aae",
+    "c9cc6b859302d634e27d4fbe0878fe3d28c69d9d44c66307f4e55da1e0c250c8",
+    "ca01f48331e3ace57493ce12bb20af49a4566ce07512a2ca8d43ccaa0c2f9b58",
+    "cab1edceed31d1f708ad2ef97e4e5e08c943d340e945e32cfb40b2099c2ea081",
+    "cb4fe85bd090b5dbdbb2b734fe4799c83969d5af533be3fa7f522cd5ab3603e3",
+    "cb9ec5cd3593db5594683b699cc12b64fffe08d65c0ce1aa9ebb7e3a3cd4550d",
+    "ccc6056f96f7e3c3f9b94a0c7693e2d3c91960cf0d6608a86c0010dc9167228b",
+    "cce76f14c4e39d6977cd4ed0fc9bc8f1cdf301b0abd3f2945be19e33270dc5cc",
+    "ceeac382121c605da857f065a9cfd87a3d73448f9739825ecb03f9119e978327",
+    "d042e79fb5f1b7a6fe1c02fe816f7fc6333742891f9e16002694c6de2661efff",
+    "d307ff5b09ef4d3324b0d665b25ce1fc7c6ef115da00dd16534549c7b3c7508f",
+    "d42dd65ec0173184ed7cea5132454d9bfc9e1d2e6b8dfbad160feb2b71907d24",
+    "d4c263dafbdc5acf3a5b075a0925f3df06ead3b834d8a2560d0eccad6ab687c5",
+    "d5c5f99a029c2f97b55c9df6bd2869ab53c5f8cee67f3e4393bb07ff8fdca65c",
+    "d8eff0390a7844032c683a93d5cde23332b0632f00c7c8c715b5ddd145d0aa1a",
+    "dc8cecc0162930b13cfb573128481db3e55daec080a921cee3c316631d0d6033",
+    "dce66db90e22137a5ace81090513880ee6e43ffcf4ca1731ff4ec51029f2aaf3",
+    "e343d55b020dd306ebbc75a7aa1f5a8787a7a271f1af815b21df8d9a18942b4d",
+    "e42cad8a1dfad82e41d707804211f74dc5ecc46586280735561c8409a9595cf1",
+    "e57359de686441af161c37be7f9fcd4f2bf7307f6a2167348d7b937e8e18dc72",
+    "e6598a0ff99e1dffff25094256ccc312c69470e76b0c4a949b9c438d1b67e697",
+    "e713ffb4e61d21d3cf6eb76c6697de5d980cc13d1709c579a8e03fac3622c73e",
+    "e99cd019cbcd2350c4eaa7da22213e12a2acf2d6e4e5e055753005914081c81b",
+    "ec58485bf4eae032447f338228d72595e834ff15a82d761c56a628508fd88512",
+    "efa7c24e7568f5ffb88d3b6c24fd207ba951b1dc4093d43cabc9fe97e7f5402b",
+    "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+    "f3a7f47822d32a833d16a79b77078fd72ede9928b4c01ed92e2699108a2b7c81",
+    "f4593357316ea98c64903957ab1b18f02bb95242a98edf28b8d3ad71109ed98e",
+    "f8181519f304732311bb0d23ddcb8f389aabcb7886a54495765310639aa6d7a8",
+    "f829a926b58e8b072dc39391c30f4e3e49023e8fb8682aae13288c17398e099b",
+    "f9ea769740ff6cc35f9d93570012820bf70045393e0a4c535d231c3331e3464e",
+    "fa840c9d2d5b720930034cf3eb6ee49ef4a7f7da7a0b161e764a63800655ea0f",
+    "fa908b4d117ceed8b9da197495e568aab88cef027c9e20d2fa3cc1fa86b026f2",
+    "fb025b2f2fdc966a2dfe157cb89e4b0f2a51e501c364226b8c497c3e9a2ee25c",
+    "fb3546bdbaa9d75b9b145306784c4b763211a054c8d9647399ed5dc6b2ba07fb",
+    "fc27bffee41235f2964b7142721b3e13609016ba990d1a8c480d28f154d83b3f",
+    "fed41dae76ee1d465295c18b8990e42f5ee96c5e46517a4e0e81a2b3275cc4a7"
+  ],
+  "approved_calcite_keys": [
+    "AliasListDegree",
+    "AsofConditionMustBeComparison",
+    "AsofMatchMustBeComparison",
+    "BinaryLiteralInvalid",
+    "BinaryLiteralOdd",
+    "CanNotApplyOp2Type",
+    "CannotCastValue",
+    "CannotInferReturnType",
+    "ColumnNotFound",
+    "DescriptorMustBeIdentifier",
+    "DuplicateLambdaParameter",
+    "IllegalLiteral",
+    "IllegalRowIndexValue",
+    "InvalidArgCount",
+    "InvalidPrecisionForDecimalType",
+    "InvalidTimeFrame",
+    "InvalidTimeFrameInOperation",
+    "LambdaClosureNotAllowed",
+    "NaturalOrUsingColumnNotCompatible",
+    "NullIllegal",
+    "NumberLiteralOutOfRange",
+    "ObjectNotFound",
+    "OverMissingOrderBy",
+    "OverNonAggregate",
+    "StringFragsOnSameLine",
+    "TypeNotComparable",
+    "UnequalRowSizes",
+    "UnicodeEscapeMalformed",
+    "UnknownIdentifier",
+    "UnsupportedIntervalLiteral"
+  ],
+  "named_dependencies": {
+    "feldera.row_comparison.equal": [
+      "Utilities.singleQuote",
+      "Documentation.citation"
+    ],
+    "feldera.row_comparison.not_equal": [
+      "Utilities.singleQuote",
+      "Documentation.citation"
+    ],
+    "feldera.row_comparison.nullif": [
+      "Utilities.singleQuote",
+      "Documentation.citation"
+    ],
+    "feldera.row_comparison.row_order": [
+      "Utilities.singleQuote",
+      "Documentation.citation"
+    ],
+    "feldera.row_comparison.container_order": [
+      "Utilities.singleQuote",
+      "Documentation.citation"
+    ],
+    "feldera.floating_equality": [
+      "WarnFloatingPointEquality.describeValues",
+      "WarnFloatingPointEquality.describeColumns",
+      "Documentation.citation"
+    ],
+    "feldera.indexing_rewrite": [
+      "DBSPCompiler.ITEM_ERROR",
+      "calcite:CanNotApplyOp2Type"
+    ],
+    "parser.keyword_syntax": [
+      "DbspParserImpl.convertException",
+      "ParseException.getMessage",
+      "CompilerMessages.messageWithoutPosition"
+    ],
+    "config.unknown_field": [
+      "Utilities.doubleQuote",
+      "ConnectorValidator.validateConfig"
+    ],
+    "config.enum_invalid": [
+      "Utilities.doubleQuote",
+      "ConnectorValidator.pathToDotted",
+      "ConnectorValidator.enumValidValues"
+    ],
+    "config.boolean_primitive": [
+      "ConnectorValidator.pathToDotted",
+      "Jackson.StdDeserializer._parseBooleanPrimitive",
+      "Jackson.DeserializationContext.weirdStringException"
+    ],
+    "config.boolean_boxed": [
+      "ConnectorValidator.pathToDotted",
+      "Jackson.StdDeserializer._parseBoolean",
+      "Jackson.DeserializationContext.weirdStringException"
+    ],
+    "quantity.unknown_unit": [
+      "ConfigQuantity.reportMalformed",
+      "ConfigReporter.fieldName",
+      "wrapper:org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter.warnPath",
+      "ConfigQuantity.MeasurementUnits.unknown",
+      "ConfigReporter.partOf",
+      "ConfigDuration.EXPECTED_UNITS",
+      "ConfigSize.EXPECTED_UNITS"
+    ],
+    "quantity.missing_unit": [
+      "ConfigQuantity.reportMalformed",
+      "ConfigReporter.fieldName",
+      "wrapper:org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter.warnPath",
+      "ConfigReporter.partOf",
+      "ConfigDuration.EXPECTED_UNITS"
+    ],
+    "quantity.negative": [
+      "ConfigQuantity.reportMalformed",
+      "ConfigReporter.fieldName",
+      "wrapper:org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter.warnPath",
+      "ConfigDuration.parseNanos"
+    ],
+    "quantity.empty": [
+      "ConfigQuantity.reportMalformed",
+      "ConfigReporter.fieldName",
+      "wrapper:org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter.warnPath",
+      "ConfigDuration.parseNanos"
+    ],
+    "geometry.literal_conversion": [
+      "RexLiteral.getValueAs",
+      "CalciteRexNode.toString",
+      "constructor:UnimplementedException"
+    ]
+  },
+  "additional_roots": [
+    {
+      "id": "parser.ordinary_syntax",
+      "error_type": "Error parsing SQL",
+      "reviewed_bodies": [
+        "Encountered \"5\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+        "Encountered \"a\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+        "Encountered \"NULL\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+        "Encountered \")\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+        "Encountered \")\".\nWas expecting one of:\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    "
+      ],
+      "definition": {
+        "format": "Encountered \"{encountered_escaped}\".\n{expectation_suffix}",
+        "source": "generated parser ParseException.java:102-134; CompilerMessages.messageWithoutPosition removes only location",
+        "examples": [
+          {
+            "message": "Encountered \"5\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+            "arguments": {
+              "encountered_escaped": "5",
+              "expectation_suffix": "Was expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    "
+            }
+          },
+          {
+            "message": "Encountered \"a\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+            "arguments": {
+              "encountered_escaped": "a",
+              "expectation_suffix": "Was expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    "
+            }
+          },
+          {
+            "message": "Encountered \"NULL\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+            "arguments": {
+              "encountered_escaped": "NULL",
+              "expectation_suffix": "Was expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    "
+            }
+          },
+          {
+            "message": "Encountered \")\".\nWas expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    ",
+            "arguments": {
+              "encountered_escaped": ")",
+              "expectation_suffix": "Was expecting one of:\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    "
+            }
+          },
+          {
+            "message": "Encountered \")\".\nWas expecting one of:\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+            "arguments": {
+              "encountered_escaped": ")",
+              "expectation_suffix": "Was expecting one of:\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    "
+            }
+          }
+        ]
+      },
+      "dependencies": [
+        "ParseException.add_escapes",
+        "ParseException.getMessage",
+        "CompilerMessages.messageWithoutPosition"
+      ]
+    },
+    {
+      "id": "unbounded.operator_state",
+      "error_type": "Unbounded state",
+      "reviewed_bodies": [
+        "The state of a JOIN in the code implementing view 'v' may grow without bound"
+      ],
+      "definition": {
+        "format": "The state of {operator}{where} may grow without bound{position_suffix}",
+        "source": "FindUnboundedState.ReportUnbounded.describe:704-716",
+        "examples": [
+          {
+            "message": "The state of a JOIN in the code implementing view 'v' may grow without bound",
+            "arguments": {
+              "operator": "a JOIN",
+              "where": " in the code implementing view 'v'",
+              "position_suffix": ""
+            }
+          }
+        ]
+      },
+      "dependencies": [
+        "FindUnboundedState.sqlName",
+        "FindUnboundedState.viewOf",
+        "FindUnboundedState.internalDescription"
+      ]
+    },
+    {
+      "id": "unbounded.silencing_hint",
+      "error_type": "Unbounded state",
+      "reviewed_bodies": [
+        "Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON\nSee https://docs.feldera.com/sql/streaming#unbounded-state-warnings"
+      ],
+      "definition": {
+        "format": "Silence these warnings with SET {variable} = ON\n{citation}",
+        "source": "FindUnboundedState.HINT:96-97",
+        "examples": [
+          {
+            "message": "Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON\nSee https://docs.feldera.com/sql/streaming#unbounded-state-warnings",
+            "arguments": {
+              "variable": "FELDERA_IGNORE_WARNING_UNBOUNDED_STATE",
+              "citation": "See https://docs.feldera.com/sql/streaming#unbounded-state-warnings"
+            }
+          }
+        ]
+      },
+      "dependencies": [
+        "DBSPCompiler.silencingVariable",
+        "Documentation.citation"
+      ]
+    }
+  ],
+  "sources": {
+    "FindUnboundedState.java": {
+      "path": "$SCRATCH/p0-diagnostic-frozen-main-sources/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FindUnboundedState.java",
+      "sha256": "831ac8f642ac6b2d2b23b3e4e2b95890034e1182309dd69558612a4ea18607e4"
+    }
+  },
+  "source_review_basis": [
+    "All 178 admitted source-expression records were inspected with their emission class, literal/parameter sequence and source locations.",
+    "The 12 bodies with competing source candidates use explicit test-specific dispositions from diagnostic-formatter-dispositions.json.",
+    "Exact body matches and named constructor continuation policies are retained; constructor suffixes and dynamic parameter expressions remain graph dependencies.",
+    "The 30 Calcite resource keys have unique matching identities in the covered population. Shared resources used by indexing rewrite are referenced by the same root ID."
+  ],
+  "uncounted_populations": [
+    {
+      "population": "Java direct/specialized assertions",
+      "status": "Parent is capturing typed targets in v8; excluded from v7 count."
+    },
+    {
+      "population": "Python compiler assertions",
+      "status": "281 assignments exist, but this Java catalog does not count their extra roots."
+    },
+    {
+      "population": "Python runtime assertions",
+      "status": "61 assignments require runtime evaluation; no runtime execution is claimed."
+    },
+    {
+      "population": "platform SDK rendering",
+      "status": "Exact composite contract remains separate from this Java catalog."
+    }
+  ],
+  "whole_suite_required_template_count": null,
+  "human_maintainer_accepted": false,
+  "P0_complete": false,
+  "reviewed_regex_body_fragments": [
+    {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#negativeIndexTests",
+      "expected": "INDEX 'ix' refers to TABLE 't'; this has no effect.",
+      "required_literal_fragment": "INDEX 'ix' refers to TABLE 't'; this has no effect",
+      "review_reason": "Reviewed Java regex has no alternation, optional group, character class, or repetition. Its only possible metacharacter is the final period. The required literal prefix occurs only in the message body; captured Java field_matches confirms the complete regex matches that body."
+    },
+    {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.MetadataTests#keyValidationTests",
+      "expected": "Table 'unknown', referred in FOREIGN KEY constraint of table 't', does not exist",
+      "required_literal_fragment": "Table 'unknown', referred in FOREIGN KEY constraint of table 't', does not exist",
+      "review_reason": "Reviewed Java regex has no alternation, optional group, character class, or repetition. Its only possible metacharacter is the final period. The required literal prefix occurs only in the message body; captured Java field_matches confirms the complete regex matches that body."
+    },
+    {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#issue1187divisorZero",
+      "expected": "Modulus by constant zero value as divisor.",
+      "required_literal_fragment": "Modulus by constant zero value as divisor",
+      "review_reason": "Reviewed Java regex has no alternation, optional group, character class, or repetition. Its only possible metacharacter is the final period. The required literal prefix occurs only in the message body; captured Java field_matches confirms the complete regex matches that body."
+    },
+    {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#errorTests",
+      "expected": "is declared recursive, but is not used in any recursive computation",
+      "required_literal_fragment": "is declared recursive, but is not used in any recursive computation",
+      "review_reason": "Reviewed Java regex has no alternation, optional group, character class, or repetition. Its only possible metacharacter is the final period. The required literal prefix occurs only in the message body; captured Java field_matches confirms the complete regex matches that body."
+    }
+  ],
+  "source_signatures": {
+    "00d3b6f3fc3723e5f15cff0f709cbb2b78e4f397c0337de13f13ec0797aae8e1": "47934fea83de277439ad540aee2f423672d54ac9b6dcd0494d2d43bbd284782f",
+    "027c7b311c19c0ecf12a0a821d1c36eb87a47fca549e179aa8ea906c6a4bbe81": "5c89c6831f16db78aaaa156776896e94069652ca7b949d48aa43e594c575e863",
+    "03b9a84083e81049accedc0fe938eb4a01c0a96d0194d419d6bb33f7ab058575": "50025619ccea1eae261e9fa24a4fa6cd5d0040c9b13ca256c437dfd5f88beb1b",
+    "04fe4db70f66ccde7d9fd209f193192fe9dcfa6c957d6758468f31111ff68c6b": "93202d780ee0c54358365d76372f22feec2d5ebc7c4eea015b15672d2bb4c000",
+    "05d4fb10730999b8f5b96f860c25fbb25330b8483d15899e1a5b0452b78c0ab4": "84c5a84b2b52e830b59878d9befb9e779f174b08b5df9966b1b4f9d7b37742b1",
+    "09553d5eca5ed0b74771f4653d0c977d13a03f079a7c7220bf487b4bebd80f7e": "8854da24b5c9230d45ad1108566c05c7c3c7dc73f21240a69179448590160ec5",
+    "09db35403db7f408d1f71de71bc50ab1a30c1f280f5772ca54039f52944f9d1a": "f7b48b7f057f978f8a2e2a1a5fc059f119f06f9aaeb89965478563ea2afe7b41",
+    "0b4c7dc85d1afc14ab263ac2ad6d5fbc306531bc285de1de05d9e9c162b13589": "a3b625988bf6206971a1128b9a4a0633d90e65324f54dd6b6f31021386d30671",
+    "0d2f077ab5e77c8376fdb104ba36b5db151c523a45829564249179d29d0c8705": "a0b23da663d6d5bbda23290e26fa0f0bfb9fbe65eddfad77f2df88c2a410b31b",
+    "0f5f578066f0a2a656a3132329644538732f45285d50d6d4aefb8b43aa61ecdb": "d94ec8eb9144b3c1291f9be86a254cf367774e10ba3b23565d9b33f846071d14",
+    "0f77e1abaf69bd8fa34d2b0aa681cd52d1edd1e69822c460b720032a13af7bfd": "b86da31e75bc656baee655827f609df5389513fc108d6dd05684ebe699b65516",
+    "1210ece0b8b36f4bea92cc30cb086b69f47a1056ac333a4b6eed50de432f6648": "6e904d92824839ad1512cd780ae3cf515b197feacffb10d59efb8cd2cde41e31",
+    "12c5cf949c98d076e9ed19357bd20db502555eb9f0ae7e7988cc4506306dc1e6": "078d0317fe02b1cca93ba20cc98bc6c6d9357b2ce0d0128b21e1e778f507c6f9",
+    "12f2b7a55357d6e0f97e9daf9b29d2bb3e86c48877cb58fc9be6fe95f52a0738": "fcca14409c200ae8a1732153b5f29025d6afc2ed8878e06c7b8a340ed9afac4c",
+    "12fdaf7d1b55a6e226c897c1112c94df8194ab1ec3dce225ab9211749ad077b9": "eb1047ff8e4d3136d1051bb529e8eac3def1df5a201a158efe7c6c1cf6de2716",
+    "131098503223201dc999ab8a830cb7c34e609d332440a0216611414cc284c733": "7814b9ac55cb75f9f9d6ac3f72b685727ff69ded663bb595f51d39c56161c4e8",
+    "13e070280425b6a2585f041c5d121d431b7820f8f71346ba7a222e98ee6906eb": "8cc9e4d64880eea5a3557b7d90120f3b634e1faf6ab58cb76884fbc0e91ed57a",
+    "13f30345704c4f385b7522a48fe0654a3b51d19ab56368e9466710aa5680cf89": "e5697d197b3e984ddfc141ed58bbb736263d79889cba65151add1ed180ca65ad",
+    "151842f47c8f194a7c76e8011e91113ec3ff85daee62df0266a6156b1da6398a": "305138c747d9771d1c6df101d7633554b3d1abe6bbf3d032ff3bcf472005909c",
+    "155b9e57478510bb840cd43b6458b3aa6aababfa12cc71e14208ee4629ee869e": "7624ee78308c3f77cc1c733c0a3ae0a317aa338ba61e6fa8eae732f7ef375a16",
+    "193d11c5ae2957e476284fa3fe4314a6b5b1e741ec507cb1bfe35ba970edc8e8": "ba546b717687b640eba697e04909a60cf737d8359879dedb20a76d9eb185966e",
+    "194449f2d46be188a290390f7ef901156d2d3efea28acb53797dfc5685e02106": "b6096c062254763d0ce3376dadb9dadc78c57449eae04867e8cceca7ec165704",
+    "1a1a55d3795a588130b96f0ffbe5ccb8f8c91447e547346a6089ad2f124876e3": "f99d912cf13dc198fe0210a97e3f9f99e03453d31d655eb42aa7d2e4a6f9a9e2",
+    "1dc8af2b2a88943d18b1154b2e3db470f42dd4ffdc2c730dde87067800033cc1": "552ab421a84209a66499a1f73a1622ccb641c44854e84472adb5509ba7e7aff9",
+    "1de4658d327a3b44a2932bd49bb6db04a6cbe0f9b1a7fb67e613ac8d1ba34bf7": "368704d8574df09ca0334f7b9bf2a40246010c8ab471d77f75f64cbd18cbde7a",
+    "1de7bb94ca42c7a837f80b5922c1c6a3ff1106b8ae3ed3e8a75675394a64a218": "5549ae664b76261d4c3161e377af6ad571c26dc9ef6f4183e04f505919b91dba",
+    "1e90bb35b27bbe02ce96009935c87ec6f3b17487615abd7f16a9967f60a14260": "18427a9b884bf5a101a70e72bb9915a1863306efcb10b11ff4d66d06ad1d5483",
+    "1eb5d5357b2a7ab5998001d6c7bdfb506d6a75af513ae16a2f7dd4d39e3cc6d0": "b913b37dc7b486fda766e405d8fcbe51700de7e1cb8dc413710b50d812c6229a",
+    "1f00fea9501c7a6144dfe9bad7f14e3c33dced88b5947d6830d17bf06039b9ff": "055b3818631b4dd13484b4addd352e866403ea509bb40d4c04fc76a0a5997bfa",
+    "1fbf663126a7e3a02b151bfb835666d07895156630aeaf1f462b4acd521fad26": "a0cf731e38a4fce485be49434229b8059ea5f9c06cd562f1ea6b45e450328adb",
+    "226a9cee1b893e599b5ca932ef9baa87c7da9b815669fe8208d7a12b168db9dc": "14c53e021bf497450e0327474f60cfa9303da964e7feb029f4db7fe062bf8739",
+    "24b14ad313c772ae809dadcfd5f13489a40ddc0cc1f74f27eddd8d5427c16331": "3e9b7523c1e5a417f02cd776603a4a8e12fae81efef93fb0961cffef04800c82",
+    "250810b396d273c9ba8846f0dd2500e4a6327d2d38866228f31b6cc486c397f9": "29b5da4ce08467b585a935ef3eb0902b072a5eb83f12548d6d0c06d4c4f43446",
+    "2b0897bee999d3d2702ffeeabe480ca8726a75ee7b791a546155fc5bad288f15": "92d86ec2ecc05bebb7ce8dc36557d246b07259abc94d88bc0bb68f3a5f9be61b",
+    "2cb1500d4ed6376a98602e82d80913fd3e7cc6451aca889db38e846cddd83156": "e5d15827dd74110d9f02911d9bbe0ceb598bcb692caf449d2d0ec621051fc454",
+    "324d7139c941af53c33509a8c920d5820801bc441daa8b3a8b997d16f0603fac": "e7d4651811b4697525453e4ec2487662bafdc7a02234d921fb8a8142728ecae0",
+    "3425011b86b2a9e3840c84fcc1a7be248e53d79c4e59ed06fa4fc02f0f236a15": "a40dfcca44950810537002a0262f9e3de3e992ac4a32cb7bc50afda751d0426f",
+    "34eab56d3f9ed61ad9a2f22983fd8e740df3992242c9b68da5b83cf3375c4319": "8a0e778f7efbd14524159306d3854d938e52a030497f6dd0d01a06496e6dcbcc",
+    "350f6e6ac11ad65f967c5f6079b2a09353cd835167bc178b23d1adb3cae06526": "b9ed2f9a2dcf77e6a28ae3ebb8575b5d4f8816ddd16fa7bfc37d7b7bd6f8ffd6",
+    "354d12cd779df5ab8bb88601b656048f80ff13c0bc0655721046368cf2be3acd": "eac70785073c67048f200de23a97a57d8d937f08097cdc6bfd41b905ce637c75",
+    "35c63c6149e4b1048da89c007bfebef60bc82414fbd83e7fed78aea6fc1c0621": "46136276f9d57945ffce91a8b0d27e173acea37d91a71b346d4de2b42819f817",
+    "366f0481bbaa9b940d1601cd8a6e5d837a26b445f4c3bf6ce658457687b60c03": "44292edf3737b3b1ba5f024446b9057fde7f026eb8db61145837de819144088e",
+    "36f473e42218096914f534e962fbe549d43ef36cca46e59d53b26ca9430ca944": "8b71b0e1c948cb0a1da9348158d3acb258b19e681ba8991dd36d2fbeae4e551e",
+    "39edb338680b6fa91663abaec3778537a4cd98f72000520f7f4fab9e824d36e0": "494e99fa52033d636c250cfc928149a82faba12e95b58dadbc0a8e2b680a26d8",
+    "3f026462d6f15e3fb78712c79f7ad56f57c330d525dcfe79866a1253dfecfc9d": "0d040e0cf072ccfbf11e1858b52d4307f475bade26c6a6dee5e41c82b8a74e31",
+    "4057cbaa21a4cb035242480cf396f5eadd5e8bed7f4b0a67672e4ce319a93d4e": "35fd759a890da422c10cd4af04999ab0cf453133c2061d8aa0e7244d09dce3d7",
+    "40ab4fe98cb17c78ad8fd3e11892a2f495201f7110cebeb97466506bccd30c0e": "be4cf932dc777fc1ca63a59da0409e071fbe77e8fb83fc56925b7e1962b31d29",
+    "432a54fa960cc7193759655d4f1dd3ef82646f3e5bec98633c9b8da486dec3e9": "43dffc069d935fe6741f780f2cdd75141d428f0c5147b15e25df80e4af3b7752",
+    "44c593bac4dcfd2516b358e8ea2a7379d237f533c295dc8d578aa1a326266bb5": "a9a890224009672c7b604342466fcf038ff29ed5acd3a4a1a9921e25fd5f66b9",
+    "464433dbcc8e1a0c72b91ab05655a1a2ce2e4f81932fb5bef9c4b94af4b87969": "b60b9a673e20b89dee3402d453ce9591cbd671cfbb07106d2e75e61560482ee8",
+    "47b1f5b0cf156b17dd775c25ee9b357c6c5ed54c94836b543dbfada3a463272c": "fe42c002782a908b6b3d5284b0ef52e8616f40ab4cd735627c229c42b94123b3",
+    "4a9b721f346874e9b9ecf4033a5f61d704f91161799407cb52871cac802db2ea": "d32ebac0cda5024840d2b7729f687fd369ec1071a9a2401e07db961f8b81afa5",
+    "4b5b97627a908027b50c31114ae3c9284bfacb33e0833bd49b2392fc672cd8a1": "a2bb8e615efefd7d71e4294c67c9e8bb821722de365fd26f85347344fd8f2f4b",
+    "4c863398771cd74f1f5185b2399a8c819fef939741f17851314067609980d6c0": "7ea00905c8a6265455ef8db69c415f09bd366f97f04ec217727d2ec5cb787b6b",
+    "4d5d786e2afeaca138c56a4c0a1a8b8bf2060a61520810a22da41735432e6839": "7e77590b2986b6c9b284bc8b69445d9b160aa9902226c2e28fa078b192304312",
+    "50009f6b2fcc2f7028f5134488a131e93c84fad2415d8c9bc3961a0d5bc54cf5": "a316ee5c7250dec06091eb385491b913713d33f02f034a09a59d0a074bf0deac",
+    "51531ebd7b9c701d8b91eabf626232e74c4fa3108823bcf1063343fbaf87c4e4": "b75b304d83a5c21def694c11572b82dc5015356ca3e31755e34c42fbbbcf726c",
+    "516ae50b3c4e05ad0ec850152a24e35195d65efa378dbf512ac7c027cb37f24f": "7d571a5c2ace75cf2942663fbf89aab4a6baf721c4e44ced445aeadc9570edef",
+    "52599f2b0c8e699b4f8d35a815056c7d29a58f28a6d1f83da40a1ed10819e208": "790c32bc9741caa56c256a5cf6a7149ae2c0b3535f5d8b94e259fdd3af0749c7",
+    "57532ee0524035fc17c36f210da4387fa5803863dc9e2e8b846c3b53953d8020": "559011dda3e3b624eb6a674e5ddba35b46c89858cc5584ee3e95f42088784fdf",
+    "576ff227c7433861a21c9cb1aeb4451aacb2e74ea2e2664b31a284cfc7d5d5b0": "3acec6b44cae1186b3a1fa8a4292b0310489e58c139716bdb0007756110e81f5",
+    "58fb9401ee2b47d802df3caf828c351713b07035b3fee376af1a77f6afdaaeda": "e6a2ebec5ffcfb13579c6bfa632a661cac6eb9b3f8a37bd588a9c651727eec7e",
+    "591cec08e603dfe23482491316001b38290404e05d8e8bbed8510e7fc24aac93": "9bad1b46f257b3481d73d0a62fd8e5be6c6de654c93442126370b2215eddbbbd",
+    "5edb5da996dc9c69dcc07a419199e2dec9ff3ef4582170fb8fc3ba278fcd0619": "bca850ec73c8d6b80fe57337bd1551f7e2a1841419d6b199cec8b4a7f52a5332",
+    "6018462f8b2214159a23e94baf81e18a07d9d250784e4ced6bbe09551fcfb894": "0f10065e71981ed0ea7dbc0ccd98a57565129c2863118737533bc103db3662ef",
+    "60b86fa704e69cd1a10c8d3354f2ca9deb8f31189a6316c1ca81e232e42f5d0b": "910ebf75346357179d815764fe5979a8eab27cf806680a7b85810d411a47c616",
+    "6111982acdb58342bc5c661c2d9663157ddb580b3bac1f849524345d62c9a462": "b2af3be8211697af53bad2803c6c2803895433dde980f7f6dad406618b51cdfd",
+    "64e6f763b2a1ba2b179fd8afd54d62c8bf6b95567448b013cffb64220e455db8": "0448a3059e1bf18c097af32081bb9f84611c96ae7863fa893b49db62c2587e38",
+    "6671157dd8f693acc97373e6147082be19dacf6ac055d21351fd78135673b8ba": "5f6595c6fb359c80165032c6f9095c5750f836a0da0b0dfbe6b93e9d159e2be9",
+    "6687273c9ba5aec2e7caeaf7599a04eface882401d30e6c5fd059e34e6dda781": "e1ae5606fb0f11132c7447c7ec6b363d271c856b4a034cd8aa2c46eebee2c248",
+    "691e085bfe208033a2c02f8f6f9a3afc733b02709020ba2b4d973f953f9cba72": "6a7de6335c0ca9016182113a5799a003c62e642d50c240dda9ffdb1f2defb452",
+    "69ac4ef9ff78d621c391f7b48b701885a057d66c74a4b2721e506f628f963ec1": "d28196509a124945bc5599041c400c1c9dab672e1e2ead949b8c5c1897039220",
+    "6a07754dd19cfc0c7b29c0c576ffc6678b14df0d0e046eff689040c7a7c711aa": "c0059dec65e7aa56c7c2bb146d57d94d02f1a93cb2823d874062661678da1db6",
+    "6a79ed6c776e320a20317973f0afa68938f836d2744688dc22599bd3baa92545": "3380bca759aa0141faedfe41cd0f5064d7ca46ebbfc86d87e71e41df373cf832",
+    "6be358d5eb9a84a9361118431e11a171c541ccc763f4f0a479412c1bc7c75537": "36f80abfd19821e45bc10b41b4dfabdfa03e1faf37c72e63dc6ab83781ff8562",
+    "6ca107ff9c771b2377d2305cb29b83feb7bf880f1ce802c3e18ac78543ef7a23": "19f67549d70f0ff5adead675369300bc91e58d9d210c6ca977175807046f4527",
+    "6ce5020607988dbed6a5fdc086595bb11cb8fa943d5f29885b50d4948fafacfb": "3a59683c9bf3b33afc9443d7ba1194483ba32aca44172bbff960c18ca0ea2f99",
+    "6d3f2567e254ad10c4b0ca27a4b2d3ccc0d03e108575d8356bdaab4f5f64b6e7": "5caeb76cbe9fec9a3615c2a8fd884d06c3be025de46d6b95bfdbd92d555319b6",
+    "6f0d7b1057104b9a5bba5f9ebd04b684ad8d48757b1759ccd14198b57c7d4fdc": "0c615fba6da441d5f529eb79e542c745c74f8d3a202b7992bb4dfc780447ff6f",
+    "70449ef7bde9d402899065db4803890510f0a1880271e434d8b9801dc79971f4": "ee6d3268ff88424198f86b05e8fce1bffc600ac37ba81748f8a0a5ffef20b6ab",
+    "74c28689efeecd9318be4143e72125116c9450ee6a7f9aa3f05e1ebe22e80b86": "99cd03e88fe32218bbb009bcc535a5ba415e83f1d39e0ee1eef734deaec1e662",
+    "75429f957046d164d884c90b849fb1c86ea6e4ac966b8ee6916980a973dd9270": "afaad89ac1efb4903c362abd8a5feb34daeef70fbad63dadc8bcdb14f63c9445",
+    "776da11e394b46f4d2b6c79693062dffcc754a6cfbeb5018aec2ae1e14f0aa5c": "a0c56c027cde8a52d1a4000affa7c59c9f52812828d034ccaa1c4b4520956faa",
+    "7c01b4c9c0d739d360085d82f4da91eae14e1bf6efe9e8de9e10ef5151ed94d2": "41682be5c969a3b1971335e8f36a06d8886766cbc212ed9953f84dbf39bc689b",
+    "7d354e05e04cdb724b1cb0f87ead1fcdf663353f118eaf28ec83ce059ac1011d": "989537b7471ecab4ccf46fb0b6d9cb216bb6a2847833bd3c0e1064ed8accb503",
+    "7d5fa554b5ca650629a50ce424d7046c0e91a5f2b9e19ee6bbed7b1e96bddcff": "3970c49d7ac69355ea410bf9532dcfca777d1298fcb26c2bc7b66e024f7d0d90",
+    "7f7c5a7fd7d5b9623ee85ea8685b39b5f9c15b812d0ec5195bcd44c7601216cf": "a3f0d6aaf71e5e55c74e13ddc4f63995e2a6c6588026f3abf0a60064d5f76d7c",
+    "812cd10fc0268ff78fd496a5098c344dc12a05e7fb51f4dd7efdaaf65a5bc5ee": "885ec91151519accb0739d2cf452c35ac19f0fd0998ac03b938623b9108f40af",
+    "828f9f048c71dad03bcdc4288005bd99b06a4f384d97a6c3743075d60c257bc5": "1be841da6b69966abf2859b326356d69cd11cf60918144740fcf8fbddc9f07b3",
+    "83368a7d9c516126c57dd600ecde012342f52b514533dc667cbecd4ebecb2b65": "fd5e85dd6b70f956d42c68e1fe1252f6373117c2cd3fd021a7473539c1f0d57a",
+    "83879f3515eeaa4a476309682c880c5b980e11f9affe810c0318b6565454c6f5": "e98c3a1047bb268ad4a3129ca654f9cd5e37c853debe401883b7d25d113c3dcb",
+    "83a43d40ea5e2de970a1ed8df33c11369fd80d627ab2482c5840213f15d4cd72": "ce79321c7e6baafc0bf90b08af43cbc935bfd1b1a27570ac2044e581edb182fa",
+    "85eb0308815600ec13a10146564e0d36d192aa609e80a5b0dabf48288a2644d1": "ef9f522fc358a23094a05458266d3abc5ad47da3b1bfd23a73c675467c41110d",
+    "875770b4a3caece27d93dc85d19487571f69b1f3132c928dc3a8e054c15def4b": "d6dd67b713e45d48a33f4686a83f50063f6c9e5c2f225ab4a1c0f5febc4fb072",
+    "8939963b32f90252d1b8fa415327d52f71b897f173f03a8497d02e0b89263288": "7f3aa05a7b81a9db272b606639ce8b913b8bbc11110209403259af4679e9a2c2",
+    "89492e39badef4392cb5fb0eada7d1d7999323612b74ee1d10964b0b13daebbe": "dd3ee484315972c80b630a4978039cdb43e7ab7b660ee11ad6418c9cda2621cf",
+    "8bc1694e46d090f4f7d02486567783c1a57f6e1e1dfa806ae557875439969233": "0d9ece33aaf087d15d53218c852cf8636236fc0107b318419418647e911e5701",
+    "954329c0f925a265d1fa6292de028788f2c91c15f20ebfb0bae321b8b9f16171": "32934fb505e5311b5a144112b269bd9599d3643b72cc06eef70ebd387ca11518",
+    "95c56cfe5be027bde00d5bcef858db36d93e989019ae11e5814770b59b79e515": "d8a69ad5a316091592d030c13ea53ecf2394aa64e72248ef8640a3067ca3e00a",
+    "99695d945852093211c579aef8543366a5453d7e15dae69b9b3aa67cf4d4c532": "a2b28d38878f2dc0c830506de1b47e4a3e775d7d578affbd014b65bcc132959d",
+    "9b39f89e44ab7c75d0b73471334180dc8e93c11ba2434cbfc79cd592a9527ce8": "1f1625dccee5362f9b6a155ada605879babcf15595e5ccdb805f45d7fe0a0703",
+    "9b50a655244515fdf68a8335c7128a3e355c74c33fae7a0975af5084d6bf1f42": "c5e775a8b01e1d46e5e056de3165f33af8a418dcdae77e37bea8ad108b5a33e8",
+    "9dbf74b3875f654799846ceab34973589f87390dafec2e05b9b4a37da21842fc": "1ca8c2dd0950562597d319449e4098accea5e3fd83836a8e0cb0cf34453d9980",
+    "9e7bd09781387d7fd2d6a0f84fb4700b01fec47329ea1e2aa6fee947b5a80d3a": "f7f67b975607df8d639c712e51701a4da469527df1d62f14f895c88d17823848",
+    "9f2b5084ead76becbde0410776a5216b7b975ca5b44473e8a33487dbbd7c8f2c": "8e823bc7bf81f0cf42412b4388d89cad2b3072af8e19791b5f976c493e7a6c4f",
+    "a009e25a249bd161c719a6b62e550f3ab6d74b05a7a22a749154e0e718bae62b": "9726f67101391276b760d972e33693d09ca956d15b9485176a77b0fd3e5ba035",
+    "a28837f8c65bcc4e79c040ac96cbf875fa5e2509e18f821770e3b4c91062b76e": "50d865cee06e5c79625a89a3a1f44eeaf46c91653b038d37090d6166f58c72a2",
+    "a2ca0d86721446f96cfd3a64d85f8cb1175992f52646ade5be58651bbfe50978": "4c89d09eaf5eee24d9681cbc25609db2869d2d8031325643252333f883058ced",
+    "a2f081c78b0d2d3792549731bc9231348dd3c5a5375d22a3d75d4fc322acb848": "d01754f82c468e4b721fb8aa730b9a572dac61f114e18c9e54d06334b894b045",
+    "a9b4eaf1a2907b4bbf4b4d7fb85501181e5a3f6faf2262e3be19b71728bed8e1": "c5ddf138fcd5c3f7fce6844872e0e6eed77ef0e9dde23aa29014f5f4663262a1",
+    "a9b516e2217c9a449e783fd3f56fe4cc2a1dd670bcc9852066848768df3d6e1e": "abaa486a0b7a13d074d7bebb7eddbdfee93f23fa2fc80ddb1b28e769e6a15e4d",
+    "ab0c5fc244de85670bf2370f1b8b96b7b355f9acaa11296a3faba21fef74c798": "862c0776254873c58306d615aeefbe5531bfc1fde69c4d8e8a76dbe6ebaac958",
+    "ac0551224cdf8fd25c315aed5a3ec3f8dfb8867431a36a5df1b45c49d075b390": "a7865f470b15aaed3f5b867190cf6b7860728bff67311f730232625bd3a615db",
+    "ad819e8c5e2fbf7a659dceb84870d4bd368c76fff887ede1d92308b6adb8650a": "f6b14a4234918e81d825c87d67bfa63c2b6a942d23fa52cc7838c2725af7a51e",
+    "b010d1059c9575fbd5718682cb27aea676050d39109ce40a462c2c884397eaf2": "69e9e870acd481d0236848356ed273fa783f28af008ce0d305fd9458c8b08046",
+    "b043ac5c57270fb0a07ae21509f80c34a08ca98654a5b3444edd1c2c967424a7": "c762a68c8d7e014772e13a77e9b4a4d5a2db7d1d522a99a1fb7a033efdbc4dd6",
+    "b07d0b33cf8ac958a9e31a3476d6f522590b6e18f5174022d1c6c0e87381a7ea": "f397ddf99ed1759cce2fcc8a1e91bb9b996d44af47a3b8149e0f40560904324a",
+    "b0e2e6c312865eb517bdf6e23f80bf9cf538828fd134cc7a5702124cc6e93667": "c9bb97564f37c8300ad9dfe7ecf010ec8e86919c02a0ba0eabfb35f0c9045c09",
+    "b1191c232c93cbe9a15709b98c6b90afb8589db5457c24f8f32e1f6fbca74b17": "e5f53d342a6874e8446d204aea7c947ff15d31cdd322d5b67ae7ae84929bfe4d",
+    "b1795b66de5f4efac876913ec62afa47135a29435b7bc92f4e9a705714a5ae7e": "0059bf36ba4792277d463da2f88bd534fc7e8f2307ea99b588d5039059bc7806",
+    "b1d51c0c7a3c664b972a79e80ceb4e0efd29ad31238f5a16fe9b9502980c3c6e": "dc7cac35cfd53b419c052e32256beee0ade55c549642c39ad3cb54e7caf90888",
+    "b25ba945f5ac6c031b565b4a632d9a4876b93f2f487c815113568422e108ed6c": "a9e2c76f5d5364cdebd7d311791753811d4253a624322ab1682d1bf50610c2ae",
+    "b26929b6d32961d391288dd7c8f67e06eb51d8832f333873f9f87ebcf8cc8084": "0ea4aa12b56d799acaea742e60bfe677a84d92de4392c9e1ec007c9c20ce039d",
+    "b4638aef82bf2755b5cd6c5fb884f64b21153911d194f75b1a7064d0e0a4e3d7": "8c476d002a3e1b37811f9298d03a699b43b367abecad7dd66e9e01456ef8e5e5",
+    "b49a5d29015d59ebc8feff4700f370046f47d1a34925448e7ec3e36a29e0017d": "b7e5e99afd32d6f1111c0453d440313f2ff42cb5276f91425b4d1107fe831995",
+    "b58e7206fe36690db1b99ef49da0d0dd3570fce8ab8d5e1ecf11704479250ad7": "4c0263ba4a385ae183409535e6ad0f7859bbcecd8b3d8a000edf7b49eacfc176",
+    "b5a8cb71e2bcb46349c4a797bc3c6ebec8df034ac7fd4471c1e0991313f0afdf": "db2c7294a32e760d5e9297f8d77bfd6ee743d617b70a144c6e2c714835470e26",
+    "b63ae3fbbc24ba632197c642b0dba814887e1d8af5f095d5a43abb179120a62c": "4c511848d2c84e61c907de27dfbe07ceca99caa48015e39d63c141fae20d3758",
+    "b9ad9664c55a2d5cb502cd41d9933c5495d6de2e4234671994ed2c6c61f77f5a": "0393c8700c258e4cff40b212978ac54b71e08a93a5fa04ce2571b61ebd0ec013",
+    "b9ce0a1be3e0b94db6158ff9fdf7a06b38afafabea5e5041b5de154327350f2f": "dcd5452e5b2e707e1b681632f2ed4833adfd49e8588366bb139dddab40533935",
+    "b9d4ad427d4132a73f699cc987fc6cccdfc95e817b3d3d5d448941c257f94a7b": "d3f433f41c5f94cfe1512bcaf684ac43e38f8fc01aa0e72e6342d005ebbe9ff5",
+    "ba7eaad9d2f0edcbaf0f312366f74ce928878acd7563533c44e4c9ff57371cd3": "213041008c6c5b06d8bb6d40a95aa3a94b2f79c38bbdca71869d1ef187b001c1",
+    "bb2d7c936b20e189e9664dec51a6c3f7c9e93bb696fbbaaee0e3f705b5f0131f": "c9b3a33cb69c6b4ec7aad2efe3ca4d4b75551a4d01647b49d821d61613a12700",
+    "bdfc13c4ecfcee052aa531c658f610a7f5803adc562c8fbbebcf51c46c886a8c": "c701e0ed88f8f38c3bbadc1c69c8bd308064e2c0d7ba294a280b7e380e3b5864",
+    "c02b0cd4a92fb5cd5d97da9170d50cedacaa8e09a8243d32d4000976977ad742": "9f8359d7891778ddf44f09b89ab0c2d731379bb6fabdf6d11dfe42e25564a139",
+    "c0af9ee1591e7d12c1cf86b046326a30bd37515e91218a4af266afd9dbfae9ea": "6ce8d5f478170d387c62f29c9d9f8a4acfbb04b93fd39cccaaeb1e475c0b2d18",
+    "c259482ad4fba5813094ce5d835cfd26100c2dbd3854cea702545846f3478137": "9588d063d41058d24e957a37cffc4efda95193847ce0c6daf2795edea231dd00",
+    "c5cd980cb5352fbbe5a54b67e9e08b17afbc068c25592540ca1665b9d455380a": "1dc6ffc01ba475a949bbccf2fcc53b8ab0a035817f1a92df0740e85579ef915c",
+    "c61af500f026735a0813308a6e3e3ad8b6be3fa2a6eef37d9f48ef449bb92679": "8efbb3a672bf3b47925eb9db5f697840ac1d5e4acab05799dbf34fd00d436997",
+    "c7442722a39fbb5ca485669eb9faf4340175f861b926fccda559634853d36274": "3d8573ccfa0bc1a716dcdbb5fc215843aa4d2a676e0230c1129abbf05c258b29",
+    "c81fb804a7f084ec1ac55c4660b45509d538b5e07dcfb4b5679993ea571bd321": "5ec88bf87a9543ffa69abf04b8c2620322d81d9d5a470cdab1304a760e1b51d6",
+    "c92b655427607d8567d61faa837d217af7dd2ace1b4e7d1e865eaf6911702aae": "208f577c33c4b8a196a9454c63fb2f0f87f6fdef1a730d068d9ede9973df87b4",
+    "c9cc6b859302d634e27d4fbe0878fe3d28c69d9d44c66307f4e55da1e0c250c8": "8f743ca81d58c8ab7d7683fcf5fc29b6e52f52bba70a375b3e516ad4b6906ed5",
+    "ca01f48331e3ace57493ce12bb20af49a4566ce07512a2ca8d43ccaa0c2f9b58": "19b2d7f98357fc362d4398b74c6bf0a82e8e0ff5c50bea9887e4ec9c660718e6",
+    "cab1edceed31d1f708ad2ef97e4e5e08c943d340e945e32cfb40b2099c2ea081": "8f5ec849ba649a89d184d1b072212d46ff60c34fb776f4bb3718d60f9e11479d",
+    "cb4fe85bd090b5dbdbb2b734fe4799c83969d5af533be3fa7f522cd5ab3603e3": "9e1206f76f57ddf059f209ec2f2000f586f409ee9406d5f98656c43cf6af9745",
+    "cb9ec5cd3593db5594683b699cc12b64fffe08d65c0ce1aa9ebb7e3a3cd4550d": "9b5082a47715766422b87eaeb2331e58fc4cfd46b026096b230516427ff51a1e",
+    "ccc6056f96f7e3c3f9b94a0c7693e2d3c91960cf0d6608a86c0010dc9167228b": "4ffb2fcdc8a591b653584f87efecd2a8622b43e1375a4d328610a29912b14cff",
+    "cce76f14c4e39d6977cd4ed0fc9bc8f1cdf301b0abd3f2945be19e33270dc5cc": "74df3cba7e034e621735c057a300af58595263bc7eac96ac757d6bec412ae86f",
+    "ceeac382121c605da857f065a9cfd87a3d73448f9739825ecb03f9119e978327": "6af9ef4ce30cdce847e947c96927230603c57b2f50cd2427b5fea39e58418706",
+    "d042e79fb5f1b7a6fe1c02fe816f7fc6333742891f9e16002694c6de2661efff": "b75db77f678ff5cf0853d5921d03d75aab2dd41a690d992a422b0d40ff2d86b4",
+    "d307ff5b09ef4d3324b0d665b25ce1fc7c6ef115da00dd16534549c7b3c7508f": "2dad57e6be8d80fd5ff565b2b9e084c6f1f33b082c5b5d84c9777db8d654a5b7",
+    "d42dd65ec0173184ed7cea5132454d9bfc9e1d2e6b8dfbad160feb2b71907d24": "533591bdcd24949b92eac8d044de0b96a3052c5bc40047d88c153bd634ea54ee",
+    "d4c263dafbdc5acf3a5b075a0925f3df06ead3b834d8a2560d0eccad6ab687c5": "49b70a48142eba88200a73e6a958fd917af0c76c9995e3f62c17706ac8a487a2",
+    "d5c5f99a029c2f97b55c9df6bd2869ab53c5f8cee67f3e4393bb07ff8fdca65c": "df7ccf914950980b2945e32b72eaa0cb33758102f67d656d34d3f0ed5d72640d",
+    "d8eff0390a7844032c683a93d5cde23332b0632f00c7c8c715b5ddd145d0aa1a": "36908ae6920adab8f7a8b339a31cfad53a0c3936ef24146d1574e9f797d65aff",
+    "dc8cecc0162930b13cfb573128481db3e55daec080a921cee3c316631d0d6033": "2d6e015dff88319d767a24a95e6aad1c560924ed8a31cb7d7929d6c24c8536e6",
+    "dce66db90e22137a5ace81090513880ee6e43ffcf4ca1731ff4ec51029f2aaf3": "a676ba914df7606bc06836c29eb995f340cfb49cb8c9643535fe2ba822928863",
+    "e343d55b020dd306ebbc75a7aa1f5a8787a7a271f1af815b21df8d9a18942b4d": "b42896dc6c68f84e260509dbf21461114355c72c3c4af96d4a55db323b3af103",
+    "e42cad8a1dfad82e41d707804211f74dc5ecc46586280735561c8409a9595cf1": "4ef27696ee6ef7b85cb9adcb1495516c5cfc746a5ca41d832db38d6360f98dd6",
+    "e57359de686441af161c37be7f9fcd4f2bf7307f6a2167348d7b937e8e18dc72": "5ef3864b39ccc270eb52ebfeaf9d302da11be64942dd0f6028f3076464161d36",
+    "e6598a0ff99e1dffff25094256ccc312c69470e76b0c4a949b9c438d1b67e697": "07f76b37f0db236272e6c52fb03b6b43a9bd5fe5c0475e14078c763195392010",
+    "e713ffb4e61d21d3cf6eb76c6697de5d980cc13d1709c579a8e03fac3622c73e": "be5e60c3137cf9c2f81fee3c9594febc5a602ef2a8d445e6c89fab5dea90203d",
+    "e99cd019cbcd2350c4eaa7da22213e12a2acf2d6e4e5e055753005914081c81b": "80f04d108d1751e4654e683b68a84bc669d5cff71ad24b88fc108f6a22357753",
+    "ec58485bf4eae032447f338228d72595e834ff15a82d761c56a628508fd88512": "7586bd49b32b0ffa2db778e352360cf7f29cdad8f8eeb4b632c00fe85ae6901c",
+    "efa7c24e7568f5ffb88d3b6c24fd207ba951b1dc4093d43cabc9fe97e7f5402b": "6c36fa5d01b34b070851879f541ec51bdf2bf0afade826368059cd11b8772d9d",
+    "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868": "9284939cba3c3224707cf9ab07ffab0a0e0dd0a3dcc3a7b5fe1a7932b474fee4",
+    "f3a7f47822d32a833d16a79b77078fd72ede9928b4c01ed92e2699108a2b7c81": "f177474e16d958bb26b94dbb5740118846013ad3551d2abe160e3683594b170d",
+    "f4593357316ea98c64903957ab1b18f02bb95242a98edf28b8d3ad71109ed98e": "b7edb14c416c1079720884d0c2791bf77b6f66723af4145423e4907af5ebbc26",
+    "f8181519f304732311bb0d23ddcb8f389aabcb7886a54495765310639aa6d7a8": "79305475b410a125a23461f878d5a82e1ecaf8e19afb43184af3cce53cbcf679",
+    "f829a926b58e8b072dc39391c30f4e3e49023e8fb8682aae13288c17398e099b": "42ee4d8bad76772e0fe3e43fa4436cc6fcd662029dba9b4c5baeae89205b4d0d",
+    "f9ea769740ff6cc35f9d93570012820bf70045393e0a4c535d231c3331e3464e": "0d19516f9d144a91bd263e34ffe9ebd2c0e9c0f834090fc6b66d7b9b9bdcdb6d",
+    "fa840c9d2d5b720930034cf3eb6ee49ef4a7f7da7a0b161e764a63800655ea0f": "ae6cda7ee27ea8a027b031e7574c398fd9ee36cc884f09770c82fc07b43a69b1",
+    "fa908b4d117ceed8b9da197495e568aab88cef027c9e20d2fa3cc1fa86b026f2": "2597d2e2ce8b76cdd05a1f287bc035f8da2fafa4e34df84dde0e058715893155",
+    "fb025b2f2fdc966a2dfe157cb89e4b0f2a51e501c364226b8c497c3e9a2ee25c": "2791a082538417bac2428ec7be4643615a22778a1ae08f6608ace26381045efd",
+    "fb3546bdbaa9d75b9b145306784c4b763211a054c8d9647399ed5dc6b2ba07fb": "7a5722ac9d772bdf7c1d6edbfaba4437cb7f03478ed11b58ea1b0933f78ac82d",
+    "fc27bffee41235f2964b7142721b3e13609016ba990d1a8c480d28f154d83b3f": "78a672d415f92ca1f9d0a57f47580815b470bc23af60cb1fca199ba1e995af09",
+    "fed41dae76ee1d465295c18b8990e42f5ee96c5e46517a4e0e81a2b3275cc4a7": "d0ad89de7fd95eb3415fcf8401e6ce3b3a0b77851bdd3a1e5ca270a1591da843"
+  },
+  "resource_digests": {
+    "AliasListDegree": "dd5711f53e822f67aae8071c9d5f077a334630ec608adfccee84357fbb06eae5",
+    "AsofConditionMustBeComparison": "ea183201957806c2de74bf4aa9753d94a19e3103f22703c8a7bf12fc602d93aa",
+    "AsofMatchMustBeComparison": "c7ec845e2b9b91c1e9745a75ffeb004e93732c08b4bed3bfc129f99a3ab79f49",
+    "BinaryLiteralInvalid": "4c26d7f84d683d8cab31fbab710bd10f5dd3fc85e489cd0384f47accbfb84a10",
+    "BinaryLiteralOdd": "546d69bb3e8b27a7e5ba158cef4095430da9c764d77b71fd9a17608899e791c4",
+    "CanNotApplyOp2Type": "81a1988490bc8b220fda44118ff284f3cdc876a8753feae61158ee5adce3d545",
+    "CannotCastValue": "e4a69bc10edbe191d3173ac0a8334a60eee5951828ad8bd8564cba16917a5016",
+    "CannotInferReturnType": "82ff5d8f58f7073d90d819a7dcdd116792baed65d7da44f474aa457185fc23b3",
+    "ColumnNotFound": "b170b1603f5eacc9ff1212b85fc35783a36c9280b288752f88f113b4905d03ff",
+    "DescriptorMustBeIdentifier": "92410ed8f0cc18e287c8717c38c810c71168c315051a04350350954dc799cf6b",
+    "DuplicateLambdaParameter": "9e8ecba727c3ef383512b9a2b3a3a37204e14d267e1480550a0d6fb3a3f3b3fe",
+    "IllegalLiteral": "96c56e266654f40e47cc381d3dcbb6fd89671233da479de7df0a4fa2c9d19fb9",
+    "IllegalRowIndexValue": "932591e2a9379408d448d4eafc3dc82122b71cd455d2ba3fed8cb4df2f8b4e86",
+    "InvalidArgCount": "d0e9187d8fa4de3c5d54595594991ef9c08520e7c3b96f1df58c57663779bf2a",
+    "InvalidPrecisionForDecimalType": "62c8eb317f2698d3c0de4f99459fb85e7bf745936cf32f62d8dc75d633f90a6d",
+    "InvalidTimeFrame": "dc566d1cf739d87e02f320f0b506108bc6ef6e445554528f9a31029dc8e7065f",
+    "InvalidTimeFrameInOperation": "0f5d84736b14b91a27fe8a0a63af7a60664c1c03e1fb27dd9380df74ee394ce0",
+    "LambdaClosureNotAllowed": "7402550193b3a729b71a29c07e6bcf30151fae8d4030afc7029012c07a9ccdae",
+    "NaturalOrUsingColumnNotCompatible": "52da2dde351db31783e4515caa7072511e739112a6cc42d7bbe5d711559b1c68",
+    "NullIllegal": "2961c33844541611da8ef37106b76b79aeceded84b2afbae3c6bf68218aa7747",
+    "NumberLiteralOutOfRange": "071e2edbd11f41ccf062c4fbed1e587fd2c51b6629a02e6cc5fb4a6dd3d5a2c6",
+    "ObjectNotFound": "96952949dcaa3b03932869e9c52051aa86949530feceb125cb12460d63b8df6d",
+    "OverMissingOrderBy": "4a13f780c742bef9d817905148704bcc8a62d3d73247b8fa291777ae998ba107",
+    "OverNonAggregate": "c5ad2137bdcc99c2376f72435f0f56a5e731ddc10697f95106424571817116c4",
+    "StringFragsOnSameLine": "73c0ef5e264d34d60024a6c020c64805ac647482145d9ad09d2c8facfb7648be",
+    "TypeNotComparable": "3a218d8bb9c3a6879790d583662df70e6ccd510975cd99a703c5e059cb6b17cc",
+    "UnequalRowSizes": "a2f043da5a308119d8f3d8d1428b92d54bec05d413175c77c3da3accc7ba8947",
+    "UnicodeEscapeMalformed": "911689a8234edf135bab644c46088c3c2ff680b05394248cb55ee567bab4c37b",
+    "UnknownIdentifier": "68c42b6887926e8743ee1facd79b94edc84be7bd00af1045af029514e800534c",
+    "UnsupportedIntervalLiteral": "d53ae78241ffaec92d34c3d546ce8ef544118a5f71aa96493931d2363877447a"
+  },
+  "v7_to_v9_location_only_changes": [
+    {
+      "id": "00d3b6f3fc3723e5f15cff0f709cbb2b78e4f397c0337de13f13ec0797aae8e1",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2296,
+          115929
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2295,
+          115866
+        ]
+      ]
+    },
+    {
+      "id": "03b9a84083e81049accedc0fe938eb4a01c0a96d0194d419d6bb33f7ab058575",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1401,
+          69029
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1400,
+          68966
+        ]
+      ]
+    },
+    {
+      "id": "04fe4db70f66ccde7d9fd209f193192fe9dcfa6c957d6758468f31111ff68c6b",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2064,
+          101830
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2063,
+          101767
+        ]
+      ]
+    },
+    {
+      "id": "0b4c7dc85d1afc14ab263ac2ad6d5fbc306531bc285de1de05d9e9c162b13589",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1382,
+          67925
+        ],
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/parser/PropertyList.java",
+          56,
+          2286
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1381,
+          67862
+        ],
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/parser/PropertyList.java",
+          56,
+          2286
+        ]
+      ]
+    },
+    {
+      "id": "12f2b7a55357d6e0f97e9daf9b29d2bb3e86c48877cb58fc9be6fe95f52a0738",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2256,
+          113155
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2255,
+          113092
+        ]
+      ]
+    },
+    {
+      "id": "151842f47c8f194a7c76e8011e91113ec3ff85daee62df0266a6156b1da6398a",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1482,
+          73614
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1481,
+          73551
+        ]
+      ]
+    },
+    {
+      "id": "2cb1500d4ed6376a98602e82d80913fd3e7cc6451aca889db38e846cddd83156",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          658,
+          32939
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          657,
+          32882
+        ]
+      ]
+    },
+    {
+      "id": "324d7139c941af53c33509a8c920d5820801bc441daa8b3a8b997d16f0603fac",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2530,
+          129228
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2529,
+          129165
+        ]
+      ]
+    },
+    {
+      "id": "35c63c6149e4b1048da89c007bfebef60bc82414fbd83e7fed78aea6fc1c0621",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2176,
+          108212
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2175,
+          108149
+        ]
+      ]
+    },
+    {
+      "id": "432a54fa960cc7193759655d4f1dd3ef82646f3e5bec98633c9b8da486dec3e9",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1468,
+          72800
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1467,
+          72737
+        ]
+      ]
+    },
+    {
+      "id": "44c593bac4dcfd2516b358e8ea2a7379d237f533c295dc8d578aa1a326266bb5",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1454,
+          71916
+        ],
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1575,
+          78528
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1453,
+          71853
+        ],
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1574,
+          78465
+        ]
+      ]
+    },
+    {
+      "id": "50009f6b2fcc2f7028f5134488a131e93c84fad2415d8c9bc3961a0d5bc54cf5",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1266,
+          62320
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1265,
+          62257
+        ]
+      ]
+    },
+    {
+      "id": "52599f2b0c8e699b4f8d35a815056c7d29a58f28a6d1f83da40a1ed10819e208",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2035,
+          100367
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2034,
+          100304
+        ]
+      ]
+    },
+    {
+      "id": "691e085bfe208033a2c02f8f6f9a3afc733b02709020ba2b4d973f953f9cba72",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2461,
+          125587
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2460,
+          125524
+        ]
+      ]
+    },
+    {
+      "id": "6a07754dd19cfc0c7b29c0c576ffc6678b14df0d0e046eff689040c7a7c711aa",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          586,
+          29381
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          585,
+          29324
+        ]
+      ]
+    },
+    {
+      "id": "828f9f048c71dad03bcdc4288005bd99b06a4f384d97a6c3743075d60c257bc5",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2218,
+          110483
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2217,
+          110420
+        ]
+      ]
+    },
+    {
+      "id": "8939963b32f90252d1b8fa415327d52f71b897f173f03a8497d02e0b89263288",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          319,
+          16420
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          318,
+          16363
+        ]
+      ]
+    },
+    {
+      "id": "954329c0f925a265d1fa6292de028788f2c91c15f20ebfb0bae321b8b9f16171",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1424,
+          70161
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1423,
+          70098
+        ]
+      ]
+    },
+    {
+      "id": "9f2b5084ead76becbde0410776a5216b7b975ca5b44473e8a33487dbbd7c8f2c",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2316,
+          117453
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2315,
+          117390
+        ]
+      ]
+    },
+    {
+      "id": "b010d1059c9575fbd5718682cb27aea676050d39109ce40a462c2c884397eaf2",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          671,
+          33999
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          670,
+          33942
+        ]
+      ]
+    },
+    {
+      "id": "b07d0b33cf8ac958a9e31a3476d6f522590b6e18f5174022d1c6c0e87381a7ea",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2479,
+          126484
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2478,
+          126421
+        ]
+      ]
+    },
+    {
+      "id": "b1795b66de5f4efac876913ec62afa47135a29435b7bc92f4e9a705714a5ae7e",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2269,
+          114149
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2268,
+          114086
+        ]
+      ]
+    },
+    {
+      "id": "b1d51c0c7a3c664b972a79e80ceb4e0efd29ad31238f5a16fe9b9502980c3c6e",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          653,
+          32569
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          652,
+          32512
+        ]
+      ]
+    },
+    {
+      "id": "ceeac382121c605da857f065a9cfd87a3d73448f9739825ecb03f9119e978327",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2377,
+          121430
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2376,
+          121367
+        ]
+      ]
+    },
+    {
+      "id": "d042e79fb5f1b7a6fe1c02fe816f7fc6333742891f9e16002694c6de2661efff",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2348,
+          119561
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2347,
+          119498
+        ]
+      ]
+    },
+    {
+      "id": "d4c263dafbdc5acf3a5b075a0925f3df06ead3b834d8a2560d0eccad6ab687c5",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2585,
+          131408
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2584,
+          131345
+        ]
+      ]
+    },
+    {
+      "id": "e42cad8a1dfad82e41d707804211f74dc5ecc46586280735561c8409a9595cf1",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2239,
+          112018
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2238,
+          111955
+        ]
+      ]
+    },
+    {
+      "id": "e6598a0ff99e1dffff25094256ccc312c69470e76b0c4a949b9c438d1b67e697",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2234,
+          111686
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2233,
+          111623
+        ]
+      ]
+    },
+    {
+      "id": "f8181519f304732311bb0d23ddcb8f389aabcb7886a54495765310639aa6d7a8",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2228,
+          111160
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2227,
+          111097
+        ]
+      ]
+    },
+    {
+      "id": "f829a926b58e8b072dc39391c30f4e3e49023e8fb8682aae13288c17398e099b",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1506,
+          74803
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          1505,
+          74740
+        ]
+      ]
+    },
+    {
+      "id": "fa908b4d117ceed8b9da197495e568aab88cef027c9e20d2fa3cc1fa86b026f2",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          665,
+          33465
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          664,
+          33408
+        ]
+      ]
+    },
+    {
+      "id": "fb025b2f2fdc966a2dfe157cb89e4b0f2a51e501c364226b8c497c3e9a2ee25c",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2249,
+          112674
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2248,
+          112611
+        ]
+      ]
+    },
+    {
+      "id": "fc27bffee41235f2964b7142721b3e13609016ba990d1a8c480d28f154d83b3f",
+      "old_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2310,
+          116978
+        ]
+      ],
+      "new_locations": [
+        [
+          "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          2309,
+          116915
+        ]
+      ]
+    }
+  ],
+  "v7_to_v9_body_drift": "One issue2027negative UnsupportedException body contains changed relational allocation IDs; root/required substring unchanged. Raw v9 is immutable and later location-range repair is separate."
+}

@@ -1,0 +1,21 @@
+[package]
+name = "feldera-fold-probe"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Disposable P0 registry; no dependency on the execution engine.
+[workspace]
+
+[features]
+default = ["ordered-json"]
+ordered-json = ["serde_json/preserve_order"]
+
+[dependencies]
+feldera-fxp = { path = "../../fxp", default-features = false }
+chrono = { version = "0.4.43", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+md5 = { package = "md-5", version = "0.10.6" }
+libm = "=0.2.15"

@@ -1,0 +1,1699 @@
+{
+  "configured_rules": 80,
+  "configured_without_productions": [
+    "AggregateMergeRule",
+    "CoerceInputsRule:org.apache.calcite.rel.RelNode",
+    "CorrelateUnionSwap",
+    "ExceptAllFoldRule",
+    "ExceptOptimizerRule",
+    "Intersect",
+    "LoptOptimizeJoinRule",
+    "Minus",
+    "ProjectJoinJoinRemoveRule",
+    "PruneEmptyFilter",
+    "PruneEmptyJoin(left)",
+    "PruneEmptyJoin(right)",
+    "PruneEmptySort",
+    "PruneJoinSingleValueRuleWithExpr(left)",
+    "PruneSortLimit0",
+    "ReduceExpressionsRule(Calc)",
+    "ReduceExpressionsRule(Window)",
+    "SortRemoveRule",
+    "SubQueryRemoveRule:Join",
+    "Union",
+    "UnionEliminatorRule",
+    "UnnestDecorrelateRule",
+    "ValuesReduceRule",
+    "ValuesReduceRule(Project-Filter)"
+  ],
+  "productions": {
+    "AggregateCaseToFilterRule": 15,
+    "AggregateExpandDistinctAggregatesRule": 268,
+    "AggregateNowFilterRule": 7,
+    "AggregateRemoveLiteralAggRule": 32,
+    "AggregateRemoveRule": 14,
+    "AggregateValuesRule": 9,
+    "AntiJoinDistinctRemoveRule": 4,
+    "CorrelateUncollectMergeRule": 65,
+    "DphypJoinReorderRule": 2058,
+    "ExpandDisjunctionForTableRule": 68,
+    "FilterAggregateTransposeRule": 35,
+    "FilterCorrelateRule": 66,
+    "FilterIntoJoinRule": 1306,
+    "FilterMergeRule": 41,
+    "FilterProjectTransposeRule": 215,
+    "InnerDecorrelator": 122,
+    "IntersectMergeRule": 5,
+    "JoinCommuteRule": 96,
+    "JoinConditionPushRule": 77,
+    "JoinExpandOrToUnionRule": 14,
+    "JoinPushExpressionsRule": 77,
+    "JoinToHyperGraphRule": 2185,
+    "JoinToMultiJoinRule": 2221,
+    "MaxCaseToCountRule": 5,
+    "MinusMergeRule": 1,
+    "ModeToArgMaxRule": 27,
+    "MultiJoinOptimizeBushyRule": 1623,
+    "ProjectCorrelateTransposeRule": 135,
+    "ProjectFilterTransposeRule": 9,
+    "ProjectJoinRemoveRule": 3,
+    "ProjectMergeRule": 349,
+    "ProjectMultiJoinMergeRule": 1612,
+    "ProjectOverSumToSum0Rule": 524,
+    "ProjectRemoveRule": 12818,
+    "ProjectSetOpTransposeRule": 565,
+    "ProjectToWindowRule:project": 880,
+    "ProjectWindowTransposeRule": 122,
+    "PruneEmptyAggregate": 3,
+    "PruneEmptyProject": 36,
+    "PruneJoinSingleValue(right)": 2,
+    "PruneJoinSingleValueRule(left)": 10,
+    "PruneJoinSingleValueRuleWithExpr(right)": 8,
+    "ReduceExpressionsRule(Filter)": 606,
+    "ReduceExpressionsRule(Join)": 21,
+    "ReduceExpressionsRule(Project)": 3657,
+    "RowsToRangeRule": 35,
+    "SessionRewriteRule": 19,
+    "SetOpToFilterRule": 46,
+    "SetopOptimizerRule": 1,
+    "SortRemoveConstantKeysRule": 5,
+    "SortRemoveRedundantRule": 12,
+    "SubQueryRemoveRule:Filter": 290,
+    "SubQueryRemoveRule:Project": 91,
+    "TableFunctionReduceExpressionsRule": 29,
+    "UnionMergeRule": 1062,
+    "ValuesReduceRule(Project)": 1074
+  },
+  "rules_with_productions": 56,
+  "schema_version": 1,
+  "steps": [
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 3,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Constant fold"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 18,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Constant fold"
+    },
+    {
+      "attempts": {
+        "AggregateValuesRule": 27,
+        "CoerceInputsRule:org.apache.calcite.rel.RelNode": 112122,
+        "PruneJoinSingleValue(right)": 3,
+        "PruneJoinSingleValueRule(left)": 27,
+        "PruneJoinSingleValueRuleWithExpr(right)": 8,
+        "ReduceExpressionsRule(Filter)": 3404,
+        "ReduceExpressionsRule(Join)": 2610,
+        "ReduceExpressionsRule(Project)": 34943,
+        "ValuesReduceRule": 5,
+        "ValuesReduceRule(Project)": 4879,
+        "ValuesReduceRule(Project-Filter)": 4
+      },
+      "configured_rules": [
+        "AggregateValuesRule",
+        "CoerceInputsRule:org.apache.calcite.rel.RelNode",
+        "PruneJoinSingleValue(right)",
+        "PruneJoinSingleValueRule(left)",
+        "PruneJoinSingleValueRuleWithExpr(left)",
+        "PruneJoinSingleValueRuleWithExpr(right)",
+        "ReduceExpressionsRule(Calc)",
+        "ReduceExpressionsRule(Filter)",
+        "ReduceExpressionsRule(Join)",
+        "ReduceExpressionsRule(Project)",
+        "ReduceExpressionsRule(Window)",
+        "ValuesReduceRule",
+        "ValuesReduceRule(Project)",
+        "ValuesReduceRule(Project-Filter)"
+      ],
+      "correlates_after": 285,
+      "correlates_before": 285,
+      "incomplete": 3,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "AggregateValuesRule": 9,
+        "PruneJoinSingleValue(right)": 2,
+        "PruneJoinSingleValueRule(left)": 10,
+        "PruneJoinSingleValueRuleWithExpr(right)": 8,
+        "ReduceExpressionsRule(Filter)": 606,
+        "ReduceExpressionsRule(Join)": 21,
+        "ReduceExpressionsRule(Project)": 3657,
+        "ValuesReduceRule(Project)": 1074
+      },
+      "step": "Constant fold"
+    },
+    {
+      "attempts": {
+        "CorrelateUncollectMergeRule": 2,
+        "ProjectRemoveRule": 80
+      },
+      "configured_rules": [
+        "CorrelateUncollectMergeRule",
+        "FilterCorrelateRule",
+        "ProjectFilterTransposeRule",
+        "ProjectRemoveRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "CorrelateUncollectMergeRule": 2,
+        "ProjectRemoveRule": 80
+      },
+      "step": "Convert UNCOLLECT"
+    },
+    {
+      "attempts": {
+        "CorrelateUncollectMergeRule": 2,
+        "ProjectFilterTransposeRule": 2,
+        "ProjectRemoveRule": 5
+      },
+      "configured_rules": [
+        "CorrelateUncollectMergeRule",
+        "FilterCorrelateRule",
+        "ProjectFilterTransposeRule",
+        "ProjectRemoveRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "CorrelateUncollectMergeRule": 2,
+        "ProjectRemoveRule": 5
+      },
+      "step": "Convert UNCOLLECT"
+    },
+    {
+      "attempts": {
+        "CorrelateUncollectMergeRule": 61,
+        "FilterCorrelateRule": 9,
+        "ProjectFilterTransposeRule": 35,
+        "ProjectRemoveRule": 88
+      },
+      "configured_rules": [
+        "CorrelateUncollectMergeRule",
+        "FilterCorrelateRule",
+        "ProjectFilterTransposeRule",
+        "ProjectRemoveRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 285,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "CorrelateUncollectMergeRule": 61,
+        "FilterCorrelateRule": 3,
+        "ProjectFilterTransposeRule": 9,
+        "ProjectRemoveRule": 88
+      },
+      "step": "Convert UNCOLLECT"
+    },
+    {
+      "attempts": {
+        "AggregateNowFilterRule": 34,
+        "MaxCaseToCountRule": 34,
+        "ModeToArgMaxRule": 34
+      },
+      "configured_rules": [
+        "AggregateCaseToFilterRule",
+        "AggregateNowFilterRule",
+        "MaxCaseToCountRule",
+        "ModeToArgMaxRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Convert complex aggregates"
+    },
+    {
+      "attempts": {
+        "AggregateCaseToFilterRule": 19,
+        "AggregateNowFilterRule": 304,
+        "MaxCaseToCountRule": 304,
+        "ModeToArgMaxRule": 415
+      },
+      "configured_rules": [
+        "AggregateCaseToFilterRule",
+        "AggregateNowFilterRule",
+        "MaxCaseToCountRule",
+        "ModeToArgMaxRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "AggregateCaseToFilterRule": 5,
+        "ModeToArgMaxRule": 13
+      },
+      "step": "Convert complex aggregates"
+    },
+    {
+      "attempts": {
+        "AggregateCaseToFilterRule": 41,
+        "AggregateNowFilterRule": 3162,
+        "MaxCaseToCountRule": 3148,
+        "ModeToArgMaxRule": 3685
+      },
+      "configured_rules": [
+        "AggregateCaseToFilterRule",
+        "AggregateNowFilterRule",
+        "MaxCaseToCountRule",
+        "ModeToArgMaxRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 224,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "AggregateCaseToFilterRule": 10,
+        "AggregateNowFilterRule": 7,
+        "MaxCaseToCountRule": 5,
+        "ModeToArgMaxRule": 14
+      },
+      "step": "Convert complex aggregates"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Correlate/Union"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Correlate/Union"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "CorrelateUnionSwap"
+      ],
+      "correlates_after": 106,
+      "correlates_before": 106,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Correlate/Union"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 0,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Decorrelate"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 0,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Decorrelate"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 4,
+      "correlates_before": 106,
+      "incomplete": 2,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Decorrelate"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Decorrelate UNNEST"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Decorrelate UNNEST"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "UnnestDecorrelateRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 224,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Decorrelate UNNEST"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Decorrelate inner queries 1"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Decorrelate inner queries 1"
+    },
+    {
+      "attempts": {
+        "InnerDecorrelator": 233
+      },
+      "configured_rules": [
+        "InnerDecorrelator"
+      ],
+      "correlates_after": 106,
+      "correlates_before": 224,
+      "incomplete": 2,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "InnerDecorrelator": 120
+      },
+      "step": "Decorrelate inner queries 1"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Decorrelate inner queries 2"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Decorrelate inner queries 2"
+    },
+    {
+      "attempts": {
+        "InnerDecorrelator": 108
+      },
+      "configured_rules": [
+        "InnerDecorrelator"
+      ],
+      "correlates_after": 106,
+      "correlates_before": 106,
+      "incomplete": 2,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "InnerDecorrelator": 2
+      },
+      "step": "Decorrelate inner queries 2"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Desugar EXCEPT"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Desugar EXCEPT"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "ExceptOptimizerRule"
+      ],
+      "correlates_after": 105,
+      "correlates_before": 105,
+      "incomplete": 0,
+      "invocations": 74109,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Desugar EXCEPT"
+    },
+    {
+      "attempts": {
+        "ProjectOverSumToSum0Rule": 6,
+        "ProjectToWindowRule:project": 10
+      },
+      "configured_rules": [
+        "ProjectOverSumToSum0Rule",
+        "ProjectToWindowRule:project"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "ProjectOverSumToSum0Rule": 6,
+        "ProjectToWindowRule:project": 10
+      },
+      "step": "Expand windows"
+    },
+    {
+      "attempts": {
+        "ProjectOverSumToSum0Rule": 34,
+        "ProjectToWindowRule:project": 120
+      },
+      "configured_rules": [
+        "ProjectOverSumToSum0Rule",
+        "ProjectToWindowRule:project"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "ProjectOverSumToSum0Rule": 34,
+        "ProjectToWindowRule:project": 120
+      },
+      "step": "Expand windows"
+    },
+    {
+      "attempts": {
+        "ProjectOverSumToSum0Rule": 484,
+        "ProjectToWindowRule:project": 750
+      },
+      "configured_rules": [
+        "ProjectOverSumToSum0Rule",
+        "ProjectToWindowRule:project"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "ProjectOverSumToSum0Rule": 484,
+        "ProjectToWindowRule:project": 750
+      },
+      "step": "Expand windows"
+    },
+    {
+      "attempts": {
+        "DphypJoinReorderRule": 2,
+        "JoinToHyperGraphRule": 2
+      },
+      "configured_rules": [
+        "DphypJoinReorderRule",
+        "JoinToHyperGraphRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "DphypJoinReorderRule": 2,
+        "JoinToHyperGraphRule": 2
+      },
+      "step": "Hypergraph"
+    },
+    {
+      "attempts": {
+        "DphypJoinReorderRule": 71,
+        "JoinToHyperGraphRule": 71
+      },
+      "configured_rules": [
+        "DphypJoinReorderRule",
+        "JoinToHyperGraphRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "DphypJoinReorderRule": 71,
+        "JoinToHyperGraphRule": 71
+      },
+      "step": "Hypergraph"
+    },
+    {
+      "attempts": {
+        "DphypJoinReorderRule": 1985,
+        "JoinToHyperGraphRule": 2150
+      },
+      "configured_rules": [
+        "DphypJoinReorderRule",
+        "JoinToHyperGraphRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "DphypJoinReorderRule": 1985,
+        "JoinToHyperGraphRule": 2112
+      },
+      "step": "Hypergraph"
+    },
+    {
+      "attempts": {
+        "AggregateExpandDistinctAggregatesRule": 87
+      },
+      "configured_rules": [
+        "AggregateExpandDistinctAggregatesRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "AggregateExpandDistinctAggregatesRule": 3
+      },
+      "step": "Isolate DISTINCT aggregates"
+    },
+    {
+      "attempts": {
+        "AggregateExpandDistinctAggregatesRule": 1207
+      },
+      "configured_rules": [
+        "AggregateExpandDistinctAggregatesRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "AggregateExpandDistinctAggregatesRule": 36
+      },
+      "step": "Isolate DISTINCT aggregates"
+    },
+    {
+      "attempts": {
+        "AggregateExpandDistinctAggregatesRule": 11338
+      },
+      "configured_rules": [
+        "AggregateExpandDistinctAggregatesRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "AggregateExpandDistinctAggregatesRule": 229
+      },
+      "step": "Isolate DISTINCT aggregates"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 2760,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Join order"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 84662,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Join order"
+    },
+    {
+      "attempts": {
+        "ExpandDisjunctionForTableRule": 8760,
+        "FilterIntoJoinRule": 1637,
+        "FilterMergeRule": 41,
+        "JoinConditionPushRule": 10457,
+        "JoinExpandOrToUnionRule": 6,
+        "JoinPushExpressionsRule": 10444,
+        "JoinToMultiJoinRule": 2221,
+        "MultiJoinOptimizeBushyRule": 1623,
+        "ProjectMultiJoinMergeRule": 7763
+      },
+      "configured_rules": [
+        "ExpandDisjunctionForTableRule",
+        "FilterIntoJoinRule",
+        "FilterMergeRule",
+        "JoinConditionPushRule",
+        "JoinExpandOrToUnionRule",
+        "JoinPushExpressionsRule",
+        "JoinToMultiJoinRule",
+        "LoptOptimizeJoinRule",
+        "MultiJoinOptimizeBushyRule",
+        "ProjectMultiJoinMergeRule"
+      ],
+      "correlates_after": 228,
+      "correlates_before": 228,
+      "incomplete": 0,
+      "invocations": 148258,
+      "optimization_level": 2,
+      "productions": {
+        "ExpandDisjunctionForTableRule": 52,
+        "FilterIntoJoinRule": 1238,
+        "FilterMergeRule": 41,
+        "JoinConditionPushRule": 77,
+        "JoinExpandOrToUnionRule": 3,
+        "JoinPushExpressionsRule": 77,
+        "JoinToMultiJoinRule": 2221,
+        "MultiJoinOptimizeBushyRule": 1623,
+        "ProjectMultiJoinMergeRule": 1612
+      },
+      "step": "Join order"
+    },
+    {
+      "attempts": {
+        "ProjectMergeRule": 3
+      },
+      "configured_rules": [
+        "AggregateMergeRule",
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "ProjectMergeRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 2760,
+      "optimization_level": 0,
+      "productions": {
+        "ProjectMergeRule": 3
+      },
+      "step": "Merge identical operations"
+    },
+    {
+      "attempts": {
+        "AggregateMergeRule": 14,
+        "ProjectMergeRule": 57
+      },
+      "configured_rules": [
+        "AggregateMergeRule",
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "ProjectMergeRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 84662,
+      "optimization_level": 1,
+      "productions": {
+        "ProjectMergeRule": 16
+      },
+      "step": "Merge identical operations"
+    },
+    {
+      "attempts": {
+        "AggregateMergeRule": 18,
+        "ProjectMergeRule": 645
+      },
+      "configured_rules": [
+        "AggregateMergeRule",
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "ProjectMergeRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 228,
+      "correlates_before": 228,
+      "incomplete": 0,
+      "invocations": 148258,
+      "optimization_level": 2,
+      "productions": {
+        "ProjectMergeRule": 330
+      },
+      "step": "Merge identical operations"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 3,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Move Correlate projections"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 18,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Move Correlate projections"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 285,
+      "correlates_before": 285,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Move Correlate projections"
+    },
+    {
+      "attempts": {
+        "FilterProjectTransposeRule": 1,
+        "ProjectWindowTransposeRule": 13
+      },
+      "configured_rules": [
+        "FilterAggregateTransposeRule",
+        "FilterProjectTransposeRule",
+        "ProjectSetOpTransposeRule",
+        "ProjectWindowTransposeRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "FilterProjectTransposeRule": 1,
+        "ProjectWindowTransposeRule": 4
+      },
+      "step": "Move projections"
+    },
+    {
+      "attempts": {
+        "FilterAggregateTransposeRule": 22,
+        "FilterProjectTransposeRule": 25,
+        "ProjectSetOpTransposeRule": 254,
+        "ProjectWindowTransposeRule": 186
+      },
+      "configured_rules": [
+        "FilterAggregateTransposeRule",
+        "FilterProjectTransposeRule",
+        "ProjectSetOpTransposeRule",
+        "ProjectWindowTransposeRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "FilterAggregateTransposeRule": 6,
+        "FilterProjectTransposeRule": 25,
+        "ProjectSetOpTransposeRule": 254,
+        "ProjectWindowTransposeRule": 41
+      },
+      "step": "Move projections"
+    },
+    {
+      "attempts": {
+        "FilterAggregateTransposeRule": 74,
+        "FilterProjectTransposeRule": 189,
+        "ProjectSetOpTransposeRule": 315,
+        "ProjectWindowTransposeRule": 787
+      },
+      "configured_rules": [
+        "FilterAggregateTransposeRule",
+        "FilterProjectTransposeRule",
+        "ProjectSetOpTransposeRule",
+        "ProjectWindowTransposeRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "FilterAggregateTransposeRule": 29,
+        "FilterProjectTransposeRule": 189,
+        "ProjectSetOpTransposeRule": 311,
+        "ProjectWindowTransposeRule": 77
+      },
+      "step": "Move projections"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Pushdown"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Pushdown"
+    },
+    {
+      "attempts": {
+        "ExpandDisjunctionForTableRule": 4540,
+        "FilterIntoJoinRule": 184,
+        "JoinConditionPushRule": 2789,
+        "JoinExpandOrToUnionRule": 25,
+        "JoinPushExpressionsRule": 2789
+      },
+      "configured_rules": [
+        "ExpandDisjunctionForTableRule",
+        "FilterIntoJoinRule",
+        "JoinConditionPushRule",
+        "JoinExpandOrToUnionRule",
+        "JoinPushExpressionsRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "ExpandDisjunctionForTableRule": 16,
+        "FilterIntoJoinRule": 68,
+        "JoinExpandOrToUnionRule": 11
+      },
+      "step": "Pushdown"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "TableFunctionReduceExpressionsRule"
+      ],
+      "correlates_after": 3,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Reduce table function arguments"
+    },
+    {
+      "attempts": {
+        "TableFunctionReduceExpressionsRule": 34
+      },
+      "configured_rules": [
+        "TableFunctionReduceExpressionsRule"
+      ],
+      "correlates_after": 18,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "TableFunctionReduceExpressionsRule": 4
+      },
+      "step": "Reduce table function arguments"
+    },
+    {
+      "attempts": {
+        "TableFunctionReduceExpressionsRule": 111
+      },
+      "configured_rules": [
+        "TableFunctionReduceExpressionsRule"
+      ],
+      "correlates_after": 285,
+      "correlates_before": 285,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "TableFunctionReduceExpressionsRule": 25
+      },
+      "step": "Reduce table function arguments"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 3,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Reject unsupported plans"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 18,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Reject unsupported plans"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 285,
+      "correlates_before": 285,
+      "incomplete": 8,
+      "invocations": 74137,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Reject unsupported plans"
+    },
+    {
+      "attempts": {
+        "AggregateRemoveRule": 14,
+        "ProjectJoinRemoveRule": 4,
+        "ProjectRemoveRule": 692
+      },
+      "configured_rules": [
+        "AggregateRemoveRule",
+        "AntiJoinDistinctRemoveRule",
+        "ProjectJoinJoinRemoveRule",
+        "ProjectJoinRemoveRule",
+        "ProjectRemoveRule",
+        "UnionEliminatorRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "ProjectRemoveRule": 692
+      },
+      "step": "Remove dead code"
+    },
+    {
+      "attempts": {
+        "AggregateRemoveRule": 200,
+        "ProjectJoinRemoveRule": 53,
+        "ProjectRemoveRule": 3682
+      },
+      "configured_rules": [
+        "AggregateRemoveRule",
+        "AntiJoinDistinctRemoveRule",
+        "ProjectJoinJoinRemoveRule",
+        "ProjectJoinRemoveRule",
+        "ProjectRemoveRule",
+        "UnionEliminatorRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "AggregateRemoveRule": 4,
+        "ProjectJoinRemoveRule": 1,
+        "ProjectRemoveRule": 3682
+      },
+      "step": "Remove dead code"
+    },
+    {
+      "attempts": {
+        "AggregateRemoveRule": 2921,
+        "AntiJoinDistinctRemoveRule": 9,
+        "ProjectJoinJoinRemoveRule": 27,
+        "ProjectJoinRemoveRule": 377,
+        "ProjectRemoveRule": 8271
+      },
+      "configured_rules": [
+        "AggregateRemoveRule",
+        "AntiJoinDistinctRemoveRule",
+        "ProjectJoinJoinRemoveRule",
+        "ProjectJoinRemoveRule",
+        "ProjectRemoveRule",
+        "UnionEliminatorRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "AggregateRemoveRule": 10,
+        "AntiJoinDistinctRemoveRule": 4,
+        "ProjectJoinRemoveRule": 2,
+        "ProjectRemoveRule": 8271
+      },
+      "step": "Remove dead code"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "Intersect",
+        "Minus",
+        "PruneEmptyAggregate",
+        "PruneEmptyFilter",
+        "PruneEmptyJoin(left)",
+        "PruneEmptyJoin(right)",
+        "PruneEmptyProject",
+        "PruneEmptySort",
+        "PruneSortLimit0",
+        "Union"
+      ],
+      "correlates_after": 3,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Remove empty relations"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "Intersect",
+        "Minus",
+        "PruneEmptyAggregate",
+        "PruneEmptyFilter",
+        "PruneEmptyJoin(left)",
+        "PruneEmptyJoin(right)",
+        "PruneEmptyProject",
+        "PruneEmptySort",
+        "PruneSortLimit0",
+        "Union"
+      ],
+      "correlates_after": 18,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Remove empty relations"
+    },
+    {
+      "attempts": {
+        "PruneEmptyAggregate": 3,
+        "PruneEmptyProject": 36
+      },
+      "configured_rules": [
+        "Intersect",
+        "Minus",
+        "PruneEmptyAggregate",
+        "PruneEmptyFilter",
+        "PruneEmptyJoin(left)",
+        "PruneEmptyJoin(right)",
+        "PruneEmptyProject",
+        "PruneEmptySort",
+        "PruneSortLimit0",
+        "Union"
+      ],
+      "correlates_after": 285,
+      "correlates_before": 285,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "PruneEmptyAggregate": 3,
+        "PruneEmptyProject": 36
+      },
+      "step": "Remove empty relations"
+    },
+    {
+      "attempts": {
+        "AggregateRemoveLiteralAggRule": 34,
+        "SubQueryRemoveRule:Filter": 1,
+        "SubQueryRemoveRule:Project": 1
+      },
+      "configured_rules": [
+        "AggregateRemoveLiteralAggRule",
+        "SubQueryRemoveRule:Filter",
+        "SubQueryRemoveRule:Join",
+        "SubQueryRemoveRule:Project"
+      ],
+      "correlates_after": 3,
+      "correlates_before": 2,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "SubQueryRemoveRule:Filter": 1,
+        "SubQueryRemoveRule:Project": 1
+      },
+      "step": "Remove sub-queries"
+    },
+    {
+      "attempts": {
+        "AggregateRemoveLiteralAggRule": 341,
+        "SubQueryRemoveRule:Filter": 5,
+        "SubQueryRemoveRule:Project": 33
+      },
+      "configured_rules": [
+        "AggregateRemoveLiteralAggRule",
+        "SubQueryRemoveRule:Filter",
+        "SubQueryRemoveRule:Join",
+        "SubQueryRemoveRule:Project"
+      ],
+      "correlates_after": 18,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "AggregateRemoveLiteralAggRule": 1,
+        "SubQueryRemoveRule:Filter": 5,
+        "SubQueryRemoveRule:Project": 33
+      },
+      "step": "Remove sub-queries"
+    },
+    {
+      "attempts": {
+        "AggregateRemoveLiteralAggRule": 3806,
+        "SubQueryRemoveRule:Filter": 284,
+        "SubQueryRemoveRule:Project": 57
+      },
+      "configured_rules": [
+        "AggregateRemoveLiteralAggRule",
+        "SubQueryRemoveRule:Filter",
+        "SubQueryRemoveRule:Join",
+        "SubQueryRemoveRule:Project"
+      ],
+      "correlates_after": 285,
+      "correlates_before": 63,
+      "incomplete": 0,
+      "invocations": 74137,
+      "optimization_level": 2,
+      "productions": {
+        "AggregateRemoveLiteralAggRule": 31,
+        "SubQueryRemoveRule:Filter": 284,
+        "SubQueryRemoveRule:Project": 57
+      },
+      "step": "Remove sub-queries"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "ExceptAllFoldRule",
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Rewrite INTERSECT/EXCEPT ALL"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "ExceptAllFoldRule",
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Rewrite INTERSECT/EXCEPT ALL"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "ExceptAllFoldRule",
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 106,
+      "correlates_before": 106,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Rewrite INTERSECT/EXCEPT ALL"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [
+        "SessionRewriteRule"
+      ],
+      "correlates_after": 3,
+      "correlates_before": 3,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Rewrite SESSION"
+    },
+    {
+      "attempts": {
+        "SessionRewriteRule": 19
+      },
+      "configured_rules": [
+        "SessionRewriteRule"
+      ],
+      "correlates_after": 18,
+      "correlates_before": 18,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "SessionRewriteRule": 8
+      },
+      "step": "Rewrite SESSION"
+    },
+    {
+      "attempts": {
+        "SessionRewriteRule": 53
+      },
+      "configured_rules": [
+        "SessionRewriteRule"
+      ],
+      "correlates_after": 285,
+      "correlates_before": 285,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "SessionRewriteRule": 11
+      },
+      "step": "Rewrite SESSION"
+    },
+    {
+      "attempts": {
+        "JoinCommuteRule": 2
+      },
+      "configured_rules": [
+        "JoinCommuteRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "JoinCommuteRule": 2
+      },
+      "step": "Right joins to left joins"
+    },
+    {
+      "attempts": {
+        "JoinCommuteRule": 19
+      },
+      "configured_rules": [
+        "JoinCommuteRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "JoinCommuteRule": 19
+      },
+      "step": "Right joins to left joins"
+    },
+    {
+      "attempts": {
+        "JoinCommuteRule": 75
+      },
+      "configured_rules": [
+        "JoinCommuteRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 224,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "JoinCommuteRule": 75
+      },
+      "step": "Right joins to left joins"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Simple Join conditions"
+    },
+    {
+      "attempts": {},
+      "configured_rules": [],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {},
+      "step": "Simple Join conditions"
+    },
+    {
+      "attempts": {
+        "JoinPushExpressionsRule": 3381
+      },
+      "configured_rules": [
+        "JoinPushExpressionsRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {},
+      "step": "Simple Join conditions"
+    },
+    {
+      "attempts": {
+        "FilterCorrelateRule": 1
+      },
+      "configured_rules": [
+        "FilterCorrelateRule",
+        "ProjectCorrelateTransposeRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Simplify correlates"
+    },
+    {
+      "attempts": {
+        "FilterCorrelateRule": 2,
+        "ProjectCorrelateTransposeRule": 29
+      },
+      "configured_rules": [
+        "FilterCorrelateRule",
+        "ProjectCorrelateTransposeRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "ProjectCorrelateTransposeRule": 14
+      },
+      "step": "Simplify correlates"
+    },
+    {
+      "attempts": {
+        "FilterCorrelateRule": 215,
+        "ProjectCorrelateTransposeRule": 302
+      },
+      "configured_rules": [
+        "FilterCorrelateRule",
+        "ProjectCorrelateTransposeRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 224,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "FilterCorrelateRule": 63,
+        "ProjectCorrelateTransposeRule": 121
+      },
+      "step": "Simplify correlates"
+    },
+    {
+      "attempts": {
+        "SetOpToFilterRule": 5
+      },
+      "configured_rules": [
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "SetOpToFilterRule",
+        "SetopOptimizerRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {
+        "SetOpToFilterRule": 2
+      },
+      "step": "Simplify set operations"
+    },
+    {
+      "attempts": {
+        "IntersectMergeRule": 1,
+        "SetOpToFilterRule": 340,
+        "UnionMergeRule": 7
+      },
+      "configured_rules": [
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "SetOpToFilterRule",
+        "SetopOptimizerRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "IntersectMergeRule": 1,
+        "SetOpToFilterRule": 20,
+        "UnionMergeRule": 7
+      },
+      "step": "Simplify set operations"
+    },
+    {
+      "attempts": {
+        "IntersectMergeRule": 4,
+        "MinusMergeRule": 1,
+        "SetOpToFilterRule": 692,
+        "SetopOptimizerRule": 1,
+        "UnionMergeRule": 1055
+      },
+      "configured_rules": [
+        "IntersectMergeRule",
+        "MinusMergeRule",
+        "SetOpToFilterRule",
+        "SetopOptimizerRule",
+        "UnionMergeRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 224,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "IntersectMergeRule": 4,
+        "MinusMergeRule": 1,
+        "SetOpToFilterRule": 24,
+        "SetopOptimizerRule": 1,
+        "UnionMergeRule": 1055
+      },
+      "step": "Simplify set operations"
+    },
+    {
+      "attempts": {
+        "SortRemoveConstantKeysRule": 7,
+        "SortRemoveRedundantRule": 7,
+        "SortRemoveRule": 7
+      },
+      "configured_rules": [
+        "SortRemoveConstantKeysRule",
+        "SortRemoveRedundantRule",
+        "SortRemoveRule"
+      ],
+      "correlates_after": 1,
+      "correlates_before": 1,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Useless sort removal"
+    },
+    {
+      "attempts": {
+        "SortRemoveConstantKeysRule": 77,
+        "SortRemoveRedundantRule": 78,
+        "SortRemoveRule": 78
+      },
+      "configured_rules": [
+        "SortRemoveConstantKeysRule",
+        "SortRemoveRedundantRule",
+        "SortRemoveRule"
+      ],
+      "correlates_after": 16,
+      "correlates_before": 16,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "SortRemoveRedundantRule": 1
+      },
+      "step": "Useless sort removal"
+    },
+    {
+      "attempts": {
+        "SortRemoveConstantKeysRule": 341,
+        "SortRemoveRedundantRule": 343,
+        "SortRemoveRule": 342
+      },
+      "configured_rules": [
+        "SortRemoveConstantKeysRule",
+        "SortRemoveRedundantRule",
+        "SortRemoveRule"
+      ],
+      "correlates_after": 224,
+      "correlates_before": 224,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "SortRemoveConstantKeysRule": 5,
+        "SortRemoveRedundantRule": 11
+      },
+      "step": "Useless sort removal"
+    },
+    {
+      "attempts": {
+        "RowsToRangeRule": 10
+      },
+      "configured_rules": [
+        "RowsToRangeRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 1380,
+      "optimization_level": 0,
+      "productions": {},
+      "step": "Window ROWS to RANGE"
+    },
+    {
+      "attempts": {
+        "RowsToRangeRule": 177
+      },
+      "configured_rules": [
+        "RowsToRangeRule"
+      ],
+      "correlates_after": 0,
+      "correlates_before": 0,
+      "incomplete": 0,
+      "invocations": 42331,
+      "optimization_level": 1,
+      "productions": {
+        "RowsToRangeRule": 12
+      },
+      "step": "Window ROWS to RANGE"
+    },
+    {
+      "attempts": {
+        "RowsToRangeRule": 861
+      },
+      "configured_rules": [
+        "RowsToRangeRule"
+      ],
+      "correlates_after": 4,
+      "correlates_before": 4,
+      "incomplete": 0,
+      "invocations": 74129,
+      "optimization_level": 2,
+      "productions": {
+        "RowsToRangeRule": 23
+      },
+      "step": "Window ROWS to RANGE"
+    }
+  ]
+}

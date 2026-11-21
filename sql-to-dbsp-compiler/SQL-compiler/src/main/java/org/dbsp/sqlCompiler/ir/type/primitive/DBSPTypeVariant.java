@@ -100,6 +100,9 @@ public class DBSPTypeVariant extends DBSPTypeBaseType {
     @SuppressWarnings("unused")
     public static DBSPTypeVariant fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = fromJsonMayBeNull(node);
-        return DBSPTypeVariant.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeVariant.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeVariant(CalciteObject.EMPTY, mayBeNull);
     }
 }

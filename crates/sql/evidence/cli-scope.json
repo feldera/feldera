@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "named_options": 47,
+  "spellings": 54,
+  "public_options": 34,
+  "hidden_options": 13,
+  "options": [
+    {
+      "names": [
+        "-i"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 49
+    },
+    {
+      "names": [
+        "-O"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 51
+    },
+    {
+      "names": [
+        "--alltables"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 55
+    },
+    {
+      "names": [
+        "--ignoreOrder"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 57
+    },
+    {
+      "names": [
+        "--outputsAreSets"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 60
+    },
+    {
+      "names": [
+        "--streaming"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 63
+    },
+    {
+      "names": [
+        "--lenient"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 66
+    },
+    {
+      "names": [
+        "--no-restrict-io"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 69
+    },
+    {
+      "names": [
+        "--unaryPlusNoop"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 72
+    },
+    {
+      "names": [
+        "--cteViews"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 77
+    },
+    {
+      "names": [
+        "--anonymize"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 166
+    },
+    {
+      "names": [
+        "--format"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 168
+    },
+    {
+      "names": [
+        "-T"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 171
+    },
+    {
+      "names": [
+        "--noRust"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 174
+    },
+    {
+      "names": [
+        "--enterprise"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 176
+    },
+    {
+      "names": [
+        "-o"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 178
+    },
+    {
+      "names": [
+        "--errors"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 180
+    },
+    {
+      "names": [
+        "--jpg",
+        "-jpg"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 182
+    },
+    {
+      "names": [
+        "--png",
+        "-png"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 184
+    },
+    {
+      "names": [
+        "--svg",
+        "-svg"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 186
+    },
+    {
+      "names": [
+        "--jit"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 188
+    },
+    {
+      "names": [
+        "--gen2"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 190
+    },
+    {
+      "names": [
+        "--plan"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 192
+    },
+    {
+      "names": [
+        "--dataflow"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 194
+    },
+    {
+      "names": [
+        "--je",
+        "-je"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 196
+    },
+    {
+      "names": [
+        "--js",
+        "-js"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 198
+    },
+    {
+      "names": [
+        "-q"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 202
+    },
+    {
+      "names": [
+        "-v"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 207
+    },
+    {
+      "names": [
+        "--handles"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 209
+    },
+    {
+      "names": [
+        "--trimInputs"
+      ],
+      "hidden": false,
+      "scope": "Standalone language and logging controls",
+      "source_line": 212
+    },
+    {
+      "names": [
+        "--crates"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 214
+    },
+    {
+      "names": [
+        "--runtime"
+      ],
+      "hidden": false,
+      "scope": "Pipeline-manager",
+      "source_line": 217
+    },
+    {
+      "names": [
+        "--correlatedColumns"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 220
+    },
+    {
+      "names": [
+        "--sqlnames"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 225
+    },
+    {
+      "names": [
+        "--raw"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 228
+    },
+    {
+      "names": [
+        "--input_circuit"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 231
+    },
+    {
+      "names": [
+        "--skip_calcite_optimization"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 234
+    },
+    {
+      "names": [
+        "--testing"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 237
+    },
+    {
+      "names": [
+        "--dump-circuits"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 244
+    },
+    {
+      "names": [
+        "--dump-producer-commit"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 247
+    },
+    {
+      "names": [
+        "--dump-runtime-abi"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 250
+    },
+    {
+      "names": [
+        "--write-s2"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 254
+    },
+    {
+      "names": [
+        "--read-s2"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 257
+    },
+    {
+      "names": [
+        "--write-s3"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 260
+    },
+    {
+      "names": [
+        "--read-s3"
+      ],
+      "hidden": true,
+      "scope": "Compiler test and replay",
+      "source_line": 263
+    },
+    {
+      "names": [
+        "--version"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 269
+    },
+    {
+      "names": [
+        "-h",
+        "--help",
+        "-?"
+      ],
+      "hidden": false,
+      "scope": "Standalone compilation and output",
+      "source_line": 365
+    }
+  ],
+  "archive_index": "cli-scope-archive.json",
+  "compiler_version": "SQL to DBSP compiler version 0.382.0"
+}

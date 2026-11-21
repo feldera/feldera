@@ -57,29 +57,34 @@ impl ProcessGroupTerminator {
     pub fn cancel(&mut self) {
         self.is_cancelled = true;
     }
+
+    /// Kill the group before its leader is reaped. Keeping that leader alive or
+    /// waitable prevents the group id from being reused during termination.
+    pub fn terminate(&mut self) -> Result<(), nix::errno::Errno> {
+        if self.is_cancelled {
+            return Ok(());
+        }
+        let pgrp = pid_t::try_from(self.process_group).map_err(|_| nix::errno::Errno::EINVAL)?;
+        match killpg(Pid::from_raw(pgrp), Signal::SIGKILL) {
+            Ok(()) | Err(nix::errno::Errno::ESRCH) => {
+                self.is_cancelled = true;
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
 }
 
 impl Drop for ProcessGroupTerminator {
     /// Terminates all processes in the process group by sending a SIGKILL using `killpg`.
     fn drop(&mut self) {
         if !self.is_cancelled {
-            // Convert the process group (u32) to the pgrp (i32)
-            let pgrp = match pid_t::try_from(self.process_group) {
-                Ok(pgrp) => pgrp,
-                Err(e) => {
-                    error!(
-                        "Failed to cancel {}: unable to convert process group ({}): {e}",
-                        self.subject, self.process_group
-                    );
-                    return;
-                }
-            };
-            // Send the SIGKILL to the PGRP
-            if let Err(e) = killpg(Pid::from_raw(pgrp), Signal::SIGKILL) {
+            if let Err(e) = self.terminate() {
                 error!(
                     "Failed to cancel {}: attempt to kill the process and its subprocesses (PGRP: {}) failed: {e}",
                     self.subject, self.process_group
                 );
+                return;
             }
             debug!(
                 "Successfully cancelled {} by killing its process group",

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "tests": 2847,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 71,
+  "runtime_executed": false,
+  "corpus": {
+    "build_identity": [
+      "c6ede756d-p0-seams-v23",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "c6ede756d"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8571,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10408,
+    "tests": 2619
+  },
+  "raw_corpus": "$SCRATCH/p0-seam-regression-corpus-v5",
+  "logs": {
+    "$SCRATCH/p0-seam-full-java-tests-v5.log": "96e51afee01a221898ea6e663ca92d359a7f2880fc23d70abcd1e433c354151d",
+    "$SCRATCH/p0-seam-regression-corpus-v5-validation.json": "a8dcffeb96342a3bb13993fc493407d0f1a254ca8122a688c43b3b28e36c389c"
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RexOptimize.java": "31da61e10bf1a94889e4ecd94166a9f7c83436f421f684a069200e065c17628d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RustFoldExecutor.java": "e7a914c2ef902a5a214f59385a59b07cf4fbabe88ebd8f37df7fdcfa5a259936",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbe.java": "b76e0d5ebf4a4844134e261e4a191f5d70e13f7c94cc0615a418ed3af4af9956",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbeTests.java": "4493d99f7dd2191252bbdb2d1920762a5bf18f45c5d11b87ee0788397e52e762"
+  },
+  "independent_review": false
+}

@@ -44,7 +44,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
+import org.dbsp.sqlCompiler.compiler.ProgramSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -710,7 +710,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("catalog.")
                 .append(registerFunction)
                 .append("::<_, ");
-        IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
+        ProgramSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
         JsonNode j = tableDescription.asJson(true);
         j = this.stripConnectors(j);
         j = this.stripPositions(j);
@@ -963,7 +963,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.generateNestedStructs(new DBSPStructItem(keyStructType, null), false);
         this.generateNestedStructs(new DBSPStructItem(upsertStruct, operator.getMetadata()), false);
 
-        IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
+        ProgramSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
         JsonNode j = tableDescription.asJson(true);
         j = this.stripConnectors(j);
         j = this.stripPositions(j);
@@ -1314,7 +1314,7 @@ public class ToRustVisitor extends CircuitVisitor {
                             .append(Utilities.doubleQuote(operator.viewName.toString(), true))
                             .append(")),").newline();
                     // schema
-                    IHasSchema description = this.metadata.getViewDescription(indexes.getView().viewName);
+                    ProgramSchema description = this.metadata.getViewDescription(indexes.getView().viewName);
                     JsonNode j = description.asJson(true);
                     j = this.stripConnectors(j);
                     j = this.stripPositions(j);
@@ -1339,7 +1339,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 if (indexes.isEmpty() || operator.metadata.viewKind != SqlCreateView.ViewKind.MATERIALIZED) {
                     // Materialized views with indexes are not emitted at all
                     this.writeComments(operator);
-                    IHasSchema description = this.metadata.getViewDescription(operator.viewName);
+                    ProgramSchema description = this.metadata.getViewDescription(operator.viewName);
                     JsonNode j = description.asJson(true);
                     j = this.stripConnectors(j);
                     j = this.stripPositions(j);

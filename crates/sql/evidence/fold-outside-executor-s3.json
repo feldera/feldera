@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "64 targeted pre/post-executor consumer fixtures plus lexical source audit; no full corpus replay",
+  "artifact_root": "$SCRATCH/p0-fold-outside-executor-v1",
+  "results": {
+    "transparency": {
+      "cases": 64,
+      "accepted_java": 43,
+      "accepted_rust": 43,
+      "compiler_bugs": [],
+      "differences": [],
+      "equal": true
+    },
+    "replacement": {
+      "cases": 64,
+      "accepted_java": 43,
+      "accepted_rust": 43,
+      "compiler_bugs": [],
+      "differences": [],
+      "equal": true
+    },
+    "expected_verdicts_and_warnings": {
+      "cases": 64,
+      "differences": [],
+      "equal": true
+    },
+    "complete": true,
+    "equal_on_measured_cases": true,
+    "artifacts": {
+      "run.py": "ea92df258297ab2033ff13b1746d23440000e7a448682e0df0d4f890592ec433",
+      "compiler-reference.json": "98be533408ab9784006bdd0ce0320deaeccdda78edc5b38741a02e8cdc78b692",
+      "probe": "8647396e00ae4961fa0b21b96c39a815e6baa743ef4932133fcc141f553c0423",
+      "input.jsonl": "18e4eec86341efd484c59ab0fdc17ecf92447d9cdf2f88cd5c3509118204c665",
+      "provenance.json": "d0910e761f55a71051d39703c9959a8dd59a938d6dc66a365b720f657585e074",
+      "baseline.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline-folds.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline-cases.jsonl": "68fd1a8f635ed0feee1ebf843c314be55777e6c4970720903eb2bba85f84d329",
+      "java.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "java-folds.jsonl": "0815c1a7ad4b6e463644a9b713e61ef28ed79c8bc0350c045541854c5d494960",
+      "java-cases.jsonl": "dbce7c331b6fd374ea4a374163038c4f73e411f3332458eed15a46482a0cb5cb",
+      "rust.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rust-folds.jsonl": "2b6dbb3c62cf5741711e5add1ba642a0eb108bd53cdbbed91168c1f10b6b2a5f",
+      "rust-folds.jsonl.worker.jsonl": "8399cfdf8e87dff37febc6b97022af48ba4fd3dacc7e1ba04438b98232078ad3",
+      "rust-cases.jsonl": "739c0d5b47f15ada339564c43acdee4ff73a9e6ff83617225c4227e18f6c4853"
+    }
+  },
+  "semantics_profile": "legacy-janino-v1",
+  "probe_sha256": "8647396e00ae4961fa0b21b96c39a815e6baa743ef4932133fcc141f553c0423",
+  "input_sha256": "18e4eec86341efd484c59ab0fdc17ecf92447d9cdf2f88cd5c3509118204c665",
+  "artifacts": {
+    "$SCRATCH/p0-fold-outside-executor-v1/run.py": "ea92df258297ab2033ff13b1746d23440000e7a448682e0df0d4f890592ec433",
+    "$SCRATCH/p0-fold-outside-executor-v1/compiler-reference.json": "98be533408ab9784006bdd0ce0320deaeccdda78edc5b38741a02e8cdc78b692",
+    "$SCRATCH/p0-fold-outside-executor-v1/probe": "8647396e00ae4961fa0b21b96c39a815e6baa743ef4932133fcc141f553c0423",
+    "$SCRATCH/p0-fold-outside-executor-v1/input.jsonl": "18e4eec86341efd484c59ab0fdc17ecf92447d9cdf2f88cd5c3509118204c665",
+    "$SCRATCH/p0-fold-outside-executor-v1/provenance.json": "d0910e761f55a71051d39703c9959a8dd59a938d6dc66a365b720f657585e074",
+    "$SCRATCH/p0-fold-outside-executor-v1/baseline.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-fold-outside-executor-v1/baseline-folds.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-fold-outside-executor-v1/baseline-cases.jsonl": "68fd1a8f635ed0feee1ebf843c314be55777e6c4970720903eb2bba85f84d329",
+    "$SCRATCH/p0-fold-outside-executor-v1/java.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-fold-outside-executor-v1/java-folds.jsonl": "0815c1a7ad4b6e463644a9b713e61ef28ed79c8bc0350c045541854c5d494960",
+    "$SCRATCH/p0-fold-outside-executor-v1/java-cases.jsonl": "dbce7c331b6fd374ea4a374163038c4f73e411f3332458eed15a46482a0cb5cb",
+    "$SCRATCH/p0-fold-outside-executor-v1/rust.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-fold-outside-executor-v1/rust-folds.jsonl": "2b6dbb3c62cf5741711e5add1ba642a0eb108bd53cdbbed91168c1f10b6b2a5f",
+    "$SCRATCH/p0-fold-outside-executor-v1/rust-folds.jsonl.worker.jsonl": "8399cfdf8e87dff37febc6b97022af48ba4fd3dacc7e1ba04438b98232078ad3",
+    "$SCRATCH/p0-fold-outside-executor-v1/rust-cases.jsonl": "739c0d5b47f15ada339564c43acdee4ff73a9e6ff83617225c4227e18f6c4853",
+    "$SCRATCH/p0-fold-outside-executor-v1/complete.json": "df5162fdbb8c58bf241eca1e8f324a9e063aebdf954ab7bd071b91732a8e3226"
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/TableContents.java": "9564d49778032ac62682e75aac5a7fb415c18a0beb9054b10e6c5e853c6b29dc",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/CalciteToDBSPCompiler.java": "e53c036da29f2e0a4b171197507ccc663deb337504e211e877247c1ee8e55468",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/aggregates/RangeAggregates.java": "61224528b8ca7d9123755b7d15f43953ce322d09b111f86552f4e06e1ee3ddbc",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/aggregates/AggregateCompiler.java": "b8ed7719a9064f1b324d16fd3a480d1402b34ffd9c2df0ac02f8e0e4ddfccdf3",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FoldTrace.java": "334d418e63e8add855a361abee479684367182ca0acaceaa477cced1bab6a10f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RustFoldExecutor.java": "3024f113d49fa3ef1c528e8278fafeae271fcbc0277661826eb0ec355f71d996",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/FelderaRexBuilder.java": "b69bb7741c9ad1b6cae55b8990acacc8029b71ac8f41eaf47eef1cd700881907",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/ConvertletTable.java": "0e59f59701d1611968f150e2b0f7e2d406353ae9ba95049f8e5e1e897d3c7cb9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/ir/expression/DBSPExpression.java": "ea5c69bd3c0b3dd5ad04c076f095f51d96e3ac04ee1d1317460304e73c153240",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/inner/Simplify.java": "71ff8731632d3755b0fbdce25475a5e68b23ce0b94c47f4ec8d6cb8feda854c9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CircuitOptimizer.java": "af0a84c9e49b13dcc28e781794425acea8b5a04bdff004ee27c38de0480a6606",
+    "crates/sql/scripts/fold_site_inventory.py": "39c4c37bd9440c1cfcb3d9597d4af4cc57b3cb4058a0bd8314032aa0b6798ab1",
+    "crates/sql/scripts/test_fold_site_inventory.py": "9c8f0dc6a6de819c2c93d5f8540a27786efcedc6624a3a7138ce2036d1bc7286",
+    "crates/sql/scripts/fold_cases.py": "c916804f63cfa81cae6195f03bcf54d28a4b37f599af40b5232904941f9b0eeb",
+    "crates/sql/scripts/test_fold_probe.py": "5c99b1eedcd053414b57ce326958d35afe9e8976ee4e9ddc2d8e822367883d22",
+    ".github/workflows/test-java.yml": "b195102c891857e67e4cb36197535d4f48bfe3cd367a6eb3c18b7f65348c585d",
+    "crates/sql/evidence/fold-site-source-inventory.json": "ba2e902187e0b6a8c44d2ff1e73970a204042139c7e64f3524dec84593233310"
+  },
+  "classpaths": {
+    "$SCRATCH/p0-fold-consumer-review-v3/test-classes": "4c84b28a4acbe4a61bcdbe53b14d95c1da858d31c4aee85a729180cabfed57ae",
+    "$SCRATCH/p0-fold-consumer-review-v3/classes": "6cf2a2b89bb2fef15a9a437c2036934e26e755cd86eaaa293fdcf15f408249ee",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "base_certificate": "fold-consumer-sites-s3.json",
+  "source_audit": {
+    "local_explicit_frontend_calls_classified": true,
+    "explicit_calls": 10,
+    "additional_pre_executor_sites": 3,
+    "branch_reachability_proven": false
+  },
+  "validation": {
+    "python_tests": 16,
+    "actionlint_passed": true
+  },
+  "full_corpus_replayed": false,
+  "all_constant_site_coverage_complete": false,
+  "P0_complete": false
+}

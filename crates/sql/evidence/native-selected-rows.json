@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-selected-rows-archive.json",
+  "previous_composite_archive_index": "native-composite-archives-final-archive.json",
+  "new_explicit_stored_shapes": 15,
+  "explicit_stored_shapes_with_component_evidence": 29,
+  "explicit_stored_shapes_total": 29,
+  "focused_runtime_tests_passed": 17,
+  "focused_runtime_and_standalone_clippy_passed": true,
+  "byte_equality_and_relocated_deserialization": true,
+  "implicit_state_layouts_complete": false,
+  "complete_native_corpus_programs": 0
+}

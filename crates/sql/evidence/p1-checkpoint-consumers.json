@@ -1,0 +1,87 @@
+{
+  "method": "Java SQL compilation compared with Java importing Rust-written version-4 S2 or S3. The independent comparator checks ordered circuit structure and sharing before import.",
+  "engines": {
+    "classic": {
+      "S2": {
+        "input_sha256": "2b21f77dcc13f4154eb0ca30907b427034a24dbed0659255ee3ae024a72f085c",
+        "equal": true,
+        "cases": 2,
+        "observations": 872,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "S3": {
+        "input_sha256": "2b21f77dcc13f4154eb0ca30907b427034a24dbed0659255ee3ae024a72f085c",
+        "equal": true,
+        "cases": 2,
+        "observations": 2,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      }
+    },
+    "gen2": {
+      "S2": {
+        "input_sha256": "6b6dc94fcad850927c6b551de0b872b521334107dc98e5c8934b102af0eca890",
+        "equal": true,
+        "cases": 2,
+        "observations": 880,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#testArrayIndex/0",
+          "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#minAndMaxOfOneInput/0"
+        ],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "S3": {
+        "input_sha256": "6b6dc94fcad850927c6b551de0b872b521334107dc98e5c8934b102af0eca890",
+        "equal": true,
+        "cases": 2,
+        "observations": 2,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#testArrayIndex/0",
+          "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#minAndMaxOfOneInput/0"
+        ],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      }
+    }
+  }
+}

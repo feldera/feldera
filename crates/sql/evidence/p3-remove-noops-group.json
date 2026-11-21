@@ -1,0 +1,28 @@
+{
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "9d50c472df726439ff2f9850f09f60a25c5aff0e89b6a249f6f195a1499aec66",
+      "f83724f3196ea2c4a03597b91fc5f600e502699a525e7978e3a85fce4f0bd5ef"
+    ],
+    "pass": "OptimizeWithGraph(RemoveNoops)",
+    "invocations": 17142,
+    "changed": 925,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "45ae1faf6610fdf5e692bc960a844f23ed8bae4de2d39dabe370287c12d40cb9",
+      "5f6487a3a325cd1034f37e0ff100eaed11e9a6ea3923feeac4fc5fb56b94f0d6"
+    ],
+    "pass": "OptimizeWithGraph(RemoveNoops)",
+    "invocations": 17054,
+    "changed": 1287,
+    "cases_without_placement": 0
+  }
+}

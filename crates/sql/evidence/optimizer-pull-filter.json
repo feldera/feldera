@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-pull-filter-archive.json",
+  "scope": "Original PullFilterVisitor stage. One single-consumer tuple projection is moved per engine, and a filter over a constant containing an overflowing integer sum retains its runtime expression.",
+  "strict_graph_and_name_counter_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "composed_placements": 53,
+  "composed_java_codec_control_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "composed_rust_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "generated_program_runtime_executed": false
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-lateness-archive.json",
+  "strict_circuit_and_name_matches": {"classic_distinct": 1, "gen2_distinct": 1, "classic_bags": 1},
+  "runtime": {
+    "classic_bags": {
+      "transactions": 3,
+      "equal_output_bags": 6,
+      "input_retractions": 2,
+      "accepted_retractions": 1,
+      "late_rows_reported": 2,
+      "runs": {"direct_java": "passed", "rust_limiter": "passed"}
+    },
+    "all_outputs_forced_to_sets": "The original Java-generated runtime reported duplicate .shard_accintegral persistent IDs for the data and error outputs of the controlled filter. The frozen compile-only circuit and checkpoint IDs match. The signed runtime result uses ordinary bag output."
+  }
+}

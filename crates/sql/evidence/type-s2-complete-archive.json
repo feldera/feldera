@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-type-s2-all-20261118-v1.tar.gz",
+  "bytes": 22632776,
+  "sha256": "c69722b644e7b5aa81b3d3524b7489f7f1b12e3d74fd82f5cc8c4151f29ac65a",
+  "manifest_sha256": "73dbd48ca149a524e07dec82842bb47189077c479a368258ea46c47c079ce8ad",
+  "verified_files": 42,
+  "all_members_verified": true
+}

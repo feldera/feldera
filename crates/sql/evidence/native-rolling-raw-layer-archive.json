@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-raw-layer.tar.gz",
+  "bytes": 42890683,
+  "sha256": "d8bb5a420902370341ebb79408ea90b86d18dd26e08867a10a53307bbfdeaf52",
+  "manifest_sha256": "0d6e5cb1d681b825dfd4b837b038a08fb9530632147446a8932450371458288e",
+  "verified_files": 440,
+  "all_members_verified": true
+}

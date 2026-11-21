@@ -1,0 +1,44 @@
+{
+  "scope": "Checked JSON decoding and disposal of the decoded value; Linux ARM64 release, one pinned CPU.",
+  "per_input": {
+    "warmup_pairs": 2,
+    "measured_pairs": 21,
+    "decodes_per_observation": 3
+  },
+  "baseline_sha256": "b93610d0aa96aaa4fc1ca860da16a05d5ba99d8b4c006c983283d9f248091478",
+  "candidate_sha256": "04523d9f83986e97b4ceaedfa2fefdb97a6b0a8cf0710eb88206592f5663d08e",
+  "archive": ".bench-results/p3-compiler-json/2026-20-11-18-38-c6ede",
+  "raw_pairs_sha256": "5fd76d46dfb61725694ed43da34283e1352fc8796406cdc9184f0ea6f0716993",
+  "snapshots": [
+    {
+      "bytes": 323127,
+      "sha256": "6e37dca2913e2bb79808d4b5d7966a909fc87767d67af685a928065a87a93723",
+      "baseline_median_us": 3500.4,
+      "candidate_median_us": 2139.1,
+      "paired_mean_ratio_interval95": [
+        0.6161603506755016,
+        0.6482967982908665
+      ]
+    },
+    {
+      "bytes": 61448,
+      "sha256": "9c200e6c6680d42d46cc515b7b4383e42f91f35049d6686658b7306fcd058f17",
+      "baseline_median_us": 625.6,
+      "candidate_median_us": 415.1,
+      "paired_mean_ratio_interval95": [
+        0.6471566663234015,
+        0.673675130100321
+      ]
+    },
+    {
+      "bytes": 1891238,
+      "sha256": "26b2162405e84541bab43842d1a3e7f812b279e93cb5bdac9afaefd6a3a36550",
+      "baseline_median_us": 22372.7,
+      "candidate_median_us": 14633.9,
+      "paired_mean_ratio_interval95": [
+        0.6451791722735544,
+        0.6701593793171542
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-aggregate-zero-archive.json",
+  "scope": "Rust replaces ExpandAggregateZeros at its original optimizer placement on flat circuits.",
+  "profiles": {
+    "incremental": {"exact_pass_results_equal": 100, "active_rewrites": 0, "final_results_equal": 100},
+    "snapshot": {"exact_pass_results_equal": 92, "active_rewrites": 2, "final_results_equal": 92},
+    "directed": {"exact_pass_results_equal": 10, "active_rewrites": 8, "final_results_equal": 10}
+  },
+  "aggregate_zero_operators_rewritten": 12,
+  "combined_incremental_matrix": {
+    "scheduled_placements": 45,
+    "programs_per_engine": 50,
+    "rust_final_results_equal": 100,
+    "java_codec_controls_equal": 100
+  },
+  "rust_tests_passed": 35,
+  "clippy": "passed"
+}

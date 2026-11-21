@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "archive_index": "p0-final-java-archive.json",
+  "compiler_exporter": {
+    "total": 3082,
+    "passed": 3003,
+    "skipped": 79,
+    "failures": 0,
+    "errors": 0
+  },
+  "manifest_validation": {
+    "build_identity": [
+      "source-sha256:989b6132222cd8190d21dc6a66d6e7ca0b44f727d54f66c09e99c0f55ad14990",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "not-executed"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8573,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10410,
+    "tests": 2628
+  },
+  "portable_output_validation": {
+    "build_identity": [
+      "source-sha256:989b6132222cd8190d21dc6a66d6e7ca0b44f727d54f66c09e99c0f55ad14990",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "not-executed"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8573,
+    "portable_bags": 10402,
+    "portable_rows": 18789,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10410,
+    "tests": 2628
+  },
+  "scope": "Linux ARM64 devcontainer, Maven compiler/exporter mode. Runtime validation uses the separately retained signed replay. The first isolated attempt omitted the compiler temporary workspace."
+}

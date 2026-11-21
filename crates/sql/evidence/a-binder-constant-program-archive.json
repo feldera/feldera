@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-constant-program-20261118-v1.tar.gz",
+  "bytes": 11308582,
+  "sha256": "b1ec6c9ab2a84ffcfeb36849fb232747de0ca31f3114822f10168803855fe945",
+  "manifest_sha256": "8e7bbce373f648634e05a1b48e918b4c29387789f2d273510f09626d08b43ad3",
+  "verified_files": 56,
+  "all_members_verified": true
+}

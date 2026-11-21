@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-eighteen-placements-archive.json",
+  "larger_fifteen_placement_run": "multiset-fifteen-placements.json",
+  "programs": 30,
+  "engine_modes": ["classic", "gen2"],
+  "outputs_are_sets": true,
+  "scheduled_placements": 18,
+  "same_input_graph_comparisons": 1100,
+  "remove_noops_iterations": 140,
+  "program_runs_with_a_second_remove_noops_iteration": 20,
+  "rust_tail_comparisons": 60,
+  "java_codec_tail_comparisons": 60,
+  "directed_cleanup_graph_comparisons": 9,
+  "differences": 0,
+  "complete_rust_prefix_replayed": false,
+  "scope": "Both scheduled RemoveNoops sites retain their Java graph construction, dead-code transforms and repeat driver. The adapter preserves live Java identities when the serialized graph is unchanged. The scheduled RemoveNoops transforms do not change the selected SQL graphs. The archived directed lateness graph exercises removal before sinks. It uses bag outputs and contains no trace-retention operator."
+}

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "scope": "Four-worker optimized persistent COUNT DISTINCT, forced spill, alternating signed transactions in both modes, default jemalloc profile.",
+  "cpus": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "pairs_per_variant_per_storage_and_batch_size": 21,
+  "variants": {
+    "count-direct-fixed-latency": {
+      "binary_sha256": "5e964fc7475d6bac2a9b16222d425eb483be1542eb9f98b4f7582e09ad5a2995",
+      "archive_index": "native-persistent-count-direct-fixed-latency-archive.json",
+      "native_to_classic_ratios": {
+        "overlay": {
+          "256": {
+            "throughput_p50": 0.90942,
+            "transaction_latency_p95": 1.07038,
+            "peak_rss_p50": 1.07934,
+            "checkpoint_bytes_p50": 0.99377
+          },
+          "2048": {
+            "throughput_p50": 0.92225,
+            "transaction_latency_p95": 1.17446,
+            "peak_rss_p50": 1.10867,
+            "checkpoint_bytes_p50": 0.99527
+          }
+        },
+        "host-bind": {
+          "256": {
+            "throughput_p50": 0.90101,
+            "transaction_latency_p95": 1.05743,
+            "peak_rss_p50": 1.08064,
+            "checkpoint_bytes_p50": 0.99377
+          },
+          "2048": {
+            "throughput_p50": 0.89583,
+            "transaction_latency_p95": 1.11665,
+            "peak_rss_p50": 1.10815,
+            "checkpoint_bytes_p50": 0.99527
+          }
+        }
+      }
+    },
+    "count-archive-latency": {
+      "binary_sha256": "72386c7d13a28974d558048d5298f5366555c39ba79b3c700b520f9959bde61c",
+      "archive_index": "native-persistent-count-archive-latency-archive.json",
+      "native_to_classic_ratios": {
+        "overlay": {
+          "256": {
+            "throughput_p50": 1.00654,
+            "transaction_latency_p95": 1.00994,
+            "peak_rss_p50": 1.01356,
+            "checkpoint_bytes_p50": 1.0
+          },
+          "2048": {
+            "throughput_p50": 0.99899,
+            "transaction_latency_p95": 1.00065,
+            "peak_rss_p50": 1.01235,
+            "checkpoint_bytes_p50": 1.0
+          }
+        },
+        "host-bind": {
+          "256": {
+            "throughput_p50": 0.99999,
+            "transaction_latency_p95": 1.01135,
+            "peak_rss_p50": 1.01415,
+            "checkpoint_bytes_p50": 1.0
+          },
+          "2048": {
+            "throughput_p50": 1.00448,
+            "transaction_latency_p95": 0.96047,
+            "peak_rss_p50": 1.0126,
+            "checkpoint_bytes_p50": 1.0
+          }
+        }
+      }
+    }
+  },
+  "original_direct_builder_failure": {
+    "error": "Storage(NoPersistentId(\"AccumulateZ1Trace nn12\"))",
+    "archive_index": "native-persistent-count-latency-archive.json"
+  },
+  "all_configurations_within_c13_runtime_limits": true,
+  "artifact_build_gate_measured": false,
+  "retained_attempt": "Initial sampling overlapped CPUs between variants. Ratios use the sequential reruns only."
+}

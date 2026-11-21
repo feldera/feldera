@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-erased-constants-archive.json",
+  "tests_passed": {
+    "native_probe": 6,
+    "dbsp_generators": 3
+  },
+  "checkpoint_interchange": [
+    "classic_to_erased",
+    "erased_to_classic"
+  ],
+  "focused_clippy_passed": true,
+  "scope": "Two workers. An explicit empty batch constructor preserves signed values and worker placement for both generators. The incremental generator resumes with no duplicate output in both persistent-mode directions. The ephemeral-mode attempt is rejected by DBSP fingerprint verification and is retained."
+}

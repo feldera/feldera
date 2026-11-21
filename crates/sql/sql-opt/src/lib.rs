@@ -1,0 +1,214 @@
+//! Transform the circuit in explicit pass order, preserving operator identities.
+
+mod aggregate_groups;
+mod aggregate_zero;
+mod append_only;
+mod array_agg;
+mod balanced_joins;
+mod chains;
+mod collapse_shared_chains;
+mod comparators;
+mod common_projections;
+pub use common_projections::{common_projection_payloads, common_projections, CommonProjection};
+mod conditionals;
+mod constant_filters;
+mod consumer_graph;
+mod cse;
+mod dead_code;
+mod distinct_outputs;
+mod empty_sources;
+mod error_consumers;
+mod error_wrappers;
+mod expand_aggregates;
+mod expression_visitor;
+mod fanout;
+mod filter_joins;
+mod filters;
+mod function_calls;
+mod gen2;
+mod hints;
+mod hoist_filters;
+mod hop;
+mod identity;
+mod incrementalize;
+mod indexed_inputs;
+mod input_fields;
+pub use input_fields::{input_field_uses, input_projections, InputFieldUse};
+mod integrate;
+mod left_joins;
+pub mod limiters;
+mod linear_retention;
+mod merge_gc;
+mod metadata_casts;
+mod multiset;
+mod nested;
+mod operator_hashes;
+mod optimize_distinct;
+mod output_integrators;
+mod project_outputs;
+mod projection;
+mod propagate_constants;
+pub use project_outputs::project_outputs;
+mod pull_filters;
+mod push_integrals;
+mod rebuild;
+mod recursive_views;
+mod regions;
+mod remove_noops;
+mod remove_table;
+mod shared_indexes;
+mod state_bounds;
+mod statistics;
+mod stream_rewrites;
+mod sums;
+mod temporal_equality;
+mod temporal_filters;
+mod terms;
+mod topology;
+mod trace_integrators;
+mod trace_retention;
+mod trim_inputs;
+pub use trim_inputs::{trim_inputs, InputLayout};
+mod udf;
+mod validation;
+mod views;
+mod waterline;
+mod window_groups;
+
+pub use window_groups::{
+    implement_window_groups, qualifying_window_groups, shared_window_fields, window_candidates,
+    WindowFields, WindowProjection,
+};
+
+pub use aggregate_groups::{aggregate_groups, AggregateKind};
+pub use aggregate_zero::expand_aggregate_zero;
+pub use append_only::append_only_streams;
+pub use array_agg::fuse_into_array_agg;
+pub use balanced_joins::{balance_joins, optimize_balanced_joins};
+pub use chains::{fuse_chains, implement_chains, optimize_chains};
+pub use collapse_shared_chains::collapse_shared_chains;
+pub use comparators::declare_comparators;
+pub use conditionals::simplify_conditionals;
+pub use constant_filters::remove_constant_filters;
+pub use consumer_graph::{consumer_graphs, Successors};
+pub use cse::{common_subexpressions, common_subexpressions_with_names, cse_payloads, CseState};
+pub use dead_code::{eliminate_dead_code, pruning, remove_dead_operators, DeadCodeResult, Pruning};
+pub use distinct_outputs::ensure_distinct_outputs;
+pub use empty_sources::propagate_empty_sources;
+pub use error_consumers::{error_consumers, ErrorConsumerOrder};
+pub use error_wrappers::create_runtime_error_wrappers;
+pub use expand_aggregates::{expand_stream_aggregates, AggregateContext, ExpandedAggregates};
+pub use expression_visitor::{ensure_expression_trees, simplify_expressions};
+pub use fanout::{clone_operators_with_fanout, optimize_fanout};
+pub use feldera_sql_expr::adjust_sql_index;
+pub use feldera_sql_expr::CastSafety;
+pub use filter_joins::filter_joins;
+pub use function_calls::{
+    circuit_contains_now, connector_metadata_call, is_clock_call, is_connector_metadata,
+    nondeterministic_initializers, ConnectorMetadataCall, NondeterministicInitializer,
+};
+pub use gen2::gen2_passes;
+pub use hints::{check_hints, HintDiagnostic};
+pub use hoist_filters::decompose_expensive_filters;
+pub use hop::expand_hop;
+pub use identity::remove_identity_operators;
+pub use incrementalize::incrementalize;
+pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
+pub use integrate::remove_redundant_integrates;
+pub use left_joins::{remove_useless_left_joins, substitute_left_joins};
+pub use linear_retention::{linear_postprocess_retain_keys, linear_retention_order};
+pub use merge_gc::{
+    merge_retention_policies, retention_groups, share_trace_inputs, SharedTraceInputs,
+};
+pub use metadata_casts::{expand_circuit_casts, expand_metadata_casts};
+pub use multiset::{plan_multiplicities, stream_multiplicities, Multiplicities, MultiplicityPlan};
+pub use nested::{build_nested_operators, NestedDiagnostics, NestedResult};
+pub use operator_hashes::{
+    check_persistent_ids, ComputedHashes, PersistentIdFinding, PrefixInputs,
+};
+pub use optimize_distinct::optimize_distinct;
+pub use output_integrators::share_output_integrators;
+pub use propagate_constants::propagate_constants;
+pub use pull_filters::pull_filters;
+pub use push_integrals::push_integrals;
+pub use recursive_views::{resolve_view_references, ViewReferences, ViewResolution};
+pub use regions::tag_regions;
+pub use remove_noops::{optimize_noops, remove_noops};
+pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
+pub use shared_indexes::{duplicate_shared_indexes, find_map_chains};
+pub use state_bounds::{
+    detects_streaming, propagate_bounds, pruned_streams, unbounded_operators, UnboundedOperator,
+};
+pub use statistics::{circuit_statistics, CircuitStatistics};
+pub use stream_rewrites::{
+    implement_joins, insert_weight_validation, optimize_differentials, push_differentials_up,
+};
+pub use sums::merge_sums;
+pub use temporal_equality::desugar_now_equality;
+pub use temporal_filters::break_temporal_filters;
+pub use topology::needs_full_snapshot;
+pub use trace_integrators::{separate_integrators, snapshot_aggregate};
+pub use trace_retention::{
+    check_and_prune_retention, duplicate_retention, retention_violation, DuplicateRetention,
+    Retained, RetentionViolation,
+};
+pub use udf::inline_udfs;
+pub use validation::{first_integral, recursive_violation, RecursiveViolation};
+pub use views::{constant_views, remove_views, ViewRemoval};
+pub use waterline::simplify_waterlines;
+
+use feldera_sql_ir::{BodyOrder, Circuit, CircuitEditor, Error, OperatorKind};
+use serde_json::json;
+
+/// A Deindex already carries its projection closure. The physical map keeps
+/// its function, declared output type, input port and relational provenance.
+pub fn remove_deindex_operators(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+    let order = circuit.operator_order(BodyOrder::Postorder)?;
+    let mut edit = CircuitEditor::new(circuit);
+    for id in order {
+        if edit.node(id)?.operator_kind() == Some(OperatorKind::Deindex) {
+            edit.deindex_as_map(id)?;
+        }
+    }
+    rebuild::rebuild_input_closures(edit.finish_with_rewrites()?, next)
+}
+
+/// Append the stream names used by the profiler and generated code. Each pass
+/// starts its own counter and visits a nested operator before its body.
+pub fn compact_names(mut circuit: Circuit) -> Result<Circuit, Error> {
+    for (i, id) in circuit
+        .operator_order(BodyOrder::Preorder)?
+        .into_iter()
+        .enumerate()
+    {
+        circuit
+            .annotations_mut(id)?
+            .push(json!({"class":"CompactName","name":format!("s{i}")}));
+    }
+    Ok(circuit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_stream_names_follow_body_order_and_preserve_annotations() {
+        let input = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+            {"class":"DBSPNestedOperator","id":7,"inputs":[],"internalOutputs":[],
+             "allOperators":[{"class":"DBSPConstantOperator","id":3,"inputs":[],"annotations":[]}],
+             "annotations":[{"class":"Recursive"}]},
+            {"class":"DBSPConstantOperator","id":2,"inputs":[],"annotations":[]}
+        ]});
+        let got = compact_names(Circuit::from_json(input).unwrap())
+            .unwrap()
+            .to_json();
+        let ops = &got["allOperators"];
+        assert_eq!(
+            ops[0]["annotations"],
+            json!([{"class":"Recursive"},{"class":"CompactName","name":"s0"}])
+        );
+        assert_eq!(ops[0]["allOperators"][0]["annotations"][0]["name"], "s1");
+        assert_eq!(ops[1]["annotations"][0]["name"], "s2");
+    }
+}

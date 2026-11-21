@@ -652,6 +652,12 @@ export type CommitProgressSummary = {
 export type CompilationProfile = 'dev' | 'unoptimized' | 'optimized' | 'optimized_symbols'
 
 /**
+ * SQL compiler family. This release supports `java`. To select it explicitly,
+ * enable the experimental `compiler_selection` feature.
+ */
+export type CompilerFamily = 'java'
+
+/**
  * A watermark that has been fully processed by the pipeline.
  */
 export type CompletedWatermark = {
@@ -4559,9 +4565,13 @@ export type PipelineDiffRequest = {
    */
   program_code?: string | null
   /**
+   * Optional compilation settings. Omit this field or send an empty object to use the platform defaults. A top-level `runtime_version` overrides the value in this object.
+   */
+  program_config?: ProgramConfig | null
+  /**
    * Runtime version to compile the new program with: a version tag
-   * (`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's default
-   * runtime is used.
+   * (`vX.Y.Z`) or a 40-character git SHA. When provided, this overrides
+   * `runtime_version` in the selected program configuration.
    */
   runtime_version?: string | null
 }
@@ -5203,6 +5213,7 @@ export type ProgramConfig = {
    * and as well can result in overriding an existing binary.
    */
   cache?: boolean
+  compiler?: CompilerFamily | null
   profile?: CompilationProfile | null
   /**
    * Override runtime version of the pipeline being executed.
@@ -7226,8 +7237,13 @@ export type ValidateProgramRequest = {
    */
   program_code: string
   /**
+   * Optional compilation settings. Omit this field or send an empty object to use the platform defaults. A top-level `runtime_version` overrides the value in this object.
+   */
+  program_config?: ProgramConfig | null
+  /**
    * Runtime version to compile with: a version tag (`vX.Y.Z`) or a
-   * 40-character git SHA. If omitted, the platform's default runtime is used.
+   * 40-character git SHA. When provided, this overrides `runtime_version`
+   * in `program_config`.
    */
   runtime_version?: string | null
 }
@@ -8513,7 +8529,7 @@ export type GetPipelineDataflowGraphResponse =
 
 export type PostPipelineDiffData = {
   /**
-   * The proposed new SQL program and/or runtime version (both optional)
+   * The proposed SQL program, compilation configuration, and runtime override (all optional)
    */
   body: PipelineDiffRequest
   path: {
@@ -10079,7 +10095,7 @@ export type PatchTenantResponse = PatchTenantResponses[keyof PatchTenantResponse
 
 export type PostValidateProgramData = {
   /**
-   * The SQL program to validate, an optional runtime version, and whether to return the IR
+   * The SQL program and compilation configuration to validate, an optional runtime override, and whether to return the IR
    */
   body: ValidateProgramRequest
   path?: never

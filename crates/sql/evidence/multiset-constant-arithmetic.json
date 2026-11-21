@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-constant-arithmetic-archive.json",
+  "directed_constant_graph_comparisons": 21,
+  "arithmetic_specific_directed_graphs": 6,
+  "live_witness_programs": 3,
+  "engine_modes": ["classic", "gen2"],
+  "live_same_input_graph_comparisons": 6,
+  "live_changed_graphs": 4,
+  "live_overflow_graphs_retained": 2,
+  "live_rust_tail_comparisons": 6,
+  "live_java_codec_tail_comparisons": 6,
+  "ordinary_bag_and_set_tail_comparisons": 600,
+  "differences": 0,
+  "scope": "Signed 32-bit ADD, SUB and MUL in scalar maps and predicates. Generated literals preserve Java type and source-position identity. A row that cannot fold because of overflow causes the enclosing map or filter to retain its original graph. An enclosing arithmetic identity can still remove an overflowing subexpression when Java Simplify does. Live sink witnesses are injected directly before scheduled constant propagation."
+}

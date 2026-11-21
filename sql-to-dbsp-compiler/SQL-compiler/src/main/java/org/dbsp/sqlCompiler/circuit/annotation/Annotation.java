@@ -23,6 +23,10 @@ public abstract class Annotation implements ICastable {
         stream.beginObject().appendClass(this).endObject();
     }
 
+    public void asReplayJson(JsonStream stream) {
+        this.asJson(stream);
+    }
+
     /** Dispatches to the static fromJson method that every annotation class defines. */
     @SuppressWarnings("unused")
     public static Annotation fromJson(JsonNode node) throws ClassNotFoundException {

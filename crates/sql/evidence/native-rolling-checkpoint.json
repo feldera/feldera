@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-rolling-checkpoint-archive.json",
+  "case_id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overDecimalTest/0",
+  "case_sha256": "bb61be22207d82695111308950e54cee2fa92b83d71f02658186ff646a965068",
+  "classic_generated_source_sha256": "0bea748ef1f20d2f1a0423805da96e12d0f9507193ea23fe541ebff660c5d030",
+  "fingerprint": "d6e8b48239a993e5",
+  "native_archive_writes": 16,
+  "native_archive_reads": 49,
+  "archived_live_searches": 8,
+  "checkpoint_files_by_snapshot": {
+    "classic": 22,
+    "native": 42
+  },
+  "post_restore_transactions_matched": 4,
+  "retroactive_updates_and_retractions_matched": true,
+  "scope": "Unchanged classic-generated operators and persistent identities on the frozen rolling program, with two nullable DECIMAL join-key streams switched to a prebuilt native archive adapter. Other state retains its original types."
+}

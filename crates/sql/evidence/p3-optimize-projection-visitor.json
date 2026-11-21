@@ -1,0 +1,46 @@
+{
+  "scope": "Fold output projections into constant collections, UNNEST shuffles and single-reader joins at each scheduled visitor iteration. Comparisons cover graph sharing, source locations, generated names and diagnostics.",
+  "comparator_sha256": "1e42335359f4363f8d77752daa69b51cbf1973709d6232dce08e56013a773d7d",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "9df6886c992e640d7a782c8d51fb85a9edce7e002249c652b7622c41d96bd278",
+      "44c56f2280a3cf58f287ef3987a16c7b90f797a5fb871285d7869a7f64eb371d",
+      "6ede3f424808a39b7c601e4f9033778826c69391ef994898ce355d9db28d525e",
+      "8060c200b98f9165adb49d3b7286e4a60efbe7a2acb9bdd4030740ccabb6d7fa"
+    ],
+    "pass": "OptimizeProjectionVisitor",
+    "invocations": 12635,
+    "changed": 4043,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "3e81c025d06253e0219278846f6fecb1e600cc0c0ea2f8fd5ce811ebdb1b6a12",
+      "0d17db823a94e81287b1136c47526c12c699343bf85095ddeeb7bfc06a54d82e",
+      "c58c78f1cdf037550e80da1e93ed59923c741695da449c838ae617852ecb335b",
+      "52a95dd2954702a8b70e732336965464687f06096fda883a5c3e3939f7a39145"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "ed55c055ee1eb0e007b135ef8f36047decc28cafe5ad410fbfbc8b34b35d9bcb",
+      "ffe5330bde797bae91c85b6a8a8b9be632c35bb54ae021ddf181bdfbc1fdcaee",
+      "bbc77f1503d01ce6e673ab771cfe811b81990003b21da647d36972e47b411e30",
+      "a1a2e8f4038804e58b9456cd4c65d6aae7ed2b042703112a83138443a9a28b77"
+    ],
+    "pass": "OptimizeProjectionVisitor",
+    "invocations": 8603,
+    "changed": 55,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "d5ed5c490c9e5a0e9a0c653b8171ef5b6f96d49525f79695a96c12ee1fcb3b14",
+      "6ec88396b25c735f2757b776933e83932b760356221fa76d60ad20b32f93322e",
+      "2413de6bbfc03ed330aed73758845a9400a4334f6efed75bf8df819487feb963",
+      "d1a7fd1e42f6244bfe13a0f909ed721b2319640bf832772c179f7fa8cefed1e1"
+    ]
+  }
+}

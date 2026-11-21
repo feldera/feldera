@@ -109,6 +109,14 @@ public class MultisetAnalysis extends CircuitVisitor {
     /** Operators whose output ports are in {@link #multiset}. */
     private final Set<DBSPOperator> analyzed = new HashSet<>();
 
+    /** Seed the live port facts. Graph rewrites can still ask for the
+     * multiplicity of a newly constructed operator through isMultiset. */
+    public void restore(Map<OutputPort, Boolean> facts) {
+        this.multiset.clear();
+        this.analyzed.clear();
+        facts.forEach(this::set);
+    }
+
     public MultisetAnalysis(DBSPCompiler compiler) {
         super(compiler);
     }

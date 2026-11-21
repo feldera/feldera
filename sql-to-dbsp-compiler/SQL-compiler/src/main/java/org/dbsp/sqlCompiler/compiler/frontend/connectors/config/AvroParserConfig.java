@@ -68,7 +68,11 @@ public class AvroParserConfig implements IValidateConfig {
         boolean ok = ConfigDuration.check(reporter,
                 "registry_timeout", this.registryTimeout,
                 "registry_timeout_secs", this.registryTimeoutSecs);
-        if (schema != null && !registryUrls.isEmpty()) {
+        if (registryUrls == null) {
+            reporter.errorPath("registry_urls", "Invalid configuration",
+                    "\"registry_urls\" cannot be null. Remove it to use the default");
+            ok = false;
+        } else if (schema != null && !registryUrls.isEmpty()) {
             reporter.warnPath("schema", "Invalid configuration",
                     "\"schema\" and \"registry_urls\" are mutually exclusive");
             ok = false;

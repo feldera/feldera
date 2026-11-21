@@ -1,0 +1,22 @@
+{
+  "scope": "JNI aggregate grouping at the input to ExpandStreamAggregates, compared with Java compatibility in both append-only and retractable modes.",
+  "optimizer_library_sha256": "6fe9519f774dd600a28118511d0374c18511d4d4ee80dc7e549000dabfce4ef7",
+  "classic": {
+    "cases": 8571,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "records_sha256": "c8694f13b0b77be5e1ae98cdb6197d0202a73084e87004f212a3598f732c7ebe",
+    "mismatches": 0,
+    "lists": 632,
+    "multiple_groups": 338,
+    "append_only_lists": 41
+  },
+  "gen2": {
+    "cases": 8527,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "records_sha256": "7958e78d8684db7a5b4cd1045310895dd6fca07a434704a884d74a2c2046e9cd",
+    "mismatches": 0,
+    "lists": 631,
+    "multiple_groups": 337,
+    "append_only_lists": 41
+  }
+}

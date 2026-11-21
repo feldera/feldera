@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-table-comparisons.tar.gz",
+  "bytes": 46092395,
+  "sha256": "6deb698470074c34959e664b2b311b0885f4c01d391febe997f1d48966a575ff",
+  "manifest_sha256": "7435c8c678a6c9fc0117e085bf17198c4f73edad9f8e7ce4ad8585318330402e",
+  "verified_files": 171,
+  "all_members_verified": true
+}

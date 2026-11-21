@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-current-regressions-20261118-v1.tar.gz",
+  "bytes": 61551518,
+  "sha256": "0da6ee11e2c1747ab8673b5f5da254c8a6c455b234529b94a51361d1253c3418",
+  "manifest_sha256": "2f3ff4917068082ab01289e7401a162a4f12bfc1ceaebdb7bd25f3757e645bb0",
+  "verified_files": 52,
+  "all_members_verified": true
+}

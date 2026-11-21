@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-left-join-empty-archive.json",
+  "scope": "Java-synthesized empty inputs on one archived typed left-join circuit per backend. Rust specializes the original closure when only the right input is empty.",
+  "comparisons": [
+    {
+      "engine": "classic",
+      "empty_input": "right",
+      "canonical_equal": true,
+      "generated_name_increment": 1
+    },
+    {
+      "engine": "classic",
+      "empty_input": "left",
+      "canonical_equal": true,
+      "generated_name_increment": 0
+    },
+    {
+      "engine": "classic",
+      "empty_input": "both",
+      "canonical_equal": true,
+      "generated_name_increment": 0
+    },
+    {
+      "engine": "classic",
+      "empty_input": "neither",
+      "canonical_equal": true,
+      "generated_name_increment": 0
+    },
+    {
+      "engine": "gen2",
+      "empty_input": "right",
+      "canonical_equal": true,
+      "generated_name_increment": 1
+    },
+    {
+      "engine": "gen2",
+      "empty_input": "left",
+      "canonical_equal": true,
+      "generated_name_increment": 0
+    },
+    {
+      "engine": "gen2",
+      "empty_input": "both",
+      "canonical_equal": true,
+      "generated_name_increment": 0
+    },
+    {
+      "engine": "gen2",
+      "empty_input": "neither",
+      "canonical_equal": true,
+      "generated_name_increment": 0
+    }
+  ],
+  "runtime_execution": false,
+  "rust_worker_sha256": "a643ae1309fdd3b63b5a5cb664f16a396834f3272e57fe94beb88f4006e7dd6e"
+}

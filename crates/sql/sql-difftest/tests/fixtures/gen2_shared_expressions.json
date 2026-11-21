@@ -1,0 +1,839 @@
+{
+  "borrow": {
+    "input": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 41,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 40,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeRef",
+                  "id": 38,
+                  "type": {
+                    "class": "DBSPTypeString",
+                    "id": 0,
+                    "fixed": false,
+                    "precision": -1,
+                    "code": "STRING",
+                    "mayBeNull": false
+                  },
+                  "mutable": false,
+                  "code": "REF",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 38
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPBorrowExpression",
+                "id": 39,
+                "expression": {
+                  "class": "DBSPCloneExpression",
+                  "id": 37,
+                  "expression": {
+                    "class": "DBSPVariablePath",
+                    "id": 2,
+                    "type": {
+                      "node": 0
+                    },
+                    "variable": "x"
+                  },
+                  "type": {
+                    "node": 0
+                  }
+                },
+                "type": {
+                  "node": 38
+                },
+                "mut": false
+              },
+              {
+                "node": 39
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "java": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 49,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 40,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeRef",
+                  "id": 38,
+                  "type": {
+                    "class": "DBSPTypeString",
+                    "id": 0,
+                    "fixed": false,
+                    "precision": -1,
+                    "code": "STRING",
+                    "mayBeNull": false
+                  },
+                  "mutable": false,
+                  "code": "REF",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 38
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPBorrowExpression",
+                "id": 44,
+                "expression": {
+                  "class": "DBSPVariablePath",
+                  "id": 2,
+                  "type": {
+                    "node": 0
+                  },
+                  "variable": "x"
+                },
+                "type": {
+                  "class": "DBSPTypeRef",
+                  "id": 43,
+                  "type": {
+                    "node": 0
+                  },
+                  "mutable": false,
+                  "code": "REF",
+                  "mayBeNull": false
+                },
+                "mut": false
+              },
+              {
+                "class": "DBSPBorrowExpression",
+                "id": 47,
+                "expression": {
+                  "node": 2
+                },
+                "type": {
+                  "class": "DBSPTypeRef",
+                  "id": 46,
+                  "type": {
+                    "node": 0
+                  },
+                  "mutable": false,
+                  "code": "REF",
+                  "mayBeNull": false
+                },
+                "mut": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "raw_tuple": {
+    "input": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 68,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 67,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeRawTuple",
+                  "id": 65,
+                  "tupFields": [
+                    {
+                      "class": "DBSPTypeString",
+                      "id": 0,
+                      "fixed": false,
+                      "precision": -1,
+                      "code": "STRING",
+                      "mayBeNull": false
+                    }
+                  ],
+                  "code": "RAW_TUPLE",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 65
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPRawTupleExpression",
+                "id": 66,
+                "type": {
+                  "node": 65
+                },
+                "fields": [
+                  {
+                    "class": "DBSPCloneExpression",
+                    "id": 63,
+                    "expression": {
+                      "class": "DBSPVariablePath",
+                      "id": 2,
+                      "type": {
+                        "node": 0
+                      },
+                      "variable": "x"
+                    },
+                    "type": {
+                      "node": 0
+                    }
+                  }
+                ]
+              },
+              {
+                "node": 66
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "java": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 76,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 67,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeRawTuple",
+                  "id": 65,
+                  "tupFields": [
+                    {
+                      "class": "DBSPTypeString",
+                      "id": 0,
+                      "fixed": false,
+                      "precision": -1,
+                      "code": "STRING",
+                      "mayBeNull": false
+                    }
+                  ],
+                  "code": "RAW_TUPLE",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 65
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPRawTupleExpression",
+                "id": 71,
+                "type": {
+                  "class": "DBSPTypeRawTuple",
+                  "id": 70,
+                  "tupFields": [
+                    {
+                      "node": 0
+                    }
+                  ],
+                  "code": "RAW_TUPLE",
+                  "mayBeNull": false
+                },
+                "fields": [
+                  {
+                    "class": "DBSPVariablePath",
+                    "id": 2,
+                    "type": {
+                      "node": 0
+                    },
+                    "variable": "x"
+                  }
+                ]
+              },
+              {
+                "class": "DBSPRawTupleExpression",
+                "id": 74,
+                "type": {
+                  "class": "DBSPTypeRawTuple",
+                  "id": 73,
+                  "tupFields": [
+                    {
+                      "node": 0
+                    }
+                  ],
+                  "code": "RAW_TUPLE",
+                  "mayBeNull": false
+                },
+                "fields": [
+                  {
+                    "node": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "unwrap": {
+    "input": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 54,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 53,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeString",
+                  "id": 51,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 51
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPUnwrapExpression",
+                "id": 52,
+                "type": {
+                  "node": 51
+                },
+                "expression": {
+                  "class": "DBSPCloneExpression",
+                  "id": 50,
+                  "expression": {
+                    "class": "DBSPVariablePath",
+                    "id": 3,
+                    "type": {
+                      "class": "DBSPTypeString",
+                      "id": 1,
+                      "fixed": false,
+                      "precision": -1,
+                      "code": "STRING",
+                      "mayBeNull": true
+                    },
+                    "variable": "nx"
+                  },
+                  "type": {
+                    "node": 1
+                  }
+                },
+                "message": "failure"
+              },
+              {
+                "node": 52
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "java": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 62,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 53,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeString",
+                  "id": 51,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 51
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPUnwrapExpression",
+                "id": 57,
+                "type": {
+                  "class": "DBSPTypeString",
+                  "id": 56,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": false
+                },
+                "expression": {
+                  "class": "DBSPVariablePath",
+                  "id": 3,
+                  "type": {
+                    "class": "DBSPTypeString",
+                    "id": 1,
+                    "fixed": false,
+                    "precision": -1,
+                    "code": "STRING",
+                    "mayBeNull": true
+                  },
+                  "variable": "nx"
+                },
+                "message": "failure"
+              },
+              {
+                "class": "DBSPUnwrapExpression",
+                "id": 60,
+                "type": {
+                  "class": "DBSPTypeString",
+                  "id": 59,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": false
+                },
+                "expression": {
+                  "node": 3
+                },
+                "message": "failure"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "some": {
+    "input": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 8,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 7,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeString",
+                  "id": 4,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": true
+                },
+                {
+                  "node": 4
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPSomeExpression",
+                "id": 5,
+                "expression": {
+                  "class": "DBSPCloneExpression",
+                  "id": 3,
+                  "expression": {
+                    "class": "DBSPVariablePath",
+                    "id": 2,
+                    "type": {
+                      "class": "DBSPTypeString",
+                      "id": 0,
+                      "fixed": false,
+                      "precision": -1,
+                      "code": "STRING",
+                      "mayBeNull": false
+                    },
+                    "variable": "x"
+                  },
+                  "type": {
+                    "node": 0
+                  }
+                },
+                "type": {
+                  "node": 4
+                }
+              },
+              {
+                "node": 5
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "java": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 16,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 7,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeString",
+                  "id": 4,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": true
+                },
+                {
+                  "node": 4
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPSomeExpression",
+                "id": 11,
+                "expression": {
+                  "class": "DBSPVariablePath",
+                  "id": 2,
+                  "type": {
+                    "class": "DBSPTypeString",
+                    "id": 0,
+                    "fixed": false,
+                    "precision": -1,
+                    "code": "STRING",
+                    "mayBeNull": false
+                  },
+                  "variable": "x"
+                },
+                "type": {
+                  "class": "DBSPTypeString",
+                  "id": 10,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": true
+                }
+              },
+              {
+                "class": "DBSPSomeExpression",
+                "id": 14,
+                "expression": {
+                  "node": 2
+                },
+                "type": {
+                  "class": "DBSPTypeString",
+                  "id": 13,
+                  "fixed": false,
+                  "precision": -1,
+                  "code": "STRING",
+                  "mayBeNull": true
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "custom_order": {
+    "input": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 11,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 10,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeWithCustomOrd",
+                  "id": 8,
+                  "typeArgs": [
+                    {
+                      "class": "DBSPTypeTuple",
+                      "id": 3,
+                      "tupFields": [
+                        {
+                          "class": "DBSPTypeString",
+                          "id": 1,
+                          "fixed": false,
+                          "precision": -1,
+                          "code": "STRING",
+                          "mayBeNull": false
+                        }
+                      ],
+                      "code": "TUPLE",
+                      "mayBeNull": false
+                    },
+                    {
+                      "class": "DBSPComparatorType",
+                      "id": 5,
+                      "name": "CMP_5e49558bedc89a4d",
+                      "code": "COMPARATOR",
+                      "mayBeNull": false
+                    }
+                  ],
+                  "name": "WithCustomOrd",
+                  "code": "USER",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 8
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPCustomOrdExpression",
+                "id": 9,
+                "source": {
+                  "class": "DBSPCloneExpression",
+                  "id": 7,
+                  "expression": {
+                    "class": "DBSPVariablePath",
+                    "id": 4,
+                    "type": {
+                      "node": 3
+                    },
+                    "variable": "x"
+                  },
+                  "type": {
+                    "node": 3
+                  }
+                },
+                "comparator": {
+                  "class": "DBSPNoComparatorExpression",
+                  "id": 6,
+                  "tupleType": {
+                    "node": 3
+                  },
+                  "type": {
+                    "node": 5
+                  }
+                },
+                "type": {
+                  "node": 8
+                }
+              },
+              {
+                "node": 9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "java": {
+      "id": 1,
+      "class": "DBSPCircuit",
+      "declarations": [],
+      "allOperators": [
+        {
+          "id": 2,
+          "class": "DBSPMapOperator",
+          "inputs": [],
+          "function": {
+            "class": "DBSPTupleExpression",
+            "id": 23,
+            "type": {
+              "class": "DBSPTypeTuple",
+              "id": 10,
+              "tupFields": [
+                {
+                  "class": "DBSPTypeWithCustomOrd",
+                  "id": 8,
+                  "typeArgs": [
+                    {
+                      "class": "DBSPTypeTuple",
+                      "id": 3,
+                      "tupFields": [
+                        {
+                          "class": "DBSPTypeString",
+                          "id": 1,
+                          "fixed": false,
+                          "precision": -1,
+                          "code": "STRING",
+                          "mayBeNull": false
+                        }
+                      ],
+                      "code": "TUPLE",
+                      "mayBeNull": false
+                    },
+                    {
+                      "class": "DBSPComparatorType",
+                      "id": 5,
+                      "name": "CMP_5e49558bedc89a4d",
+                      "code": "COMPARATOR",
+                      "mayBeNull": false
+                    }
+                  ],
+                  "name": "WithCustomOrd",
+                  "code": "USER",
+                  "mayBeNull": false
+                },
+                {
+                  "node": 8
+                }
+              ],
+              "code": "TUPLE",
+              "mayBeNull": false
+            },
+            "fields": [
+              {
+                "class": "DBSPCustomOrdExpression",
+                "id": 16,
+                "source": {
+                  "class": "DBSPVariablePath",
+                  "id": 4,
+                  "type": {
+                    "node": 3
+                  },
+                  "variable": "x"
+                },
+                "comparator": {
+                  "class": "DBSPNoComparatorExpression",
+                  "id": 6,
+                  "tupleType": {
+                    "node": 3
+                  },
+                  "type": {
+                    "node": 5
+                  }
+                },
+                "type": {
+                  "class": "DBSPTypeWithCustomOrd",
+                  "id": 15,
+                  "typeArgs": [
+                    {
+                      "node": 3
+                    },
+                    {
+                      "node": 5
+                    }
+                  ],
+                  "name": "WithCustomOrd",
+                  "code": "USER",
+                  "mayBeNull": false
+                }
+              },
+              {
+                "class": "DBSPCustomOrdExpression",
+                "id": 21,
+                "source": {
+                  "node": 4
+                },
+                "comparator": {
+                  "node": 6
+                },
+                "type": {
+                  "class": "DBSPTypeWithCustomOrd",
+                  "id": 20,
+                  "typeArgs": [
+                    {
+                      "node": 3
+                    },
+                    {
+                      "node": 5
+                    }
+                  ],
+                  "name": "WithCustomOrd",
+                  "code": "USER",
+                  "mayBeNull": false
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-count-benchmark-archive.json",
+  "source_test": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#emptyAggregate/0",
+  "samples": 124,
+  "pairs_per_batch_size": 31,
+  "initial_distinct_rows": 16384,
+  "workers": 1,
+  "measurement_cpu": 0,
+  "profile": "Rust dev with debug info and incremental compilation disabled",
+  "forced_spill": true,
+  "results": [
+    {
+      "rows_per_step": 256,
+      "steps_per_sample": 40,
+      "classic_rows_per_second_p50": 49066,
+      "native_rows_per_second_p50": 43604,
+      "paired_native_over_classic_latency_p50": 1.128,
+      "classic_peak_rss_mib_p50": 40.9,
+      "native_peak_rss_mib_p50": 46.8,
+      "spilled_file_bytes_each_engine": 255639,
+      "pairs_with_identical_file_size_lists": 31
+    },
+    {
+      "rows_per_step": 2048,
+      "steps_per_sample": 20,
+      "classic_rows_per_second_p50": 64678,
+      "native_rows_per_second_p50": 58185,
+      "paired_native_over_classic_latency_p50": 1.108,
+      "classic_peak_rss_mib_p50": 46.7,
+      "native_peak_rss_mib_p50": 54.9,
+      "spilled_file_bytes_each_engine": 282775,
+      "pairs_with_identical_file_size_lists": 31
+    }
+  ],
+  "scope": "One frozen stateful circuit with alternating signed updates. Each step checks both count deltas and the error output. Both builds commit actual checkpoints. File size agreement measures the forced-spill storage footprint. Optimized deployment budgets and checkpoint byte parity are separate."
+}

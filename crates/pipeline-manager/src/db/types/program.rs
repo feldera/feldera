@@ -542,10 +542,35 @@ impl TryFrom<String> for RuntimeSelector {
     }
 }
 
+/// SQL compiler family. This release supports `java`. To select it explicitly,
+/// enable the experimental `compiler_selection` feature.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, ToSchema, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum CompilerFamily {
+    #[default]
+    Java,
+}
+
+impl<'de> Deserialize<'de> for CompilerFamily {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match String::deserialize(deserializer).as_deref() {
+            Ok("java") => Ok(Self::Java),
+            _ => Err(serde::de::Error::custom(
+                "Invalid SQL compiler family. Only `java` is supported in this release. Set `compiler` to `java` or omit it.",
+            )),
+        }
+    }
+}
+
 /// Program configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ProgramConfig {
+    /// Experimental. To select `java` explicitly, enable the `compiler_selection`
+    /// unstable feature. Omit this field to use the default Java compiler.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compiler: Option<CompilerFamily>,
+
     /// Compilation profile.
     /// If none is specified, the compiler default compilation profile is used.
     pub profile: Option<CompilationProfile>,
@@ -623,6 +648,7 @@ impl ProgramConfig {
 impl Default for ProgramConfig {
     fn default() -> Self {
         Self {
+            compiler: None,
             profile: None,
             cache: true,
             runtime_version: None,
@@ -1014,7 +1040,8 @@ pub fn generate_pipeline_config(
 #[cfg(test)]
 mod tests {
     use super::{
-        RuntimeSelector, determine_connector_endpoint_names, generate_program_info, has_rust_udfs,
+        CompilerFamily, ProgramConfig, RuntimeSelector, determine_connector_endpoint_names,
+        generate_program_info, has_rust_udfs,
     };
     use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
     use feldera_types::config::{ConnectorConfig, TransportConfig};
@@ -1023,6 +1050,30 @@ mod tests {
     };
     use feldera_types::transport::datagen::DatagenInputConfig;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn compiler_selection_preserves_explicit_java_and_rejects_unknown_families() {
+        let default: ProgramConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(default.compiler.unwrap_or_default(), CompilerFamily::Java);
+        assert!(
+            serde_json::to_value(default)
+                .unwrap()
+                .get("compiler")
+                .is_none()
+        );
+
+        let explicit: ProgramConfig = serde_json::from_str(r#"{"compiler":"java"}"#).unwrap();
+        assert_eq!(explicit.compiler, Some(CompilerFamily::Java));
+        assert_eq!(serde_json::to_value(explicit).unwrap()["compiler"], "java");
+        for choice in serde_json::json!(["rust", "hybrid", "native", "Java", "", 1, {"java": null}])
+            .as_array()
+            .unwrap()
+        {
+            let config = serde_json::json!({"compiler": choice});
+            let error = serde_json::from_value::<ProgramConfig>(config).unwrap_err();
+            assert!(error.to_string().contains("Only `java` is supported"));
+        }
+    }
 
     #[test]
     fn test_runtime_version_validation() {

@@ -115,6 +115,9 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
     @SuppressWarnings("unused")
     public static DBSPTypeUSize fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPTypeUSize.fromJsonMayBeNull(node);
-        return DBSPTypeUSize.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeUSize.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeUSize(mayBeNull);
     }
 }

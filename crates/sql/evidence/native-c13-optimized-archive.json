@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-c13-optimized-20261118-v1.tar.gz",
+  "bytes": 630413,
+  "sha256": "707347c700f9fd825978fa09a840789a2beed4f9a1a55b7c49a3088e7b7c1252",
+  "manifest_sha256": "82f6a2b0ac39bebaa4cf7c7c4406ed51f7c830c0f42289f39074ac248f83a06f",
+  "verified_files": 965,
+  "all_members_verified": true
+}

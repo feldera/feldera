@@ -1,0 +1,157 @@
+{
+  "forge_revision": "d4879df7cded0fefb176aebd2a9890caa8877665",
+  "platform_gitlink": "43f386f2022e9c112cf9bc2aea326b0bd3178bcd",
+  "reader_sha256": "ce5edb1bb49999a3d2ee475610950a41bdf2271bcf9ab367a8cc6bd811c84110",
+  "cases": {
+    "inner_join": {
+      "source_sha256": "84a0655792a66883de6f83623710d5954d7c077d30843580e37e6392e0a22a0b",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        }
+      }
+    },
+    "left_join": {
+      "source_sha256": "239d31541d07a986f7678785575d6144c99ebbe17e9de31ad861f238c849c53b",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "8 operators",
+          "err": ""
+        }
+      }
+    },
+    "anti_join": {
+      "source_sha256": "ad6815dd6fa0eeda8946a842ca2f7fba3cc2c33d70769c44a3dbbe7eda60c57f",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "11 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "11 operators",
+          "err": ""
+        }
+      }
+    },
+    "except_all": {
+      "source_sha256": "d5071c086a29cc8d193fbc3979a6788f00ad611bb5c84a7a7da9552af1cf9645",
+      "forge": {
+        "java": {
+          "exit": 1,
+          "out": "",
+          "err": "Error: Ir(\"operator `s6` has unknown class `DBSPPositiveOperator`\")"
+        },
+        "rust": {
+          "exit": 1,
+          "out": "",
+          "err": "Error: Ir(\"operator `s6` has unknown class `DBSPPositiveOperator`\")"
+        }
+      }
+    },
+    "intersection": {
+      "source_sha256": "20c68a8a7ebf9157c6b2c033e75e77ea161de2de0b09a5d3949a918266ceaacc",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "14 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "14 operators",
+          "err": ""
+        }
+      }
+    },
+    "lag": {
+      "source_sha256": "2c4501009926f20c9f6cca7719ac861b768e87747a25dfdb0ad3794d4abfaa8e",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        }
+      }
+    },
+    "rolling": {
+      "source_sha256": "7ccd660f47f8aaaa0180f38e58e4d4b1c437a1be42a7c45570963300d874b39f",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        }
+      }
+    },
+    "top_k": {
+      "source_sha256": "b7feb4e2f00a36ce0a257b4d76d7a27e3bbd6b35a175c7aa91ed8a21dac97722",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        }
+      }
+    },
+    "grouped_min": {
+      "source_sha256": "10ec567c5e63de502a9fba829e51ee9ac49258d0e73776f590f167e20ab8ead4",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "7 operators",
+          "err": ""
+        }
+      }
+    },
+    "three_way": {
+      "source_sha256": "48e0a086694626e14f7c4d90e0ab0c422839286cbcc401f18f7d4b098966d869",
+      "forge": {
+        "java": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        },
+        "rust": {
+          "exit": 0,
+          "out": "9 operators",
+          "err": ""
+        }
+      }
+    }
+  }
+}

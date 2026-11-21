@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-advance.tar.gz",
+  "bytes": 5567406,
+  "sha256": "626873bf9d9109b6af70f381ebf46a1bfad87a312c09e07a93a94a48222ee1bb",
+  "manifest_sha256": "d917f926669db8e091f8e5417a58d0d5b4166cf70ea6fe57cdb61e0499607fd6",
+  "verified_files": 28,
+  "all_members_verified": true
+}

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-rolling-checkpoint-compacted-archive.json",
+  "scope": "Persistent rolling COUNT on Linux ARM64, with checkpoints taken after DBSP reports completed compaction. The paired classic and native circuits keep their existing case-specific adapters.",
+  "binary_sha256": "740ffe6306e47284cc57d02206cc604e080465250583598f66e2632fcd819bd4",
+  "process_pairs": 84,
+  "limits": {
+    "throughput": 0.85,
+    "transaction_p95": 1.2,
+    "peak_rss": 1.25,
+    "checkpoint": 1.01
+  },
+  "configurations": [
+    {
+      "storage": "overlay",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.98006353174535,
+        "transaction_p95": 1.0137343886558232,
+        "peak_rss": 1.0127816494265445,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    },
+    {
+      "storage": "overlay",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9237615103632274,
+        "transaction_p95": 1.0571214472106636,
+        "peak_rss": 1.0061484588134697,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9959532082815459,
+        "transaction_p95": 1.0024231895028601,
+        "peak_rss": 1.011911815148586,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9908539346259801,
+        "transaction_p95": 1.0156096377346737,
+        "peak_rss": 1.0039175885517102,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    }
+  ]
+}

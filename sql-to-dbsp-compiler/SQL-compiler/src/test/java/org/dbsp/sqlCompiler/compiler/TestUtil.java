@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticExporter;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
@@ -57,8 +58,10 @@ public class TestUtil {
      * @param contents  Substring that we expect to find. */
     public static void assertMessagesContain(CompilerMessages messages, String contents) {
         String text = messages.toString();
-        if (text.contains(contents))
+        if (text.contains(contents)) {
+            DiagnosticExporter.recordMessages(messages, contents, text);
             return;
+        }
         System.out.println(text);
         Assert.fail("Expected message to contain " + Utilities.singleQuote(contents));
     }

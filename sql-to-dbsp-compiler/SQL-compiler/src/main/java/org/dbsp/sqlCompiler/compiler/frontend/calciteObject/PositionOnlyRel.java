@@ -9,20 +9,35 @@ import java.util.Map;
 
 /** Represents just a source position. */
 public class PositionOnlyRel extends CalciteRelNode {
+    private final boolean sourceEmpty;
+
     public PositionOnlyRel(SourcePositionRange position) {
         super(position);
+        this.sourceEmpty = true;
+    }
+
+    public PositionOnlyRel(SourcePositionRange position, List<SourcePositionRange> positions) {
+        this(position, positions, true);
+    }
+
+    /** An imported node can retain the presence of provenance without retaining
+     * live Calcite objects. Type factories use this distinction when interning. */
+    public PositionOnlyRel(SourcePositionRange position, List<SourcePositionRange> positions, boolean sourceEmpty) {
+        super(position);
+        this.sourceEmpty = sourceEmpty;
+        this.positions.clear();
+        this.positions.addAll(positions);
     }
 
     @Override
     public CalciteRelNode copy() {
-        return new PositionOnlyRel(this.position);
+        return new PositionOnlyRel(this.position, this.positions, this.sourceEmpty);
     }
 
-    /** True, as for {@link CalciteEmptyRel}: no relational operator produced this node,
-     * so the nodes that combine with it keep their own contents. */
+    /** Ordinary position wrappers are empty; imported wrappers preserve the original flag. */
     @Override
     public boolean isEmpty() {
-        return true;
+        return this.sourceEmpty;
     }
 
     /** Serialized like {@link CalciteEmptyRel}: the annotation has no {@link RelNode} to name. */
@@ -32,12 +47,12 @@ public class PositionOnlyRel extends CalciteRelNode {
     }
 
     @Override
-    public CalciteRelNode remove(RelNode node) {
+    public CalciteRelNode remove(RelReference node) {
         return this;
     }
 
     @Override
-    public boolean contains(RelNode node) {
+    public boolean contains(RelReference node) {
         return false;
     }
 
@@ -52,7 +67,7 @@ public class PositionOnlyRel extends CalciteRelNode {
     }
 
     @Override
-    public List<RelNode> getRelNodes() {
+    public List<RelReference> getReferences() {
         return List.of();
     }
 

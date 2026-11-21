@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-distinct-archive.json",
+  "scope": "Rust replaces OptimizeDistinctVisitor on flat graphs at its original placement. Java's redundant pre-analysis remains in the test schedule.",
+  "profiles": {
+    "incremental": {
+      "programs": 100,
+      "active_rewrites": 4,
+      "scheduled_rust_final_results_equal": 100,
+      "java_codec_controls_equal": 100
+    },
+    "snapshot": {
+      "programs": 92,
+      "active_rewrites": 16,
+      "scheduled_rust_final_results_equal": 92,
+      "java_codec_controls_equal": 92
+    },
+    "directed": {
+      "programs": 12,
+      "active_rewrites": 6,
+      "scheduled_rust_final_results_equal": 12,
+      "java_codec_controls_equal": 12
+    }
+  },
+  "exact_pass_results_equal": 204,
+  "directed_graphs_equal": 5,
+  "combined_incremental_matrix": {
+    "scheduled_placements": 44,
+    "programs_per_engine": 50,
+    "rust_final_results_equal": 100,
+    "java_codec_controls_equal": 100
+  },
+  "rust_tests_passed": 34,
+  "clippy": "passed"
+}

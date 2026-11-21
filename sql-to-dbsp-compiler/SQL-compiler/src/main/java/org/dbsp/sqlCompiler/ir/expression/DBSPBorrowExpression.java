@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -42,7 +43,11 @@ public final class DBSPBorrowExpression extends DBSPExpression {
     public final boolean mut;
 
     DBSPBorrowExpression(DBSPExpression expression, boolean mutable) {
-        super(expression.getNode(), expression.getType().ref());
+        this(expression, mutable, expression.getType().ref());
+    }
+
+    private DBSPBorrowExpression(DBSPExpression expression, boolean mutable, DBSPType type) {
+        super(expression.getNode(), type);
         this.expression = expression;
         this.mut = mutable;
     }
@@ -96,6 +101,8 @@ public final class DBSPBorrowExpression extends DBSPExpression {
     public static DBSPBorrowExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
         boolean mut = Utilities.getBooleanProperty(node, "mut");
-        return new DBSPBorrowExpression(expression, mut);
+        DBSPType type = getJsonType(node, decoder);
+        Utilities.enforce(type.sameType(expression.getType().ref()));
+        return new DBSPBorrowExpression(expression, mut, type);
     }
 }

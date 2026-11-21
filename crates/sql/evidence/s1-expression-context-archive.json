@@ -1,0 +1,34 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T13:14:20.585533+00:00",
+  "archive": ".p0-artifacts/p0-s1-expression-context-20261117-v1.tar.gz",
+  "sha256": "e880f66c82cb9cb59a1c98726a1e9a819bd00e9c2599b09fb0d4d99beda1c791",
+  "bytes": 47265667,
+  "certificates": [
+    "s1-expression-context.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-expression-context.json": [
+      {
+        "source_prefix": "consumer/",
+        "archive_prefix": "$SCRATCH/p0-s1-expression-context-v1/source-snapshot/"
+      },
+      {
+        "source_prefix": "producer/",
+        "archive_prefix": "$SCRATCH/p0-s1-expression-project-full-v1/source-snapshot/"
+      }
+    ]
+  },
+  "scope": "Generated positions, exact input-reference types and project-only prefix transport; the full shard fails on a named type constructor",
+  "P0_complete": false,
+  "classpath_hash_algorithms": {
+    "s1-expression-context.json": "path-space-hex-sha256-newline"
+  },
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-expression-context-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 362,
+  "verified_source_hashes": 131,
+  "verified_classpath_hashes": 11
+}

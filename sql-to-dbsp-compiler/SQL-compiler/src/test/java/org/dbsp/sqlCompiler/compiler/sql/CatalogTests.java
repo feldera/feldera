@@ -22,6 +22,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -438,8 +440,8 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE MATERIALIZED VIEW v1(c0, c1, c2) AS (SELECT t4.c2, t4.c0, t4.c0 FROM t4 WHERE t4.c0);""";
         var cc = this.getCC(sql);
         // TestUtil.assertMessagesContain does not work for warnings is 'quiet' = true.
-        Assert.assertTrue(cc.compiler.messages.messages.toString()
-                .contains("Column 'c1' of table 't4' is unused"));
+        DiagnosticAssertions.assertContains(Target.RENDERED, "Column 'c1' of table 't4' is unused",
+                cc.compiler.messages.messages.toString());
     }
 
     @Test
@@ -479,7 +481,11 @@ public class CatalogTests extends BaseSQLTests {
         sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE INDEX IX ON T(id);""";
-        this.shouldWarn(sql, "INDEX 'ix' refers to TABLE 't'; this has no effect.");
+        this.shouldWarn(sql, new Warning("Indexed table", 2, 14, """
+                        1|CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
+                        2|CREATE INDEX IX ON T(id);
+                                       ^^
+                    """));
     }
 
 

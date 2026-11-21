@@ -1,0 +1,149 @@
+{
+  "profile": "Linux ARM64 project devcontainer, local checkout",
+  "rust_tests": {
+    "passed": 167,
+    "failed": 0,
+    "ignored": 0
+  },
+  "clippy": {
+    "warnings_as_errors": true
+  },
+  "python_harness_tests": {
+    "passed": 264
+  },
+  "test_log_sha256": "32fba0613f9b9c67c3e6f32b2ff88464d944a505a74355109c51928053637956",
+  "p1_directed_rerun": {
+    "comparisons": {
+      "CSE": 204,
+      "FuseIntoArrayAgg": 68,
+      "InsertLimiters": 24
+    },
+    "gen2_refusals": 4,
+    "report_sha256": "797fdb288e752dbd9b47ac45dd7fa0bb7c2207805e4bda5cfbbad85fa910b417"
+  },
+  "optimize_noops_cli": {
+    "java_oracle_sha256": "cab8446b572a8b309bbdf9df8b7bfaa9d74f1095fee0634ec74bb08a35fe389b",
+    "report_sha256": "4bcea097ea1168b1c4049e9de8320440df9bff144592fbe381657c540967de4f",
+    "program": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#testArrayIndex/0",
+    "matched_circuits_and_name_counters": {
+      "classic": 2,
+      "gen2": 2
+    }
+  },
+  "pass_comparator_negative_controls": {
+    "counter": "OptimizeWithGraph(RemoveNoops) invocation 0 generated-name counter differs",
+    "rewired_sink": "OptimizeWithGraph(RemoveNoops) invocation 0: /outer/3/inputs/0/operator: values or JSON types differ"
+  },
+  "local_build": {
+    "profile": "Linux ARM64, release JNI library and clean Maven compiler package",
+    "rust_tests_passed": 191,
+    "rust_test_log_sha256": "7ea88de4c30ea6ecd45fc15ab423b6f15379cae08b203029b63f0dd863724366",
+    "clippy_warnings_as_errors": true,
+    "clippy_log_sha256": "67208351665c3b5086ac6b7cb1a584117bd6749e8346404122ca523820e288fb",
+    "python_tests_passed": 271,
+    "python_log_sha256": "37a75b8fee398fc5f3ccd9c2b11b162b9c87707a2ac9061bc1c1d31c665d2c7e",
+    "maven_replay_tests_passed": 34,
+    "maven_log_sha256": "b7bfef36214247266112d3a0bea5b14089d9050a6f83c8ba137d6b6b17712b8d",
+    "manager_shadow_tests_passed": 12,
+    "manager_log_sha256": "1cef70c27e3d54698ae494130626e621677f31572c275b6402477f10a2aed826",
+    "compiler_jar_sha256": "b507cb8a782b0c6af3c4a3396d0b8a938c32147f693fa9e75f6a643f2918c8c8",
+    "linux_package_smoke": {
+      "engine_artifacts": {
+        "classic": {
+          "schema.json": "b267765ba614c04627425d5e494c74cf3b5b4945415161e09e80f6239b2a9f63",
+          "dataflow.json": "d40aba6bca1a5fa109463958ea003a71055a5dbc7f4d87652ec78cc0ae04fbe7",
+          "circuit.rs": "e1c39bbc7bc87a414f35e2503e9c2fd3e722778c7a49e45a1d72bccc63aeca1a",
+          "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+        },
+        "gen2": {
+          "schema.json": "b267765ba614c04627425d5e494c74cf3b5b4945415161e09e80f6239b2a9f63",
+          "dataflow.json": "91f703c6b989228bed7a995576d48b7fa1d5d69cd155fb44ccf9e37f44dfaa20",
+          "circuit.json": "776e415c9f03a5af103813df9e099560f00011041caf8e63e858c74319dadbf4"
+        }
+      },
+      "compiler_sha256": "265bed01bc6d0beaf66a68a11067bba7c8715b7eecda0efd9e19fe0575205af1",
+      "jni_sha256": "f2b82d1a6967f7ba5e65c2b2c39d28069523b422fbca4627096c35ba1c02ea9c"
+    },
+    "packaged_corpus_driver_outer_join_tests": {
+      "classic": {
+        "matched_cases": 197,
+        "report_sha256": "e313f5fabb9c86b1a9e86f52be2fefd1a1053eca65760bb8054b94b4bbc3ffa1"
+      },
+      "gen2": {
+        "matched_cases": 197,
+        "report_sha256": "3e1265ca91df6ce9bc9d23c37a95b76b88ebe8b45006d7d12313548e548b4874"
+      },
+      "native_pass_kinds": 18
+    },
+    "native_pass_kinds": 32
+  },
+  "stream_clocks": {
+    "source_archive": "p0-optimizer-stream-kinds-20261118-v1.tar.gz",
+    "source_archive_sha256": "d953cb84b6e5f0c53f419a9772d4715ab237d7863a4d4f08e22ef7f6589d9b10",
+    "cases": {
+      "directed-classic": {
+        "observations": 564,
+        "collections": 2526,
+        "deltas": 4596,
+        "waterlines": 320,
+        "comparison_log_sha256": "189eb448e2ff40cc3877afc4cfc8dfcc4c78710a0875cc618ab19e2b37e303e4"
+      },
+      "directed-gen2": {
+        "observations": 564,
+        "collections": 2526,
+        "deltas": 4596,
+        "waterlines": 320,
+        "comparison_log_sha256": "189eb448e2ff40cc3877afc4cfc8dfcc4c78710a0875cc618ab19e2b37e303e4"
+      },
+      "incremental-classic": {
+        "observations": 4230,
+        "collections": 13950,
+        "deltas": 25159,
+        "waterlines": 212,
+        "comparison_log_sha256": "7eb57218aee2c420d6c4c69eef7c96279eab92200187ec6e1a86af3717361083"
+      },
+      "incremental-gen2": {
+        "observations": 4230,
+        "collections": 13950,
+        "deltas": 25159,
+        "waterlines": 212,
+        "comparison_log_sha256": "7eb57218aee2c420d6c4c69eef7c96279eab92200187ec6e1a86af3717361083"
+      },
+      "snapshot-classic": {
+        "observations": 4186,
+        "collections": 44076,
+        "deltas": 3740,
+        "waterlines": 0,
+        "comparison_log_sha256": "f983875c68d861ab8b9de50de9bd82bb4d3aad9fa85020a62b6204dd8e83955c"
+      },
+      "snapshot-gen2": {
+        "observations": 4186,
+        "collections": 44076,
+        "deltas": 3740,
+        "waterlines": 0,
+        "comparison_log_sha256": "f983875c68d861ab8b9de50de9bd82bb4d3aad9fa85020a62b6204dd8e83955c"
+      }
+    },
+    "outputs": {
+      "collections": 121104,
+      "deltas": 66990,
+      "waterlines": 1064
+    }
+  },
+  "statistics_trace": {
+    "native_pass_kinds": 30,
+    "optimizer_library_sha256": "370d26e067f063e6c93b9d7fd006b564abbe266a7bcf658f3a775fbf199bd002",
+    "jar_sha256": "5992105854c963704a2c0797c357ffd87c6954e5cdf4f1abdba95b3c5c9c47ba",
+    "workloads": {
+      "array-subquery": {
+        "matching_direct_and_live_trace_sha256": "1684b8aa3d0375449865d7b30f9b21ca575b2bd3beb8c232b969e413cdac304e"
+      },
+      "nexmark-suite": {
+        "matching_direct_and_live_trace_sha256": "4e60945b3d518fd6f13a5ee8b88f7de0956e44422b0efdc365a872222c0d451e"
+      },
+      "outer-join": {
+        "matching_direct_and_live_trace_sha256": "8de9bf1cb618d9931920dcd02b08d63ba7b581be64887195d891cd0c59581c66"
+      }
+    }
+  }
+}

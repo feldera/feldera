@@ -28,7 +28,10 @@ public interface IJson {
         } else if (node.isBoolean()) {
             stream.append(node.asBoolean());
         } else if (node.isNull()) {
-            stream.append("null");
+            if (stream.forCircuitSeam)
+                stream.appendNull();
+            else
+                stream.append("null");
         } else if (node.isBigDecimal()) {
             stream.append(node.toString());
         } else if (node.isTextual()) {

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-nullable-predicates-archive.json",
+  "engine_modes": ["classic", "gen2"],
+  "directed_constant_graphs": 27,
+  "new_directed_constant_graphs": 3,
+  "live_programs_per_mode": 2,
+  "live_same_input_folds": 4,
+  "wrapped_overflow_filters_retained": 2,
+  "set_output_programs_per_mode": 45,
+  "scheduled_placements": 24,
+  "same_input_pass_comparisons": 2110,
+  "rust_final_comparisons": 90,
+  "java_codec_final_comparisons": 90,
+  "ordinary_bag_and_set_tail_comparisons": 600,
+  "differences": 0,
+  "scope": "IS NULL, NOT, and the nullable boolean filter wrapper on the supported signed integer and boolean closure subset. SQL NULL remains distinct from an expression that did not fold. Java supplies the independent graph oracle. Live predicates are inserted immediately before the scheduled constant propagation pass."
+}

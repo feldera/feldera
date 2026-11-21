@@ -88,13 +88,19 @@ public class ViewColumnMetadata
         DBSPExpression lateness = null;
         if (node.has("lateness"))
             lateness = DBSPNode.fromJsonInner(node, "lateness", decoder, DBSPExpression.class);
-        return new ViewColumnMetadata(CalciteObject.EMPTY, viewName, columnName, type, lateness);
+        CalciteObject source = node.has("position")
+                ? CalciteObject.create(SourcePositionRange.fromJson(node.get("position"))) : CalciteObject.EMPTY;
+        return new ViewColumnMetadata(source, viewName, columnName, type, lateness);
     }
 
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
         JsonStream stream = visitor.stream;
         stream.beginObject();
+        if (visitor.replayMetadata) {
+            stream.label("position");
+            IJson.toJsonStream(this.getPositionRange().asJson(), stream);
+        }
         stream.label("viewName");
         this.viewName.asJson(visitor);
         stream.label("columnName");

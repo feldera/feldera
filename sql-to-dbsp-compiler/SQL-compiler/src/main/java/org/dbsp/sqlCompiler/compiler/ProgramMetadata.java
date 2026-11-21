@@ -4,13 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.ToSqlVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
@@ -35,8 +34,8 @@ import java.util.Set;
  * Contains a description of all input tables and all views,
  * and the values of all variables set by SQL SET statements. */
 public class ProgramMetadata implements IJson {
-    final LinkedHashMap<ProgramIdentifier, IHasSchema> inputTables;
-    final LinkedHashMap<ProgramIdentifier, IHasSchema> outputViews;
+    final LinkedHashMap<ProgramIdentifier, ProgramSchema> inputTables;
+    final LinkedHashMap<ProgramIdentifier, ProgramSchema> outputViews;
     /** The variables created by SET statements with their values. */
     final LinkedHashMap<String, DBSPExpression> variables;
     /** Maps each variable to the position of the SET statement that gave it its value. */
@@ -111,6 +110,37 @@ public class ProgramMetadata implements IJson {
     public boolean hasValue(String variable) {
         variable = canonicalVariableName(variable);
         return this.variables.containsKey(variable);
+    }
+
+    /** Settings belong to the internal replay envelope, not the public schema or
+     * persistent-id preimage. Keep values and their declaration positions together. */
+    public void writeSettings(ToJsonInnerVisitor visitor) {
+        visitor.stream.beginArray();
+        for (var entry: this.variables.entrySet()) {
+            visitor.stream.beginObject().label("name").append(entry.getKey()).label("value");
+            entry.getValue().accept(visitor);
+            visitor.stream.label("position");
+            IJson.toJsonStream(this.positions.get(entry.getKey()).asJson(), visitor.stream);
+            visitor.stream.endObject();
+        }
+        visitor.stream.endArray();
+    }
+
+    /** Restore final SET values without repeating front-end warnings. The envelope
+     * carries those warnings separately; the optimizer still reports its own. */
+    public void readSettings(JsonNode settings, JsonDecoder decoder) {
+        if (!settings.isArray() || !this.variables.isEmpty())
+            throw new IllegalArgumentException("Settings must be an array loaded into fresh metadata");
+        for (JsonNode entry: settings) {
+            String name = Utilities.getStringProperty(entry, "name");
+            if (!name.equals(canonicalVariableName(name)) || this.variables.containsKey(name))
+                throw new IllegalArgumentException("Duplicate or noncanonical setting " + name);
+            DBSPExpression value = decoder.decodeInner(Utilities.getProperty(entry, "value"), DBSPExpression.class);
+            SourcePositionRange position = SourcePositionRange.fromJson(Utilities.getProperty(entry, "position"));
+            this.variables.put(name, value);
+            this.positions.put(name, position);
+        }
+        DBSPTypeVariant.useLegacyRepresentation(!this.useFlatVariant());
     }
 
     /** The position of the SET statement that gave {@code variable} its value.
@@ -263,13 +293,13 @@ public class ProgramMetadata implements IJson {
     public ObjectNode asJson() {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
-        for (IHasSchema input: this.inputTables.values()) {
+        for (ProgramSchema input: this.inputTables.values()) {
             if (input.is(DeclareViewStatement.class))
                 continue;
             inputs.add(input.asJson(false));
         }
         ArrayNode outputs = mapper.createArrayNode();
-        for (IHasSchema output: this.outputViews.values())
+        for (ProgramSchema output: this.outputViews.values())
             outputs.add(output.asJson(false));
         ObjectNode ios = mapper.createObjectNode();
         ios.set("inputs", inputs);
@@ -277,7 +307,7 @@ public class ProgramMetadata implements IJson {
         return ios;
     }
 
-    public IHasSchema getTableDescription(ProgramIdentifier name) {
+    public ProgramSchema getTableDescription(ProgramIdentifier name) {
         return Utilities.getExists(this.inputTables, name);
     }
 
@@ -289,38 +319,47 @@ public class ProgramMetadata implements IJson {
         return this.outputViews.containsKey(name);
     }
 
-    public IHasSchema getViewDescription(ProgramIdentifier name) {
+    public ProgramSchema getViewDescription(ProgramIdentifier name) {
         return Utilities.getExists(this.outputViews, name);
     }
 
-    public void addTable(IHasSchema description) {
+    public void addTable(ProgramSchema description) {
         this.inputTables.put(description.getName(), description);
     }
 
     public boolean removeTable(ProgramIdentifier name) {
-        IHasSchema removed = this.inputTables.remove(name);
+        ProgramSchema removed = this.inputTables.remove(name);
         return removed != null;
     }
 
-    public void addView(IHasSchema description) {
+    public void addView(ProgramSchema description) {
         this.outputViews.put(description.getName(), description);
     }
 
-    public static ProgramMetadata fromJson(JsonNode node, RelDataTypeFactory typeFactory) {
+    public static ProgramMetadata fromJson(JsonNode node) {
         ProgramMetadata result = new ProgramMetadata();
+        result.readSchema(node);
+        return result;
+    }
+
+    /** Load schemas into a fresh compilation, retaining independently restored SET state. */
+    public void readSchema(JsonNode node) {
+        if (!this.inputTables.isEmpty() || !this.outputViews.isEmpty())
+            throw new IllegalArgumentException("Schema replay requires fresh metadata");
+        if (!node.path("inputs").isArray() || !node.path("outputs").isArray())
+            throw new IllegalArgumentException("Program metadata requires input and output arrays");
         var it = Utilities.getProperty(node, "inputs").elements();
         while (it.hasNext()) {
             JsonNode tbl = it.next();
-            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl, typeFactory);
-            result.addTable(sch);
+            ProgramSchema sch = new JsonProgramSchema(tbl);
+            Utilities.putNew(this.inputTables, sch.getName(), sch);
         }
         it = Utilities.getProperty(node, "outputs").elements();
         while (it.hasNext()) {
             JsonNode tbl = it.next();
-            IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl, typeFactory);
-            result.addView(sch);
+            ProgramSchema sch = new JsonProgramSchema(tbl);
+            Utilities.putNew(this.outputViews, sch.getName(), sch);
         }
-        return result;
     }
 
     @Override

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "94 fixed scalar literals with one-entry type tables, exact Calcite type/value round trip and bounded Rust structural type checks",
+  "raw_directory": "$SCRATCH/p0-s1-typed-roundtrip-v2",
+  "cases": 94,
+  "rust_tests": 24,
+  "java_tests": 8,
+  "clippy": true,
+  "negative_checks": 9,
+  "SQL_scalar_types_imported": true,
+  "runtime_executed": false,
+  "frozen_classpath": {
+    "test_classes": {
+      "path": "$SCRATCH/p0-s1-typed-roundtrip-v2/test-classes-manifest.json",
+      "sha256": "9965ce0da43b05585dd4e89b7459a449b517650d22e37dc8347eada1b792dd87"
+    },
+    "classes": {
+      "path": "$SCRATCH/p0-s1-typed-roundtrip-v2/classes-manifest.json",
+      "sha256": "0d433d6b458039c17c9ea93387f0cc79d29253d8d799c95c77e24605841be70f"
+    },
+    "dependencies_jar": {
+      "path": "$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+      "sha256": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    }
+  },
+  "environment": {
+    "CARGO_HOME": "$CARGO_HOME",
+    "CARGO_TARGET_DIR": "$SCRATCH/p0-rel-model-target"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/character-length.jsonl": "391135dce6bdf0e700109bb0cd2bd9a1df85ad66db32160231e1d4ad954070c7",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/character-length.log": "566650cf269827addf559a5a630a23d7f66ac3affbbf5b1cf23cb9db8f84ba1c",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/classes-manifest.json": "0d433d6b458039c17c9ea93387f0cc79d29253d8d799c95c77e24605841be70f",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/collation-identity.jsonl": "cb3bc0ee54f3685cdbe2e3617f750488403319c34388dec1a2097c5d53df5b11",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/collation-identity.log": "93c31b493f49244364864248a99ffd4508bb6596e2ca38bf86183aeb2505944b",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/command-0.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/command-1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/command-2.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/commands.json": "12f9d43c481977d0637d979d083ce9b14ef83f84fa76d4fb7bd36aa09f417627",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/dangling-type.jsonl": "79a7f1c2163dddf616ddda8ed7020d95da167f1b15703538950291a4a9c55844",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/dangling-type.log": "f290abf343671d01ea5c36c6bd574982db1e6cd4fdaab36b2af4bc061691e7b0",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/decimal-rounding.jsonl": "ea5122cab59d563d0dc2d6d95b701efa3859af58a8c6b729f8942c18fc746749",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/decimal-rounding.log": "0265032ad00e15aeaee32ce7728b0585de25fca6cc7e2083f624f272f96c98db",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/float-width.jsonl": "6a1daa4a325e229ff22094f49aa855d63a0e0fcb16ce1c54080fee7387ae78e1",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/float-width.log": "e143755577eec1146ad49730c2b7bdf26a815cbcecfe160a45234beb6290a07f",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/integer-overflow.jsonl": "5718238096f43444e08f578af70ca514cf6677d093564fa5215a9e62dfeee150",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/integer-overflow.log": "e2c4765b7870ab87acb0d1ef0a295146ee932b2ab2180ad248a8b65ab1ea754b",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/literal_roundtrip": "7e188fc9cdd3202fb384e727ef32bbbb411ea2a3edb821acc44dadc6d869de21",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/mixed-typed-input.jsonl": "679126bd082b9479f93938055ee65f9ee3f1815ec4ac296bc25e7f3f7ccf9f46",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/mixed-typed-input.log": "d322dd9856842b6768759820bef8bb26d9c125d4b2b68466eb161e561d8e0cb1",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/negative-results.json": "2ab62e8a8b985b0a810af23a4305ae02e7d079505cf10312233f5133a010dbf3",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/nonnullable-null.jsonl": "a597ca048bba450fcbe05fa6cece6b16e8ab87814fa363b79c2aaa7634caf956",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/nonnullable-null.log": "b39acbdcd3c0195bd5e4c90d72ebc394c41df2a43aa659b78cccc534b892355d",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/test-classes-manifest.json": "9965ce0da43b05585dd4e89b7459a449b517650d22e37dc8347eada1b792dd87",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/unknown-type-field.jsonl": "de041319face4c98b655aedc90ab3bcd5f70d60fa895989bc9e8207a504d0ddc",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/unknown-type-field.log": "f6e820b51cb6ed62b518b164852b3e88735be729c21883340a5bf03bd4357e51",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/export/cases.jsonl": "203724d16d566ebfad4dd3aef4f50d951cc42869f21ee5ecb6dfc2f12344c41f",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/export/complete.json": "e47e061fbd03318bf805fc920ff73568b584705a897c2503509a0399739c3f16",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/rust/cases.jsonl": "c2828299033460247ac44ee4db7ab00825499a4216edbbc81b9eecfe641d51d9",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/rust/complete.json": "a04dbdefcf131575e3cf71f17c2d5d97619dc9a59c13f7dd1e61001c7783789b",
+    "$SCRATCH/p0-s1-typed-roundtrip-v2/java-import/complete.json": "f8b296615f3b3346430cf2b6144e710fb6a31d1037dddaaaf1c87f64b4eb93d0",
+    "$SCRATCH/p0-s1-scalar-export-v2/command.json": "1c39e47485c1b4690b4907d8cf099fa2f0e1d6cd995a3e61440907d0434356ee",
+    "$SCRATCH/p0-s1-scalar-export-v2/maven.log": "13feceb40f910f687610648bb5554982fcb6bd143e6be4fa2f5d5b0fd8c1794d",
+    "$SCRATCH/p0-s1-typed-roundtrip-v1/command-0.log": "204a09877f2c7e7b7bd7c77da58cc817c7cc2d6827b80b1e6e0f8ceaa40426e0",
+    "$SCRATCH/p0-s1-typed-roundtrip-v1/command-1.log": "e4f53d4d95cd22cfa5b80b08e452c2875e2cacbb475a2b07e63c4f715536ac2e"
+  },
+  "sources": {
+    "crates/sql/sql-rel-model/Cargo.lock": "4982e4bf63010a1e9b946adec2f502b6443f46b0f936318bfcee03f6506312fd",
+    "crates/sql/sql-rel-model/Cargo.toml": "0934756c44aa55b59137db244c464a13c7eacf6b5ef1eff4386e8df40d0721e9",
+    "crates/sql/sql-rel-model/README.md": "c8138375f41c5b8f0ee9137f61d6d174c4adcd9f73f9714bfda31c48be3e3d60",
+    "crates/sql/sql-rel-model/examples/literal_roundtrip.rs": "8b7351d6164d1d434854010143d0119708af4c2cf3454413073807bd7b4962a4",
+    "crates/sql/sql-rel-model/examples/literal_schema.rs": "0b398d16d14b93bc108b952097f2b8ba5a59f1b07a123424eea71cba86b70384",
+    "crates/sql/sql-rel-model/examples/type_schema.rs": "ee8a8c1e076f5aa64ba8f7b4e247158387aabe363b540c481ca2c89cae248629",
+    "crates/sql/sql-rel-model/literal-schema.json": "fb449de00b424cc6cda59f2bbd2f12833f3892bd2024a37d66614639f3bc5095",
+    "crates/sql/sql-rel-model/src/lib.rs": "7baaed45718afedf975be1007aee4866230cf0c37abf60ae163b3ec8f98ae8c5",
+    "crates/sql/sql-rel-model/src/literal_validation.rs": "23568f928763527eefb10cc19ca36543dc43269cf44beae9a5b8f4f3d26d8534",
+    "crates/sql/sql-rel-model/src/literals.rs": "1ebae7cdbabb6e2eb2714d0aaa85405d4ae652c0fa5c5f208a021f999b66205e",
+    "crates/sql/sql-rel-model/src/source.rs": "f7e3dbc7578dd8c9603e69462d5d80ebeba2ef0bc629d9fb03fb220420e7ef3b",
+    "crates/sql/sql-rel-model/src/typed_literals.rs": "ec3091d89ccd503e4cf996c9d29f97be9572d34be97df6439ddb2c1e23bb35a8",
+    "crates/sql/sql-rel-model/src/types.rs": "cda76085bfc914a75550cd580231f71297749540f9599c8a17838752715b0106",
+    "crates/sql/sql-rel-model/src/validate.rs": "7b76f495169b24d7ef9951f617d3a3d35de030461b47053394554c63bc4572a2",
+    "crates/sql/sql-rel-model/tests/type_contract.rs": "b0e2492bcccbbef4182be52e4c2c6234f72ac78b8299303c1bb785febfb82eea",
+    "crates/sql/sql-rel-model/tests/typed_literals.rs": "920a98c50416f2f40ccd6b8dee8e94a5ef3dd46a7834bfaac443b242248515ff",
+    "crates/sql/sql-rel-model/type-schema.json": "6732a40faef2d0b29fcbec7c13df22c1e85f949eac62f2e594e09c6b5b3f8572",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1LiteralPayload.java": "2478340403b7230001ea0b8eb6c679eba90b85bac13e6aa4f3308e736815f45e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1LiteralPayloadTests.java": "9ec638d7e29bc3cb3b46feb53bce9e2922cc99c3f26850e5b52b402cf2b4b35f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1LiteralProbe.java": "28f31c0fd0ba9e0cb070cd341620e47c2007ad9e3cc2be910d98c46e22ce9f1c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1ScalarType.java": "92d9c569177a8e43265706a12bed5c7d9734472cee3f615df9353a25a4bda5de",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1ScalarTypeTests.java": "ef3f9a4a1815861e2612b694115ac902ea054cadf5ea13f0f4ae38c1e04f6fd5"
+  },
+  "supersedes_draft": "Adds explicit built-in versus named collation identity; Calcite type digests distinguish equal-named collation objects. Previous evidence remains a record of the earlier schema.",
+  "retained_failed_attempts": [
+    "$SCRATCH/p0-typed-literals-v1 (Clippy nested-if warnings)",
+    "$SCRATCH/p0-typed-literals-v2 (character collation type identity loss)",
+    "$SCRATCH/p0-typed-literals-v3 (same loss with full type digest diagnosis)",
+    "$SCRATCH/p0-s1-scalar-export-v1 (incorrect negative expectation: Calcite preserves the tested default TIME type)"
+  ],
+  "limitations": [
+    "Only scalar fixture types and absent origins are imported; compound/named types and shared arena identity are not measured.",
+    "Default-versus-explicit precision forms that cannot survive exact reconstruction are refused at export; the full precision model remains open.",
+    "Character encoding/collation behavior, interval qualifier value bounds and temporal zone validity are not certified by the Rust structural verifier.",
+    "No relational, expression, statement, binding or full-corpus S1 import, C7 runtime parity, or independent review is claimed."
+  ],
+  "export_reconstructs_and_checks_exact_original_type": true,
+  "rust_verification_reused": {
+    "test_and_clippy_directory": "$SCRATCH/p0-s1-typed-roundtrip-v1",
+    "unchanged_binary_sha256": "7e188fc9cdd3202fb384e727ef32bbbb411ea2a3edb821acc44dadc6d869de21"
+  }
+}

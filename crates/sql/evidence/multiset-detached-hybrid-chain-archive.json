@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-detached-hybrid-chain-20261118-v1.tar.gz",
+  "bytes": 32291924,
+  "sha256": "c1a0211d4f71908640b2f6f69f94fba6173f179895ffd7c13460535f64010ee5",
+  "manifest_sha256": "00187c0b97e493520756ff5143e17e76cf793570ac468767331dea79c0b57219",
+  "verified_files": 9566,
+  "all_members_verified": true
+}

@@ -1,0 +1,905 @@
+{
+  "schema_version": 1,
+  "purpose": "Proposed adversarial C7 fixtures for the bounded Rust domain decorrelator",
+  "runtime_verified": false,
+  "sql_syntax_validated": false,
+  "oracle_provenance": "Explicit SQL bag semantics reviewed independently; these are expected results, not execution evidence.",
+  "fixtures": [
+    {
+      "id": "inner_equality_nulls_duplicates",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT r.v FROM R r WHERE r.k = l.k) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              30
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              40
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 3
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 4
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            7
+          ],
+          "weight": 6
+        },
+        {
+          "row": [
+            1,
+            20,
+            7
+          ],
+          "weight": 3
+        }
+      ],
+      "purpose": "Keep SQL equality NULL behavior separate from null-safe domain identity; multiply both bag weights.",
+      "runtime_verified": false
+    },
+    {
+      "id": "inner_null_safe_predicate",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT r.v FROM R r WHERE r.k IS NOT DISTINCT FROM l.k) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              30
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              40
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 3
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 4
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            7
+          ],
+          "weight": 6
+        },
+        {
+          "row": [
+            1,
+            20,
+            7
+          ],
+          "weight": 3
+        },
+        {
+          "row": [
+            null,
+            30,
+            9
+          ],
+          "weight": 8
+        }
+      ],
+      "purpose": "A genuinely null-safe original predicate must retain its NULL matches.",
+      "runtime_verified": false
+    },
+    {
+      "id": "left_constant_empty_right",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l LEFT JOIN LATERAL (SELECT 7 AS v FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              30
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              40
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 3
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 4
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            7
+          ],
+          "weight": 6
+        },
+        {
+          "row": [
+            1,
+            20,
+            7
+          ],
+          "weight": 3
+        },
+        {
+          "row": [
+            null,
+            30,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            2,
+            40,
+            null
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "Project the constant before LEFT padding; missing rows produce NULL rather than 7.",
+      "runtime_verified": false
+    },
+    {
+      "id": "left_completely_empty_right",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l LEFT JOIN LATERAL (SELECT 7 AS v FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              30
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              40
+            ],
+            "weight": 1
+          }
+        ],
+        "R": []
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            30,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            2,
+            40,
+            null
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "Each left occurrence survives once when the entire right relation is empty.",
+      "runtime_verified": false
+    },
+    {
+      "id": "correlated_projection_without_from",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT l.k AS v) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              30
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              40
+            ],
+            "weight": 1
+          }
+        ],
+        "R": []
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            1
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            1
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            30,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            2,
+            40,
+            2
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "A zero-column Values relation containing one tuple is not an empty relation; hidden NULL key survives projection.",
+      "runtime_verified": false
+    },
+    {
+      "id": "union_all_branch_key_subsets",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT l.k AS v UNION ALL SELECT l.p AS v) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              10
+            ],
+            "weight": 1
+          }
+        ],
+        "R": []
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            1
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            1,
+            10,
+            10
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            1,
+            20,
+            1
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            1,
+            20,
+            20
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            10,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            10,
+            10
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "A branch using only k must not multiply repeated k values when rejoined to the common (k,p) domain.",
+      "runtime_verified": false
+    },
+    {
+      "id": "union_distinct_is_per_domain",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT l.k AS v UNION SELECT l.p AS v) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              1
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              1
+            ],
+            "weight": 1
+          }
+        ],
+        "R": []
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            1,
+            1
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            null,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            1,
+            2
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            1,
+            1
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "DISTINCT collapses branch duplicates within each domain, including NULLs, without deduplicating original left weights.",
+      "runtime_verified": false
+    },
+    {
+      "id": "intersect_all_per_domain",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL ((SELECT r.v FROM R r WHERE r.k = l.k) INTERSECT ALL (SELECT l.p AS v UNION ALL SELECT l.p AS v)) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              7
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              7
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 3
+          },
+          {
+            "row": [
+              2,
+              7
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              7
+            ],
+            "weight": 4
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            7,
+            7
+          ],
+          "weight": 4
+        },
+        {
+          "row": [
+            2,
+            7,
+            7
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "Apply bag INTERSECT ALL to correlation fields plus payload; do not treat ALL as DISTINCT.",
+      "runtime_verified": false
+    },
+    {
+      "id": "except_all_per_domain",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL ((SELECT r.v FROM R r WHERE r.k = l.k) EXCEPT ALL (SELECT l.p AS v UNION ALL SELECT l.p AS v)) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              7
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              7
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 3
+          },
+          {
+            "row": [
+              2,
+              7
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              7
+            ],
+            "weight": 4
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            7,
+            7
+          ],
+          "weight": 2
+        }
+      ],
+      "purpose": "Apply bag EXCEPT ALL to correlation fields plus payload; do not treat ALL as DISTINCT.",
+      "runtime_verified": false
+    },
+    {
+      "id": "uncorrelated_union_branch_repeats_per_domain",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT l.k AS v UNION ALL SELECT 99 AS v) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              30
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              2,
+              40
+            ],
+            "weight": 1
+          }
+        ],
+        "R": []
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            1
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            10,
+            99
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            1
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            1,
+            20,
+            99
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            30,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            null,
+            30,
+            99
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            2,
+            40,
+            2
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            40,
+            99
+          ],
+          "weight": 1
+        }
+      ],
+      "purpose": "The uncorrelated branch repeats once per distinct domain and final join restores left multiplicity.",
+      "runtime_verified": false
+    },
+    {
+      "id": "empty_left",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.v FROM L l LEFT JOIN LATERAL (SELECT 7 AS v FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 3
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 4
+          }
+        ]
+      },
+      "expected": [],
+      "purpose": "No generator or LEFT join should synthesize an output when the left input is empty.",
+      "runtime_verified": false
+    }
+  ],
+  "incremental_extension": {
+    "fixture": "inner_equality_nulls_duplicates",
+    "replace_initial_inputs": {
+      "L": [
+        {
+          "row": [
+            1,
+            10
+          ],
+          "weight": 2
+        }
+      ],
+      "R": [
+        {
+          "row": [
+            1,
+            7
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    "steps": [
+      {
+        "input_deltas": {
+          "L": [
+            {
+              "row": [
+                1,
+                10
+              ],
+              "weight": -1
+            }
+          ],
+          "R": []
+        },
+        "expected_delta": [
+          {
+            "row": [
+              1,
+              10,
+              7
+            ],
+            "weight": -1
+          }
+        ]
+      },
+      {
+        "input_deltas": {
+          "L": [
+            {
+              "row": [
+                1,
+                10
+              ],
+              "weight": -1
+            }
+          ],
+          "R": []
+        },
+        "expected_delta": [
+          {
+            "row": [
+              1,
+              10,
+              7
+            ],
+            "weight": -1
+          }
+        ]
+      }
+    ],
+    "purpose": "The distinct domain remains present until the last duplicate is retracted; each retraction changes final output by one.",
+    "initial_expected": [
+      {
+        "row": [
+          1,
+          10,
+          7
+        ],
+        "weight": 2
+      }
+    ]
+  }
+}

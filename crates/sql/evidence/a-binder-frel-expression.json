@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-frel-expression-archive.json",
+  "scope": "Independently bound scalar FRel expression fragments under the fixed S1 profile.",
+  "directed_reference": {
+    "programs": 72,
+    "emitted_and_java_imported": 71,
+    "outcomes": {
+      "equivalent": 57,
+      "type_or_structure_mismatch": 12,
+      "no_reference_projection": 2,
+      "candidate_refusal": 1
+    }
+  },
+  "extra_scope_controls": {
+    "new_relation_names_and_projection": 2,
+    "unhandled_statement_options_refused": 2
+  },
+  "generated_binder_controls": {
+    "records": 59264,
+    "byte_equal": true,
+    "sha256": "f911a62866fa709c8e0a41247c80c01ff2d770e922a75a9550a8e33096437cf0"
+  },
+  "original_corpus": {
+    "records": 9886,
+    "held_out": 1563,
+    "held_out_fragments_emitted": 0
+  },
+  "remaining": "The optimized Java projection applies an additional DECIMAL cast in 12 cases. The probe only admits a single scalar view over a directly declared table. Complete held-out FRel, C0 and C1a remain unmeasured."
+}

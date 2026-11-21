@@ -1,0 +1,410 @@
+{
+  "schema_version": 1,
+  "scope": "Complete full-prefix audit before closure/sort sharing and pending LATENESS check repairs",
+  "cases": 8571,
+  "equal": false,
+  "difference_count": 19,
+  "observations": 3503220,
+  "shards": [
+    {
+      "shard": 0,
+      "path": "$SCRATCH/p0-s2-full-v4/shard-000/complete.json",
+      "sha256": "b5b635a983d7107ef8f916442fc48ae38a5b26ca0a8daf308f1bd0eaa62bc3ed",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 580581,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#limitTest2/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#orderbyDescendingTest/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "shard": 1,
+      "path": "$SCRATCH/p0-s2-full-v4/shard-001/complete.json",
+      "sha256": "6f9cd982a66a1b55c158983d5630e01447bb2fe77a822ae93a4032f3407a91f3",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 586572,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#limitTest2/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#orderby2Test/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#limitTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#limitTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testViewLateness/0",
+            "fields": [
+              "diagnostics",
+              "exported_diagnostics_equal"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [
+          "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testViewLateness/0"
+        ],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "shard": 2,
+      "path": "$SCRATCH/p0-s2-full-v4/shard-002/complete.json",
+      "sha256": "d867ae6c2cc7e023c94c7358161cbbec89f16c60e618091f69568215ec28cdbf",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 583452,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#orderbyTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#orderbyDescendingTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#limitTestColumn/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#orderbyTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#limitTestColumn/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "shard": 3,
+      "path": "$SCRATCH/p0-s2-full-v4/shard-003/complete.json",
+      "sha256": "5684dde00a76bab3aebec341229604565740fccf0835e8a58a2cc18309413117",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 585824,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#orderby2Test/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#orderby2Test/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#limitTest/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "shard": 4,
+      "path": "$SCRATCH/p0-s2-full-v4/shard-004/complete.json",
+      "sha256": "cbbe2644a6fb01bd26430d9a9addec6922d7d71bd85462b648d9753813e36e13",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 582499,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#limitTestColumn/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#orderbyTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#limitTest2/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "shard": 5,
+      "path": "$SCRATCH/p0-s2-full-v4/shard-005/complete.json",
+      "sha256": "b116c40b06f2dfd7fc620f2e3065f11074718435e2df793f883452a3d0de5e93",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 584292,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#orderbyDescendingTest/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    }
+  ],
+  "superseded_by": "Current version-3 audit in $SCRATCH/p0-s2-full-v6; not complete when this record was written"
+}

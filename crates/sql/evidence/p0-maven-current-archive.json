@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-maven-current.tar.gz",
+  "bytes": 90463779,
+  "sha256": "95e2c9163bcfa76e77ff428b60bd3cc43b848cb5ba77418dbfbb11add347a195",
+  "manifest_sha256": "8943fb6053d59726d09f6303b9f98f245a54136eea3ca21f26295ec47ff87b23",
+  "verified_files": 26787,
+  "all_members_verified": true
+}

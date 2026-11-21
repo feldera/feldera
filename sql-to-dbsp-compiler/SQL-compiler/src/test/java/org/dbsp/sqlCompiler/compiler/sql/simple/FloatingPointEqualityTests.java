@@ -3,7 +3,8 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
-import org.junit.Assert;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -47,7 +48,7 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
     }
 
     void assertWarnings(String program, String... expected) {
-        Assert.assertEquals(List.of(expected), this.warnings(program));
+        DiagnosticAssertions.assertListEquals(Target.RENDERED_WARNING_LINES, List.of(expected), this.warnings(program));
     }
 
     void assertNoWarnings(String program) {
@@ -56,7 +57,7 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
 
     @Test
     public void equalsRendered() {
-        Assert.assertEquals("""
+        DiagnosticAssertions.assertEquals(Target.RENDERED, """
                 While compiling:
                     2|CREATE TABLE S(x DOUBLE, z INT);
                     3|CREATE VIEW V AS SELECT * FROM T WHERE x = y;
@@ -113,7 +114,7 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
     /** The warning points at the DISTINCT keyword and names the columns */
     @Test
     public void distinctEmitted() {
-        Assert.assertEquals("""
+        DiagnosticAssertions.assertEquals(Target.RENDERED, """
                 While compiling:
                     2|CREATE TABLE S(x DOUBLE, z INT);
                     3|CREATE VIEW V AS SELECT DISTINCT x FROM T;
@@ -211,7 +212,7 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
 
     @Test
     public void naturalJoinEmitted() {
-        Assert.assertEquals("""
+        DiagnosticAssertions.assertEquals(Target.RENDERED, """
                 While compiling:
                     2|CREATE TABLE S(x DOUBLE, z INT);
                     3|CREATE VIEW V AS SELECT * FROM T NATURAL JOIN S;
@@ -336,7 +337,7 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
                 CREATE FUNCTION eq(a DOUBLE, b DOUBLE) RETURNS BOOLEAN AS a = b;
                 CREATE VIEW V AS SELECT eq(x, y) FROM T;""",
                 "3:59: warning: Floating point equality: '=' " + DOUBLE);
-        Assert.assertEquals("""
+        DiagnosticAssertions.assertEquals(Target.RENDERED, """
                 (no input file): Floating point equality
                 (no input file):5:3: warning: Floating point equality: '=' compares floating point values of type DOUBLE for equality.
                 See https://docs.feldera.com/sql/comparisons#comparing-floating-point-values

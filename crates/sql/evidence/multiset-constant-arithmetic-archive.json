@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-constant-arithmetic-20261118-v1.tar.gz",
+  "bytes": 286084,
+  "sha256": "b5711d7c34ed8899dd90d4003118e1d29a7c5d8ef3dfbd318702490ecc892a5e",
+  "manifest_sha256": "04ec7a89edfdf645dfb354b10b0e324a2a54324259269ef0563bfc6aff44d58b",
+  "verified_files": 104,
+  "all_members_verified": true
+}

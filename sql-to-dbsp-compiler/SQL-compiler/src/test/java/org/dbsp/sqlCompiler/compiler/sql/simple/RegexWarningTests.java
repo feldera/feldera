@@ -3,6 +3,8 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.RustRegexChecker;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -103,7 +105,7 @@ public class RegexWarningTests extends BaseSQLTests {
     @Test
     public void rejectedPatterns() {
         for (Map.Entry<String, String> entry : REJECTED.entrySet())
-            Assert.assertEquals(entry.getKey(), entry.getValue(),
+            DiagnosticAssertions.assertEquals(Target.REGEX_EXPLANATION, entry.getKey(), entry.getValue(),
                     RustRegexChecker.unsupportedConstruct(entry.getKey()));
     }
 
@@ -134,7 +136,7 @@ public class RegexWarningTests extends BaseSQLTests {
         for (CompilerMessages.Message message : cc.compiler.messages.messages)
             if (message.errorType.equals(RustRegexChecker.WARNING))
                 output.append(message);
-        Assert.assertEquals("""
+        DiagnosticAssertions.assertEquals(Target.RENDERED, """
                 While compiling:
                     1|CREATE TABLE T(s VARCHAR);
                     2|CREATE VIEW V AS SELECT s RLIKE 'a(?=b)' FROM T;
@@ -156,7 +158,7 @@ public class RegexWarningTests extends BaseSQLTests {
                    REGEXP_REPLACE(s, '(?<!a)'),
                    REGEXP_REPLACE(s, '\\1', 'x')
                 FROM T;""");
-        Assert.assertEquals(List.of(
+        DiagnosticAssertions.assertListEquals(Target.RENDERED_WARNING_LINES, List.of(
                 "3:4: warning: Unsupported regular expression feature: Pattern '(?=a)' contains the look-ahead '(?='",
                 "4:4: warning: Unsupported regular expression feature: Pattern '(?!a)' contains the look-ahead '(?!'",
                 "5:4: warning: Unsupported regular expression feature: Pattern '(?<=a)' contains the look-behind '(?<='",
@@ -175,6 +177,6 @@ public class RegexWarningTests extends BaseSQLTests {
                    s RLIKE NULL,
                    REGEXP_REPLACE(s, p, 'x')
                 FROM T;""");
-        Assert.assertEquals(List.of(), warnings);
+        DiagnosticAssertions.assertListEquals(Target.RENDERED_WARNING_LINES, List.of(), warnings);
     }
 }

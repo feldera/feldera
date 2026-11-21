@@ -1,4 +1,6 @@
 use super::{Mailbox, require_persistent_id};
+#[cfg(feature = "native-abi")]
+use crate::trace::{Batch as DynBatch, Spine as DynSpine, WithSnapshot};
 use crate::{
     Batch, BatchReader, Circuit, Error, Runtime, Stream,
     circuit::{
@@ -118,6 +120,28 @@ where
             );
 
         (output_handle, enable_count, gid)
+    }
+}
+
+#[cfg(feature = "native-abi")]
+impl<B> Stream<RootCircuit, B>
+where
+    B: DynBatch,
+{
+    /// Accumulate each transaction's output with the supplied batch factories.
+    #[track_caller]
+    pub fn dyn_accumulate_output_persistent(
+        &self,
+        factories: &B::Factories,
+        persistent_id: Option<&str>,
+    ) -> OutputHandle<DynSpineSnapshot<B>> {
+        let (stream, enable_count) = self.dyn_accumulate(factories).into_parts();
+        enable_count.enable();
+        let (output, handle) = AccumulateOutput::<ErasedBatch<B>>::new(enable_count);
+        let circuit = self.circuit();
+        let gid = circuit.add_sink(output, &stream);
+        circuit.set_persistent_node_id(&gid, persistent_id);
+        handle
     }
 }
 
@@ -585,18 +609,18 @@ where
 /// share host-local [`CohortSlots`] and publish to host-local mailboxes,
 /// which remote workers cannot reach. A reader observes a host's outputs
 /// atomically; distinct hosts publish independently.
-pub struct AccumulateOutput<B>
+pub(super) struct AccumulateOutput<B>
 where
-    B: Batch,
+    B: OutputBatch,
 {
     global_id: GlobalNodeId,
-    handle: OutputHandle<SpineSnapshot<B>>,
+    handle: OutputHandle<B::Snapshot>,
     /// Global indices of this host's workers: cohort slot `i` belongs to
     /// worker `local_workers.start + i`.
     local_workers: Range<usize>,
     /// This worker's cohort slot: its offset within `local_workers`.
     slot: usize,
-    pending: CohortSlots<SpineSnapshot<B>>,
+    pending: CohortSlots<B::Snapshot>,
     output_batch_stats: BatchSizeStats,
 
     /// Enable count of the paired upstream [`Accumulator`](crate::operator::dynamic::accumulator::Accumulator).
@@ -624,14 +648,64 @@ where
     /// swapped into the live circuit's operator (see [`Self::swap_state`]),
     /// where the next committed transaction combines it with that
     /// transaction's output and publishes the result.
-    cache: Option<SpineSnapshot<B>>,
+    cache: Option<B::Snapshot>,
+}
+
+// Both representations share publication and bootstrap state. The classic
+// sink keeps its existing batch type parameter for circuit fingerprinting.
+pub(super) trait OutputBatch: 'static {
+    type Spine: 'static;
+    type Snapshot: Debug + Clone + Send + 'static;
+
+    fn len_upper_bound(spine: &Self::Spine) -> usize;
+    fn snapshot(spine: &Self::Spine) -> Self::Snapshot;
+    fn append(first: Self::Snapshot, second: Self::Snapshot) -> Self::Snapshot;
+}
+
+impl<B: Batch + Send> OutputBatch for B {
+    type Spine = Spine<B>;
+    type Snapshot = SpineSnapshot<B>;
+
+    fn len_upper_bound(spine: &Self::Spine) -> usize {
+        spine.len_upper_bound()
+    }
+
+    fn snapshot(spine: &Self::Spine) -> Self::Snapshot {
+        spine.ro_snapshot()
+    }
+
+    fn append(first: Self::Snapshot, second: Self::Snapshot) -> Self::Snapshot {
+        SpineSnapshot::<B>::concat([&first, &second])
+    }
+}
+
+#[cfg(feature = "native-abi")]
+struct ErasedBatch<B>(PhantomData<B>);
+
+#[cfg(feature = "native-abi")]
+impl<B: DynBatch> OutputBatch for ErasedBatch<B> {
+    type Spine = DynSpine<B>;
+    type Snapshot = DynSpineSnapshot<B>;
+
+    fn len_upper_bound(spine: &Self::Spine) -> usize {
+        spine.len_upper_bound()
+    }
+
+    fn snapshot(spine: &Self::Spine) -> Self::Snapshot {
+        spine.ro_snapshot()
+    }
+
+    fn append(mut first: Self::Snapshot, second: Self::Snapshot) -> Self::Snapshot {
+        first.extend(second);
+        first
+    }
 }
 
 impl<B> AccumulateOutput<B>
 where
-    B: Batch + Send,
+    B: OutputBatch,
 {
-    pub fn new(enable_count: EnableCount) -> (Self, OutputHandle<SpineSnapshot<B>>) {
+    pub(super) fn new(enable_count: EnableCount) -> (Self, OutputHandle<B::Snapshot>) {
         let handle = OutputHandle::new();
 
         // The slots live in the host-local store, out of reach of remote
@@ -674,7 +748,7 @@ where
     /// Only the worker that completes a cohort publishes it, so there is
     /// never more than one publisher per cohort. Mailboxes are indexed by
     /// global worker index, slots by local offset.
-    fn put_and_publish(&self, snapshot: SpineSnapshot<B>) {
+    fn put_and_publish(&self, snapshot: B::Snapshot) {
         if let Some(cohort) = self.pending.put(self.slot, snapshot) {
             for (worker, snapshot) in self.local_workers.clone().zip(cohort) {
                 self.handle.mailbox(worker).set(Some(snapshot));
@@ -687,15 +761,15 @@ where
     }
 
     /// Merge `snapshot` into the cached accumulated output.
-    fn merge_into_cache(&mut self, snapshot: SpineSnapshot<B>) {
+    fn merge_into_cache(&mut self, snapshot: B::Snapshot) {
         self.cache = Some(match self.cache.take() {
             None => snapshot,
-            Some(cached) => SpineSnapshot::<B>::concat([&cached, &snapshot]),
+            Some(cached) => B::append(cached, snapshot),
         });
     }
 
     /// Route the transaction's output `snapshot`.
-    fn deliver(&mut self, snapshot: SpineSnapshot<B>) {
+    fn deliver(&mut self, snapshot: B::Snapshot) {
         if self.caching {
             // Bootstrap circuit: accumulate the view's output across the
             // backfill and synchronization transactions for transfer at
@@ -705,7 +779,7 @@ where
             // First committed transaction after a cutover swapped in the
             // backfilled output: combine it with this transaction's output so
             // the connector observes the full view as its first batch.
-            self.put_and_publish(SpineSnapshot::<B>::concat([&cached, &snapshot]));
+            self.put_and_publish(B::append(cached, snapshot));
         } else {
             self.put_and_publish(snapshot);
         }
@@ -714,7 +788,7 @@ where
 
 impl<B> Operator for AccumulateOutput<B>
 where
-    B: Batch + Send,
+    B: OutputBatch,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("AccumulateOutput")
@@ -777,23 +851,23 @@ where
     }
 }
 
-impl<B> SinkOperator<Option<Spine<B>>> for AccumulateOutput<B>
+impl<B> SinkOperator<Option<B::Spine>> for AccumulateOutput<B>
 where
-    B: Batch + Send,
+    B: OutputBatch,
 {
-    async fn eval(&mut self, val: &Option<Spine<B>>) {
+    async fn eval(&mut self, val: &Option<B::Spine>) {
         if let Some(val) = val {
-            self.output_batch_stats.add_batch(val.len_upper_bound());
+            self.output_batch_stats.add_batch(B::len_upper_bound(val));
             // Deliver even empty outputs: cohort completion requires one
             // emission per worker per transaction.
-            self.deliver(val.ro_snapshot());
+            self.deliver(B::snapshot(val));
         }
     }
 
-    async fn eval_owned(&mut self, val: Option<Spine<B>>) {
+    async fn eval_owned(&mut self, val: Option<B::Spine>) {
         if let Some(val) = val {
-            self.output_batch_stats.add_batch(val.len_upper_bound());
-            self.deliver(val.ro_snapshot());
+            self.output_batch_stats.add_batch(B::len_upper_bound(&val));
+            self.deliver(B::snapshot(&val));
         }
     }
 
@@ -998,6 +1072,33 @@ mod test {
         }
 
         dbsp.kill().unwrap();
+    }
+
+    #[cfg(feature = "native-abi")]
+    #[test]
+    fn native_abi_accumulated_output_publishes_each_transaction() {
+        use crate::trace::BatchReaderFactories;
+
+        let (mut runtime, (input, output)) = Runtime::init_circuit(1, |circuit| {
+            let (stream, input) = circuit.add_input_zset::<i64>();
+            let factories = BatchReaderFactories::new::<i64, (), i64>();
+            let output = stream
+                .inner()
+                .dyn_accumulate_output_persistent(&factories, Some("output"));
+            Ok((input, output))
+        })
+        .unwrap();
+
+        for weight in [3, -3, 0] {
+            if weight != 0 {
+                input.append(&mut vec![Tup2(7, weight)]);
+            }
+            runtime.transaction().unwrap();
+            let batch = output.take_from_worker(0).unwrap().consolidate();
+            assert_eq!(batch, crate::zset!(7i64 => weight).into_inner());
+            assert!(output.take_from_worker(0).is_none());
+        }
+        runtime.kill().unwrap();
     }
 
     #[test]

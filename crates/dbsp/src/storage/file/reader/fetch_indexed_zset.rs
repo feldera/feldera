@@ -174,14 +174,14 @@ where
         keys: FilteredKeys<'b, K>,
     ) -> Result<Self, Error> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        let factories = reader.columns[0].factories.factories();
+        let factories = reader.factories[0].factories();
         let output = factories.keys_factory.default_box();
         let tmp_key = factories.key_factory.default_box();
 
         let mut this = Self {
             keys,
             reader,
-            cache: reader.file.cache(),
+            cache: reader.layer.file.cache(),
             factories,
             sender,
             receiver,
@@ -192,7 +192,7 @@ where
             _phantom: PhantomData,
         };
         if !this.keys.is_empty()
-            && let Some(node) = &reader.columns[0].root
+            && let Some(node) = &reader.layer.columns[0].root
         {
             let mut reads = Vec::new();
             this.try_read(
@@ -258,11 +258,11 @@ where
         for (read, result) in results.reads.into_iter().zip(results.results) {
             let raw = result?;
             let tree_block = TreeBlock::from_raw_with_cache(
-                decompress(self.reader.file.compression, read.node.location, raw)?,
+                decompress(self.reader.layer.file.compression, read.node.location, raw)?,
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
-                self.reader.file.version,
+                self.reader.layer.file.version,
             )
             .unwrap();
             self.process_read(&read.keys, tree_block, reads)?;
@@ -272,7 +272,7 @@ where
 
     fn start_reads(&mut self, reads: Vec<Fetch0Read>) {
         if !reads.is_empty() {
-            self.reader.file.file_handle.read_async(
+            self.reader.layer.file.file_handle.read_async(
                 reads.iter().map(|read| read.node.location).collect(),
                 {
                     let sender = self.sender.clone();
@@ -286,8 +286,12 @@ where
     }
 
     fn try_read(&mut self, read: Fetch0Read, reads: &mut Vec<Fetch0Read>) -> Result<(), Error> {
-        if let Some(tree_block) =
-            TreeBlock::from_cache(&read.node, &self.cache, &*self.reader.file.file_handle).unwrap()
+        if let Some(tree_block) = TreeBlock::from_cache(
+            &read.node,
+            &self.cache,
+            &*self.reader.layer.file.file_handle,
+        )
+        .unwrap()
         {
             self.process_read(&read.keys, tree_block, reads)?;
         } else {
@@ -299,7 +303,7 @@ where
     fn process_read(
         &mut self,
         key_range: &Range<usize>,
-        tree_block: TreeBlock<K, A>,
+        tree_block: TreeBlock,
         reads: &mut Vec<Fetch0Read>,
     ) -> Result<(), Error> {
         match tree_block {
@@ -417,7 +421,7 @@ where
     /// Next row to append to `vals` and `diffs`.
     next_row: u64,
 
-    out_of_order: BTreeMap<u64, (Rows, Arc<DataBlock<K1, A1>>)>,
+    out_of_order: BTreeMap<u64, (Rows, Arc<DataBlock>)>,
 
     pending: usize,
 }
@@ -434,7 +438,7 @@ where
     ) -> Result<Self, Error> {
         source.finish();
 
-        let factories = source.reader.columns[1].factories.factories();
+        let factories = source.reader.factories[1].factories();
 
         let offs = {
             let mut offs = Vec::with_capacity(source.row_groups.len() + 1);
@@ -477,7 +481,7 @@ where
             pending: 0,
         };
         if !this.rows.is_empty()
-            && let Some(node) = &source.reader.columns[1].root
+            && let Some(node) = &source.reader.layer.columns[1].root
         {
             let mut reads = Vec::new();
             this.try_read(
@@ -491,7 +495,7 @@ where
 
     fn start_reads(&mut self, reads: Vec<Fetch1Read>) {
         if !reads.is_empty() {
-            self.reader.file.file_handle.read_async(
+            self.reader.layer.file.file_handle.read_async(
                 reads.iter().map(|read| read.node.location).collect(),
                 {
                     let sender = self.sender.clone();
@@ -504,8 +508,12 @@ where
         }
     }
     fn try_read(&mut self, read: Fetch1Read, reads: &mut Vec<Fetch1Read>) -> Result<(), Error> {
-        if let Some(tree_block) =
-            TreeBlock::from_cache(&read.node, &self.cache, &*self.reader.file.file_handle).unwrap()
+        if let Some(tree_block) = TreeBlock::from_cache(
+            &read.node,
+            &self.cache,
+            &*self.reader.layer.file.file_handle,
+        )
+        .unwrap()
         {
             self.process_read(read.keys, tree_block, reads)?;
         } else {
@@ -570,11 +578,11 @@ where
         for (read, result) in results.reads.into_iter().zip(results.results) {
             let raw = result?;
             let tree_block = TreeBlock::from_raw_with_cache(
-                decompress(self.reader.file.compression, read.node.location, raw)?,
+                decompress(self.reader.layer.file.compression, read.node.location, raw)?,
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
-                self.reader.file.version,
+                self.reader.layer.file.version,
             )
             .unwrap();
             self.process_read(read.keys, tree_block, reads)?;
@@ -582,12 +590,15 @@ where
         Ok(())
     }
 
-    fn process_data_block(&mut self, rows: Rows, data_block: Arc<DataBlock<K1, A1>>) {
+    fn process_data_block(&mut self, rows: Rows, data_block: Arc<DataBlock>) {
         for row in rows.iter(&self.rows) {
-            self.vals
-                .push_with(&mut |val| unsafe { data_block.key_for_row(&self.factories, row, val) });
-            self.diffs.push_with(&mut |diff| unsafe {
-                data_block.aux_for_row(&self.factories, row, diff)
+            self.vals.push_with(&mut |val| {
+                // SAFETY: this row belongs to the value block and the factory matches its key.
+                unsafe { data_block.key_for_row(&self.factories, row, val) }
+            });
+            self.diffs.push_with(&mut |diff| {
+                // SAFETY: the same row stores a weight of the destination type.
+                unsafe { data_block.aux_for_row(&self.factories, row, diff) }
             });
         }
         self.next_row = Rows::next(&self.rows, data_block.rows().end);
@@ -596,7 +607,7 @@ where
     fn process_read(
         &mut self,
         mut rows: Rows,
-        tree_block: TreeBlock<K1, A1>,
+        tree_block: TreeBlock,
         reads: &mut Vec<Fetch1Read>,
     ) -> Result<(), Error> {
         match tree_block {

@@ -1,0 +1,3 @@
+CREATE TABLE t (s VARCHAR(4));
+INSERT INTO t (s) VALUES ('a'), ('abcd');
+CREATE VIEW v AS SELECT s FROM t;

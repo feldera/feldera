@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "reused-optimizer-worker-archive.json",
+  "scheduled_placements": 24,
+  "final_compiler_comparisons": 90,
+  "same_input_byte_comparisons": 2110,
+  "successful_protocol_requests": 38,
+  "negative_protocol_controls": 5,
+  "expired_worker_reaped": true,
+  "engine_modes": ["classic", "gen2"],
+  "measured_compilations": 768,
+  "warmup_compilations": 192,
+  "benchmark_graph_and_diagnostic_comparisons": 720,
+  "paired_worker_over_fork_median_range": [0.876, 0.887],
+  "worker_over_fork_p95_range": [0.736, 1.099],
+  "differences": 0,
+  "scope": "The probe keeps the same per-pass circuit files and validation while reusing one serial Rust subprocess per JVM. The performance experiment uses the same release build for one-shot and reused Rust. The instrumented timing stops at S3 and includes intermediate graph serialization and decoding."
+}

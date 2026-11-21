@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-shared-options-20261118-v1.tar.gz",
+  "bytes": 126028375,
+  "sha256": "b7cd2cb8245dfefb7a3b383afdc7533e2482a4d4cb040c1ea2e87d1f19bbabde",
+  "manifest_sha256": "279d925f30cd0c607761f1cce66169dc713acb4ed35e71b0a8282f0e45183560",
+  "verified_files": 6,
+  "all_members_verified": true
+}

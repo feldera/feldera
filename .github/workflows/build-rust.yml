@@ -149,6 +149,10 @@ jobs:
           # Move the executables we ship to users to a separate directory
           mv build-artifacts/fda build-release-artifacts/
           mv build-artifacts/pipeline-manager build-release-artifacts/
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          mkdir -p build-release-artifacts/sql-optimizer
+          release_dir="$target_dir/${{ matrix.target }}/release"
+          cp "$release_dir/sql2dbsp" "$release_dir/libfeldera_sql_opt_jni.so" build-release-artifacts/sql-optimizer/
 
       # Upload test binaries as one artifact
       - name: Upload test artifacts
@@ -170,6 +174,14 @@ jobs:
         with:
           name: pipeline-manager-${{ matrix.target }}
           path: build-release-artifacts/pipeline-manager
+          retention-days: 7
+
+      - name: Upload the opt-in Rust SQL optimizer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sql-optimizer-${{ matrix.target }}
+          path: build-release-artifacts/sql-optimizer
+          if-no-files-found: error
           retention-days: 7
 
   build-fda-native:

@@ -1,0 +1,19 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-correlation-evidence-20261118-v1.tar.gz",
+  "archive_root": "p0-correlation-evidence-20261118-v1",
+  "sha256": "3d3a0b7f4bcddf6b1f7dd7299eb87a646e605ba02605c3b2441783df821fe788",
+  "bytes": 77431475,
+  "verified_files": 7537,
+  "archive_files": 7538,
+  "source_files": 2765,
+  "class_files": 4194,
+  "manifest": "MANIFEST.sha256.json",
+  "manifest_sha256": "1407b9a5b51f500c514538e1d0166c954fc62cbe49db26f52d62952eb443cfd5",
+  "adjudication": "adjudication.json",
+  "all_members_verified": true,
+  "manifest_verified": true,
+  "human_maintainer_accepted": false,
+  "P0_complete": false
+}

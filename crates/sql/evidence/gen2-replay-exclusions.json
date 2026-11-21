@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "registered_cases": 8544,
+  "replayed_cases": 8527,
+  "skipped": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#dateTemporalFilterWithLowerBound/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "d58b536355b03e04a4498d5a8d9b9d5fd7813b28b8562f05fbbafc7c5280b508"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testThreeWayJoinHints/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<2> but was:<0>",
+      "input_sha256": "2a58a497337c6311f76028905d82da9186f8113a7ee538e3ce60f3cfca89972a"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testOneArgMin/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "05d43a0b26eddf80151c6b53dce61d169180834dfb08d17d39da0152d99a47eb"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testOneArgMin/1",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "eb8cc027247f965a6692168a1d18ee57ef68d9084ee4e4e935d8bf9d0da3fd65"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testHints/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "064ed28ba578f6a9ffaa8fba720e4efeee61743e67965fa802c937e1fd0f15c5"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815a/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<1> but was:<0>",
+      "input_sha256": "8525c02812bbe0b532addc5cdf253b80b7c9f59032099cc73b65d04e973ed727"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#integerTemporalFilterWithUpperBound/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "ab37be899d2fa936118131e0c543774f89ee75946cf6027adcde8853fa5f66b4"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#dateTemporalFilterWithUpperBound/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "017f8fcf33fdcf5eaccf40f8729b51feb30d52188336e802c37a808959620bcb"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541b/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<1> but was:<0>",
+      "input_sha256": "ebc67b08f608e31f634028d9d9c0dfb58b656aed6afea9ee51273154bb5092a6"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#checkNowChainAggregateHash/0",
+      "reason": "Test body did not complete: org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError: Assertion failed\norg.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$1.postorder(Regression2Tests.java:98)\norg.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator.accept(DBSPChainAggregateOperator.java:67)\norg.dbsp.sqlCompiler.circuit.DBSPCircuit.accept(DBSPCircuit.java:253)\norg.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor.apply(CircuitVisitor.java:124)\norg.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit.visit(CompilerCircuit.java:33)\norg.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests.checkNowChainAggregateHash(Regression2Tests.java:90)\njava.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\njava.base/java.lang.reflect.Method.invoke(Method.java:580)\norg.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)\norg.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)\norg.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)\norg.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests$2.evaluate(BaseSQLTests.java:266)\norg.junit.rules.TestWatcher$1.evaluate(TestWatcher.java:61)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)\norg.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)\norg.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)\norg.junit.runners.ParentRunner$4.run(ParentRunner.java:331)\norg.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)\norg.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)\norg.junit.runners.ParentRunner.access$100(ParentRunner.java:66)\norg.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)\norg.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)\norg.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)\norg.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)\norg.junit.runners.ParentRunner.run(ParentRunner.java:413)\norg.apache.maven.surefire.junit4.JUnit4Provider.execute(JUnit4Provider.java:316)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeWithRerun(JUnit4Provider.java:240)\norg.apache.maven.surefire.junit4.JUnit4Provider.executeTestSet(JUnit4Provider.java:214)\norg.apache.maven.surefire.junit4.JUnit4Provider.invoke(JUnit4Provider.java:155)\norg.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)\norg.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)\norg.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)\norg.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)\n\nWe would appreciate if you could report an issue at https://github.com/feldera/feldera/issues",
+      "input_sha256": "22329ad843a7e128126b6190ef88adb43669ce07f8aeba6218bb19b71f248b6e"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815c/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<1> but was:<0>",
+      "input_sha256": "ac2fae61b83644194680e63a76024e594872a80d85fc1fdad059085056431187"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541a/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<1> but was:<0>",
+      "input_sha256": "c159655ea3efe42d373f8082442fa4661ab0cd767a30d727306d00d7ec6aaf67"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4577/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<7> but was:<0>",
+      "input_sha256": "2bc4a718839579c7fc4b15b711efc9217314cc77a37f0cf7500c77b874296429"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<1> but was:<0>",
+      "input_sha256": "20d17642ca330c0b780822375bc226fd485b1b301825f9e12f5a80d3f3e7f744"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#integerTemporalFilterWithLowerBound/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "e749eedf27db2d40ecff08f5600c7daa864d1893f021210b7d7239593c8f816c"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue2998/0",
+      "reason": "Test body did not complete: java.lang.AssertionError",
+      "input_sha256": "5d1ba83eaec3bd6e1e97d74adb1f5806e826591255df2d8222c35db318ce336b"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815b/0",
+      "reason": "Test body did not complete: java.lang.AssertionError: expected:<1> but was:<0>",
+      "input_sha256": "ef8b7d727a4a00015fbc3d2e3dab96ac92737946eae2123e5cfbb35ee47fafea"
+    }
+  ],
+  "approved_dispositions": false
+}

@@ -1,0 +1,28 @@
+{
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "5f663d0a33e780ccbde5bce223804fe96c8e6c682d8068d027c1fe0ffe5c530a",
+      "18b73c273c8b2926d4b2809f90a2eb44acffef70b65b887a530e646e5aee7140"
+    ],
+    "pass": "RemoveDeindexOperators",
+    "invocations": 8571,
+    "changed": 403,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "4c022cbbfc2bb200a428b33222c497405c8b987ec61398900ed3c9b7c1afe1c0",
+      "f35d140f421954716ed76493a4a1ea13f806ef1fd9fd14b63badf7cf8b446822"
+    ],
+    "pass": "RemoveDeindexOperators",
+    "invocations": 8527,
+    "changed": 289,
+    "cases_without_placement": 0
+  }
+}

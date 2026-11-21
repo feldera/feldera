@@ -1,0 +1,31 @@
+{
+  "scope": "ExpandHop in uninterrupted Java compilation compared with Rust. Includes generated names, topology, expression sharing and relational provenance.",
+  "jar_sha256": "64d5cfce823e884649f3bd83b6c95bd7e65077dd048c1d27000e3cf6516ea1bd",
+  "comparator_sha256": "91352467cbe49e6c049211eec07ecf4c89424b827c0661cee2f944d267325dca",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "f90499eddd530952a5012a5e0eb6ef2457bfcca1c4a610f4e6dc088876d666bb",
+      "cfa4aa8285c8e84ee407bf6b7d46d65fb93f4ca364c20a5349801d7b38732e05"
+    ],
+    "pass": "ExpandHop",
+    "invocations": 8571,
+    "changed": 20,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "6c8077611d23c105afa601b6e311233a7307c645160ca6ad0857ff326179f8e9",
+      "56bac2ff449a401fba2f348b83b7d46787f1235f18618af4ca9425edccd7777e"
+    ],
+    "pass": "ExpandHop",
+    "invocations": 8527,
+    "changed": 20,
+    "cases_without_placement": 0
+  }
+}

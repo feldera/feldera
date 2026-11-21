@@ -102,6 +102,9 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsDateType, IsTime
     @SuppressWarnings("unused")
     public static DBSPTypeDate fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeDate.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeDate.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeDate(CalciteObject.EMPTY, mayBeNull);
     }
 }

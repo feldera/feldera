@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "targets": {
+    "wasm32-unknown-unknown": {
+      "artifact": "$SCRATCH/p0-fold-portability-v5/wasm32-unknown-unknown.rlib",
+      "sha256": "db68be371b1ad5f3a2bf903881cf2795a9770fa414cde84afe8560efc7ea5e6a",
+      "executed": false,
+      "linked_executable": false
+    },
+    "x86_64-pc-windows-msvc": {
+      "artifact": "$SCRATCH/p0-fold-portability-v5/x86_64-pc-windows-msvc.rlib",
+      "sha256": "af5ec1d0025359fd0e66607940409a5c34532261de316c133bbc8d479796975c",
+      "executed": false,
+      "linked_executable": false
+    }
+  },
+  "sources": {
+    "crates/sql/fold-probe/Cargo.lock": "7965f84b066d91cd4c3170d65a67855380368a250a3d79c99cbfe865355bbebb",
+    "crates/sql/fold-probe/Cargo.toml": "0e4f0a562815f524c3768bc0ac546bb03038ac59662f0d45cff9efe1cbe32007",
+    "crates/sql/fold-probe/src/arrays.rs": "b5ad44a9a7ad636f52a077df6f405b6a3eeabb756a90934381d457728705ed08",
+    "crates/sql/fold-probe/src/binary.rs": "1a8603b1b39bf6ebc1409d5c49d59e1dd8a018641e5aa3198d432a440c155259",
+    "crates/sql/fold-probe/src/comparison.rs": "aa863e92962989f0b97a0197dd5aabbe846c02a2d5c7a2f70333a8868a924e38",
+    "crates/sql/fold-probe/src/eval.rs": "62be76217d090cdc47f5f2d9a91318a42287eafd0978fc1fdf5a8b2e864720e2",
+    "crates/sql/fold-probe/src/extract.rs": "d65a3ed07f41a02aa40d7c4b91370dd9f96b2f9d0bd18cf42fde1eb07330da37",
+    "crates/sql/fold-probe/src/lib.rs": "b8149260b15a6d4f582eb1d5589457ca920fc32b667cf8b43940442a8137c20a",
+    "crates/sql/fold-probe/src/main.rs": "a9d0d300e1feb2e17c123f681d76e37834f5c7be6055d178020e41aed402dede",
+    "crates/sql/fold-probe/src/math.rs": "217a9c2d66d56e3441afc1745675c72a7bb7bd9f673752632006486ff48ebe95",
+    "crates/sql/fold-probe/src/model.rs": "2a4af4faed83e3141db3a1e705b12a6715dab176f7a01ce1d407593489bd79b1",
+    "crates/sql/fold-probe/src/numeric.rs": "25c2210a480582d7094c8a30091c0c84ce7c9a94b2a4860c23eeea4d2bae74db",
+    "crates/sql/fold-probe/src/pattern.rs": "e03756158d7a9c00e20128efd399402802661272c4ef28cc7a138e49528f8fb8",
+    "crates/sql/fold-probe/src/rounding.rs": "6c322079b2afaf2a288412cea46b161b55fdc060dc4f11f68723d64b49edb4dd",
+    "crates/sql/fold-probe/src/strings.rs": "f76eea96c684aa55cc82ec57235010e6f1e1700395b182204165cc579acb5c72",
+    "crates/sql/fold-probe/src/temporal.rs": "1dbc60dc25f4267e1b12f2762a48c27abeb16bde21c278b0a6d67cd449779a62",
+    "crates/sql/fold-probe/src/uuid.rs": "f7ce40a64b3739aa78f9bb089f0e03f6d7c995b173ff2c6e081091c8cd91f6aa",
+    "crates/sql/fold-probe/tests/semantics.rs": "c43af899d4ece469405c883ef86322826431b2898e25390f12febfe6671fc43d",
+    "crates/fxp/Cargo.toml": "a5a6afb4b76a11cd318192f54c98bd5c550153b9ca3065f5c3e845661d1597bb",
+    "crates/fxp/src/dbsp_impl.rs": "2279ae42a7b934a3c3d672e981f8aa889d9ea923355650d25b413224255ed068",
+    "crates/fxp/src/dynamic.rs": "18e81d5f24d67c6ddc124c11db6c9024fbed9b93d5ca6ef6ab1b4dd2771f3441",
+    "crates/fxp/src/fixed.rs": "4d11071cfb2097f7938e724489286317f7739938348dd0c114f882fbffda1267",
+    "crates/fxp/src/lib.rs": "be313306a73b824c6624915b1319a4f3cb0d7b64253d150422d95c883cdbffac",
+    "crates/fxp/src/rkyv_impl.rs": "c874512eb03a737c9f6995f9944749dfbb72bd46b7d8d9f91cab63f5fea7e330",
+    "crates/fxp/src/serde_impl.rs": "a05e625b9cc43c09dc3e235ea7e1c1fbd0869c1d41fb04fb47f525644b3b540c",
+    "crates/fxp/src/u256.rs": "a7b1559cdb05c72f379834e5abad7f3d3f1958329e8881f15699e9934acc4cef"
+  },
+  "runtime_dependency_present": false,
+  "complete_sqllib_split": false,
+  "independent_review": false
+}

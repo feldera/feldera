@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-identity-maps-archive.json",
+  "engine_modes": ["classic", "gen2"],
+  "programs_per_mode": 43,
+  "scheduled_placements": 24,
+  "same_input_pass_comparisons": 2014,
+  "identity_map_graph_comparisons": 86,
+  "identity_map_graph_changes": 4,
+  "name_aware_pass_comparisons": 284,
+  "rust_final_comparisons": 86,
+  "java_codec_final_comparisons": 86,
+  "detached_s2_s3_chains": 12,
+  "directed_cleanup_graphs": 12,
+  "fresh_java_noop_graph_roundtrips": 3,
+  "ordinary_bag_and_set_tail_comparisons": 600,
+  "rust_tests": 29,
+  "differences": 0,
+  "scope": "Flat supported operator and expression shapes. The directed graphs cover tuple projection, indexed key/value projection, reordered fields, sibling retention conflicts and retained-noop closure regeneration. Java and Rust compare the generated-name counter alongside the graph. The earlier bag-output lateness fixture omitted trace retention. The archive retains the observed gaps and corrected set-output witnesses."
+}

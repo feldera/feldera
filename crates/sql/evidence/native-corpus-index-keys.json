@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-corpus-index-keys-archive.json",
+  "workloads": 26,
+  "measured_pairs": 806,
+  "warmup_pairs": 52,
+  "sort_merge_mismatches": 0,
+  "scope": "synthetic values with all five exact selected-corpus index-key shapes",
+  "keys": {
+    "unit": {
+      "type_id": "1d5ba8562d0ec7c561f55b34b57f407ffb8043f2e077c5c1e52ec49c46172d7a",
+      "workloads": 2,
+      "normalized_over_direct_including_encoding": [
+        4.027914332662071,
+        5.029785118316993
+      ]
+    },
+    "integer": {
+      "type_id": "738080148cd884518ba24b2ce659fd406c093632c1642f4ea73dfe63b09fae37",
+      "workloads": 6,
+      "normalized_over_direct_including_encoding": [
+        3.2839501926733643,
+        4.873000658638065
+      ]
+    },
+    "integer_pair": {
+      "type_id": "c75d8e16c4cb1cf52a2a063efae16c834a3ae88342b9af85d38be017bd166394",
+      "workloads": 6,
+      "normalized_over_direct_including_encoding": [
+        1.8218619985676485,
+        2.701589181310642
+      ]
+    },
+    "nullable_decimal": {
+      "type_id": "28310a2273f899518827b7dd2041aba3458cdf498a02fa8ab89e7cec14617473",
+      "workloads": 6,
+      "normalized_over_direct_including_encoding": [
+        2.4624250044628653,
+        3.4975101913677014
+      ]
+    },
+    "unsigned_time": {
+      "type_id": "33e5dd233cf2623dd645ce18b18663523bf59e7dffeef4dcacc76295a63abffa",
+      "workloads": 6,
+      "normalized_over_direct_including_encoding": [
+        3.4204023066013773,
+        4.926250024792241
+      ]
+    }
+  },
+  "full_n2_verified": false
+}

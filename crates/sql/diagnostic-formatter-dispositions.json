@@ -1,0 +1,1947 @@
+{
+  "schema_version": 1,
+  "scope": "Independent agent follow-up to frozen v7 wrapper extraction; preserves earlier review certificates",
+  "inputs": {
+    "$SCRATCH/p0-diagnostic-wrappers-v1/reports/attribution.json": "dbc08324699f22f19fbcc71149b3ebd7075ea48fcedbea301508d76574787d7d",
+    "$SCRATCH/p0-diagnostic-wrappers-v1/reports/templates.json": "e615181048ea3942d4ff5ff99ce2f52c65293d55e33f15ab97b5e5932d382c9c",
+    "$SCRATCH/p0-diagnostic-review-v7/java-diagnostics.jsonl": "906810acf91a99ec04d60d451973f6eccd04edd457093ed4f05b800f83539d67"
+  },
+  "sources": {
+    "validator": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/ConnectorValidator.java",
+      "sha256": "909e456531d2ff7f35022e9f63b694e3e0f1a368ebe9743c112b00bc80de0e62",
+      "anchors": [
+        {
+          "text": "private static String enumValidValues",
+          "lines": [
+            27
+          ]
+        },
+        {
+          "text": "private static String pathToDotted",
+          "lines": [
+            52
+          ]
+        },
+        {
+          "text": "if (e instanceof UnrecognizedPropertyException",
+          "lines": [
+            366
+          ]
+        },
+        {
+          "text": "message = \"unknown field \"",
+          "lines": [
+            367
+          ]
+        },
+        {
+          "text": "ife.getTargetType().isEnum()",
+          "lines": [
+            369
+          ]
+        },
+        {
+          "text": "+ e.getOriginalMessage()",
+          "lines": [
+            378
+          ]
+        },
+        {
+          "text": "reporter.reportWarning(range, \"Invalid configuration\", message)",
+          "lines": [
+            380
+          ]
+        }
+      ]
+    },
+    "quantity": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/ConfigQuantity.java",
+      "sha256": "8b4cc4e454322a95e7abe2f1f620cea10da8c310081d9602fd273618800f36f3",
+      "anchors": [
+        {
+          "text": "ParseException unknown(",
+          "lines": [
+            62
+          ]
+        },
+        {
+          "text": "record MeasurementUnits",
+          "lines": [
+            42
+          ]
+        },
+        {
+          "text": "static void reportMalformed",
+          "lines": [
+            251
+          ]
+        }
+      ]
+    },
+    "duration": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/ConfigDuration.java",
+      "sha256": "ec8730d92eba395f9b292e241d579354280b1365d647e581483b7430c1e0dbae",
+      "anchors": [
+        {
+          "text": "private static final String EXPECTED_UNITS",
+          "lines": [
+            31
+          ]
+        },
+        {
+          "text": "cannot be negative",
+          "lines": [
+            59
+          ]
+        },
+        {
+          "text": "duration is empty",
+          "lines": [
+            64
+          ]
+        },
+        {
+          "text": "has no unit",
+          "lines": [
+            85
+          ]
+        }
+      ]
+    },
+    "size": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/ConfigSize.java",
+      "sha256": "6b34be9ec1c4927f25ccb7a09716380657bc3c4cbf4b77c3a14b631d50229cf0",
+      "anchors": [
+        {
+          "text": "private static final String EXPECTED_UNITS",
+          "lines": [
+            30
+          ]
+        },
+        {
+          "text": "\"size\", EXPECTED_UNITS",
+          "lines": [
+            53
+          ]
+        }
+      ]
+    },
+    "reporter": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/ConfigReporter.java",
+      "sha256": "45e62b2874e2c87eaa17bf0601aea61d704da4db608fb2b5626c28537ec49cfc",
+      "anchors": [
+        {
+          "text": "public static String fieldName",
+          "lines": [
+            43
+          ]
+        },
+        {
+          "text": "public static String partOf",
+          "lines": [
+            56
+          ]
+        }
+      ]
+    },
+    "literal": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+      "sha256": "dfb6f51513f341b509c9f50a633471500fbbdf94366003a6b35a478dbaf5022b",
+      "anchors": [
+        {
+          "text": "literal.getValueAs(Point.class)",
+          "lines": [
+            348
+          ]
+        },
+        {
+          "text": "throw new UnimplementedException(node, ex)",
+          "lines": [
+            377
+          ]
+        }
+      ]
+    },
+    "unimplemented": {
+      "path": "org/dbsp/sqlCompiler/compiler/errors/UnimplementedException.java",
+      "sha256": "5b29c088f550a1fd3793ae7f6d7c91bb96134fc98da14e8dcaa43002259e924d",
+      "anchors": [
+        {
+          "text": "public static final String SUGGEST",
+          "lines": [
+            44
+          ]
+        },
+        {
+          "text": "public UnimplementedException(CalciteObject node, Throwable cause)",
+          "lines": [
+            107
+          ]
+        }
+      ]
+    },
+    "csv": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvParserConfig.java",
+      "sha256": "4bb25febcbfbd9f075fcca8fec21583439d4f007b61127660706360cd7e73c85",
+      "anchors": [
+        {
+          "text": "public boolean headers",
+          "lines": [
+            20
+          ]
+        }
+      ]
+    },
+    "postgres": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/PostgresCdcReaderConfig.java",
+      "sha256": "7185102e2488170459fad19e2c385fbe3e754bfe75434d332d0c4965f7106288",
+      "anchors": [
+        {
+          "text": "public Boolean runSourceMigrations",
+          "lines": [
+            22
+          ]
+        }
+      ]
+    },
+    "utilities": {
+      "path": "org/dbsp/util/Utilities.java",
+      "sha256": "ad6b5a52caf20e05dc96a84e9b53eafcc992594bde0fd159e34e909a75a544b0",
+      "anchors": [
+        {
+          "text": "public static String doubleQuote",
+          "lines": [
+            258
+          ]
+        },
+        {
+          "text": "public static String singleQuote",
+          "lines": [
+            335
+          ]
+        }
+      ]
+    },
+    "JsonUpdateFormat": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/JsonUpdateFormat.java",
+      "sha256": "e944f3c27669e95416f26ff312e5e58a790626c2a55d8e2f4ce960529f201dc6",
+      "anchors": [
+        {
+          "text": "public enum JsonUpdateFormat",
+          "lines": [
+            4
+          ]
+        }
+      ]
+    },
+    "CsvTrim": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvTrim.java",
+      "sha256": "a5493d4fcca630c9e95aeae87b06fa48aef57246776aa13e7b1c9b34dce60e1e",
+      "anchors": [
+        {
+          "text": "public enum CsvTrim",
+          "lines": [
+            5
+          ]
+        }
+      ]
+    },
+    "KafkaLogLevel": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/KafkaLogLevel.java",
+      "sha256": "3f73451712eaa9570822527f3ad871bd0bae3845c2e16ff8d6c92a353a99a17e",
+      "anchors": [
+        {
+          "text": "public enum KafkaLogLevel",
+          "lines": [
+            4
+          ]
+        }
+      ]
+    },
+    "NatsReplayPolicy": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/NatsReplayPolicy.java",
+      "sha256": "290a334d7fed5bda754b15be81720d54fa37d1cdddbde04ab9163e6fd68848e6",
+      "anchors": [
+        {
+          "text": "public enum NatsReplayPolicy",
+          "lines": [
+            7
+          ]
+        }
+      ]
+    },
+    "IcebergIngestMode": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/IcebergIngestMode.java",
+      "sha256": "192cbca5ad86556aef633ddc73c9434dc8dddf2db16d3d7f5d8340bca21d66d2",
+      "anchors": [
+        {
+          "text": "public enum IcebergIngestMode",
+          "lines": [
+            4
+          ]
+        }
+      ]
+    },
+    "RawParserMode": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/RawParserMode.java",
+      "sha256": "3a3d6978ec3f1c604d867935b8f46b0f933b34c5a0ee21c3900d53373239d982",
+      "anchors": [
+        {
+          "text": "public enum RawParserMode",
+          "lines": [
+            4
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+      "sha256": "b779d49fca68dca6a4c821caa14b4db0e6c5c553cc013fa7d0dbb317a0903c27",
+      "anchors": [
+        {
+          "text": "\"Preprocessor must have a field \\\"name\\\"\"",
+          "lines": [
+            2296
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/ValidateRecursiveOperators.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/ValidateRecursiveOperators.java",
+      "sha256": "7cc56412a23d28facf3e4aeefc2da7765b253e0ce79ed0bef8718bd83d39c7bb",
+      "anchors": []
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/AvroParserConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/AvroParserConfig.java",
+      "sha256": "e717f98e6d83e02304d2be89ad21f065ba2704be95d4e5e248634109919bc4f6",
+      "anchors": [
+        {
+          "text": "\"\\\"registry_urls\\\" cannot be null; remove it to use the default\"",
+          "lines": [
+            73
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvEncoderConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvEncoderConfig.java",
+      "sha256": "c3afc2b1e36598ccdd8e929ecd79039b1d7415dc006824e43efae0a54c2a1567",
+      "anchors": []
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvParserConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvParserConfig.java",
+      "sha256": "4bb25febcbfbd9f075fcca8fec21583439d4f007b61127660706360cd7e73c85",
+      "anchors": []
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S3InputConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S3InputConfig.java",
+      "sha256": "432a454b18c9e8186058c82919b080dd6311a31a575126d812be5123feab2f24",
+      "anchors": [
+        {
+          "text": "\"required field \\\"region\\\" is missing or empty\"",
+          "lines": [
+            53
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/NatsInputConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/NatsInputConfig.java",
+      "sha256": "a5198408acd33ef36083eb6b0437bcec21efffccac82b269a5851189e7e15fa8",
+      "anchors": [
+        {
+          "text": "\"required field \\\"stream_name\\\" is missing or empty\"",
+          "lines": [
+            55
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S2InputConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S2InputConfig.java",
+      "sha256": "9a8def0d36c222d6a43a50ace7113422fe72ef8e6ca44bdddd621899e1fdbf0e",
+      "anchors": [
+        {
+          "text": "\"required field \\\"stream\\\" is missing or empty\"",
+          "lines": [
+            40
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/KafkaOutputConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/KafkaOutputConfig.java",
+      "sha256": "e75a719c50d71838a67051843fbe02e71d8e9ac47ddb6bb356b7f3a6161353ac",
+      "anchors": [
+        {
+          "text": "\"required field \\\"topic\\\" is missing or empty\"",
+          "lines": [
+            63
+          ]
+        }
+      ]
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+      "sha256": "dfb6f51513f341b509c9f50a633471500fbbdf94366003a6b35a478dbaf5022b",
+      "anchors": []
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/config/ConfigQuantity.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/ConfigQuantity.java",
+      "sha256": "8b4cc4e454322a95e7abe2f1f620cea10da8c310081d9602fd273618800f36f3",
+      "anchors": []
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+      "sha256": "b3ebf9b7183d91a37b43967119a1d44be9f33c772b88d9b9d45ff2624b673f30",
+      "anchors": []
+    },
+    "ambiguity:org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RejectUnsupportedPlans.java": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RejectUnsupportedPlans.java",
+      "sha256": "b9d262832ad2b815dbeaccf9a5019f7125d9db075f94f36dd872719556fc68e1",
+      "anchors": []
+    },
+    "table_constants": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/statements/CreateTableStatement.java",
+      "sha256": "9928d76b6044ae61bac95bc99abd163a16c405533d504d4d31abd1cfc6ac2a40",
+      "anchors": [
+        {
+          "text": "MESSAGE_ORIENTED",
+          "lines": [
+            50
+          ]
+        }
+      ]
+    },
+    "geometry_node": {
+      "path": "org/dbsp/sqlCompiler/compiler/frontend/calciteObject/CalciteRexNode.java",
+      "sha256": "184061809b6decbbd923bc0554480ffc087d1dcdfc85531fa677f5f216794969",
+      "anchors": [
+        {
+          "text": "public String toString()",
+          "lines": [
+            39
+          ]
+        }
+      ]
+    }
+  },
+  "dependency_bytecode": {
+    "p0-calcite-RexLiteral.javap": {
+      "sha256": "6fbece250bb44171dc51abe26e07ba5e0ae7be4440e2a558649b5d33141c7808",
+      "artifact": "v7 frozen classes plus dependencies.jar"
+    },
+    "p0-jackson-BooleanDeserializer.javap": {
+      "sha256": "86c3027ff904c0a69d2bc93fafd2271684c2c7df3d23f24862ae4e198eccd1e9",
+      "artifact": "v7 frozen classes plus dependencies.jar"
+    },
+    "p0-jackson-DeserializationContext.javap": {
+      "sha256": "848169adea2bd1174cbf2ba77ac23fd91c10448687756e58d0476087b24bc877",
+      "artifact": "v7 frozen classes plus dependencies.jar"
+    },
+    "p0-jackson-StdDeserializer.javap": {
+      "sha256": "f9838b9d432b9d548409977c22109d7e8b850ac502ded1f12530767363c3077e",
+      "artifact": "v7 frozen classes plus dependencies.jar"
+    }
+  },
+  "external_dependency_policy": "Bytecode disassembly is primary evidence for pinned Jackson and Calcite formatter behavior; no claim to have reviewed missing upstream source. Full classpaths are retained in the v7 capture archive.",
+  "identities": [
+    {
+      "id": "config.unknown_field",
+      "sources": [
+        "validator",
+        "utilities"
+      ],
+      "contract": "UnrecognizedPropertyException branch; field is the rejected property name."
+    },
+    {
+      "id": "config.enum_invalid",
+      "sources": [
+        "validator"
+      ],
+      "contract": "InvalidFormatException enum branch; values retain declaration order and JsonProperty serialized names, selected by the actual connector test input."
+    },
+    {
+      "id": "config.boolean_primitive",
+      "sources": [
+        "validator",
+        "csv"
+      ],
+      "contract": "CsvParserConfig.headers is primitive boolean; Jackson StdDeserializer._parseBooleanPrimitive -> DeserializationContext.weirdStringException."
+    },
+    {
+      "id": "config.boolean_boxed",
+      "sources": [
+        "validator",
+        "postgres"
+      ],
+      "contract": "PostgresCdcReaderConfig.runSourceMigrations is boxed Boolean; Jackson StdDeserializer._parseBoolean -> DeserializationContext.weirdStringException."
+    },
+    {
+      "id": "quantity.unknown_unit",
+      "sources": [
+        "quantity",
+        "reporter",
+        "duration",
+        "size"
+      ],
+      "contract": "MeasurementUnits.unknown -> ConfigReporter.partOf -> ConfigQuantity.reportMalformed; partOf includes whole input only when different from the rejected unit."
+    },
+    {
+      "id": "quantity.missing_unit",
+      "sources": [
+        "duration",
+        "reporter",
+        "quantity"
+      ],
+      "contract": "ConfigDuration.parse missing-unit branch -> partOf -> reportMalformed."
+    },
+    {
+      "id": "quantity.negative",
+      "sources": [
+        "duration",
+        "quantity"
+      ],
+      "contract": "ConfigDuration.parse negative-duration branch -> reportMalformed."
+    },
+    {
+      "id": "quantity.empty",
+      "sources": [
+        "duration",
+        "quantity"
+      ],
+      "contract": "ConfigDuration.parse empty branch -> reportMalformed."
+    },
+    {
+      "id": "geometry.literal_conversion",
+      "sources": [
+        "literal",
+        "unimplemented",
+        "geometry_node"
+      ],
+      "contract": "RexLiteral.getValueAs(Point.class) rejects a LINESTRING; ExpressionCompiler catches the AssertionError; UnimplementedException adds CalciteObject node display and issue suggestion. Dependency bytecode, not unavailable upstream source, substantiates the cause text. CalciteRexNode.toString serializes through SqlImplementor.Context.toSql and the configured dialect, with RexNode fallback. node_display is a recorded rendering argument, not a reimplementation of that SQL pretty-printer."
+    }
+  ],
+  "enums": {
+    "JsonUpdateFormat": {
+      "values": [
+        "insert_delete",
+        "debezium",
+        "snowflake",
+        "raw",
+        "redis"
+      ],
+      "source": "JsonUpdateFormat"
+    },
+    "CsvTrim": {
+      "values": [
+        "none",
+        "headers",
+        "fields",
+        "all"
+      ],
+      "source": "CsvTrim"
+    },
+    "KafkaLogLevel": {
+      "values": [
+        "emerg",
+        "alert",
+        "critical",
+        "error",
+        "warning",
+        "notice",
+        "info",
+        "debug"
+      ],
+      "source": "KafkaLogLevel"
+    },
+    "NatsReplayPolicy": {
+      "values": [
+        "Instant",
+        "Original"
+      ],
+      "source": "NatsReplayPolicy"
+    },
+    "IcebergIngestMode": {
+      "values": [
+        "snapshot",
+        "follow",
+        "snapshot_and_follow"
+      ],
+      "source": "IcebergIngestMode"
+    },
+    "RawParserMode": {
+      "values": [
+        "blob",
+        "lines"
+      ],
+      "source": "RawParserMode"
+    }
+  },
+  "bodies": [
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"batch.max_size\": unknown unit 'm' in size '4m'; expected one of \"k\", \"M\", \"G\", \"T\", \"P\", \"E\", \"Ki\", \"Mi\", \"Gi\", \"Ti\", \"Pi\", or \"Ei\", each with or without a trailing \"B\"",
+      "sha256": "87a42c4930baca8941aca70277d0fb70e5c4fb0503e048a938e6a4e0dd3ee842",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "batch/max_size",
+        "kind": "size",
+        "unit": "m",
+        "text": "4m"
+      },
+      "observations": [
+        {
+          "record_index": 77,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#postgresCdcReaderRejectsMalformedBatchMaxSize",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"batch.max_size\": unknown unit 'm' in size '4m'",
+          "sql_sha256": [
+            "e9c753e4c5ef00499315b07a033264d92453447ba642e38c372e545f873937f7"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"buffer_size\": unknown unit 'KB ' in size '64KB '; expected one of \"k\", \"M\", \"G\", \"T\", \"P\", \"E\", \"Ki\", \"Mi\", \"Gi\", \"Ti\", \"Pi\", or \"Ei\", each with or without a trailing \"B\"",
+      "sha256": "56da24126683178d57dcdb47409a17b2460eba5d4ca13e09a8e80d906c859507",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "buffer_size",
+        "kind": "size",
+        "unit": "KB ",
+        "text": "64KB "
+      },
+      "observations": [
+        {
+          "record_index": 119,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#fileInputMalformedBufferSize",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"buffer_size\": unknown unit 'KB ' in size '64KB '",
+          "sql_sha256": [
+            "8ac21f654b563888d054d142b9e4639269c6a86e1c1f82e55daf25e19fb40ee6"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"clock_resolution\": '1000' has no unit; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "04e66b34620416a268fe03087d8afbcb36c97069ff4e3453b80ab69b36c165dc",
+      "identity": "quantity.missing_unit",
+      "arguments": {
+        "path": "clock_resolution",
+        "kind": "duration",
+        "number": "1000",
+        "text": "1000"
+      },
+      "observations": [
+        {
+          "record_index": 32,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#clockInputMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"clock_resolution\": '1000' has no unit",
+          "sql_sha256": [
+            "35c790d27ce8312ca9f97683d0b96a7ac5b836265ce59b69e13c34c44631f6b2"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"connect_timeout\": duration '-10s' cannot be negative",
+      "sha256": "37bf6c915f61f97fea4cb51cd00cbb3ece98e919d5f660cf1192eb75e2c9195f",
+      "identity": "quantity.negative",
+      "arguments": {
+        "path": "connect_timeout",
+        "kind": "duration",
+        "text": "-10s"
+      },
+      "observations": [
+        {
+          "record_index": 28,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#pubSubInputMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"connect_timeout\": duration '-10s' cannot be negative",
+          "sql_sha256": [
+            "ab4c12a08e8e7a6ed72c7d23a5aca747a8b905cc81eccff594191859bb067253"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"connection_config.connection_timeout\": unknown unit ' s' in duration '30 s'; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "692c6ae2023ee2b5264fb7bec6bd5b6ffdbaca4504b9e614e189e88fb38d4ee2",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "connection_config/connection_timeout",
+        "kind": "duration",
+        "unit": " s",
+        "text": "30 s"
+      },
+      "observations": [
+        {
+          "record_index": 25,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputMalformedConnectionDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"connection_config.connection_timeout\": unknown unit ' s'",
+          "sql_sha256": [
+            "630b1bc70166aba9aa0d56dd492dc05681f619cca47641621d5436390b76c67b"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"consumer_config.max_expiry\": unknown unit 'forever'; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "3efe5c8c3bfce0c104fa7d1ad05599afe16ff3a8e3a6fd8801a4bbb14f91c5ca",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "consumer_config/max_expiry",
+        "kind": "duration",
+        "unit": "forever",
+        "text": "forever"
+      },
+      "observations": [
+        {
+          "record_index": 65,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputMalformedConsumerDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown unit 'forever';",
+          "sql_sha256": [
+            "326b4f9eb074be33e605828607bd0e57ad4aa483ff78074aaff6b6253fe39370"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"group_join_timeout\": unknown unit 'sec' in duration '10sec'; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "6547435c0ff6108d258d1f43836c8e3910d75fe3e3393a76568f7fc56a80b0bf",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "group_join_timeout",
+        "kind": "duration",
+        "unit": "sec",
+        "text": "10sec"
+      },
+      "observations": [
+        {
+          "record_index": 45,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#kafkaInputMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown unit 'sec' in duration '10sec'",
+          "sql_sha256": [
+            "ce8e0cddab330168fa6f0b30169bdd225bf6628c587dd6b861b4e136a57af791"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"initialization_timeout\": duration is empty; write \"0\", or a number and a unit such as \"500ms\"",
+      "sha256": "f63ec20669493aa46ca84ba45b1cc220699f86c75704ed4b43080afd41d762bd",
+      "identity": "quantity.empty",
+      "arguments": {
+        "path": "initialization_timeout",
+        "kind": "duration"
+      },
+      "observations": [
+        {
+          "record_index": 103,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#kafkaOutputMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"initialization_timeout\": duration is empty",
+          "sql_sha256": [
+            "c9a90ce3859e8c43a7c7c1edecbb3d1e475f3cd49342de212b43a22fb3bcb967"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"pause_linger\": '30' has no unit; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "babdf2d2a449c89fe3fb57cb3434e2f6ec882c90f51caeb219a990a704456587",
+      "identity": "quantity.missing_unit",
+      "arguments": {
+        "path": "pause_linger",
+        "kind": "duration",
+        "number": "30",
+        "text": "30"
+      },
+      "observations": [
+        {
+          "record_index": 66,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#urlInputMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "\"pause_linger\": '30' has no unit",
+          "sql_sha256": [
+            "843b9b5404bdd79adcc1b9075c5a978a83d6cf3815e79bc5f27a626dec2064df"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"registry_timeout\": unknown unit 'ten seconds'; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "97965b08a0db5e07f94cd0ee0eafd413477c9ec267fa589e1c3585427cac492c",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "registry_timeout",
+        "kind": "duration",
+        "unit": "ten seconds",
+        "text": "ten seconds"
+      },
+      "observations": [
+        {
+          "record_index": 80,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#avroParserMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown unit 'ten seconds';",
+          "sql_sha256": [
+            "546e5d912d0cb7686c5d14b18cb524986efbbe072571bcdb82807d10efadef67"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"registry_timeout\": unknown unit 'y' in duration '10y'; expected one of \"ns\", \"us\", \"ms\", \"s\", \"m\", \"h\", or \"d\"",
+      "sha256": "7c1300ed72ae968a8c4872c3fc85e5e9b7dac5e50a4323cff7c330fb239c307d",
+      "identity": "quantity.unknown_unit",
+      "arguments": {
+        "path": "registry_timeout",
+        "kind": "duration",
+        "unit": "y",
+        "text": "10y"
+      },
+      "observations": [
+        {
+          "record_index": 84,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#avroEncoderMalformedDuration",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown unit 'y' in duration '10y'",
+          "sql_sha256": [
+            "fa6925c42f93fa4f49dd949a31bf0dfa318752b8caf17ec8e88af9f353765220"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Not yet implemented",
+      "message": "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n'LINESTRING (0 0, 0 0)'\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues",
+      "sha256": "8321764978a8296dc4d10b2b8e58f0b18283a7ea74be12b66de1b1f784b33701",
+      "identity": "geometry.literal_conversion",
+      "arguments": {
+        "sql_type": "GEOMETRY",
+        "target_class": "org.locationtech.jts.geom.Point",
+        "node_display": "'LINESTRING (0 0, 0 0)'"
+      },
+      "observations": [
+        {
+          "record_index": 222,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.NegativeParserTests#errorTest",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.NegativeParserTests:218",
+          "expected": "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n'LINESTRING (0 0, 0 0)'",
+          "sql_sha256": [
+            "aebd70df3986a8a01dd7b8c69fdac336687f9e78554a564ce1013e2c61445253"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"consumer_config.replay_policy\": invalid value \"fast\"; valid values are: \"Instant\", \"Original\"",
+      "sha256": "cd86154c53a6de8533c21c8db84cab70bbfb318e5a2179f8f1902db252e4ebc6",
+      "identity": "config.enum_invalid",
+      "arguments": {
+        "field": "consumer_config.replay_policy",
+        "value": "fast",
+        "enum": "NatsReplayPolicy"
+      },
+      "observations": [
+        {
+          "record_index": 58,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputInvalidReplayPolicy",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "invalid value \"fast\"",
+          "sql_sha256": [
+            "f3629b44d8c1e29bd0bf5e58a1c02e0589e5826ff89ba6349fad20c1080bf94e"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"headers\": Cannot deserialize value of type `boolean` from String \"yes\": only \"true\"/\"True\"/\"TRUE\" or \"false\"/\"False\"/\"FALSE\" recognized",
+      "sha256": "0c6efbf69b5fb9a0384d471762eb674509f1daa9734a6439e6e3f5acf116d4e3",
+      "identity": "config.boolean_primitive",
+      "arguments": {
+        "field": "headers",
+        "value": "yes"
+      },
+      "observations": [
+        {
+          "record_index": 36,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvWrongTypeForBoolean",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "Cannot deserialize value of type `boolean` from String \"yes\"",
+          "sql_sha256": [
+            "d9672c623377bcf0a8e3b836336346baf4ab574105b6e8551697f1b60405e877"
+          ]
+        },
+        {
+          "record_index": 37,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvWrongTypeForBoolean",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "    7|        \"headers\": \"yes\"\n              ^",
+          "sql_sha256": [
+            "d9672c623377bcf0a8e3b836336346baf4ab574105b6e8551697f1b60405e877"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"log_level\": invalid value \"verbose\"; valid values are: \"emerg\", \"alert\", \"critical\", \"error\", \"warning\", \"notice\", \"info\", \"debug\"",
+      "sha256": "0a2bde8aa14260c2191e122ab04c04595403c99bbf5c206f1282c14d1cd76a1b",
+      "identity": "config.enum_invalid",
+      "arguments": {
+        "field": "log_level",
+        "value": "verbose",
+        "enum": "KafkaLogLevel"
+      },
+      "observations": [
+        {
+          "record_index": 57,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#kafkaInputInvalidLogLevel",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "field \"log_level\": invalid value \"verbose\"",
+          "sql_sha256": [
+            "1d1c7f1f13e638a5b9163f801fcffa0db80c8f991fef823272990fec5ff7dfef"
+          ]
+        },
+        {
+          "record_index": 129,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#kafkaOutputInvalidLogLevel",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "field \"log_level\": invalid value \"verbose\"",
+          "sql_sha256": [
+            "da826ddcdf291ceb4baea607b60dac91f4e34ce4fcf24b278b7a17355ad0f70b"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"mode\": invalid value \"batch\"; valid values are: \"snapshot\", \"follow\", \"snapshot_and_follow\"",
+      "sha256": "442b4586c498c8ade945999c35e44cfb024da10e633e040c86c83b1cac848024",
+      "identity": "config.enum_invalid",
+      "arguments": {
+        "field": "mode",
+        "value": "batch",
+        "enum": "IcebergIngestMode"
+      },
+      "observations": [
+        {
+          "record_index": 62,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#icebergReaderInvalidMode",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "field \"mode\": invalid value \"batch\"",
+          "sql_sha256": [
+            "295e3b253c6cec5025a4e13eb7ac7bb0f038de6b7450828e1cdd6c0dd0eb977f"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"mode\": invalid value \"chunks\"; valid values are: \"blob\", \"lines\"",
+      "sha256": "0ab783cdb538cc0d16fb7532dc69eb5bcd3f79ed94e2b98c4d107662579b8d55",
+      "identity": "config.enum_invalid",
+      "arguments": {
+        "field": "mode",
+        "value": "chunks",
+        "enum": "RawParserMode"
+      },
+      "observations": [
+        {
+          "record_index": 141,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#rawParserInvalidMode",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "field \"mode\": invalid value \"chunks\"; valid values are: \"blob\", \"lines\"",
+          "sql_sha256": [
+            "b8efcdb1e36863127d816e18191fbd2d9a6ca5c9d6df3217f275438db9fa668e"
+          ]
+        },
+        {
+          "record_index": 142,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#rawParserInvalidMode",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "    7|        \"mode\": \"chunks\"\n              ^",
+          "sql_sha256": [
+            "b8efcdb1e36863127d816e18191fbd2d9a6ca5c9d6df3217f275438db9fa668e"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"run_source_migrations\": Cannot deserialize value of type `java.lang.Boolean` from String \"no\": only \"true\" or \"false\" recognized",
+      "sha256": "71068895593648b8d5be12770fbf607bf603ecbd7c9d87a66e58fc992817840e",
+      "identity": "config.boolean_boxed",
+      "arguments": {
+        "field": "run_source_migrations",
+        "value": "no"
+      },
+      "observations": [
+        {
+          "record_index": 165,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#postgresCdcReaderRunSourceMigrations",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "Cannot deserialize value of type `java.lang.Boolean` from String \"no\"",
+          "sql_sha256": [
+            "259c37f8f6fb97c7974fd1345554eaabb62b5a8d7190ee37a6693f236d400abd"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"trim\": invalid value \"both\"; valid values are: \"none\", \"headers\", \"fields\", \"all\"",
+      "sha256": "eaf3285107988cb37ceb4575b6eda90bbd98632a90e24bd31d6dd1796b9194a5",
+      "identity": "config.enum_invalid",
+      "arguments": {
+        "field": "trim",
+        "value": "both",
+        "enum": "CsvTrim"
+      },
+      "observations": [
+        {
+          "record_index": 17,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvInvalidTrimValue",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "field \"trim\": invalid value \"both\"; valid values are: \"none\", \"headers\", \"fields\", \"all\"",
+          "sql_sha256": [
+            "ab917a0ecd53bd1c7fe42579c390331a25b1b7d95a7046b062150bfdcbf2bbc0"
+          ]
+        },
+        {
+          "record_index": 18,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvInvalidTrimValue",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "    7|        \"trim\": \"both\"\n              ^",
+          "sql_sha256": [
+            "ab917a0ecd53bd1c7fe42579c390331a25b1b7d95a7046b062150bfdcbf2bbc0"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"update_format\": invalid value \"upsert\"; valid values are: \"insert_delete\", \"debezium\", \"snowflake\", \"raw\", \"redis\"",
+      "sha256": "9207ebd6e9603067ffa2d26e7fb28f4824d3264a0a3a95c869bd860d51265ed3",
+      "identity": "config.enum_invalid",
+      "arguments": {
+        "field": "update_format",
+        "value": "upsert",
+        "enum": "JsonUpdateFormat"
+      },
+      "observations": [
+        {
+          "record_index": 15,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#jsonParserInvalidUpdateFormat",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "field \"update_format\": invalid value \"upsert\"; valid values are:",
+          "sql_sha256": [
+            "6f68feb241e96f83c89feff312a5e947b8a3d1e6c0f3b99d0a69abad418ee81a"
+          ]
+        },
+        {
+          "record_index": 16,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#jsonParserInvalidUpdateFormat",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "    7|        \"update_format\": \"upsert\"\n              ^",
+          "sql_sha256": [
+            "6f68feb241e96f83c89feff312a5e947b8a3d1e6c0f3b99d0a69abad418ee81a"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"acl\"",
+      "sha256": "9f9e0d50990ad068d2cfe94009bfef0ec1e71aeea56317c4db839f7b883c12ef",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "acl"
+      },
+      "observations": [
+        {
+          "record_index": 63,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#s3InputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"acl\"",
+          "sql_sha256": [
+            "82db62f23ab8e4fb13550b60921a08211a6e030f494b98a0ac428eb7254cc245"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"batch_size\"",
+      "sha256": "070b7f8fa3928f700d28b26a38860c74b5d99a8ba1f1513ad1fc8015abcb1cac",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "batch_size"
+      },
+      "observations": [
+        {
+          "record_index": 73,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#postgresReaderUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"batch_size\"",
+          "sql_sha256": [
+            "ab2140741c6ed8a2ff909c9793de2ea7d84631873b10a76836224baff3fd55f1"
+          ]
+        },
+        {
+          "record_index": 78,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#postgresCdcReaderUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"batch_size\"",
+          "sql_sha256": [
+            "b14ed920c7b8164b03670311ee99787f5d1f283b36d211d66a99b0abccdf3ae0"
+          ]
+        },
+        {
+          "record_index": 143,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#s2OutputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"batch_size\"",
+          "sql_sha256": [
+            "6139f289cc89022621debdaf1062838c409e3f2fb986ad076c32d5cb1b0666f1"
+          ]
+        },
+        {
+          "record_index": 163,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#postgresWriterUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"batch_size\"",
+          "sql_sha256": [
+            "3db419ce4284f89d2b286b5f4aa83c493ac69ea4b7ffb2517356bc872cbcb10c"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"consistant_reads\"",
+      "sha256": "6e875dbcff722f44dc160518cfe04196bfda27a3448122792038f8c25f1f4dcf",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "consistant_reads"
+      },
+      "observations": [
+        {
+          "record_index": 34,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#dynamodbOutputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"consistant_reads\"",
+          "sql_sha256": [
+            "301921bd768fc79d58c29a999a4db7a614cd5a15b5a9d8c921f2503378ff310b"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"encoding\"",
+      "sha256": "35fbe6536a216283ad52a4e77681f6ebde5a62f4da3d6efe290de8ac5f8179bd",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "encoding"
+      },
+      "observations": [
+        {
+          "record_index": 30,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#fileInputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"encoding\"",
+          "sql_sha256": [
+            "16f5e31bbbcad6f78608d8dc3f19f38d502af58b2547b06366ea971f2c746ab6"
+          ]
+        },
+        {
+          "record_index": 50,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#fileOutputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"encoding\"",
+          "sql_sha256": [
+            "83c4325bf9fac45a4411f857071d770e876885db8e82db3f2e7bf6b4396b23ee"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"max_messages\"",
+      "sha256": "d813ad6e23beea96a11d9882d5467e8e069289fdc8f68b1b79e26630a5b57823",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "max_messages"
+      },
+      "observations": [
+        {
+          "record_index": 153,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#pubSubInputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"max_messages\"",
+          "sql_sha256": [
+            "be457504df43101c6cc4cbeda77257de55446ff3907bd8bf143c1b179dc70e83"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"max_reconnects\"",
+      "sha256": "cb8dbe5a51d1b73f6d426f32057709b9ac7fa06757a9a34604b902ceccdaac45",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "max_reconnects"
+      },
+      "observations": [
+        {
+          "record_index": 91,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputUnknownFieldTopLevel",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"max_reconnects\"",
+          "sql_sha256": [
+            "3f39c5da9c2f6c22ded0719dc891b32f88824e55e0af536995f2d9fb293521f9"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"retries\"",
+      "sha256": "c59d9eaedf22469bc723fc194241d226229fe5639d75c6010a86c7e8bd157083",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "retries"
+      },
+      "observations": [
+        {
+          "record_index": 38,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#urlInputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"retries\"",
+          "sql_sha256": [
+            "0c1da6c9273c588c90afd0a383f30a5abed641633928363dbfb3c367331c9c05"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"tick_rate\"",
+      "sha256": "25ea1fb77c1ae24e60fc4a3c865873819887a2228522cc2f52ca4120c5bb71f3",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "tick_rate"
+      },
+      "observations": [
+        {
+          "record_index": 56,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#clockInputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"tick_rate\"",
+          "sql_sha256": [
+            "14101c66a7e45c251496a367cd96e6ffd71c7b96a91a388391315a962e6128f2"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"tls_enabled\"",
+      "sha256": "b19639d6e2e38a55abdb7f398f46e1a88783c921788487cabe5b5c8ceeef808b",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "tls_enabled"
+      },
+      "observations": [
+        {
+          "record_index": 33,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputUnknownFieldInConnectionConfig",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"tls_enabled\"",
+          "sql_sha256": [
+            "96f5b63adad442a8bd6161b5098f6c837f30dd5903a3b4293375a5096c2a6f7f"
+          ]
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "unknown field \"ttl_seconds\"",
+      "sha256": "6153308e649102bcf11a69e5e9253b528b065709c86f4525831375add8a202e6",
+      "identity": "config.unknown_field",
+      "arguments": {
+        "field": "ttl_seconds"
+      },
+      "observations": [
+        {
+          "record_index": 12,
+          "diagnostic_index": 0,
+          "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#redisOutputUnknownField",
+          "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+          "expected": "unknown field \"ttl_seconds\"",
+          "sql_sha256": [
+            "8fe778a5bca64d7129e4f8656335958639c716927107acb65299bf1208ccb17d"
+          ]
+        }
+      ]
+    }
+  ],
+  "ambiguous_bodies": [
+    {
+      "error_type": "Compilation error",
+      "message": "Preprocessor must have a field \"name\"",
+      "sha256": "ffd0584eb889bdf5f1bcd63b828610ab00bba63e55b811bd40fff68ad13955e4",
+      "candidate_ids": [
+        "00d3b6f3fc3723e5f15cff0f709cbb2b78e4f397c0337de13f13ec0797aae8e1",
+        "fc27bffee41235f2964b7142721b3e13609016ba990d1a8c480d28f154d83b3f"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "00d3b6f3fc3723e5f15cff0f709cbb2b78e4f397c0337de13f13ec0797aae8e1",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+          "line": 2296,
+          "expression": "\"Preprocessor must have a field \\\"name\\\"\"",
+          "reason": "The name field is absent. MESSAGE_ORIENTED is the constant message_oriented, not name.",
+          "observations": [
+            {
+              "record_index": 53,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#testPreprocessorValidation",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:286",
+              "expected": "Compilation error: Preprocessor must have a field \"name\"\n    7|   \"preprocessor\": [{\n                          ^\n    8|      \"config\": {}",
+              "sql_sha256": [
+                "746e893d0c3d04990bc31493f881fafbcc786ed8c9352e12fd92413ea6fa579b"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "fc27bffee41235f2964b7142721b3e13609016ba990d1a8c480d28f154d83b3f",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/SqlToRelCompiler.java",
+              "line": 2310
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Compilation error",
+      "message": "Unsupported operation 'LAG' in recursive code",
+      "sha256": "548df630ed9e3ac2f3bcc982420e0d3be5438bdbb1c5153df8a39a2ce6296d8c",
+      "candidate_ids": [
+        "5a841fd5b774d79e2a4fd2c0719bced811de33d9f7703032115dbe62bf489188",
+        "7c01b4c9c0d739d360085d82f4da91eae14e1bf6efe9e8de9e10ef5151ed94d2"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "7c01b4c9c0d739d360085d82f4da91eae14e1bf6efe9e8de9e10ef5151ed94d2",
+          "source": "org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/ValidateRecursiveOperators.java",
+          "line": 46,
+          "expression": "\"Unsupported operation \" + Utilities.singleQuote(operation) + \" in recursive code\"",
+          "reason": "LAG and OVER visitors pass bug=false, selecting CompilationError; captured class agrees.",
+          "observations": [
+            {
+              "record_index": 308,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#illegalRecursiveTests",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests:581",
+              "expected": "Unsupported operation 'LAG' in recursive code",
+              "sql_sha256": [
+                "92239b5ff0aab4281aed014f42a138052667ec694889acd26381629e72690329"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "5a841fd5b774d79e2a4fd2c0719bced811de33d9f7703032115dbe62bf489188",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/ValidateRecursiveOperators.java",
+              "line": 43
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Compilation error",
+      "message": "Unsupported operation 'OVER' in recursive code",
+      "sha256": "a37eb6ed39c20e6ccfa125566310a7c632d1c5fcec61832934e08fa4524ab553",
+      "candidate_ids": [
+        "5a841fd5b774d79e2a4fd2c0719bced811de33d9f7703032115dbe62bf489188",
+        "7c01b4c9c0d739d360085d82f4da91eae14e1bf6efe9e8de9e10ef5151ed94d2"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "7c01b4c9c0d739d360085d82f4da91eae14e1bf6efe9e8de9e10ef5151ed94d2",
+          "source": "org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/ValidateRecursiveOperators.java",
+          "line": 46,
+          "expression": "\"Unsupported operation \" + Utilities.singleQuote(operation) + \" in recursive code\"",
+          "reason": "LAG and OVER visitors pass bug=false, selecting CompilationError; captured class agrees.",
+          "observations": [
+            {
+              "record_index": 309,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#unsupportedRecursive",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests:631",
+              "expected": "Unsupported operation 'OVER' in recursive code",
+              "sql_sha256": [
+                "6541eec0d654b070eb71cec6e20d2b72595a80a66b810798c971473f700957f8"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "5a841fd5b774d79e2a4fd2c0719bced811de33d9f7703032115dbe62bf489188",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/ValidateRecursiveOperators.java",
+              "line": 43
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "\"registry_urls\" cannot be null; remove it to use the default",
+      "sha256": "bc5fa01d346d57c887f06464e9854fe35f64c3d23e7c8e991c0105dc18ccb4b8",
+      "candidate_ids": [
+        "3425011b86b2a9e3840c84fcc1a7be248e53d79c4e59ed06fa4fc02f0f236a15",
+        "a009e25a249bd161c719a6b62e550f3ab6d74b05a7a22a749154e0e718bae62b"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "3425011b86b2a9e3840c84fcc1a7be248e53d79c4e59ed06fa4fc02f0f236a15",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/AvroParserConfig.java",
+          "line": 72,
+          "expression": "\"\\\"registry_urls\\\" cannot be null; remove it to use the default\"",
+          "reason": "Test selects Avro with registry_urls=null; this field is not a quantity parser path.",
+          "observations": [
+            {
+              "record_index": 150,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#nullAvroRegistryUrlsWarn",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "\"registry_urls\" cannot be null; remove it to use the default",
+              "sql_sha256": [
+                "7a275f2d66d50b68118d2b264621576716d12d1b61705ee474f70ab4dfb942d4"
+              ]
+            },
+            {
+              "record_index": 151,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#nullAvroRegistryUrlsWarn",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "\"registry_urls\" cannot be null; remove it to use the default",
+              "sql_sha256": [
+                "a82620ae6e86d6911e2724a2c1225b19b8db23aca81bd4ac9197566c4ff75df2"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "a009e25a249bd161c719a6b62e550f3ab6d74b05a7a22a749154e0e718bae62b",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/ConfigQuantity.java",
+              "line": 184
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "field \"delimiter\" must be an ASCII character; got '\u03b1'",
+      "sha256": "6badd421b5bac926400e9e366863d6c92bb2beea360392ce7328eddd771b91a3",
+      "candidate_ids": [
+        "3f026462d6f15e3fb78712c79f7ad56f57c330d525dcfe79866a1253dfecfc9d",
+        "516ae50b3c4e05ad0ec850152a24e35195d65efa378dbf512ac7c027cb37f24f"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "3f026462d6f15e3fb78712c79f7ad56f57c330d525dcfe79866a1253dfecfc9d",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvEncoderConfig.java",
+          "line": 23,
+          "expression": "\"field \\\"delimiter\\\" must be an ASCII character; got \" + Utilities.singleQuote(String.valueOf(delimiter))",
+          "reason": "Both CSV directions are independently tested; keep parser and encoder emitting sites distinct.",
+          "observations": [
+            {
+              "record_index": 13,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvEncoderNonAsciiDelimiter",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "field \"delimiter\" must be an ASCII character",
+              "sql_sha256": [
+                "fd90435ba17a11509b7b16c24c3d9eaf31387547132f94db50122eb8ab5eccfa"
+              ]
+            },
+            {
+              "record_index": 14,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvEncoderNonAsciiDelimiter",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "    8|        \"delimiter\": \"\u03b1\"\n              ^",
+              "sql_sha256": [
+                "fd90435ba17a11509b7b16c24c3d9eaf31387547132f94db50122eb8ab5eccfa"
+              ]
+            }
+          ]
+        },
+        {
+          "candidate_id": "516ae50b3c4e05ad0ec850152a24e35195d65efa378dbf512ac7c027cb37f24f",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/CsvParserConfig.java",
+          "line": 68,
+          "expression": "\"field \" + Utilities.doubleQuote(name, false) + \" must be an ASCII character; got \" + Utilities.singleQuote(c.toString())",
+          "reason": "Both CSV directions are independently tested; keep parser and encoder emitting sites distinct.",
+          "observations": [
+            {
+              "record_index": 51,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvNonAsciiDelimiter",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "field \"delimiter\" must be an ASCII character",
+              "sql_sha256": [
+                "44828bdbcc350c9ae365f87939d1db1a8597e186fb4e72ebabf7c2f50ff3766d"
+              ]
+            },
+            {
+              "record_index": 52,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#csvNonAsciiDelimiter",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "    7|        \"delimiter\": \"\u03b1\"\n              ^",
+              "sql_sha256": [
+                "44828bdbcc350c9ae365f87939d1db1a8597e186fb4e72ebabf7c2f50ff3766d"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "required field \"bucket_name\" is missing or empty",
+      "sha256": "c4f77e5a5ed1db902901ec8068ba58a926850e175b68e71a3646ad15276ac34f",
+      "candidate_ids": [
+        "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+        "b26929b6d32961d391288dd7c8f67e06eb51d8832f333873f9f87ebcf8cc8084"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "b26929b6d32961d391288dd7c8f67e06eb51d8832f333873f9f87ebcf8cc8084",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S3InputConfig.java",
+          "line": 57,
+          "expression": "\"required field \\\"bucket_name\\\" is missing or empty\"",
+          "reason": "The selected connector validate method emits this literal directly; generic checkNonEmpty is an overbroad string-match alternative.",
+          "observations": [
+            {
+              "record_index": 21,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#s3InputMissingBucketName",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "required field \"bucket_name\" is missing or empty",
+              "sql_sha256": [
+                "c710725c491094d96571e3c9c8f2b78507cbbd3bb0dc90924d91accdb9470a34"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+              "line": 25
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "required field \"connection_config.server_url\" is missing or empty",
+      "sha256": "2a317e320eb4553a6f705036433d37850c2e371bdc50cdc6abc5a5b8e143828d",
+      "candidate_ids": [
+        "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+        "a28837f8c65bcc4e79c040ac96cbf875fa5e2509e18f821770e3b4c91062b76e"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "a28837f8c65bcc4e79c040ac96cbf875fa5e2509e18f821770e3b4c91062b76e",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/NatsInputConfig.java",
+          "line": 76,
+          "expression": "\"required field \\\"connection_config.server_url\\\" is missing or empty\"",
+          "reason": "The selected connector validate method emits this literal directly; generic checkNonEmpty is an overbroad string-match alternative.",
+          "observations": [
+            {
+              "record_index": 85,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputMissingServerUrl",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "required field \"connection_config.server_url\" is missing or empty",
+              "sql_sha256": [
+                "2053f1090986b6a364abee20078e0cf3bf31a47fe270c7f9018bf07a90131e10"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+              "line": 25
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "required field \"region\" is missing or empty",
+      "sha256": "45aafc9abce5075fc43181d7fb6bce6bb0455b43d497a901ec76b9e0edb17fbd",
+      "candidate_ids": [
+        "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+        "13e070280425b6a2585f041c5d121d431b7820f8f71346ba7a222e98ee6906eb"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "13e070280425b6a2585f041c5d121d431b7820f8f71346ba7a222e98ee6906eb",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S3InputConfig.java",
+          "line": 52,
+          "expression": "\"required field \\\"region\\\" is missing or empty\"",
+          "reason": "The selected connector validate method emits this literal directly; generic checkNonEmpty is an overbroad string-match alternative.",
+          "observations": [
+            {
+              "record_index": 42,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#s3InputMissingRegion",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "required field \"region\" is missing or empty",
+              "sql_sha256": [
+                "cfab23b31820967005dab9a2020f23d845a4bd54ac4985bc026c5a1b5d8d54b0"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+              "line": 25
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "required field \"stream\" is missing or empty",
+      "sha256": "fa0fb4744b95b267d69128fff7ed472a094d65cadaec02067733e4cd898aeb75",
+      "candidate_ids": [
+        "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+        "c92b655427607d8567d61faa837d217af7dd2ace1b4e7d1e865eaf6911702aae"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "c92b655427607d8567d61faa837d217af7dd2ace1b4e7d1e865eaf6911702aae",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S2InputConfig.java",
+          "line": 39,
+          "expression": "\"required field \\\"stream\\\" is missing or empty\"",
+          "reason": "The selected connector validate method emits this literal directly; generic checkNonEmpty is an overbroad string-match alternative.",
+          "observations": [
+            {
+              "record_index": 74,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#s2InputMissingStream",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "required field \"stream\" is missing or empty",
+              "sql_sha256": [
+                "ffb36bfea2f894ed0d2ceed42b422bead79d2afda0b8df45b12db8da6d4f8c2c"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+              "line": 25
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template.",
+      "excluded_sites_within_selected_candidate": [
+        {
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/S2OutputConfig.java",
+          "line": 34,
+          "reason": "Captured SQL selects s2_input; only S2InputConfig is observed for this body."
+        }
+      ]
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "required field \"stream_name\" is missing or empty",
+      "sha256": "28716f2d2c187a5be6bb3265b1bfbb426a2075b6edc4022745379b46ba37a7d7",
+      "candidate_ids": [
+        "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+        "1eb5d5357b2a7ab5998001d6c7bdfb506d6a75af513ae16a2f7dd4d39e3cc6d0"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "1eb5d5357b2a7ab5998001d6c7bdfb506d6a75af513ae16a2f7dd4d39e3cc6d0",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/NatsInputConfig.java",
+          "line": 54,
+          "expression": "\"required field \\\"stream_name\\\" is missing or empty\"",
+          "reason": "The selected connector validate method emits this literal directly; generic checkNonEmpty is an overbroad string-match alternative.",
+          "observations": [
+            {
+              "record_index": 157,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#natsInputMissingStreamName",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "required field \"stream_name\" is missing or empty",
+              "sql_sha256": [
+                "7eb5afb3a904964f03427fcb895e488e0c4c1a00ea1e3b4b20e9604c7682aef0"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+              "line": 25
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Invalid configuration",
+      "message": "required field \"topic\" is missing or empty",
+      "sha256": "4dadef8fd8f5274ff85c9ce4e9778bcc2bf4e9e7f31a35c97d47ecd0ee1518a3",
+      "candidate_ids": [
+        "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+        "576ff227c7433861a21c9cb1aeb4451aacb2e74ea2e2664b31a284cfc7d5d5b0"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "576ff227c7433861a21c9cb1aeb4451aacb2e74ea2e2664b31a284cfc7d5d5b0",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/config/KafkaOutputConfig.java",
+          "line": 62,
+          "expression": "\"required field \\\"topic\\\" is missing or empty\"",
+          "reason": "The selected connector validate method emits this literal directly; generic checkNonEmpty is an overbroad string-match alternative.",
+          "observations": [
+            {
+              "record_index": 75,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#kafkaOutputMissingTopic",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.ConnectorTests:44",
+              "expected": "required field \"topic\" is missing or empty",
+              "sql_sha256": [
+                "5da1e1a8a81511712912f6c99e211dea56f5761263cb81d8737e81cb4cfadc24"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "f352d0cf4166b76f397a6097c06bd65e40412b47764dccef944d0cdff28aa868",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/connectors/IValidateConfig.java",
+              "line": 25
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    },
+    {
+      "error_type": "Not yet implemented",
+      "message": "Function 'DATEADD' not yet implemented\nPerhaps you can use DATE_ADD or addition between a date and an interval?\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues",
+      "sha256": "ccbb0cc9ea4960d430d57e3d73c2c92e098ec2533bac476c94a7e14753639a8c",
+      "candidate_ids": [
+        "57532ee0524035fc17c36f210da4387fa5803863dc9e2e8b846c3b53953d8020",
+        "09db35403db7f408d1f71de71bc50ab1a30c1f280f5772ca54039f52944f9d1a"
+      ],
+      "selected_sites": [
+        {
+          "candidate_id": "57532ee0524035fc17c36f210da4387fa5803863dc9e2e8b846c3b53953d8020",
+          "source": "org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+          "line": 2429,
+          "expression": "\"Function \" + Utilities.singleQuote(call.getOperator().toString()) + \" not yet implemented\" + System.lineSeparator() + \"Perhaps you can use DATE_ADD or addition between a date and an interval?\"",
+          "reason": "The DATEADD-specific branch includes the DATE_ADD suggestion; generic function branches cannot emit that middle line.",
+          "observations": [
+            {
+              "record_index": 1267,
+              "diagnostic_index": 0,
+              "source_test": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3777",
+              "call_site": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests:2162",
+              "expected": "Not yet implemented: Function 'DATEADD' not yet implemented\nPerhaps you can use DATE_ADD or addition between a date and an interval?\nYou can suggest support for this feature by filing an issue at https://github.com/feldera/feldera/issues\n    1|CREATE VIEW baz AS select DATEADD(DAY, -360, DATE '2020-01-01')\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+              "sql_sha256": [
+                "81e257a141b965a84ba46ddbfe5b6508468a2453f700b2dc78e39f97b224f90a"
+              ]
+            }
+          ]
+        }
+      ],
+      "rejected_candidates": [
+        {
+          "candidate_id": "09db35403db7f408d1f71de71bc50ab1a30c1f280f5772ca54039f52944f9d1a",
+          "sites": [
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java",
+              "line": 2514
+            },
+            {
+              "source": "org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RejectUnsupportedPlans.java",
+              "line": 212
+            }
+          ],
+          "reason": "Branch, concrete constant, captured class, or selected connector excludes this syntactic candidate; see selected-source reason."
+        }
+      ],
+      "counting_scope": "Observed emission identity; presence alone does not establish a required template."
+    }
+  ],
+  "remaining_work": [
+    "Combine these reviewed identities with all other asserted bodies; do not sum source-candidate counts.",
+    "Review direct and specialized Java assertions, Python runtime/compiler expectations, platform contracts, and nested dependencies in prior outer-template dispositions.",
+    "Maintainer acceptance and final deduplicated required-template count remain pending."
+  ],
+  "required_template_count": null,
+  "catalog_reviewed": false,
+  "P0_complete": false,
+  "dependency_classfiles": {
+    "com/fasterxml/jackson/databind/deser/std/StdDeserializer.class": {
+      "sha256": "a32a9570ea55865ec4e632855d4f7badd8c3379358d08914f5a497681a042dbc",
+      "origin": "dependencies.jar"
+    },
+    "com/fasterxml/jackson/databind/deser/std/NumberDeserializers$BooleanDeserializer.class": {
+      "sha256": "ea258a523707736a7ef5044f3e6e088188b980f8248131de24f9a65fd21771b6",
+      "origin": "dependencies.jar"
+    },
+    "com/fasterxml/jackson/databind/DeserializationContext.class": {
+      "sha256": "2f5e6aa6c43ba6801e590b81ea7537e75623137939acea9bdecfb539cfa4dc01",
+      "origin": "dependencies.jar"
+    },
+    "org/apache/calcite/rex/RexLiteral.class": {
+      "sha256": "77ce414d8d798ecad65819f7b1db7f790ed804daf15fad1386107a9e5f5e0f6f",
+      "origin": "dependencies.jar"
+    }
+  },
+  "dependency_version": {
+    "jackson-databind": "2.22.4 (dependencies.jar META-INF/maven/com.fasterxml.jackson.core/jackson-databind/pom.properties)",
+    "calcite_git": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b (capture v7 provenance)"
+  }
+}

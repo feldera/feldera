@@ -65,12 +65,17 @@ public final class ConfigReporter {
      * {@code "quoting/delimiter"}); it is appended to the config pointer.
      */
     public void warnPath(String relativePath, String category, String message) {
+        this.reporter.reportWarning(this.fieldRange(relativePath), category, message);
+    }
+
+    public void errorPath(String relativePath, String category, String message) {
+        this.reporter.reportError(this.fieldRange(relativePath), category, message);
+    }
+
+    private SourcePositionRange fieldRange(String relativePath) {
         String pointer = this.configJPath + "/" + relativePath;
         SourcePosition pos = Utilities.jsonPointerLocation(this.outerJson, pointer, false);
-        SourcePositionRange range = pos != null
-                ? pos.relativeTo(this.outerStart).asRange()
-                : SourcePositionRange.INVALID;
-        this.reporter.reportWarning(range, category, message);
+        return pos != null ? pos.relativeTo(this.outerStart).asRange() : SourcePositionRange.INVALID;
     }
 
     /** Report a warning that does not correspond to a single field (points at the config block). */

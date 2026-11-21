@@ -1,0 +1,28 @@
+{
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "4b0a5d073c8764740f70e3acedc5f074f84c19d2c71c07ad1bcab45eb2c1a6b0",
+      "a18411c8724376c0e6c220ea07a3ebf03cd9edcfeacc0899b4abf9048dbd5dbf"
+    ],
+    "pass": "IncrementalizeVisitor",
+    "invocations": 601,
+    "changed": 601,
+    "cases_without_placement": 7970
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "b4774bcbebddc8d57f43698153a22ad6686a1ef8b14c7527d786f420128cd2a1",
+      "dfea3ac82a9201f0ee84d518456f61ae2c66f8a7e99ba23152761d3a29b20d21"
+    ],
+    "pass": "IncrementalizeVisitor",
+    "invocations": 8526,
+    "changed": 8526,
+    "cases_without_placement": 1
+  }
+}

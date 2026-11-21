@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-implement-now-archive.json",
+  "scope": "Full scheduled ImplementNow placement on the frozen suite: remove an unused source or implement a direct NOW() projection using the external clock stream.",
+  "strict_graph_and_name_counter_equal": {"classic": 50, "gen2": 50},
+  "active_clock_projections": {"classic": 1, "gen2": 1},
+  "warnings_reported": {"classic": 1, "gen2": 1},
+  "composed_placements": 54,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "composition_executable": "composed/feldera-multiset-probe",
+  "strict_comparison_executable": "feldera-multiset-probe",
+  "generated_program_runtime_executed": false
+}

@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-expression-objects-20261117-v1.tar.gz",
+  "sha256": "2f9668f0c339945fa3ff85089cb700846ae01398a759495c3f42eb5bd7edf43e",
+  "bytes": 54291760,
+  "certificates": [
+    "s1-expression-objects.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-expression-objects.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-expression-objects-v3/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-expression-objects.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Shared whole-plan expression objects with contextual uses and SQL function bodies",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-expression-objects-archive.json"
+}

@@ -42,7 +42,9 @@ public abstract class DBSPSourceTableOperator
             DBSPType outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
         super(node, operation, outputType, name, metadata, kind, comment);
-        Utilities.enforce(node.is(RelAnd.class) || node.is(CalciteEmptyRel.class));
+        // Replayed sources have positions but no live Calcite table-scan objects.
+        Utilities.enforce(node.is(RelAnd.class) || node.is(CalciteEmptyRel.class)
+                || node.is(org.dbsp.sqlCompiler.compiler.frontend.calciteObject.PositionOnlyRel.class));
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
     }

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-window-deindex-repair-20261118-v1.tar.gz",
+  "bytes": 1210436,
+  "sha256": "ff424b3c15d0f8ad7816824723f52459e8fe255f0f6f064a2c4bacef2e3da7de",
+  "manifest_sha256": "2085061cca10ba296a4f87b4896850e81848b7bb1f44170002c66c2036a2d9a2",
+  "verified_files": 37,
+  "all_members_verified": true
+}

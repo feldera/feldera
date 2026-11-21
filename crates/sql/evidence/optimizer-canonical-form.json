@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-canonical-form-archive.json",
+  "scope": "Canonical parameter and local binding names in measured typed circuit closures, within the original Java schedule.",
+  "strict_pass_equal": {"classic": 50, "gen2": 50},
+  "strict_name_counters_equal": {"classic": 50, "gen2": 50},
+  "final_artifacts_equal": {
+    "java_codec": {"classic": 50, "gen2": 50},
+    "rust_canonical": {"classic": 50, "gen2": 50},
+    "rust_canonical_formation_and_collapse": {"classic": 50, "gen2": 50},
+    "fifty_placement_java_control": {"classic": 50, "gen2": 50},
+    "fifty_placement_rust": {"classic": 50, "gen2": 50}
+  },
+  "first_attempt": "The Java rewriter rebuilds Apply operators without copying their annotations. The first Rust run retained Waterline on one Apply in each engine.",
+  "runtime_executed": false
+}

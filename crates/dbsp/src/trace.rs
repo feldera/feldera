@@ -60,6 +60,8 @@ mod sampling;
 pub mod spine_async;
 pub(crate) use sampling::sample_keys_from_batches;
 pub use spine_async::{BatchReaderWithSnapshot, ListMerger, Spine, SpineSnapshot, WithSnapshot};
+#[cfg(feature = "native-abi")]
+pub use spine_async::{MergeOutput, merge_untimed_cursors};
 
 #[cfg(test)]
 pub mod test;

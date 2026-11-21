@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-stream-kinds-20261118-v1.tar.gz",
+  "bytes": 15919420,
+  "sha256": "d953cb84b6e5f0c53f419a9772d4715ab237d7863a4d4f08e22ef7f6589d9b10",
+  "manifest_sha256": "bb857f83b41b8b68ce5c4c3b5b4a8eb2cba4ed581674d4d2eed86f49980e9a87",
+  "verified_files": 27,
+  "all_members_verified": true
+}

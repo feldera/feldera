@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -30,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
@@ -39,19 +41,41 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyConditionals;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandMetadataCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandSafeCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandUnsafeCasts;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.DuplicateSharedIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleHashes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.SeparateIntegrators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.BuildNestedOperators;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.FixupViewReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.RecursiveComponents;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.SubstituteLeftJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.ValidateRecursiveOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.BreakFilters;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.DesugarNowEquality;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
+
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -64,11 +88,13 @@ public class CircuitOptimizer extends Passes {
     final Set<String> disabled;
     /** Names of all the passes, sorted. */
     final Set<String> passNames;
+    private final OptimizerSnapshots snapshots;
 
     public CircuitOptimizer(DBSPCompiler compiler) {
         super("Optimizer", compiler);
         this.disabled = new HashSet<>(compiler.metadata.disabledOptimizations());
         this.passNames = new TreeSet<>();
+        this.snapshots = new OptimizerSnapshots(compiler);
         this.createOptimizer();
         this.checkDisabled();
     }
@@ -78,8 +104,72 @@ public class CircuitOptimizer extends Passes {
     public void add(CircuitTransform pass) {
         String name = pass.getName();
         this.passNames.add(name);
-        if (!this.disabled.contains(name))
-            super.add(pass);
+        if (this.disabled.contains(name))
+            return;
+        super.add(this.selectImplementation(pass));
+    }
+
+    private CircuitTransform selectImplementation(CircuitTransform pass) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return pass;
+        if (pass instanceof Conditional conditional) {
+            if (conditional.transform instanceof Gen2Passes || conditional.transform instanceof InsertWeightValidation)
+                return conditional.withTransform(new RustCircuitPass(this.compiler, conditional.transform, this.snapshots));
+            return pass;
+        }
+        if (pass instanceof MergeGC || pass instanceof FindUnboundedState || pass instanceof ShareIndexes || pass instanceof ExpandIndexedInputs || pass instanceof ExpandAggregates || pass instanceof MerkleHashes
+                || pass instanceof RemoveUselessLeftJoins || pass instanceof ShareWindowIntegrals) {
+            ((Passes) pass).passes.replaceAll(this::selectImplementation);
+            return pass;
+        }
+        boolean supported;
+        if (pass instanceof OptimizeWithGraph graph) {
+            supported = switch (pass.getName()) {
+                case "RemoveNoops", "PushDifferentialsUp", "CloneOperatorsWithFanout", "BalancedJoins", "ChainVisitor", "StrayGC" -> true;
+                default -> false;
+            };
+            if (!supported && graph.transform instanceof Passes iteration)
+                iteration.passes.replaceAll(this::selectImplementation);
+        } else {
+            supported = pass instanceof Graph || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
+                    || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds
+                    || pass instanceof MergeGC.FindEquivalentNoops
+                    || pass instanceof MergeGC.FindMultipleRetains || pass instanceof CollapseSharedChains || pass instanceof RemoveUselessLeftJoinsVisitor
+                    || pass instanceof FindWindowGroups || pass instanceof ImplementWindowGroups
+                    || pass instanceof FindMapChains || pass instanceof DuplicateSharedIndexes
+                    || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections
+                    || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs
+                    || pass instanceof ExpandIndexedInputs.IndexedInputs || pass instanceof ExpandAggregates.ExpandStreamAggregates
+                    || pass instanceof OptimizeProjectionVisitor || pass instanceof PullFilterVisitor
+                    || pass instanceof ShareOutputIntegrators || pass instanceof FilterJoinVisitor || pass instanceof AppendOnly
+                    || pass instanceof DecomposeExpensiveFilters || pass instanceof CircuitContainsNow || pass instanceof BreakFilters
+                    || pass instanceof DesugarNowEquality
+                    || pass instanceof FuseIntoArrayAgg || pass instanceof ComparatorDeclarations
+                    || pass instanceof CompactNames || pass instanceof TagRegions
+                    || pass instanceof RemoveDeindexOperators || pass instanceof DeadCode
+                    || pass instanceof OptimizeIncrementalVisitor || pass instanceof IncrementalizeVisitor
+                    || pass instanceof NoIntegralVisitor || pass instanceof ValidateRecursiveOperators
+                    || pass instanceof CSE || pass instanceof MergeSums || pass instanceof RemoveIAfterD
+                    || pass instanceof ImplementChains || pass instanceof ImplementJoins || pass instanceof RemoveTable
+                    || pass instanceof ExpandAggregateZero || pass instanceof DeterministicFunctions
+                    || pass instanceof ConstantViews || pass instanceof CircuitStatistics || pass instanceof ExpandMetadataCasts
+                    || pass instanceof LinearPostprocessRetainKeys || pass instanceof ExpandHop
+                    || pass instanceof CheckRetain || pass instanceof SeparateIntegrators || pass instanceof OrderErrorConsumers
+                    || pass instanceof RemoveIdentityOperators || pass instanceof FixupViewReferences || pass instanceof BuildNestedOperators
+                    || pass instanceof SubstituteLeftJoins || pass instanceof EnsureDistinctOutputs || pass instanceof MultisetAnalysis
+                    || pass instanceof FindUnboundedState.DetectStreamingOperations || pass instanceof FindUnboundedState.FindGCedStreams
+                    || pass instanceof FindUnboundedState.FindBounded || pass instanceof FindUnboundedState.CollectUnbounded
+                    || pass instanceof OptimizeDistinctVisitor
+                    || (pass instanceof CircuitDispatcher dispatcher && dispatcher.innerVisitor instanceof NoConnectorMetadata)
+                    || (pass instanceof CircuitRewriter rewriter && (rewriter.transform instanceof AdjustSqlIndex
+                        || rewriter.getName().equals("EnsureExpressionTrees") || rewriter.transform instanceof SimplifyWaterline
+                        || rewriter.transform instanceof SimplifyConditionals || rewriter.transform.getClass() == Simplify.class
+                        || rewriter.transform instanceof ExpandSafeCasts || rewriter.transform instanceof ExpandUnsafeCasts
+                        || rewriter.transform instanceof CreateRuntimeErrorWrappers || rewriter.transform instanceof UDFInliner))
+                    || pass instanceof RemoveViewOperators || pass instanceof CheckHints
+                    || pass instanceof PropagateConstants || pass instanceof PropagateEmptySources || pass instanceof RemoveConstantFilters;
+        }
+        return supported ? new RustCircuitPass(this.compiler, pass, this.snapshots) : pass;
     }
 
     /** Warn about each name in {@link ProgramMetadata#DISABLE_OPTIMIZATIONS} that is not
@@ -100,7 +190,7 @@ public class CircuitOptimizer extends Passes {
     void addWithMultisets(Function<MultisetAnalysis, CircuitTransform> create) {
         MultisetAnalysis multisets = new MultisetAnalysis(this.compiler);
         CircuitTransform pass = create.apply(multisets);
-        this.add(new Passes(pass.getName(), this.compiler, multisets, pass));
+        this.add(new Passes(pass.getName(), this.compiler, this.selectImplementation(multisets), this.selectImplementation(pass)));
     }
 
     static class StopOnError extends CircuitVisitor {
@@ -125,12 +215,12 @@ public class CircuitOptimizer extends Passes {
         // Runs before ImplementNow so temporal filters compare fields instead of
         // expensive computations, which makes them implementable as windows
         this.add(new DecomposeExpensiveFilters(compiler));
-        this.add(new ImplementNow(compiler));
+        this.add(new ImplementNow(compiler, this::selectImplementation));
         this.add(new Conditional(compiler, new Lineage(compiler, true), () -> compiler.options.ioOptions.correlatedColumns));
         this.add(new DeterministicFunctions(compiler));
         this.add(new NoConnectorMetadata(compiler).getCircuitVisitor(true));
         this.add(new StopOnError(compiler));
-        this.add(new RecursiveComponents(compiler));
+        this.add(new RecursiveComponents(compiler, this::selectImplementation));
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable));
         if (options.languageOptions.outputsAreSets)
             this.addWithMultisets(multisets -> new EnsureDistinctOutputs(compiler, multisets));
@@ -145,7 +235,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new FuseExpensiveMaps(compiler));
         this.add(new RemoveViewOperators(compiler, false));
         this.add(new LeftJoinChains(compiler));
-        this.add(new UnusedFields(compiler));
+        this.add(new UnusedFields(compiler, this::selectImplementation));
         this.add(new RemoveUselessLeftJoins(compiler));
         this.add(new CSE(compiler));
         // First invocation, fuses aggregates and maps
@@ -184,7 +274,7 @@ public class CircuitOptimizer extends Passes {
         // Runs before MonotoneAnalyzer, whose SeparateIntegrators gives the join its own integral
         // wherever garbage collection needs it
         this.add(new ShareOutputIntegrators(compiler));
-        this.add(new MonotoneAnalyzer(compiler));
+        this.add(new MonotoneAnalyzer(compiler, this::selectImplementation));
         // Can remove this table after the monotone analysis only
         this.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
         // The circuit is complete here, start optimizing for real.
@@ -222,7 +312,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new ImplementChains(compiler));
-        this.add(new ExpandCasts(compiler));
+        this.add(new ExpandCasts(compiler, this::selectImplementation));
         this.add(new CircuitRewriter(compiler, new SimplifyConditionals(compiler), false));
         this.add(new Simplify(compiler).getCircuitRewriter(true));
         this.add(new ImplementJoins(compiler));
@@ -265,6 +355,10 @@ public class CircuitOptimizer extends Passes {
 
     public DBSPCircuit optimize(DBSPCircuit input) {
         DBSPCircuit result = this.apply(input);
+        // A pass can stop before incrementalization after reporting a user error.
+        // Its partial circuit need not satisfy the final optimizer invariant.
+        if (this.compiler.hasErrors())
+            return result;
         boolean requested = this.compiler.options.languageOptions.incrementalize;
         Utilities.enforce(result.incremental == requested, () -> "The circuit is " +
                 (result.incremental ? "" : "not ") + "incremental, but the compilation " +

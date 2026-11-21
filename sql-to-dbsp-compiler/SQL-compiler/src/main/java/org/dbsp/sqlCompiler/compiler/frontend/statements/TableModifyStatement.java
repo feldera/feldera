@@ -24,27 +24,31 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 
 import javax.annotation.Nullable;
+import java.util.List;
 
-/** Describes a SQL statements that modifies a table
- * (e.g., an INSERT or REMOVE statement). */
+/** Describes an INSERT or REMOVE statement. */
 public class TableModifyStatement extends RelStatement {
     public final ProgramIdentifier tableName;
-    public final SqlNode data;
+    /** Exact ordered destination selectors; null means the implicit table order.
+     * Diagnostic spelling is separate from the resolved identifier. */
+    public record TargetColumn(ProgramIdentifier name, SourcePositionRange position, String displayName) { }
+    @Nullable public final List<TargetColumn> targetColumns;
     @Nullable
     public RelNode rel;
     /** True for insert, false for remove */
     public final boolean insert;
 
-    public TableModifyStatement(ParsedStatement node, boolean insert, ProgramIdentifier tableName, SqlNode data) {
+    public TableModifyStatement(ParsedStatement node, boolean insert, ProgramIdentifier tableName,
+                                @Nullable List<TargetColumn> targetColumns) {
         super(node);
         this.insert = insert;
         this.tableName = tableName;
-        this.data = data;
+        this.targetColumns = targetColumns == null ? null : List.copyOf(targetColumns);
         this.rel = null;
     }
 

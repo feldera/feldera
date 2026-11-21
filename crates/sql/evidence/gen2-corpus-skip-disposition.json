@@ -1,0 +1,479 @@
+{
+  "schema_version": 1,
+  "scope": "Audit the 17 registered skips in the frozen Gen-2 v3 corpus, and preserve JUnit result identities.",
+  "archive_index": "gen2-corpus-skip-disposition-archive.json",
+  "registered_cases": 8546,
+  "replayed_cases": 8529,
+  "v3_corpus_failure_methods": 16,
+  "runtime_junit_status": {
+    "pass": 2218,
+    "skipped": 71,
+    "error": 510,
+    "failure": 69
+  },
+  "status_pairs": {
+    "pass/pass": 2218,
+    "skipped/skipped": 71,
+    "pass/error": 510,
+    "pass/failure": 69
+  },
+  "skip_reasons": {
+    "window control type assertion": 4,
+    "join annotation assertion": 2,
+    "expected aggregate operator assertion": 2,
+    "shared index operator count assertion": 3,
+    "optimizer circuit shape assertion": 3,
+    "required persistent hash missing in circuit visitor": 1,
+    "clone count assertion": 1,
+    "optimizer circuit visitor assertion": 1
+  },
+  "cases": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#dateTemporalFilterWithLowerBound/0",
+      "input_sha256": "7019002c4b9cc46a2d6d6cadf347a40a755edd360990971a355b89eb4e58b423",
+      "reason": "window control type assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$8.postorder(IncrementalRegressionTests.java:936)",
+          "xml_sha256": "6ec7543a675d950a735ce6ffea2e01cba808d1a8db3e84f04259b4222033ccaa"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$8.postorder(IncrementalRegressionTests.java:936)",
+          "xml_sha256": "b7ceed93d4c008ffc6e5fb2b2c0c3ada45a9427502acc1f7ddefd8a1b6082400"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testThreeWayJoinHints/0",
+      "input_sha256": "e24837c841ef5b169c6b5fcf87c42bccb5818bc3092938fbe0737d716a463bc5",
+      "reason": "join annotation assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<2> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$15.endVisit(Regression2Tests.java:1363)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<2> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$15.endVisit(Regression2Tests.java:1363)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testOneArgMin/0",
+      "input_sha256": "54a48c03a44e20e92848e7c4b037bc179f236e0439a733767315f89ff63f6eaf",
+      "reason": "expected aggregate operator assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests$1.endVisit(AggregateTests.java:272)",
+          "xml_sha256": "7bc861a23a0d2440fbabd81f1f5f0a729e180602da3ba68aad3b24c291e9fb1f"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests$1.endVisit(AggregateTests.java:272)",
+          "xml_sha256": "68a77515b920b5df36f00c5b1e9cc61847ea5c4d66e9eeae72401724de98911c"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testOneArgMin/1",
+      "input_sha256": "726b15ffdbd5bea77e2758769a898d76973d34b974f84d766830ec81c670af86",
+      "reason": "expected aggregate operator assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests$1.endVisit(AggregateTests.java:272)",
+          "xml_sha256": "7bc861a23a0d2440fbabd81f1f5f0a729e180602da3ba68aad3b24c291e9fb1f"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests$1.endVisit(AggregateTests.java:272)",
+          "xml_sha256": "68a77515b920b5df36f00c5b1e9cc61847ea5c4d66e9eeae72401724de98911c"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testHints/0",
+      "input_sha256": "3f3da02d9f219a996e367c0ec25437760420105d5455df3b4c97d139830319ed",
+      "reason": "join annotation assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$14.endVisit(Regression2Tests.java:1339)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$14.endVisit(Regression2Tests.java:1339)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815a/0",
+      "input_sha256": "c595949481ae2f148a3c3b6af158c60de31f94ce4121aa8ab0bcc85ae8a51891",
+      "reason": "shared index operator count assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests$2.endVisit(IncrementalRegression2Tests.java:199)",
+          "xml_sha256": "0fa65d133ceb9df04c736089459d8a3ec6f4859f4a284c95785de86f16915d3c"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests$2.endVisit(IncrementalRegression2Tests.java:199)",
+          "xml_sha256": "01deec1b7b9a201e7979bdca009c4bef844f1c15171f17b9d67f0d8e32d3304c"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#integerTemporalFilterWithUpperBound/0",
+      "input_sha256": "ed4f1214fffba74be343a07169f955b51bcae7d8b08f2bb4864a3f4f97d26a82",
+      "reason": "window control type assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$9.postorder(IncrementalRegressionTests.java:978)",
+          "xml_sha256": "6ec7543a675d950a735ce6ffea2e01cba808d1a8db3e84f04259b4222033ccaa"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$9.postorder(IncrementalRegressionTests.java:978)",
+          "xml_sha256": "b7ceed93d4c008ffc6e5fb2b2c0c3ada45a9427502acc1f7ddefd8a1b6082400"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#dateTemporalFilterWithUpperBound/0",
+      "input_sha256": "6ea955c4098ff4ddd439aa37639e152bf1f30bb509ed6795af143496322734be",
+      "reason": "window control type assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$8.postorder(IncrementalRegressionTests.java:936)",
+          "xml_sha256": "6ec7543a675d950a735ce6ffea2e01cba808d1a8db3e84f04259b4222033ccaa"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$8.postorder(IncrementalRegressionTests.java:936)",
+          "xml_sha256": "b7ceed93d4c008ffc6e5fb2b2c0c3ada45a9427502acc1f7ddefd8a1b6082400"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541b/0",
+      "input_sha256": "a6e93b8a9bb4f97d9b554cb05b43992c38e8df2cbe4518acaf1b3be96cb223ee",
+      "reason": "optimizer circuit shape assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$8.endVisit(Regression2Tests.java:417)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$8.endVisit(Regression2Tests.java:417)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#checkNowChainAggregateHash/0",
+      "input_sha256": "714d32c737eceb46f86be413ba6dc9fa285965bcea240518be4a45e7d2c444ac",
+      "reason": "required persistent hash missing in circuit visitor",
+      "reports": {
+        "corpus": {
+          "status": "error",
+          "exception": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+          "message": "Assertion failed",
+          "test_frame": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$1.postorder(Regression2Tests.java:98)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "error",
+          "exception": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError",
+          "message": "Assertion failed",
+          "test_frame": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$1.postorder(Regression2Tests.java:98)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815c/0",
+      "input_sha256": "4ca088e0106501829f4f4d0c2eb6cdde948d2e11ac7c87b218375990cc0342dd",
+      "reason": "shared index operator count assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests$4.endVisit(IncrementalRegression2Tests.java:331)",
+          "xml_sha256": "0fa65d133ceb9df04c736089459d8a3ec6f4859f4a284c95785de86f16915d3c"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests$4.endVisit(IncrementalRegression2Tests.java:331)",
+          "xml_sha256": "01deec1b7b9a201e7979bdca009c4bef844f1c15171f17b9d67f0d8e32d3304c"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541a/0",
+      "input_sha256": "2a93c0e9ffc0d72780ad83b8bd1e5c8813d5a4ca78917bafb926f525115fd245",
+      "reason": "optimizer circuit shape assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$6.endVisit(Regression2Tests.java:380)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$6.endVisit(Regression2Tests.java:380)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4577/0",
+      "input_sha256": "52a19355f62e459375ac57a9fa4f4c89697c0124c6764e6e46395e93a90b6fa3",
+      "reason": "clone count assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<7> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests.issue4577(Regression1Tests.java:890)",
+          "xml_sha256": "53f7e87f630c1900dfecf2d2761fd8d73a9328b0f665cc8e95d735fa2f5ad679"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<7> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests.issue4577(Regression1Tests.java:890)",
+          "xml_sha256": "2cf1f6dd7d7ae44d4532353abf4af72a170bc305be1ba6ad04298b204086586d"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541/0",
+      "input_sha256": "53b430cdd2031fe601f1fa60d74c59dab6b4cbab33e9f559fd9d223856a987d7",
+      "reason": "optimizer circuit shape assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$4.endVisit(Regression2Tests.java:343)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests$4.endVisit(Regression2Tests.java:343)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#integerTemporalFilterWithLowerBound/0",
+      "input_sha256": "23f0c576c47648b11c1dfad15b13be3027f9ae287b1c001114f921ba862c1ed9",
+      "reason": "window control type assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$9.postorder(IncrementalRegressionTests.java:978)",
+          "xml_sha256": "6ec7543a675d950a735ce6ffea2e01cba808d1a8db3e84f04259b4222033ccaa"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests$9.postorder(IncrementalRegressionTests.java:978)",
+          "xml_sha256": "b7ceed93d4c008ffc6e5fb2b2c0c3ada45a9427502acc1f7ddefd8a1b6082400"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue2998/0",
+      "input_sha256": "776b4f040fb39496d813964c29744d82a52ff60526fe134c9ec6b64f237aa299",
+      "reason": "optimizer circuit visitor assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests.issue2998(Regression2Tests.java:569)",
+          "xml_sha256": "c140a8f329d88e159d3c438eb4139bb9771250faa6658724ed0eaa64a5b3a98e"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests.issue2998(Regression2Tests.java:569)",
+          "xml_sha256": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815b/0",
+      "input_sha256": "01ff756d7ba09e1972a2d19e2dc1705e579fcd97cc53b594b9ba6caef45a0b63",
+      "reason": "shared index operator count assertion",
+      "reports": {
+        "corpus": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests$3.endVisit(IncrementalRegression2Tests.java:282)",
+          "xml_sha256": "0fa65d133ceb9df04c736089459d8a3ec6f4859f4a284c95785de86f16915d3c"
+        },
+        "runtime": {
+          "status": "failure",
+          "exception": "java.lang.AssertionError",
+          "message": "expected:<1> but was:<0>",
+          "test_frame": "at org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests$3.endVisit(IncrementalRegression2Tests.java:282)",
+          "xml_sha256": "01deec1b7b9a201e7979bdca009c4bef844f1c15171f17b9d67f0d8e32d3304c"
+        },
+        "baseline": {
+          "status": "pass"
+        }
+      },
+      "disposition": "Retain as an original corpus skip. Use the classic C7 oracle and require canonical S3 for exported Gen-2 programs under decision 2."
+    }
+  ],
+  "approved_gate_exception_count": 0,
+  "effective": {
+    "registered_cases": 8544,
+    "replayed_cases": 8527,
+    "same_original_skips": true,
+    "missing_registration_witnesses": [
+      {
+        "source_test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowEquality",
+        "runtime_v3_exported": 1,
+        "effective_cases_registered": 0,
+        "observed_effective_error": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError: Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>",
+        "classification": "The compiler stopped before the test registered its case."
+      },
+      {
+        "source_test": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowEqualityReversed",
+        "runtime_v3_exported": 1,
+        "effective_cases_registered": 0,
+        "observed_effective_error": "org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError: Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>",
+        "classification": "The compiler stopped before the test registered its case."
+      }
+    ]
+  }
+}

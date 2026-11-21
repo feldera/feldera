@@ -1,0 +1,13 @@
+[package]
+name = "feldera-type-derivation-probe"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+default-run = "feldera-type-derivation-probe"
+
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

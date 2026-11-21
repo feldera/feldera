@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-nested-stream-kinds-20261118-v1.tar.gz",
+  "bytes": 2658657,
+  "sha256": "b35bdc4de4e949adfffccfac8a9607067e6466c1c8809a11dc0f08298186d91c",
+  "manifest_sha256": "06e9064c97764784f43fb9316070852091adb9781a2dc77d664a32de8098a42e",
+  "verified_files": 19,
+  "all_members_verified": true
+}

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-seams-v26",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v26/classes": "e62c4399fff62835b278dbff6bef3ccb17ee8cb46f0d41467e0cf5e2f4ec11b6",
+    "$SCRATCH/p0-seam-tools-v26/test-classes": "08ec8837c0aad1aa2633a50b187ddcbc10c3951018f77eeaebf26c12d11b117b",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+  "input_sha256": "eb616d8d9b4a48c6e8a962005ca57f6f839a5912e07e38d4f8690c59ea60a3ac",
+  "source_class": null,
+  "cases": 14,
+  "stage": "S2",
+  "execution_order": [
+    "replay-s2",
+    "capture"
+  ],
+  "keep_going": true,
+  "artifact_contract": "seam-v1",
+  "runtime_executed": false,
+  "limits": {
+    "heap_mib": 1024,
+    "output_mib": 512,
+    "min_free_mib": 512,
+    "timeout_seconds_per_jvm": 1200
+  },
+  "equal": true,
+  "observations": 6196,
+  "capture_transparency": false,
+  "dataflow_contract": "all-engines-v1",
+  "observation_contract": "full-prefix-v1",
+  "artifact_byte_differences": [
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#leftLateness/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#iceTFTest/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessKeepsInheritedWaterline/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.EmitFinalIncrementalTests#nullIsNeverEmitted/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testEmitFinalStarJoin/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2822/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2846/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessTimestampMerge/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#projectionBug/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessMergesWithInherited/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testEmitFinal/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2847/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#starJoinFlatmapTest/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessTighterThanInherited/0"
+  ],
+  "differences": [],
+  "failed_cases": {
+    "expected": [],
+    "actual": []
+  },
+  "exported_schema_differences": [],
+  "exported_diagnostic_differences": [],
+  "jvm_runs": 2
+}

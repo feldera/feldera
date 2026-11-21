@@ -38,7 +38,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 
 /** Replace the following pattern, where every consumer of the noops keeps a full integral of
  * its input, so that the consumers can share one integral:
@@ -63,7 +65,19 @@ import java.util.Set;
  */
 public class MergeGC extends Passes {
     /** This is a modified form of {@link CSE.FindCSE} */
-    static class FindEquivalentNoops extends CircuitWithGraphsVisitor {
+    public static class FindEquivalentNoops extends CircuitWithGraphsVisitor {
+        public SharedTraceInputs sharedInputs() {
+            return SharedTraceInputs.capture(this.canonical, this.removed);
+        }
+
+        public void restore(SharedTraceInputs plan, Map<Long, DBSPOperator> operators) {
+            this.canonical.clear();
+            this.removed.clear();
+            plan.aliases.forEach((from, to) -> this.canonical.put(
+                    Objects.requireNonNull(operators.get(from)), Objects.requireNonNull(operators.get(to))));
+            plan.removed.forEach(id -> this.removed.add(Objects.requireNonNull(operators.get(id))));
+        }
+
         /** Maps each operator to its canonical representative */
         public final Map<DBSPOperator, DBSPOperator> canonical;
         /** GC operators to remove: the shared integral has no retention of their kind */
@@ -211,7 +225,32 @@ public class MergeGC extends Passes {
      * All the operators of a group have the same class: {@link DBSPIntegrateTraceRetainKeysOperator}s
      * with the same {@code accumulate} flag, {@link DBSPIntegrateTraceRetainValuesOperator}s, or
      * {@link DBSPIntegrateTraceRetainNValuesOperator}s with identical policies. */
-    static class FindMultipleRetains extends CircuitWithGraphsVisitor {
+    public static class FindMultipleRetains extends CircuitWithGraphsVisitor {
+        public Set<Long> groupedIds() {
+            var ids = new TreeSet<Long>();
+            this.grouped.forEach(gc -> ids.add(gc.asOperator().id));
+            return ids;
+        }
+
+        public List<List<Long>> memberIds() {
+            return this.shareLeftInput.stream().map(group ->
+                    group.stream().map(gc -> gc.asOperator().id).toList()).toList();
+        }
+
+        public void restore(long[][] groups, Map<Long, DBSPOperator> operators) {
+            for (var members : groups) {
+                var group = new ArrayList<IGCOperator>(members.length);
+                for (long id : members) {
+                    var gc = Objects.requireNonNull(operators.get(id)).to(IGCOperator.class);
+                    if (!this.grouped.add(gc))
+                        throw new IllegalStateException("Retention operator occurs in multiple groups: " + id);
+                    group.add(gc);
+                }
+                if (group.size() > 1)
+                    this.shareLeftInput.add(group);
+            }
+        }
+
         /** Groups of at least two GC operators of the same class that read the same data; MergeRetain
          * replaces each group with one operator. */
         final List<List<IGCOperator>> shareLeftInput;
@@ -283,7 +322,11 @@ public class MergeGC extends Passes {
     }
 
     /** Merge the groups of GC operators found by {@link FindMultipleRetains} */
-    static class MergeRetain extends CircuitCloneVisitor {
+    public static class MergeRetain extends CircuitCloneVisitor {
+        public List<List<Long>> memberIds() {
+            return this.fmr.memberIds();
+        }
+
         /** Keep a counter and a list; offer a method to decrement counter */
         static class ListCounter<T> {
             int counter;
@@ -468,7 +511,21 @@ public class MergeGC extends Passes {
 
     /** Replace each noop with its canonical representative and remove the GC operators
      * whose shared integral is not garbage collected. */
-    static class MergeNoops extends CSE.RemoveCSE {
+    public record SharedTraceInputs(Map<Long, Long> aliases, Set<Long> removed) {
+        static SharedTraceInputs capture(Map<DBSPOperator, DBSPOperator> canonical, Set<DBSPOperator> discarded) {
+            var aliases = new HashMap<Long, Long>();
+            canonical.forEach((from, to) -> aliases.put(from.id, to.id));
+            var removed = new HashSet<Long>();
+            discarded.forEach(op -> removed.add(op.id));
+            return new SharedTraceInputs(aliases, removed);
+        }
+    }
+
+    public static class MergeNoops extends CSE.RemoveCSE {
+        public SharedTraceInputs sharedInputs() {
+            return SharedTraceInputs.capture(this.canonical, this.removed);
+        }
+
         final Set<DBSPOperator> removed;
 
         MergeNoops(DBSPCompiler compiler, Map<DBSPOperator, DBSPOperator> canonical, Set<DBSPOperator> removed) {

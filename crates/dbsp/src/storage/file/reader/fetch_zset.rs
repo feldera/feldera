@@ -50,7 +50,7 @@ where
     ///
     /// Maps from the first row in the received data block to the range in
     /// `keys` that the data block covers and the data block itself.
-    output_blocks: BTreeMap<u64, (Range<usize>, Arc<DataBlock<K, A>>)>,
+    output_blocks: BTreeMap<u64, (Range<usize>, Arc<DataBlock>)>,
 }
 
 impl<'a, 'b, K, A> FetchZSet<'a, 'b, K, A>
@@ -63,12 +63,12 @@ where
         keys: FilteredKeys<'b, K>,
     ) -> Result<Self, Error> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        let factories = reader.columns[0].factories.factories();
+        let factories = reader.factories[0].factories();
         let tmp_key = factories.key_factory.default_box();
         let mut this = Self {
             keys,
             reader,
-            cache: reader.file.cache(),
+            cache: reader.layer.file.cache(),
             factories,
             sender,
             receiver,
@@ -77,7 +77,7 @@ where
             pending: 0,
         };
         if !this.keys.is_empty()
-            && let Some(node) = &reader.columns[0].root
+            && let Some(node) = &reader.layer.columns[0].root
         {
             let mut reads = Vec::new();
             this.try_read(
@@ -181,11 +181,11 @@ where
         for (read, result) in results.reads.into_iter().zip(results.results) {
             let raw = result?;
             let tree_block = TreeBlock::from_raw_with_cache(
-                decompress(self.reader.file.compression, read.node.location, raw)?,
+                decompress(self.reader.layer.file.compression, read.node.location, raw)?,
                 &read.node,
                 &self.cache,
                 self.reader.file_handle().file_id(),
-                self.reader.file.version,
+                self.reader.layer.file.version,
             )
             .unwrap();
             self.process_read(&read.keys, tree_block, reads)?;
@@ -195,7 +195,7 @@ where
 
     fn start_reads(&mut self, reads: Vec<FetchZSetRead>) {
         if !reads.is_empty() {
-            self.reader.file.file_handle.read_async(
+            self.reader.layer.file.file_handle.read_async(
                 reads.iter().map(|read| read.node.location).collect(),
                 {
                     let sender = self.sender.clone();
@@ -213,8 +213,12 @@ where
         read: FetchZSetRead,
         reads: &mut Vec<FetchZSetRead>,
     ) -> Result<(), Error> {
-        if let Some(tree_block) =
-            TreeBlock::from_cache(&read.node, &self.cache, &*self.reader.file.file_handle).unwrap()
+        if let Some(tree_block) = TreeBlock::from_cache(
+            &read.node,
+            &self.cache,
+            &*self.reader.layer.file.file_handle,
+        )
+        .unwrap()
         {
             self.process_read(&read.keys, tree_block, reads)?;
         } else {
@@ -226,7 +230,7 @@ where
     fn process_read(
         &mut self,
         key_range: &Range<usize>,
-        tree_block: TreeBlock<K, A>,
+        tree_block: TreeBlock,
         reads: &mut Vec<FetchZSetRead>,
     ) -> Result<(), Error> {
         match tree_block {

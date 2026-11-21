@@ -1,0 +1,23 @@
+[package]
+name = "feldera-sql-difftest"
+description = "Differential testing tools for the Feldera SQL compiler migration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+default-run = "sql-difftest"
+
+[dependencies]
+feldera-sql-ir = { path = "../sql-ir" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[[bin]]
+name = "sql-difftest"
+path = "src/main.rs"
+
+[dev-dependencies]
+feldera-sql-expr = { path = "../sql-expr" }
+feldera-sql-opt = { path = "../sql-opt" }

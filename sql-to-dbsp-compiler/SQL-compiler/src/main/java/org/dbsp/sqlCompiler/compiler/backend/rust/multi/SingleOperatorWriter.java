@@ -18,11 +18,10 @@ import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
+import org.dbsp.sqlCompiler.compiler.backend.rust.FindStatics;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
@@ -30,9 +29,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
-
-import java.util.SortedMap;
-import java.util.TreeMap;
 
 /** Writes the implementation of a single operator as a function that instantiates
  * the operator in circuit. */
@@ -64,26 +60,6 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         this.topLevel = circuit == parent;
         this.materializations = materializations;
         this.multisets = multisets;
-    }
-
-    /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
-    static class FindStatics extends InnerVisitor {
-        // Use a sorted map for a deterministic iterator
-        final SortedMap<String, DBSPStaticExpression> found = new TreeMap<>();
-
-        public FindStatics(DBSPCompiler compiler) {
-            super(compiler);
-        }
-
-        @Override
-        public VisitDecision preorder(DBSPType type) {
-            return VisitDecision.STOP;
-        }
-
-        @Override
-        public void postorder(DBSPStaticExpression expression) {
-            this.found.put(expression.getName(), expression);
-        }
     }
 
     String inputName(int inputNo) {
@@ -219,7 +195,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
         FindStatics staticsFinder = new FindStatics(compiler);
         this.operator.accept(staticsFinder);
-        for (DBSPStaticExpression expression: staticsFinder.found.values()) {
+        for (DBSPStaticExpression expression: staticsFinder.expressions()) {
             DBSPStaticItem item = new DBSPStaticItem(expression);
             item.accept(visitor.innerVisitor);
         }

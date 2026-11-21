@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -91,7 +90,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
         if (node.has("query"))
             queryOrViewName = Utilities.getStringProperty(node, "query");
         CommonInfo info = commonInfoFromJson(node, decoder);
-        DBSPTypeStruct originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPTypeStruct.class);
+        DBSPType originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
         ViewMetadata metadata = ViewMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         return new DBSPSinkOperator(CalciteEmptyRel.INSTANCE, viewName, queryOrViewName,
                 originalRowType, metadata, info.getInput(0))

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-count-benchmark-20261118-v1.tar.gz",
+  "bytes": 12999566,
+  "sha256": "3e2e6d8e118dbedc95bcde36aea810b99b7283e0ed217f0e18d8886852fe43dc",
+  "manifest_sha256": "6d5ed9701b320eda5a8342e2991e14c0b7a90909cfec4de05910195eacb8c4ec",
+  "verified_files": 146,
+  "all_members_verified": true
+}

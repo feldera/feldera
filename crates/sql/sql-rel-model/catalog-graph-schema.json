@@ -1,0 +1,368 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Catalog",
+  "type": "object",
+  "required": [
+    "scans",
+    "schema_version",
+    "schemas",
+    "tables"
+  ],
+  "properties": {
+    "scans": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Scan"
+      }
+    },
+    "schema_version": {
+      "$ref": "#/definitions/CatalogVersion"
+    },
+    "schemas": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CatalogSchema"
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Table"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "CatalogSchema": {
+      "type": "object",
+      "required": [
+        "columns",
+        "diagnostic",
+        "name",
+        "properties",
+        "source",
+        "values"
+      ],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Column"
+          }
+        },
+        "diagnostic": {
+          "$ref": "#/definitions/DiagnosticSource"
+        },
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "properties": {
+          "description": "Preserve the distinction between absent and present-but-empty properties.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Property"
+          }
+        },
+        "source": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "values": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "CatalogVersion": {
+      "type": "string",
+      "enum": [
+        "catalog-v1"
+      ]
+    },
+    "Column": {
+      "type": "object",
+      "required": [
+        "default_position",
+        "default_value",
+        "diagnostic",
+        "index",
+        "lateness",
+        "name",
+        "primary_key",
+        "ty",
+        "unused"
+      ],
+      "properties": {
+        "default_position": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Origin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default_value": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "diagnostic": {
+          "$ref": "#/definitions/DiagnosticSource"
+        },
+        "index": {
+          "description": "Zero-based position in the schema, within Calcite's signed-int domain.",
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "lateness": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "primary_key": {
+          "type": "boolean"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "unused": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiagnosticSource": {
+      "description": "Text used in diagnostics, never an executable function body or SQL fallback.",
+      "type": "object",
+      "required": [
+        "empty",
+        "internal_text",
+        "origin",
+        "text"
+      ],
+      "properties": {
+        "empty": {
+          "type": "boolean"
+        },
+        "internal_text": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/definitions/Origin"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Name": {
+      "type": "object",
+      "required": [
+        "name",
+        "quoted"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "quoted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Origin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "end",
+            "kind",
+            "source",
+            "start"
+          ],
+          "properties": {
+            "end": {
+              "$ref": "#/definitions/Position"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "source"
+              ]
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start": {
+              "$ref": "#/definitions/Position"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A compiler-derived range with partially unknown coordinates. Zero is an explicit unknown component here, not a one-based source coordinate. Retain the known components and source identity without inventing text locations. Fully unknown positions use Absent instead.",
+          "type": "object",
+          "required": [
+            "end",
+            "kind",
+            "source",
+            "start"
+          ],
+          "properties": {
+            "end": {
+              "$ref": "#/definitions/Position"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "generated"
+              ]
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start": {
+              "$ref": "#/definitions/Position"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Position": {
+      "type": "object",
+      "required": [
+        "column",
+        "line"
+      ],
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Property": {
+      "type": "object",
+      "required": [
+        "key_position",
+        "name",
+        "value",
+        "value_position"
+      ],
+      "properties": {
+        "key_position": {
+          "$ref": "#/definitions/Origin"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "value_position": {
+          "$ref": "#/definitions/Origin"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Scan": {
+      "type": "object",
+      "required": [
+        "relation",
+        "table"
+      ],
+      "properties": {
+        "relation": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "table": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Table": {
+      "type": "object",
+      "required": [
+        "name",
+        "row",
+        "schema"
+      ],
+      "properties": {
+        "name": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "schema": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -65,7 +65,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     /** True if 'value', the value of a constant, is an empty Z-set. */
-    static boolean isEmpty(DBSPExpression value) {
+    public static boolean isEmpty(DBSPExpression value) {
         if (value.is(DBSPZSetExpression.class))
             return value.to(DBSPZSetExpression.class).isEmpty();
         if (value.is(DBSPIndexedZSetExpression.class))

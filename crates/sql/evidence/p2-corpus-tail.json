@@ -1,0 +1,26 @@
+{
+  "boundaries": [
+    "before CheckHints to before MerkleHashes",
+    "after MerkleHashes to after CircuitStatistics"
+  ],
+  "comparison": "Canonical graph equality including node sharing, ordering, source ranges and provenance",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "21c7a26f9647668aefbc809a06df1541ed64a3c215dda97b435402edad7c2276",
+      "7bb3d4f49b58a38d1fb9acbe3c4ea0e6d17d042b92b972ab22e67ae64cf01d05"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "427e187a3b0783fc9cf21e46a50faf576045defc4996ca98d6ce1a298e586dda",
+      "ed6abd2f18a29fe9c9c11bb84591c2320fd6acf61a2dbaa21e20cfb5453648b0"
+    ]
+  },
+  "counters": "All 15 CircuitStatistics fields match the executed Java pass for every case."
+}

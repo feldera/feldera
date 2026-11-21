@@ -1,0 +1,93 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T09:58:40.393883+00:00",
+  "archive": ".p0-artifacts/p0-s1-fragments-20261117-v1.tar.gz",
+  "sha256": "2d281c730f6d9ffc21d9dc1984d52b25239d3da62b1eeb05a7556b9f27a6d142",
+  "bytes": 96872058,
+  "certificates": [
+    "s1-literals-full.json",
+    "s1-expressions.json",
+    "s1-operator-registry.json"
+  ],
+  "members": [
+    "$SCRATCH/p0-s1-literal-corpus-build-v1",
+    "$SCRATCH/p0-s1-literal-corpus-build-v2",
+    "$SCRATCH/p0-s1-literal-corpus-failure-v1",
+    "$SCRATCH/p0-s1-literal-corpus-full-v1",
+    "$SCRATCH/p0-s1-literal-corpus-full-v2",
+    "$SCRATCH/p0-s1-literal-evidence-v1",
+    "$SCRATCH/p0-s1-literal-extended-build-v1",
+    "$SCRATCH/p0-s1-literal-extended-build-v2",
+    "$SCRATCH/p0-s1-literal-extended-build-v3",
+    "$SCRATCH/p0-s1-literal-extended-build-v4",
+    "$SCRATCH/p0-s1-literal-extended-build-v5",
+    "$SCRATCH/p0-s1-literal-extended-build-v6",
+    "$SCRATCH/p0-s1-literal-extended-build-v7",
+    "$SCRATCH/p0-s1-literal-extended-build-v8",
+    "$SCRATCH/p0-s1-literal-extended-rust-v1",
+    "$SCRATCH/p0-s1-literal-import-final-v5",
+    "$SCRATCH/p0-s1-literal-java-v1",
+    "$SCRATCH/p0-s1-literal-java-v2",
+    "$SCRATCH/p0-s1-literal-java-v3",
+    "$SCRATCH/p0-s1-literal-java-v4",
+    "$SCRATCH/p0-s1-literal-java-v5",
+    "$SCRATCH/p0-s1-literal-roundtrip-certificate.json",
+    "$SCRATCH/p0-s1-literal-roundtrip-v1",
+    "$SCRATCH/p0-s1-literal-roundtrip-v2",
+    "$SCRATCH/p0-s1-literal-transport-full-v3",
+    "$SCRATCH/p0-s1-literal-transport-full-v4",
+    "$SCRATCH/p0-s1-expression-contract-v1",
+    "$SCRATCH/p0-s1-operator-registry-v1",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+    "$SCRATCH/p0-s2-full-v7/shard-000/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-001/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-002/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-003/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-004/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-005/input.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-000.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-001.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-002.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-003.jsonl",
+    "$REPO/crates/sql/evidence/s1-literals-full.json",
+    "$REPO/crates/sql/evidence/s1-expressions.json",
+    "$REPO/crates/sql/evidence/s1-operator-registry.json"
+  ],
+  "scope": "Completed literal, expression and static-operator fragments, frozen tools, inputs and retained literal failures; not all P0 evidence",
+  "layout": "Archive members retain paths below / with no leading slash. Original $SCRATCH paths appear under tmp/.",
+  "runtime_C7_proven": false,
+  "P0_complete": false,
+  "verified_artifact_hashes": 415,
+  "verified_classpath_hashes": 10,
+  "archive_sha256_verified": true,
+  "classpath_hash_algorithm": "For directories: SHA-256 of sorted relative path + space + hex file SHA-256 + newline. For files: SHA-256 of bytes.",
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-literals-full.json": [
+      {
+        "source_prefix": "crates/sql/sql-rel-model/",
+        "archive_prefix": "$SCRATCH/p0-s1-literal-evidence-v1/rust-source-snapshot/"
+      }
+    ],
+    "s1-expressions.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-expression-contract-v1/source-snapshot/"
+      }
+    ],
+    "s1-operator-registry.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-operator-registry-v1/source-snapshot/"
+      }
+    ]
+  },
+  "verified_source_hashes": 89,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-fragment-archive.json",
+  "classpath_hash_algorithms": {
+    "s1-literals-full.json": "path-space-hex-sha256-newline",
+    "s1-expressions.json": "path-space-hex-sha256-newline",
+    "s1-operator-registry.json": "path-space-hex-sha256-newline"
+  }
+}

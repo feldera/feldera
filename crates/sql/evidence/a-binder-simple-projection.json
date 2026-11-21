@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-simple-projection-archive.json",
+  "scope": "Standalone literal projections and scalar projections over one named or aliased table.",
+  "constant_rows": {
+    "directed_typed_trees_equal": 6,
+    "java_imports": 6,
+    "reserved_system_view_false_accepts_repaired": 2
+  },
+  "qualified_columns": {
+    "directed_cases": 8,
+    "typed_trees_and_sources_equal": 4,
+    "java_imports": 5,
+    "verdict_only_agreements": 2,
+    "java_projection_eliminated": 1,
+    "java_accepted_column_alias_list_outside_rust_scope": 1
+  },
+  "frozen_submission_replay": {
+    "records": 9886,
+    "held_out": 1563,
+    "development_fragments": 1,
+    "held_out_fragments": 0
+  },
+  "generated_controls": {"byte_equal": true, "records": 59264}
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-lateness.tar.gz",
+  "bytes": 46727927,
+  "sha256": "f0971b49ca42747eea6b89cfece1d801fe92427f1aa5201b650c2159138badad",
+  "manifest_sha256": "ebc631c44f31d3e7effe7b541d0d420739d91272a1fb1787293f2176c6b2c748",
+  "verified_files": 191,
+  "all_members_verified": true
+}

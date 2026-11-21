@@ -1,0 +1,34 @@
+{
+  "scope": "Bypass key-preserving indexes on integrated join inputs and rebind each affected join closure.",
+  "comparator_sha256": "6bfdd995556b954ac360f1446a427b52cbabfe8850bdb7f3a991674918619fe2",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "70fa9be273f50644053aa400d33885df9cb35fcc6e50afe1b48b29a49054e2c8"
+    ],
+    "pass": "ShareOutputIntegrators",
+    "invocations": 8571,
+    "changed": 34,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "c2c7d9c1213993f5be421fd7ace2f4d4db3002ab69882ec515098555b458dd11"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "4ecc1af73713085442ced3ab7bba58736182bfe6175284e5ca443958a2cafc0a"
+    ],
+    "pass": "ShareOutputIntegrators",
+    "invocations": 8527,
+    "changed": 34,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "1f456291ed702b367e0cbc42d151675fbfc94ea818c5779f9a168567d77e0263"
+    ]
+  }
+}

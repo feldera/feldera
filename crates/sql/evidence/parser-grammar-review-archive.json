@@ -1,0 +1,12 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "complete": true,
+  "archive": ".p0-artifacts/p0-parser-grammar-review-20261118-v1.tar.gz",
+  "bytes": 130889538,
+  "sha256": "7a4bbe72837bc432dc35497f3fe50db953f17af5b81f387146c33468fb019ddd",
+  "verified_artifact_files": 746,
+  "verified_source_files": 213,
+  "verified_classpaths": 3,
+  "certificate": "crates/sql/evidence/parser-grammar-review.json"
+}

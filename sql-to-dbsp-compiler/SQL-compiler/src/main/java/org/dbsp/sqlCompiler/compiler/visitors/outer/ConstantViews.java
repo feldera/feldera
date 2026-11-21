@@ -41,10 +41,16 @@ public class ConstantViews extends CircuitVisitor {
         if (operator.viewName.equals(DBSPCompiler.ERROR_VIEW_NAME))
             return;
         if (this.constant.contains(operator.input())) {
-            this.compiler.reportWarning(
-                    operator.getSourcePosition(),
-                    "View is constant",
-                    "View " + operator.viewName.singleQuote() + " does not depend on any input data");
+            this.constantView(operator);
         }
+    }
+
+    protected void constantView(DBSPSinkOperator operator) {
+        warn(this.compiler, operator);
+    }
+
+    public static void warn(DBSPCompiler compiler, DBSPSinkOperator operator) {
+        compiler.reportWarning(operator.getSourcePosition(), "View is constant",
+                "View " + operator.viewName.singleQuote() + " does not depend on any input data");
     }
 }

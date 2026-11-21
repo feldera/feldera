@@ -1,0 +1,40 @@
+{
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "da2a9e8ba98abd74e081685d3c9f6330b418f24235bdf51a8d82753d84770236",
+      "a0db9067bc9f731b76ac9e53761ef68895092b2c65b220e9cb77d6f56556bf03"
+    ],
+    "pass": "PropagateEmptySources",
+    "invocations": 25713,
+    "changed": 1137,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "2cb3961c9abb60f8a410549dfeee6fa352db76180e3a44d5f05174e769e4bb4d",
+      "9aee9c328f67cca26dab5ebdbd1fd431cb64fac8924dc12fe7d50a5e829aad52"
+    ],
+    "pass": "PropagateEmptySources",
+    "invocations": 25581,
+    "changed": 1121,
+    "cases_without_placement": 0
+  },
+  "directed_empty_right_left_joins": {
+    "matched": 5,
+    "case_ids": [
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests#testMix/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests#testMix/2",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests#testMix/4",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests#testMix/6",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests#testMix/8"
+    ],
+    "oracle_sha256": "7f90cdc56dac6642607410f7aa7d3bdd1f18ffb405180dcf155ece236c18ffa9",
+    "results_sha256": "0b0158d2e15eda355234d7e8c6905d6c7425a222e602e01edef8cbe8057fd3d3"
+  }
+}

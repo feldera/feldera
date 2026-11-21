@@ -900,6 +900,7 @@ async fn precompile_program(
         cache: false,
         runtime_version: None,
         use_platform_compiler: false,
+        compiler: None,
     };
     let program_config = serde_json::to_value(&program_config).map_err(|e| {
         CommonError::json_serialization_error(
@@ -1275,6 +1276,8 @@ mod test {
             compiler_working_directory: existing_path.to_string_lossy().to_string(),
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: "".to_string(),
+            shadow_sql_compiler: None,
+            shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: "".to_string(),
             compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
@@ -1299,6 +1302,8 @@ mod test {
             compiler_working_directory: non_existing_path.to_string_lossy().to_string(),
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: "".to_string(),
+            shadow_sql_compiler: None,
+            shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: "".to_string(),
             compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
@@ -1711,6 +1716,8 @@ mod test {
             compiler_working_directory: working_dir.to_string_lossy().to_string(),
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: String::new(),
+            shadow_sql_compiler: None,
+            shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: String::new(),
             compilation_cargo_lock_path: String::new(),
             dbsp_override_path: String::new(),
@@ -2024,6 +2031,8 @@ mod test {
                 compiler_working_directory: compiler_dir.path().to_string_lossy().into_owned(),
                 compilation_profile: CompilationProfile::Optimized,
                 sql_compiler_path: String::new(),
+                shadow_sql_compiler: None,
+                shadow_sql_compiler_timeout_secs: 30,
                 sql_compiler_cache_url: String::new(),
                 compilation_cargo_lock_path: String::new(),
                 dbsp_override_path: String::new(),

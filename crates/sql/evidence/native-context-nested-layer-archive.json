@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-nested-layer.tar.gz",
+  "bytes": 5438125,
+  "sha256": "84dadc84da9bac22792ab56ecc7df1e5a5567bd3bd350c3a268d38e708503d74",
+  "manifest_sha256": "c6b7a4b7db8ef54f5707553131a83b899fa623bf492b53a800156bf7529c5615",
+  "verified_files": 27,
+  "all_members_verified": true
+}

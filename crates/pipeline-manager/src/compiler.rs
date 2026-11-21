@@ -4,6 +4,7 @@ pub mod main;
 mod prebuilt;
 mod rust_compiler;
 mod rustc_diagnostics;
+mod shadow;
 mod sql_compiler;
 #[cfg(test)]
 mod test;

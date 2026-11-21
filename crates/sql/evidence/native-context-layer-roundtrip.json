@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-layer-roundtrip-archive.json",
+  "native_probe_tests": 50,
+  "frozen_native_programs": 10,
+  "dbsp_storage_tests": 63,
+  "all_target_clippy": true,
+  "byte_identical_layer_file": true,
+  "native_written_file_reopened": true,
+  "writer_descriptors_released_before_reload": true,
+  "descriptor_materialization_checks": 3,
+  "metrics": {
+    "file_bytes": 9216,
+    "owned_items": 513,
+    "owned_key_bounds": 10,
+    "item_probes": 38,
+    "index_probes": 24,
+    "item_writes": 513,
+    "item_key_reads": 8
+  },
+  "storage_test_workspace_manifest_sha256": "df04985c4c94062b03b3dfce31b86a209212cb92070f5e07d6b44c6a5ed7b40d",
+  "storage_test_workspace_lock_sha256": "741a5ae34ea54fc64d3ee8cbb8e97e9e0c42f6460410b0393dabeef92c0dcfac",
+  "scope": "The testing-only writer and lookup seams exercise the stock DBSP layer-file format and tree traversal with owned INTEGER/BIGINT descriptors. The whole-circuit batch factory graph still uses the existing static interfaces."
+}

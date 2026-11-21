@@ -7,7 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitDispatcher;
 
 /** Apply ContainsNow to every function in a circuit, except the {@link DBSPNowOperator}. */
-class CircuitContainsNow extends CircuitDispatcher {
+public class CircuitContainsNow extends CircuitDispatcher {
     public CircuitContainsNow(DBSPCompiler compiler) {
         super(compiler, new ContainsNow(compiler, false), false);
     }
@@ -25,5 +25,9 @@ class CircuitContainsNow extends CircuitDispatcher {
 
     public boolean found() {
         return this.innerVisitor.to(ContainsNow.class).found;
+    }
+
+    public void recordClockUse(boolean found) {
+        this.innerVisitor.to(ContainsNow.class).found |= found;
     }
 }

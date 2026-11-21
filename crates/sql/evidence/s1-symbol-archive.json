@@ -1,0 +1,52 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T10:12:31.550057+00:00",
+  "archive": ".p0-artifacts/p0-s1-symbol-validation-20261117-v1.tar.gz",
+  "sha256": "c852279992ad873a3764ff988fdcd8c6dcec63e29f530312b27f565a463ba27d",
+  "bytes": 43691951,
+  "certificates": [
+    "s1-symbol-validation.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-symbol-validation.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-symbol-validation-v1/source-snapshot/"
+      }
+    ]
+  },
+  "members": [
+    "$SCRATCH/p0-s1-symbol-validation-v1",
+    "$SCRATCH/p0-s1-literal-import-final-v5",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/literal_corpus_roundtrip",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/matrix/export/cases.jsonl",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-000/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-001/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-002/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-003/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-004/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-005/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-000/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-001/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-002/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-003/cases.jsonl",
+    "$REPO/crates/sql/evidence/s1-symbol-validation.json",
+    "$REPO/crates/sql/scripts/verify_fragment_archive.py",
+    "$REPO/crates/sql/scripts/test_verify_fragment_archive.py"
+  ],
+  "scope": "Symbol hardening, retained unsupported acceptances, frozen inputs/tools and source; not complete P0 evidence",
+  "related_archive": "s1-fragment-archive.json",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-symbol-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 100,
+  "verified_source_hashes": 26,
+  "verified_classpath_hashes": 2,
+  "classpath_hash_algorithm": "For directories: SHA-256 of sorted relative path + space + hex file SHA-256 + newline. For files: SHA-256 of bytes.",
+  "classpath_hash_algorithms": {
+    "s1-symbol-validation.json": "path-space-hex-sha256-newline"
+  }
+}

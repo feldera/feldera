@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-nested-reachability-archive.json",
+  "scope": "Five scheduled dead-code rewrites on six recursive SQL programs, with the original direct Java result as the oracle.",
+  "exact_pass_results": 60,
+  "changed_pass_graphs": 28,
+  "removed_inner_operators": 124,
+  "new_empty_export_slots": 2,
+  "final_rust_results_equal": 12,
+  "final_java_codec_results_equal": 12,
+  "stream_group_exact_controls": 282,
+  "rust_tests_passed": 36,
+  "clippy": "passed"
+}

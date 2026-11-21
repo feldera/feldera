@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-view-removal-archive.json",
+  "comparison_scope": "isolated flat RemoveViewOperators(all=false) with default identifier casing",
+  "programs": 50,
+  "isolated_comparisons": 200,
+  "removed_views": 282,
+  "isolated_comparison_differences": 0,
+  "explicit_view_lateness_fixture": {
+    "removed": ["a", "b", "v"],
+    "preserved": ["delayed", "error_view"]
+  },
+  "java_tail_regression_comparisons": 200,
+  "view_removal_is_in_resumed_prefix": false,
+  "human_hours_measured": false,
+  "raw_result": "p0-view-removal-run-v3/complete.json"
+}

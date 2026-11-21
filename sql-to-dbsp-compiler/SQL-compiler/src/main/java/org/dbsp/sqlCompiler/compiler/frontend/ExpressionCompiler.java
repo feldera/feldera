@@ -197,7 +197,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         this.context = context;
         this.inputRow = inputRow;
         this.constants = constants;
-        this.rexBuilder = compiler.sqlToRelCompiler.getRexBuilder();
+        this.rexBuilder = compiler.getRexBuilder();
         this.compiler = compiler;
         this.typeCompiler = compiler.getTypeCompiler();
         if (inputRow != null &&

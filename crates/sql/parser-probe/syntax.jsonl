@@ -1,0 +1,39 @@
+{"id": "syntax/interval", "submissions": [{"sql": "SELECT INTERVAL '10 10:30' DAY TO MINUTE", "many": true, "batch": 0}]}
+{"id": "syntax/lambda", "submissions": [{"sql": "SELECT TRANSFORM(ARRAY[1, 2], x -> x + 1)", "many": true, "batch": 0}]}
+{"id": "syntax/named_argument", "submissions": [{"sql": "SELECT f(x => 1)", "many": true, "batch": 0}]}
+{"id": "syntax/pivot", "submissions": [{"sql": "SELECT * FROM t PIVOT (SUM(x) FOR y IN (1, 2))", "many": true, "batch": 0}]}
+{"id": "syntax/unpivot", "submissions": [{"sql": "SELECT * FROM t UNPIVOT (x FOR y IN (a, b))", "many": true, "batch": 0}]}
+{"id": "syntax/qualify", "submissions": [{"sql": "SELECT a FROM t QUALIFY ROW_NUMBER() OVER () = 1", "many": true, "batch": 0}]}
+{"id": "syntax/null_safe_equal", "submissions": [{"sql": "SELECT a <=> b FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/cast_colon", "submissions": [{"sql": "SELECT a::INTEGER FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/safe_cast", "submissions": [{"sql": "SELECT SAFE_CAST(a AS INTEGER) FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/dateadd", "submissions": [{"sql": "SELECT DATEADD(day, 1, d) FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/wildcard_exclude", "submissions": [{"sql": "SELECT * EXCLUDE (a) FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/wildcard_replace", "submissions": [{"sql": "SELECT * REPLACE (a + 1 AS a) FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/select_hint", "submissions": [{"sql": "SELECT /*+ INDEX(t) */ * FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/table_hint", "submissions": [{"sql": "SELECT * FROM t /*+ INDEX(t) */", "many": true, "batch": 0}]}
+{"id": "syntax/trailing_comma", "submissions": [{"sql": "SELECT a, FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/asof", "submissions": [{"sql": "SELECT * FROM l ASOF JOIN r MATCH_CONDITION(l.ts >= r.ts) ON l.k = r.k", "many": true, "batch": 0}]}
+{"id": "syntax/left_asof", "submissions": [{"sql": "SELECT * FROM l LEFT ASOF JOIN r MATCH_CONDITION(l.ts >= r.ts) ON l.k = r.k", "many": true, "batch": 0}]}
+{"id": "syntax/tumble", "submissions": [{"sql": "SELECT * FROM TABLE(TUMBLE(TABLE t, DESCRIPTOR(ts), INTERVAL '1' HOUR))", "many": true, "batch": 0}]}
+{"id": "syntax/map_literal", "submissions": [{"sql": "SELECT MAP[1, 2]", "many": true, "batch": 0}]}
+{"id": "syntax/map_type", "submissions": [{"sql": "CREATE TABLE t (m MAP<INTEGER, VARCHAR>)", "many": true, "batch": 0}]}
+{"id": "syntax/postfix_array_type", "submissions": [{"sql": "CREATE TABLE t (a INTEGER ARRAY)", "many": true, "batch": 0}]}
+{"id": "syntax/row_type", "submissions": [{"sql": "CREATE TABLE t (r ROW(a INTEGER, b VARCHAR))", "many": true, "batch": 0}]}
+{"id": "syntax/interval_difference", "submissions": [{"sql": "SELECT (a - b) YEAR FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/unicode_identifier", "submissions": [{"sql": "SELECT U&\"d\\0061t\" FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/numeric_identifier", "submissions": [{"sql": "SELECT 123abc FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/adjacent_strings", "submissions": [{"sql": "SELECT 'a'\n'b'", "many": true, "batch": 0}]}
+{"id": "syntax/table_properties", "submissions": [{"sql": "CREATE TABLE t (i INT) WITH ('materialized' = 'true')", "many": true, "batch": 0}]}
+{"id": "syntax/materialized_view", "submissions": [{"sql": "CREATE MATERIALIZED VIEW v AS SELECT i FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/local_view", "submissions": [{"sql": "CREATE LOCAL VIEW v AS SELECT i FROM t", "many": true, "batch": 0}]}
+{"id": "syntax/lateness", "submissions": [{"sql": "CREATE TABLE t (ts TIMESTAMP LATENESS INTERVAL 1 HOUR)", "many": true, "batch": 0}]}
+{"id": "extra/create_database", "submissions": [{"sql": "CREATE DATABASE db", "many": true, "batch": 0}]}
+{"id": "extra/drop_schema", "submissions": [{"sql": "DROP SCHEMA s CASCADE", "many": true, "batch": 0}]}
+{"id": "extra/update", "submissions": [{"sql": "UPDATE t SET a = 1", "many": true, "batch": 0}]}
+{"id": "extra/delete_returning", "submissions": [{"sql": "DELETE FROM t RETURNING *", "many": true, "batch": 0}]}
+{"id": "extra/select_into", "submissions": [{"sql": "SELECT a INTO new_t FROM t", "many": true, "batch": 0}]}
+{"id": "extra/backtick_identifier", "submissions": [{"sql": "SELECT `a` FROM t", "many": true, "batch": 0}]}
+{"id": "extra/limit_comma", "submissions": [{"sql": "SELECT * FROM t LIMIT 2, 3", "many": true, "batch": 0}]}
+{"id": "invalid/trailing_statement", "submissions": [{"sql": "SELECT 1; SELECT (", "many": true, "batch": 0}]}
+{"id": "invalid/unclosed_string", "submissions": [{"sql": "SELECT 'abc", "many": true, "batch": 0}]}

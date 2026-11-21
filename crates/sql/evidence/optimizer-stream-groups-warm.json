@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-stream-groups-warm-archive.json",
+  "scope": "Warm Linux ARM64 compiler probe of the same 45 Rust pass placements, with 45 single handoffs or 34 grouped handoffs.",
+  "original_pass_placements": 45,
+  "grouped_handoff_sites": 34,
+  "measured_compilations": 768,
+  "warmup_compilations": 192,
+  "passed_graph_and_diagnostic_comparisons": 720,
+  "pinned_cpu": 0,
+  "profiles": {
+    "classic": {
+      "passed_graph_and_diagnostic_comparisons": 360,
+      "workloads": {
+        "integer-union": {
+          "latency_ns": {
+            "direct": {
+              "p50": 6201032.5,
+              "p95": 9578492
+            },
+            "java": {
+              "p50": 216608390.5,
+              "p95": 278917700
+            },
+            "separate": {
+              "p50": 498450020.0,
+              "p95": 529293028
+            },
+            "grouped": {
+              "p50": 352692083.5,
+              "p95": 422926096
+            }
+          },
+          "grouped_over_separate": {
+            "median": 0.7067049968224461,
+            "bootstrap_95_interval": [
+              0.698757489170162,
+              0.7168953972453436
+            ]
+          },
+          "grouped_over_direct": {
+            "median": 57.78786639477107,
+            "bootstrap_95_interval": [
+              49.600244278827276,
+              71.15705352224207
+            ]
+          }
+        },
+        "lateness": {
+          "latency_ns": {
+            "direct": {
+              "p50": 7029527.0,
+              "p95": 13973155
+            },
+            "java": {
+              "p50": 347764231.5,
+              "p95": 413449569
+            },
+            "separate": {
+              "p50": 618152549.0,
+              "p95": 660757933
+            },
+            "grouped": {
+              "p50": 488101484.5,
+              "p95": 548366275
+            }
+          },
+          "grouped_over_separate": {
+            "median": 0.790547515350501,
+            "bootstrap_95_interval": [
+              0.7828267750630156,
+              0.7951615975007235
+            ]
+          },
+          "grouped_over_direct": {
+            "median": 70.71352535717767,
+            "bootstrap_95_interval": [
+              62.672949395609095,
+              96.93613779218546
+            ]
+          }
+        },
+        "two-tables": {
+          "latency_ns": {
+            "direct": {
+              "p50": 3844098.5,
+              "p95": 10384548
+            },
+            "java": {
+              "p50": 207212205.5,
+              "p95": 235465673
+            },
+            "separate": {
+              "p50": 469689966.5,
+              "p95": 508166470
+            },
+            "grouped": {
+              "p50": 331326841.0,
+              "p95": 379323150
+            }
+          },
+          "grouped_over_separate": {
+            "median": 0.7048205151874255,
+            "bootstrap_95_interval": [
+              0.6981106692370403,
+              0.7122891525240009
+            ]
+          },
+          "grouped_over_direct": {
+            "median": 86.22525223674266,
+            "bootstrap_95_interval": [
+              65.9421937723379,
+              108.96286320885214
+            ]
+          }
+        }
+      }
+    },
+    "gen2": {
+      "passed_graph_and_diagnostic_comparisons": 360,
+      "workloads": {
+        "integer-union": {
+          "latency_ns": {
+            "direct": {
+              "p50": 5942384.5,
+              "p95": 10332339
+            },
+            "java": {
+              "p50": 221912083.0,
+              "p95": 353414884
+            },
+            "separate": {
+              "p50": 504628752.0,
+              "p95": 802544721
+            },
+            "grouped": {
+              "p50": 354210120.5,
+              "p95": 505724408
+            }
+          },
+          "grouped_over_separate": {
+            "median": 0.6967533708986863,
+            "bootstrap_95_interval": [
+              0.6816664787415485,
+              0.7039907335661916
+            ]
+          },
+          "grouped_over_direct": {
+            "median": 73.84609316251104,
+            "bootstrap_95_interval": [
+              49.721139761908134,
+              83.48131999560667
+            ]
+          }
+        },
+        "lateness": {
+          "latency_ns": {
+            "direct": {
+              "p50": 8068882.5,
+              "p95": 14996713
+            },
+            "java": {
+              "p50": 347574188.0,
+              "p95": 552258893
+            },
+            "separate": {
+              "p50": 615099956.5,
+              "p95": 920679699
+            },
+            "grouped": {
+              "p50": 483425298.0,
+              "p95": 709408083
+            }
+          },
+          "grouped_over_separate": {
+            "median": 0.7840965912952794,
+            "bootstrap_95_interval": [
+              0.7725077619816785,
+              0.7925356146901558
+            ]
+          },
+          "grouped_over_direct": {
+            "median": 61.80177888593269,
+            "bootstrap_95_interval": [
+              57.732546117138085,
+              69.63236504018732
+            ]
+          }
+        },
+        "two-tables": {
+          "latency_ns": {
+            "direct": {
+              "p50": 3221215.0,
+              "p95": 10470298
+            },
+            "java": {
+              "p50": 207233185.0,
+              "p95": 351631661
+            },
+            "separate": {
+              "p50": 470095913.0,
+              "p95": 752434038
+            },
+            "grouped": {
+              "p50": 330586228.5,
+              "p95": 484536350
+            }
+          },
+          "grouped_over_separate": {
+            "median": 0.7086409849050077,
+            "bootstrap_95_interval": [
+              0.6979591077970007,
+              0.7184697768200954
+            ]
+          },
+          "grouped_over_direct": {
+            "median": 104.9575316227186,
+            "bootstrap_95_interval": [
+              75.00665589747791,
+              125.14633516346211
+            ]
+          }
+        }
+      }
+    }
+  }
+}

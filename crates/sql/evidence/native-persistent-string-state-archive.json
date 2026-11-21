@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-persistent-string-state-20261119.tar.gz",
+  "bytes": 11400706,
+  "sha256": "7965f14f40cbefa41409b2545f065a4d60214d879c4bc74cd12a70dee3317c29",
+  "manifest_sha256": "617717fd7b24aeac1b21dde96b114a3da254ff387411ba550d1d39388f10dfee",
+  "verified_files": 171,
+  "all_members_verified": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-push-differentials-final-20261118-v2.tar.gz",
+  "bytes": 11724015,
+  "sha256": "1d4ecf132832c51dba56fa59d1f970e49980243955de423237ebe43e66803b26",
+  "manifest_sha256": "db974d412c9bb88b3c6a34af3077dfdc376c6ff14e98d81a02a61da1fd949b75",
+  "verified_files": 1275,
+  "all_members_verified": true
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-multiworker-state-archive.json",
+  "scope": "Frozen nullable SUM and COUNT DISTINCT circuits restore on the same worker count in both directions, including after native relinking.",
+  "profiles": {
+    "1": {
+      "count": {"fingerprint": "7bc27ca84ccbc571", "archive_writes": 2, "archive_reads": 11, "relinked_reads": 4},
+      "sum": {"fingerprint": "8cf0fa7be63603e5", "archive_writes": 2, "archive_reads": 11, "relinked_reads": 4}
+    },
+    "4": {
+      "count": {"fingerprint": "53256c6248bbbc2b", "archive_writes": 4, "archive_reads": 13, "relinked_reads": 5},
+      "sum": {"fingerprint": "8175b19ac9ff4a8a", "archive_writes": 8, "archive_reads": 36, "relinked_reads": 22}
+    }
+  },
+  "signed_zsets_and_error_outputs_match": true,
+  "matching_fingerprints_between_backends": true,
+  "scratch_storage": "host-backed volume",
+  "changed_worker_count_tested": false
+}

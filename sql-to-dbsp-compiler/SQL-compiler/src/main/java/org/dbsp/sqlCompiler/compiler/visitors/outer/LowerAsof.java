@@ -35,6 +35,7 @@ import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -54,21 +55,22 @@ public class LowerAsof implements CircuitTransform {
         // Maps an integrate trace node in the original graph to the asof join operator that it should be moved to
         Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces = new HashMap<>();
         Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces = new HashMap<>();
-        // Maps an integrate trace operator in the new graph to the original one
-        Map<IGCOperator, IGCOperator> original = new HashMap<>();
+        // Replay uses insertion order to reproduce the order of GC edges.
+        Map<IGCOperator, IGCOperator> original = this.compiler.usesCircuitSeam()
+                ? new LinkedHashMap<>() : new HashMap<>();
 
         Graph graph = new Graph(this.compiler);
-        graph.apply(circuit);
+        this.compiler.applyObservedPass(this.getName(), 0, 0, graph, circuit);
 
         // First scan the circuit, populate the maps, and replace asof operators
         var lower = new LowerAsofInner(compiler, graph.graphs, leftGces, rightGces, original);
-        circuit = lower.apply(circuit);
+        circuit = this.compiler.applyObservedPass(this.getName(), 1, 0, lower, circuit);
         if (leftGces.isEmpty()) {
             return circuit;
         }
 
         graph = new Graph(this.compiler);
-        graph.apply(circuit);
+        this.compiler.applyObservedPass(this.getName(), 2, 0, graph, circuit);
         // Add dependency edges to the circuit to enforce the processing of integrate trace operators
         // after the corresponding joins
         var cg = graph.graphs.getGraph(circuit);
@@ -83,10 +85,11 @@ public class LowerAsof implements CircuitTransform {
                 cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
         }
         circuit.resort(cg);
+        this.compiler.observeCircuit(this.getName(), 3, "OrderGcDependencies", circuit);
 
         // Scan the circuit a second time and fix the integrate nodes.
         var moveGc = new MoveGC(compiler, leftGces, rightGces, original);
-        circuit = moveGc.apply(circuit);
+        circuit = this.compiler.applyObservedPass(this.getName(), 4, 0, moveGc, circuit);
         return circuit;
     }
 

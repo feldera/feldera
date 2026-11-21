@@ -314,6 +314,10 @@ async fn unbundle_support_bundle(
         // Extract program config if available, using corresponding platform version as runtime_version if not specified
         let program_config = if let Some(pc) = config.get("program_config") {
             Some(ProgramConfig {
+                compiler: serde_json::from_value(pc["compiler"].clone()).unwrap_or_else(|_| {
+                    warn!("The bundle specifies an unsupported SQL compiler. Using the server default. To restore this compiler choice, use a version of fda that supports it.");
+                    None
+                }),
                 cache: pc["cache"].as_bool().unwrap_or(true),
                 profile: pc["profile"].as_str().map(|s| match s {
                     "dev" => CompilationProfile::Dev,
@@ -329,6 +333,7 @@ async fn unbundle_support_bundle(
             })
         } else {
             Some(ProgramConfig {
+                compiler: None,
                 cache: true,
                 profile: Some(CompilationProfile::Optimized),
                 runtime_version: runtime_version.clone(),
@@ -464,5 +469,32 @@ pub async fn debug(format: OutputFormat, action: DebugActions, client: Client) {
                 std::process::exit(1);
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unbundle_accepts_an_unknown_compiler() {
+        let bundle = tempfile::NamedTempFile::new().unwrap();
+        let mut zip = zip::ZipWriter::new(bundle.reopen().unwrap());
+        zip.start_file(
+            "collection/pipeline_config.json",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        serde_json::to_writer(&mut zip, &serde_json::json!({
+            "name": "example", "program_code": "SELECT 1", "program_config": {"compiler": "future"}
+        })).unwrap();
+        zip.finish().unwrap();
+
+        crate::install_crypto_provider();
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let client = Client::new_with_client("http://localhost", http, Default::default());
+        unbundle_support_bundle(OutputFormat::Text, bundle.path(), false, true, client)
+            .await
+            .unwrap();
     }
 }

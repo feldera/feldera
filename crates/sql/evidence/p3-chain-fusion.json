@@ -1,0 +1,53 @@
+{
+  "scope": "OptimizeWithGraph(ChainVisitor) at its exit in uninterrupted Java compilation. Compares the generated-name counter, graph, expression sharing and provenance.",
+  "jar_sha256": "255eba6020388c6554fc16fb8e25651b461ac525dc5a02371fe5b64b0f20e376",
+  "comparator_sha256": "51108ddf64c914a42e9edc238c4f703b7b3c7bf4a8bf000f44d2ea7535dccb34",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "6dfad79310a1e8f09889d69f9d7ff407522a8720f451a8db6ebcc2081875c623"
+    ],
+    "pass": "OptimizeWithGraph(ChainVisitor)",
+    "invocations": 17142,
+    "changed": 1777,
+    "cases_without_placement": 0,
+    "individual_iterations": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "712813f934f9a8fd8da1a723eb1e3ee527f427ec92a04ff28ce8f47c3294798e"
+      ],
+      "pass": "ChainVisitor",
+      "invocations": 18919,
+      "changed": 1777,
+      "cases_without_placement": 0
+    }
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "e887ef6ad652ef530732db0ff015dfbc367776f5e66aef6c308ba7f292fcc11a"
+    ],
+    "pass": "OptimizeWithGraph(ChainVisitor)",
+    "invocations": 17054,
+    "changed": 5603,
+    "cases_without_placement": 0,
+    "individual_iterations": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "c61423f59afabfd066de0c24d632c31c6df1de660e24724cb8e470144cdeb770"
+      ],
+      "pass": "ChainVisitor",
+      "invocations": 22657,
+      "changed": 5603,
+      "cases_without_placement": 0
+    }
+  }
+}

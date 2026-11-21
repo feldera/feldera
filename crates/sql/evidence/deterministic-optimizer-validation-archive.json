@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-deterministic-functions-20261118-v1.tar.gz",
+  "bytes": 12379382,
+  "sha256": "551a9a818a8889a205f2c8d050fac9e19e52e7d88bebbdb661aa7f8460dd5f2b",
+  "manifest_sha256": "f42b23c7ac11889fcfa9d5997b502907121fb16fff6c6a31be37ef2b2ce8cf29",
+  "verified_files": 6055,
+  "all_members_verified": true
+}

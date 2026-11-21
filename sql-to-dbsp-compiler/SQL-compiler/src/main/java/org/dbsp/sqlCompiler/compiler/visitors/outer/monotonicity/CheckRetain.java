@@ -39,6 +39,11 @@ public class CheckRetain extends CircuitWithGraphsVisitor {
         return null;
     }
 
+    public static InternalCompilerError duplicate(DBSPBinaryOperator first, DBSPOperator other) {
+        return new InternalCompilerError("Operator " + first.left() + " has two " + Objects.requireNonNull(slot(first))
+                + " retention policies: " + first + " and " + other);
+    }
+
     void checkUnique(DBSPBinaryOperator retain) {
         RetentionKind slot = Objects.requireNonNull(slot(retain));
         OutputPort data = retain.left();
@@ -49,8 +54,7 @@ public class CheckRetain extends CircuitWithGraphsVisitor {
             // A GC operator reads the data it retains on input 0 and the bounds on input 1
             if (!other.inputs.get(0).equals(data))
                 continue;
-            throw new InternalCompilerError("Operator " + data + " has two " + slot +
-                    " retention policies: " + retain + " and " + other);
+            throw duplicate(retain, other);
         }
     }
 

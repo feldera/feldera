@@ -1,0 +1,30 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T14:13:35.225708+00:00",
+  "archive": ".p0-artifacts/p0-s1-constructor-objects-20261117-v1.tar.gz",
+  "sha256": "5ba1df88adb19d0a69e9db4695e87609a64f08c5ec644416dcfbd69d94d349c1",
+  "bytes": 52229884,
+  "certificates": [
+    "s1-constructor-objects.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-constructor-objects.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-constructor-objects-v3/source-snapshot/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-constructor-objects.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Constructor operator objects and 527-case project-only prefix; the full shard fails on a SQL-defined function body",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-constructor-objects-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 592,
+  "verified_source_hashes": 75,
+  "verified_classpath_hashes": 13
+}

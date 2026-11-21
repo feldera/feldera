@@ -1,0 +1,46 @@
+{
+  "scope": "Pull filters through single-reader maps, aggregates and linear operators or evaluate filters on constants. The boundary comparison covers graph sharing, generated names and diagnostics.",
+  "comparator_sha256": "8b1a896d80dd5d9e0ec0984f3207cf68ff0b87007f5d18ca092a5cb7bc61b381",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "9f26b1da4058dacf96f5f5c1dd7f2acc82539cda4ea5203e7eeeec5e3a1aa818",
+      "9a62eb9e7524fe4875b88de52058b27338d0f54596e8882492ca52a9c5f5acbb",
+      "8405ef5246a89b6297da9c06e6f01335d78260d6840ef7e812a365d76c6e6ba5",
+      "9aaf3d9f37c64548a96f09a2be7118a4274795f16858f2be6affc21a70c1ceb4"
+    ],
+    "pass": "PullFilterVisitor",
+    "invocations": 9112,
+    "changed": 541,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "3381bbda22cfc82ea31373787cd902c4237a3efb94c7df966d6780e71b5722e0",
+      "352c88c7d0e8eeb024769b3d56ed9c891d088bbb5ae6d165a8e12646aef51603",
+      "1cb6702e10c4c531761a6383826ce4bbf7b9d738329f7789764d971c5fda651c",
+      "a8376ce115f1666e75148874f52aa97d3e09a2e015de6a36fd88fb59aeeca089"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "fd7de30b42a48af29fae9c30337b70c352b6d4f5eb4cbe3effaae1d9064e5e0a",
+      "0a16e005fdd2512d0e0f41e3735e218898e4f1514576d432d2436f526059aa2e",
+      "bc981ff034c2e5d59fd291520dedda1f5b4575c20808f7e267c375403ee5dfa9",
+      "dc1622f52fd158f8336a29005340f6859fd57b5dba099cdcd5e54442fab4d773"
+    ],
+    "pass": "PullFilterVisitor",
+    "invocations": 9055,
+    "changed": 528,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "9060c398a54b9f548425db8379f104e7ee1c9f7b5468c4ab5b3fd57a1550ab7e",
+      "eb17da63294963b67e80634e9c012adcf7083a8283a27507f8edcecc4c15ee1a",
+      "0bb2c9567a8071307b5ee632d042782acd556f3ca60a62d7fb9403a681874bb8",
+      "8fe5e6da5d3a22f055e23cab2fb482268569938374e3d127f9af0679ab9f36c6"
+    ]
+  }
+}

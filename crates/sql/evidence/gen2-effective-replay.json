@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "equal": true,
+  "cases": 7,
+  "jvm_runs": 8,
+  "observations": 2779,
+  "isolation": "three independent JVMs per ordered shard plus one capture-disabled baseline",
+  "shards": [
+    {
+      "shard": 0,
+      "seconds": 13.731432711000025,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 4,
+          "observations": 1511,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 4,
+          "observations": 1511,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 4,
+          "observations": 1511,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 1,
+      "seconds": 14.138184901000045,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 3,
+          "observations": 1268,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 3,
+          "observations": 1268,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 3,
+          "observations": 1268,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "input_sha256": "e9b485a741dc8eb09e5f8817440e716cc73158bfdc371d92efaf12c91c5fdfc0",
+    "comparator_sha256": "d2198cd6334064e44d07e4e5816a85fa277f7695fd6f22d644663bb66e3e2656",
+    "classpath": {
+      "$SCRATCH/p0-gen2-effective-tools/test-classes": "cab46f4d8f5f288646351b15a7c0de1147b6304ab1cf7d7f50ee824042f65b13",
+      "$SCRATCH/p0-gen2-effective-tools/classes": "0d0f758286140ee801c4ca37396f5104a4188aac4f80dc9234f5eb83eb837278",
+      "$SCRATCH/p0-coercion-compiler.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "workers": 2,
+    "heap": "2g",
+    "producer": "c6ede756d-p0-ordered-asof-effective-options",
+    "runtime": "c6ede756d",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  }
+}

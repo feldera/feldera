@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-seams-v26",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v26/classes": "e62c4399fff62835b278dbff6bef3ccb17ee8cb46f0d41467e0cf5e2f4ec11b6",
+    "$SCRATCH/p0-seam-tools-v26/test-classes": "08ec8837c0aad1aa2633a50b187ddcbc10c3951018f77eeaebf26c12d11b117b",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "probe_sha256": "fc315bab3df8ac86d8c0a33f9d530515c990c84e2a0fc17ef34d87a2643d4301",
+  "sources": {
+    "crates/sql/scripts/run_multiset_probe.py": "373cb23665e273655abe625012c835014ce1f86eb0c96b2f44fb32322fd18710",
+    "crates/sql/multiset-probe/Cargo.toml": "c640a2b5be6b63f0ae3c610bff13463e8b61bf77089e5910dabd542b7a11ac61",
+    "crates/sql/multiset-probe/Cargo.lock": "13c19e43aa47b7d964e6248186ed446e3bc855278181835d5b5b6ac7026058f5",
+    "crates/sql/multiset-probe/src/analysis.rs": "c83be51e1904df3785541de5618b722e8e6a0ff9d9381999bdb7242d433dae61",
+    "crates/sql/multiset-probe/src/decode.rs": "a87029e5184f1f15abe2c19fa05f72597d2553ec40bf0d300a9344ac665c65c1",
+    "crates/sql/multiset-probe/src/lib.rs": "a635f2e231b19aec0bdc2947a2da22ada7c60d7d1f0b53b14e61e580fad42895",
+    "crates/sql/multiset-probe/src/main.rs": "876f339041aeb1dd354bb7d9c3ab49f7d2d26118176f6b56f5a37aa83c9c5f7a",
+    "crates/sql/multiset-probe/src/model.rs": "235426e59a711eb40cdaac108d4c6aabd2792a8bd46612f61c2d4c9a3f09882d",
+    "crates/sql/multiset-probe/src/prune.rs": "4926fd118cf2e3cbcdbfb98199a5a02a5651b43ecff614414e00c54041022e79",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/MultisetProbe.java": "6ae584b5225822896f993ce0378d6bbd352c164395eeefac8ddaa47604882253",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/CorpusDeterminism.java": "319bb14f4af46dce6af668e817a394fb7c3ed289711d838764dc40f3168647b9",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/MultisetAnalysis.java": "8beb1cce99c127f10eefca51dd14352e600e5361a4d81e2bc952e2190da8c95b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/LosslessCastLineage.java": "75ada25f5e2b753ecd7d0130c62822e2294cf9e3c877b892fad16a54198f8530",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/KeyAnalysis.java": "6f88b2ac0489ace56cdb8926a3b9557128f5ea5a23ed8e2190eb3bcb0e158b23",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Lineage.java": "e88379c3261140bc1da36ce0564c02d5da5bfa001d1b99c8f71ded876d4f065d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/DeadCode.java": "b73f61348b10b899244d88b9a0c90b7c717e9720c3c2aaa295eb6bbf596ace1b",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FindDeadCode.java": "712e7bb0bd5c64399827617a54e4a39a0d44bc523966dade5f21c2ce52f7551d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveOperators.java": "cfc62d8e1fd91e26909b172ce73b9ceecb63b2edf60694aa816614ac62c83664"
+  },
+  "input_sha256": "9dae77a2f291175355c39249eda8f73f7739070d290709f8ef1a8ee6a423c26d",
+  "programs": 50,
+  "runtime_executed": false,
+  "optimizer_ported": false,
+  "typed_model": "analysis projection; other wire fields are preserved",
+  "rust_passes": [
+    "MultisetAnalysis subset",
+    "DeadCode keepAllSources=true"
+  ],
+  "remaining_optimizer": "Java",
+  "limits": {
+    "heap_mib": 1024,
+    "output_mib": 512,
+    "min_free_mib": 512,
+    "timeout_seconds": 300
+  },
+  "results": [
+    {
+      "mode": "classic",
+      "stage": "S2",
+      "cases": 50,
+      "ports": 609,
+      "set_ports": 247,
+      "multiset_ports": 362,
+      "differences": [],
+      "dead_code_differences": [],
+      "removed_operators": 100,
+      "equal": true
+    },
+    {
+      "mode": "classic",
+      "stage": "S3",
+      "cases": 50,
+      "ports": 281,
+      "set_ports": 177,
+      "multiset_ports": 104,
+      "differences": [],
+      "dead_code_differences": [],
+      "removed_operators": 0,
+      "equal": true
+    },
+    {
+      "mode": "gen2",
+      "stage": "S2",
+      "cases": 50,
+      "ports": 609,
+      "set_ports": 247,
+      "multiset_ports": 362,
+      "differences": [],
+      "dead_code_differences": [],
+      "removed_operators": 100,
+      "equal": true
+    },
+    {
+      "mode": "gen2",
+      "stage": "S3",
+      "cases": 50,
+      "ports": 281,
+      "set_ports": 179,
+      "multiset_ports": 102,
+      "differences": [],
+      "dead_code_differences": [],
+      "removed_operators": 0,
+      "equal": true
+    }
+  ],
+  "tail_results": [
+    {
+      "mode": "classic",
+      "start": "S2",
+      "cases": 50,
+      "equal": true,
+      "differences": []
+    },
+    {
+      "mode": "classic",
+      "start": "S3",
+      "cases": 50,
+      "equal": true,
+      "differences": []
+    },
+    {
+      "mode": "gen2",
+      "start": "S2",
+      "cases": 50,
+      "equal": true,
+      "differences": []
+    },
+    {
+      "mode": "gen2",
+      "start": "S3",
+      "cases": 50,
+      "equal": true,
+      "differences": []
+    }
+  ],
+  "equal": true,
+  "jvm_runs": 8
+}

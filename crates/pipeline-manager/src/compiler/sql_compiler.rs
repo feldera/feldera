@@ -6,16 +6,18 @@ use crate::compiler::util::{
     crate_name_pipeline_globals, create_dir_if_not_exists, create_new_file,
     create_new_file_with_content, encode_dir_as_string, read_file_content, recreate_dir,
 };
-use crate::config::{CommonConfig, CompilerConfig};
+use crate::config::{CommonConfig, CompilerConfig, ShadowCompiler};
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{
-    RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage, generate_program_info,
+    CompilerFamily, RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage, generate_program_info,
 };
 use crate::db::types::tenant::TenantId;
-use crate::db::types::utils::{validate_program_config, validate_program_info};
+use crate::db::types::utils::{
+    validate_program_config, validate_program_config_input, validate_program_info,
+};
 use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
@@ -593,6 +595,8 @@ pub(crate) enum SqlCompilationOutput {
     /// IR only: schema, dataflow, and connectors. Skips packaging the generated
     /// Rust, which is not needed to compute pipeline diffs.
     IrOnly,
+    /// Observational compilation: no Rust artifacts and no database connection.
+    Shadow,
 }
 
 /// Root directory for ephemeral (IR-only) SQL compilations. It is wiped on
@@ -674,6 +678,61 @@ pub(crate) async fn perform_sql_compilation(
     program_code: &str,
     output: SqlCompilationOutput,
 ) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
+    let result = perform_sql_compilation_inner(SqlCompilationRequest {
+        common_config,
+        config,
+        db,
+        tenant_id,
+        pipeline_id,
+        pipeline_name,
+        platform_version,
+        program_version,
+        program_config,
+        program_code,
+        output,
+    })
+    .await;
+    let _shadow =
+        super::shadow::launch(common_config, config, program_config, program_code, &result);
+    result
+}
+
+/// Inputs to one compilation attempt. A shadow uses a fresh identity, no
+/// database connection, and observational output.
+pub(super) struct SqlCompilationRequest<'a> {
+    pub common_config: &'a CommonConfig,
+    pub config: &'a CompilerConfig,
+    pub db: Option<Arc<Mutex<StoragePostgres>>>,
+    pub tenant_id: TenantId,
+    pub pipeline_id: PipelineId,
+    pub pipeline_name: Option<String>,
+    pub platform_version: &'a str,
+    pub program_version: Version,
+    pub program_config: &'a serde_json::Value,
+    pub program_code: &'a str,
+    pub output: SqlCompilationOutput,
+}
+
+pub(super) type SqlCompilationResult =
+    Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError>;
+
+/// Executes one attempt without changing pipeline status or delivering artifacts.
+pub(super) async fn perform_sql_compilation_inner(
+    request: SqlCompilationRequest<'_>,
+) -> SqlCompilationResult {
+    let SqlCompilationRequest {
+        common_config,
+        config,
+        db,
+        tenant_id,
+        pipeline_id,
+        pipeline_name,
+        platform_version,
+        program_version,
+        program_config,
+        program_code,
+        output,
+    } = request;
     let start = Instant::now();
 
     // These must always be the same, the SQL compiler should never pick up
@@ -730,7 +789,7 @@ pub(crate) async fn perform_sql_compilation(
             .working_dir()
             .join("sql-compilation")
             .join(format!("pipeline-{pipeline_id}")),
-        SqlCompilationOutput::IrOnly => {
+        SqlCompilationOutput::IrOnly | SqlCompilationOutput::Shadow => {
             ephemeral_compilation_dir(config).join(pipeline_id.to_string())
         }
     };
@@ -751,13 +810,24 @@ pub(crate) async fn perform_sql_compilation(
     let output_stderr_file = create_new_file(&output_stderr_file_path).await?;
 
     // Outputs
-    let output_json_schema_file_path = working_dir.join("schema.json");
-    let output_dataflow_file_path = working_dir.join("dataflow.json");
-    let output_jit_file_path = working_dir.join("jit.json");
+    let shadow_compiler = (output == SqlCompilationOutput::Shadow)
+        .then_some(config.shadow_sql_compiler)
+        .flatten();
+    let rust_optimizer = shadow_compiler == Some(ShadowCompiler::RustOptimizer);
+    let hybrid = rust_optimizer || shadow_compiler == Some(ShadowCompiler::Hybrid);
+    let hybrid_attempt = working_dir.join("hybrid-attempt");
+    let artifact_dir = if hybrid {
+        hybrid_attempt.join("result")
+    } else {
+        working_dir.clone()
+    };
+    let output_json_schema_file_path = artifact_dir.join("schema.json");
+    let output_dataflow_file_path = artifact_dir.join("dataflow.json");
+    let output_jit_file_path = artifact_dir.join(if hybrid { "circuit.json" } else { "jit.json" });
     let output_rust_directory_path = working_dir.join("rust");
     // The Gen-2 engine runs the circuit from the JIT IR and skips the Rust half of
     // compilation, so the Rust output tree is only prepared for other runtimes.
-    if !runtime_selector.is_gen2() {
+    if !runtime_selector.is_gen2() && output != SqlCompilationOutput::Shadow {
         recreate_dir(&output_rust_directory_path.join("crates"))
             .await
             .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
@@ -781,6 +851,11 @@ pub(crate) async fn perform_sql_compilation(
         && has_unstable_feature("runtime_version")
         && !sql_compiler_executable_file_path.exists()
     {
+        if output == SqlCompilationOutput::Shadow {
+            return Err(SqlCompilationError::SystemError(
+                "Shadow SQL compiler is not available locally".to_owned(),
+            ));
+        }
         fetch_sql_compiler(config, &runtime_selector).await?;
         // Either executable exists now or we error'd out
         assert!(sql_compiler_executable_file_path.exists());
@@ -790,40 +865,73 @@ pub(crate) async fn perform_sql_compilation(
     //
     // In the future, it might be that flags can be passed to the SQL compiler through
     // the program_config field of the pipeline.
-    let mut command = Command::new("java");
-    command
-        .arg("-jar")
-        .arg(&sql_compiler_executable_file_path)
-        .arg(input_sql_file_path.as_os_str())
-        .arg("-js")
-        .arg(output_json_schema_file_path.as_os_str())
-        .arg("--dataflow")
-        .arg(output_dataflow_file_path.as_os_str())
-        .arg("-i")
-        .arg("-je")
-        .arg("--alltables")
-        .arg("--ignoreOrder");
-    if runtime_selector.is_gen2() {
-        // The Gen-2 engine consumes the circuit IR and skips Rust codegen. `--gen2` emits
-        // the IR and drops the primary-key columns from an indexed source's value; `--jit`
-        // would emit the IR without that dedup. `-o` names the file the IR goes to, which
-        // `--crates` would conflict with, so the Rust output arguments stay in the else arm.
+    let mut command = if hybrid {
+        let mut request = serde_json::json!({
+            "java_classpath": sql_compiler_executable_file_path,
+            "producer_commit": env!("VERGEN_GIT_SHA"),
+            "runtime_abi": String::from_utf8_lossy(runtime_selector.as_bytes()),
+            "engine": if runtime_selector.is_gen2() { "gen2" } else { "classic" },
+            "sql": input_sql_file_path,
+            "slots": config.working_dir().join("hybrid-workers"),
+            "deadline_ms": config.shadow_sql_compiler_timeout_secs.saturating_mul(1000),
+            "enterprise": cfg!(feature = "feldera-enterprise"),
+            "ir_only": true,
+        });
+        if rust_optimizer {
+            request["rust_optimizer_passes"] = true.into();
+        }
+        let manifest = working_dir.join("hybrid-request.json");
+        create_new_file_with_content(&manifest, &request.to_string()).await?;
+        let mut command = Command::new("sql2dbsp");
+        command.arg("--hybrid").arg(manifest).arg(&hybrid_attempt);
         command
-            .arg("--gen2")
-            .arg("-o")
-            .arg(output_jit_file_path.as_os_str());
     } else {
-        let runtime_crates_path = runtime_selector.runtime_sources(config);
+        let mut command = match program_config.compiler.unwrap_or_default() {
+            CompilerFamily::Java => Command::new("java"),
+        };
+        if output == SqlCompilationOutput::Shadow {
+            super::shadow::limit_jvm(&mut command);
+        }
         command
-            .arg("-o")
-            .arg(output_rust_directory_path.as_os_str())
-            .arg("--runtime")
-            .arg(runtime_crates_path)
-            .arg("--crates") // Generate multiple crates instead of a single main.rs
-            .arg(crate_name_pipeline_base(pipeline_id));
+            .arg("-jar")
+            .arg(&sql_compiler_executable_file_path)
+            .arg(input_sql_file_path.as_os_str())
+            .arg("-js")
+            .arg(output_json_schema_file_path.as_os_str())
+            .arg("--dataflow")
+            .arg(output_dataflow_file_path.as_os_str())
+            .arg("-i")
+            .arg("-je")
+            .arg("--alltables")
+            .arg("--ignoreOrder");
+        if runtime_selector.is_gen2() {
+            // The Gen-2 engine consumes the circuit IR and skips Rust codegen. `--gen2` emits
+            // the IR and drops the primary-key columns from an indexed source's value; `--jit`
+            // would emit the IR without that dedup. `-o` names the file the IR goes to, which
+            // `--crates` would conflict with, so the Rust output arguments stay in the else arm.
+            command
+                .arg("--gen2")
+                .arg("-o")
+                .arg(output_jit_file_path.as_os_str());
+        } else if output == SqlCompilationOutput::Shadow {
+            command.arg("--noRust");
+        } else {
+            let runtime_crates_path = runtime_selector.runtime_sources(config);
+            command
+                .arg("-o")
+                .arg(output_rust_directory_path.as_os_str())
+                .arg("--runtime")
+                .arg(runtime_crates_path)
+                .arg("--crates") // Generate multiple crates instead of a single main.rs
+                .arg(crate_name_pipeline_base(pipeline_id));
+        }
+        #[cfg(feature = "feldera-enterprise")]
+        command.arg("--enterprise");
+        command
+    };
+    if output == SqlCompilationOutput::Shadow {
+        super::shadow::limit_output_files(&mut command);
     }
-    #[cfg(feature = "feldera-enterprise")]
-    command.arg("--enterprise");
     // Every runtime sends stdout to stdout.log. The Gen-2 IR goes to its own file through
     // `-o` rather than by hijacking stdout, so a stray byte from the JVM (a warning, an
     // `-XX` message) cannot land inside the IR and turn into an unrelated deserialization
@@ -862,7 +970,12 @@ pub(crate) async fn perform_sql_compilation(
     // Wait for process to exit while regularly checking if the pipeline still exists
     // and has not had its program get updated
     let exit_status = loop {
-        match process.try_wait() {
+        let status = if output == SqlCompilationOutput::Shadow {
+            super::shadow::try_wait(&mut process, &mut terminator)
+        } else {
+            process.try_wait()
+        };
+        match status {
             Ok(exit_status) => match exit_status {
                 None => {
                     if let Some(db) = db.clone() {
@@ -903,7 +1016,8 @@ pub(crate) async fn perform_sql_compilation(
         sleep(COMPILATION_CHECK_INTERVAL).await;
     };
 
-    // Once the process has exited, it is no longer needed to terminate its process group
+    // Shadow polling has already terminated helpers before reaping the leader.
+    // Other compilation modes retain their existing completion behavior.
     terminator.cancel();
 
     // Check presence of exit status code
@@ -927,7 +1041,15 @@ pub(crate) async fn perform_sql_compilation(
                 .to_string(),
             )
         })?;
-    let messages: Vec<SqlCompilerMessage> = if stderr_str.is_empty() {
+    let messages: Vec<SqlCompilerMessage> = if hybrid {
+        super::shadow::hybrid::messages(
+            &artifact_dir,
+            &runtime_selector,
+            rust_optimizer,
+            exit_status.success(),
+        )
+        .await?
+    } else if stderr_str.is_empty() {
         vec![]
     } else {
         // TODO: the proper solution is to log this to a separate stream, this breaks in case
@@ -935,6 +1057,12 @@ pub(crate) async fn perform_sql_compilation(
         let find_json_start = stderr_str.find("[");
         match serde_json::from_str(&stderr_str[find_json_start.unwrap_or(0)..]) {
             Ok(messages) => messages,
+            Err(_) if output == SqlCompilationOutput::Shadow => {
+                return Err(SqlCompilationError::SystemError(
+                    "Cannot read shadow diagnostics as JSON. Check the SQL compiler version."
+                        .to_owned(),
+                ));
+            }
             Err(e) => {
                 if !exit_status.success() {
                     return Err(SqlCompilationError::SystemError(format!(
@@ -997,7 +1125,9 @@ pub(crate) async fn perform_sql_compilation(
                     let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
                     (main_rust, stubs)
                 }
-                SqlCompilationOutput::IrOnly => (String::new(), String::new()),
+                SqlCompilationOutput::IrOnly | SqlCompilationOutput::Shadow => {
+                    (String::new(), String::new())
+                }
             }
         };
 
@@ -1091,7 +1221,7 @@ pub(crate) async fn validate_program(
     // Reject a custom runtime version when the feature is disabled instead of
     // silently falling back to the platform runtime, which would produce a
     // misleading result.
-    match validate_program_config(program_config, true) {
+    match validate_program_config_input(program_config) {
         Ok(validated) => {
             if validated
                 .runtime_version

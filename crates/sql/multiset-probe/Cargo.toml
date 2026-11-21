@@ -1,0 +1,17 @@
+[package]
+name = "feldera-multiset-probe"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+# Disposable P0 spike, not the production sql-ir crate.
+[workspace]
+
+[dependencies]
+feldera-sql-ir = { path = "../sql-ir" }
+feldera-sql-difftest = { path = "../sql-difftest" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
+sha2 = "0.10"
+

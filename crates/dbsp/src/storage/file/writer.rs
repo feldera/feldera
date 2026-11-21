@@ -26,7 +26,7 @@ use crate::storage::{
 use crate::{
     Runtime,
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
-    storage::file::ItemFactory,
+    storage::file::Item,
     trace::filter::{BatchFilters, key_range::KeyRange},
 };
 use binrw::{
@@ -267,22 +267,132 @@ where
     }
 }
 
+#[derive(Clone)]
+enum WriterFactories {
+    Static(AnyFactories),
+    #[cfg(feature = "native-abi")]
+    Context {
+        key: Arc<dyn std::any::Any + Send + Sync>,
+        item: Arc<dyn std::any::Any + Send + Sync>,
+    },
+}
+
+#[cfg(feature = "native-abi")]
+/// Creates the key scratch values used to build a layer file's index.
+pub trait LayerKeyFactory<K: DataTrait + ?Sized>: Send + Sync {
+    /// Creates a key with the descriptor used by this column.
+    fn default_key(&self) -> Box<K>;
+}
+
+#[cfg(feature = "native-abi")]
+/// Encodes and reads archived items using a runtime layout descriptor.
+///
+/// # Safety
+///
+/// For each column, `with_item` must serialize a valid rkyv archive of
+/// [`RefTup2`](super::RefTup2) for the concrete key and auxiliary types.
+/// The item offset must have the alignment and field layout of that archive.
+/// The scratch key from `default_key` must serialize as the same key type.
+/// `read_item_key` must accept every item that this factory writes.
+pub unsafe trait LayerItemFactory<K: DataTrait + ?Sized, A: DataTrait + ?Sized>:
+    LayerKeyFactory<K>
+{
+    /// Calls `write` once with a serializable item for this key and auxiliary value.
+    fn with_item<'a>(&self, key: &'a K, aux: &'a A, write: &mut dyn FnMut(&dyn Item<'a, K, A>));
+
+    /// Deserializes an archived item's key into a scratch value.
+    ///
+    /// # Safety
+    ///
+    /// `bytes` must contain an intact item from this factory at `offset`.
+    /// `target` must have the type and layout returned by `default_key`.
+    unsafe fn read_item_key(&self, bytes: &[u8], offset: usize, target: &mut K);
+}
+
+// Each column uses the same K and A to install, write and finish its factory.
+impl WriterFactories {
+    #[cfg(feature = "native-abi")]
+    fn context<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        factory: Arc<dyn LayerItemFactory<K, A>>,
+    ) -> Self {
+        let key: Arc<dyn LayerKeyFactory<K>> = factory.clone();
+        Self::Context {
+            key: Arc::new(key),
+            item: Arc::new(factory),
+        }
+    }
+
+    fn default_key<K: DataTrait + ?Sized>(&self) -> Box<K> {
+        match self {
+            Self::Static(factories) => factories.key_factory().default_box(),
+            #[cfg(feature = "native-abi")]
+            Self::Context { key, .. } => key
+                .downcast_ref::<Arc<dyn LayerKeyFactory<K>>>()
+                .expect("column key type mismatch: use the key type supplied to context")
+                .default_key(),
+        }
+    }
+
+    fn with_item<'a, K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        key: &'a K,
+        aux: &'a A,
+        write: &mut dyn FnMut(&dyn Item<'a, K, A>),
+    ) {
+        match self {
+            Self::Static(factories) => factories.item_factory().with(key, aux, write),
+            #[cfg(feature = "native-abi")]
+            Self::Context { item, .. } => item
+                .downcast_ref::<Arc<dyn LayerItemFactory<K, A>>>()
+                .expect("column item type mismatch: use the key and auxiliary types supplied to context")
+                .with_item(key, aux, write),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The block and offset refer to an item serialized by this factory.
+    unsafe fn read_item_key<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        block: &FBuf,
+        offset: usize,
+        target: &mut K,
+    ) {
+        match self {
+            Self::Static(factories) => {
+                let factory = factories.item_factory::<K, A>();
+                // SAFETY: this item was serialized by the same static factory.
+                let item = unsafe { factory.archived_value(block, offset) };
+                DeserializeDyn::deserialize(item.fst(), target);
+            }
+            #[cfg(feature = "native-abi")]
+            Self::Context { item, .. } => {
+                let factory = item
+                    .downcast_ref::<Arc<dyn LayerItemFactory<K, A>>>()
+                    .expect("column item type mismatch: finish the column with its original key and auxiliary types");
+                // SAFETY: the same contextual factory wrote this item.
+                unsafe { factory.read_item_key(block, offset, target) };
+            }
+        }
+    }
+}
+
 struct ColumnWriter {
     parameters: Arc<Parameters>,
     rows: Range<u64>,
     data_block: DataBlockBuilder,
     index_blocks: Vec<IndexBlockBuilder>,
-    factories: AnyFactories,
+    factories: WriterFactories,
 }
 
 impl ColumnWriter {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
+    fn new(factories: WriterFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
         ColumnWriter {
             parameters: parameters.clone(),
             rows: 0..0,
-            data_block: DataBlockBuilder::new(factories, parameters, column),
+            data_block: DataBlockBuilder::new(&factories, parameters, column),
             index_blocks: Vec::new(),
-            factories: factories.clone(),
+            factories,
         }
     }
 
@@ -303,7 +413,7 @@ impl ColumnWriter {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.build::<K, A>();
-            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
+            self.write_data_block(block_writer, data_block, serializer)?;
         }
 
         // Flush index.
@@ -347,12 +457,10 @@ impl ColumnWriter {
     where
         K: DataTrait + ?Sized,
     {
-        let key_factory = self.factories.key_factory::<K>();
-
-        let mut min = key_factory.default_box();
+        let mut min = self.factories.default_key::<K>();
         rkyv_deserialize(raw, entry.min_offset, min.as_mut());
 
-        let mut max = key_factory.default_box();
+        let mut max = self.factories.default_key::<K>();
         rkyv_deserialize(raw, entry.max_offset, max.as_mut());
 
         (min, max)
@@ -374,7 +482,7 @@ impl ColumnWriter {
         &mut self.index_blocks[level]
     }
 
-    fn write_data_block<K, A>(
+    fn write_data_block<K>(
         &mut self,
         block_writer: &mut BlockWriter,
         data_block: DataBlock<K>,
@@ -382,13 +490,12 @@ impl ColumnWriter {
     ) -> Result<(), StorageError>
     where
         K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
     {
         let rows = data_block.rows();
         let (block, location) =
             block_writer.write_block(data_block.raw, self.parameters.compression)?;
 
-        super::reader::DataBlock::<K, A>::from_raw_with_cache(
+        super::reader::DataBlock::from_raw_with_cache(
             block,
             &TreeNode {
                 location,
@@ -427,7 +534,7 @@ impl ColumnWriter {
             let n_rows = index_block.n_rows();
             let (block, location) =
                 block_writer.write_block(index_block.raw, self.parameters.compression)?;
-            super::reader::IndexBlock::<K>::from_raw_with_cache(
+            super::reader::IndexBlock::from_raw_with_cache(
                 block,
                 &TreeNode {
                     location,
@@ -466,7 +573,7 @@ impl ColumnWriter {
         A: DataTrait + ?Sized,
     {
         if let Some(data_block) = self.data_block.add_item(item, row_group, serializer) {
-            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
+            self.write_data_block(block_writer, data_block, serializer)?;
         }
         Ok(())
     }
@@ -522,7 +629,7 @@ struct DataBlockBuilder {
     value_offset_stride: StrideBuilder,
     row_groups: ContiguousRanges,
     size_target: Option<usize>,
-    factories: AnyFactories,
+    factories: WriterFactories,
     first_row: u64,
 }
 
@@ -549,7 +656,7 @@ where
 }
 
 impl DataBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
+    fn new(factories: &WriterFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
         let min_data_block = parameters.min_data_block_for(column);
         let mut raw = FBuf::with_capacity(min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
@@ -594,16 +701,14 @@ impl DataBlockBuilder {
         let old_stride = self.value_offset_stride;
 
         let mut result = Ok(0);
-        self.factories
-            .item_factory()
-            .with(item.0, item.1, &mut |item| {
-                result = rkyv_serialize(
-                    serializer,
-                    &mut self.raw,
-                    item,
-                    self.size_target.unwrap_or(usize::MAX),
-                );
-            });
+        self.factories.with_item(item.0, item.1, &mut |item| {
+            result = rkyv_serialize(
+                serializer,
+                &mut self.raw,
+                item,
+                self.size_target.unwrap_or(usize::MAX),
+            );
+        });
         let offset = result.inspect_err(|_| self.raw.resize(old_len, 0))?;
 
         self.value_offsets.push(offset);
@@ -687,9 +792,6 @@ impl DataBlockBuilder {
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        let key_factory = self.factories.key_factory::<K>();
-        let item_factory = self.factories.item_factory::<K, A>();
-
         let specs = self.specs();
 
         self.raw
@@ -728,13 +830,21 @@ impl DataBlockBuilder {
         };
         header.overwrite_head(&mut self.raw);
 
-        let mut min = key_factory.default_box();
+        let mut min = self.factories.default_key::<K>();
         let min_offset = *self.value_offsets.first().unwrap();
-        rkyv_deserialize_key::<K, A>(item_factory, &self.raw, min_offset, min.as_mut());
+        // SAFETY: the builder recorded this offset when it serialized the item.
+        unsafe {
+            self.factories
+                .read_item_key::<K, A>(&self.raw, min_offset, min.as_mut())
+        };
 
-        let mut max = key_factory.default_box();
+        let mut max = self.factories.default_key::<K>();
         let max_offset = *self.value_offsets.last().unwrap();
-        rkyv_deserialize_key::<K, A>(item_factory, &self.raw, max_offset, max.as_mut());
+        // SAFETY: the builder recorded this offset when it serialized the item.
+        unsafe {
+            self.factories
+                .read_item_key::<K, A>(&self.raw, max_offset, max.as_mut())
+        };
 
         // Take our data buffer, replacing it by a new one with a capacity big
         // enough for the data in the current one.  We round up to a multiple of
@@ -801,7 +911,7 @@ struct IndexBlockBuilder {
     entries: Vec<IndexEntry>,
     child_type: NodeType,
     size_target: Option<usize>,
-    factories: AnyFactories,
+    factories: WriterFactories,
     max_child_size: usize,
     first_row: u64,
 }
@@ -830,22 +940,8 @@ fn rkyv_deserialize<K>(src: &FBuf, offset: usize, key: &mut K)
 where
     K: DataTrait + ?Sized,
 {
+    // SAFETY: the index builder recorded the offset when it serialized this key type.
     unsafe { key.deserialize_from_bytes(src.as_slice(), offset) };
-}
-
-fn rkyv_deserialize_key<K, A>(
-    factory: &'static dyn ItemFactory<K, A>,
-    src: &FBuf,
-    offset: usize,
-    key: &mut K,
-) where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    DeserializeDyn::deserialize(
-        unsafe { factory.archived_value(src.as_slice(), offset).fst() },
-        key,
-    )
 }
 
 fn rkyv_serialize<T>(
@@ -876,7 +972,11 @@ where
 }
 
 impl IndexBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, child_type: NodeType) -> Self {
+    fn new(
+        factories: &WriterFactories,
+        parameters: &Arc<Parameters>,
+        child_type: NodeType,
+    ) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_index_block);
         raw.resize(IndexBlockHeader::LEN, 0);
 
@@ -1027,8 +1127,6 @@ impl IndexBlockBuilder {
     where
         K: DataTrait + ?Sized,
     {
-        let key_factory = self.factories.key_factory::<K>();
-
         let specs = self.specs();
 
         self.raw
@@ -1073,11 +1171,11 @@ impl IndexBlockBuilder {
         };
         header.overwrite_head(&mut self.raw);
 
-        let mut min = key_factory.default_box();
+        let mut min = self.factories.default_key::<K>();
         let entry_0 = self.entries.first().unwrap();
         rkyv_deserialize(&self.raw, entry_0.min_offset, min.as_mut());
 
-        let mut max = key_factory.default_box();
+        let mut max = self.factories.default_key::<K>();
         let entry_n = self.entries.last().unwrap();
         rkyv_deserialize(&self.raw, entry_n.max_offset, max.as_mut());
 
@@ -1258,14 +1356,30 @@ impl Writer {
         key_filter: Option<BatchKeyFilter>,
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
+        Self::new_with_factories(
+            factories
+                .iter()
+                .map(|f| WriterFactories::Static((*f).clone())),
+            cache,
+            storage_backend,
+            parameters,
+            key_filter,
+        )
+    }
 
+    fn new_with_factories(
+        factories: impl Iterator<Item = WriterFactories>,
+        cache: fn() -> Option<Arc<BufferCache>>,
+        storage_backend: &dyn StorageBackend,
+        parameters: Parameters,
+        key_filter: Option<BatchKeyFilter>,
+    ) -> Result<Self, StorageError> {
         let parameters = Arc::new(parameters);
-        let cws = factories
-            .iter()
+        let cws: Vec<_> = factories
             .enumerate()
             .map(|(column, factories)| ColumnWriter::new(factories, &parameters, column))
             .collect();
-        let finished_columns = Vec::with_capacity(n_columns);
+        let finished_columns = Vec::with_capacity(cws.len());
         let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
             cache,
@@ -1627,6 +1741,80 @@ where
     {
         self.into_reader_impl(metadata)
     }
+}
+
+/// Write an ordinary one-column layer file with runtime-owned factories.
+///
+/// This entry point supports the archive ABI experiment. The caller supplies
+/// rows with strictly increasing keys and a factory for the existing archive layout.
+#[cfg(feature = "native-abi")]
+pub fn write_layer_with_factory<'a, K, A>(
+    factory: Arc<dyn LayerItemFactory<K, A>>,
+    rows: impl IntoIterator<Item = (&'a K, &'a A)>,
+    cache: fn() -> Option<Arc<BufferCache>>,
+    storage_backend: &dyn StorageBackend,
+    parameters: Parameters,
+    metadata: BatchMetadata,
+) -> Result<Arc<dyn FileReader>, StorageError>
+where
+    K: DataTrait + ?Sized + 'a,
+    A: DataTrait + ?Sized + 'a,
+{
+    let mut writer = Writer::new_with_factories(
+        std::iter::once(WriterFactories::context(factory)),
+        cache,
+        storage_backend,
+        parameters,
+        None,
+    )?;
+    for row in rows {
+        writer.write(0, row)?;
+    }
+    writer.finish_column::<K, A>(0)?;
+    writer.close(metadata).map(|(file, _)| file)
+}
+
+/// Write a two-column layer file with runtime-owned archive factories.
+///
+/// Outer keys must strictly increase. Each outer row must have a nonempty group
+/// of inner rows, whose keys must strictly increase within that group.
+#[cfg(feature = "native-abi")]
+pub fn write_nested_layer_with_factories<'a, K0, A0, K1, A1, Group>(
+    outer: Arc<dyn LayerItemFactory<K0, A0>>,
+    inner: Arc<dyn LayerItemFactory<K1, A1>>,
+    rows: impl IntoIterator<Item = ((&'a K0, &'a A0), Group)>,
+    cache: fn() -> Option<Arc<BufferCache>>,
+    storage_backend: &dyn StorageBackend,
+    parameters: Parameters,
+    metadata: BatchMetadata,
+) -> Result<Arc<dyn FileReader>, StorageError>
+where
+    K0: DataTrait + ?Sized + 'a,
+    A0: DataTrait + ?Sized + 'a,
+    K1: DataTrait + ?Sized + 'a,
+    A1: DataTrait + ?Sized + 'a,
+    Group: IntoIterator<Item = (&'a K1, &'a A1)>,
+{
+    let mut writer = Writer::new_with_factories(
+        [
+            WriterFactories::context(outer),
+            WriterFactories::context(inner),
+        ]
+        .into_iter(),
+        cache,
+        storage_backend,
+        parameters,
+        None,
+    )?;
+    for (outer, group) in rows {
+        for inner in group {
+            writer.write(1, inner)?;
+        }
+        writer.write(0, outer)?;
+    }
+    writer.finish_column::<K0, A0>(0)?;
+    writer.finish_column::<K1, A1>(1)?;
+    writer.close(metadata).map(|(file, _)| file)
 }
 
 /// 2-column layer file writer.

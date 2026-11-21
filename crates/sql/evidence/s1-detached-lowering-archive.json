@@ -1,0 +1,37 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-detached-lowering-20261118-v1.tar.gz",
+  "sha256": "bb021f6b76cc9de883ba2eacd23fc1a701e1a4286c33e79d3bf6765518e615d5",
+  "bytes": 474356109,
+  "certificates": [
+    "s1-detached-lowering.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-detached-lowering.json": [
+      {
+        "source_prefix": "p0-statement-program-v6/",
+        "archive_prefix": "$SCRATCH/p0-statement-program-v6/sources/"
+      },
+      {
+        "source_prefix": "p0-s1-lowering-v1/",
+        "archive_prefix": "$SCRATCH/p0-s1-lowering-v1/sources/"
+      },
+      {
+        "source_prefix": "p0-s1-lowering-v3/",
+        "archive_prefix": "$SCRATCH/p0-s1-lowering-v3/sources/"
+      },
+      {
+        "source_prefix": "p0-s1-lowering-v4/",
+        "archive_prefix": "$SCRATCH/p0-s1-lowering-v4/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-detached-lowering.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Detached typed S1 construction with frontend diagnostic interleaving; exact S2 circuit/schema/diagnostic comparison",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-detached-lowering-archive.json"
+}

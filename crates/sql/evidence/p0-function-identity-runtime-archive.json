@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-function-identity-runtime-20261118-v1.tar.gz",
+  "bytes": 63930,
+  "sha256": "803195e05a0d29e8b8fcc8541135781efc3e97a1e252fb1b589670680e5a60ea",
+  "manifest_sha256": "6122a9b951197b6174b7d659c9993fc1897fbf68cdf8f3545062ed6012d2d033",
+  "verified_files": 8,
+  "all_members_verified": true
+}

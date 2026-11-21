@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-state-outside-view-cones-20261118.tar.gz",
+  "bytes": 185686,
+  "sha256": "b60bc19ed60783274c5de7c1e4d1cf1738017e114a5e2f9ea27343057244f70f",
+  "manifest_sha256": "3b43e7dbe7b53fc84a09bdad6ae5307736958d1949723e79eed2a12e66464863",
+  "verified_files": 10,
+  "all_members_verified": true
+}

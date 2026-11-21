@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "complete for the generated type matrix",
+  "archive_index": "type-s2-complete-archive.json",
+  "validated_java_binding_archive_index": "type-bindings-archive.json",
+  "capture": {
+    "schema_version": 1,
+    "expected_probes": 84224,
+    "probes": 84224,
+    "accepted": 60840,
+    "rejected": 23384,
+    "compiler_bugs": 0,
+    "capture_errors": 0,
+    "complete": true,
+    "runtime_verified": false,
+    "scope": "Unoptimized Java S2 scalar projections and set coercions",
+    "captured_projections": 49920,
+    "captured_set_map_projections": 10560,
+    "captured_aggregate_components": 360,
+    "accepted_outside_projection_scope": 0
+  },
+  "s2_comparison": {
+    "counts": {
+      "equal_columns": 15708,
+      "equal_with_literal": 45132,
+      "rejected": 23384
+    },
+    "mismatches": 0
+  },
+  "test_results": {
+    "java_tests": 8,
+    "rust_tests": 28,
+    "rust_clippy_passed": true
+  },
+  "raw_reports": [
+    "p0-type-s2-all-v1/complete.json",
+    "p0-type-s2-compare-all-v1/summary.json",
+    "p0-type-s2-compare-types-all-v1/complete.json",
+    "p0-type-s2-compare-binding-all-v1/complete.json"
+  ],
+  "full_c9_verified": false,
+  "c7_verified_by_this_run": false
+}

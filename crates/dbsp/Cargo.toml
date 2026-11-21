@@ -34,6 +34,9 @@ heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
 # Test hooks for other crates, such as `DBSPHandle::inject_fatal_error`.
 testing = []
 
+# Storage and operator interfaces for the native compiler experiment.
+native-abi = []
+
 [dependencies]
 num = { workspace = true }
 anyhow = { workspace = true }

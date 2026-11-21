@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "Three CLI workloads, direct versus file-split S2 in one warmed JVM",
+  "archive": ".bench-results/seam-warm/2026-18-11-00-54-c6ede",
+  "workloads": {
+    "array-subquery.sql": {
+      "samples": 31,
+      "direct": {
+        "mean_seconds": 0.012233610580645161,
+        "median_seconds": 0.01087165,
+        "empirical_p95_seconds": 0.015358661,
+        "min_seconds": 0.00986344,
+        "max_seconds": 0.034577082
+      },
+      "split": {
+        "mean_seconds": 0.027670621322580646,
+        "median_seconds": 0.024351182,
+        "empirical_p95_seconds": 0.044276312,
+        "min_seconds": 0.022156427,
+        "max_seconds": 0.049985742
+      },
+      "split_over_direct": 2.261852389380322,
+      "paired_bootstrap_95_percent_interval": [
+        2.0617575854578662,
+        2.484980780460722
+      ]
+    },
+    "nexmark-suite.sql": {
+      "samples": 31,
+      "direct": {
+        "mean_seconds": 0.19129615964516128,
+        "median_seconds": 0.182331344,
+        "empirical_p95_seconds": 0.246764995,
+        "min_seconds": 0.168578395,
+        "max_seconds": 0.272075305
+      },
+      "split": {
+        "mean_seconds": 1.3183277893548386,
+        "median_seconds": 1.21549685,
+        "empirical_p95_seconds": 1.945506479,
+        "min_seconds": 0.6311532310000001,
+        "max_seconds": 2.1506989599999997
+      },
+      "split_over_direct": 6.891553870188657,
+      "paired_bootstrap_95_percent_interval": [
+        6.1122447848222246,
+        7.695960523522264
+      ]
+    },
+    "outer-join.sql": {
+      "samples": 31,
+      "direct": {
+        "mean_seconds": 0.00931496670967742,
+        "median_seconds": 0.008392853,
+        "empirical_p95_seconds": 0.014184866,
+        "min_seconds": 0.006916057,
+        "max_seconds": 0.028592359
+      },
+      "split": {
+        "mean_seconds": 0.019226153903225806,
+        "median_seconds": 0.017437791,
+        "empirical_p95_seconds": 0.030372195999999997,
+        "min_seconds": 0.015051576,
+        "max_seconds": 0.051447787999999994
+      },
+      "split_over_direct": 2.0640067219189895,
+      "paired_bootstrap_95_percent_interval": [
+        1.9386162954594548,
+        2.211038773892263
+      ]
+    }
+  },
+  "shared_process": {
+    "seconds": 54.81676484196214,
+    "max_rss_kib": 800308,
+    "returncode": 0
+  },
+  "pairs": 108,
+  "samples_per_workload": 31,
+  "warmups_per_workload": 5,
+  "artifact_schema_and_diagnostics_equal": true,
+  "production_budget_approved": false,
+  "P0_complete": false,
+  "runtime_executed": false,
+  "limitations": [
+    "VM host load and CPU frequency are uncontrolled.",
+    "Selected SQL workloads use CLI defaults, not the JUnit option matrix.",
+    "One JVM executes both paths; no Rust mid-end or IPC is measured.",
+    "Per-command latency excludes JVM startup and schedule parsing; it includes output and S2 file I/O.",
+    "Warmup count is fixed; JIT/GC can still evolve during measured samples.",
+    "RSS is the high-water mark of the entire shared JVM, not an attributable per-path measurement.",
+    "Empirical p95 and paired bootstrap intervals do not certify production tail latency."
+  ],
+  "files": {
+    "results/summary.json": "12e5013fe0b8d05043e8a4f1564dfe043ce4611ec9476fcebd7abc832dc9d57c",
+    "results/measurements.jsonl": "97a9b03c9ea0e00af94c0a93c00a89376dc425e9c413382eb1c05c32bce5a610",
+    "results/schedule.json": "2b5b58bfde09c0812da87d1a1c6019b429c073ad2d0ef6d73caee487c437625d",
+    "results/environment.json": "e8906038751d065ecfa06f9ee5bf7ba767da8d2b97ed7464b59887bd4d958cb0",
+    "results/phase-summary.json": "359f77b1fca5b2e838f145d28524a2e4ee914b2254941d5ff7d5dde6b7ef8aa1",
+    "dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9",
+    "p0-warm-seam-deferred-v1.json": "d602023fc82f93e5850ccec42b416223fea2d8c41990cd71b8f82bbd0a6d1d98"
+  }
+}

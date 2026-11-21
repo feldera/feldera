@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-regions-archive.json",
+  "regression_archive_index": "optimizer-regions-regressions-archive.json",
+  "engines": ["classic", "gen2"],
+  "scheduled_placements": 30,
+  "flat_programs_per_engine": 50,
+  "same_input_pass_comparisons": 2942,
+  "rust_final_compiler_comparisons": 100,
+  "java_codec_final_compiler_controls": 100,
+  "region_same_input_comparisons_in_combined_run": 100,
+  "live_region_programs_per_engine": 3,
+  "live_region_final_compiler_comparisons": 6,
+  "live_region_stage_graph_comparisons": 12,
+  "directed_annotation_graphs": 4,
+  "directed_graphs_requiring_removal": 3,
+  "bag_and_set_tail_regressions": 600,
+  "rust_tests": 31,
+  "differences": 0,
+  "scope": "The combined matrix uses set-output mode and retains intervening Java optimizer passes. GlobalAggregate is the region annotation class in the current Java optimizer. The four directed graphs cover contiguous regions, disconnected regions, competing region names and duplicate tags. Three real aggregate SQL programs per engine reach TagRegions with region annotations and match Java at this stage and in the final compiler artifacts."
+}

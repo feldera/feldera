@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-projections-archive.json",
+  "scope": "Three original OptimizeProjections placements in the frozen 50 programs. Compose direct tuple permutations into single-consumer stream joins.",
+  "strict_graphs_and_name_counters_equal": {"classic": 150, "gen2": 150},
+  "active_fusions": {"classic": 1, "gen2": 1},
+  "composed_placements": 58,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "limits": "The supported slice does not transport Java's analyzed set or exercise its later rewrites. Other candidate layouts are refused."
+}

@@ -26,6 +26,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.List;
+import javax.annotation.Nullable;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
@@ -42,10 +43,22 @@ public final class DBSPAggregateList extends DBSPNode
 
     public DBSPAggregateList(CalciteObject node, DBSPVariablePath rowVar,
                              List<IAggregate> aggregates) {
+        this(node, rowVar, aggregates, null);
+    }
+
+    private DBSPAggregateList(CalciteObject node, DBSPVariablePath rowVar,
+                              List<IAggregate> aggregates, @Nullable DBSPTupleExpression cachedResult) {
         super(node);
         this.rowVar = rowVar;
         this.aggregates = aggregates;
-        this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, IAggregate::getEmptySetResult));
+        if (cachedResult != null) {
+            Utilities.enforce(cachedResult.fields != null && !cachedResult.getType().mayBeNull
+                    && cachedResult.fields.length == aggregates.size());
+            for (int i = 0; i < aggregates.size(); i++)
+                Utilities.enforce(cachedResult.fields[i] == aggregates.get(i).getEmptySetResult());
+        }
+        this.emptySetResult = cachedResult != null ? cachedResult
+                : new DBSPTupleExpression(node, Linq.map(aggregates, IAggregate::getEmptySetResult));
         for (IAggregate b: this.aggregates) {
             List<DBSPParameter> params = b.getRowVariableReferences();
             for (DBSPParameter p: params) {
@@ -170,6 +183,8 @@ public final class DBSPAggregateList extends DBSPNode
     public static DBSPAggregateList fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPVariablePath rowVar = fromJsonInner(node, "rowVar", decoder, DBSPVariablePath.class);
         List<IAggregate> aggregates = fromJsonInnerList(node, "aggregates", decoder, IAggregate.class);
-        return new DBSPAggregateList(CalciteObject.EMPTY, rowVar, aggregates);
+        DBSPTupleExpression cached = node.has("cachedEmptySetResult")
+                ? fromJsonInner(node, "cachedEmptySetResult", decoder, DBSPTupleExpression.class) : null;
+        return new DBSPAggregateList(CalciteObject.EMPTY, rowVar, aggregates, cached);
     }
 }

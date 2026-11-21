@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "contract": "types-v0",
+  "tests": 9,
+  "clippy_warnings_denied": true,
+  "ci_wired": true,
+  "workflow_lint_passed": true,
+  "full_s1_schema": false,
+  "java_importer": false,
+  "corpus_projection_verified": false,
+  "independent_review": false,
+  "sources": {
+    "crates/sql/sql-rel-model/Cargo.lock": "4982e4bf63010a1e9b946adec2f502b6443f46b0f936318bfcee03f6506312fd",
+    "crates/sql/sql-rel-model/Cargo.toml": "0934756c44aa55b59137db244c464a13c7eacf6b5ef1eff4386e8df40d0721e9",
+    "crates/sql/sql-rel-model/README.md": "31649847754c477a37ff452012d917b4ed55cc2a70a763d1f45ab504e36e934a",
+    "crates/sql/sql-rel-model/examples/type_schema.rs": "ee8a8c1e076f5aa64ba8f7b4e247158387aabe363b540c481ca2c89cae248629",
+    "crates/sql/sql-rel-model/src/lib.rs": "c7b89d6e9b55c27be06b58df2c6cccd113169791ea8aed74fd58e6d6ceeab274",
+    "crates/sql/sql-rel-model/src/source.rs": "f7e3dbc7578dd8c9603e69462d5d80ebeba2ef0bc629d9fb03fb220420e7ef3b",
+    "crates/sql/sql-rel-model/src/types.rs": "dc6ded4754370e0344860a0b99b7c98d0bf9298981253f0aa5969efe5407c413",
+    "crates/sql/sql-rel-model/src/validate.rs": "baca52cab65a3bc86222fd3ab5c86bd9f7a4bcdbd81da920364ebdcb5d947177",
+    "crates/sql/sql-rel-model/tests/type_contract.rs": "3a58e1fed365c90e8e4cd07d94cc4e6f53ccbe0ea5cd23e2b51f50e7855b7721",
+    "crates/sql/sql-rel-model/type-schema.json": "3a401c650bebb9a118d7bd85ff25846499d0aeae1b19dadb23c49cfedb4ce626"
+  },
+  "validation_scope": [
+    "strict tagged decoding",
+    "missing and unknown fields across every modeled type shape",
+    "ordered sharing and duplicate field names",
+    "dangling references and orphan cycles",
+    "iterative deep-graph validation",
+    "shared-subtree depth limits",
+    "basic source ranges",
+    "generated schema drift"
+  ]
+}

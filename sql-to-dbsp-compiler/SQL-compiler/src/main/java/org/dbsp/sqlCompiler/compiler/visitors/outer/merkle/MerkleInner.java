@@ -39,6 +39,8 @@ public class MerkleInner extends ToJsonInnerVisitor {
     public VisitDecision preorder(DBSPAggregateList list) {
         AggregateListParts parts = new AggregateListParts(this.compiler);
         list.accept(parts);
+        if (this.compiler.hashInputHook != null)
+            this.compiler.observeHashInput("aggregate-rust", parts.rust.toString());
         this.stream.append(hash(parts.rust.toString()).toString());
         return VisitDecision.STOP;
     }
@@ -88,6 +90,7 @@ public class MerkleInner extends ToJsonInnerVisitor {
     @Override
     public VisitDecision preorder(IDBSPInnerNode node) {
         String rust = ToRustInnerVisitor.toRustString(this.compiler, node, null, false);
+        this.compiler.observeHashInput("inner-rust", rust);
         HashString hash = hash(rust);
         this.stream.append(hash.toString());
         return VisitDecision.STOP;

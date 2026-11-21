@@ -60,6 +60,8 @@ impl CompilerTest {
             sql_compiler_path:
                 "../../sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar"
                     .to_owned(),
+            shadow_sql_compiler: None,
+            shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: "https://example.com".to_owned(),
             compilation_cargo_lock_path: "../../Cargo.lock".to_owned(),
             dbsp_override_path: "../../".to_owned(),

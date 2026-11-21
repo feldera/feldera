@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "scope": "focused syntax probes; full S1 equivalence not checked",
+  "cases": [
+    {
+      "id": "syntax/row_type",
+      "sql": "CREATE TABLE t (r ROW(a INTEGER, b VARCHAR))",
+      "java": [
+        {
+          "node_class": "SqlCreateTable",
+          "kind": "CREATE_TABLE",
+          "sql": "CREATE TABLE `t` (`r` ROW(`a` INTEGER, `b` VARCHAR))",
+          "position": {
+            "line": 1,
+            "column": 1,
+            "end_line": 1,
+            "end_column": 44
+          }
+        }
+      ],
+      "rust": [
+        {
+          "dialect": "generic",
+          "statements": [
+            "CREATE TABLE t (r ROW(a, INTEGER, b, VARCHAR))"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "CREATE TABLE t (r ROW(a, INTEGER, b, VARCHAR))"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "generic",
+          "statements": [
+            "CREATE TABLE t (r ROW(a, INTEGER, b, VARCHAR))"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "CREATE TABLE t (r ROW(a, INTEGER, b, VARCHAR))"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        }
+      ]
+    },
+    {
+      "id": "syntax/interval_difference",
+      "sql": "SELECT (a - b) YEAR FROM t",
+      "java": [
+        {
+          "node_class": "SqlSelect",
+          "kind": "SELECT",
+          "sql": "SELECT (`a` - `b`) YEAR\nFROM `t`",
+          "position": {
+            "line": 1,
+            "column": 1,
+            "end_line": 1,
+            "end_column": 26
+          }
+        }
+      ],
+      "rust": [
+        {
+          "dialect": "generic",
+          "statements": [
+            "SELECT (a - b) AS YEAR FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "SELECT (a - b) AS YEAR FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "generic",
+          "statements": [
+            "SELECT (a - b) AS YEAR FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "SELECT (a - b) AS YEAR FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        }
+      ]
+    },
+    {
+      "id": "syntax/unicode_identifier",
+      "sql": "SELECT U&\"d\\0061t\" FROM t",
+      "java": [
+        {
+          "node_class": "SqlSelect",
+          "kind": "SELECT",
+          "sql": "SELECT `dat`\nFROM `t`",
+          "position": {
+            "line": 1,
+            "column": 1,
+            "end_line": 1,
+            "end_column": 25
+          }
+        }
+      ],
+      "rust": [
+        {
+          "dialect": "generic",
+          "statements": [
+            "SELECT U & \"d\\0061t\" FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "SELECT U & \"d\\0061t\" FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "generic",
+          "statements": [
+            "SELECT U & \"d\\0061t\" FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "SELECT U & \"d\\0061t\" FROM t"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        }
+      ]
+    },
+    {
+      "id": "syntax/adjacent_strings",
+      "sql": "SELECT 'a'\n'b'",
+      "java": [
+        {
+          "node_class": "SqlSelect",
+          "kind": "SELECT",
+          "sql": "SELECT 'a'\n'b'",
+          "position": {
+            "line": 1,
+            "column": 1,
+            "end_line": 2,
+            "end_column": 3
+          }
+        }
+      ],
+      "rust": [
+        {
+          "dialect": "generic",
+          "statements": [
+            "SELECT 'a' AS 'b'"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "SELECT 'a' AS 'b'"
+          ],
+          "verdict": "accepted",
+          "version": "0.62.0"
+        },
+        {
+          "dialect": "generic",
+          "statements": [
+            "SELECT 'a' AS 'b'"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        },
+        {
+          "dialect": "feldera_prototype",
+          "statements": [
+            "SELECT 'a' AS 'b'"
+          ],
+          "verdict": "accepted",
+          "version": "0.64.0"
+        }
+      ]
+    }
+  ]
+}

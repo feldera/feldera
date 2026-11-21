@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-operator-audit.tar.gz",
+  "bytes": 12853741,
+  "sha256": "91e021e4adbbddd15e09b4ff99993119334b81680175575eb105ce5559ddfd94",
+  "manifest_sha256": "51ceff78cd3ef6f15356d6a160fdd2008a9bf2350cb9f970adbcad01b82950bc",
+  "verified_files": 20,
+  "all_members_verified": true
+}

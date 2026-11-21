@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /**
  * Represents a closure that sorts an IndexedZSet with empty keys and
@@ -52,13 +53,22 @@ public final class DBSPSortExpression extends DBSPExpression {
 
     public DBSPSortExpression(
             CalciteObject node, DBSPType elementType, DBSPExpression comparator) {
-        super(node, new DBSPTypeFunction(
+        this(node, elementType, comparator, functionType(elementType));
+    }
+
+    private static DBSPTypeFunction functionType(DBSPType elementType) {
+        return new DBSPTypeFunction(
                 // Return type
                 new DBSPTypeArray(elementType, false),
                 // Argument type
                 new DBSPTypeRawTuple(
                         DBSPTypeTuple.EMPTY.ref(),
-                        new DBSPTypeArray(elementType, false).ref())));
+                        new DBSPTypeArray(elementType, false).ref()));
+    }
+
+    private DBSPSortExpression(CalciteObject node, DBSPType elementType,
+                               DBSPExpression comparator, DBSPTypeFunction type) {
+        super(node, type);
         this.comparator = comparator;
         this.elementType = elementType;
     }
@@ -112,6 +122,8 @@ public final class DBSPSortExpression extends DBSPExpression {
     public static DBSPSortExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
         DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
-        return new DBSPSortExpression(CalciteObject.EMPTY, elementType, comparator);
+        DBSPTypeFunction type = getJsonType(node, decoder).to(DBSPTypeFunction.class);
+        Utilities.enforce(type.sameType(functionType(elementType)));
+        return new DBSPSortExpression(CalciteObject.EMPTY, elementType, comparator, type);
     }
 }

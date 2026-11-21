@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-calibration.tar.gz",
+  "bytes": 43253704,
+  "sha256": "69d8093b5736a3dc48d376c36493b7959e1f81dbb266019c522a00580c968b0f",
+  "manifest_sha256": "a18f7ce724a2b0ec41807a27c19a5d996287282fd63fd080fffe17a9a794a407",
+  "verified_files": 360,
+  "all_members_verified": true
+}

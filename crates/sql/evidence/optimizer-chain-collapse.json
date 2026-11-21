@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-chain-collapse-archive.json",
+  "scope": "ImplementChains at its original placement on indexed tuple extraction or construction followed by an integer projection.",
+  "strict_pass_equal": {"classic": 50, "gen2": 50},
+  "strict_name_counters_equal": {"classic": 50, "gen2": 50},
+  "productive_cases": {"classic": 2, "gen2": 2},
+  "final_artifacts_equal": {
+    "java_codec": {"classic": 50, "gen2": 50},
+    "rust_collapse": {"classic": 50, "gen2": 50},
+    "rust_collapse_and_formation": {"classic": 50, "gen2": 50}
+  },
+  "first_attempt": "Two Gen-2 graphs used field projections into a constructed tuple rather than cloning the indexed value. This shape is supported in the final evidence.",
+  "runtime_executed": false
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-distinct-outputs-20261118-v1.tar.gz",
+  "bytes": 7554557,
+  "sha256": "ea8c87b195bf57eae29f34a4b5304f0c413f05362bf785f6bd5923395d619d04",
+  "manifest_sha256": "85962a7c7d94b7851d9fd5b1abc9a5d48a7631a803f160ed9d2f6159e9db3895",
+  "verified_files": 464,
+  "all_members_verified": true
+}

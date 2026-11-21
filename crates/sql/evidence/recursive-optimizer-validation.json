@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "recursive-optimizer-validation-archive.json",
+  "scheduled_placements": 26,
+  "recursive_validation_placements": 2,
+  "flat_programs_per_mode_in_combined_run": 45,
+  "combined_final_compiler_comparisons": 90,
+  "accepted_recursive_programs_per_mode": 2,
+  "recursive_final_compiler_comparisons": 4,
+  "recursive_detached_s2_import_comparisons": 4,
+  "accepted_same_input_validations": 188,
+  "rejected_same_input_validations": 4,
+  "structured_rejection_diagnostics": 4,
+  "ordinary_bag_and_set_tail_comparisons": 600,
+  "rust_tests": 31,
+  "differences": 0,
+  "scope": "Both original visitor placements scan supported nested operator wire shapes. Rust selects the first forbidden operator in Java visit order and the adapter constructs the matching compiler exception from the live operator. Recursive LAG and OVER rejections match class, error kind, text and the original absent source span. Recursive programs run these two replacements only. The complete 26-placement matrix uses the flat corpus."
+}

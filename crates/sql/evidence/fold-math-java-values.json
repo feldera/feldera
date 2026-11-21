@@ -1,0 +1,1155 @@
+{
+  "schema_version": 1,
+  "scope": "Runtime-correct math and float normalization compared against the entire captured Java fold journal",
+  "java_certificate": "fold-extract-s3.json",
+  "java_journal_sha256": "289a14ac22d926fd5f3da8ec95d88574f58d83a3382885a02397c05eb65b5b34",
+  "runtime_certificate": "fold-runtime-math.json",
+  "probe_sha256": "1818d293de8df4c0fca000ffcf4d197ba6a644326a792cf7834791a2f6e41c84",
+  "comparison": {
+    "observations": 18132,
+    "unique_expression_records": 1987,
+    "counts": {
+      "value": 13223,
+      "java_changed": 10961,
+      "comparable": 12557,
+      "equal": 12551,
+      "unsupported": 4725,
+      "java_result_not_literal": 666,
+      "runtime_error": 184
+    },
+    "operators": [
+      {
+        "evaluator": "Janino",
+        "kind": "CAST",
+        "operator": "CAST",
+        "count": 7133
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_VALUE_CONSTRUCTOR",
+        "operator": "ARRAY",
+        "count": 5323
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "CHECKED_TIMES",
+        "operator": "*",
+        "count": 1911
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "LITERAL",
+        "operator": "",
+        "count": 432
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CHECKED_MINUS_PREFIX",
+        "operator": "-",
+        "count": 397
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CASE",
+        "operator": "CASE",
+        "count": 289
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SUBSTRING",
+        "count": 210
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "PLUS",
+        "operator": "+",
+        "count": 161
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "MAP_VALUE_CONSTRUCTOR",
+        "operator": "MAP",
+        "count": 151
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "SAFE_CAST",
+        "operator": "SAFE_CAST",
+        "count": 128
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "MINUS",
+        "operator": "-",
+        "count": 121
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "CAST",
+        "operator": "CAST",
+        "count": 114
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "EQUALS",
+        "operator": "=",
+        "count": 107
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "LIKE",
+        "operator": "LIKE",
+        "count": 66
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "PI",
+        "count": 64
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "EXTRACT",
+        "operator": "EXTRACT",
+        "count": 62
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CHECKED_DIVIDE",
+        "operator": "/",
+        "count": 55
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "MOD",
+        "operator": "MOD",
+        "count": 54
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "FLOOR",
+        "operator": "FLOOR",
+        "count": 52
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "NOT",
+        "operator": "NOT",
+        "count": 50
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ST_POINT",
+        "operator": "ST_POINT",
+        "count": 45
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "LEFT",
+        "count": 44
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "TIMESTAMP_DIFF",
+        "operator": "DATEDIFF",
+        "count": 40
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "RIGHT",
+        "count": 40
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "STARTS_WITH",
+        "operator": "STARTS_WITH",
+        "count": 34
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CHECKED_PLUS",
+        "operator": "+",
+        "count": 32
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "LOG",
+        "count": 32
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ENDS_WITH",
+        "operator": "ENDS_WITH",
+        "count": 30
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CHECKED_TIMES",
+        "operator": "*",
+        "count": 28
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "OVERLAY",
+        "count": 28
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CEIL",
+        "operator": "CEIL",
+        "count": 28
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "MAP_CONTAINS_KEY",
+        "operator": "MAP_CONTAINS_KEY",
+        "count": 28
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ARRAY",
+        "count": 25
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SPLIT",
+        "count": 24
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_COMPACT",
+        "operator": "ARRAY_COMPACT",
+        "count": 24
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ASIN",
+        "count": 24
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ACOS",
+        "count": 24
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ATAN",
+        "count": 20
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "CONCAT_WS",
+        "count": 20
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "EXP",
+        "count": 20
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_DISTINCT",
+        "operator": "ARRAY_DISTINCT",
+        "count": 20
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "NULLIF",
+        "operator": "NULLIF",
+        "count": 19
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_REPEAT",
+        "operator": "ARRAY_REPEAT",
+        "count": 18
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "GREATER_THAN",
+        "operator": ">",
+        "count": 18
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SIN",
+        "count": 18
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "DATE_TRUNC",
+        "operator": "DATE_TRUNC",
+        "count": 18
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "SORT_ARRAY",
+        "operator": "SORT_ARRAY",
+        "count": 18
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "POWER",
+        "count": 17
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "POSITION",
+        "operator": "POSITION",
+        "count": 16
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "LN",
+        "count": 16
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "RADIANS",
+        "count": 16
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "||",
+        "count": 14
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "TAN",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_PREPEND",
+        "operator": "ARRAY_PREPEND",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CHECKED_MINUS",
+        "operator": "-",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "GREATEST",
+        "operator": "GREATEST",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "COT",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "TRIM",
+        "operator": "TRIM",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "COS",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "MAP_CONCAT",
+        "operator": "MAP_CONCAT",
+        "count": 12
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ITEM",
+        "operator": "ITEM",
+        "count": 11
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "CHECKED_DIVIDE",
+        "operator": "/",
+        "count": 11
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "CARDINALITY",
+        "count": 11
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SQRT",
+        "count": 10
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "COALESCE",
+        "operator": "COALESCE",
+        "count": 10
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "LIKE",
+        "operator": "ILIKE",
+        "count": 10
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "CHAR_LENGTH",
+        "operator": "CHAR_LENGTH",
+        "count": 10
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_TO_STRING",
+        "operator": "ARRAY_TO_STRING",
+        "count": 10
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_REVERSE",
+        "operator": "ARRAY_REVERSE",
+        "count": 10
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "LEAST",
+        "operator": "LEAST",
+        "count": 9
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ELEMENT",
+        "count": 9
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "OCTET_LENGTH",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_CONCAT",
+        "operator": "ARRAY_CONCAT",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "LOG10",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "REVERSE",
+        "operator": "REVERSE",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "IS_FALSE",
+        "operator": "IS FALSE",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_APPEND",
+        "operator": "ARRAY_APPEND",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "IS_NOT_TRUE",
+        "operator": "IS NOT TRUE",
+        "count": 8
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "REPLACE",
+        "count": 7
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "AND",
+        "operator": "AND",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "MD5",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "NOT_EQUALS",
+        "operator": "<>",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_SIZE",
+        "operator": "ARRAY_SIZE",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_LENGTH",
+        "operator": "ARRAY_LENGTH",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "s",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "t",
+        "count": 6
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "LESS_THAN",
+        "operator": "<",
+        "count": 5
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ST_DISTANCE",
+        "count": 5
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OR",
+        "operator": "OR",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ACOSH",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "CSCH",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ITEM",
+        "operator": "SAFE_OFFSET",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "IS_NULL",
+        "operator": "IS NULL",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SIGN",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_MAX",
+        "operator": "ARRAY_MAX",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "IS_NAN",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "CSC",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "IS_INF",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "HOUR",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "YEAR",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "CONCAT",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ASCII",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "TO_HEX",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SEC",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "DEGREES",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "REPEAT",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "ARRAY_MIN",
+        "operator": "ARRAY_MIN",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ATAN2",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "COTH",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "MINUTE",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "MONTH",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ASINH",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "SECOND",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "DAYOFMONTH",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER",
+        "operator": "DAYOFWEEK",
+        "count": 4
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "COSH",
+        "count": 2
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "SAFE_CAST",
+        "operator": "SAFE_CAST",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "INITCAP",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SINH",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "TANH",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "IS_NOT_DISTINCT_FROM",
+        "operator": "IS NOT DISTINCT FROM",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "CBRT",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "ATANH",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "SECH",
+        "count": 2
+      },
+      {
+        "evaluator": "RexOptimize",
+        "kind": "CHECKED_MINUS",
+        "operator": "-",
+        "count": 2
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "IS_NOT_NULL",
+        "operator": "IS NOT NULL",
+        "count": 1
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "LESS_THAN_OR_EQUAL",
+        "operator": "<=",
+        "count": 1
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "EXISTS",
+        "operator": "EXISTS",
+        "count": 1
+      },
+      {
+        "evaluator": "Janino",
+        "kind": "OTHER_FUNCTION",
+        "operator": "x",
+        "count": 1
+      }
+    ],
+    "refusals": {
+      "interval casts": 3544,
+      "operator MAP_VALUE_CONSTRUCTOR / Some(\"MAP\")": 172,
+      "cast target UUID": 97,
+      "integer overflow": 84,
+      "literal type BINARY": 73,
+      "operator OTHER_FUNCTION / Some(\"ARRAY\")": 65,
+      "literal type UUID": 59,
+      "dynamic, nondeterministic, or user-defined call": 50,
+      "literal type SYMBOL": 44,
+      "operator TIMESTAMP_DIFF / Some(\"DATEDIFF\")": 40,
+      "operator NULLIF / Some(\"NULLIF\")": 39,
+      "cast target VARBINARY": 37,
+      "cast target UINTEGER": 34,
+      "cast target UTINYINT": 33,
+      "string cast source": 32,
+      "boolean cast": 32,
+      "string decimal parser rounding": 32,
+      "operator OTHER_FUNCTION / Some(\"OVERLAY\")": 28,
+      "operator MAP_CONTAINS_KEY / Some(\"MAP_CONTAINS_KEY\")": 28,
+      "integer arithmetic": 24,
+      "array cast requires component-type projection": 20,
+      "operator DATE_TRUNC / Some(\"DATE_TRUNC\")": 18,
+      "operator SORT_ARRAY / Some(\"SORT_ARRAY\")": 18,
+      "literal type VARBINARY": 15,
+      "cast target UBIGINT": 15,
+      "operator OTHER_FUNCTION / Some(\"SIGN\")": 14,
+      "operator OTHER / Some(\"||\")": 14,
+      "%": 12,
+      "operator GREATEST / Some(\"GREATEST\")": 12,
+      "TRIM character semantics": 12,
+      "operator ARRAY_TO_STRING / Some(\"ARRAY_TO_STRING\")": 12,
+      "operator MAP_CONCAT / Some(\"MAP_CONCAT\")": 12,
+      "negative logarithm argument": 12,
+      "operator OTHER_FUNCTION / Some(\"SQRT\")": 10,
+      "integer cast": 10,
+      "decimal overflow": 10,
+      "literal type GEOMETRY": 9,
+      "operator LEAST / Some(\"LEAST\")": 9,
+      "mixed arithmetic operands": 8,
+      "negative SUBSTRING length differs between Java and runtime": 8,
+      "float cast": 8,
+      "cast target BINARY": 8,
+      "boolean cast source": 7,
+      "cast target USMALLINT": 7,
+      "operator OTHER_FUNCTION / Some(\"s\")": 6,
+      "operator OTHER_FUNCTION / Some(\"t\")": 6,
+      "operator OTHER_FUNCTION / Some(\"ACOSH\")": 4,
+      "operator OTHER_FUNCTION / Some(\"CSCH\")": 4,
+      "operator OTHER / Some(\"HOUR\")": 4,
+      "operator OTHER / Some(\"YEAR\")": 4,
+      "operator OTHER_FUNCTION / Some(\"TO_HEX\")": 4,
+      "operator OTHER_FUNCTION / Some(\"COTH\")": 4,
+      "operator OTHER / Some(\"MINUTE\")": 4,
+      "operator OTHER / Some(\"MONTH\")": 4,
+      "operator OTHER_FUNCTION / Some(\"ASINH\")": 4,
+      "operator OTHER / Some(\"SECOND\")": 4,
+      "operator OTHER / Some(\"DAYOFMONTH\")": 4,
+      "operator OTHER / Some(\"DAYOFWEEK\")": 4,
+      "operator OTHER_FUNCTION / Some(\"COSH\")": 2,
+      "function CONCAT": 2,
+      "operator OTHER_FUNCTION / Some(\"INITCAP\")": 2,
+      "operator OTHER_FUNCTION / Some(\"SINH\")": 2,
+      "operator OTHER_FUNCTION / Some(\"TANH\")": 2,
+      "ELEMENT requires at most one element": 2,
+      "operator OTHER_FUNCTION / Some(\"CBRT\")": 2,
+      "operator OTHER_FUNCTION / Some(\"ATANH\")": 2,
+      "operator OTHER_FUNCTION / Some(\"SECH\")": 2,
+      "date cast": 2,
+      "operator EXISTS / Some(\"EXISTS\")": 1,
+      "operator OTHER_FUNCTION / Some(\"x\")": 1
+    },
+    "differences": [
+      {
+        "index": 2206,
+        "case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testExp/2",
+        "expression": {
+          "kind": "OTHER_FUNCTION",
+          "text": "EXP(1.0:DECIMAL(2, 1))",
+          "type": {
+            "name": "DOUBLE",
+            "precision": 15,
+            "scale": -2147483648,
+            "nullable": false,
+            "full": "DOUBLE NOT NULL"
+          },
+          "operator": "EXP",
+          "operator_class": "org.apache.calcite.sql.SqlBasicFunction",
+          "deterministic": true,
+          "dynamic": false,
+          "arguments": [
+            {
+              "kind": "LITERAL",
+              "text": "1.0:DECIMAL(2, 1)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 2,
+                "scale": 1,
+                "nullable": false,
+                "full": "DECIMAL(2, 1) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "1.0"
+            }
+          ]
+        },
+        "java": {
+          "type": "float",
+          "value": "4005bf0a8b14576a"
+        },
+        "rust": {
+          "type": "float",
+          "value": "4005bf0a8b145769"
+        }
+      },
+      {
+        "index": 2259,
+        "case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Tests#nonPostgresTests/17",
+        "expression": {
+          "kind": "OTHER_FUNCTION",
+          "text": "LOG(3.0:DECIMAL(2, 1), 4.0:DECIMAL(2, 1))",
+          "type": {
+            "name": "DOUBLE",
+            "precision": 15,
+            "scale": -2147483648,
+            "nullable": false,
+            "full": "DOUBLE NOT NULL"
+          },
+          "operator": "LOG",
+          "operator_class": "org.apache.calcite.sql.SqlBasicFunction",
+          "deterministic": true,
+          "dynamic": false,
+          "arguments": [
+            {
+              "kind": "LITERAL",
+              "text": "3.0:DECIMAL(2, 1)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 2,
+                "scale": 1,
+                "nullable": false,
+                "full": "DECIMAL(2, 1) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "3.0"
+            },
+            {
+              "kind": "LITERAL",
+              "text": "4.0:DECIMAL(2, 1)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 2,
+                "scale": 1,
+                "nullable": false,
+                "full": "DECIMAL(2, 1) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "4.0"
+            }
+          ]
+        },
+        "java": {
+          "type": "float",
+          "value": "3fe95c01a39fbd68"
+        },
+        "rust": {
+          "type": "float",
+          "value": "3fe95c01a39fbd69"
+        }
+      },
+      {
+        "index": 5112,
+        "case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testExp/3",
+        "expression": {
+          "kind": "OTHER_FUNCTION",
+          "text": "EXP(1.0:DECIMAL(2, 1))",
+          "type": {
+            "name": "DOUBLE",
+            "precision": 15,
+            "scale": -2147483648,
+            "nullable": false,
+            "full": "DOUBLE NOT NULL"
+          },
+          "operator": "EXP",
+          "operator_class": "org.apache.calcite.sql.SqlBasicFunction",
+          "deterministic": true,
+          "dynamic": false,
+          "arguments": [
+            {
+              "kind": "LITERAL",
+              "text": "1.0:DECIMAL(2, 1)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 2,
+                "scale": 1,
+                "nullable": false,
+                "full": "DECIMAL(2, 1) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "1.0"
+            }
+          ]
+        },
+        "java": {
+          "type": "float",
+          "value": "4005bf0a8b14576a"
+        },
+        "rust": {
+          "type": "float",
+          "value": "4005bf0a8b145769"
+        }
+      },
+      {
+        "index": 8023,
+        "case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testExp/4",
+        "expression": {
+          "kind": "OTHER_FUNCTION",
+          "text": "EXP(1.0000000000:DECIMAL(25, 10))",
+          "type": {
+            "name": "DOUBLE",
+            "precision": 15,
+            "scale": -2147483648,
+            "nullable": false,
+            "full": "DOUBLE NOT NULL"
+          },
+          "operator": "EXP",
+          "operator_class": "org.apache.calcite.sql.SqlBasicFunction",
+          "deterministic": true,
+          "dynamic": false,
+          "arguments": [
+            {
+              "kind": "LITERAL",
+              "text": "1.0000000000:DECIMAL(25, 10)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 25,
+                "scale": 10,
+                "nullable": false,
+                "full": "DECIMAL(25, 10) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "1.0000000000"
+            }
+          ]
+        },
+        "java": {
+          "type": "float",
+          "value": "4005bf0a8b14576a"
+        },
+        "rust": {
+          "type": "float",
+          "value": "4005bf0a8b145769"
+        }
+      },
+      {
+        "index": 11029,
+        "case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testExp/5",
+        "expression": {
+          "kind": "OTHER_FUNCTION",
+          "text": "EXP(1.0000000000:DECIMAL(25, 10))",
+          "type": {
+            "name": "DOUBLE",
+            "precision": 15,
+            "scale": -2147483648,
+            "nullable": false,
+            "full": "DOUBLE NOT NULL"
+          },
+          "operator": "EXP",
+          "operator_class": "org.apache.calcite.sql.SqlBasicFunction",
+          "deterministic": true,
+          "dynamic": false,
+          "arguments": [
+            {
+              "kind": "LITERAL",
+              "text": "1.0000000000:DECIMAL(25, 10)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 25,
+                "scale": 10,
+                "nullable": false,
+                "full": "DECIMAL(25, 10) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "1.0000000000"
+            }
+          ]
+        },
+        "java": {
+          "type": "float",
+          "value": "4005bf0a8b14576a"
+        },
+        "rust": {
+          "type": "float",
+          "value": "4005bf0a8b145769"
+        }
+      },
+      {
+        "index": 17151,
+        "case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Tests#nonPostgresTests/16",
+        "expression": {
+          "kind": "OTHER_FUNCTION",
+          "text": "LOG(3.0:DECIMAL(2, 1), 4.0:DECIMAL(2, 1))",
+          "type": {
+            "name": "DOUBLE",
+            "precision": 15,
+            "scale": -2147483648,
+            "nullable": false,
+            "full": "DOUBLE NOT NULL"
+          },
+          "operator": "LOG",
+          "operator_class": "org.apache.calcite.sql.SqlBasicFunction",
+          "deterministic": true,
+          "dynamic": false,
+          "arguments": [
+            {
+              "kind": "LITERAL",
+              "text": "3.0:DECIMAL(2, 1)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 2,
+                "scale": 1,
+                "nullable": false,
+                "full": "DECIMAL(2, 1) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "3.0"
+            },
+            {
+              "kind": "LITERAL",
+              "text": "4.0:DECIMAL(2, 1)",
+              "type": {
+                "name": "DECIMAL",
+                "precision": 2,
+                "scale": 1,
+                "nullable": false,
+                "full": "DECIMAL(2, 1) NOT NULL"
+              },
+              "value_class": "java.math.BigDecimal",
+              "value": "4.0"
+            }
+          ]
+        },
+        "java": {
+          "type": "float",
+          "value": "3fe95c01a39fbd68"
+        },
+        "rust": {
+          "type": "float",
+          "value": "3fe95c01a39fbd69"
+        }
+      }
+    ],
+    "all_supported": false,
+    "zero_comparable_differences": false,
+    "verdict_relevant_coverage_proven": false,
+    "deviations_reviewed": false
+  },
+  "deviations_reviewed": false,
+  "full_compilation_result": "Pending in $SCRATCH/p0-fold-final-s3-v4"
+}

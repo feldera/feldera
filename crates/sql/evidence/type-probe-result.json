@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "producer_commit": "c6ede756d-p0-type-probes-final",
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "runtime_commit": "c6ede756d",
+  "expected_probes": 84224,
+  "probes": 84224,
+  "accepted": 59456,
+  "rejected": 24768,
+  "compiler_bugs": 1384,
+  "oracle_ready": false,
+  "runtime_verified": false
+}

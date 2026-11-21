@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-expand-casts-archive.json",
+  "scope": "Original cast expansion placement on measured nullable integers and scalar table defaults, including a safe variant-to-string default.",
+  "strict_pass_equal": {"classic": 50, "gen2": 50},
+  "strict_name_counters_equal": {"classic": 50, "gen2": 50},
+  "sql_casts_expanded": {"classic": 6, "gen2": 6},
+  "final_artifacts_equal": {
+    "fifty_one_placement_java_control": {"classic": 50, "gen2": 50},
+    "fifty_one_placement_rust": {"classic": 50, "gen2": 50}
+  },
+  "first_attempt": "Two nullable INTEGER literals in each mode needed a nullable literal rather than a Some expression.",
+  "runtime_executed": false
+}

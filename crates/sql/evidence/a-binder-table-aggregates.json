@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-table-aggregates-archive.json",
+  "scope": "Bound global and grouped SUM, COUNT, MIN and MAX, single COUNT DISTINCT, and supported per-aggregate Boolean comparisons through FILTER. The Rust binder builds typed aggregate and input-projection nodes without Java user-statement IR.",
+  "typed_and_artifact_cases": {"classic": 24, "gen2": 24},
+  "full_prefix_observations": {"classic": 10221, "gen2": 10269},
+  "held_out_case_ids": ["6187", "7214", "7322", "9780", "6273", "6281", "6282", "7299", "7307", "7308", "7407", "7415", "7416"],
+  "unique_held_out_sql_sequences": 5,
+  "signed_classic_runtime": {
+    "programs": 5,
+    "transactions": 15,
+    "equal_output_bags": 30,
+    "nonempty_output_bags": 15,
+    "programs_with_aggregate_filter": 2
+  }
+}

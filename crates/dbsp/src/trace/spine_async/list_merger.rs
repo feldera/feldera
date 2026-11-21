@@ -1,10 +1,9 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use ouroboros::self_referencing;
 
 use crate::{
-    algebra::Lattice,
-    dynamic::{DynDataTyped, DynWeightedPairs, Weight, WeightTrait},
+    dynamic::{DataTrait, DynDataTyped, DynWeightedPairs, WeightTrait},
     time::Timestamp,
     trace::{
         Batch, BatchFactories, BatchReaderFactories, Builder, Filter, GroupFilter, MergeCursor,
@@ -70,38 +69,11 @@ where
     }
 }
 
-/// Merger that merges up to 64 batches at a time.
-// FIXME: can we apply GC to the output of the merger instead of individual cursors?
-// Specifically, when a LastN filter over values, we want to discard all but the last N
-// values below the waterline from the output of the merger. Instead we currently apply
-// the filter to each cursor individually, meaning that we may end up preserving upto N
-// values below the waterline per input cursor.
-pub struct ListMerger<C, B>
+/// Merger over the cursors of a DBSP batch.
+pub struct ListMerger<C, B>(CursorListMerger<C, B::Key, B::Val, B::Time, B::R>)
 where
     C: MergeCursor<B::Key, B::Val, B::Time, B::R>,
-    B: Batch,
-{
-    cursors: Vec<C>,
-
-    /// Indexes of cursors that hold the current minimum key and their positions in the key heap.
-    current_key: Vec<(usize, usize)>,
-
-    /// A binary heap containing the indexes of cursors sorted by key.
-    key_heap: Vec<usize>,
-
-    /// Indexes of cursors that hold the current minimum value and their positions in the value heap.
-    current_val: Vec<(usize, usize)>,
-
-    /// A binary heap containing the indexes of cursors sorted by value.
-    val_heap: Vec<usize>,
-
-    any_values: bool,
-    has_mut: Vec<bool>,
-    tmp_weight: Box<B::R>,
-    time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<B::Time>, B::R>>>,
-
-    scratch: Vec<usize>,
-}
+    B: Batch;
 
 impl<C, B> ListMerger<C, B>
 where
@@ -118,11 +90,139 @@ where
 
     /// Creates a new merger for `cursors`.
     pub fn new(factories: &B::Factories, cursors: Vec<C>) -> Self {
-        let time_diffs = factories.time_diffs_factory().map(|f| f.default_box());
+        Self(CursorListMerger::new(
+            cursors,
+            factories.weight_factory().default_box(),
+            factories
+                .time_diffs_factory()
+                .map(|factory| factory.default_box()),
+        ))
+    }
+
+    /// Performs up to `fuel` units of work.
+    pub fn work(&mut self, builder: &mut B::Builder, frontier: &B::Time, fuel: &mut isize) {
+        self.0
+            .work(&mut BatchMergeOutput::<B>(builder), frontier, fuel);
+    }
+}
+
+/// Receives the ordered weight, value and key updates produced by a merge.
+pub trait MergeOutput<K: ?Sized, V: ?Sized, T, R: ?Sized> {
+    /// Adds the next key after its values and weights.
+    fn push_key(&mut self, key: &K);
+    /// Adds the next value after its weights.
+    fn push_val(&mut self, val: &V);
+    /// Adds one timestamp and weight for the current value.
+    fn push_time_diff(&mut self, time: &T, weight: &R);
+
+    /// Adds a key that the cursor no longer needs.
+    fn push_key_mut(&mut self, key: &mut K) {
+        self.push_key(key);
+    }
+
+    /// Adds a value that the cursor no longer needs.
+    fn push_val_mut(&mut self, val: &mut V) {
+        self.push_val(val);
+    }
+
+    /// Adds a timestamp and weight that the cursor no longer needs.
+    fn push_time_diff_mut(&mut self, time: &mut T, weight: &mut R) {
+        self.push_time_diff(time, weight);
+    }
+}
+
+struct BatchMergeOutput<'a, B: Batch>(&'a mut B::Builder);
+
+impl<B: Batch> MergeOutput<B::Key, B::Val, B::Time, B::R> for BatchMergeOutput<'_, B> {
+    fn push_key(&mut self, key: &B::Key) {
+        self.0.push_key(key);
+    }
+
+    fn push_val(&mut self, val: &B::Val) {
+        self.0.push_val(val);
+    }
+
+    fn push_time_diff(&mut self, time: &B::Time, weight: &B::R) {
+        self.0.push_time_diff(time, weight);
+    }
+
+    fn push_key_mut(&mut self, key: &mut B::Key) {
+        self.0.push_key_mut(key);
+    }
+
+    fn push_val_mut(&mut self, val: &mut B::Val) {
+        self.0.push_val_mut(val);
+    }
+
+    fn push_time_diff_mut(&mut self, time: &mut B::Time, weight: &mut B::R) {
+        self.0.push_time_diff_mut(time, weight);
+    }
+}
+
+/// Merges untimed cursors into an ordered output with caller-owned scratch.
+#[cfg(feature = "native-abi")]
+pub fn merge_untimed_cursors<K, V, R>(
+    cursors: Vec<impl MergeCursor<K, V, (), R>>,
+    weight: Box<R>,
+    output: &mut impl MergeOutput<K, V, (), R>,
+) where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    let mut merger = CursorListMerger::new(cursors, weight, None);
+    let mut fuel = isize::MAX;
+    merger.work(output, &(), &mut fuel);
+    assert!(fuel > 0);
+}
+
+/// Merger that merges up to 64 batches at a time.
+// FIXME: can we apply GC to the output of the merger instead of individual cursors?
+// Specifically, when a LastN filter over values, we want to discard all but the last N
+// values below the waterline from the output of the merger. Instead we currently apply
+// the filter to each cursor individually, meaning that we may end up preserving upto N
+// values below the waterline per input cursor.
+struct CursorListMerger<C, K: ?Sized, V: ?Sized, T, R: WeightTrait + ?Sized> {
+    cursors: Vec<C>,
+
+    /// Indexes of cursors that hold the current minimum key and their positions in the key heap.
+    current_key: Vec<(usize, usize)>,
+
+    /// A binary heap containing the indexes of cursors sorted by key.
+    key_heap: Vec<usize>,
+
+    /// Indexes of cursors that hold the current minimum value and their positions in the value heap.
+    current_val: Vec<(usize, usize)>,
+
+    /// A binary heap containing the indexes of cursors sorted by value.
+    val_heap: Vec<usize>,
+
+    any_values: bool,
+    has_mut: Vec<bool>,
+    tmp_weight: Box<R>,
+    time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<T>, R>>>,
+
+    scratch: Vec<usize>,
+    types: PhantomData<fn(&K, &V)>,
+}
+
+impl<C, K, V, T, R> CursorListMerger<C, K, V, T, R>
+where
+    C: MergeCursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn new(
+        cursors: Vec<C>,
+        tmp_weight: Box<R>,
+        time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<T>, R>>>,
+    ) -> Self {
         let has_mut = cursors.iter().map(|c| c.has_mut()).collect();
         let num_cursors = cursors.len();
 
-        let mut merger = ListMerger {
+        let mut merger = Self {
             cursors,
             current_key: Vec::new(),
             key_heap: Vec::new(),
@@ -130,9 +230,10 @@ where
             val_heap: Vec::new(),
             any_values: false,
             has_mut,
-            tmp_weight: factories.weight_factory().default_box(),
+            tmp_weight,
             time_diffs,
             scratch: Vec::with_capacity(num_cursors),
+            types: PhantomData,
         };
 
         merger.init_key_heap();
@@ -257,13 +358,18 @@ where
     /// Perform `fuel` amount of work.
     ///
     /// When the function returns and fuel > 0, the batches should be guaranteed to be fully merged.
-    pub fn work(&mut self, builder: &mut B::Builder, frontier: &B::Time, fuel: &mut isize) {
-        let advance_func = |t: &mut DynDataTyped<B::Time>| t.join_assign(frontier);
+    pub fn work(
+        &mut self,
+        builder: &mut impl MergeOutput<K, V, T, R>,
+        frontier: &T,
+        fuel: &mut isize,
+    ) {
+        let advance_func = |t: &mut DynDataTyped<T>| t.join_assign(frontier);
 
-        let time_map_func = if frontier == &B::Time::minimum() {
+        let time_map_func = if frontier == &T::minimum() {
             None
         } else {
-            Some(&advance_func as &dyn Fn(&mut DynDataTyped<B::Time>))
+            Some(&advance_func as &dyn Fn(&mut DynDataTyped<T>))
         };
 
         // As long as there are multiple cursors...
@@ -339,7 +445,7 @@ where
                 }
                 debug_assert!(
                     time_map_func.is_some() || self.any_values,
-                    "This assertion should fail only if B::Cursor is a spine or a CursorList, but we shouldn't be merging those"
+                    "a merge cursor must expose a nonzero update for its key"
                 );
                 if self.any_values {
                     self.any_values = false;
@@ -361,8 +467,8 @@ where
 
     fn copy_times(
         &mut self,
-        builder: &mut B::Builder,
-        map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
+        builder: &mut impl MergeOutput<K, V, T, R>,
+        map_func: Option<&dyn Fn(&mut DynDataTyped<T>)>,
         fuel: &mut isize,
     ) -> bool {
         // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
@@ -372,7 +478,7 @@ where
                 time_diffs.clear();
                 for (i, _pos) in self.current_val.iter() {
                     self.cursors[*i].map_times(&mut |time, w| {
-                        let mut time: B::Time = time.clone();
+                        let mut time: T = time.clone();
                         map_func(&mut time);
 
                         time_diffs.push_refs((&time, w));
@@ -417,7 +523,7 @@ where
             if self.tmp_weight.is_zero() {
                 return false;
             }
-            builder.push_time_diff_mut(&mut B::Time::default(), &mut self.tmp_weight);
+            builder.push_time_diff_mut(&mut T::default(), &mut self.tmp_weight);
         }
 
         let index = self.current_val.first().unwrap().0;

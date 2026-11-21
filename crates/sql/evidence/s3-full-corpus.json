@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-seams-v19",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+    "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+  "stage": "S3",
+  "artifact_contract": "seam-v1",
+  "observation_contract": "final-s3-v1",
+  "raw_evidence": "$SCRATCH/p0-s3-full-v3",
+  "cases": 8571,
+  "observations": 8571,
+  "equal": true,
+  "jvm_runs": 12,
+  "differences": [],
+  "runtime_executed": false,
+  "full_optimizer_prefix_compared": false,
+  "independent_review": false,
+  "shards": [
+    {
+      "path": "$SCRATCH/p0-s3-full-v3/shard-000/complete.json",
+      "sha256": "f9ece0d5b192f2e53d29fb9eb49de6d46ae7c9f4343f6672f1f49a6c1f2a4905",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v19",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+          "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 1429,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v3/shard-001/complete.json",
+      "sha256": "1ee36b573d194c0cdaae857e74f5b83c8bdd5e072475156315bd582ffb027f15",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v19",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+          "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 1429,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v3/shard-002/complete.json",
+      "sha256": "5ff67cbab13f464c819ae639044f5eab2299bb4dc549b3d7ee1ee9ba7422dd0a",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v19",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+          "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 1429,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v3/shard-003/complete.json",
+      "sha256": "a61abee9ec99b98f583cf8a1a683a18941955894f7d26a75c8be99e0ba0c1c1b",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v19",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+          "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 1428,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v3/shard-004/complete.json",
+      "sha256": "ca314d0bcb5f91be46dacf279e0e70894da662f716f66fc8611a2b02f94a4481",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v19",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+          "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 1428,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v3/shard-005/complete.json",
+      "sha256": "689c28c53c996da1f8e5010975e83a4da09a375b8cc8e030fc923ed05744752f",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v19",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+          "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 1428,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    }
+  ]
+}

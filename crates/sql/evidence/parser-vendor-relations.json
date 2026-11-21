@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "scope": "Vendored parser hooks and typed LEFT ASOF/TABLE arguments; repeated ARRAY suffixes",
+  "raw_directory": "$SCRATCH/p0-parser-vendor-v2",
+  "rust_raw_directory": "$SCRATCH/p0-parser-vendor-v1",
+  "sources": {
+    "crates/sql/parser-probe/Cargo.toml": "9a66b19dcbe20b754dc82e5e6b6764f8d6bae590bca9dacaf458ebfdfe36db6d",
+    "crates/sql/parser-probe/adversarial.jsonl": "344e7b2a144f7e1688e4cdd1a3701e3f04eccd614681a9a3ec452c29c8a1c10d",
+    "crates/sql/parser-probe/Cargo.lock": "d29e1ae4771e7e2590e55fa744420bf0ac0073a6c3cea9d96a6893233d70327b",
+    "crates/sql/parser-probe/README.md": "ca60e1ecaf40efcb437b54d1996f497932c6be378ee41b44b880bbbb3b5471b6",
+    "crates/sql/parser-probe/syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "crates/sql/parser-probe/src/v062.rs": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+    "crates/sql/parser-probe/src/lib.rs": "2089cc57ee69c624b7c6454b871e122519ffda5d409e9bd8a773ea21b19633f8",
+    "crates/sql/parser-probe/src/v064.rs": "f99c113ec52c83ae4adada1157c939a517350c2ef32365a89743fa5a1971a8b9",
+    "crates/sql/parser-probe/src/main.rs": "386260231d2612cf65f165f0263b58211ea7c27c319e4bfbf23156cfc4c05df8",
+    "crates/sql/parser-probe/vendor/sqlparser/Cargo.toml": "f39937579d8630409ad98b82af462cda69e893cdd7a3a922d80e22d24c12bdb3",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA.patch": "c028e7572609c1f0840050215b659512b083f11d9a07b48d57587878ed1a2e16",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA-PATCHES.md": "5ac1bc05186f15e8f13880200eb70de3e79e2a5bc14fe8d6c7ab0bc6d33d9dd2",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA-PROVENANCE.json": "27b1a61dbc3c8c170d3ac063019a12ad86667d9c2e010c8746f164c31da61892",
+    "crates/sql/parser-probe/vendor/sqlparser/Cargo.lock": "790ec02b9f106c3a5508ae133e2475829ffa5d8410ce0b4f59c03ea4f3392503",
+    "crates/sql/parser-probe/vendor/sqlparser/README.md": "3f22fcd32dbf34ba4be110fe741d0c41a1b815939eb6ba99f1d8c15091a65f6f",
+    "crates/sql/parser-probe/vendor/sqlparser/NOTICE.TXT": "bb3ca1682483387eb1f4e538b226f83856212488f11ebad1bd71bb928a44f5e9",
+    "crates/sql/parser-probe/vendor/sqlparser/LICENSE.TXT": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+    "crates/sql/parser-probe/vendor/sqlparser/Cargo.toml.orig": "4e75f703320d14c42202f6a0e1079873d79afea95c7eab29ff101490104bf013",
+    "crates/sql/parser-probe/vendor/sqlparser/src/display_utils.rs": "bf16b070b9a9a89dd5e022b4177745da044ac7c4b4fdee5f8831a11c4f1124d0",
+    "crates/sql/parser-probe/vendor/sqlparser/src/keywords.rs": "b8bb01a2d4a2f0210ec3942c2c52e93a4a25ea804d8d68ab94f390877fa79c0f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/lib.rs": "4671ee7aa82d74ee9989c61c26459e4601911bb70437ba5bcdbf98d47c9bc466",
+    "crates/sql/parser-probe/vendor/sqlparser/src/test_utils.rs": "2b9f1b25d9681acb43c2ac3bab40435dd4bee3f8080d4d4cb17f5c0796dbad86",
+    "crates/sql/parser-probe/vendor/sqlparser/src/tokenizer.rs": "f88b10ea68d201a8cc61fce078e5d192aad30c7462712856c5fde8282f393af2",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/merge.rs": "bd0b8a6da9396073ea0d66ec523e08807157f7e0f6768cc9976a9632fc4e033a",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/mod.rs": "082300b61d1492883d7e8a41e0b19259f5ce1becc8b49f09bf146322149b5b15",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/alter.rs": "478c172d14a4fa5b63921917f9aaa0ab888e019d63190e7971b8294a3d8d8269",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/spans.rs": "c4e73006241bb1c2c69516717940b9cbe5a8f4b5165034d653b0bec03c06df76",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/operator.rs": "546957910a5ac953409c21f4f83e8f410f4509bda913e0865e1b890aeb8ab87b",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/data_type.rs": "cae1d25fa1e81dbe3ccba303b1c77aaee21d9c1cc3c22e89a4bca8bdf0ccf89c",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/dcl.rs": "5929fc51faaa0a809ee0888f50a351d96908d0d55b952bc7e458854bffe92ae9",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/query.rs": "f606a417cc6f08cce4ab87bfef6cfeacc7b329e015e77495ddd8137d7ec3a435",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/ddl.rs": "b6a83938865749d14831a54f674b392b7547e260310438d4c304849ebeae68e2",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/table_constraints.rs": "847dc5a02937a283a3842a2af54abc6eca867145773527c6d2ab7374c97542b5",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/mod.rs": "a363012ac384270055e2da2d57cfbb0aaf0d81c6fba0a3196d0489f1bdef0304",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/trigger.rs": "e8902b8057caced0a39dcdd1f03a565b88ff1e2c8a1d83fb16e9915ae58114db",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/comments.rs": "a139b9dec0855a9f82c834a667ddfe6548e1afe94a3e3a8fbcea2a862cc51937",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/value.rs": "69367b8a0455902f10aa4b629c82f79d49696ac35007ca5bace59fab0ee98f4f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/dml.rs": "da1cfc93945ed088b819dad7deda258279b63503fddabb84ee9615a8ad436c16",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/visitor.rs": "9c9fb148b701d5b5719f60cdcd5a4e203d1672118df72270d7b172b764a292c7",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/bigquery.rs": "bb64916af8cf940ee4677cb26424dc9d4bbeff460a7ecaebd4921d92b2378a80",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/sqlite.rs": "0ee50dfa8896f7e8b5b63b27741f323f8f2a121c19e75011b8cea0edc9269a9d",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/generic.rs": "2d33a67c09abb0fccc287349a8245afbab78809084a5638ae82d03faa87071b4",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/mssql.rs": "7c1782b8b34499cdde6abe43b20a30b76383e78d5d788ea3e660d2646d0864f5",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/clickhouse.rs": "3e476d410548b8c2fa3af58a44e90eefbf7472d9682c51248a5fc5b0326ea19c",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/postgresql.rs": "055a4869516b86d0857cfaca5b04783671296b971dedf5b0824b31456e6253fb",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/redshift.rs": "047473eefca3ea01e60bcd79c70e7709ed961424cd46bd4aa11a6554a5a4e9d7",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/mod.rs": "0e1011daf07d66fdece3ffa4975a3bbd17d6c9fd405c9bcc8fdee1d8fca73739",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/mysql.rs": "e05fbdbfa74fb0462f3b49d603043c513775de3ab3cded02457a6204e545f6ed",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/oracle.rs": "ed1529920b992d26726f7a5274f5e6eeaced33d1c93e03f361d16ba3a83808dc",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/ansi.rs": "cfdc197695c76125447a5f45e3183869be3b477e7dc5b162a5b09b1e4353cd2e",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/databricks.rs": "fac341b036294c3980de023e4c3fdebe42c8a36c6891a35b7622b67cea06553e",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/teradata.rs": "a4b1dab235fd3d0d12c8cd64af05b8e1b6bccc929afec8e44ec27a2e7ea0fac3",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/duckdb.rs": "5723cedaf97245eec187ea0809666289261225b5d73b4f7dd221812b64c46d74",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/snowflake.rs": "5748e4a49d63b29ea0a42587cf6f981977810bcda4da426102d8c7a342d2c2a1",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/spark.rs": "cb5ee7f04d1e8a4d7ab2e8dcf77d20ce21d1af1fa35282459210d97f2ca7c2fe",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/hive.rs": "2135fa5cb41aee546d742f412c81b04a9ba6095068d33704dfe1e39e4389f5f0",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/stmt_create_table.rs": "9ee988839144208883733d0c60f52a434bb03fdfd5245efa56bcdb2bdc82fe49",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/stmt_create_database.rs": "592936616b01efbfe16642e95523983ad5decc614dda797bf09aca32e8ad7c87",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/attached_token.rs": "5600d2689f5643d177f23e9158c8a1b9e701a488b27336cc3b65ff93f566628a",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/mod.rs": "51babef675e6388da59b847f1f81a53726e4975d7a18afd8cf8f431f2914b913",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/key_value_options.rs": "c8216f577f9d7e96e550f6790aa3ccec56cde60620a48e3069636a1dd589296c",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/stmt_data_loading.rs": "5051029866cc6dc2aa7c9e5268e446c9decff0abbd7d376d7df06e20e44fd795",
+    "crates/sql/parser-probe/src/v064/temporal_types.rs": "068e169b4ef965053b698b8473498eb633d1a6cfc1feb595ea2aa748fe6c1753",
+    "crates/sql/parser-probe/src/v064/trim.rs": "9772d783d8e35d7ceeb0a4043aed287bf86ed5ddc400d9b62af42487878e810e",
+    "crates/sql/parser-probe/src/v064/relations.rs": "8b7a9d8245edce5e336ccb944d46594e84459a356a0c6920c99ed8f7e5b543ad",
+    "crates/sql/parser-probe/src/v064/aggregate_tests.rs": "07d30b47326fa3c10e507fe291e922849c371b11173fcd782b3b90136d800d39",
+    "crates/sql/parser-probe/src/v064/unicode.rs": "2c039d25dc343c2118953f186c900d1f77f0da635ebcede942911f76ea1d220b",
+    "crates/sql/parser-probe/src/v064/functions.rs": "9d82246249c7453c83ba80b0fca1c7c537bc241f8f3777b1ff8d749c5d5c9472",
+    "crates/sql/parser-probe/src/v064/lateness.rs": "93a932e183c747d502054d1ef44f2abc749653f4a7b8801f8bce551e1c324c3b",
+    "crates/sql/parser-probe/src/v064/statements.rs": "b23d07f30a62051c42ff5405b4a522a7dc5c48275773612d325324e3668bf09a",
+    "crates/sql/parser-probe/src/v064/reserved.rs": "0a1abb3c8a0b6e1b146d8de43f9ee43c6cdbedec48ffc9da2c6ec7c0053cc497",
+    "crates/sql/parser-probe/src/v064/reject.rs": "8f34520f12593daa6b974d11534902ce6136c2588431d0d4f2df7a09ea53df56",
+    "crates/sql/parser-probe/src/v064/settings.rs": "2294a5f842cb3ebda7665d3237745b0fdbd58211914c070aedbff5f82c758019",
+    "crates/sql/parser-probe/src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbe.java": "723137e250c9027636545c6d21ae1cdac6d0d5f8f8d54c278d77bdd967c10e2f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbeTests.java": "e6f106fbdc19d8a8417970891ac27100c30705548a80fb3a1b7859079eedfaba"
+  },
+  "comparisons": {
+    "corpus": {
+      "cases": 8571,
+      "counts": {
+        "both_accept": 33894,
+        "accepted_submissions": 33894,
+        "accepted_cases": 8450,
+        "java_only": 121,
+        "rejected_submissions": 121,
+        "rejected_cases": 121
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "typed recursive view and standalone LATENESS extensions with complete top-level consumption; statement-family allowlist and scoped DROP/SET/description options; qualified datetime differences misparsed as aliases; function-specific inline null treatment and FILTER ordering; reserved words in declarations, relations, references and projection aliases; LATENESS contexts and non-query expressions"
+        },
+        "cases": 8571,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 5807,
+            "accepted_submissions": 31127,
+            "rejected_cases": 2764,
+            "rejected_submissions": 2888,
+            "statements_in_accepted_submissions": 94363
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 5978,
+            "accepted_submissions": 31317,
+            "rejected_cases": 2593,
+            "rejected_submissions": 2698,
+            "statements_in_accepted_submissions": 94588
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 8450,
+            "accepted_submissions": 33894,
+            "rejected_cases": 121,
+            "rejected_submissions": 121,
+            "statements_in_accepted_submissions": 101642
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 7876,
+            "accepted_submissions": 33308,
+            "rejected_cases": 695,
+            "rejected_submissions": 707,
+            "statements_in_accepted_submissions": 99741
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "ad87027b13152d16446633380893ab36d0b12ac4a4d133be43b0b4c934049415",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "parser_implementations": {
+          "0.64.0/feldera_prototype": "vendored sqlparser 0.64.0: join/argument hooks, typed LEFT ASOF and TABLE arguments, repeated ARRAY suffixes; see vendor/sqlparser/FELDERA-PATCHES.md",
+          "0.64.0/generic": "unmodified crates.io sqlparser 0.64.0"
+        },
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 8571,
+        "accepted_cases": 8571,
+        "rejected_cases": 0,
+        "accepted_submissions": 34015,
+        "rejected_submissions": 0,
+        "statements_in_accepted_submissions": 101870,
+        "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "producer": "c6ede756d-p0-parser",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-vendor-v1/corpus-comparison.json",
+      "sha256": "177c4ee6b007ae28521c79b73f110f50f938d7cc5d7745ce147d670538be666c"
+    },
+    "keywords": {
+      "cases": 13660,
+      "counts": {
+        "both_accept": 13147,
+        "accepted_submissions": 13147,
+        "accepted_cases": 13147,
+        "both_reject": 510,
+        "rejected_submissions": 513,
+        "rejected_cases": 513,
+        "java_only": 3
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "typed recursive view and standalone LATENESS extensions with complete top-level consumption; statement-family allowlist and scoped DROP/SET/description options; qualified datetime differences misparsed as aliases; function-specific inline null treatment and FILTER ordering; reserved words in declarations, relations, references and projection aliases; LATENESS contexts and non-query expressions"
+        },
+        "cases": 13660,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 13651,
+            "accepted_submissions": 13651,
+            "rejected_cases": 9,
+            "rejected_submissions": 9,
+            "statements_in_accepted_submissions": 13651
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 13647,
+            "accepted_submissions": 13647,
+            "rejected_cases": 13,
+            "rejected_submissions": 13,
+            "statements_in_accepted_submissions": 13647
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 13147,
+            "accepted_submissions": 13147,
+            "rejected_cases": 513,
+            "rejected_submissions": 513,
+            "statements_in_accepted_submissions": 13147
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 13647,
+            "accepted_submissions": 13647,
+            "rejected_cases": 13,
+            "rejected_submissions": 13,
+            "statements_in_accepted_submissions": 13647
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "ad87027b13152d16446633380893ab36d0b12ac4a4d133be43b0b4c934049415",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+        "parser_implementations": {
+          "0.64.0/feldera_prototype": "vendored sqlparser 0.64.0: join/argument hooks, typed LEFT ASOF and TABLE arguments, repeated ARRAY suffixes; see vendor/sqlparser/FELDERA-PATCHES.md",
+          "0.64.0/generic": "unmodified crates.io sqlparser 0.64.0"
+        },
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 13660,
+        "accepted_cases": 13150,
+        "rejected_cases": 510,
+        "accepted_submissions": 13150,
+        "rejected_submissions": 510,
+        "statements_in_accepted_submissions": 13150,
+        "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+        "producer": "c6ede756d-p0-parser",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-vendor-v1/keywords-comparison.json",
+      "sha256": "d8288ef4c70a18f58c1183dee9a1c7bae9a6f8b9a99f27d0475905abd545228c"
+    },
+    "adversarial": {
+      "cases": 419,
+      "counts": {
+        "both_accept": 190,
+        "accepted_submissions": 190,
+        "accepted_cases": 190,
+        "java_only": 27,
+        "rejected_submissions": 229,
+        "rejected_cases": 229,
+        "both_reject": 202
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "typed recursive view and standalone LATENESS extensions with complete top-level consumption; statement-family allowlist and scoped DROP/SET/description options; qualified datetime differences misparsed as aliases; function-specific inline null treatment and FILTER ordering; reserved words in declarations, relations, references and projection aliases; LATENESS contexts and non-query expressions"
+        },
+        "cases": 419,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 150,
+            "accepted_submissions": 150,
+            "rejected_cases": 269,
+            "rejected_submissions": 269,
+            "statements_in_accepted_submissions": 156
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 212,
+            "accepted_submissions": 212,
+            "rejected_cases": 207,
+            "rejected_submissions": 207,
+            "statements_in_accepted_submissions": 219
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 190,
+            "accepted_submissions": 190,
+            "rejected_cases": 229,
+            "rejected_submissions": 229,
+            "statements_in_accepted_submissions": 199
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 221,
+            "accepted_submissions": 221,
+            "rejected_cases": 198,
+            "rejected_submissions": 198,
+            "statements_in_accepted_submissions": 228
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "ad87027b13152d16446633380893ab36d0b12ac4a4d133be43b0b4c934049415",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "344e7b2a144f7e1688e4cdd1a3701e3f04eccd614681a9a3ec452c29c8a1c10d",
+        "parser_implementations": {
+          "0.64.0/feldera_prototype": "vendored sqlparser 0.64.0: join/argument hooks, typed LEFT ASOF and TABLE arguments, repeated ARRAY suffixes; see vendor/sqlparser/FELDERA-PATCHES.md",
+          "0.64.0/generic": "unmodified crates.io sqlparser 0.64.0"
+        },
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 419,
+        "accepted_cases": 217,
+        "rejected_cases": 202,
+        "accepted_submissions": 217,
+        "rejected_submissions": 202,
+        "statements_in_accepted_submissions": 226,
+        "input_sha256": "344e7b2a144f7e1688e4cdd1a3701e3f04eccd614681a9a3ec452c29c8a1c10d",
+        "producer": "unrecorded",
+        "calcite": "unrecorded",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-vendor-v2/adversarial-comparison.json",
+      "sha256": "04c1f115a2b35e74df87cc42a72fbb3faa1f61ea93b8222542f90531333f0ee6"
+    }
+  },
+  "regression_checks": {
+    "preserved_previously_accepted_cases": 8369,
+    "recovered_cases": 81,
+    "stock_comparator_submissions_equal": 34015
+  },
+  "rust_tests": 41,
+  "java_oracle_tests": 8,
+  "clippy_passed": true,
+  "exhaustive_ast_rejection": false,
+  "s1_equivalence_checked": false,
+  "oracle_classpath": {
+    "$SCRATCH/p0-seam-tools-v31/classes": "31b1bd6819d17762fe82a12c7ac860564dd8659daa58559a6c03fbf12d5a69b9",
+    "$SCRATCH/p0-seam-tools-v31/test-classes": "1381e4e531ff8bb9cf555572fd8c74b3bb2d432e0544e75869cd7db151f087f8",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "earlier_overacceptance": {
+    "comparison": "$SCRATCH/p0-parser-vendor-v2/before-adversarial-comparison.json",
+    "sha256": "07b2715d9771a8d4a1e7c62807cdd71ab6b812e7d04e5a730648c631c9dbcedf",
+    "rust_only_acceptances": 7,
+    "repaired": true
+  },
+  "oracle_failure": {
+    "directory": "$SCRATCH/p0-parser-vendor-v1",
+    "classification": "Expected ASOF grammar error misclassified by the test oracle; repaired in v31",
+    "log_sha256": "ff015b0a7415d5cd2d4329f0b1a4b0a0e6752b8e199a6eecada6070c79513522"
+  },
+  "limitations": [
+    "Raw syntax coverage only: full AST rejection, complete spans and S1 parity remain open",
+    "Maintenance cost and upstream acceptance of the vendor patch are not measured",
+    "Production dependencies and compiler selection are unchanged"
+  ],
+  "logs": {
+    "$SCRATCH/p0-parser-vendor-tests-v2.log": "c7073ad3e4cf0b48d68cbb5e127151e19cf7254c69e3fca931ab0869b3d22c6a",
+    "$SCRATCH/p0-parser-vendor-clippy-v2.log": "cbf6ea9dc7ad37051a8ed9ba11b7e1105cbedb32c4974c758e718c4151d223a6",
+    "$SCRATCH/p0-parser-asof-oracle-java.log": "93945899c1be1e404c383cefef8e03224d147d9108126cfbfc773512fccda49f"
+  }
+}

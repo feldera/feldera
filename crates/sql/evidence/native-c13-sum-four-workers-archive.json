@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-c13-sum-four-workers-20261118-v1.tar.gz",
+  "bytes": 6470106,
+  "sha256": "03331d6b18c987922b764795be86e2814180c425903acbe7f01a3a072f2df28e",
+  "manifest_sha256": "3f41480c669450fbfd2eab89efecd8e63ad4d5dc77727b8973f105ba0721d9b4",
+  "verified_files": 390,
+  "all_members_verified": true
+}

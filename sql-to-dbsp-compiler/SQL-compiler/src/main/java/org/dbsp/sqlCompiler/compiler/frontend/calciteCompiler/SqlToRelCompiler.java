@@ -124,7 +124,6 @@ import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlDelegatingConformance;
 import org.apache.calcite.sql.validate.SqlValidator;
-import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.sql2rel.ConvertToChecked;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.RelBuilder;
@@ -237,6 +236,18 @@ import static org.apache.calcite.util.Static.RESOURCE;
  *   Optimize is called automatically from compile().
  */
 public class SqlToRelCompiler implements IWritesLogs {
+    /** Test-only read-only observation before and after SQL-to-Rel conversion.
+     * Callbacks must not mutate the validator, syntax tree, or relational plan. */
+    public interface BindingObserver {
+        void validated(SqlNode node, SqlValidator validator);
+        void converted(RelRoot root);
+    }
+
+    @Nullable public BindingObserver bindingObserver;
+    /** Test-only observation of relational optimizer inputs and outputs. */
+    @Nullable public CalciteOptimizer.Observer optimizerObserver;
+    /** Test-only substitution used to execute independently rewritten FRel. */
+    @Nullable public java.util.function.BiFunction<String, RelNode, RelNode> optimizerInputTransform;
     private final CompilerOptions options;
     private final SqlParser.Config parserConfig;
     private final Catalog calciteCatalog;
@@ -357,7 +368,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         // This planner does not do anything.
         // We use a series of planner stages later to perform the real optimizations.
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
-        planner.setExecutor(RexUtil.EXECUTOR);
+        planner.setExecutor(org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.FoldTrace.wrap(
+                RexUtil.EXECUTOR));
         HintStrategyTable hints = HintStrategyTable.builder()
                 .hintStrategy(HINT_BROADCAST, HintStrategy.builder(HintPredicates.JOIN)
                         .optionChecker(this::checkHintHasArgument)
@@ -731,6 +743,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 .withIdentifierExpansion(true)
                 .withDefaultNullCollation(NULL_COLLATION)
                 .withCallRewrite(false)
+                .withTypeCoercionFactory(FelderaTypeCoercion::new)
                 ;
         validatorConfig = validatorConfig.withConformance(new Conformance(validatorConfig.conformance()));
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
@@ -738,7 +751,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 Collections.singletonList(calciteCatalog.schemaName),
                 this.typeFactory,
                 this.connectionConfig);
-        this.validator = SqlValidatorUtil.newValidator(
+        this.validator = new FelderaSqlValidator(
                 newOperatorTable,
                 catalogReader,
                 this.typeFactory,
@@ -754,22 +767,16 @@ public class SqlToRelCompiler implements IWritesLogs {
         );
     }
 
+    /** Names ambiguous with a user table under the current validator configuration. */
+    public java.util.stream.Stream<String> predefinedTableNameConflicts() {
+        return Objects.requireNonNull(this.validator).getOperatorTable().getOperatorList().stream()
+                .filter(op -> !(op instanceof SqlAggFunction))
+                .filter(op -> op.kind != SqlKind.ITEM && op.kind != SqlKind.DOT && op.kind != SqlKind.SEARCH)
+                .map(SqlOperator::getName);
+    }
+
     public boolean functionExists(String identifier) {
-        List<SqlOperator> operators = Objects.requireNonNull(this.validator).getOperatorTable().getOperatorList();
-        for (SqlOperator op: operators) {
-            if (op instanceof SqlAggFunction)
-                // These names are not ambiguous
-                continue;
-            if (op.kind == SqlKind.ITEM ||
-                    op.kind == SqlKind.DOT ||
-                    op.kind == SqlKind.SEARCH)
-                // These are actually not named
-                continue;
-            if (op.getName().equalsIgnoreCase(identifier)) {
-                return true;
-            }
-        }
-        return false;
+        return this.predefinedTableNameConflicts().anyMatch(identifier::equalsIgnoreCase);
     }
 
     /** aka EXPLAIN */
@@ -791,20 +798,19 @@ public class SqlToRelCompiler implements IWritesLogs {
      * the body of a user-defined function, a column default value, or a lateness. */
     UnaryOperator<SqlParserPos> sourcePositionRemap = UnaryOperator.identity();
 
-    /** Create a new parser.
+    /** Add blank lines for earlier SQL submissions.
      * @param sql       Program to parse.
      * @param saveLines If true remember the number of lines used by the program. */
-    SqlParser createSqlParser(String sql, boolean saveLines) {
+    String parserInput(String sql, boolean saveLines) {
         // This function can be invoked multiple times.
         // In order to get correct line numbers, we feed the parser extra empty lines
         // before the statements we compile in this round.
         String toParse = this.newlines + sql;
-        SqlParser sqlParser = SqlParser.create(toParse, this.parserConfig);
         if (saveLines) {
             int lines = sql.split("\n").length;
             this.newlines.append("\n".repeat(lines));
         }
-        return sqlParser;
+        return toParse;
     }
 
     ExtraValidation getExtraValidator() {
@@ -825,7 +831,7 @@ public class SqlToRelCompiler implements IWritesLogs {
      * @param saveLines  True if the lines "take space": are accounted as part of the input program
      * @param postprocess  If false, skip {@link #postParsingProcess(ParsedStatement)} */
     public SqlNode parse(String sql, boolean saveLines, boolean postprocess) throws SqlParseException {
-        SqlParser sqlParser = this.createSqlParser(sql, saveLines);
+        SqlParser sqlParser = SqlParser.create(this.parserInput(sql, saveLines), this.parserConfig);
         SqlNode result = sqlParser.parseStmt();
         return postprocess ? this.postParsingProcess(result, saveLines) : result;
     }
@@ -908,20 +914,28 @@ public class SqlToRelCompiler implements IWritesLogs {
      * @param postprocess If false, skip {@link #postParsingProcess(ParsedStatement)}. */
     public List<ParsedStatement> parseStatements(String statements, boolean saveLines, boolean postprocess)
             throws SqlParseException {
-        SqlParser sqlParser = this.createSqlParser(statements, saveLines);
+        String input = this.parserInput(statements, saveLines);
+        SqlParser sqlParser = SqlParser.create(input, this.parserConfig);
         List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
-            ParsedStatement stat = new ParsedStatement(node, saveLines);
+            ParsedStatement stat = new ParsedStatement(node, saveLines, saveLines ? null : input);
             result.add(postprocess ? this.postParsingProcess(stat) : stat);
         }
         return result;
     }
 
+    /** Parse one queued statement while retaining its source context. */
+    public ParsedStatement parseStatement(String sql, boolean visible) throws SqlParseException {
+        String input = this.parserInput(sql, visible);
+        SqlNode node = SqlParser.create(input, this.parserConfig).parseStmt();
+        return new ParsedStatement(node, visible, visible ? null : input);
+    }
+
     /** Validate a freshly parsed statement, and apply some rewrites. */
     public ParsedStatement postParsingProcess(ParsedStatement statement) {
         SqlNode node = this.postParsingProcess(statement.statement(), statement.visible());
-        return new ParsedStatement(node, statement.visible());
+        return statement.withStatement(node);
     }
 
     public List<ParsedStatement> parseStatements(String statements) throws SqlParseException {
@@ -945,6 +959,8 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         CalciteOptimizer optimizer = new CalciteOptimizer(
                 this.options.languageOptions.optimizationLevel, relBuilder, this.errorReporter);
+        optimizer.observer = this.optimizerObserver;
+        optimizer.inputTransform = this.optimizerInputTransform;
         RelNode input = rel;
         rel = DBSPCompiler.timed("Calcite.optimize", () -> optimizer.apply(input, this.options));
         RelNode finalRel1 = rel;
@@ -1186,6 +1202,8 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     RexNode validateLateness(SqlIdentifier columnName, SqlDataTypeSpec columnType,
                              SqlNode value, SourceFileContents sources) {
+        if (org.apache.calcite.sql.SqlUtil.isNullLiteral(value, true))
+            throw new CompilationError("LATENESS must not be NULL", CalciteObject.create(value));
         // The generated SQL contains a reformatted copy of 'value', so problems are reported at all of 'value'
         UnaryOperator<SqlParserPos> remap = generated -> value.getParserPosition();
         try {
@@ -1224,6 +1242,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                 List<RexNode> projects = project.getProjects();
                 if (projects.size() == 1) {
                     RexNode subtract = projects.get(0);
+                    // A NULL result is not evidence that subtraction by zero was eliminated.
+                    // Converting the original SQL here would use a validator that has never seen it.
+                    if (RexUtil.isNullLiteral(subtract, true))
+                        throw new CompilationError("LATENESS must not be NULL", CalciteObject.create(value));
                     if (subtract.getKind() == SqlKind.CAST) {
                         subtract = ((RexCall) subtract).getOperands().get(0);
                     }
@@ -1634,8 +1656,10 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         @SuppressWarnings("EmptyMethod")
         void visitScan(TableScan scan) {
-            // assume that the entire row has exactly 1 field
-            this.body = new RexInputRef(0, scan.getRowType());
+            // Optimization can remove the project for an identity function.
+            // Its body still references the single parameter, not the input row.
+            this.body = scan.getRowType().getFieldCount() == 1
+                    ? new RexInputRef(0, scan.getRowType().getFieldList().get(0).getType()) : null;
         }
 
         void visitProject(LogicalProject project) {
@@ -1658,11 +1682,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
-    @Nullable
-    RexNode createFunction(SqlCreateFunctionDeclaration decl, SourceFileContents sources) {
+    private record FunctionTranslation(@Nullable RexNode expression, @Nullable String source) { }
+
+    FunctionTranslation createFunction(SqlCreateFunctionDeclaration decl, SourceFileContents sources) {
         SqlNode body = decl.getBody();
         if (body == null)
-            return null;
+            return new FunctionTranslation(null, null);
 
         int newLineNumber = 0;
         SqlParserPos position = body.getParserPosition();
@@ -1713,7 +1738,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RelNode node = view.getRel();
             ProjectExtractor extractor = new ProjectExtractor();
             extractor.go(node);
-            return Objects.requireNonNull(extractor.body);
+            return new FunctionTranslation(Objects.requireNonNull(extractor.body), sql);
         } catch (CalciteContextException e) {
             throw rewriteException(e, remap);
         } catch (SqlParseException e) {
@@ -2114,9 +2139,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         Boolean nullableResult = retType.getNullable();
         if (nullableResult != null && nullableResult)
             returnType = this.createNullableType(returnType);
-        RexNode bodyExp = this.createFunction(decl, sources);
+        FunctionTranslation translation = this.createFunction(decl, sources);
         ExternalFunction function = this.customFunctions.createUDF(
-                CalciteObject.create(node), decl.getName(), structType, returnType, bodyExp);
+                CalciteObject.create(node), decl.getName(), structType, returnType, translation.expression(), translation.source());
         return new CreateFunctionStatement(node, function);
     }
 
@@ -2130,9 +2155,14 @@ public class SqlToRelCompiler implements IWritesLogs {
         // Phase names with a "Calcite." prefix measure parts of the "Calcite" phase
         SqlNode validated = DBSPCompiler.timed("Calcite.validate",
                 () -> this.getValidator().validate(wrappedStringLiterals));
+        if (this.bindingObserver != null)
+            this.bindingObserver.validated(validated, this.getValidator());
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
-        return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
+        RelRoot result = DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
+        if (this.bindingObserver != null)
+            this.bindingObserver.converted(result);
+        return result;
     }
 
     void validateViewProperty(ProgramIdentifier view, SqlCreateView.ViewKind viewKind,
@@ -2604,14 +2634,30 @@ public class SqlToRelCompiler implements IWritesLogs {
         return result;
     }
 
+    /** Capture statement metadata before crossing the relational lowering seam. */
+    @Nullable
+    private static List<TableModifyStatement.TargetColumn> modificationColumns(
+            ParsedStatement statement, @Nullable SqlNodeList columns) {
+        if (columns == null)
+            return null;
+        List<TableModifyStatement.TargetColumn> result = new ArrayList<>();
+        for (SqlNode column: columns) {
+            if (!(column instanceof SqlIdentifier id))
+                throw new UnsupportedException(CalciteObject.create(statement));
+            result.add(new TableModifyStatement.TargetColumn(ProgramIdentifier.fromSqlId(id),
+                    new SourcePositionRange(id.getParserPosition()), id.toString()));
+        }
+        return List.copyOf(result);
+    }
+
     private TableModifyStatement compileRemove(ParsedStatement node) {
         SqlRemove remove = (SqlRemove) node.statement();
         SqlNode table = remove.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("REMOVE not supported for " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(
-                node, false, ProgramIdentifier.fromSqlId(id), remove.getSource());
-        RelRoot values = this.sqlToRel(stat.data);
+                node, false, ProgramIdentifier.fromSqlId(id), modificationColumns(node, remove.getTargetColumnList()));
+        RelRoot values = this.sqlToRel(remove.getSource());
         values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;
@@ -2622,8 +2668,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlNode table = insert.getTargetTable();
         if (!(table instanceof SqlIdentifier id))
             throw new UnimplementedException("INSERT not supported for " + table, CalciteObject.create(table));
-        TableModifyStatement stat = new TableModifyStatement(node, true, ProgramIdentifier.fromSqlId(id), insert.getSource());
-        RelRoot values = this.sqlToRel(stat.data);
+        TableModifyStatement stat = new TableModifyStatement(node, true, ProgramIdentifier.fromSqlId(id), modificationColumns(node, insert.getTargetColumnList()));
+        RelRoot values = this.sqlToRel(insert.getSource());
         values = values.withRel(this.optimize(values.rel, true, this.getRelBuilder()));
         stat.setTranslation(values.rel);
         return stat;

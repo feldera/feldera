@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "archive": ".bench-results/native-keys/2026-18-11-07-34-c6ede/raw.tar.gz",
+  "bytes": 1714125,
+  "sha256": "04c781f63ace06b51347f768f2c86a9f7f5859ca34ef123ecd78ffdcbb647add",
+  "manifest_sha256": "3b1e21e0f05facf54910f6873dec006be898fcccb5976b542769909a41e7144f",
+  "verified_files": 49,
+  "all_members_verified": true
+}

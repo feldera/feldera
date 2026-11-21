@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-diagnostics-regressions-20261118-v1.tar.gz",
+  "bytes": 11614819,
+  "sha256": "6b03e35d14fce58949ceb6a4a3f5d02d2e86f3fabea66878f5e6fe4c947f5f5d",
+  "manifest_sha256": "62fc0d1612d394a8dde4f3a0f0d89be8d35876caac6b15f75712ecf6128eeddd",
+  "verified_files": 1217,
+  "all_members_verified": true
+}

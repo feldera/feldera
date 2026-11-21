@@ -1,0 +1,725 @@
+{
+  "schema_version": 1,
+  "cases": 39,
+  "input_sha256": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+  "rust_build": {
+    "ast_reject_pass": true,
+    "ast_reject_scope": {
+      "0.64.0/feldera_prototype": "qualified datetime differences misparsed as aliases"
+    },
+    "cases": 39,
+    "complete": true,
+    "counts": {
+      "0.62.0/feldera_prototype": {
+        "accepted_cases": 29,
+        "accepted_submissions": 29,
+        "rejected_cases": 10,
+        "rejected_submissions": 10,
+        "statements_in_accepted_submissions": 29
+      },
+      "0.62.0/generic": {
+        "accepted_cases": 31,
+        "accepted_submissions": 31,
+        "rejected_cases": 8,
+        "rejected_submissions": 8,
+        "statements_in_accepted_submissions": 31
+      },
+      "0.64.0/feldera_prototype": {
+        "accepted_cases": 29,
+        "accepted_submissions": 29,
+        "rejected_cases": 10,
+        "rejected_submissions": 10,
+        "statements_in_accepted_submissions": 29
+      },
+      "0.64.0/generic": {
+        "accepted_cases": 32,
+        "accepted_submissions": 32,
+        "rejected_cases": 7,
+        "rejected_submissions": 7,
+        "statements_in_accepted_submissions": 32
+      }
+    },
+    "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+    "executable_sha256": "74e729fc2f36057ba2375b960fc0e17c7693e4b13cef44f9101daf2e2575bef7",
+    "exhaustive_ast_rejection": false,
+    "include_ast": true,
+    "input_sha256": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "s1_equivalence_checked": false,
+    "schema_version": 1,
+    "token_rewrite_scope": {
+      "0.64.0/feldera_prototype": "Unicode identifiers only"
+    },
+    "token_rewrites": true
+  },
+  "java_build": {
+    "schema_version": 1,
+    "stage": "raw_parser",
+    "cases": 39,
+    "accepted_cases": 30,
+    "rejected_cases": 9,
+    "accepted_submissions": 30,
+    "rejected_submissions": 9,
+    "statements_in_accepted_submissions": 30,
+    "input_sha256": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "producer": "c6ede756d-p0-seams-v22",
+    "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+    "complete": true
+  },
+  "semantic_equivalence_checked": false,
+  "counts": {
+    "0.62.0/feldera_prototype": {
+      "both_accept": 23,
+      "accepted_submissions": 29,
+      "accepted_cases": 29,
+      "rust_only": 6,
+      "java_only": 7,
+      "rejected_submissions": 10,
+      "rejected_cases": 10,
+      "both_reject": 3
+    },
+    "0.62.0/generic": {
+      "both_accept": 24,
+      "accepted_submissions": 31,
+      "accepted_cases": 31,
+      "rust_only": 7,
+      "java_only": 6,
+      "rejected_submissions": 8,
+      "rejected_cases": 8,
+      "both_reject": 2
+    },
+    "0.64.0/feldera_prototype": {
+      "both_accept": 23,
+      "accepted_submissions": 29,
+      "accepted_cases": 29,
+      "rust_only": 6,
+      "java_only": 7,
+      "rejected_submissions": 10,
+      "rejected_cases": 10,
+      "both_reject": 3
+    },
+    "0.64.0/generic": {
+      "both_accept": 25,
+      "accepted_submissions": 32,
+      "accepted_cases": 32,
+      "rust_only": 7,
+      "java_only": 5,
+      "rejected_submissions": 7,
+      "rejected_cases": 7,
+      "both_reject": 2
+    }
+  },
+  "disagreement_groups": [
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: < at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_type",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: ARRAY at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/postfix_array_type",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: LATENESS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/lateness",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: t at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/tumble",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_literal",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: , at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/limit_comma",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected OUTER, SEMI, ANTI or JOIN after LEFT",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/left_asof",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"*\" at line 1, column 25.\nWas expecting one of:\n    <EOF> \n    \";\" ...\n    \"WHERE\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/delete_returning",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"/*+\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/table_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 8.\nWas expecting one of:\n    \"/*+\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"STREAM\" ...\n    \"DISTINCT\" ...\n    \"*\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/select_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'CREATE' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" \"OR\" ...\n    \"CREATE\" \"LOCAL\" ...\n    \"CREATE\" \"MATERIALIZED\" ...\n    \"CREATE\" \"VIEW\" ...\n    \"CREATE\" \"TABLE\" ...\n    \"CREATE\" \"INDEX\" ...\n    \"CREATE\" \"TYPE\" ...\n    \"CREATE\" \"FUNCTION\" ...\n    \"CREATE\" \"LINEAR\" ...\n    \"CREATE\" \"AGGREGATE\" ...\n    \"DROP\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/create_database",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'DROP' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" ...\n    \"DROP\" \"TABLE\" ...\n    \"DROP\" \"VIEW\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/drop_schema",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'INTO' at line 1, column 10.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    \",\" ...\n    \"FROM\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    <QUOTED_STRING> ...\n    \".\" ...\n    \":\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"^\" ...\n    \"&\" ...\n    \"[\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/select_into",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: ARRAY at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/postfix_array_type",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: LATENESS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/lateness",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: < at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_type",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: t at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/tumble",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_literal",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected OUTER, SEMI, ANTI or JOIN after LEFT",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/left_asof",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"*\" at line 1, column 25.\nWas expecting one of:\n    <EOF> \n    \";\" ...\n    \"WHERE\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/delete_returning",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"/*+\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/table_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 8.\nWas expecting one of:\n    \"/*+\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"STREAM\" ...\n    \"DISTINCT\" ...\n    \"*\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/select_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'CREATE' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" \"OR\" ...\n    \"CREATE\" \"LOCAL\" ...\n    \"CREATE\" \"MATERIALIZED\" ...\n    \"CREATE\" \"VIEW\" ...\n    \"CREATE\" \"TABLE\" ...\n    \"CREATE\" \"INDEX\" ...\n    \"CREATE\" \"TYPE\" ...\n    \"CREATE\" \"FUNCTION\" ...\n    \"CREATE\" \"LINEAR\" ...\n    \"CREATE\" \"AGGREGATE\" ...\n    \"DROP\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/create_database",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'DROP' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" ...\n    \"DROP\" \"TABLE\" ...\n    \"DROP\" \"VIEW\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/drop_schema",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'INTO' at line 1, column 10.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    \",\" ...\n    \"FROM\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    <QUOTED_STRING> ...\n    \".\" ...\n    \":\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"^\" ...\n    \"&\" ...\n    \"[\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/select_into",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Lexical error at line 1, column 8.  Encountered: \"`\" (96), after : \"\"",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/backtick_identifier",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: < at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_type",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: LATENESS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/lateness",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: t at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/tumble",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_literal",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: , at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/limit_comma",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected OUTER, SEMI, ANTI or JOIN after LEFT",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/left_asof",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: qualified datetime differences are unsupported at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/interval_difference",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"*\" at line 1, column 25.\nWas expecting one of:\n    <EOF> \n    \";\" ...\n    \"WHERE\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/delete_returning",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"/*+\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/table_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 8.\nWas expecting one of:\n    \"/*+\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"STREAM\" ...\n    \"DISTINCT\" ...\n    \"*\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/select_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'CREATE' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" \"OR\" ...\n    \"CREATE\" \"LOCAL\" ...\n    \"CREATE\" \"MATERIALIZED\" ...\n    \"CREATE\" \"VIEW\" ...\n    \"CREATE\" \"TABLE\" ...\n    \"CREATE\" \"INDEX\" ...\n    \"CREATE\" \"TYPE\" ...\n    \"CREATE\" \"FUNCTION\" ...\n    \"CREATE\" \"LINEAR\" ...\n    \"CREATE\" \"AGGREGATE\" ...\n    \"DROP\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/create_database",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'DROP' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" ...\n    \"DROP\" \"TABLE\" ...\n    \"DROP\" \"VIEW\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/drop_schema",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'INTO' at line 1, column 10.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    \",\" ...\n    \"FROM\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    <QUOTED_STRING> ...\n    \".\" ...\n    \":\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"^\" ...\n    \"&\" ...\n    \"[\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/select_into",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: LATENESS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/lateness",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: < at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_type",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ), found: t at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/tumble",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/map_literal",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: expected OUTER, SEMI, ANTI or JOIN after LEFT",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/left_asof",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"*\" at line 1, column 25.\nWas expecting one of:\n    <EOF> \n    \";\" ...\n    \"WHERE\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/delete_returning",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"/*+\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/table_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"/*+ INDEX\" at line 1, column 8.\nWas expecting one of:\n    \"/*+\" ...\n    \"/*+\" <IDENTIFIER> ...\n    \"/*+\" <HYPHENATED_IDENTIFIER> ...\n    \"/*+\" <QUOTED_IDENTIFIER> ...\n    \"/*+\" <BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"/*+\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"/*+\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"STREAM\" ...\n    \"DISTINCT\" ...\n    \"*\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "syntax/select_hint",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'CREATE' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" \"OR\" ...\n    \"CREATE\" \"LOCAL\" ...\n    \"CREATE\" \"MATERIALIZED\" ...\n    \"CREATE\" \"VIEW\" ...\n    \"CREATE\" \"TABLE\" ...\n    \"CREATE\" \"INDEX\" ...\n    \"CREATE\" \"TYPE\" ...\n    \"CREATE\" \"FUNCTION\" ...\n    \"CREATE\" \"LINEAR\" ...\n    \"CREATE\" \"AGGREGATE\" ...\n    \"DROP\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/create_database",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'DROP' at line 1, column 1.\nWas expecting one of:\n    <EOF> \n    \"REMOVE\" ...\n    \"LATENESS\" ...\n    \"SET\" ...\n    \"CREATE\" ...\n    \"DROP\" \"TABLE\" ...\n    \"DROP\" \"VIEW\" ...\n    \"WITH\" ...\n    \"SELECT\" ...\n    \"VALUES\" ...\n    \"TABLE\" ...\n    \"FROM\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    \"EXPLAIN\" ...\n    \"DESCRIBE\" ...\n    \"INSERT\" ...\n    \"DELETE\" ...\n    \"UPDATE\" ...\n    \"MERGE\" ...\n    \"CALL\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/drop_schema",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'INTO' at line 1, column 10.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    \",\" ...\n    \"FROM\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    <QUOTED_STRING> ...\n    \".\" ...\n    \":\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"^\" ...\n    \"&\" ...\n    \"[\" ...\n    \"(\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/select_into",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Lexical error at line 1, column 8.  Encountered: \"`\" (96), after : \"\"",
+      "count": 1,
+      "examples": [
+        {
+          "id": "extra/backtick_identifier",
+          "submission": 0
+        }
+      ]
+    }
+  ]
+}

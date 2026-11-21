@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-decimal-archive.json",
+  "scope": "List-merger compaction and nullable DECIMAL(38, 2) layer roundtrip using caller-owned descriptors and the schema-independent storage reader.",
+  "tests": {
+    "owned-context": 9,
+    "default": 53,
+    "frozen": 10,
+    "storage": 63,
+    "list-merger": 6
+  },
+  "all_target_clippy": true,
+  "merge_input_updates": 1024,
+  "merge_output_rows": 448,
+  "merge_reopened_with_fresh_descriptors": true,
+  "decimal_rows": 513,
+  "decimal_live_hash_comparisons": 513,
+  "decimal_index_probes": 15,
+  "decimal_byte_identical_to_classic": true,
+  "storage_test_workspace_lock_sha256": "741a5ae34ea54fc64d3ee8cbb8e97e9e0c42f6460410b0393dabeef92c0dcfac"
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-aggregate-execution-20261118-v1.tar.gz",
+  "bytes": 62109804,
+  "sha256": "49bb6488860df4116193f835f1330b89c8549b5f0facf8b6a67a1ac941b31da5",
+  "manifest_sha256": "48d89931ef2f4f331df15fb05be4865de4263ff5ca83729e67b3e60e8cdcbcb1",
+  "verified_files": 84,
+  "all_members_verified": true
+}

@@ -1218,6 +1218,18 @@ async fn read_program_code(
     }
 }
 
+async fn read_program_config(path: Option<String>) -> Option<ProgramConfig> {
+    read_file(path)
+        .await
+        .unwrap_or_else(|()| std::process::exit(1))
+        .map(|text| {
+            serde_json::from_str(&text).unwrap_or_else(|error| {
+                eprintln!("Invalid program configuration JSON: {error}");
+                std::process::exit(1)
+            })
+        })
+}
+
 /// Validate a SQL program via `POST /v0/validate_program` and print the result
 /// (success, SQL errors/warnings, or a system error) as pretty JSON. Validation
 /// failures are reported in the output; the command exits non-zero only on a
@@ -1226,6 +1238,7 @@ async fn validate_program(
     program_path: Option<String>,
     stdin: bool,
     runtime_version: Option<String>,
+    program_config: Option<String>,
     ir: bool,
     client: Client,
 ) {
@@ -1241,6 +1254,7 @@ async fn validate_program(
         .post_validate_program()
         .body(ValidateProgramRequest {
             program_code,
+            program_config: read_program_config(program_config).await,
             runtime_version,
             ir: Some(ir),
         })
@@ -1564,6 +1578,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         udf_rust,
                         udf_toml,
                         program_config: Some(ProgramConfig {
+                            compiler: None,
                             cache: true,
                             profile: Some(profile),
                             runtime_version,
@@ -2915,6 +2930,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             program_path,
             stdin,
             runtime_version,
+            program_config,
         } => {
             let program_code = read_program_code(program_path, stdin)
                 .await
@@ -2925,6 +2941,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .body(PipelineDiffRequest {
                     program_code,
                     runtime_version,
+                    program_config: read_program_config(program_config).await,
                 })
                 .send()
                 .await
@@ -3641,6 +3658,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 udf_rust: None,
                 udf_toml: None,
                 program_config: Some(ProgramConfig {
+                    compiler: None,
                     profile,
                     cache: true,
                     runtime_version,
@@ -4135,8 +4153,9 @@ fn main() {
                     program_path,
                     stdin,
                     runtime_version,
+                    program_config,
                     ir,
-                } => validate_program(program_path, stdin, runtime_version, ir, client()).await,
+                } => validate_program(program_path, stdin, runtime_version, program_config, ir, client()).await,
                 Commands::Cluster { action } => cluster(cli.format, action, client()).await,
                 Commands::Debug { action } => debug::debug(cli.format, action, client()).await,
             }

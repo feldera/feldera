@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.connectors.config;
 
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -27,7 +29,7 @@ public class ConfigDurationTests {
             ConfigDuration.parseNanos(text);
             Assert.fail("expected " + text + " to be rejected");
         } catch (ConfigQuantity.ParseException e) {
-            Assert.assertTrue(e.getMessage(), e.getMessage().contains(expected));
+            DiagnosticAssertions.assertContains(Target.CONFIG_EXCEPTION, expected, e.getMessage());
         }
     }
 

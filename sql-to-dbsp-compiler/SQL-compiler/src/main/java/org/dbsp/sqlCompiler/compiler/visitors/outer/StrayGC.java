@@ -17,7 +17,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.graph.Port;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
+import java.util.Objects;
 import java.util.Map;
 
 /** Check if all GC operators have an obvious operator they apply to */
@@ -31,34 +33,38 @@ public class StrayGC extends CircuitWithGraphsVisitor {
         super(compiler, g);
     }
 
-    /** Check that 'operator' is the only retention of its kind attached to
-     * its source.
-     * The same operator can be visited twice, hence the identity test. */
-    void checkSingleRetainer(DBSPBinaryOperator operator,
-                             Map<OutputPort, DBSPOperator> retainers, String what) {
-        DBSPOperator previous = retainers.put(operator.left(), operator);
-        if (previous != null && previous != operator) {
-            throw new InternalCompilerError(
-                    "Operators " + previous + " and " + operator +
-                    " both garbage-collect the " + what + " of " + operator.left().operator +
-                    "; the runtime honors only one " + what + " retention condition per trace");
-        }
+    public enum Violation { INPUT_ACCUMULATE, TRACE_NONACCUMULATE, DUPLICATE, MISSING_SIBLING }
+
+    /** Render the diagnostic with live operator names, including their compiler-assigned IDs. */
+    public static InternalCompilerError violation(Violation reason, DBSPBinaryOperator operator,
+                                                 @Nullable DBSPOperator previous) {
+        return new InternalCompilerError(switch (reason) {
+            case INPUT_ACCUMULATE -> "Operator " + operator + " garbage-collects an input table "
+                    + "and must use the non-accumulate variant";
+            case TRACE_NONACCUMULATE -> "Operator " + operator + " garbage-collects a trace inside the "
+                    + "accumulate framework and must use the accumulate_ variant";
+            case DUPLICATE -> {
+                String what = operator instanceof DBSPIntegrateTraceRetainKeysOperator ? "keys" : "values";
+                yield "Operators " + Objects.requireNonNull(previous) + " and " + operator
+                        + " both garbage-collect the " + what + " of " + operator.left().operator
+                        + "; the runtime honors only one " + what + " retention condition per trace";
+            }
+            case MISSING_SIBLING -> "Operator " + operator + " does not have a sibling to GC for";
+        });
     }
 
-    /** Check that the retain operator invokes the runtime function variant that
-     * matches its data source: input tables require the non-accumulate variant,
-     * everything else the accumulate_ one.  The wrong variant makes the
-     * operator a silent no-op. */
+    void checkSingleRetainer(DBSPBinaryOperator operator, Map<OutputPort, DBSPOperator> retainers) {
+        DBSPOperator previous = retainers.put(operator.left(), operator);
+        if (previous != null && previous != operator)
+            throw violation(Violation.DUPLICATE, operator, previous);
+    }
+
     void checkAccumulate(DBSPBinaryOperator operator, boolean accumulate) {
         boolean input = operator.left().operator.is(DBSPInputMapWithWaterlineOperator.class);
         if (input && accumulate)
-            throw new InternalCompilerError(
-                    "Operator " + operator + " garbage-collects an input table " +
-                    "and must use the non-accumulate variant");
+            throw violation(Violation.INPUT_ACCUMULATE, operator, null);
         if (!input && !accumulate)
-            throw new InternalCompilerError(
-                    "Operator " + operator + " garbage-collects a trace inside the " +
-                    "accumulate framework and must use the accumulate_ variant");
+            throw violation(Violation.TRACE_NONACCUMULATE, operator, null);
     }
 
     void check(DBSPBinaryOperator operator) {
@@ -79,14 +85,14 @@ public class StrayGC extends CircuitWithGraphsVisitor {
                 return;
             }
         }
-        throw new InternalCompilerError("Operator " + operator + " does not have a sibling to GC for");
+        throw violation(Violation.MISSING_SIBLING, operator, null);
     }
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
         // This operator always uses the accumulate_ variant
         this.checkAccumulate(operator, true);
-        this.checkSingleRetainer(operator, this.valueRetainers, "values");
+        this.checkSingleRetainer(operator, this.valueRetainers);
         this.check(operator);
     }
 
@@ -94,14 +100,14 @@ public class StrayGC extends CircuitWithGraphsVisitor {
     public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
         // This operator always uses the accumulate_ variant
         this.checkAccumulate(operator, true);
-        this.checkSingleRetainer(operator, this.valueRetainers, "values");
+        this.checkSingleRetainer(operator, this.valueRetainers);
         this.check(operator);
     }
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
         this.checkAccumulate(operator, operator.accumulate);
-        this.checkSingleRetainer(operator, this.keyRetainers, "keys");
+        this.checkSingleRetainer(operator, this.keyRetainers);
         DBSPOperator left = operator.left().operator;
         if (left.is(DBSPAggregateLinearPostprocessRetainKeysOperator.class) ||
             left.is(DBSPChainAggregateOperator.class) ||

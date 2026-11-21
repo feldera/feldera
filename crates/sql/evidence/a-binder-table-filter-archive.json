@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-table-filter-20261119.tar.gz",
+  "bytes": 15471282,
+  "sha256": "ca9e8020498026e7b2764ea1166749e981692c708d9650cd47a4e9c4698fcc56",
+  "manifest_sha256": "435dc62b4895455c4c0277e8d0dae44ec82ef3104b2d3a7200074e735653f878",
+  "verified_files": 99,
+  "all_members_verified": true
+}

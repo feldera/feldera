@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "archive_index": "d1-heldout-baseline-archive.json",
+  "source_populations": {
+    "classic_export": 8571,
+    "java_diagnostic": 1333
+  },
+  "split": {
+    "cases": 9904,
+    "groups": 1862,
+    "methods": 2142,
+    "counts": [
+      {
+        "partition": "development",
+        "population": "classic_export",
+        "transport": "available",
+        "cases": 7087
+      },
+      {
+        "partition": "development",
+        "population": "classic_export",
+        "transport": "manifest_limit",
+        "cases": 18
+      },
+      {
+        "partition": "development",
+        "population": "java_diagnostic",
+        "transport": "available",
+        "cases": 1236
+      },
+      {
+        "partition": "held_out",
+        "population": "classic_export",
+        "transport": "available",
+        "cases": 1466
+      },
+      {
+        "partition": "held_out",
+        "population": "java_diagnostic",
+        "transport": "available",
+        "cases": 97
+      }
+    ]
+  },
+  "emission_outcomes": [
+    {
+      "partition": "development",
+      "population": "classic_export",
+      "current_result": "h_only",
+      "cases": 1
+    },
+    {
+      "partition": "development",
+      "population": "classic_export",
+      "current_result": "manifest_limit",
+      "cases": 18
+    },
+    {
+      "partition": "development",
+      "population": "classic_export",
+      "current_result": "neither_emits",
+      "cases": 7086
+    },
+    {
+      "partition": "development",
+      "population": "java_diagnostic",
+      "current_result": "neither_emits",
+      "cases": 1236
+    },
+    {
+      "partition": "held_out",
+      "population": "classic_export",
+      "current_result": "h_only",
+      "cases": 3
+    },
+    {
+      "partition": "held_out",
+      "population": "classic_export",
+      "current_result": "neither_emits",
+      "cases": 1463
+    },
+    {
+      "partition": "held_out",
+      "population": "java_diagnostic",
+      "current_result": "neither_emits",
+      "cases": 97
+    }
+  ],
+  "artifacts": {
+    "selection.json": "d5bb34e5b9f5896b1237a082aa6a9e8e887773e84f5b2abdb242193f7ea4644d",
+    "baseline.json": "bd6a0f65baad234b312372dc4ab10601a17e84e411e38148b717d8cf5baacebb",
+    "cases.jsonl": "4d26807cf2067627d00df32939d85767a22bcc11320ce0ec7ec4a9d743875403",
+    "binder-input.jsonl": "528dbb76b35b36f95b75ad4a789ee505c16a6c84ad68c1d97bfbfdcdc455ed04",
+    "a-baseline.jsonl": "3dd5138b6ccc30d4b9312ca1182e7fe6348588d472a5d40d03be15fda188b082",
+    "h-baseline.jsonl": "be9f78221744db7abfc5100f7f097f9eeb54eaa22059414e75c3483a48385739",
+    "a-binder-probe": "c88eff1ff2231721a6b931f7a1f7a1bef2319dfb8e9b78251a9d18b693aaef5d",
+    "feldera-datafusion-binder-probe": "9be6001db21bb46506b09db1531cd0df0029aa07662a0040792c6f5f88acb1af",
+    "d1_holdout.py": "97a147d340586bb272fcfa146a47623fd350f05f1ef590419017abcd70ed8275"
+  },
+  "a_platform": "Linux ARM64",
+  "h_platform": "macOS ARM64",
+  "full_C0_C1a_agreement_measured": false,
+  "equivalent_FRel_scope": false,
+  "measured_engineer_days": null,
+  "scope": "The unchanged binder probes receive the same manifest derived from the reviewed classic export and located diagnostic captures. The original submissions and Java oracle are retained. Projection and result-schema emission do not establish C0, C1a or FRel agreement."
+}

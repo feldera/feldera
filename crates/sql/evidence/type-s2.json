@@ -1,0 +1,214 @@
+{
+  "comparison": "exact compact C6a expression and type text for accepted column-only calls",
+  "counts": {
+    "equal": 7648,
+    "literal_deferred": 21312,
+    "rejected": 13920
+  },
+  "full_C9_verified": false,
+  "java_sha256": "c2cb3074397e967fd9fc146f5236a56540c0687293e81db1ed66137764f0c702",
+  "operations": {
+    "ABS": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "ACOS": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "ASCII": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "ASIN": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "ATAN": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "ATAN2": {
+      "equal": 676,
+      "literal_deferred": 2028,
+      "rejected": 1392
+    },
+    "CBRT": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "CEIL": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "CHAR_LENGTH": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "COALESCE": {
+      "equal": 784,
+      "literal_deferred": 2352,
+      "rejected": 960
+    },
+    "CONCAT": {
+      "equal": 1024,
+      "literal_deferred": 3072
+    },
+    "COS": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "COT": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "DEGREES": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "EXP": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "FLOOR": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "INITCAP": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "LEFT": {
+      "equal": 512,
+      "literal_deferred": 1536,
+      "rejected": 2048
+    },
+    "LENGTH": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "LN": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "LOG": {
+      "equal": 676,
+      "literal_deferred": 2028,
+      "rejected": 1392
+    },
+    "LOG10": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "LOWER": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "MD5": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "MOD": {
+      "equal": 676,
+      "literal_deferred": 2028,
+      "rejected": 1392
+    },
+    "NULLIF": {
+      "equal": 784,
+      "literal_deferred": 2352,
+      "rejected": 960
+    },
+    "OCTET_LENGTH": {
+      "equal": 8,
+      "literal_deferred": 8,
+      "rejected": 48
+    },
+    "POWER": {
+      "equal": 676,
+      "literal_deferred": 2028,
+      "rejected": 1392
+    },
+    "RADIANS": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "REPEAT": {
+      "equal": 512,
+      "literal_deferred": 1536,
+      "rejected": 2048
+    },
+    "REVERSE": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "RIGHT": {
+      "equal": 512,
+      "literal_deferred": 1536,
+      "rejected": 2048
+    },
+    "ROUND": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "SIGN": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "SIN": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "SQRT": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "TAN": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "TRIM": {
+      "equal": 32,
+      "literal_deferred": 32
+    },
+    "TRUNCATE": {
+      "equal": 26,
+      "literal_deferred": 26,
+      "rejected": 12
+    },
+    "UPPER": {
+      "equal": 32,
+      "literal_deferred": 32
+    }
+  },
+  "probes": 42880,
+  "runtime_verified": false,
+  "rust_sha256": "ea5e31acf526de9e70dd4c56c69837e86bd1de97f3a8f2887cd70f878458846b",
+  "schema_version": 1,
+  "shared_lowering": true,
+  "scope": "Forty function manifest, exact accepted column-only S2 text and result type",
+  "archive_index": "type-s2-archive.json",
+  "java_base_classpath": "type-bindings-archive.json",
+  "java_accepted_projections": 28960,
+  "java_projection_capture_errors": 0,
+  "focused_java_tests": 7,
+  "rust_tests": 28
+}

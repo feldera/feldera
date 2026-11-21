@@ -1,0 +1,271 @@
+{
+  "schema_version": 1,
+  "scope": "Typed recursive view declarations and standalone LATENESS; full top-level input consumption",
+  "raw_directory": "$SCRATCH/p0-parser-extensions-v1",
+  "sources": {
+    "crates/sql/parser-probe/Cargo.toml": "d4a5d5aca072d2558b381b168cdc168d6b5be057944e73a54e34ebdfed8cae6b",
+    "crates/sql/parser-probe/adversarial.jsonl": "78e73c4b173ed29ffff83547b4a5d872bd60b5cf8cae370b03a41b50d6891d34",
+    "crates/sql/parser-probe/Cargo.lock": "cce3727d255df64508c8d27224ba4958ef743044042106a5abfccf9f199faf08",
+    "crates/sql/parser-probe/syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "crates/sql/parser-probe/src/v062.rs": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+    "crates/sql/parser-probe/src/lib.rs": "2089cc57ee69c624b7c6454b871e122519ffda5d409e9bd8a773ea21b19633f8",
+    "crates/sql/parser-probe/src/v064.rs": "3ba62b93811b93c2544426b33bab47dc6445a3db24a0468136e767d85b34f84c",
+    "crates/sql/parser-probe/src/main.rs": "0f072b6d8c774941b395bb26f551677e2894941cf05674770ed36cb0534c7690",
+    "crates/sql/parser-probe/src/v064/temporal_types.rs": "068e169b4ef965053b698b8473498eb633d1a6cfc1feb595ea2aa748fe6c1753",
+    "crates/sql/parser-probe/src/v064/trim.rs": "9772d783d8e35d7ceeb0a4043aed287bf86ed5ddc400d9b62af42487878e810e",
+    "crates/sql/parser-probe/src/v064/aggregate_tests.rs": "07d30b47326fa3c10e507fe291e922849c371b11173fcd782b3b90136d800d39",
+    "crates/sql/parser-probe/src/v064/unicode.rs": "2c039d25dc343c2118953f186c900d1f77f0da635ebcede942911f76ea1d220b",
+    "crates/sql/parser-probe/src/v064/functions.rs": "9d82246249c7453c83ba80b0fca1c7c537bc241f8f3777b1ff8d749c5d5c9472",
+    "crates/sql/parser-probe/src/v064/lateness.rs": "93a932e183c747d502054d1ef44f2abc749653f4a7b8801f8bce551e1c324c3b",
+    "crates/sql/parser-probe/src/v064/statements.rs": "b23d07f30a62051c42ff5405b4a522a7dc5c48275773612d325324e3668bf09a",
+    "crates/sql/parser-probe/src/v064/reserved.rs": "0a1abb3c8a0b6e1b146d8de43f9ee43c6cdbedec48ffc9da2c6ec7c0053cc497",
+    "crates/sql/parser-probe/src/v064/reject.rs": "8f34520f12593daa6b974d11534902ce6136c2588431d0d4f2df7a09ea53df56",
+    "crates/sql/parser-probe/src/v064/settings.rs": "2294a5f842cb3ebda7665d3237745b0fdbd58211914c070aedbff5f82c758019",
+    "crates/sql/parser-probe/src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01"
+  },
+  "comparisons": {
+    "corpus": {
+      "cases": 8571,
+      "counts": {
+        "both_accept": 33812,
+        "accepted_submissions": 33812,
+        "accepted_cases": 8369,
+        "java_only": 203,
+        "rejected_submissions": 203,
+        "rejected_cases": 202
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "typed recursive view and standalone LATENESS extensions with complete top-level consumption; statement-family allowlist and scoped DROP/SET/description options; qualified datetime differences misparsed as aliases; function-specific inline null treatment and FILTER ordering; reserved words in declarations, relations, references and projection aliases; LATENESS contexts and non-query expressions"
+        },
+        "cases": 8571,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 5807,
+            "accepted_submissions": 31127,
+            "rejected_cases": 2764,
+            "rejected_submissions": 2888,
+            "statements_in_accepted_submissions": 94363
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 5978,
+            "accepted_submissions": 31317,
+            "rejected_cases": 2593,
+            "rejected_submissions": 2698,
+            "statements_in_accepted_submissions": 94588
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 8369,
+            "accepted_submissions": 33812,
+            "rejected_cases": 202,
+            "rejected_submissions": 203,
+            "statements_in_accepted_submissions": 101460
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 7876,
+            "accepted_submissions": 33308,
+            "rejected_cases": 695,
+            "rejected_submissions": 707,
+            "statements_in_accepted_submissions": 99741
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "fa0001a85735ed620d77437f43883dec03fa06a70413bbf4f24e41330bfc21f4",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 8571,
+        "accepted_cases": 8571,
+        "rejected_cases": 0,
+        "accepted_submissions": 34015,
+        "rejected_submissions": 0,
+        "statements_in_accepted_submissions": 101870,
+        "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "producer": "c6ede756d-p0-parser",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-extensions-v1/corpus-comparison.json",
+      "sha256": "dd66612322f495a6d437afb282bd4404ca62e47b203f7421dc2118ed8fd70fef"
+    },
+    "keywords": {
+      "cases": 13660,
+      "counts": {
+        "both_accept": 13147,
+        "accepted_submissions": 13147,
+        "accepted_cases": 13147,
+        "both_reject": 510,
+        "rejected_submissions": 513,
+        "rejected_cases": 513,
+        "java_only": 3
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "typed recursive view and standalone LATENESS extensions with complete top-level consumption; statement-family allowlist and scoped DROP/SET/description options; qualified datetime differences misparsed as aliases; function-specific inline null treatment and FILTER ordering; reserved words in declarations, relations, references and projection aliases; LATENESS contexts and non-query expressions"
+        },
+        "cases": 13660,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 13651,
+            "accepted_submissions": 13651,
+            "rejected_cases": 9,
+            "rejected_submissions": 9,
+            "statements_in_accepted_submissions": 13651
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 13647,
+            "accepted_submissions": 13647,
+            "rejected_cases": 13,
+            "rejected_submissions": 13,
+            "statements_in_accepted_submissions": 13647
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 13147,
+            "accepted_submissions": 13147,
+            "rejected_cases": 513,
+            "rejected_submissions": 513,
+            "statements_in_accepted_submissions": 13147
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 13647,
+            "accepted_submissions": 13647,
+            "rejected_cases": 13,
+            "rejected_submissions": 13,
+            "statements_in_accepted_submissions": 13647
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "fa0001a85735ed620d77437f43883dec03fa06a70413bbf4f24e41330bfc21f4",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 13660,
+        "accepted_cases": 13150,
+        "rejected_cases": 510,
+        "accepted_submissions": 13150,
+        "rejected_submissions": 510,
+        "statements_in_accepted_submissions": 13150,
+        "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+        "producer": "c6ede756d-p0-parser",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-extensions-v1/keywords-comparison.json",
+      "sha256": "15597d83415c6470019ab2c4bea86bb15d1f3266d3be44e876f2b31dc62984a9"
+    },
+    "adversarial": {
+      "cases": 367,
+      "counts": {
+        "both_accept": 167,
+        "accepted_submissions": 167,
+        "accepted_cases": 167,
+        "java_only": 25,
+        "rejected_submissions": 200,
+        "rejected_cases": 200,
+        "both_reject": 175
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "typed recursive view and standalone LATENESS extensions with complete top-level consumption; statement-family allowlist and scoped DROP/SET/description options; qualified datetime differences misparsed as aliases; function-specific inline null treatment and FILTER ordering; reserved words in declarations, relations, references and projection aliases; LATENESS contexts and non-query expressions"
+        },
+        "cases": 367,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 145,
+            "accepted_submissions": 145,
+            "rejected_cases": 222,
+            "rejected_submissions": 222,
+            "statements_in_accepted_submissions": 151
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 204,
+            "accepted_submissions": 204,
+            "rejected_cases": 163,
+            "rejected_submissions": 163,
+            "statements_in_accepted_submissions": 211
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 167,
+            "accepted_submissions": 167,
+            "rejected_cases": 200,
+            "rejected_submissions": 200,
+            "statements_in_accepted_submissions": 176
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 209,
+            "accepted_submissions": 209,
+            "rejected_cases": 158,
+            "rejected_submissions": 158,
+            "statements_in_accepted_submissions": 216
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "fa0001a85735ed620d77437f43883dec03fa06a70413bbf4f24e41330bfc21f4",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "78e73c4b173ed29ffff83547b4a5d872bd60b5cf8cae370b03a41b50d6891d34",
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 367,
+        "accepted_cases": 192,
+        "rejected_cases": 175,
+        "accepted_submissions": 192,
+        "rejected_submissions": 175,
+        "statements_in_accepted_submissions": 201,
+        "input_sha256": "78e73c4b173ed29ffff83547b4a5d872bd60b5cf8cae370b03a41b50d6891d34",
+        "producer": "unrecorded",
+        "calcite": "unrecorded",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-extensions-v1/adversarial-comparison.json",
+      "sha256": "4f1448683acf4f70ecda5a51c19482d42033e08ab18f0649c9545de05fdefce2"
+    }
+  },
+  "rust_tests": 37,
+  "clippy_passed": true,
+  "exhaustive_ast_rejection": false,
+  "s1_equivalence_checked": false,
+  "limitations": [
+    "Column LATENESS remains a validated token option, not a typed S1 node",
+    "No complete AST field rejection or source-span parity",
+    "The parser still rejects 202 corpus cases (2.36%)"
+  ],
+  "logs": {
+    "$SCRATCH/p0-parser-extension-tests-v3.log": "73ab510a0e8c70ecd81588f01677c30ee9683d7fba772f5e94b3bdd3d246e14d",
+    "$SCRATCH/p0-parser-extension-clippy-v3.log": "16a770e45fa1161f342b357c19f2ed7e9ee1c284c9ea794d3784a9981e32c551"
+  }
+}

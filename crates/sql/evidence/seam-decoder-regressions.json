@@ -1,0 +1,438 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "scope": "Decoder and compiler-state regressions found while expanding S2/S3 replay; not a full P0 certificate",
+  "maintainer_reviewed": false,
+  "runtime_executed": false,
+  "before": [
+    {
+      "log": "$SCRATCH/p0-nested-regressions-before.log",
+      "sha256": "9d5347f03816978e82d3c6b63dcdc3f6ad23399a61bfded744dd9015b0cd0493",
+      "failures": [
+        {
+          "method": "s3TailPreservesSingleAndMultiCrateWorkspaces",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 10,  Failures: 1"
+      ]
+    },
+    {
+      "log": "$SCRATCH/p0-weight-regressions-before-v2.log",
+      "sha256": "a1d4e85a6ed8c2ff9f16066039bccb225e3c3280283a4a14f1f032e523adfe22",
+      "failures": [
+        {
+          "method": "hashInputsAndPassSequenceMatchInBothModes",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        },
+        {
+          "method": "s3TailPreservesSingleAndMultiCrateWorkspaces",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 10,  Failures: 2"
+      ]
+    },
+    {
+      "log": "$SCRATCH/p0-borrow-regressions-before.log",
+      "sha256": "44b421cc13b5896235527611ddfb3a3686d27b9f1ea04d8e9f279b69bde59776",
+      "failures": [
+        {
+          "method": "borrowKeepsSharedType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 5,  Failures: 1"
+      ]
+    },
+    {
+      "log": "$SCRATCH/p0-index-regressions-before.log",
+      "sha256": "572b4f2fc5a1df1bdfe323782372a7462101e29b80ce7b629b3ea708a052227c",
+      "failures": [
+        {
+          "method": "relationalOperatorsAndFunctionsSurviveS2",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        },
+        {
+          "method": "s3TailPreservesSingleAndMultiCrateWorkspaces",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 10,  Failures: 2"
+      ]
+    },
+    {
+      "log": "$SCRATCH/p0-now-some-regressions-before.log",
+      "sha256": "35e94cf7bcb06d1b612321d94371e759ae0aba74b79e1a929925af317a303d97",
+      "failures": [
+        {
+          "method": "internalClockKeepsSharedOutputType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        },
+        {
+          "method": "someKeepsSharedType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 17,  Failures: 2"
+      ]
+    },
+    {
+      "log": "$SCRATCH/p0-comparator-regressions-before.log",
+      "sha256": "09b053a1d58fce6f8168e47489050005aec117bf1ee8d1e25c2f30553a66091f",
+      "failures": [
+        {
+          "method": "emptyComparatorKeepsSharedType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests"
+        },
+        {
+          "method": "customOrderKeepsSharedType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests"
+        },
+        {
+          "method": "fieldComparatorKeepsSharedType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests"
+        },
+        {
+          "method": "directComparatorKeepsSharedType",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 10,  Failures: 4"
+      ]
+    },
+    {
+      "log": "$SCRATCH/p0-function-regressions-before.log",
+      "sha256": "0251b88f4e6b525f5b56f6d81779d75a78c7ac2987362aa2b6b1abb540ace233",
+      "failures": [
+        {
+          "method": "relationalOperatorsAndFunctionsSurviveS2",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        },
+        {
+          "method": "s3TailPreservesSingleAndMultiCrateWorkspaces",
+          "class": "org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests"
+        }
+      ],
+      "totals": [
+        "Tests run: 11,  Failures: 2"
+      ]
+    }
+  ],
+  "after": {
+    "classpath": {
+      "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+      "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+      "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "targeted_tests": 45,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "log": "$SCRATCH/p0-seam-tools-v17-tests.log",
+    "log_sha256": "1a6206705f1fd990f4986f0d3c4938b79f4fcdc0a22b53f921ff7098a71c21ac"
+  },
+  "full_java_suite": {
+    "compiler": "c6ede756d-p0-seams-v16",
+    "tests": 2841,
+    "failures": 0,
+    "errors": 0,
+    "skips": 71,
+    "runtime_executed": false,
+    "log": "$SCRATCH/p0-seam-full-java-tests-v1.log",
+    "log_sha256": "e0853d0bc0589f26ad4730be243bb867fbb37c2db75aa7c5f4d914025b37901d",
+    "corpus_validation": {
+      "build_identity": [
+        "c6ede756d-p0-seams-v16",
+        "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "c6ede756d"
+      ],
+      "compile_only": 315,
+      "expected_errors": 232,
+      "exported": 8571,
+      "runtime_verified": false,
+      "schema_version": 1,
+      "skipped": 0,
+      "steps": 10408,
+      "tests": 2619
+    },
+    "qualification": "This full run precedes the function-decoder read-order repair; the final targeted suite includes that repair."
+  },
+  "rust_written_seam_regression": {
+    "raw_directory": "$SCRATCH/p0-multiset-seam-regression-v1",
+    "complete_sha256": "cce707f32bb490477c60375cf7081e695817c9435ebc39ce5ef088109f42852d",
+    "report": {
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-seams-v16",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v16/classes": "7c5d73d8cd5db6171ffa2f6ec1e5155240c2e20f892b5d29201293b726f3520b",
+        "$SCRATCH/p0-seam-tools-v16/test-classes": "258d14334f65f7c0e79d1a0576b9f1a36d9070ae638607db9858c3eb40e82067",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "probe_sha256": "d9c2f0ce557c88e4cb90aa7f7baba1fc0efee57772720177a247e0345245a5a1",
+      "sources": {
+        "crates/sql/scripts/run_multiset_probe.py": "373cb23665e273655abe625012c835014ce1f86eb0c96b2f44fb32322fd18710",
+        "crates/sql/multiset-probe/Cargo.toml": "c640a2b5be6b63f0ae3c610bff13463e8b61bf77089e5910dabd542b7a11ac61",
+        "crates/sql/multiset-probe/Cargo.lock": "13c19e43aa47b7d964e6248186ed446e3bc855278181835d5b5b6ac7026058f5",
+        "crates/sql/multiset-probe/src/analysis.rs": "c83be51e1904df3785541de5618b722e8e6a0ff9d9381999bdb7242d433dae61",
+        "crates/sql/multiset-probe/src/decode.rs": "a87029e5184f1f15abe2c19fa05f72597d2553ec40bf0d300a9344ac665c65c1",
+        "crates/sql/multiset-probe/src/lib.rs": "a635f2e231b19aec0bdc2947a2da22ada7c60d7d1f0b53b14e61e580fad42895",
+        "crates/sql/multiset-probe/src/main.rs": "b0bf8ef2c0cd631b4ca86a9bb6a40ea33d97145f38037dfc1f29aa5ca1c8cb06",
+        "crates/sql/multiset-probe/src/model.rs": "235426e59a711eb40cdaac108d4c6aabd2792a8bd46612f61c2d4c9a3f09882d",
+        "crates/sql/multiset-probe/src/prune.rs": "4926fd118cf2e3cbcdbfb98199a5a02a5651b43ecff614414e00c54041022e79",
+        "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/MultisetProbe.java": "6ae584b5225822896f993ce0378d6bbd352c164395eeefac8ddaa47604882253",
+        "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/CorpusDeterminism.java": "7f7393d29f819392e1c4ebe0c31fc604a4be5f5a7422bf5c19da196c06160126",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/MultisetAnalysis.java": "8beb1cce99c127f10eefca51dd14352e600e5361a4d81e2bc952e2190da8c95b",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/LosslessCastLineage.java": "75ada25f5e2b753ecd7d0130c62822e2294cf9e3c877b892fad16a54198f8530",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/KeyAnalysis.java": "6f88b2ac0489ace56cdb8926a3b9557128f5ea5a23ed8e2190eb3bcb0e158b23",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Lineage.java": "e88379c3261140bc1da36ce0564c02d5da5bfa001d1b99c8f71ded876d4f065d",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/DeadCode.java": "b73f61348b10b899244d88b9a0c90b7c717e9720c3c2aaa295eb6bbf596ace1b",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FindDeadCode.java": "712e7bb0bd5c64399827617a54e4a39a0d44bc523966dade5f21c2ce52f7551d",
+        "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveOperators.java": "cfc62d8e1fd91e26909b172ce73b9ceecb63b2edf60694aa816614ac62c83664"
+      },
+      "input_sha256": "9dae77a2f291175355c39249eda8f73f7739070d290709f8ef1a8ee6a423c26d",
+      "programs": 50,
+      "runtime_executed": false,
+      "optimizer_ported": false,
+      "typed_model": "analysis projection; other wire fields are preserved",
+      "rust_passes": [
+        "MultisetAnalysis subset",
+        "DeadCode keepAllSources=true"
+      ],
+      "remaining_optimizer": "Java",
+      "limits": {
+        "heap_mib": 1024,
+        "output_mib": 512,
+        "min_free_mib": 512,
+        "timeout_seconds": 300
+      },
+      "results": [
+        {
+          "mode": "classic",
+          "stage": "S2",
+          "cases": 50,
+          "ports": 609,
+          "set_ports": 247,
+          "multiset_ports": 362,
+          "differences": [],
+          "dead_code_differences": [],
+          "removed_operators": 100,
+          "equal": true
+        },
+        {
+          "mode": "classic",
+          "stage": "S3",
+          "cases": 50,
+          "ports": 281,
+          "set_ports": 177,
+          "multiset_ports": 104,
+          "differences": [],
+          "dead_code_differences": [],
+          "removed_operators": 0,
+          "equal": true
+        },
+        {
+          "mode": "gen2",
+          "stage": "S2",
+          "cases": 50,
+          "ports": 609,
+          "set_ports": 247,
+          "multiset_ports": 362,
+          "differences": [],
+          "dead_code_differences": [],
+          "removed_operators": 100,
+          "equal": true
+        },
+        {
+          "mode": "gen2",
+          "stage": "S3",
+          "cases": 50,
+          "ports": 281,
+          "set_ports": 179,
+          "multiset_ports": 102,
+          "differences": [],
+          "dead_code_differences": [],
+          "removed_operators": 0,
+          "equal": true
+        }
+      ],
+      "tail_results": [
+        {
+          "mode": "classic",
+          "start": "S2",
+          "cases": 50,
+          "equal": true,
+          "differences": []
+        },
+        {
+          "mode": "classic",
+          "start": "S3",
+          "cases": 50,
+          "equal": true,
+          "differences": []
+        },
+        {
+          "mode": "gen2",
+          "start": "S2",
+          "cases": 50,
+          "equal": true,
+          "differences": []
+        },
+        {
+          "mode": "gen2",
+          "start": "S3",
+          "cases": 50,
+          "equal": true,
+          "differences": []
+        }
+      ],
+      "equal": true,
+      "jvm_runs": 8
+    }
+  },
+  "audit_failure_retention": {
+    "S2": {
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-seams-v17",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+        "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "input_sha256": "dada9ab3ed3c8706886c9e3c1e6d93f32273886b61c93b1d4de7d30b357e3a9d",
+      "source_class": null,
+      "cases": 2,
+      "stage": "S2",
+      "execution_order": [
+        "replay-s2",
+        "capture"
+      ],
+      "keep_going": true,
+      "artifact_contract": "seam-v1",
+      "runtime_executed": false,
+      "limits": {
+        "heap_mib": 1024,
+        "output_mib": 512,
+        "min_free_mib": 512,
+        "timeout_seconds_per_jvm": 1200
+      },
+      "equal": false,
+      "observations": 376,
+      "capture_transparency": false,
+      "observation_contract": "full-prefix-v1",
+      "artifact_byte_differences": [],
+      "differences": [
+        {
+          "id": "audit-deliberate-invalid/0",
+          "fields": [
+            "failure"
+          ]
+        }
+      ],
+      "failed_cases": {
+        "expected": [
+          "audit-deliberate-invalid/0"
+        ],
+        "actual": [
+          "audit-deliberate-invalid/0"
+        ]
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": [],
+      "jvm_runs": 2
+    },
+    "S3": {
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-seams-v17",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+        "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "input_sha256": "dada9ab3ed3c8706886c9e3c1e6d93f32273886b61c93b1d4de7d30b357e3a9d",
+      "source_class": null,
+      "cases": 2,
+      "stage": "S3",
+      "execution_order": [
+        "replay-s3",
+        "capture-s3"
+      ],
+      "keep_going": true,
+      "artifact_contract": "seam-v1",
+      "runtime_executed": false,
+      "limits": {
+        "heap_mib": 1024,
+        "output_mib": 512,
+        "min_free_mib": 512,
+        "timeout_seconds_per_jvm": 1200
+      },
+      "equal": false,
+      "observations": 1,
+      "capture_transparency": false,
+      "observation_contract": "final-s3-v1",
+      "artifact_byte_differences": [],
+      "differences": [
+        {
+          "id": "audit-deliberate-invalid/0",
+          "fields": [
+            "failure"
+          ]
+        }
+      ],
+      "failed_cases": {
+        "expected": [
+          "audit-deliberate-invalid/0"
+        ],
+        "actual": [
+          "audit-deliberate-invalid/0"
+        ]
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": [],
+      "jvm_runs": 2
+    }
+  },
+  "unpassed_full_runs": [
+    {
+      "raw_directory": "$SCRATCH/p0-s2-full-v2",
+      "process_results": [
+        {
+          "shard": 0,
+          "exit_code": 1
+        },
+        {
+          "shard": 1,
+          "exit_code": 1
+        },
+        {
+          "shard": 2,
+          "exit_code": 1
+        },
+        {
+          "shard": 3,
+          "exit_code": 1
+        },
+        {
+          "shard": 4,
+          "exit_code": 1
+        },
+        {
+          "shard": 5,
+          "exit_code": 1
+        }
+      ],
+      "qualification": "All direct captures completed; each replay stopped at its first failure. No failure was excluded or accepted."
+    }
+  ]
+}

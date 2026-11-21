@@ -1,0 +1,46 @@
+{
+  "scope": "Expand primary-key inputs and rewrite their direct MapIndex readers. Compare classical full-row and Gen-2 split key/value layouts, graph sharing, provenance and generated names.",
+  "comparator_sha256": "094f9e28d61551f010586adf5289afc15fc1b3b54647550ab7ad9c635c68e02e",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "0399eddacc2eda54178fc5c0575241a7f28cab60b0eda6121ee556ecd940f0aa",
+      "39fd19a2de25aecc11961fb4a1e7c32c3217082bde70231bc857acd987d782c6",
+      "a0516237d4857b855bcf2252f0ed52f9558ccb8505f77174c573eea225ae3fc8",
+      "da068b22fdc4bfcf75ff224e7caa80286616620b4597eb74dc26a6a26cb7e8dd"
+    ],
+    "pass": "IndexedInputs",
+    "invocations": 8571,
+    "changed": 846,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "426901fe9dc7cf6d366b61a11244d4829b5101a256f09900a16b07713b0b2c3c",
+      "49ee3ab8876ccee3511a438abfefb6f0af331ee7e0b8cd3570891be0c5ef352a",
+      "2f162a7bfe6bed46a1c205f82b02978db8b212f382d173f07697599624b5e4c3",
+      "2fcf917c06eaf3167d4a350da8840f18f9b0c6e84e33add65f78f49f1bf7bc20"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "00c737a65bd523b5347982eb544fe507d6d2e203cf3460f8c357d595fabe5c28",
+      "8d536ad027881eb4c56157948100f1ebf05eeb63312c659b5387f8889ca44ba6",
+      "7262473ba02e204a9f10672f873f62b4ab0cf9aa0cfc6baf8d8f7549c6f0bd91",
+      "6cd324a90b82c2226c4ad2a7d23478fa7bfdc313165e1261de6037679e9e6fdb"
+    ],
+    "pass": "IndexedInputs",
+    "invocations": 8527,
+    "changed": 832,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "85e240068fd6caceb52c84d69a46d3e1bf8f7180ebb0f479f987bec9c8ee8904",
+      "55ebfe7064c1481a1449cbf47df10cc200ce4928109630401f2aa5b09fa2d55e",
+      "981746f322d5fe8c6e246411e0320b93298fbec3c7fd73349f04f02fef0cf33c",
+      "65a4b16bd255f9a968d72ac6518f5bfae27ffca082d634b3e02ecb8456dd0614"
+    ]
+  }
+}

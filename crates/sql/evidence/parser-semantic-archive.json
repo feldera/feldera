@@ -1,0 +1,26 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-parser-semantic-20261118-v1.tar.gz",
+  "sha256": "4d0557b2706b67d672ecc1e2304dcd253b4496c3a595b2e51b2d4e3a99fb80c8",
+  "bytes": 238031674,
+  "certificates": [
+    "parser-semantic.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "parser-semantic.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-parser-semantic-archive-v1/audit-sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "parser-semantic.json": "path-null-binary-sha256"
+  },
+  "scope": "Focused AST-derived SQL Java parse/bind oracle and quoted function parameter repair; full positive/adversarial raw parser preservation, not full-corpus S1 semantic equivalence",
+  "prior_archive_index": "crates/sql/evidence/parser-ddl-archive.json",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/parser-semantic-archive.json"
+}

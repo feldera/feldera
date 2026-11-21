@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-tail-activity.tar.gz",
+  "bytes": 62612241,
+  "sha256": "3e010f6e8937347c034460d0ffff140aad1ac68ab01d84a321f97302b9dcc5c4",
+  "manifest_sha256": "2c1265c2dca7263e314ffa4649e6fc0c5dfc26f0ea69c7f2cd713e59a9f06c7e",
+  "verified_files": 64808,
+  "all_members_verified": true
+}

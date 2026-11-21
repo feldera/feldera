@@ -1,0 +1,635 @@
+{
+  "schema_version": 1,
+  "scope": "composite source-state inventory with explicit observation points for the three manual composites",
+  "exhaustive_per_point_inventory": false,
+  "independent_review_complete": false,
+  "rows": [
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CircuitOptimizer.java",
+          "sha256": "af0a84c9e49b13dcc28e781794425acea8b5a04bdff004ee27c38de0480a6606"
+        }
+      ],
+      "state_contract": "One `AnalyzedSet` survives all three `OptimizeProjections` placements. `addWithMultisets` binds an analysis to its consumer. Disabled-pass names and conditional predicates depend on compiler metadata; preserve construction and execution order.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "Optimizer"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Passes.java",
+          "sha256": "6fac7d9e680155d15d623a5afabea243c9400490481522fe4e5c1e40cf63f245"
+        },
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Conditional.java",
+          "sha256": "22d92ad855c62b88e9b11693b5442fbe10edbca6cc155dab0893aef387ecefe9"
+        }
+      ],
+      "state_contract": "Ordered pass instances and predicates captured from other analyses. `afterPass` validation and stopping on diagnostics are part of execution. Skipped conditional bodies have no inner observation.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "Passes"
+        },
+        {
+          "container": "Conditional"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Repeat.java",
+          "sha256": "6b782f2b4b68c68d1b2a5582c313db939e2737f12b42dd9a4a721c989fcf45b5"
+        }
+      ],
+      "state_contract": "Reuses the same transform instance, tracks iteration and convergence against the preceding circuit, and bounds iterations using the original component size. Recreating only the final iteration loses this state.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "Repeat"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/OptimizeWithGraph.java",
+          "sha256": "bd43c206216f630cf358af224caaa04254419d97b8b6e6f411beb373e021c833"
+        }
+      ],
+      "state_contract": "Each iteration runs `Graph`, the consumer bound to its `CircuitGraphs`, and `DeadCode`. A saved circuit cannot substitute for the paired graph object.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "Repeat"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/DeadCode.java",
+          "sha256": "b73f61348b10b899244d88b9a0c90b7c717e9720c3c2aaa295eb6bbf596ace1b"
+        }
+      ],
+      "state_contract": "`FindDeadCode.toKeep` is consumed by `RemoveOperators`; both use the same operator identities and `keepAllSources` policy.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "DeadCode"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CSE.java",
+          "sha256": "21b182c3ef6af8f94ebd7958c2e214b4949a3c49efef946ae77594e645888dfb"
+        }
+      ],
+      "state_contract": "`Graph`, `FindCSE`, and `RemoveCSE` share a canonical-operator map. The enclosing repeat retains their instances and convergence history.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "CSE"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CreateStarJoins.java",
+          "sha256": "ca111cec27393b50241c3fa93bb92732994073dcffe4986de4e979c4f828f598"
+        }
+      ],
+      "state_contract": "`FindJoinTrees` reads the graph and populates the join-tree map consumed by `ReplaceStarJoins`.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "CreateStarJoins"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveStarJoins.java",
+          "sha256": "5c5ff727a10a2399ac21572d6035d80307dac1dfe0abca094463ba756a73dc30"
+        }
+      ],
+      "state_contract": "Repeated `RemoveStarJoinsPass` with the common repeat contract; SET state selects its top-level execution.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "Repeat"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FuseExpensiveMaps.java",
+          "sha256": "c60ef28d868b961a1e865384fed7cabf4c263d82728deea1744ea4ffbca3ae5c"
+        }
+      ],
+      "state_contract": "`FindFusableMaps` supplies the analysis object to `Fuse`; its operator/function identities must agree with the input circuit.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "FuseExpensiveMaps"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FuseIntoArrayAgg.java",
+          "sha256": "4267e0f22e5086b5219e53d2b50b1072ce74e820f4231193ca5b28473de9fa6c"
+        }
+      ],
+      "state_contract": "Each repeat iteration runs graph analysis, `FindFusable`, `Fuse`, and dead-code removal. Fusion analysis includes closure parameter/reference mappings.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "FuseIntoArrayAgg"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ExpandAggregates.java",
+          "sha256": "07562a737fb098d03265647216affebe542b82eea43ad67b31972e00cebcadb6"
+        }
+      ],
+      "state_contract": "`AppendOnly` supplies the predicate used by `ExpandStreamAggregates`. The compiler weight variable and aggregate cached empty tuples must retain identity; the S2 envelope explicitly restores them.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ExpandAggregates"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ExpandAggregateZero.java",
+          "sha256": "8e9deadddb4a59cb2673d247eab306d68d55970df35a04c097f3969446d2908b"
+        }
+      ],
+      "state_contract": "`CollectZeros` and `ExpandAggregateZeros` share the zero-aggregate collection.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ExpandAggregateZero"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/LeftJoinChains.java",
+          "sha256": "d3e630ba01f9fd5406d3021f0a0d87618fc9a18ca7fd59480d7787f8f849c2b3"
+        }
+      ],
+      "state_contract": "`KeyAnalysis` feeds `LeftJoinChainsVisitor`; `DeferCarriedColumns` consumes its `chainEnd` map.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "LeftJoinChains"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveUselessLeftJoins.java",
+          "sha256": "4a9ae0c6caf93bfc2e8d6b67340f8b104daa3066c0502184a6015c4c96d0311e"
+        }
+      ],
+      "state_contract": "Key analysis and its consumer run before dead-code removal on the same identities.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "RemoveUselessLeftJoins"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/RecursiveComponents.java",
+          "sha256": "2c579adceba0a5aaab520f17697c46d8c18215272630e5fde9f01104f6a45165"
+        }
+      ],
+      "state_contract": "The first graph feeds view-reference fixup; a fresh second graph feeds nested-operator construction. Validation and left-join substitution follow. The two graphs are not interchangeable.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "RecursiveComponents"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/indexSharing/ShareIndexes.java",
+          "sha256": "887aeb99ea3795d991f94f4ae9de0cceca467fbedc83378b5cc1425a138daa3e"
+        }
+      ],
+      "state_contract": "Map-chain discovery feeds collapse. A graph then feeds index duplication; a later rebuilt graph feeds shared-index discovery and replacement. Each phase has its own dead-code cleanup.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ShareIndexes"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/windowSharing/ShareWindowIntegrals.java",
+          "sha256": "9ea4dd1d698155502dc13458d748858eaa0b22e2e65b07d35453fb7ce1f13b9d"
+        }
+      ],
+      "state_contract": "Window-group discovery feeds `ImplementWindowGroups`, then dead-code removal.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ShareWindowIntegrals"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ExpandIndexedInputs.java",
+          "sha256": "88d647b861b2d9af7668cfba640491802205a94537f75590e891f4d199dae979"
+        }
+      ],
+      "state_contract": "Indexed-input rewriting precedes graph construction. `FindCommonProjections` consumes that graph and passes its results to replacement, then dead-code removal.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ExpandIndexedInputs"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveIdentityOperators.java",
+          "sha256": "1e67270121699136c2be2dd7e08c5e349d30418aa8433595ecf71aa9238c0418"
+        }
+      ],
+      "state_contract": "`Graph` feeds `Decide`, whose removal map feeds `RemoveOrReplace`.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "RemoveIdentityOperators"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FindUnboundedState.java",
+          "sha256": "831ac8f642ac6b2d2b23b3e4e2b95890034e1182309dd69558612a4ea18607e4"
+        }
+      ],
+      "state_contract": "Streaming detection, GCed streams, key analysis, bounded ports, and unbounded operators are shared. The same `FindBounded` visitor runs twice for recursive circuits. A final graph feeds reporting. `apply` clears the shared collections only at the composite boundary.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "FindUnboundedState"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ImplementNow.java",
+          "sha256": "96c8276fc63b60f354cad2ad305d8e294971ef4ed1345b8dc67301fa86d921b6"
+        }
+      ],
+      "state_contract": "`CircuitContainsNow.found` gates subsequent transforms and table removal. Filter breaking repeats. A distinct final NOW scan gates failure reporting; its predicate must not use the earlier scan.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ImplementNow"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters.java",
+          "sha256": "65e75df674f4e9d20509381d71cc7eab2cbee1306e000924088d33398e3933c5"
+        }
+      ],
+      "state_contract": "A graph feeds `Scan`; `Reorder` reads its chosen-conjunct map. Both conditional bodies use the same window-sharing SET policy.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ReorderTemporalFilters"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/MonotoneAnalyzer.java",
+          "sha256": "6db1ce209e95727e64c5b2ff59b511959b19776a78dd645c6077cf9a453066fe"
+        }
+      ],
+      "state_contract": "Original/expanded circuits, expansion maps, monotonicity facts, error reachability, and graph rebuilds are detailed in PORTING.md. Limiter insertion returns to the original circuit.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "MonotoneAnalyzer"
+        }
+      ],
+      "required_points": [
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 0,
+          "pass": "EnsureExpressionTrees",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 1,
+          "pass": "Graph",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 2,
+          "pass": "SeparateIntegrators",
+          "activation": "incrementalization enabled"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 3,
+          "pass": "Graph",
+          "activation": "incrementalization enabled"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 4,
+          "pass": "OrderErrorConsumers",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 5,
+          "pass": "DeltaExpandOperators",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 6,
+          "pass": "Monotonicity",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 7,
+          "pass": "InsertLimiters",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 8,
+          "pass": "MergeGC",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 9,
+          "pass": "Graph",
+          "activation": "always"
+        },
+        {
+          "container": "MonotoneAnalyzer",
+          "index": 10,
+          "pass": "CheckRetain",
+          "activation": "always"
+        }
+      ]
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/MergeGC.java",
+          "sha256": "8e61eba64d8fc46aa70ef6ac1dd5071450f6fbd6b1d296c55680d35e249a8780"
+        }
+      ],
+      "state_contract": "The first graph and equivalent-noop scan feed canonical/removal maps. After noop merging, a second graph and retain scan feed `MergeRetain`.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "MergeGC"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LowerAsof.java",
+          "sha256": "82a67b3cc1fb785bd0b4ee59b7a7a26c543d0102697dd248379af2317b434490"
+        }
+      ],
+      "state_contract": "Left/right GC maps and ordered original-to-replacement mappings survive lowering, graph rebuilding, dependency sorting, and GC movement. Edge insertion order is observable.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "LowerAsof"
+        }
+      ],
+      "required_points": [
+        {
+          "container": "LowerAsof",
+          "index": 0,
+          "pass": "Graph",
+          "activation": "always"
+        },
+        {
+          "container": "LowerAsof",
+          "index": 1,
+          "pass": "LowerAsofInner",
+          "activation": "always"
+        },
+        {
+          "container": "LowerAsof",
+          "index": 2,
+          "pass": "Graph",
+          "activation": "lowering found GC replacements"
+        },
+        {
+          "container": "LowerAsof",
+          "index": 3,
+          "pass": "OrderGcDependencies",
+          "activation": "lowering found GC replacements"
+        },
+        {
+          "container": "LowerAsof",
+          "index": 4,
+          "pass": "MoveGC",
+          "activation": "lowering found GC replacements"
+        }
+      ]
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LinearPostprocessRetainKeys.java",
+          "sha256": "4f9dbd60016d61495e0409574b42be9637221b7227e8127f03d1547e2428a3d4"
+        }
+      ],
+      "state_contract": "The initial graph discovers artificial waterline edges. Sorting occurs only when edges exist; a rebuilt graph feeds replacement. Observation indices are 0 graph, 1 sort, 2 graph, 3 replacement.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "LinearPostprocessRetainKeys"
+        }
+      ],
+      "required_points": [
+        {
+          "container": "LinearPostprocessRetainKeys",
+          "index": 0,
+          "pass": "Graph",
+          "activation": "always"
+        },
+        {
+          "container": "LinearPostprocessRetainKeys",
+          "index": 1,
+          "pass": "OrderWaterlineDependencies",
+          "activation": "linear postprocess has retain-key dependencies"
+        },
+        {
+          "container": "LinearPostprocessRetainKeys",
+          "index": 2,
+          "pass": "Graph",
+          "activation": "linear postprocess has retain-key dependencies"
+        },
+        {
+          "container": "LinearPostprocessRetainKeys",
+          "index": 3,
+          "pass": "ReplaceLinear",
+          "activation": "linear postprocess has retain-key dependencies"
+        }
+      ]
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/expandCasts/ExpandCasts.java",
+          "sha256": "37aa162e45629d68f1c0682bf30bea55daeb57de14c8f8d5a17044c107aa7fd1"
+        }
+      ],
+      "state_contract": "Separate safe- and unsafe-cast repeats retain their own visitors and convergence state; metadata-cast expansion follows both.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "ExpandCasts"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Gen2Passes.java",
+          "sha256": "9d2de8aa3de3007aae5d87a7fa1552d018c23b8d6f4675fcdc974075340716d3"
+        }
+      ],
+      "state_contract": "Ordered typed-box removal followed by clone removal; selected only for Gen-2. No additional shared analysis is wired by this constructor.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "Gen2Passes"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/merkle/MerkleHashes.java",
+          "sha256": "4ba1edfbfbe31c1b447b784a71056e38ee5abb7e36932d2e13e6464666d69171"
+        }
+      ],
+      "state_contract": "Multiset facts, unprefixed hashes, delta/GC prefix maps, global hashes, and local hashes share operator identity. Global persistent-id validation precedes local hash assignment. Restore the whole sequence, not serialized hash annotations.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "MerkleHashes"
+        }
+      ],
+      "required_points": []
+    },
+    {
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/TagRegions.java",
+          "sha256": "ab47384eaa1abd6b28cceb2d98b0ad88b6cf8fffab9070536351d3d332fcc977"
+        }
+      ],
+      "state_contract": "Conflict detection and region removal share the annotation-removal set.",
+      "replay_strategy": "complete_s2_prefix",
+      "selectors": [
+        {
+          "container": "TagRegions"
+        }
+      ],
+      "required_points": []
+    }
+  ],
+  "nonreturning_implementations": [
+    {
+      "implementation": "org.dbsp.sqlCompiler.compiler.visitors.outer.Fail",
+      "reason": "Always throws InternalCompilerError; CircuitDumps emits S4 only after a pass returns successfully. The pass remains in scope.",
+      "sources": [
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Fail.java",
+          "sha256": "369ff1e387318ede2840afe478e03ddfb3625bbeb4a955f224c61687f3adfa6a"
+        },
+        {
+          "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/CircuitDumps.java",
+          "sha256": "c94a4ad4ff791c80eb580b95113543b31fa4d528162588a47f61e7d36dcac144"
+        }
+      ],
+      "independent_review_complete": false
+    }
+  ]
+}

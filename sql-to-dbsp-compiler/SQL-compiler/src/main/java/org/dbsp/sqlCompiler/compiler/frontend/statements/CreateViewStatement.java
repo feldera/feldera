@@ -47,14 +47,20 @@ public class CreateViewStatement extends CreateRelationStatement {
 
     /** Compiled and optimized query. */
     private final RelRoot compiled;
-    public final SqlCreateView createView;
+    private final SqlCreateView.ViewKind viewKind;
     final int emitFinal;
 
     public CreateViewStatement(ParsedStatement node, ProgramIdentifier tableName,
                                List<RelColumnMetadata> columns, SqlCreateView createView,
                                RelRoot compiled, int emitFinal, @Nullable Properties properties) {
+        this(node, tableName, columns, createView.viewKind, compiled, emitFinal, properties);
+    }
+
+    public CreateViewStatement(ParsedStatement node, ProgramIdentifier tableName,
+                               List<RelColumnMetadata> columns, SqlCreateView.ViewKind viewKind,
+                               RelRoot compiled, int emitFinal, @Nullable Properties properties) {
         super(node, tableName, columns, properties);
-        this.createView = createView;
+        this.viewKind = viewKind;
         this.compiled = compiled;
         this.emitFinal = emitFinal;
     }
@@ -68,7 +74,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     }
 
     public SqlCreateView.ViewKind getViewKind() {
-        return this.createView.viewKind;
+        return this.viewKind;
     }
 
     @Override
@@ -76,7 +82,7 @@ public class CreateViewStatement extends CreateRelationStatement {
         JsonNode node = super.asJson(addColumnCaseSensitivity);
         ObjectNode object = (ObjectNode) node;
         object.put(MATERIALIZED,
-                this.createView.viewKind == SqlCreateView.ViewKind.MATERIALIZED);
+                this.viewKind == SqlCreateView.ViewKind.MATERIALIZED);
         return object;
     }
 

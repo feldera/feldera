@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-integral-movement-20261118-v1.tar.gz",
+  "bytes": 25739802,
+  "sha256": "8fa2cf68dac56d5fc6ebd9865a20d3b0c28da2648ada6c4401efeff486b02961",
+  "manifest_sha256": "6289a8390acccf59f7d132822a50208372e0b4cacf3339a72a7daca15508f826",
+  "verified_files": 20125,
+  "all_members_verified": true
+}

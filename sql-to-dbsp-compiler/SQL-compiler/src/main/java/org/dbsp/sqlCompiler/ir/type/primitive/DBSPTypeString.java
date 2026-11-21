@@ -151,6 +151,9 @@ public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         boolean fixed = Utilities.getBooleanProperty(node, "fixed");
         int precision = Utilities.getIntProperty(node, "precision");
-        return DBSPTypeString.create(CalciteObject.EMPTY, precision, fixed, mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeString.create(CalciteObject.EMPTY, precision, fixed, mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeString(CalciteObject.EMPTY, precision, fixed, mayBeNull);
     }
 }

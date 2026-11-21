@@ -203,7 +203,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn metadata(&self) -> &BatchMetadata {
-        &self.file.metadata
+        self.file.metadata()
     }
 }
 

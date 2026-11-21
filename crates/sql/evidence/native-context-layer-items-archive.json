@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-layer-items.tar.gz",
+  "bytes": 71994,
+  "sha256": "4146d750587ed4d23a37b4439a8c60bc9c1fe806c1e95ccface9e385a8922143",
+  "manifest_sha256": "63ba22d43499dc7f9c0f2522f50a9787840136460ff3d28012a3cdb17ce004e9",
+  "verified_files": 9,
+  "all_members_verified": true
+}

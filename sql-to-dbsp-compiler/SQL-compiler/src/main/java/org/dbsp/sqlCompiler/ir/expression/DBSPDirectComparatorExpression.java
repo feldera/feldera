@@ -20,7 +20,12 @@ public final class DBSPDirectComparatorExpression extends DBSPComparatorExpressi
 
     public DBSPDirectComparatorExpression(
             CalciteObject node, DBSPComparatorExpression source, boolean ascending) {
-        super(node, DBSPComparatorType.generateType(source.getComparatorType(), ascending));
+        this(node, source, ascending, DBSPComparatorType.generateType(source.getComparatorType(), ascending));
+    }
+
+    private DBSPDirectComparatorExpression(CalciteObject node, DBSPComparatorExpression source,
+            boolean ascending, DBSPComparatorType type) {
+        super(node, type);
         this.source = source;
         this.ascending = ascending;
     }
@@ -77,6 +82,8 @@ public final class DBSPDirectComparatorExpression extends DBSPComparatorExpressi
     public static DBSPDirectComparatorExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPComparatorExpression source = fromJsonInner(node, "source", decoder, DBSPComparatorExpression.class);
         boolean ascending = Utilities.getBooleanProperty(node, "ascending");
-        return new DBSPDirectComparatorExpression(CalciteObject.EMPTY, source, ascending);
+        DBSPComparatorType type = getJsonType(node, decoder).to(DBSPComparatorType.class);
+        Utilities.enforce(type.sameType(DBSPComparatorType.generateType(source.getComparatorType(), ascending)));
+        return new DBSPDirectComparatorExpression(CalciteObject.EMPTY, source, ascending, type);
     }
 }

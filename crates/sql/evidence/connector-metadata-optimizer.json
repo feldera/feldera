@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "connector-metadata-optimizer-archive.json",
+  "scheduled_placements": 27,
+  "programs_per_engine": 46,
+  "engines": ["classic", "gen2"],
+  "same_input_pass_comparisons": 2432,
+  "connector_metadata_same_input_acceptances": 92,
+  "rust_final_compiler_comparisons": 92,
+  "java_codec_final_compiler_controls": 92,
+  "structured_rejection_diagnostics": 6,
+  "rejection_cases": ["view call", "function declaration call", "first of multiple calls"],
+  "allowed_column_default_checked_in_both_engines": true,
+  "nested_reference_acceptance_checks": 2,
+  "ordinary_bag_and_set_tail_comparisons": 600,
+  "rust_tests": 31,
+  "differences": 0,
+  "scope": "The connector-metadata check is executed at its original placement in the Java optimizer. It allows column defaults and rejects the first forbidden executable call in the covered programs. All six rejection comparisons preserve Java exception class, error kind, text and source span. The full placement matrix uses the flat subset in set-output mode. The ordinary set regression was retried after the first run reached the devcontainer disk floor. Both attempts are preserved."
+}

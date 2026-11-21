@@ -87,12 +87,22 @@ public class MerkleOuter extends CircuitVisitor {
         this.recursiveOutputs = new HashSet<>();
     }
 
+    Map<Long, String> hashesById(java.util.function.Predicate<DBSPOperator> selected) {
+        var result = new HashMap<Long, String>();
+        this.operatorHash.forEach((operator, hash) -> {
+            if (selected.test(operator))
+                result.put(operator.id, hash.toString());
+        });
+        return result;
+    }
+
     void setHashedString(DBSPOperator operator, String string) {
         // A stream that leaves a recursive circuit gets an id that depends on the format
         // in which its state is stored.  Only the global hash becomes a persistent id;
         // the local hash just names the generated code.
         if (this.includeInputs && this.recursiveOutputs.contains(operator.getId()))
             string += this.recursiveStateVersion;
+        this.compiler.observeHashInput(this.includeInputs ? "global-operator" : "local-operator", string);
         HashString hash = MerkleInner.hash(string);
         String name = CompactName.getCompactName(operator);
         Logger.INSTANCE.belowLevel(this, 1)
@@ -247,6 +257,8 @@ public class MerkleOuter extends CircuitVisitor {
                     if (operator.hasOutput(i))
                         types.append(operator.outputType(i)).append(";");
                 this.label("outputTypes");
+                if (this.compiler.hashInputHook != null)
+                    this.compiler.observeHashInput("output-type", types.toString());
                 this.stream.append(MerkleInner.hash(types.toString()).toString());
             }
             String prefix = MerkleOuter.this.prefixes.get(operator);

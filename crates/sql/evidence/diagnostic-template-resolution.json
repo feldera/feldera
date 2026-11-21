@@ -1,0 +1,66 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "scope": "Independent agent diagnostic source and rendering-boundary review against immutable capture v7",
+  "review_status": "Proposed source-backed identities; not human maintainer acceptance",
+  "archive": ".p0-artifacts/p0-diagnostic-template-resolution-20261118-v1.tar.gz",
+  "sha256": "19e3c98c0205b61d62ba3ebce4ddf28df508104dd0b756193610cf42ff1a0d45",
+  "bytes": 2044814,
+  "verified_files": 976,
+  "archive_root": "p0-diagnostic-template-resolution-20261118-v1",
+  "manifest": "MANIFEST.sha256.json",
+  "parent_capture_archive": {
+    "certificate": "diagnostic-shared-helper-archive.json",
+    "archive": ".p0-artifacts/p0-diagnostic-shared-helper-20261118-v1.tar.gz",
+    "sha256": "6817a03b522d6ef7b4e841ea12cd05b87e5fef93c2535fa97a240c6602604ffb"
+  },
+  "classpath_dependency": "Replay Java overlay with v7 tools/classes, tools/test-classes and dependencies.jar retained in parent archive, plus JUnit 4.13.2 and Hamcrest 1.3. Overlay classes precede frozen classes.",
+  "counts": {
+    "java_assertions": 1333,
+    "call_sites": 375,
+    "reviewed_cross_field_assertions": 72,
+    "cross_field_assertions_selecting_body_text": 71,
+    "cross_field_selected_body_occurrences": 76,
+    "cross_field_label_and_class_only": 1,
+    "source_files": 865,
+    "emission_sites": 705,
+    "added_wrapper_sites": 88,
+    "literal_expression_candidates": 551,
+    "previous_unmapped_asserted_bodies": 133,
+    "remaining_unmapped_asserted_bodies": 52,
+    "source_resolved_subset_bodies": 22,
+    "proposed_outer_template_identities": 8,
+    "remaining_configuration_formatter_bodies": 29,
+    "remaining_geometry_conversion_bodies": 1,
+    "source_candidates_for_asserted_bodies": 141,
+    "calcite_candidates_for_asserted_bodies": 42
+  },
+  "validation": {
+    "java_wrapper_extractor_tests": 4,
+    "python_focused_tests": 18,
+    "reviewed_bodies_reconstructed_exactly": 22,
+    "archive_content_hashes_verified": true
+  },
+  "artifacts": {
+    "final_cross_field_report": "capture-v7/cross-fields-v4.json",
+    "new_extraction": "wrapper-extraction/extraction.json",
+    "new_templates": "wrapper-extraction/reports/templates.json",
+    "new_attribution": "wrapper-extraction/reports/attribution.json"
+  },
+  "sources": {
+    "crates/sql/DIAGNOSTIC-REVIEW.md": "8147319b4231da4349429e73c4824e1a72c72226d0b0a4d4157086c42677f961",
+    "crates/sql/diagnostic-template-dispositions.json": "0d7bc3a44a108957fc53acb749d13b3f548afbb86e3cbb37c15ae3f80e52f657",
+    "crates/sql/scripts/diagnostic_cross_fields.py": "62e8979cbfd367edd9cef58cbd01d8bd2e38c8ef5a7b432b2e81032bad7f04cd",
+    "crates/sql/scripts/test_diagnostic_cross_fields.py": "50b2afa705fcd3dd381a8b5838b5d049641a5cab4ca548ad56a23b78247d0a24"
+  },
+  "remaining_work": [
+    "Review 29 configuration formatter chains and one geometry-conversion chain.",
+    "Catalog nested formatters in the eight proposed outer identities.",
+    "Resolve ambiguous source candidate identities and review all distinct asserted bodies, including cross-field selections.",
+    "Account for direct/specialized Java assertions, Python runtime/compiler expectations and platform contracts.",
+    "Obtain maintainer acceptance and a deduplicated required-template count."
+  ],
+  "required_template_count": null,
+  "catalog_reviewed": false,
+  "P0_complete": false
+}

@@ -1,0 +1,113 @@
+{
+  "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
+  "compiler_sha256": "53fdf6567a491bf44a4a29d0b8b55fa7a278457e2b2ea255a39f75d8c2428d23",
+  "optimizer_library_sha256": "0af75d61d235938276d42665b48b8894697c992454a9fb8063b3b502eb4063b0",
+  "compiler_jar_sha256": "63a1b7e3c046a4d6d11c4632799b3930bb05dca56c9667147ba252fb8e3bddcb",
+  "programs": {
+    "count": {
+      "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+      "binary_sha256": {
+        "java": "518d0069f719d0f3716b33a2d700bf6f96a8dfcddf64446a8868a6ab6c31b46b",
+        "hybrid": "99106dac4b29bff6c33ac65fe59d63fb148d835ec043e089629aeed19cdef2fd"
+      },
+      "generated_rust_sha256": {
+        "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+        "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a1fbb8-bb76-73b2-957d-e70bf4791a42",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a1fbb8-bbaf-7723-821f-249ddfda7c28",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ]
+        }
+      ]
+    },
+    "watermark": {
+      "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+      "binary_sha256": {
+        "java": "c5e321e81b3d2bf94be11ae7a3f43e71a3d0f55512688169aeefc0cecce179f5",
+        "hybrid": "87ba3f1ff519c73a08d65072e3dd9f8f3dae68fabaaef137dd4a1907fb5a9fb0"
+      },
+      "generated_rust_sha256": {
+        "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+        "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+      },
+      "restores": [
+        {
+          "writer": "java",
+          "reader": "hybrid",
+          "bootstrap": false,
+          "checkpoint_id": "01a1fbba-3b9b-7613-82ea-2bd2352bbea3",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        },
+        {
+          "writer": "hybrid",
+          "reader": "java",
+          "bootstrap": false,
+          "checkpoint_id": "01a1fbba-3bcd-7151-ba36-c972ccce91b1",
+          "restored_count_deltas": [
+            [
+              1,
+              1
+            ],
+            [
+              2,
+              -1
+            ]
+          ],
+          "late_input_dropped_after_restore": true
+        }
+      ]
+    }
+  },
+  "direct_and_hybrid_recursive_lag_diagnostic": [
+    {
+      "start_line_number": 0,
+      "start_column": 0,
+      "end_line_number": 0,
+      "end_column": 0,
+      "warning": false,
+      "error_type": "Compilation error",
+      "message": "Unsupported operation 'LAG' in recursive code",
+      "snippet": ""
+    }
+  ],
+  "pass_kinds": 88
+}

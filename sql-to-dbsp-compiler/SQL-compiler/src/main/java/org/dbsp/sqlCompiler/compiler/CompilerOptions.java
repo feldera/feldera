@@ -241,6 +241,33 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
          * optimization pass.  SerializationTests sets this; the other tests do not. */
         public boolean checkSerialization = false;
 
+        @Parameter(hidden = true, names = "--dump-circuits",
+                description = "Directory for versioned S2, S3, and S4 test observations")
+        public String dumpCircuits = "";
+        @Parameter(hidden = true, names = "--dump-producer-commit",
+                description = "Source revision of the compiler producing test observations")
+        public String dumpProducerCommit = "";
+        @Parameter(hidden = true, names = "--dump-runtime-abi",
+                description = "Runtime ABI/build identity for test observations")
+        public String dumpRuntimeAbi = "";
+
+        @Parameter(hidden = true, names = "--write-s2",
+                description = "Write an experimental S2 replay file; requires --input_circuit")
+        public String writeS2 = "";
+        @Parameter(hidden = true, names = "--read-s2",
+                description = "Read the input as an experimental S2 replay file")
+        public boolean readS2 = false;
+        @Parameter(hidden = true, names = "--write-s3",
+                description = "Write an experimental optimized-circuit replay file")
+        public String writeS3 = "";
+        @Parameter(hidden = true, names = "--read-s3",
+                description = "Read an optimized circuit and run the Java tail")
+        public boolean readS3 = false;
+
+        @Parameter(hidden = true, names = "--rust-optimizer-passes",
+                description = "Run the supported circuit optimizations in the Rust library")
+        public boolean rustOptimizerPasses = false;
+
         // Used only for internal testing
         public boolean nowStream = true;
         @Parameter(names = "--version", description = "Print compiler version", help = true)
@@ -266,6 +293,26 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public boolean validate(IErrorReporter reporter) {
             int count = 0;
+            int seamFlags = (this.writeS2.isEmpty() ? 0 : 1) + (this.writeS3.isEmpty() ? 0 : 1)
+                    + (this.readS2 ? 1 : 0) + (this.readS3 ? 1 : 0);
+            boolean optimizeCheckpoint = seamFlags == 2 && this.readS2 && !this.writeS3.isEmpty();
+            if ((seamFlags > 1 && !optimizeCheckpoint) || (!this.writeS2.isEmpty() && !this.inputCircuit)
+                    || ((this.readS2 || this.readS3 || !this.writeS3.isEmpty()) && this.inputCircuit)) {
+                reporter.reportError(SourcePositionRange.INVALID, "Invalid options",
+                        "Choose one circuit seam flag or --read-s2 with --write-s3. Only --write-s2 takes --input_circuit");
+                return false;
+            }
+            if (seamFlags > 0 && (this.dumpProducerCommit.isBlank() || this.dumpRuntimeAbi.isBlank())) {
+                reporter.reportError(SourcePositionRange.INVALID, "Invalid options",
+                        "Circuit replay requires --dump-producer-commit and --dump-runtime-abi");
+                return false;
+            }
+            if (!this.dumpCircuits.isEmpty() &&
+                    (this.dumpProducerCommit.isBlank() || this.dumpRuntimeAbi.isBlank())) {
+                reporter.reportError(SourcePositionRange.INVALID, "Invalid options",
+                        "--dump-circuits requires --dump-producer-commit and --dump-runtime-abi");
+                return false;
+            }
             if (this.emitJpeg)
                 count++;
             if (this.emitSvg)

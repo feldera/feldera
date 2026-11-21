@@ -27,7 +27,7 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
                 succ.node().to(IGCOperator.class).garbageCollects(port));
     }
 
-    private boolean canBalance(DBSPJoinBaseOperator join) {
+    protected boolean canBalance(DBSPJoinBaseOperator join) {
         // Limitations from DBSP:
         ICircuit parent = this.getParent();
         // Inside recursive component cannot be adaptive

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-small-integer-archive.json",
+  "signed_integer_widths": [8, 32],
+  "operations": ["ADD", "SUB", "MUL"],
+  "directed_constant_graph_comparisons": 24,
+  "new_signed_8_bit_graphs": 3,
+  "ordinary_bag_and_set_tail_comparisons": 600,
+  "rust_tests": 27,
+  "differences": 0,
+  "scope": "Directed signed 8-bit map, filter and overflow witnesses compare exact graph output with Java. The full bag and set regressions exercise the current build in classic and Gen-2. Earlier scheduled arithmetic witnesses cover signed 32-bit expressions."
+}

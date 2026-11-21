@@ -4,6 +4,7 @@ import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexExecutor;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
@@ -33,9 +34,20 @@ import java.util.Objects;
  * <a href="https://issues.apache.org/jira/browse/CALCITE-6752">JavaTypeFactoryImpl cannot represent fractional
  * seconds</a>.  So we reimplement a subset of these using the "correct" semantics. */
 public class RexOptimize extends RexShuttle {
+    /** A planner executor can also supply the temporal rewrites. */
+    public interface Executor extends RexExecutor {
+        RexNode optimize(RexBuilder builder, RexCall call);
+    }
+
     final RexBuilder builder;
+    @Nullable private final Executor executor;
 
     public RexOptimize(RexBuilder builder) {
+        this(builder, null);
+    }
+
+    public RexOptimize(RexBuilder builder, @Nullable RexExecutor executor) {
+        this.executor = executor instanceof Executor custom ? custom : null;
         this.builder = builder;
     }
 
@@ -52,6 +64,15 @@ public class RexOptimize extends RexShuttle {
     }
 
     RexNode optimize(RexCall call) {
+        if (this.executor != null)
+            return this.executor.optimize(this.builder, call);
+        RexNode result = this.optimizeImpl(call);
+        if (result != call)
+            FoldTrace.record("RexOptimize", java.util.List.of(call), java.util.List.of(result));
+        return result;
+    }
+
+    private RexNode optimizeImpl(RexCall call) {
         SqlTypeName type = call.getType().getSqlTypeName();
         if (SqlTypeName.INTERVAL_TYPES.contains(type))
             return this.optimizeInterval(call);

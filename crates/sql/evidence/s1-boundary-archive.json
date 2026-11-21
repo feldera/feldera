@@ -1,0 +1,106 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T10:56:17.452048+00:00",
+  "archive": ".p0-artifacts/p0-s1-boundaries-20261117-v1.tar.gz",
+  "sha256": "9864eee5b207b7d36fc20bec80325f355f2c079a558107c3a094ecabbd42f3e9",
+  "bytes": 128374170,
+  "certificates": [
+    "s1-type-arenas.json",
+    "s1-statement-metadata.json",
+    "s1-literal-storage.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-type-arenas.json": [
+      {
+        "source_prefix": "crates/sql/sql-rel-model/",
+        "archive_prefix": "$SCRATCH/p0-s1-type-arena-evidence-v1/rust-source-snapshot/"
+      },
+      {
+        "source_prefix": "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/",
+        "archive_prefix": "$SCRATCH/p0-s1-type-import-build-v5/source-snapshot/"
+      }
+    ],
+    "s1-statement-metadata.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-statement-metadata-v1/source-snapshot/"
+      }
+    ],
+    "s1-literal-storage.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-literal-storage-v1/source-snapshot/"
+      }
+    ]
+  },
+  "members": [
+    "$SCRATCH/p0-s1-type-arena-build-v2",
+    "$SCRATCH/p0-s1-type-arena-build-v3",
+    "$SCRATCH/p0-s1-type-arena-build-v4",
+    "$SCRATCH/p0-s1-type-arena-evidence-v1",
+    "$SCRATCH/p0-s1-type-arena-java-v1",
+    "$SCRATCH/p0-s1-type-arena-roundtrip-v1",
+    "$SCRATCH/p0-s1-type-arena-rust-v2",
+    "$SCRATCH/p0-s1-type-arena-rust-v4",
+    "$SCRATCH/p0-s1-type-corpus-build-v1",
+    "$SCRATCH/p0-s1-type-corpus-full-v1",
+    "$SCRATCH/p0-s1-type-corpus-full-v2",
+    "$SCRATCH/p0-s1-type-corpus-full-v3",
+    "$SCRATCH/p0-s1-type-corpus-full-v4",
+    "$SCRATCH/p0-s1-type-corpus-smoke-v1",
+    "$SCRATCH/p0-s1-type-failure-v1",
+    "$SCRATCH/p0-s1-type-gen2-full-v1",
+    "$SCRATCH/p0-s1-type-import-build-v5",
+    "$SCRATCH/p0-s1-statement-metadata-v1",
+    "$SCRATCH/p0-s1-statement-metadata-s3-v1",
+    "$SCRATCH/p0-s1-literal-storage-v1",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+    "$SCRATCH/sql-difftest-target/release/sql-difftest",
+    "$SCRATCH/p0-s2-full-v7/shard-000/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-001/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-002/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-003/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-004/input.jsonl",
+    "$SCRATCH/p0-s2-full-v7/shard-005/input.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-000.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-001.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-002.jsonl",
+    "$SCRATCH/p0-gen2-full-determinism-v4/input-003.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-000/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-001/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-002/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-003/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-004/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/classic/shard-005/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-000/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-001/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-002/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/gen2/shard-003/cases.jsonl",
+    "$SCRATCH/p0-s1-literal-transport-full-v4/matrix/export/cases.jsonl",
+    "$REPO/crates/sql/evidence/s1-type-arenas.json",
+    "$REPO/crates/sql/evidence/s1-statement-metadata.json",
+    "$REPO/crates/sql/evidence/s1-literal-storage.json",
+    "$REPO/crates/sql/scripts/verify_fragment_archive.py",
+    "$REPO/crates/sql/scripts/test_verify_fragment_archive.py"
+  ],
+  "scope": "Ordered type arenas, immutable statement target metadata, before/after final-S3 comparison and literal storage guard; not complete P0 evidence",
+  "related_archives": [
+    "s1-fragment-archive.json",
+    "s1-symbol-archive.json"
+  ],
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-boundary-archive.json",
+  "classpath_hash_algorithm": "See classpath_hash_algorithms for each certificate; file entries always use SHA-256 of bytes.",
+  "classpath_hash_algorithms": {
+    "s1-type-arenas.json": "path-null-binary-sha256",
+    "s1-statement-metadata.json": "path-space-hex-sha256-newline",
+    "s1-literal-storage.json": "path-space-hex-sha256-newline"
+  },
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 579,
+  "verified_source_hashes": 63,
+  "verified_classpath_hashes": 17,
+  "bundled_verifier_note": "Use the repository verifier, which supports the grouped classpaths and legacy directory hash format in the type-arena certificate."
+}

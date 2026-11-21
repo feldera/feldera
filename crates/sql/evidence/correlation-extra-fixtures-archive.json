@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-correlation-extra-fixtures-20261119.tar.gz",
+  "bytes": 48221815,
+  "sha256": "c637ece814da01deb6406a8c5a59ea16a259a452410372621fe43b74d282cf0d",
+  "manifest_sha256": "4be940dfe23fe71b5699ea696675fc83b7ebbb6538ec985a5424f0323a61b41d",
+  "verified_files": 59,
+  "all_members_verified": true
+}

@@ -29,6 +29,7 @@ import org.apache.calcite.util.Util;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Utilities;
 
@@ -916,11 +917,12 @@ public class CustomFunctions {
      */
     public ExternalFunction createUDF(
             CalciteObject node, SqlIdentifier name,
-            RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
+            RelDataType signature, RelDataType returnType, @Nullable RexNode body, @Nullable String bodySource) {
         List<RelDataTypeField> parameterList = signature.getFieldList();
         ProgramIdentifier functionName = ProgramIdentifier.fromSqlId(name);
         boolean generated = functionName.name().toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
-        ExternalFunction result = new ExternalFunction(name, returnType, parameterList, body, generated);
+        ExternalFunction result = new ExternalFunction(name.getSimple(), CalciteObject.create(name),
+                new SourcePositionRange(name.getParserPosition()), returnType, parameterList, body, generated, bodySource);
         if (this.udf.containsKey(functionName)) {
             throw new CompilationError("Function with name " +
                     functionName.singleQuote() + " already exists", node);

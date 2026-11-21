@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-fifteen-placements-archive.json",
+  "programs": 170,
+  "engine_modes": ["classic", "gen2"],
+  "outputs_are_sets": true,
+  "scheduled_placements": 15,
+  "same_input_graph_comparisons": 5100,
+  "changed_graphs": 1996,
+  "constant_propagation_changed_graphs": 18,
+  "rust_tail_comparisons": 340,
+  "java_codec_tail_comparisons": 340,
+  "rust_s2_to_hybrid_to_rust_s3_to_java_tail_comparisons": 48,
+  "directed_constant_graph_comparisons": 15,
+  "differences": 0,
+  "complete_rust_prefix_replayed": false,
+  "scope": "The expanded selection includes 24 SQL constant witnesses. Rust replaces all five top-level pruning transforms, and Java retains unused-table diagnostics. Constant propagation supports snapshot negation, literal and projected filters, direct scalar comparisons, identity, literal and single-column maps, and redundant incremental distinct. Other non-empty map and filter folds require additional scalar expression evaluation. The full scheduled compiler run precedes the added comparison case. The latest build rechecks the same-input pass graphs and runs the directed fixtures and detached SQL chains."
+}

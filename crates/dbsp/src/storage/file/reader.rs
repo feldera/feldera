@@ -23,7 +23,7 @@ use crate::storage::{
 };
 use crate::trace::cursor::AccessHint;
 use crate::{
-    dynamic::{DataTrait, DeserializeDyn, DynData, Factory},
+    dynamic::{DataTrait, DeserializeDyn, DynData},
     storage::{
         backend::{BlockLocation, FileReader, InvalidBlockLocation, StorageBackend},
         buffer_cache::{AtomicCacheStats, CacheStats},
@@ -62,11 +62,22 @@ use tracing::info;
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
 
+mod seek_key;
+#[cfg(feature = "native-abi")]
+pub use seek_key::ArchivedSeekKey;
+#[cfg(not(feature = "native-abi"))]
+use seek_key::ArchivedSeekKey;
+
 mod fetch_zset;
 pub use fetch_zset::FetchZSet;
 
 mod fetch_indexed_zset;
 pub use fetch_indexed_zset::FetchIndexedZSet;
+
+#[cfg(feature = "native-abi")]
+mod archived_rows;
+#[cfg(feature = "native-abi")]
+pub use archived_rows::{ArchivedLayerReader, ArchivedLayerRow, ArchivedRows};
 
 /// Any kind of error encountered reading a layer file.
 #[derive(ThisError, Debug)]
@@ -315,6 +326,12 @@ pub enum CorruptionError {
         end: u64,
     },
 
+    /// A data block in a nonterminal column has no child-row offsets.
+    #[error(
+        "Data block ({0}) is missing its row group offsets. Restore the file from a valid checkpoint."
+    )]
+    MissingRowGroups(BlockLocation),
+
     /// Bad block type.
     #[error("Block ({0}) is wrong type of block.")]
     BadBlockType(BlockLocation),
@@ -540,35 +557,22 @@ impl ValueMapReader {
 }
 
 /// Reader for a data block in a storage file.
-pub(super) struct DataBlock<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+pub(super) struct DataBlock {
     location: BlockLocation,
     raw: Arc<FBuf>,
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
     first_row: u64,
     version: u32,
-    _phantom: PhantomData<fn(&K, &A)>,
 }
 
-impl<K, A> CacheEntry for DataBlock<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+impl CacheEntry for DataBlock {
     fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.capacity()
     }
 }
 
-impl<K, A> DataBlock<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+impl DataBlock {
     pub(super) fn from_raw(
         raw: Arc<FBuf>,
         location: BlockLocation,
@@ -600,7 +604,6 @@ where
             raw,
             first_row,
             version,
-            _phantom: PhantomData,
         })
     }
 
@@ -711,7 +714,10 @@ where
     }
 
     fn row_group(&self, index: usize) -> Result<Range<u64>, Error> {
-        let row_groups = self.row_groups.as_ref().unwrap();
+        let row_groups = self
+            .row_groups
+            .as_ref()
+            .ok_or(CorruptionError::MissingRowGroups(self.location))?;
         let start = row_groups.get(&self.raw, index);
         let end = row_groups.get(&self.raw, index + 1);
         if start < end {
@@ -732,22 +738,32 @@ where
         self.row_group(index)
     }
 
-    unsafe fn archived_item(
+    fn seek_key(&self, index: usize) -> ArchivedSeekKey<'_> {
+        ArchivedSeekKey {
+            block: &self.raw,
+            offset: self.value_map.get(&self.raw, index),
+            is_index_bound: false,
+        }
+    }
+
+    unsafe fn archived_item<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
         &self,
         factories: &Factories<K, A>,
         index: usize,
     ) -> &dyn ArchivedItem<'_, K, A> {
+        // SAFETY: The caller supplies the item type and an index in the block's offset map.
         unsafe {
             factories
                 .item_factory
                 .archived_value(&self.raw, self.value_map.get(&self.raw, index))
         }
     }
-    unsafe fn archived_item_for_row(
+    unsafe fn archived_item_for_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
         &self,
         factories: &Factories<K, A>,
         row: u64,
     ) -> &dyn ArchivedItem<'_, K, A> {
+        // SAFETY: The caller supplies a row in this block and the matching item factory.
         unsafe {
             let index = (row - self.first_row) as usize;
 
@@ -755,7 +771,13 @@ where
         }
     }
 
-    unsafe fn item(&self, factories: &Factories<K, A>, index: usize, item: (&mut K, &mut A)) {
+    unsafe fn item<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+        item: (&mut K, &mut A),
+    ) {
+        // SAFETY: The caller supplies the factory and destinations for the item at this index.
         unsafe {
             let archived_item = self.archived_item(factories, index);
             let mut deserializer = Deserializer::new(self.version);
@@ -764,39 +786,75 @@ where
             DeserializeDyn::deserialize_with(archived_item.snd(), item.1, &mut deserializer);
         }
     }
-    unsafe fn item_for_row(&self, factories: &Factories<K, A>, row: u64, item: (&mut K, &mut A)) {
+    unsafe fn item_for_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        row: u64,
+        item: (&mut K, &mut A),
+    ) {
+        // SAFETY: The caller supplies a row in this block and matching key and auxiliary types.
         unsafe {
             let index = (row - self.first_row) as usize;
             self.item(factories, index, item)
         }
     }
-    unsafe fn key(&self, factories: &Factories<K, A>, index: usize, key: &mut K) {
+    unsafe fn key<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+        key: &mut K,
+    ) {
+        // SAFETY: The caller supplies an index in this block and the matching key and item types.
         unsafe {
             let item = self.archived_item(factories, index);
             let mut deserializer = Deserializer::new(self.version);
             DeserializeDyn::deserialize_with(item.fst(), key, &mut deserializer)
         }
     }
-    unsafe fn key_range(&self, factories: &Factories<K, A>, min: &mut K, max: &mut K) {
+    unsafe fn key_range<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        min: &mut K,
+        max: &mut K,
+    ) {
+        // SAFETY: A data block contains at least one item. Both destinations have its key type.
         unsafe {
             self.key(factories, 0, min);
             self.key(factories, self.n_values() - 1, max);
         }
     }
-    unsafe fn aux(&self, factories: &Factories<K, A>, index: usize, aux: &mut A) {
+    unsafe fn aux<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+        aux: &mut A,
+    ) {
+        // SAFETY: The caller supplies an index in this block and the matching auxiliary and item types.
         unsafe {
             let item = self.archived_item(factories, index);
             let mut deserializer = Deserializer::new(self.version);
             DeserializeDyn::deserialize_with(item.snd(), aux, &mut deserializer)
         }
     }
-    unsafe fn key_for_row(&self, factories: &Factories<K, A>, row: u64, key: &mut K) {
+    unsafe fn key_for_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        row: u64,
+        key: &mut K,
+    ) {
+        // SAFETY: The caller supplies a row in this block and the matching key type.
         unsafe {
             let index = (row - self.first_row) as usize;
             self.key(factories, index, key)
         }
     }
-    unsafe fn aux_for_row(&self, factories: &Factories<K, A>, row: u64, aux: &mut A) {
+    unsafe fn aux_for_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        row: u64,
+        aux: &mut A,
+    ) {
+        // SAFETY: The caller supplies a row in this block and the matching auxiliary type.
         unsafe {
             let index = (row - self.first_row) as usize;
             self.aux(factories, index, aux)
@@ -809,54 +867,36 @@ where
     /// `bias` is [Greater], the child is the last such child.  Returns `None`
     /// if there is no match.
     ///
-    /// `compare` sees each probed key in its archived form, so the search
-    /// deserializes only the key that it returns: before this function
-    /// returns successfully, it sets `key` to the key for the row that it
-    /// found.  On error, `key` might be changed.
-    unsafe fn find_best_match<C>(
+    /// The comparator sees each key's archived location.
+    fn find_best_match<C>(
         &self,
-        factories: &Factories<K, A>,
         target_rows: &Range<u64>,
         compare: &mut C,
         bias: Ordering,
-        key: &mut K,
-    ) -> Option<usize>
+    ) -> Result<Option<usize>, Error>
     where
-        C: FnMut(&K::Archived) -> Ordering,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
     {
-        unsafe {
-            let block_rows = self.rows();
-            if block_rows.start >= target_rows.end || block_rows.end <= target_rows.start {
-                return None;
-            }
-            let mut best = None;
-            let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
-            let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
-            while start < end {
-                let mid = start.midpoint(end);
-                // SAFETY: `mid` is below `self.n_values()`, and the block's
-                // bytes were written as archived `(K, A)` items, which is the
-                // caller's obligation for this block (the checksum verified
-                // on read rules out corruption).
-                let cmp = compare(self.archived_item(factories, mid).fst());
-
-                match cmp {
-                    Less => end = mid,
-                    Equal => {
-                        self.key(factories, mid, key);
-                        return Some(mid);
-                    }
-                    Greater => start = mid + 1,
-                };
-                if cmp == bias {
-                    best = Some(mid);
-                }
-            }
-            if let Some(best) = best {
-                self.key(factories, best, key);
-            }
-            best
+        let block_rows = self.rows();
+        if block_rows.start >= target_rows.end || block_rows.end <= target_rows.start {
+            return Ok(None);
         }
+        let mut best = None;
+        let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
+        let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
+        while start < end {
+            let mid = start.midpoint(end);
+            let cmp = compare(self.seek_key(mid))?;
+            match cmp {
+                Less => end = mid,
+                Equal => return Ok(Some(mid)),
+                Greater => start = mid + 1,
+            }
+            if cmp == bias {
+                best = Some(mid);
+            }
+        }
+        Ok(best)
     }
 
     /// Searches this data block for `target`.  If it is found, deserializes
@@ -867,14 +907,18 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe: the block's bytes are
     /// read as archived `(K, A)` items, which they are when the file was
     /// written for those types.
-    unsafe fn find(&self, factories: &Factories<K, A>, target: &K, key: &mut K) -> Option<usize> {
+    unsafe fn find<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        target: &K,
+        key: &mut K,
+    ) -> Option<usize> {
+        // SAFETY: Each midpoint is a valid item index. The caller supplies the matching archive types.
         unsafe {
             let mut start = 0;
             let mut end = self.n_values();
             while start < end {
                 let mid = start.midpoint(end);
-                // SAFETY: `mid` is below `self.n_values()`, and the block
-                // holds archived `(K, A)` items, as the caller guarantees.
                 match self.archived_item(factories, mid).fst().cmp_target(target) {
                     Less => start = mid + 1,
                     Equal => {
@@ -912,11 +956,7 @@ pub(super) struct TreeNode {
 }
 
 impl TreeNode {
-    fn read<K, A>(&self, file: &ImmutableFileRef) -> Result<TreeBlock<K, A>, Error>
-    where
-        K: DataTrait + ?Sized,
-        A: DataTrait + ?Sized,
-    {
+    fn read(&self, file: &ImmutableFileRef) -> Result<TreeBlock, Error> {
         match self.node_type {
             NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(file, self)?)),
             NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(file, self)?)),
@@ -936,7 +976,7 @@ impl TreeNode {
         let mut min = key_factory.default_box();
         let mut max = key_factory.default_box();
 
-        match self.read::<K, A>(file)? {
+        match self.read(file)? {
             // SAFETY: Unsafe because of serialization
             TreeBlock::Data(data_block) => unsafe {
                 data_block.key_range(factories, min.as_mut(), max.as_mut());
@@ -951,16 +991,12 @@ impl TreeNode {
     }
 }
 
-enum TreeBlock<K: DataTrait + ?Sized, A: DataTrait + ?Sized> {
-    Data(Arc<DataBlock<K, A>>),
-    Index(Arc<IndexBlock<K>>),
+enum TreeBlock {
+    Data(Arc<DataBlock>),
+    Index(Arc<IndexBlock>),
 }
 
-impl<K, A> TreeBlock<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+impl TreeBlock {
     fn from_cache(
         node: &TreeNode,
         cache: &BufferCache,
@@ -1016,10 +1052,7 @@ where
 }
 
 /// Reader for an index block in a storage file.
-pub(super) struct IndexBlock<K>
-where
-    K: DataTrait + ?Sized,
-{
+pub(super) struct IndexBlock {
     location: BlockLocation,
     raw: Arc<FBuf>,
     child_type: NodeType,
@@ -1029,22 +1062,15 @@ where
     child_sizes: VarintReader,
     first_row: u64,
     version: u32,
-    _phantom: PhantomData<K>,
 }
 
-impl<K> CacheEntry for IndexBlock<K>
-where
-    K: DataTrait + ?Sized,
-{
+impl CacheEntry for IndexBlock {
     fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.capacity()
     }
 }
 
-impl<K> IndexBlock<K>
-where
-    K: DataTrait + ?Sized,
-{
+impl IndexBlock {
     pub(super) fn from_raw(
         raw: Arc<FBuf>,
         location: BlockLocation,
@@ -1107,7 +1133,6 @@ where
             raw,
             first_row,
             version,
-            _phantom: PhantomData,
         })
     }
 
@@ -1246,7 +1271,8 @@ where
         Err(CorruptionError::MissingRow(row).into())
     }
 
-    unsafe fn get_bound(&self, index: usize, bound: &mut K) {
+    unsafe fn get_bound<K: DataTrait + ?Sized>(&self, index: usize, bound: &mut K) {
+        // SAFETY: The caller supplies a valid bound index and the archived key type.
         unsafe {
             let offset = self.bounds.get(&self.raw, index) as usize;
             let mut deserializer = Deserializer::new(self.version);
@@ -1254,32 +1280,24 @@ where
         }
     }
 
-    /// Returns bound number `index` in its archived form.
-    ///
-    /// # Safety
-    ///
-    /// Unsafe because `rkyv` deserialization is unsafe: the bytes at the
-    /// bound's offset are read as an archived `K`, which they are when the
-    /// file was written for that key type.  `index` must be below
-    /// `2 * self.n_children()`.
-    unsafe fn archived_bound(&self, key_factory: &dyn Factory<K>, index: usize) -> &K::Archived {
-        unsafe {
-            let offset = self.bounds.get(&self.raw, index) as usize;
-            // SAFETY: the writer stored at `offset` the archived `K` that
-            // `get_bound` deserializes from the same position; the caller
-            // guarantees the file's key type and the index.
-            key_factory.archived_value(&self.raw, offset)
+    fn seek_key(&self, index: usize) -> ArchivedSeekKey<'_> {
+        ArchivedSeekKey {
+            block: &self.raw,
+            offset: self.bounds.get(&self.raw, index) as usize,
+            is_index_bound: true,
         }
     }
 
-    unsafe fn key_range(&self, min: &mut K, max: &mut K) {
+    unsafe fn key_range<K: DataTrait + ?Sized>(&self, min: &mut K, max: &mut K) {
+        // SAFETY: Each index block has at least one child with two bounds of the given key type.
         unsafe {
             self.get_bound(0, min);
             self.max_bound(max);
         }
     }
 
-    unsafe fn max_bound(&self, bound: &mut K) {
+    unsafe fn max_bound<K: DataTrait + ?Sized>(&self, bound: &mut K) {
+        // SAFETY: The last bound belongs to this block and the caller supplies its key type.
         unsafe { self.get_bound(self.last_bound_index(), bound) }
     }
 
@@ -1287,47 +1305,42 @@ where
     /// in the range `target_rows` and which may contain a key for which
     /// `compare` returns `bias` or [Equal], or `None` if there is no such
     /// child.  `compare` sees each bound in its archived form.
-    unsafe fn find_best_match<C>(
+    fn find_best_match<C>(
         &self,
-        key_factory: &dyn Factory<K>,
         target_rows: &Range<u64>,
         compare: &mut C,
         bias: Ordering,
-    ) -> Option<usize>
+    ) -> Result<Option<usize>, Error>
     where
-        C: FnMut(&K::Archived) -> Ordering,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
     {
-        unsafe {
-            let mut start = 0;
-            let mut end = self.n_children() * 2;
-            let mut result = None;
-            while start < end {
-                let mid = start.midpoint(end);
-                let row = self.get_row_bound(mid) + self.first_row;
-                let cmp = match range_compare(target_rows, row) {
-                    Equal => {
-                        // SAFETY: `mid` is below `2 * self.n_children()`,
-                        // and the file's key type is the caller's obligation.
-                        let cmp = compare(self.archived_bound(key_factory, mid));
-                        if cmp == Equal {
-                            return Some(mid / 2);
-                        }
-                        cmp
+        let mut start = 0;
+        let mut end = self.n_children() * 2;
+        let mut result = None;
+        while start < end {
+            let mid = start.midpoint(end);
+            let row = self.get_row_bound(mid) + self.first_row;
+            let cmp = match range_compare(target_rows, row) {
+                Equal => {
+                    let cmp = compare(self.seek_key(mid))?;
+                    if cmp == Equal {
+                        return Ok(Some(mid / 2));
                     }
-                    cmp => cmp,
-                };
-                if cmp == Less {
-                    end = mid
-                } else {
-                    start = mid + 1
-                };
-                if bias == cmp {
-                    result = Some(mid / 2);
+                    cmp
                 }
+                cmp => cmp,
+            };
+            if cmp == Less {
+                end = mid
+            } else {
+                start = mid + 1
+            };
+            if bias == cmp {
+                result = Some(mid / 2);
             }
-
-            result
         }
+
+        Ok(result)
     }
 
     /// Finds the child `child_index` that contains
@@ -1337,7 +1350,7 @@ where
     /// initial target).  Returns `Some((child_index, n_targets))`.
     ///
     /// `tmp_key` and `start` are temporary storage.
-    unsafe fn find_next<I>(
+    unsafe fn find_next<K: DataTrait + ?Sized, I>(
         &self,
         targets: &I,
         mut target_indexes: Range<usize>,
@@ -1347,6 +1360,7 @@ where
     where
         I: Index<usize, Output = K> + ?Sized,
     {
+        // SAFETY: The midpoint selects an existing child. Both bounds have the scratch key's type.
         unsafe {
             let start_index = target_indexes.next().unwrap();
             let mut end = self.n_children();
@@ -1377,27 +1391,9 @@ where
     fn last_bound_index(&self) -> usize {
         self.n_children() * 2 - 1
     }
-
-    /// Returns the comparison of the largest bound key using `compare`.
-    ///
-    /// # Safety
-    ///
-    /// Unsafe because `rkyv` deserialization is unsafe; see
-    /// [`Self::archived_bound`].
-    unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &mut C) -> Ordering
-    where
-        C: FnMut(&K::Archived) -> Ordering,
-    {
-        // SAFETY: the last bound's index is in range by construction, and
-        // the file's key type is the caller's obligation.
-        unsafe { compare(self.archived_bound(key_factory, self.last_bound_index())) }
-    }
 }
 
-impl<K> Debug for IndexBlock<K>
-where
-    K: DataTrait + ?Sized + Debug,
-{
+impl Debug for IndexBlock {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(
             f,
@@ -1466,13 +1462,11 @@ impl FileTrailer {
 #[derive(Debug, SizeOf)]
 struct Column {
     root: Option<TreeNode>,
-    #[size_of(skip)]
-    factories: AnyFactories,
     n_rows: u64,
 }
 
 impl Column {
-    fn new(factories: &AnyFactories, info: &FileTrailerColumn) -> Result<Self, Error> {
+    fn new(info: &FileTrailerColumn) -> Result<Self, Error> {
         let FileTrailerColumn {
             node_offset,
             node_size,
@@ -1497,11 +1491,7 @@ impl Column {
         } else {
             None
         };
-        Ok(Self {
-            root,
-            n_rows,
-            factories: factories.clone(),
-        })
+        Ok(Self { root, n_rows })
     }
 }
 
@@ -2001,16 +1991,19 @@ where
 /// Use [Reader::rows] to read data.
 #[derive(Debug)]
 pub struct Reader<T> {
+    layer: LayerFile,
+    factories: Vec<AnyFactories>,
+
+    /// `fn() -> T` is `Send` and `Sync` regardless of `T`.
+    _phantom: PhantomData<fn() -> T>,
+}
+
+#[derive(Debug)]
+struct LayerFile {
     file: ImmutableFileRef,
     columns: Vec<Column>,
     membership_filter_location: Option<BlockLocation>,
-
-    /// Additional metadata added to the file by the writer.
-    pub(crate) metadata: BatchMetadata,
-
-    /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
-    /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
-    _phantom: PhantomData<fn() -> T>,
+    metadata: BatchMetadata,
 }
 
 impl<T> SizeOf for Reader<T>
@@ -2018,8 +2011,15 @@ where
     T: ColumnSpec,
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
-        self.file.size_of_with_context(context);
-        self.columns.size_of_with_context(context);
+        self.layer.file.size_of_with_context(context);
+        self.layer.columns.size_of_with_context(context);
+        context
+            .add_vectorlike(
+                self.factories.len(),
+                self.factories.capacity(),
+                size_of::<AnyFactories>(),
+            )
+            .add_distinct_allocation();
     }
 }
 
@@ -2108,44 +2108,26 @@ pub fn read_metadata(
     Ok(read_trailer(cache, &*file, &stats)?.metadata.clone())
 }
 
-impl<T> Reader<T>
-where
-    T: ColumnSpec,
-{
-    /// Creates and returns a new `Reader` for `file`.
-    pub(crate) fn new(
-        factories: &[&AnyFactories],
+impl LayerFile {
+    fn open(
         cache: fn() -> Option<Arc<BufferCache>>,
         file: Arc<dyn FileReader>,
+        expected_columns: usize,
     ) -> Result<Self, Error> {
-        let (reader, _membership_filter) = Self::new_with_filter(factories, cache, file, None)?;
-        Ok(reader)
-    }
-
-    pub(crate) fn new_with_filter(
-        factories: &[&AnyFactories],
-        cache: fn() -> Option<Arc<BufferCache>>,
-        file: Arc<dyn FileReader>,
-        membership_filter: Option<BatchKeyFilter>,
-    ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
         let stats = AtomicCacheStats::default();
         let file_trailer = read_trailer(cache, &*file, &stats)?;
-
-        assert_eq!(factories.len(), file_trailer.columns.len());
-
         let columns: Vec<_> = file_trailer
             .columns
             .iter()
-            .zip(factories.iter())
-            .map(|(info, factories)| Column::new(factories, info))
+            .map(Column::new)
             .collect::<Result<_, _>>()?;
         if columns.is_empty() {
             return Err(CorruptionError::NoColumns.into());
         }
-        if columns.len() != T::n_columns() {
+        if columns.len() != expected_columns {
             return Err(Error::WrongNumberOfColumns {
                 actual: columns.len(),
-                expected: T::n_columns(),
+                expected: expected_columns,
             });
         }
         for i in 1..columns.len() {
@@ -2184,18 +2166,48 @@ where
             None
         };
 
+        Ok(Self {
+            file: ImmutableFileRef::new(
+                cache,
+                file,
+                file_trailer.compression,
+                stats,
+                file_trailer.version,
+            ),
+            columns,
+            membership_filter_location,
+            metadata: file_trailer.metadata.clone(),
+        })
+    }
+}
+
+impl<T> Reader<T>
+where
+    T: ColumnSpec,
+{
+    /// Creates and returns a new `Reader` for `file`.
+    pub(crate) fn new(
+        factories: &[&AnyFactories],
+        cache: fn() -> Option<Arc<BufferCache>>,
+        file: Arc<dyn FileReader>,
+    ) -> Result<Self, Error> {
+        let (reader, _membership_filter) = Self::new_with_filter(factories, cache, file, None)?;
+        Ok(reader)
+    }
+
+    pub(crate) fn new_with_filter(
+        factories: &[&AnyFactories],
+        cache: fn() -> Option<Arc<BufferCache>>,
+        file: Arc<dyn FileReader>,
+        membership_filter: Option<BatchKeyFilter>,
+    ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
+        assert_eq!(factories.len(), T::n_columns());
+        let layer = LayerFile::open(cache, file, T::n_columns())?;
+        let factories = factories.iter().map(|factory| (*factory).clone()).collect();
         Ok((
             Self {
-                file: ImmutableFileRef::new(
-                    cache,
-                    file,
-                    file_trailer.compression,
-                    stats,
-                    file_trailer.version,
-                ),
-                columns,
-                membership_filter_location,
-                metadata: file_trailer.metadata.clone(),
+                layer,
+                factories,
                 _phantom: PhantomData,
             },
             membership_filter,
@@ -2204,7 +2216,7 @@ where
 
     /// Marks the file of the reader as being part of a checkpoint.
     pub fn mark_for_checkpoint(&self) {
-        self.file.file_handle.mark_for_checkpoint();
+        self.layer.file.file_handle.mark_for_checkpoint();
     }
 
     /// Instantiates a reader given an existing path.
@@ -2231,39 +2243,39 @@ where
     /// may be visited in total by calling `next_column()` on each of the rows
     /// in the previous column.
     pub fn n_rows(&self, column: usize) -> u64 {
-        self.columns[column].n_rows
+        self.layer.columns[column].n_rows
     }
 
     /// Returns the storage path for the underlying object.
     pub fn path(&self) -> &StoragePath {
-        self.file.file_handle.path()
+        self.layer.file.file_handle.path()
     }
 
     /// Returns the size of the underlying file in bytes.
     pub fn byte_size(&self) -> Result<u64, Error> {
-        Ok(self.file.file_handle.get_size()?)
+        Ok(self.layer.file.file_handle.get_size()?)
     }
 
     /// Evict this file from the cache.
     #[cfg(test)]
     pub fn evict(&self) {
-        self.file.evict();
+        self.layer.file.evict();
     }
 
     /// Returns the cache statistics for this file.  The statistics are specific
     /// to this file's cache behavior for reads.
     pub fn cache_stats(&self) -> CacheStats {
-        self.file.stats.read()
+        self.layer.file.stats.read()
     }
 
     /// Returns the `FileReader` embedded in this `Reader`.
     pub fn file_handle(&self) -> &Arc<dyn FileReader> {
-        &self.file.file_handle
+        &self.layer.file.file_handle
     }
 
     /// Returns additional metadata added to the file by the writer.
     pub fn metadata(&self) -> &BatchMetadata {
-        &self.metadata
+        &self.layer.metadata
     }
 }
 
@@ -2280,8 +2292,9 @@ where
     pub fn membership_filter(&self) -> Result<Option<BatchKeyFilter>, Error> {
         let key_range = self.key_range()?;
         let first_key = key_range.as_ref().map(|(min, _)| min.as_ref().as_data());
-        self.membership_filter_location
-            .map(|location| read_filter_block(&*self.file.file_handle, location, first_key))
+        self.layer
+            .membership_filter_location
+            .map(|location| read_filter_block(&*self.layer.file.file_handle, location, first_key))
             .transpose()
             .map(Option::flatten)
     }
@@ -2302,17 +2315,17 @@ where
     /// The bounds are loaded from the root node when first requested and can
     /// then be cached by higher-level batch types.
     pub fn key_range(&self) -> Result<Option<(Box<K>, Box<K>)>, Error> {
-        let Some(root) = self.columns[0].root.as_ref() else {
+        let Some(root) = self.layer.columns[0].root.as_ref() else {
             return Ok(None);
         };
 
-        let factories = self.columns[0].factories.factories::<K, A>();
-        Ok(Some(root.key_range(&self.file, &factories)?))
+        let factories = self.factories[0].factories::<K, A>();
+        Ok(Some(root.key_range(&self.layer.file, &factories)?))
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
     pub fn rows(&self) -> RowGroup<'_, K, A, N, (&'static K, &'static A, N)> {
-        RowGroup::new(self, 0, 0..self.columns[0].n_rows)
+        RowGroup::new(self, 0, 0..self.layer.columns[0].n_rows)
     }
 
     /// Returns a [`BulkRows`] for column 0.
@@ -2492,7 +2505,7 @@ where
     fn new(reader: &'a Reader<T>, column: usize, rows: Range<u64>) -> Self {
         Self {
             reader,
-            factories: reader.columns[column].factories.factories(),
+            factories: reader.factories[column].factories(),
             column,
             rows,
             read_ahead: ReadAhead::OFF,
@@ -2517,11 +2530,26 @@ where
         self
     }
 
+    fn find_path(
+        &self,
+        compare: &mut impl FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
+        bias: Ordering,
+    ) -> Result<Option<Path>, Error> {
+        Path::best_match(
+            &self.reader.layer.file,
+            self.reader.layer.columns[self.column].root.as_ref(),
+            &self.rows,
+            compare,
+            bias,
+        )
+    }
+
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    unsafe fn cursor(&self, position: Position<K, A>) -> Cursor<'a, K, A, N, T> {
+    unsafe fn cursor(&self, position: Position) -> Cursor<'a, K, A, N, T> {
         let mut key = self.factories.key_factory.default_box();
+        // SAFETY: The position belongs to this column and its factory allocated the destination key.
         unsafe { position.key(&self.factories, &mut key) };
         Cursor {
             row_group: self.clone(),
@@ -2543,6 +2571,23 @@ where
     /// Returns the number of rows in the row group.
     pub fn len(&self) -> u64 {
         self.rows.end - self.rows.start
+    }
+
+    /// Find the first row whose key matches the comparator.
+    ///
+    /// The comparator follows [Cursor::advance_to_first_ge]'s ordering contract.
+    /// The result holds the row number, owned block and archived item offset.
+    #[cfg(feature = "native-abi")]
+    pub fn locate_first_with(
+        &self,
+        mut compare: impl FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
+    ) -> Result<Option<(u64, Arc<FBuf>, usize)>, Error> {
+        Ok(self.find_path(&mut compare, Less)?.map(|path| {
+            let item = path
+                .data
+                .seek_key((path.row - path.data.first_row) as usize);
+            (path.row, item.block.clone(), item.offset)
+        }))
     }
 
     /// Returns a cursor for just before the row group.
@@ -2740,7 +2785,7 @@ where
     A: DataTrait + ?Sized,
 {
     row_group: RowGroup<'a, K, A, N, T>,
-    position: Position<K, A>,
+    position: Position,
 
     /// When `position.has_value()`, this is the deserialized key at that row.
     /// Otherwise, it can have any value.
@@ -2890,7 +2935,41 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn archived_item(&self) -> Option<&dyn ArchivedItem<'_, K, A>> {
+        // SAFETY: The position uses this row group's factory for the archived item.
         unsafe { self.position.archived_item(&self.row_group.factories) }
+    }
+
+    /// Retain the backing block and archived item offset for storage experiments.
+    #[cfg(feature = "native-abi")]
+    pub fn archived_item_block(&self) -> Option<(Arc<FBuf>, usize)> {
+        let path = self.position.path()?;
+        let data = &path.data;
+        let index = (path.row - data.first_row) as usize;
+        Some((data.raw.clone(), data.value_map.get(&data.raw, index)))
+    }
+
+    /// Retain the index blocks and archived key offsets along the current path.
+    ///
+    /// Each entry bounds the child containing the current row. The key offsets
+    /// are relative to the retained block.
+    #[cfg(feature = "native-abi")]
+    pub fn archived_index_bound_blocks(&self) -> Result<Vec<ArchivedIndexBounds>, Error> {
+        let Some(path) = self.position.path() else {
+            return Ok(Vec::new());
+        };
+        path.indexes
+            .iter()
+            .map(|index| {
+                let child = index.find_row(path.row)?;
+                let key_offsets =
+                    [2 * child, 2 * child + 1].map(|bound| index.bounds.get(&index.raw, bound));
+                Ok(ArchivedIndexBounds {
+                    block: index.raw.clone(),
+                    rows: index.get_rows(child),
+                    key_offsets: key_offsets.map(|offset| offset as usize),
+                })
+            })
+            .collect()
     }
 
     /// Returns `true` if the cursor is on a row.
@@ -2977,13 +3056,11 @@ where
         unsafe { self.advance_to_first_ge(&mut |archived| archived.cmp_target(target).reverse()) }
     }
 
-    /// Moves the cursor forward past rows for which `compare` returns [`Less`],
-    /// where `compare` is a function such that if it returns [`Equal`] or
-    /// [`Greater`] for a given key, it returns [`Greater`] for all larger keys.
-    /// `compare` sees each key in its archived form.
+    /// Moves the cursor to the first key at least as large as the target.
     ///
-    /// This function does not move the cursor if `compare` returns [`Equal`] or
-    /// [`Greater`] for the current row or a previous row.
+    /// `compare` compares the target to each archived key. As keys increase,
+    /// its results must progress from [`Greater`] through [`Equal`] to [`Less`].
+    /// The cursor stays at its current row if that key already matches.
     ///
     /// # Error handling
     ///
@@ -2997,9 +3074,33 @@ where
     where
         C: FnMut(&K::Archived) -> Ordering,
     {
+        // SAFETY: The cursor owns the key for its position and the caller supplies matching archives.
         unsafe {
             self.position
                 .advance_to_first_ge(&self.row_group, compare, &mut *self.key)
+        }
+    }
+
+    /// Seek forward using the stored location of each probed key.
+    ///
+    /// The comparator receives the same keys as [Self::advance_to_first_ge].
+    /// The cursor uses its existing factories to deserialize the selected key.
+    ///
+    /// # Safety
+    ///
+    /// The cursor's factories must match the archive types in the file.
+    #[cfg(feature = "native-abi")]
+    pub unsafe fn advance_to_first_ge_with_locations(
+        &mut self,
+        mut compare: impl FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
+    ) -> Result<(), Error> {
+        // SAFETY: the caller guarantees the selected key can be deserialized.
+        unsafe {
+            self.position.advance_to_first_ge_with_locations(
+                &self.row_group,
+                &mut compare,
+                &mut *self.key,
+            )
         }
     }
 
@@ -3060,13 +3161,11 @@ where
         unsafe { self.rewind_to_last_le(&mut |archived| archived.cmp_target(target).reverse()) }
     }
 
-    /// Moves the cursor backward past rows for which `compare` returns
-    /// [`Greater`], where `compare` is a function such that if it returns
-    /// [`Equal`] or [`Less`] for a given key, it returns [`Less`] for all
-    /// lesser keys.  `compare` sees each key in its archived form.
+    /// Moves the cursor to the last key at most as large as the target.
     ///
-    /// This function does not move the cursor if `compare` returns [`Equal`] or
-    /// [`Less`] for the current row or a previous row.
+    /// `compare` compares the target to each archived key using the same
+    /// order as [Self::advance_to_first_ge]. The cursor stays at its current
+    /// row if that key already matches.
     ///
     /// # Safety
     ///
@@ -3106,34 +3205,45 @@ where
     }
 }
 
-/// A path from the root of a column to a data block.
-struct Path<K: DataTrait + ?Sized, A: DataTrait + ?Sized> {
-    row: u64,
-    indexes: Vec<Arc<IndexBlock<K>>>,
-    data: Arc<DataBlock<K, A>>,
+/// Owned bytes and offsets of the first and last keys for an index child.
+#[cfg(feature = "native-abi")]
+pub struct ArchivedIndexBounds {
+    /// Backing storage for both keys.
+    pub block: Arc<FBuf>,
+    /// Absolute rows covered by the index child.
+    pub rows: Range<u64>,
+    /// Offsets of the first and last key, in that order.
+    pub key_offsets: [usize; 2],
 }
 
-impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> PartialEq for Path<K, A> {
+/// A path from the root of a column to a data block.
+struct Path {
+    row: u64,
+    indexes: Vec<Arc<IndexBlock>>,
+    data: Arc<DataBlock>,
+}
+
+impl PartialEq for Path {
     fn eq(&self, other: &Self) -> bool {
         self.row == other.row
     }
 }
 
-impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> Eq for Path<K, A> {}
+impl Eq for Path {}
 
-impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> PartialOrd for Path<K, A> {
+impl PartialOrd for Path {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> Ord for Path<K, A> {
+impl Ord for Path {
     fn cmp(&self, other: &Self) -> Ordering {
         self.row.cmp(&other.row)
     }
 }
 
-impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> Clone for Path<K, A> {
+impl Clone for Path {
     fn clone(&self) -> Self {
         Self {
             row: self.row,
@@ -3158,18 +3268,13 @@ impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> Clone for Path<K, A> {
 ///
 /// # Arguments
 ///
-/// * `row_group` - the row group being walked, which sets the depth and takes the
-///   statistics.
+/// * `file` - the source and its read statistics.
+/// * `read_ahead` - the number of blocks to read ahead.
 /// * `index` - the index block whose children to read.
 /// * `child` - the child the cursor is entering; the blocks after it are the ones read.
-fn read_ahead<K, A, N, T>(row_group: &RowGroup<'_, K, A, N, T>, index: &IndexBlock<K>, child: usize)
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    let file = &row_group.reader.file;
+fn read_ahead(file: &ImmutableFileRef, read_ahead: ReadAhead, index: &IndexBlock, child: usize) {
     let cache = file.cache();
-    let last = (child + row_group.read_ahead.blocks).min(index.n_children().saturating_sub(1));
+    let last = (child + read_ahead.blocks).min(index.n_children().saturating_sub(1));
     for next in child + 1..=last {
         let Ok(node) = index.get_child(next) else {
             return;
@@ -3204,20 +3309,16 @@ where
                 let Ok(block) = decompress(compression, node.location, raw) else {
                     return;
                 };
-                let _ =
-                    DataBlock::<K, A>::from_raw_with_cache(block, &node, &cache, file_id, version);
+                let _ = DataBlock::from_raw_with_cache(block, &node, &cache, file_id, version);
             }),
         );
     }
 }
 
-fn push_index_block<K>(
-    indexes: &mut Vec<Arc<IndexBlock<K>>>,
-    index_block: Arc<IndexBlock<K>>,
-) -> Result<(), Error>
-where
-    K: DataTrait + ?Sized,
-{
+fn push_index_block(
+    indexes: &mut Vec<Arc<IndexBlock>>,
+    index_block: Arc<IndexBlock>,
+) -> Result<(), Error> {
     const MAX_DEPTH: usize = 64;
     if indexes.len() > MAX_DEPTH {
         // A depth of 64 (very deep) with a branching factor of 2 (very
@@ -3234,45 +3335,42 @@ where
     Ok(())
 }
 
-impl<K, A> Path<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    fn for_row<N, T>(row_group: &RowGroup<'_, K, A, N, T>, row: u64) -> Result<Self, Error>
+impl Path {
+    fn for_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        row: u64,
+    ) -> Result<Self, Error>
     where
         T: ColumnSpec,
     {
         Self::for_row_from_ancestor(
-            row_group,
+            &row_group.reader.layer.file,
+            row_group.read_ahead,
             Vec::new(),
-            row_group.reader.columns[row_group.column]
+            row_group.reader.layer.columns[row_group.column]
                 .root
                 .clone()
                 .unwrap(),
             row,
         )
     }
-    fn for_row_from_ancestor<N, T>(
-        row_group: &RowGroup<'_, K, A, N, T>,
-        mut indexes: Vec<Arc<IndexBlock<K>>>,
+    fn for_row_from_ancestor(
+        file: &ImmutableFileRef,
+        read_ahead_hint: ReadAhead,
+        mut indexes: Vec<Arc<IndexBlock>>,
         mut node: TreeNode,
         row: u64,
-    ) -> Result<Self, Error>
-    where
-        T: ColumnSpec,
-    {
+    ) -> Result<Self, Error> {
         loop {
-            let block = node.read(&row_group.reader.file)?;
+            let block = node.read(file)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => {
                     return Ok(Self { row, indexes, data });
                 }
                 TreeBlock::Index(index) => {
-                    if row_group.read_ahead.blocks > 0 && matches!(index.child_type, NodeType::Data)
-                    {
-                        read_ahead(row_group, &index, index.find_row(row)?);
+                    if read_ahead_hint.blocks > 0 && matches!(index.child_type, NodeType::Data) {
+                        read_ahead(file, read_ahead_hint, &index, index.find_row(row)?);
                     }
                     push_index_block(&mut indexes, index)?;
                 }
@@ -3280,7 +3378,7 @@ where
             node = next.unwrap();
         }
     }
-    fn for_row_from_hint<N, T>(
+    fn for_row_from_hint<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
         row_group: &RowGroup<'_, K, A, N, T>,
         hint: Option<&Self>,
         row: u64,
@@ -3291,25 +3389,35 @@ where
         let Some(hint) = hint else {
             return Self::for_row(row_group, row);
         };
-        if hint.data.rows().contains(&row) {
+        hint.for_row_near(&row_group.reader.layer.file, row_group.read_ahead, row)
+    }
+
+    fn for_row_near(
+        &self,
+        file: &ImmutableFileRef,
+        read_ahead_hint: ReadAhead,
+        row: u64,
+    ) -> Result<Self, Error> {
+        if self.data.rows().contains(&row) {
             return Ok(Self {
                 row,
-                ..hint.clone()
+                ..self.clone()
             });
         }
-        for (idx, index_block) in hint.indexes.iter().enumerate().rev() {
+        for (idx, index_block) in self.indexes.iter().enumerate().rev() {
             if index_block.rows().contains(&row) {
                 let child = index_block.find_row(row)?;
                 let node = index_block.get_child(child)?;
                 // The next data block of a walk is found right here, in the
                 // parent the hint already holds, so this is where a
                 // sequential cursor learns what it will want after it.
-                if row_group.read_ahead.blocks > 0 && matches!(node.node_type, NodeType::Data) {
-                    read_ahead(row_group, index_block, child);
+                if read_ahead_hint.blocks > 0 && matches!(node.node_type, NodeType::Data) {
+                    read_ahead(file, read_ahead_hint, index_block, child);
                 }
                 return Self::for_row_from_ancestor(
-                    row_group,
-                    hint.indexes[0..=idx].to_vec(),
+                    file,
+                    read_ahead_hint,
+                    self.indexes[0..=idx].to_vec(),
                     node,
                     row,
                 );
@@ -3317,16 +3425,35 @@ where
         }
         Err(CorruptionError::MissingRow(row).into())
     }
-    unsafe fn key(&self, factories: &Factories<K, A>, key: &mut K) {
+    unsafe fn key<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        key: &mut K,
+    ) {
+        // SAFETY: The path's data block contains its row. The caller supplies the matching key type.
         unsafe { self.data.key_for_row(factories, self.row, key) }
     }
-    unsafe fn aux(&self, factories: &Factories<K, A>, aux: &mut A) {
+    unsafe fn aux<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        aux: &mut A,
+    ) {
+        // SAFETY: The path's data block contains its row. The caller supplies the matching auxiliary type.
         unsafe { self.data.aux_for_row(factories, self.row, aux) }
     }
-    unsafe fn item(&self, factories: &Factories<K, A>, item: (&mut K, &mut A)) {
+    unsafe fn item<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        item: (&mut K, &mut A),
+    ) {
+        // SAFETY: The path's data block contains its row. The caller supplies the matching item types.
         unsafe { self.data.item_for_row(factories, self.row, item) }
     }
-    unsafe fn archived_item(&self, factories: &Factories<K, A>) -> &dyn ArchivedItem<'_, K, A> {
+    unsafe fn archived_item<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+    ) -> &dyn ArchivedItem<'_, K, A> {
+        // SAFETY: The path's data block contains its row. The caller supplies the matching item factory.
         unsafe { self.data.archived_item_for_row(factories, self.row) }
     }
 
@@ -3334,18 +3461,16 @@ where
         self.data.row_group_for_row(self.row)
     }
 
-    fn move_to_row<N, T>(
+    fn move_to_row(
         &mut self,
-        row_group: &RowGroup<'_, K, A, N, T>,
+        file: &ImmutableFileRef,
+        read_ahead: ReadAhead,
         row: u64,
-    ) -> Result<(), Error>
-    where
-        T: ColumnSpec,
-    {
+    ) -> Result<(), Error> {
         if self.data.rows().contains(&row) {
             self.row = row;
         } else {
-            *self = Self::for_row_from_hint(row_group, Some(self), row)?;
+            *self = self.for_row_near(file, read_ahead, row)?;
         }
         Ok(())
     }
@@ -3355,73 +3480,47 @@ where
     /// [Less], the return value is the first such child; if `bias` is
     /// [Greater], the return value is the last such child.
     ///
-    /// The caller supplies `key` as storage for a key.  Before this function
-    /// returns successfully, it sets `key` to the key for the row that it
-    /// found.  On error, `key` might be changed.
-    unsafe fn best_match<N, T, C>(
-        row_group: &RowGroup<'_, K, A, N, T>,
+    fn best_match<C>(
+        file: &ImmutableFileRef,
+        root: Option<&TreeNode>,
+        rows: &Range<u64>,
         compare: &mut C,
         bias: Ordering,
-        key: &mut K,
     ) -> Result<Option<Self>, Error>
     where
-        T: ColumnSpec,
-        C: FnMut(&K::Archived) -> Ordering,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
     {
-        unsafe {
-            let mut indexes = Vec::new();
-            let Some(mut node) = row_group.reader.columns[row_group.column].root.clone() else {
-                return Ok(None);
-            };
-            loop {
-                match node.read(&row_group.reader.file)? {
-                    TreeBlock::Index(index_block) => {
-                        let Some(child_idx) = index_block.find_best_match(
-                            row_group.factories.key_factory,
-                            &row_group.rows,
-                            compare,
-                            bias,
-                        ) else {
-                            return Ok(None);
-                        };
-                        node = index_block.get_child(child_idx)?;
-                        push_index_block(&mut indexes, index_block)?;
-                    }
-                    TreeBlock::Data(data_block) => {
-                        return Ok(data_block
-                            .find_best_match(
-                                &row_group.factories,
-                                &row_group.rows,
-                                compare,
-                                bias,
-                                key,
-                            )
-                            .map(|child_idx| Self {
-                                row: data_block.first_row + child_idx as u64,
-                                indexes,
-                                data: data_block,
-                            }));
-                    }
+        let mut indexes = Vec::new();
+        let Some(mut node) = root.cloned() else {
+            return Ok(None);
+        };
+        loop {
+            match node.read(file)? {
+                TreeBlock::Index(index_block) => {
+                    let Some(child_idx) = index_block.find_best_match(rows, compare, bias)? else {
+                        return Ok(None);
+                    };
+                    node = index_block.get_child(child_idx)?;
+                    push_index_block(&mut indexes, index_block)?;
+                }
+                TreeBlock::Data(data_block) => {
+                    return Ok(data_block
+                        .find_best_match(rows, compare, bias)?
+                        .map(|child_idx| Self {
+                            row: data_block.first_row + child_idx as u64,
+                            indexes,
+                            data: data_block,
+                        }));
                 }
             }
         }
     }
 
-    /// Moves this path, which must initially be in `row_group`, forward past
-    /// rows in `row_group` for which `compare` returns [`Less`], where
-    /// `compare` is a function such that if it returns [`Equal`] or [`Greater`]
-    /// for a given key, it returns [`Greater`] for all larger keys.
+    /// Advances an existing path to the first key at least as large as the
+    /// target. The comparator orders the target relative to each stored key.
     ///
-    /// Returns:
-    ///
-    /// - `Ok(true)` on success.
-    ///
-    /// - `Ok(false)` if `compare` returns `Less` for every row.
-    ///
-    /// - `Err(_)` if the file is corrupted or on an I/O error.
-    ///
-    /// This function does not change the path if `compare` returns [`Equal`] or
-    /// [`Greater`] for the current row or a previous row.
+    /// Returns `Ok(true)` if a key matches and `Ok(false)` at the end of
+    /// the row group. I/O, corruption and comparator errors propagate.
     ///
     /// `key` must initially be the key for the path's row.  If this returns
     /// `Ok(true)`, updates `key` to the path's new key.  If this returns
@@ -3434,7 +3533,7 @@ where
     /// and index blocks already in the path, instead of starting from the root
     /// node.  The same optimization would apply to backward seeks, but they
     /// haven't been important in practice yet.
-    unsafe fn advance_to_first_ge<N, T, C>(
+    unsafe fn advance_to_first_ge<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
         compare: &mut C,
@@ -3442,16 +3541,16 @@ where
     ) -> Result<bool, Error>
     where
         T: ColumnSpec,
-        C: FnMut(&K::Archived) -> Ordering,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
     {
+        // SAFETY: each search returns an index in its data block. The caller
+        // supplies the matching item factory and key for both key reads.
         unsafe {
             // Check the current position first. We might already be done.
-            // SAFETY: a path's data block holds its row, and the file's item
-            // types are the caller's obligation.
             let current = self
                 .data
-                .archived_item_for_row(&row_group.factories, self.row);
-            if compare(current.fst()) != Greater {
+                .seek_key((self.row - self.data.first_row) as usize);
+            if compare(current)? != Greater {
                 return Ok(true);
             }
 
@@ -3459,17 +3558,13 @@ where
             // or equal to the target, then the position must be in the current data
             // block.
             let last_row = min(self.data.rows().end, row_group.rows.end) - 1;
-            // SAFETY: `last_row` is in this data block, since the block
-            // holds `self.row`, which the row group's range contains.
             let last = self
                 .data
-                .archived_item_for_row(&row_group.factories, last_row);
+                .seek_key((last_row - self.data.first_row) as usize);
             let mut rows = self.row + 1..row_group.rows.end;
-            if compare(last.fst()) != Greater {
-                let child_idx = self
-                    .data
-                    .find_best_match(&row_group.factories, &rows, compare, Less, key)
-                    .unwrap();
+            if compare(last)? != Greater {
+                let child_idx = self.data.find_best_match(&rows, compare, Less)?.unwrap();
+                self.data.key(&row_group.factories, child_idx, key);
                 self.row = self.data.first_row + child_idx as u64;
                 return Ok(true);
             }
@@ -3480,19 +3575,14 @@ where
                 // `index_block` and the greatest value under `index_block` is less
                 // than the target.
                 if rows.end > index_block.rows().end
-                    && index_block.compare_max(row_group.factories.key_factory, compare) == Greater
+                    && compare(index_block.seek_key(index_block.last_bound_index()))? == Greater
                 {
                     rows.start = index_block.rows().end;
                     continue;
                 }
 
                 // Otherwise, our target (if any) must be below `index_block`.
-                let Some(child_idx) = index_block.find_best_match(
-                    row_group.factories.key_factory,
-                    &rows,
-                    compare,
-                    Less,
-                ) else {
+                let Some(child_idx) = index_block.find_best_match(&rows, compare, Less)? else {
                     // `rows.end` is inside `index_block` but the largest key is
                     // less than the target.
                     return Ok(false);
@@ -3501,29 +3591,23 @@ where
                 push_index_block(&mut self.indexes, index_block)?;
 
                 loop {
-                    match node.read::<K, A>(&row_group.reader.file)? {
+                    match node.read(&row_group.reader.layer.file)? {
                         TreeBlock::Index(index_block) => {
-                            let Some(child_idx) = index_block.find_best_match(
-                                row_group.factories.key_factory,
-                                &rows,
-                                compare,
-                                Less,
-                            ) else {
+                            let Some(child_idx) =
+                                index_block.find_best_match(&rows, compare, Less)?
+                            else {
                                 return Ok(false);
                             };
                             node = index_block.get_child(child_idx)?;
                             push_index_block(&mut self.indexes, index_block)?;
                         }
                         TreeBlock::Data(data_block) => {
-                            let Some(child_idx) = data_block.find_best_match(
-                                &row_group.factories,
-                                &rows,
-                                compare,
-                                Less,
-                                key,
-                            ) else {
+                            let Some(child_idx) =
+                                data_block.find_best_match(&rows, compare, Less)?
+                            else {
                                 return Ok(false);
                             };
+                            data_block.key(&row_group.factories, child_idx, key);
                             self.row = child_idx as u64 + data_block.first_row;
                             self.data = data_block;
                             return Ok(true);
@@ -3538,11 +3622,7 @@ where
     }
 }
 
-impl<K, A> Debug for Path<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+impl Debug for Path {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "Path {{ row: {}, indexes:", self.row)?;
         for index in &self.indexes {
@@ -3570,16 +3650,12 @@ where
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+enum Position {
     /// Before a row group.
     Before,
 
     /// Within a row group.
-    Row(Path<K, A>),
+    Row(Path),
 
     /// After a row group.
     ///
@@ -3593,14 +3669,10 @@ where
     ///
     /// We could add a hint to [Position::Before] but reverse iteration is
     /// uncommon so it probably wouldn't help with much.
-    After { hint: Option<Path<K, A>> },
+    After { hint: Option<Path> },
 }
 
-impl<K, A> Clone for Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
+impl Clone for Position {
     fn clone(&self) -> Self {
         match self {
             Position::Before => Position::Before,
@@ -3610,18 +3682,17 @@ where
     }
 }
 
-impl<K, A> Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    fn for_row<N, T>(row_group: &RowGroup<'_, K, A, N, T>, row: u64) -> Result<Self, Error>
+impl Position {
+    fn for_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
+        row_group: &RowGroup<'_, K, A, N, T>,
+        row: u64,
+    ) -> Result<Self, Error>
     where
         T: ColumnSpec,
     {
         Ok(Self::Row(Path::for_row(row_group, row)?))
     }
-    fn for_row_from_hint<N, T>(
+    fn for_row_from_hint<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
         row_group: &RowGroup<'_, K, A, N, T>,
         hint: &Self,
         row: u64,
@@ -3635,7 +3706,10 @@ where
             row,
         )?))
     }
-    fn next<N, T>(&mut self, row_group: &RowGroup<'_, K, A, N, T>) -> Result<(), Error>
+    fn next<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+    ) -> Result<(), Error>
     where
         T: ColumnSpec,
     {
@@ -3651,7 +3725,10 @@ where
             Ok(())
         }
     }
-    fn prev<N, T>(&mut self, row_group: &RowGroup<'_, K, A, N, T>) -> Result<(), Error>
+    fn prev<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+    ) -> Result<(), Error>
     where
         T: ColumnSpec,
     {
@@ -3659,7 +3736,11 @@ where
             Self::Before => (),
             Self::Row(path) => {
                 if path.row > row_group.rows.start {
-                    path.move_to_row(row_group, path.row - 1)?;
+                    path.move_to_row(
+                        &row_group.reader.layer.file,
+                        row_group.read_ahead,
+                        path.row - 1,
+                    )?;
                 } else {
                     *self = Self::Before;
                 }
@@ -3678,7 +3759,7 @@ where
         }
         Ok(())
     }
-    fn move_to_row<N, T>(
+    fn move_to_row<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
         row: u64,
@@ -3692,7 +3773,9 @@ where
                 Position::After { hint } => {
                     *self = Self::Row(Path::for_row_from_hint(row_group, hint.as_ref(), row)?)
                 }
-                Position::Row(path) => path.move_to_row(row_group, row)?,
+                Position::Row(path) => {
+                    path.move_to_row(&row_group.reader.layer.file, row_group.read_ahead, row)?
+                }
             }
         }
         Ok(())
@@ -3704,7 +3787,7 @@ where
     }
     /// Replaces `self` by an arbitrary value and returns its prevous [Path]
     /// (whether the current row or a hint).
-    fn take_hint(&mut self) -> Option<Path<K, A>> {
+    fn take_hint(&mut self) -> Option<Path> {
         match replace(self, Position::Before) {
             Position::Before => None,
             Position::Row(hint) => Some(hint),
@@ -3712,7 +3795,7 @@ where
         }
     }
     /// Returns the current row or a hint for one.
-    fn hint(&self) -> Option<&Path<K, A>> {
+    fn hint(&self) -> Option<&Path> {
         match self {
             Position::Before => None,
             Position::Row(path) => Some(path),
@@ -3720,7 +3803,7 @@ where
         }
     }
 
-    fn path(&self) -> Option<&Path<K, A>> {
+    fn path(&self) -> Option<&Path> {
         match self {
             Position::Before => None,
             Position::Row(path) => Some(path),
@@ -3730,7 +3813,12 @@ where
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    pub unsafe fn key<'k>(&self, factories: &Factories<K, A>, key: &'k mut K) -> Option<&'k mut K> {
+    pub unsafe fn key<'k, K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        key: &'k mut K,
+    ) -> Option<&'k mut K> {
+        // SAFETY: Only a row position has a path. The caller supplies its factory and key type.
         unsafe {
             self.path().map(|path| {
                 path.key(factories, key);
@@ -3741,7 +3829,12 @@ where
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    pub unsafe fn aux<'a>(&self, factories: &Factories<K, A>, aux: &'a mut A) -> Option<&'a mut A> {
+    pub unsafe fn aux<'a, K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
+        &self,
+        factories: &Factories<K, A>,
+        aux: &'a mut A,
+    ) -> Option<&'a mut A> {
+        // SAFETY: Only a row position has a path. The caller supplies its factory and auxiliary type.
         unsafe {
             self.path().map(|path| {
                 path.aux(factories, aux);
@@ -3752,7 +3845,7 @@ where
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    pub unsafe fn item<'a>(
+    pub unsafe fn item<'a, K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
         &self,
         factories: &Factories<K, A>,
         item: (&'a mut K, &'a mut A),
@@ -3767,7 +3860,7 @@ where
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    pub unsafe fn archived_item(
+    pub unsafe fn archived_item<K: DataTrait + ?Sized, A: DataTrait + ?Sized>(
         &self,
         factories: &Factories<K, A>,
     ) -> Option<&dyn ArchivedItem<'_, K, A>> {
@@ -3783,7 +3876,7 @@ where
     fn has_value(&self) -> bool {
         self.path().is_some()
     }
-    unsafe fn best_match<N, T, C>(
+    unsafe fn best_match<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T, C>(
         row_group: &RowGroup<'_, K, A, N, T>,
         compare: &mut C,
         bias: Ordering,
@@ -3791,11 +3884,16 @@ where
     ) -> Result<Self, Error>
     where
         T: ColumnSpec,
-        C: FnMut(&K::Archived) -> Ordering,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
     {
+        // SAFETY: the path selects a row in this group. The caller supplies
+        // the matching factory and destination key.
         unsafe {
-            match Path::best_match(row_group, compare, bias, key)? {
-                Some(path) => Ok(Position::Row(path)),
+            match row_group.find_path(compare, bias)? {
+                Some(path) => {
+                    path.key(&row_group.factories, key);
+                    Ok(Position::Row(path))
+                }
                 None => Ok(if bias == Less {
                     Position::After { hint: None }
                 } else {
@@ -3804,7 +3902,10 @@ where
             }
         }
     }
-    fn absolute_position<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
+    fn absolute_position<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
+        &self,
+        row_group: &RowGroup<K, A, N, T>,
+    ) -> u64
     where
         T: ColumnSpec,
     {
@@ -3814,7 +3915,10 @@ where
             Position::After { .. } => row_group.rows.end,
         }
     }
-    fn remaining_rows<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
+    fn remaining_rows<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T>(
+        &self,
+        row_group: &RowGroup<K, A, N, T>,
+    ) -> u64
     where
         T: ColumnSpec,
     {
@@ -3825,20 +3929,13 @@ where
         }
     }
 
-    /// Moves this position forward, past rows in `row_group` for which
-    /// `compare` returns [`Less`], where `compare` is a function such that if
-    /// it returns [`Equal`] or [`Greater`] for a given key, it returns
-    /// [`Greater`] for all larger keys.
+    /// Advances the position to the first key at least as large as the target.
+    /// The comparator orders the target relative to each archived key.
     ///
-    /// If this position is on a row, then `key` must be its key.  On successful
-    /// return, if the position is on a row, updates `key` to its key.
-    ///
-    /// This function does not change the position if `compare` returns
-    /// [`Equal`] or [`Greater`] for the current row or a previous row.
-    ///
-    /// Returns an error only if I/O fails or the file is corrupt.  If this an
-    /// error, then the position might be lost (and set to `Position::After`).
-    unsafe fn advance_to_first_ge<N, T, C>(
+    /// If this position is on a row, `key` must contain its key. On success
+    /// the selected row's key replaces it. A failed search from a row can move
+    /// the position past the end of the row group.
+    unsafe fn advance_to_first_ge<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
         compare: &mut C,
@@ -3848,10 +3945,37 @@ where
         T: ColumnSpec,
         C: FnMut(&K::Archived) -> Ordering,
     {
+        // SAFETY: the cursor's factories match the file's archive types.
+        unsafe {
+            self.advance_to_first_ge_with_locations(
+                row_group,
+                &mut |location| Ok(compare(location.archived(&row_group.factories))),
+                key,
+            )
+        }
+    }
+
+    unsafe fn advance_to_first_ge_with_locations<
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+        N,
+        T,
+        C,
+    >(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &mut C,
+        key: &mut K,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
+    {
+        // SAFETY: the caller supplies the factory and key for this row group.
         unsafe {
             match self {
                 Position::Before => {
-                    *self = Self::best_match::<N, T, _>(row_group, compare, Less, key)?;
+                    *self = Self::best_match(row_group, compare, Less, key)?;
                 }
                 Position::After { .. } => (),
                 Position::Row(path) => {
@@ -3875,20 +3999,14 @@ where
         }
     }
 
-    /// Moves this position backward, past rows in `row_group` for which
-    /// `compare` returns [`Greater`], where `compare` is a function such that
-    /// if it returns [`Equal`] or [`Less`] for a given key, it returns
-    /// [`Less`] for all lesser keys.
-    ///
-    /// On return, if the position is on a row, `key` is its key.
-    ///
-    /// This function does not change the position if `compare` returns
-    /// [`Equal`] or [`Less`] for the current row or a previous row.
+    /// Rewinds the position to the last key at most as large as the target.
+    /// The comparator orders the target relative to each archived key.
+    /// On success, if the position is on a row, `key` is its key.
     ///
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    unsafe fn rewind_to_last_le<N, T, C>(
+    unsafe fn rewind_to_last_le<K: DataTrait + ?Sized, A: DataTrait + ?Sized, N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
         compare: &mut C,
@@ -3898,9 +4016,36 @@ where
         T: ColumnSpec,
         C: FnMut(&K::Archived) -> Ordering,
     {
+        // SAFETY: the cursor's factories match the file's archive types.
+        unsafe {
+            self.rewind_to_last_le_with_locations(
+                row_group,
+                &mut |location| Ok(compare(location.archived(&row_group.factories))),
+                key,
+            )
+        }
+    }
+
+    unsafe fn rewind_to_last_le_with_locations<
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+        N,
+        T,
+        C,
+    >(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &mut C,
+        key: &mut K,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+        C: FnMut(ArchivedSeekKey<'_>) -> Result<Ordering, Error>,
+    {
         // Backward seeks have no equivalent of the forward search from the
         // current path, so this starts from the root every time.
-        let position = unsafe { Self::best_match::<N, T, _>(row_group, compare, Greater, key) }?;
+        // SAFETY: the caller supplies the factory and key for this row group.
+        let position = unsafe { Self::best_match(row_group, compare, Greater, key) }?;
         if position < *self {
             *self = position;
         }

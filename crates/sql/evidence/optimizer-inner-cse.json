@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-inner-cse-archive.json",
+  "scope": "Original InnerCSE placement for the frozen suite. Split shared variable paths in Gen-2 indexed-row reconstruction.",
+  "strict_graphs_equal": {"classic": 50, "gen2": 50},
+  "active_reconstructions": {"classic": 0, "gen2": 2},
+  "composed_placements": 55,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "generated_program_runtime_executed": false
+}

@@ -1,0 +1,113 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "scope": "Java/Python compiler root catalog extension, platform SDK formatting replay, and unresolved Java runtime contract source inventory",
+  "counts": {
+    "shared_assertions": 1333,
+    "direct_assertions": 382,
+    "covered_assertions": 1933,
+    "shared_body_roots": 228,
+    "additional_direct_body_roots": 12,
+    "covered_required_body_roots": 252,
+    "direct_fragment_templates": 26,
+    "direct_fragment_assertions": 116,
+    "direct_body_assertions": 176,
+    "direct_contracts": {
+      "formatter_fragment_requirement": 116,
+      "rendered_text_requires_attribution": 127,
+      "non_body_contract": 36,
+      "message_body_requirement": 49,
+      "snapshot_stability": 19,
+      "absence_contract": 35
+    },
+    "roots_by_kind": {
+      "calcite_resource": 43,
+      "reviewed_formatter": 22,
+      "source_expression": 187
+    },
+    "shared_dependency_nodes": 174,
+    "java_required_body_roots": 240,
+    "java_covered_assertions": 1715,
+    "python_expectations": 281,
+    "python_dispositions": {
+      "message_body_candidates": 212,
+      "non_body_fields_only": 5,
+      "runtime_contract_accounted_separately": 61,
+      "not_registered": 3
+    },
+    "additional_python_compiler_body_roots": 12,
+    "covered_required_compiler_body_roots": 252,
+    "compiler_roots_by_kind": {
+      "calcite_resource": 43,
+      "reviewed_formatter": 22,
+      "source_expression": 187
+    },
+    "platform_contracts": 1
+  },
+  "required_compiler_body_roots": 252,
+  "whole_suite_required_template_count": null,
+  "review_status": "Independent agent source review; no human maintainer acceptance",
+  "python_runtime_certificate": "python-runtime-error-attribution.json",
+  "platform": {
+    "exact_sdk_contract_matches": true,
+    "additional_body_roots": 0,
+    "full_platform_execution": false
+  },
+  "java_runtime": {
+    "runtime_contract_cases": 232,
+    "runtime_contract_tests": 71,
+    "distinct_expectation_strings": 95,
+    "runtime_verified_cases": 0,
+    "source_anchored_contracts": 232,
+    "unresolved_template_contracts": 232,
+    "new_runtime_execution_gate": false
+  },
+  "threshold": {
+    "trigger": 150,
+    "exceeded": true,
+    "estimate_proposal": "../MESSAGE-PARITY-ESTIMATE.md",
+    "baseline_replaced": false
+  },
+  "validation": {
+    "focused_tests": 11,
+    "staged_replays": 3,
+    "substantive_json_exact": true
+  },
+  "archive": ".p0-artifacts/p0-diagnostic-scope-extension-20261118-v1.tar.gz",
+  "sha256": "e6725894058c18f5c728a917f3ff187995e7e2528e79f2db68b3cdcab19ee422",
+  "bytes": 2030854,
+  "verified_files": 433,
+  "archive_root": "p0-diagnostic-scope-extension-20261118-v1",
+  "sources": {
+    "crates/sql/DIAGNOSTIC-REVIEW.md": "731ebfaeb6e352ce65c220109662ceb590bebd3aa3fbbc628e16542ea272810a",
+    "crates/sql/MESSAGE-PARITY-ESTIMATE.md": "4293ef47072419d2dae3d04abe06a87bb7366daafc8a979be130b97a534742cf",
+    "crates/sql/diagnostic-python-compiler-review.json": "f8abc12f16c1318382e0cf7491c454253fe085f5b86c257875af83eb6b34e2c9",
+    "crates/sql/evidence/diagnostic-reviewed-catalog.json": "d211f0e3f005a2922f565b3ee6345acfc8de878b4e33e00c4bff00492fa7d581",
+    "crates/sql/evidence/diagnostic-direct-capture-archive.json": "66565139980f05c2ed2911f1860713445bb4cc7e3272ec7fc2ba9ed0cf5e64d8",
+    "crates/sql/evidence/python-diagnostics.json": "ef8bb49ebca5dbc6a02951baf55aa3b86d81369c5322e317503b36b4f3a940f8",
+    "crates/sql/evidence/python-runtime-diagnostics.json": "67f09518c85ca7a15a25113ecfb72733bcc1c90e964d34111a5196eff08159dc",
+    "crates/sql/evidence/python-runtime-error-attribution.json": "3e184576a7fdd34452c91ad635db643536a4f438ec55df08446f60fe319fe8ed",
+    "python/tests/platform/negative_test.py": "24e9c5a6cb805b09c2556c20652ef62a2bb445707ed26caf707f512b5294c37c",
+    "python/feldera/rest/pipeline.py": "bc98abdc8477e6536aeadcb3d453f156d5f6052ad6c973a203c26aa8507bbc98",
+    "python/feldera/rest/feldera_client.py": "9a0ad0a9e4d5871abb3547c710ed87a999355b14602a4bd020c2d07290428052",
+    "python/feldera/enums.py": "e0a44d8fdbd2eb635828912a56a13d1228e1ce7b08495cd62831c05c9cb44de0",
+    "python/feldera/_long_operation_warning.py": "051f6fbef4b1a4f0ed5180a5c3570b53b2b2569a249d86adf8713cb1cf11a55a",
+    "crates/sql/scripts/platform_diagnostic_contract.py": "9e5cc4f19264df1bcc6caf80bffd07dd94da50f56d4063a8af707d03c7a35f5a",
+    "crates/sql/scripts/test_java_runtime_contract_inventory.py": "a9e9e625dbbba2aa25e79c0c94a2b6cf4cfd53fbad33699365a74bc2bfa8f757",
+    "crates/sql/scripts/diagnostic_python_catalog.py": "d0b693d3fc2a1054690909ebe7e725438ec2d3b3029f3da533f7fe2bc8d4be1d",
+    "crates/sql/scripts/java_runtime_contract_inventory.py": "b0e50cd564d48c336be4f8d7bd71120bec6a57e4d670cba841370475915c56bd",
+    "crates/sql/scripts/diagnostic_direct_assertions.py": "bd97fdbfaa0367ce346488e70969dfcce25675dc4ac58232c2de19bb57f8ef5b",
+    "crates/sql/scripts/diagnostic_catalog.py": "b8b47206cba5bdc2bb14b086f492fc6f604487a51104fbc72f19d74a0165a9d2",
+    "crates/sql/scripts/diagnostic_templates.py": "d92e4ac5b690c444de60a32081b97b09ac2954484dd4533b544a0b88b3a17b6e",
+    "crates/sql/scripts/python_diagnostics.py": "008a77235e51c14eb3e3072b1b68ada3d592f4f4d9b5c55ddd45f2410b27e854",
+    "crates/sql/scripts/diagnostic_formatter_review.py": "bcf476e6da1bf5339b6c2aaeebdf7783dc1a5f3e4cb0b48c7f0dd5ce21717b31",
+    "crates/sql/scripts/diagnostic_cross_fields.py": "62e8979cbfd367edd9cef58cbd01d8bd2e38c8ef5a7b432b2e81032bad7f04cd",
+    "crates/sql/scripts/test_diagnostic_python_catalog.py": "151fd3a90e98f86bb7d2fb7a8079eefcf57358524108cbdf772d4048409223e1",
+    "crates/sql/scripts/diagnostic_expectation_attribution.py": "7f5b4c86aab953e34dca849e0088bd25f366d3a1a167decc7443dc5dc10086b2",
+    "crates/sql/scripts/diagnostic_census.py": "ac284f5c24b9d8a537fe9e8b85d4d0b970545c767cf002f76d00e7d5f76d4775",
+    "crates/sql/scripts/test_platform_diagnostic_contract.py": "68f13431682a30a4f71a280f166b3c6c09aa9a3a2db53e33a9c1ea4c706a37da",
+    "crates/sql/scripts/diagnostic_direct_catalog.py": "3ec742ec7cf5b18404fb80bc4d5f7e24d34f67d02b4d65a571244f9b1b6bf110"
+  },
+  "human_maintainer_accepted": false,
+  "P0_complete": false
+}

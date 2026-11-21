@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-persistent-sum-latency-archive.json",
+  "scope": "Optimized nullable SUM adapter, DBSP persistent mode, four workers, Linux ARM64, paired classic and native execution.",
+  "binary_sha256": "da17f4d543b6050422c9c3cc65e11c14f935aa92c20abf6aaedeec240b3e14c7",
+  "pairs_per_storage_per_batch_size": 21,
+  "cpus": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "native_to_classic_ratios": {
+    "overlay": {
+      "256": {
+        "throughput_p50": 1.00601,
+        "transaction_latency_p95": 0.99473,
+        "peak_rss_p50": 1.02552,
+        "checkpoint_bytes_p50": 1.0
+      },
+      "2048": {
+        "throughput_p50": 1.00206,
+        "transaction_latency_p95": 0.99734,
+        "peak_rss_p50": 1.0203,
+        "checkpoint_bytes_p50": 1.0
+      }
+    },
+    "host-bind": {
+      "256": {
+        "throughput_p50": 0.99115,
+        "transaction_latency_p95": 1.01067,
+        "peak_rss_p50": 1.02511,
+        "checkpoint_bytes_p50": 1.0
+      },
+      "2048": {
+        "throughput_p50": 1.00217,
+        "transaction_latency_p95": 0.99225,
+        "peak_rss_p50": 1.02114,
+        "checkpoint_bytes_p50": 1.0
+      }
+    }
+  },
+  "signed_outputs_match": true,
+  "all_four_workload_configurations_within_runtime_limits": true,
+  "artifact_build_gate_measured": false
+}

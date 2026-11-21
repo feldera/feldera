@@ -1,0 +1,21 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-python-diagnostics-20261118-v1.tar.gz",
+  "sha256": "4b2864e72a609c1f0f358cc62ccfc5ba9149d74061d54584e98527479391d2e3",
+  "bytes": 30895003,
+  "certificates": [
+    "python-diagnostics.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "python-diagnostics.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-python-diagnostics-v2/sources/"
+      }
+    ]
+  },
+  "scope": "Compiler-only evaluation of registered Python negative-test SQL with imported literal table fixtures",
+  "P0_complete": false
+}

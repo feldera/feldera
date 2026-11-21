@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-table-filter-archive.json",
+  "scope": "Plain table predicates: BOOLEAN literals, nullable BOOLEAN columns and IS TRUE, signed INTEGER greater than a nonnegative INTEGER literal.",
+  "held_out_case_ids": [
+    "6210",
+    "7236",
+    "7344"
+  ],
+  "distinct_held_out_sql_programs": 1,
+  "typed_and_artifact_comparisons": {
+    "classic": {
+      "cases": 12,
+      "observations": 4602
+    },
+    "gen2": {
+      "cases": 12,
+      "observations": 4626
+    }
+  },
+  "regression_controls": {
+    "table_programs": 62,
+    "constant_programs": 32,
+    "generated_probes": 59264,
+    "scoped_probes": 9886,
+    "clippy": "passed"
+  },
+  "repaired_differences": [
+    "IS TRUE must include both suffix tokens in the operator source span.",
+    "Generated scalar and scoped probes retain the unfiltered SELECT refusal precedence."
+  ],
+  "generated_program_runtime_executed": false
+}

@@ -1,0 +1,408 @@
+{
+  "schema_version": 1,
+  "scope": "Composite wiring and state dependencies; not a field-level proof for every visitor",
+  "audit": "crates/sql/S4-STATE.md",
+  "audit_sha256": "2c8366e399cbca0e096ea4f57facb22d5ea9145628a394df629828a193825a8f",
+  "composite_declarations": 28,
+  "source_files": 33,
+  "independent_review": false,
+  "runtime_executed": false,
+  "sources": [
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CSE.java",
+      "sha256": "21b182c3ef6af8f94ebd7958c2e214b4949a3c49efef946ae77594e645888dfb",
+      "composite_declarations": [
+        {
+          "class": "CSE",
+          "base": "Repeat",
+          "line": 26
+        },
+        {
+          "class": "OneCSEPass",
+          "base": "Passes",
+          "line": 35
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CircuitCloneVisitor.java",
+      "sha256": "0c301f269ac7e437ebd928dbcb31db47e697b198f60da2676eeef8e55c943a7e",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CircuitOptimizer.java",
+      "sha256": "af0a84c9e49b13dcc28e781794425acea8b5a04bdff004ee27c38de0480a6606",
+      "composite_declarations": [
+        {
+          "class": "CircuitOptimizer",
+          "base": "Passes",
+          "line": 62
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CircuitVisitor.java",
+      "sha256": "f2a2ac1c83a8286fe76e901eee87d5ba43785625f12a6566d1a87ee740b7c06c",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Conditional.java",
+      "sha256": "22d92ad855c62b88e9b11693b5442fbe10edbca6cc155dab0893aef387ecefe9",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/CreateStarJoins.java",
+      "sha256": "ca111cec27393b50241c3fa93bb92732994073dcffe4986de4e979c4f828f598",
+      "composite_declarations": [
+        {
+          "class": "CreateStarJoins",
+          "base": "Passes",
+          "line": 43
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/DeadCode.java",
+      "sha256": "b73f61348b10b899244d88b9a0c90b7c717e9720c3c2aaa295eb6bbf596ace1b",
+      "composite_declarations": [
+        {
+          "class": "DeadCode",
+          "base": "Passes",
+          "line": 6
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ExpandAggregateZero.java",
+      "sha256": "8e9deadddb4a59cb2673d247eab306d68d55970df35a04c097f3969446d2908b",
+      "composite_declarations": [
+        {
+          "class": "ExpandAggregateZero",
+          "base": "Passes",
+          "line": 31
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ExpandAggregates.java",
+      "sha256": "07562a737fb098d03265647216affebe542b82eea43ad67b31972e00cebcadb6",
+      "composite_declarations": [
+        {
+          "class": "ExpandAggregates",
+          "base": "Passes",
+          "line": 48
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/ExpandIndexedInputs.java",
+      "sha256": "88d647b861b2d9af7668cfba640491802205a94537f75590e891f4d199dae979",
+      "composite_declarations": [
+        {
+          "class": "ExpandIndexedInputs",
+          "base": "Passes",
+          "line": 37
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FindUnboundedState.java",
+      "sha256": "831ac8f642ac6b2d2b23b3e4e2b95890034e1182309dd69558612a4ea18607e4",
+      "composite_declarations": [
+        {
+          "class": "FindUnboundedState",
+          "base": "Passes",
+          "line": 89
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FuseExpensiveMaps.java",
+      "sha256": "c60ef28d868b961a1e865384fed7cabf4c263d82728deea1744ea4ffbca3ae5c",
+      "composite_declarations": [
+        {
+          "class": "FuseExpensiveMaps",
+          "base": "Passes",
+          "line": 41
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/FuseIntoArrayAgg.java",
+      "sha256": "4267e0f22e5086b5219e53d2b50b1072ce74e820f4231193ca5b28473de9fa6c",
+      "composite_declarations": [
+        {
+          "class": "FuseIntoArrayAgg",
+          "base": "Repeat",
+          "line": 96
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Gen2Passes.java",
+      "sha256": "9d2de8aa3de3007aae5d87a7fa1552d018c23b8d6f4675fcdc974075340716d3",
+      "composite_declarations": [
+        {
+          "class": "Gen2Passes",
+          "base": "Passes",
+          "line": 9
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LinearPostprocessRetainKeys.java",
+      "sha256": "4f9dbd60016d61495e0409574b42be9637221b7227e8127f03d1547e2428a3d4",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/LowerAsof.java",
+      "sha256": "82a67b3cc1fb785bd0b4ee59b7a7a26c543d0102697dd248379af2317b434490",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/OptimizeWithGraph.java",
+      "sha256": "bd43c206216f630cf358af224caaa04254419d97b8b6e6f411beb373e021c833",
+      "composite_declarations": [
+        {
+          "class": "OptimizeWithGraph",
+          "base": "Repeat",
+          "line": 9
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Passes.java",
+      "sha256": "6fac7d9e680155d15d623a5afabea243c9400490481522fe4e5c1e40cf63f245",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveIdentityOperators.java",
+      "sha256": "1e67270121699136c2be2dd7e08c5e349d30418aa8433595ecf71aa9238c0418",
+      "composite_declarations": [
+        {
+          "class": "RemoveIdentityOperators",
+          "base": "Passes",
+          "line": 41
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveStarJoins.java",
+      "sha256": "5c5ff727a10a2399ac21572d6035d80307dac1dfe0abca094463ba756a73dc30",
+      "composite_declarations": [
+        {
+          "class": "RemoveStarJoins",
+          "base": "Repeat",
+          "line": 38
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/RemoveUselessLeftJoins.java",
+      "sha256": "4a9ae0c6caf93bfc2e8d6b67340f8b104daa3066c0502184a6015c4c96d0311e",
+      "composite_declarations": [
+        {
+          "class": "RemoveUselessLeftJoins",
+          "base": "Passes",
+          "line": 7
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/Repeat.java",
+      "sha256": "6b782f2b4b68c68d1b2a5582c313db939e2737f12b42dd9a4a721c989fcf45b5",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/TagRegions.java",
+      "sha256": "ab47384eaa1abd6b28cceb2d98b0ad88b6cf8fffab9070536351d3d332fcc977",
+      "composite_declarations": [
+        {
+          "class": "TagRegions",
+          "base": "Passes",
+          "line": 24
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/expandCasts/ExpandCasts.java",
+      "sha256": "37aa162e45629d68f1c0682bf30bea55daeb57de14c8f8d5a17044c107aa7fd1",
+      "composite_declarations": [
+        {
+          "class": "ExpandCasts",
+          "base": "Passes",
+          "line": 11
+        },
+        {
+          "class": "RepeatExpandUnsafeCasts",
+          "base": "Repeat",
+          "line": 25
+        },
+        {
+          "class": "RepeatExpandSafeCasts",
+          "base": "Repeat",
+          "line": 31
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/indexSharing/ShareIndexes.java",
+      "sha256": "887aeb99ea3795d991f94f4ae9de0cceca467fbedc83378b5cc1425a138daa3e",
+      "composite_declarations": [
+        {
+          "class": "ShareIndexes",
+          "base": "Passes",
+          "line": 30
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/keys/LeftJoinChains.java",
+      "sha256": "d3e630ba01f9fd5406d3021f0a0d87618fc9a18ca7fd59480d7787f8f849c2b3",
+      "composite_declarations": [
+        {
+          "class": "LeftJoinChains",
+          "base": "Passes",
+          "line": 11
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/merkle/MerkleHashes.java",
+      "sha256": "4ba1edfbfbe31c1b447b784a71056e38ee5abb7e36932d2e13e6464666d69171",
+      "composite_declarations": [
+        {
+          "class": "MerkleHashes",
+          "base": "Passes",
+          "line": 15
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/MergeGC.java",
+      "sha256": "8e61eba64d8fc46aa70ef6ac1dd5071450f6fbd6b1d296c55680d35e249a8780",
+      "composite_declarations": [
+        {
+          "class": "MergeGC",
+          "base": "Passes",
+          "line": 64
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/monotonicity/MonotoneAnalyzer.java",
+      "sha256": "6db1ce209e95727e64c5b2ff59b511959b19776a78dd645c6077cf9a453066fe",
+      "composite_declarations": [],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/recursive/RecursiveComponents.java",
+      "sha256": "2c579adceba0a5aaab520f17697c46d8c18215272630e5fde9f01104f6a45165",
+      "composite_declarations": [
+        {
+          "class": "RecursiveComponents",
+          "base": "Passes",
+          "line": 14
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ImplementNow.java",
+      "sha256": "96c8276fc63b60f354cad2ad305d8e294971ef4ed1345b8dc67301fa86d921b6",
+      "composite_declarations": [
+        {
+          "class": "ImplementNow",
+          "base": "Passes",
+          "line": 16
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters.java",
+      "sha256": "65e75df674f4e9d20509381d71cc7eab2cbee1306e000924088d33398e3933c5",
+      "composite_declarations": [
+        {
+          "class": "ReorderTemporalFilters",
+          "base": "Passes",
+          "line": 51
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/visitors/outer/windowSharing/ShareWindowIntegrals.java",
+      "sha256": "9ea4dd1d698155502dc13458d748858eaa0b22e2e65b07d35453fb7ce1f13b9d",
+      "composite_declarations": [
+        {
+          "class": "ShareWindowIntegrals",
+          "base": "Passes",
+          "line": 12
+        }
+      ],
+      "strategy": "complete S2 prefix in one compiler context",
+      "isolated_checkpoint_certified": false
+    }
+  ]
+}

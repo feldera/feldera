@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-44-warm-benchmark-20261118-v1.tar.gz",
+  "bytes": 16590854,
+  "sha256": "c5d417d85cb9434d3103afcadc2598cb5cd75fc42b7ceb73c40bd9ad156b9bed",
+  "manifest_sha256": "835a827bf16fe09b05aa3d223ee3ce34c3f8f633a5c6922cf6cd3303128cf26a",
+  "verified_files": 12243,
+  "all_members_verified": true
+}

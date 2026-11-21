@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "94 fixed scalar fixture payloads exported by Java, rewritten by Rust and imported by Java with supplied fixture SQL types",
+  "raw_directory": "$SCRATCH/p0-s1-literal-roundtrip-v2",
+  "cases": 94,
+  "payload_kinds": {
+    "boolean": 2,
+    "integer": 18,
+    "null": 21,
+    "decimal": 4,
+    "float32": 9,
+    "float64": 18,
+    "character": 2,
+    "binary": 1,
+    "date": 2,
+    "time": 2,
+    "timestamp": 2,
+    "interval": 13
+  },
+  "exact_payloads_equal": true,
+  "exact_RexLiteral_values_and_types_equal": true,
+  "SQL_types_imported": false,
+  "runtime_executed": false,
+  "classpath": {
+    "$SCRATCH/p0-s1-literal-roundtrip-v2/tools/test-classes": "ddd20d8c7350740e9647802d8b29bb31bce579642406719a1f68a2312276988a",
+    "$SCRATCH/p0-s1-literal-roundtrip-v2/tools/classes": "b98e244e0f7dfc0ccb3c972120ff58e483c91502bfba7ad1ca201a12a4ad60a9",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "rust_binary": {
+    "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/literal_roundtrip",
+    "sha256": "8e3406d3f93b4a0f64749275f86412d6b5b2f9629a70618d18ca532eccad6191"
+  },
+  "commands": {
+    "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/commands.json",
+    "sha256": "1208705ff514d7f157ad332e0e98d40e44f4e5e68c33872425e021f4d84e2e2b"
+  },
+  "artifacts": [
+    {
+      "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/export/complete.json",
+      "sha256": "0101841f0388e220b209ecae17285e42e95e5e9e639b24e5a1222477600068a5"
+    },
+    {
+      "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/export/cases.jsonl",
+      "sha256": "12220b15b053f64b7634ab98d961d573bf425f70795ab61bf77d0d2a6fce3b1c"
+    },
+    {
+      "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/rust/complete.json",
+      "sha256": "e7329376d65db0d8b85ce085bb55873773b9dccb47fc7ff631b574a5e3c34384"
+    },
+    {
+      "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/rust/cases.jsonl",
+      "sha256": "12220b15b053f64b7634ab98d961d573bf425f70795ab61bf77d0d2a6fce3b1c"
+    },
+    {
+      "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/java-import/complete.json",
+      "sha256": "b4fe549a0285a5e47c19fd8c2dce755fbbb0e3d18d4444987466484f427b5ddd"
+    }
+  ],
+  "negative_checks": [
+    {
+      "mutation": "missing_case",
+      "rejected_by": "java",
+      "returncode": 1,
+      "last_command": [
+        "java",
+        "-ea",
+        "-cp",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/tools/test-classes:$SCRATCH/p0-s1-literal-roundtrip-v2/tools/classes:$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+        "org.dbsp.sqlCompiler.compiler.sql.tools.S1LiteralProbe",
+        "verify",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/rust-missing_case/cases.jsonl",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/java-missing_case"
+      ]
+    },
+    {
+      "mutation": "duplicate_id",
+      "rejected_by": "rust",
+      "returncode": 1,
+      "last_command": [
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/literal_roundtrip",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/duplicate_id.jsonl",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/rust-duplicate_id"
+      ]
+    },
+    {
+      "mutation": "unknown_field",
+      "rejected_by": "rust",
+      "returncode": 1,
+      "last_command": [
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/literal_roundtrip",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/unknown_field.jsonl",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/rust-unknown_field"
+      ]
+    },
+    {
+      "mutation": "invalid_coefficient",
+      "rejected_by": "rust",
+      "returncode": 1,
+      "last_command": [
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/literal_roundtrip",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/invalid_coefficient.jsonl",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/rust-invalid_coefficient"
+      ]
+    },
+    {
+      "mutation": "nan_payload_change",
+      "rejected_by": "java",
+      "returncode": 1,
+      "last_command": [
+        "java",
+        "-ea",
+        "-cp",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/tools/test-classes:$SCRATCH/p0-s1-literal-roundtrip-v2/tools/classes:$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+        "org.dbsp.sqlCompiler.compiler.sql.tools.S1LiteralProbe",
+        "verify",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/rust-nan_payload_change/cases.jsonl",
+        "$SCRATCH/p0-s1-literal-roundtrip-v2/java-nan_payload_change"
+      ]
+    }
+  ],
+  "negative_record": {
+    "path": "$SCRATCH/p0-s1-literal-roundtrip-v2/negative-results.json",
+    "sha256": "2996fdc149ac83bf635aac587ca34c7e7181049b4d0b876b49d5619eca76396d"
+  },
+  "java_tests": 3,
+  "java_log": {
+    "path": "$SCRATCH/p0-s1-literal-java-v5/maven.log",
+    "sha256": "8808a69b6f9418ec69d29bb596eb8049ee1ad3b16a9880ad37948a1b45cba51d"
+  },
+  "rust_tests": 16,
+  "rust_log": {
+    "path": "$SCRATCH/p0-s1-literal-roundtrip-v1/command-0.log",
+    "sha256": "7bd26f05fa39b983b1eee816be7d70e89f091a4f159a8c31d34a248784c41322"
+  },
+  "clippy_log": {
+    "path": "$SCRATCH/p0-s1-literal-roundtrip-v1/command-1.log",
+    "sha256": "f19569f1e3a543d39a5d8a5d01b7d6dac04f2375d89ebbc1c45b2b271194d193"
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1LiteralPayload.java": "2478340403b7230001ea0b8eb6c679eba90b85bac13e6aa4f3308e736815f45e",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1LiteralPayloadTests.java": "9ec638d7e29bc3cb3b46feb53bce9e2922cc99c3f26850e5b52b402cf2b4b35f",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S1LiteralProbe.java": "271ea84b87363856a6048013a16fdecf9a7fba59c287678cd405b13d28340a54",
+    "crates/sql/sql-rel-model/src/literals.rs": "1ebae7cdbabb6e2eb2714d0aaa85405d4ae652c0fa5c5f208a021f999b66205e",
+    "crates/sql/sql-rel-model/src/literal_validation.rs": "23568f928763527eefb10cc19ca36543dc43269cf44beae9a5b8f4f3d26d8534",
+    "crates/sql/sql-rel-model/examples/literal_roundtrip.rs": "7392736be5d7c11b6756bb5224b138bfd4b6bb3221426d904b3304315d3c9443"
+  },
+  "retained_attempts": [
+    "$SCRATCH/p0-s1-literal-java-v1",
+    "$SCRATCH/p0-s1-literal-java-v2",
+    "$SCRATCH/p0-s1-literal-java-v3",
+    "$SCRATCH/p0-s1-literal-java-v4",
+    "$SCRATCH/p0-s1-literal-java-v5",
+    "$SCRATCH/p0-s1-literal-roundtrip-v1"
+  ],
+  "limitations": [
+    "SQL types come from a fixed fixture registry and are not imported from the wire.",
+    "Nested collection, geometry, VARIANT, zoned-time and symbol projection are not covered.",
+    "No relation, statement, binding or lowering parity is certified.",
+    "No C7 runtime execution or complete S1 corpus experiment is included."
+  ]
+}

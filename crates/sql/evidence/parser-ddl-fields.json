@@ -1,0 +1,5085 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "Complete top-level DDL field policies and LOCAL view semantic repair; exhaustive upstream source enumeration, not complete grammar classification or S1 equivalence",
+  "raw_directory": "$SCRATCH/p0-parser-ddl-final-v1",
+  "comparisons": {
+    "adversarial-comparison": {
+      "cases": 745,
+      "candidate": {
+        "both_accept": 359,
+        "accepted_submissions": 359,
+        "accepted_cases": 359,
+        "java_only": 34,
+        "rejected_submissions": 386,
+        "rejected_cases": 386,
+        "both_reject": 352
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 352,
+        "different": 193,
+        "equal": 156,
+        "java_position_missing": 3
+      }
+    },
+    "controls-comparison": {
+      "cases": 12,
+      "candidate": {
+        "both_reject": 4,
+        "rejected_submissions": 5,
+        "rejected_cases": 5,
+        "both_accept": 7,
+        "accepted_submissions": 7,
+        "accepted_cases": 7,
+        "java_only": 1
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 4,
+        "different": 4
+      }
+    },
+    "corpus-comparison": {
+      "cases": 8571,
+      "candidate": {
+        "both_accept": 33923,
+        "accepted_submissions": 33923,
+        "accepted_cases": 8479,
+        "java_only": 92,
+        "rejected_submissions": 92,
+        "rejected_cases": 92
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {}
+    },
+    "ddl-comparison": {
+      "cases": 98,
+      "candidate": {
+        "both_accept": 14,
+        "accepted_submissions": 14,
+        "accepted_cases": 14,
+        "both_reject": 83,
+        "rejected_submissions": 84,
+        "rejected_cases": 84,
+        "java_only": 1
+      },
+      "view_fields": {
+        "checked": true,
+        "java_views": 6,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 83,
+        "equal": 29,
+        "different": 54
+      }
+    },
+    "diagnostics-comparison": {
+      "cases": 1143,
+      "candidate": {
+        "both_accept": 2023,
+        "accepted_submissions": 2023,
+        "accepted_cases": 1120,
+        "java_only": 9,
+        "rejected_submissions": 23,
+        "rejected_cases": 23,
+        "both_reject": 14
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 14,
+        "java_position_missing": 2,
+        "equal": 10,
+        "different": 2
+      }
+    },
+    "expanded-adversarial-comparison": {
+      "cases": 922,
+      "candidate": {
+        "both_accept": 402,
+        "accepted_submissions": 402,
+        "accepted_cases": 402,
+        "java_only": 39,
+        "rejected_submissions": 520,
+        "rejected_cases": 520,
+        "both_reject": 481
+      },
+      "view_fields": {
+        "checked": true,
+        "java_views": 19,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 481,
+        "different": 281,
+        "equal": 197,
+        "java_position_missing": 3
+      }
+    },
+    "fields-comparison": {
+      "cases": 48,
+      "candidate": {
+        "both_reject": 39,
+        "rejected_submissions": 40,
+        "rejected_cases": 40,
+        "both_accept": 8,
+        "accepted_submissions": 8,
+        "accepted_cases": 8,
+        "java_only": 1
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 39,
+        "different": 33,
+        "equal": 6
+      }
+    },
+    "keywords-comparison": {
+      "cases": 13660,
+      "candidate": {
+        "both_accept": 13147,
+        "accepted_submissions": 13147,
+        "accepted_cases": 13147,
+        "both_reject": 510,
+        "rejected_submissions": 513,
+        "rejected_cases": 513,
+        "java_only": 3
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 510,
+        "different": 410,
+        "equal": 100
+      }
+    },
+    "mutations-comparison": {
+      "cases": 27760,
+      "candidate": {
+        "both_accept": 10260,
+        "accepted_submissions": 10260,
+        "accepted_cases": 10260,
+        "both_reject": 17226,
+        "rejected_submissions": 17500,
+        "rejected_cases": 17500,
+        "java_only": 274
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 17226,
+        "equal": 10355,
+        "different": 6871
+      }
+    },
+    "review-comparison": {
+      "cases": 60,
+      "candidate": {
+        "both_reject": 42,
+        "rejected_submissions": 45,
+        "rejected_cases": 45,
+        "both_accept": 15,
+        "accepted_submissions": 15,
+        "accepted_cases": 15,
+        "java_only": 3
+      },
+      "view_fields": {
+        "checked": false,
+        "java_views": 0,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {
+        "java_rejected_submissions": 42,
+        "different": 30,
+        "equal": 12
+      }
+    },
+    "view-kinds-comparison": {
+      "cases": 7,
+      "candidate": {
+        "both_accept": 7,
+        "accepted_submissions": 7,
+        "accepted_cases": 7
+      },
+      "view_fields": {
+        "checked": true,
+        "java_views": 8,
+        "scope": "typed CREATE VIEW kind and replacement flag only; not S1 equivalence",
+        "differences": []
+      },
+      "positions": {}
+    }
+  },
+  "preservation": {
+    "corpus": {
+      "submissions": 34015,
+      "control_measurements_identical": 102045,
+      "candidate_measurements_identical": 25345,
+      "new_explicit_standard_view_fields": 8634,
+      "repaired_local_views": 591
+    },
+    "keywords": {
+      "submissions": 13660,
+      "control_measurements_identical": 40980,
+      "candidate_measurements_identical": 11030,
+      "new_explicit_standard_view_fields": 2630,
+      "repaired_local_views": 0
+    },
+    "diagnostics": {
+      "submissions": 2046,
+      "control_measurements_identical": 6138,
+      "candidate_measurements_identical": 947,
+      "new_explicit_standard_view_fields": 1083,
+      "repaired_local_views": 46
+    },
+    "adversarial": {
+      "submissions": 745,
+      "control_measurements_identical": 2235,
+      "candidate_measurements_identical": 734,
+      "new_explicit_standard_view_fields": 5,
+      "repaired_local_views": 0,
+      "rejection_diagnostic_changes": 6
+    },
+    "mutations": {
+      "submissions": 27760,
+      "control_measurements_identical": 83280,
+      "new_explicit_standard_view_fields": 8580,
+      "repaired_local_views": 515,
+      "candidate_measurements_identical": 18780,
+      "rejection_diagnostic_changes": 726
+    },
+    "fields": {
+      "submissions": 48,
+      "control_measurements_identical": 144,
+      "candidate_measurements_identical": 48
+    },
+    "review": {
+      "submissions": 60,
+      "control_measurements_identical": 180,
+      "candidate_measurements_identical": 57,
+      "rejection_diagnostic_changes": 3
+    },
+    "controls": {
+      "submissions": 12,
+      "control_measurements_identical": 36,
+      "candidate_measurements_identical": 12
+    },
+    "ddl": {
+      "submissions": 98,
+      "control_measurements_identical": 294,
+      "candidate_measurements_identical": 39,
+      "new_rejections": 48,
+      "rejection_diagnostic_changes": 5,
+      "new_explicit_standard_view_fields": 5,
+      "repaired_local_views": 1
+    }
+  },
+  "changes": {
+    "corpus": [
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#minAndMaxOfOneInput/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093NullableAggregate/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#windowErrorTest/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/12",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/13",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/14",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLongExtract/15",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests#sameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests#sameOutputWithoutLateness/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests#sameOutputWithoutLateness/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests#sameOutputWithoutLateness/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#q16alt/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 6
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testRoundSubtraction/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests#sameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#spreadsheetReduced/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testInterval/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238UpperBound/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238UpperBound/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveSplittingTheTemporalConjuncts/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.NonLinearRecursionTests#multimodalTrips/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093TwoColumnsData/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 4
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.SerializationTests#testLargeProgram/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 6
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093Aggregate/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.SelfJoinGCIncrementalTests#twoSelfJoinsSameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093Chain/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2736/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#forkedChainDefersEachBranch/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testSharedTopK/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#windowErrorNullTimestampTest/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCalciteExamples/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCalciteExamples/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#forkedChainStartsANewChain/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastToInterval/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastToInterval/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastToInterval/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastToInterval/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastToInterval/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastToInterval/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastString/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testUnnestVariant/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testSubtraction/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MergeGCIncrementalTests#sameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.DeduplicationIncrementalTests#dedupRepeatedRow/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#coalesceTypes/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#issue2980/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsIncrementalTests#testLateSoftDelete/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6279/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6279/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6279/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6279/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6279/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815a/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessTimestampMerge/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236NullsFirst/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236NullsFirst/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236NullsFirst/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236NullsFirst/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperations/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperations/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperations/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperations/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperations/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperations/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#changeLog/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#aggregateEndsAChain/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testLambdaDuplication/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/12",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/13",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/14",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/15",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/16",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/17",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/18",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/19",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/20",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/21",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/22",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/23",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/24",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/25",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/26",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/27",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/28",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/29",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/30",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals/31",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MergeGCIncrementalTests#differentBoundTypesSameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#testSharedIndexGC/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2529/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#testRecursiveInMiddle/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/12",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/13",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/14",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/15",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/16",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/17",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/18",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#doubleCastTest/19",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541b/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue6565b/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testEmitFinalStarJoin/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#rowValuesSurviveSharing/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236OtherSortColumn/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236OtherSortColumn/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236Partitioned/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236Partitioned/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#errorStreamQueryTest/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testSoftDeletes/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236MultiColumnSort/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7236MultiColumnSort/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.DeduplicationIncrementalTests#dedupTwoChangesInOneTransaction/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.SerializationTests#testStreamingOperators/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 5
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#calcite7784/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541a/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.SelfJoinGCIncrementalTests#sameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.SelfJoinGCIncrementalTests#sameOutputWithoutLateness/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.SelfJoinGCIncrementalTests#sameOutputWithoutLateness/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.SelfJoinGCIncrementalTests#sameOutputWithoutLateness/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testHopWindows/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/12",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/13",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/14",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/15",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/16",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalOperators/17",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#softDeleteLog/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testControl/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue4694/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#testSparkInline/0",
+        "submission": 1,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testMultiply/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessKeepsInheritedWaterline/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#transitiveClosure/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testSparkInline/0",
+        "submission": 1,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#keyReadByTheChainIsPreferred/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238OtherColumn/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238OtherColumn/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541c/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLimitsPositive/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLimitsPositive/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLimitsPositive/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLimitsPositive/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLimitsPositive/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testLimitsPositive/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#logarithmTest/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#castRow/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareIndexesTests#sharedIndexResults/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#testRecursiveInMiddle/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#checkExtract/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#checkExtract/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#checkExtract/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#checkExtract/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#logarithm10Test/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/12",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/13",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/14",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/15",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/16",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/17",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/18",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/19",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/20",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/21",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/22",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/23",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/24",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/25",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/26",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/27",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/28",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/29",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/30",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/31",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/32",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/33",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/34",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/35",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/36",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/37",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/38",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCastShortIntervalToString/39",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#windowNullGroupKeyTest/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#testSparkInline/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#sameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5541/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testRoundMultiply/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests#resultsSurviveTheMove/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue7227/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#lookupReusesTheStartIndex/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.DeduplicationIncrementalTests#dedupOutput/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testExcept/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testExcept/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareIndexesTests#topKResultsWithSharedIndex/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalSub/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testIntervalSub/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#starJoinsSameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#issue4926/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.DeduplicationIncrementalTests#dedupFirstCopySlightlyOutOfOrder/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#projectionBug/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessTighterThanInherited/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testAdd/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#mapValuesVariant/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#leftJoinChainKeyFromTopK/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#squareRootTest/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.NonLinearRecursionTests#pointsToAnalysis/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/2",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/3",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/4",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/5",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/6",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/7",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/8",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/9",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/10",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/11",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/12",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/13",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/14",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/15",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/16",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/17",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/18",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5815b/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238BothBounds/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7238BothBounds/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCast/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#testCast/1",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testRoundAdd/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093NullTimestamps/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#deadLeftJoinUnderDistinctAndTopK/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests#resultsSurviveSharing/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#testChain/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 3
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#mapKeyVariant/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.DeduplicationIncrementalTests#dedupDelete/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testDivisionRound/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testDivision/0",
+        "submission": 2,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#viewLatenessMergesWithInherited/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.NonLinearRecursionTests#treeEvaluationByChild/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#distinctContinuesAChain/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#mapVariant/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5215/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2502/0",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 4
+      }
+    ],
+    "keywords": [],
+    "diagnostics": [
+      {
+        "id": "diagnostic/14/org.dbsp.sqlCompiler.compiler.sql.ConnectorTests#connectorOnLocalView",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "diagnostic/34/org.dbsp.sqlCompiler.compiler.sql.MetadataTests#latenessOnRecursiveViewRejected",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "diagnostic/35/org.dbsp.sqlCompiler.compiler.sql.MetadataTests#latenessOnRecursiveViewRejected",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "diagnostic/80/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/81/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/82/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/83/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/84/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/85/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/86/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/87/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/88/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/89/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/90/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/91/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/92/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/93/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/94/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/95/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/96/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/97/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/98/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/99/org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests#literals",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "diagnostic/130/org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#unsupportedRecursive",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "diagnostic/1082/org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2736b",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      }
+    ],
+    "adversarial": [],
+    "mutations": [
+      {
+        "id": "mutation/af1e994967f7ecb5aaa689fd9cc907b3f1b742bc0c3a113cadd579e14143f341/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/af1e994967f7ecb5aaa689fd9cc907b3f1b742bc0c3a113cadd579e14143f341/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2ca3189637c8ff4aa239bc174abc35a816799d06243281f99b501bb2032af08c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/59aa3cf3ce66755664a7b39e35626da8e4749428049529b636a383ba2fd7e17d/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/59aa3cf3ce66755664a7b39e35626da8e4749428049529b636a383ba2fd7e17d/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/59aa3cf3ce66755664a7b39e35626da8e4749428049529b636a383ba2fd7e17d/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/83d262c603d281d0a04eb10d94f092dd9d25aa022b85d3b65daf82b5cbb37bcd/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/83d262c603d281d0a04eb10d94f092dd9d25aa022b85d3b65daf82b5cbb37bcd/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/a8704ee24c83a06a7c14c9e00082a8e27daefc67e069c33cf19353d5b719380d/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a8704ee24c83a06a7c14c9e00082a8e27daefc67e069c33cf19353d5b719380d/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a8704ee24c83a06a7c14c9e00082a8e27daefc67e069c33cf19353d5b719380d/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/850e24097f05dea9ef28ce422bd980477e645bb54cdc8570ac5d8e09ca6fc361/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/850e24097f05dea9ef28ce422bd980477e645bb54cdc8570ac5d8e09ca6fc361/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/850e24097f05dea9ef28ce422bd980477e645bb54cdc8570ac5d8e09ca6fc361/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8025d2221fcb6888edcc0c987ce35f7df6869923f2c05d241bbc584beacba53b/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8025d2221fcb6888edcc0c987ce35f7df6869923f2c05d241bbc584beacba53b/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8025d2221fcb6888edcc0c987ce35f7df6869923f2c05d241bbc584beacba53b/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f0dac8d601d8f51f2647af22a7bc1c3d8ef9b12e9f1c8c2964a94b2c5a7ea30b/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f0dac8d601d8f51f2647af22a7bc1c3d8ef9b12e9f1c8c2964a94b2c5a7ea30b/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/34f3b383ef1f1f91b86798a98ab8aa49b9f7fd54325c0893dfc6dbf13087bb04/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/34f3b383ef1f1f91b86798a98ab8aa49b9f7fd54325c0893dfc6dbf13087bb04/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/b2b51b470cdcd7e1a76307b472afc19112436c27baaa8694866e6105271273aa/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/b2b51b470cdcd7e1a76307b472afc19112436c27baaa8694866e6105271273aa/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/b2b51b470cdcd7e1a76307b472afc19112436c27baaa8694866e6105271273aa/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/1a877e6437824eea7ca1c93f80e47e2a2c8b5622e484d2bcae06e1716e85c89c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/1a877e6437824eea7ca1c93f80e47e2a2c8b5622e484d2bcae06e1716e85c89c/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/1a877e6437824eea7ca1c93f80e47e2a2c8b5622e484d2bcae06e1716e85c89c/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2686f1a5a898685e7841a787c97b766d1f714a5eedc7e329e012535cb409cbd2/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2686f1a5a898685e7841a787c97b766d1f714a5eedc7e329e012535cb409cbd2/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e17c23b70a43717f3f98f65c71afcb128c5191cf85a18fe184062535fbcf9c5f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e17c23b70a43717f3f98f65c71afcb128c5191cf85a18fe184062535fbcf9c5f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8ba1aa92157f82339a7b9df5090291ecd55fda23ac5443b6b35dfc9ac0f9fbd9/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8ba1aa92157f82339a7b9df5090291ecd55fda23ac5443b6b35dfc9ac0f9fbd9/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8ba1aa92157f82339a7b9df5090291ecd55fda23ac5443b6b35dfc9ac0f9fbd9/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e684d98e5528a4a62f616e9b3d99117bcdbe42e4c1c3ccc96093be5b82318969/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e684d98e5528a4a62f616e9b3d99117bcdbe42e4c1c3ccc96093be5b82318969/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e684d98e5528a4a62f616e9b3d99117bcdbe42e4c1c3ccc96093be5b82318969/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a7aca37813a1e253dbb1cfb5191814abfaeba735e25e057bee5d878db11f0151/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a7aca37813a1e253dbb1cfb5191814abfaeba735e25e057bee5d878db11f0151/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a7aca37813a1e253dbb1cfb5191814abfaeba735e25e057bee5d878db11f0151/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5f867d8bc7f38f74d910b2d7a218e238178880f3ed09c2e1c24ba47a7ba4b793/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/5f867d8bc7f38f74d910b2d7a218e238178880f3ed09c2e1c24ba47a7ba4b793/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/5f867d8bc7f38f74d910b2d7a218e238178880f3ed09c2e1c24ba47a7ba4b793/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/6070ac1b442f86ce2f87b166a60936759c2ed8624e4db1f5000bbafd36949dac/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/13cb5db48a28af0ba938c60b346d09c8a932efae3879e868cde8cf18c195ed5f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/938ffc6def3aac865fb5f54127ce467d0b6ded5176077d5c94b8fdc3a308abe9/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/938ffc6def3aac865fb5f54127ce467d0b6ded5176077d5c94b8fdc3a308abe9/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/cba5f988e010a76d7fa664ac96b6de036e51d32cc8626ea88c827bc9b968456a/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cba5f988e010a76d7fa664ac96b6de036e51d32cc8626ea88c827bc9b968456a/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/f8cd9947ede460d6688ca46ada7096a6e8b9e1f61a1dee394267d8322e2ec704/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/f8cd9947ede460d6688ca46ada7096a6e8b9e1f61a1dee394267d8322e2ec704/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cdfe295d6b9044ec8f0bb5db1f25003efb25039035760cea43f5e070a87da1ea/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cdfe295d6b9044ec8f0bb5db1f25003efb25039035760cea43f5e070a87da1ea/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cdfe295d6b9044ec8f0bb5db1f25003efb25039035760cea43f5e070a87da1ea/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/34b9d308bfd5ac740bd94a87d0c44d1893d116e2c141d63d533c9728757fbbc5/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/34b9d308bfd5ac740bd94a87d0c44d1893d116e2c141d63d533c9728757fbbc5/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/5b61f15e3adc7448d42d9358ce015538154ce84fc2eaa5efc422fe6b2292be49/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/5b61f15e3adc7448d42d9358ce015538154ce84fc2eaa5efc422fe6b2292be49/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8d914961cbac5c9ae7fd04969de680fa0510e8ccde54a1f2c0f7e85e3595a2f7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8d914961cbac5c9ae7fd04969de680fa0510e8ccde54a1f2c0f7e85e3595a2f7/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8d914961cbac5c9ae7fd04969de680fa0510e8ccde54a1f2c0f7e85e3595a2f7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/ab8173b87b7eb4e65642c207084d51ed7ed9f30cb013a1c6735bb5aa8767529e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/ab8173b87b7eb4e65642c207084d51ed7ed9f30cb013a1c6735bb5aa8767529e/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/ab8173b87b7eb4e65642c207084d51ed7ed9f30cb013a1c6735bb5aa8767529e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/9765857b34b9874a6f55ea9ca3fde108f29f035ea814d0357dd0bc5b11ca9cdb/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/9765857b34b9874a6f55ea9ca3fde108f29f035ea814d0357dd0bc5b11ca9cdb/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/9765857b34b9874a6f55ea9ca3fde108f29f035ea814d0357dd0bc5b11ca9cdb/replace_closer",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/9765857b34b9874a6f55ea9ca3fde108f29f035ea814d0357dd0bc5b11ca9cdb/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/14d47c5858a77d7bf476e36383413eed5a1e447bc8a18fe16d5e15199080fc30/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/14d47c5858a77d7bf476e36383413eed5a1e447bc8a18fe16d5e15199080fc30/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/b7f00deea5fc8c3c392a918f9dbf50a50f157e6e9624b5faa037b3da1d8c4cfb/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/b7f00deea5fc8c3c392a918f9dbf50a50f157e6e9624b5faa037b3da1d8c4cfb/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/c6f32a1e1e208fb364c2629d9f8692e3774cec6eeb56b0a8556f348d79401a73/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/c6f32a1e1e208fb364c2629d9f8692e3774cec6eeb56b0a8556f348d79401a73/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/80550f8a564d468bf985025dd53b2801d0b250573f4926ffbe471b960635cff7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/80550f8a564d468bf985025dd53b2801d0b250573f4926ffbe471b960635cff7/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/80550f8a564d468bf985025dd53b2801d0b250573f4926ffbe471b960635cff7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cf274d566f947a65044467fe917596920ce21afba3b81f03f0e2c82029353487/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cf274d566f947a65044467fe917596920ce21afba3b81f03f0e2c82029353487/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/cf274d566f947a65044467fe917596920ce21afba3b81f03f0e2c82029353487/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/f494142d72b472995243990397771fa6c3e8216e96d008226515725b01b15355/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/f494142d72b472995243990397771fa6c3e8216e96d008226515725b01b15355/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/f494142d72b472995243990397771fa6c3e8216e96d008226515725b01b15355/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8f1c7abe579295939b39485725adae6c39ebae204e80a6a72bfca06713c1f0d8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8f1c7abe579295939b39485725adae6c39ebae204e80a6a72bfca06713c1f0d8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2c68793ad25acda07b49e8bbe07d4dc504529bc76e0e97511bd32d85fc8e9bb4/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2c68793ad25acda07b49e8bbe07d4dc504529bc76e0e97511bd32d85fc8e9bb4/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/b5817bf4c945e178b36167f00a3a0aec8edb92f3b1a4aa2d1a93273d63847e8d/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/b5817bf4c945e178b36167f00a3a0aec8edb92f3b1a4aa2d1a93273d63847e8d/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/43436537c9d53b809ffd55091bacc98ab0c66a465a0cf5c6b883a569ddb50e55/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/43436537c9d53b809ffd55091bacc98ab0c66a465a0cf5c6b883a569ddb50e55/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/43436537c9d53b809ffd55091bacc98ab0c66a465a0cf5c6b883a569ddb50e55/replace_closer",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/43436537c9d53b809ffd55091bacc98ab0c66a465a0cf5c6b883a569ddb50e55/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/e3900186fa6b66d5b99e5db6e6d63b6c9c572bed3ac73b0702d7f252e8e632b8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/e3900186fa6b66d5b99e5db6e6d63b6c9c572bed3ac73b0702d7f252e8e632b8/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/e3900186fa6b66d5b99e5db6e6d63b6c9c572bed3ac73b0702d7f252e8e632b8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/de09b67b01e3eb7d5626282a5acd8ad255fcf0b2554171e05d8cac34f4180418/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/de09b67b01e3eb7d5626282a5acd8ad255fcf0b2554171e05d8cac34f4180418/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/de09b67b01e3eb7d5626282a5acd8ad255fcf0b2554171e05d8cac34f4180418/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/df8edd3f5275020d080d00e990069994dfc1e0cc650dd75c8e16e5771a527b34/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/df8edd3f5275020d080d00e990069994dfc1e0cc650dd75c8e16e5771a527b34/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/3dac2dfcce7a5533f744355adf88ef15fc5e914dc92afce00a111f51c7b0fa05/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/3dac2dfcce7a5533f744355adf88ef15fc5e914dc92afce00a111f51c7b0fa05/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2fc2ac48b168b3fceafdfd4f33d36ea6ba89301850c89885b5792a2f32e14706/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2fc2ac48b168b3fceafdfd4f33d36ea6ba89301850c89885b5792a2f32e14706/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2fc2ac48b168b3fceafdfd4f33d36ea6ba89301850c89885b5792a2f32e14706/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8a54746017a3199fd1dcb2a2d4a50d3f950d56c88f498eef13d48e4219febdeb/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8a54746017a3199fd1dcb2a2d4a50d3f950d56c88f498eef13d48e4219febdeb/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/8a54746017a3199fd1dcb2a2d4a50d3f950d56c88f498eef13d48e4219febdeb/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2d14aafa5916773855dc6daba96e713e844f8856a6ffd064bd3226d0040c7e9a/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2d14aafa5916773855dc6daba96e713e844f8856a6ffd064bd3226d0040c7e9a/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2d14aafa5916773855dc6daba96e713e844f8856a6ffd064bd3226d0040c7e9a/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/4583c2d896d7edd05f4aa2dc94d1f5906bd763238a398e52d2ba6c534d54b838/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/4583c2d896d7edd05f4aa2dc94d1f5906bd763238a398e52d2ba6c534d54b838/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/7af461b5d4747336ed32ece1d4715babd49eaa9a37ba08bdb13b555a622e9042/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/7af461b5d4747336ed32ece1d4715babd49eaa9a37ba08bdb13b555a622e9042/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/79d525ce9e133d0cc3cf867ddde6cf0d2b854a161014e20f3cf194b3a9633667/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/79d525ce9e133d0cc3cf867ddde6cf0d2b854a161014e20f3cf194b3a9633667/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/adb0edc4f4b032157aa3071a2440193eeb00b1789adc0d3e424c5d777b53b302/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/adb0edc4f4b032157aa3071a2440193eeb00b1789adc0d3e424c5d777b53b302/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/1d377747d6ebf4ae7afafac07bae256185b65fba5f1d23d1e9c0c17bd89e21ba/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/1d377747d6ebf4ae7afafac07bae256185b65fba5f1d23d1e9c0c17bd89e21ba/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/d5199110a78d3d1190dbac0a497d5cd9073008807ca82320470675f89292f5b8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/d5199110a78d3d1190dbac0a497d5cd9073008807ca82320470675f89292f5b8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/7635185a9d10b0ea739be44aac81107313d6f262e3d7dc82229828d9494c0e25/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/7635185a9d10b0ea739be44aac81107313d6f262e3d7dc82229828d9494c0e25/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/c42d518b5577b7f1970d7f8d2f6142f1c6aef337255d1eb77d005a53292b1b6e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/c42d518b5577b7f1970d7f8d2f6142f1c6aef337255d1eb77d005a53292b1b6e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/088219ea3d2cf8b57604654f3926ff4c1dd8800d58217dd69a1c0403189ccdfc/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/088219ea3d2cf8b57604654f3926ff4c1dd8800d58217dd69a1c0403189ccdfc/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/bde3b36f72846fe8457da04452f7d4c3f5f0d3ff81b70600661ff2d0b2625eb8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/bde3b36f72846fe8457da04452f7d4c3f5f0d3ff81b70600661ff2d0b2625eb8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/630dfe9d9d22ce0ba95d62ab7eca36eecfbf9b5df7f671385cdba70593f30ad7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/630dfe9d9d22ce0ba95d62ab7eca36eecfbf9b5df7f671385cdba70593f30ad7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/b06d4720ecb8f858c982b1568c5820cb00b7d8fc6a925feaf9b64273604f793f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/b06d4720ecb8f858c982b1568c5820cb00b7d8fc6a925feaf9b64273604f793f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/7661b70a53d77bc8580c6761565984f50dec7ca7483d662fe80b65bd9bb9772c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/7661b70a53d77bc8580c6761565984f50dec7ca7483d662fe80b65bd9bb9772c/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e26866a932d025430cd295810f2773637873f550e72b43003bd16ab208bacf2a/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e26866a932d025430cd295810f2773637873f550e72b43003bd16ab208bacf2a/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a37ffc478ff2535af858eb0ed03102bb28de16b94bc7c00100ab69d52b1e501e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a37ffc478ff2535af858eb0ed03102bb28de16b94bc7c00100ab69d52b1e501e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/d8307f6d04ef650e427bb28f36bb454f5b78ffbcc8e90975dd891c6cb02ca826/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/d8307f6d04ef650e427bb28f36bb454f5b78ffbcc8e90975dd891c6cb02ca826/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/13fc11d62d126316a04c00ed5c83a744942b0dae41277d84d9bbf5271e5669ef/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/13fc11d62d126316a04c00ed5c83a744942b0dae41277d84d9bbf5271e5669ef/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/496d6dcf4a9ff33e5a724dce005f9f1f72eed9dd10972bb1e5dc91e7894f02f9/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/496d6dcf4a9ff33e5a724dce005f9f1f72eed9dd10972bb1e5dc91e7894f02f9/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9c10f506e715ab30202fb716fcbdea4906f888f7e2d03bd66cff3afca64f9472/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9c10f506e715ab30202fb716fcbdea4906f888f7e2d03bd66cff3afca64f9472/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/d4b453153ef86e8e5e269297eb1bb4d62899429b5598aeac83671d9aeee2ed4e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/d4b453153ef86e8e5e269297eb1bb4d62899429b5598aeac83671d9aeee2ed4e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f6a0aa8fdc6034e354ade5854a661ec6bc438506ed9a64e8d803609f98ace55a/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f6a0aa8fdc6034e354ade5854a661ec6bc438506ed9a64e8d803609f98ace55a/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9b08097720fe92421628162131b3ea70b14a5ba7b8931b0b56a2aa22f8690e16/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9b08097720fe92421628162131b3ea70b14a5ba7b8931b0b56a2aa22f8690e16/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9b08097720fe92421628162131b3ea70b14a5ba7b8931b0b56a2aa22f8690e16/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/3bd4d59efb763a84086eeaad4d8399816dfe51c988d4b470ad5eae0f2cce0c4e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/3bd4d59efb763a84086eeaad4d8399816dfe51c988d4b470ad5eae0f2cce0c4e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/707b19097d6daabddab9001baa988bac83838cf82dd59275182102bc184fb737/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/707b19097d6daabddab9001baa988bac83838cf82dd59275182102bc184fb737/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/da2b082188065c9ef5261e28d67f4367a7e9fea707f91a99590a84dde4f1ebee/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/da2b082188065c9ef5261e28d67f4367a7e9fea707f91a99590a84dde4f1ebee/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/1b04e9549a98f78994524ccca5d5e491fdca41e0ed89638d20072e10732e12d4/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/1b04e9549a98f78994524ccca5d5e491fdca41e0ed89638d20072e10732e12d4/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2bd13ac0059b90043d2a90b41ddbae5f77134b2788ba4d358d8a09ee717608b0/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/c0bd10e530abb8a56f6ebb682bb826b8f8fc7e6872381a977502c04bf1ed524e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/c0bd10e530abb8a56f6ebb682bb826b8f8fc7e6872381a977502c04bf1ed524e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/92b0e1f2aec132d7b5324b5db9df922bccf3d121058678a2ed9fab86dab19644/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/92b0e1f2aec132d7b5324b5db9df922bccf3d121058678a2ed9fab86dab19644/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/63dcbb8fcba884c62663fb311d0778f31603510c6dea6698551f0b24805f40ff/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/63dcbb8fcba884c62663fb311d0778f31603510c6dea6698551f0b24805f40ff/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a6463e7cbb730814b26c61411bb9734213b130740d148172638e1dd9a37cdd8e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a6463e7cbb730814b26c61411bb9734213b130740d148172638e1dd9a37cdd8e/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a6463e7cbb730814b26c61411bb9734213b130740d148172638e1dd9a37cdd8e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/971b91fd10f809bb1c242c2b2b7b286b6f8fc1d872bd047afe99b0f190270338/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 3
+      },
+      {
+        "id": "mutation/971b91fd10f809bb1c242c2b2b7b286b6f8fc1d872bd047afe99b0f190270338/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 3
+      },
+      {
+        "id": "mutation/971b91fd10f809bb1c242c2b2b7b286b6f8fc1d872bd047afe99b0f190270338/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 3
+      },
+      {
+        "id": "mutation/b39e5c372186e7abcc8d9945aaa221e3c6ced717609e017038bfd2bd038fb6c1/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/b39e5c372186e7abcc8d9945aaa221e3c6ced717609e017038bfd2bd038fb6c1/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f13ebcff2914bb34b5ad0f6ed5a05b3cd33893acb45d47663069e16f63a42947/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f13ebcff2914bb34b5ad0f6ed5a05b3cd33893acb45d47663069e16f63a42947/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f213cb90500abc01e9c6a5cf8a39b2db3843149c79eeff2c3666ed078bb7f49b/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f213cb90500abc01e9c6a5cf8a39b2db3843149c79eeff2c3666ed078bb7f49b/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a781f146f637edead5de243ed4ed210513310a67f6e498b0e0951c460c9fe617/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a781f146f637edead5de243ed4ed210513310a67f6e498b0e0951c460c9fe617/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/13343b9a3bb86141f913dea1a7042d6f31477c661157dd51399e6a15adcd7968/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/13343b9a3bb86141f913dea1a7042d6f31477c661157dd51399e6a15adcd7968/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/13343b9a3bb86141f913dea1a7042d6f31477c661157dd51399e6a15adcd7968/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/744d94f2b636ba6945749304a5122bebed8c24eff8a6887ef83cc5c2fbbc2dd8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/744d94f2b636ba6945749304a5122bebed8c24eff8a6887ef83cc5c2fbbc2dd8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f50244f47f220f877ab6e85ce3a1f1a1140d7336c3fce9b4ae69dc5d75c64e01/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f50244f47f220f877ab6e85ce3a1f1a1140d7336c3fce9b4ae69dc5d75c64e01/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/86b9b40d0d0c2aa201da01b1d93078217915b8b9394a3688bf418922b1603bfb/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/7a2ea8af99ae2f3608012b53d1bd47adb56a3e838e0d3d65d6cf51e68ce95afc/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/7a2ea8af99ae2f3608012b53d1bd47adb56a3e838e0d3d65d6cf51e68ce95afc/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/dbd3849d232849dceea8be4a680636a23bed130af72dceeda6d3cad2b9424092/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/cb5b597c9227bfa74d9313a04be2231786eb3f446297978f26405a3130db9353/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/cb5b597c9227bfa74d9313a04be2231786eb3f446297978f26405a3130db9353/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/70631bae9393bf133af9063cbc90a956f0285ab3811a4433b4f70e3a1b0725d9/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 6
+      },
+      {
+        "id": "mutation/70631bae9393bf133af9063cbc90a956f0285ab3811a4433b4f70e3a1b0725d9/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 6
+      },
+      {
+        "id": "mutation/9d85543dc20c30b40094af6d6b423982dc71394a4508a474dfdb92394bfa9a78/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9d85543dc20c30b40094af6d6b423982dc71394a4508a474dfdb92394bfa9a78/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9d85543dc20c30b40094af6d6b423982dc71394a4508a474dfdb92394bfa9a78/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/3f5f237d73c071319da95400f92d01b2489856e613dba658082e7120cd031aee/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/3f5f237d73c071319da95400f92d01b2489856e613dba658082e7120cd031aee/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/dc63abfd0c148af4e1f7a931f65266e6398fa090f4d84ed23f7b8c50905f500f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 4
+      },
+      {
+        "id": "mutation/dc63abfd0c148af4e1f7a931f65266e6398fa090f4d84ed23f7b8c50905f500f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 4
+      },
+      {
+        "id": "mutation/9996c318946fe101afeea0295824d60392e6b0f8fd12b91625b01bad586b30e6/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 6
+      },
+      {
+        "id": "mutation/9996c318946fe101afeea0295824d60392e6b0f8fd12b91625b01bad586b30e6/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 6
+      },
+      {
+        "id": "mutation/3c192d420c1079748ddb6758f9cbb2d8edb75729c1b5db5e16981d50052f29be/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/53b3e449684d89f8b19f35f8804d80f235808c768c849dd108a777de295cf275/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/53b3e449684d89f8b19f35f8804d80f235808c768c849dd108a777de295cf275/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/53b3e449684d89f8b19f35f8804d80f235808c768c849dd108a777de295cf275/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/89e222c6d12f6c02bbf1b30d5c10449c53124f8f1c8e0ea2e43979b857e3c625/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/89e222c6d12f6c02bbf1b30d5c10449c53124f8f1c8e0ea2e43979b857e3c625/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/89e222c6d12f6c02bbf1b30d5c10449c53124f8f1c8e0ea2e43979b857e3c625/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/63a66359236612654e451894f66e05858494a5b280c23e8a581ff4cc4524e081/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/63a66359236612654e451894f66e05858494a5b280c23e8a581ff4cc4524e081/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/63a66359236612654e451894f66e05858494a5b280c23e8a581ff4cc4524e081/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e4aa05dea6116283fa7b2aaa789669c3a679cf05419a76ac68a2a85438fb48b8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e4aa05dea6116283fa7b2aaa789669c3a679cf05419a76ac68a2a85438fb48b8/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e4aa05dea6116283fa7b2aaa789669c3a679cf05419a76ac68a2a85438fb48b8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/60c91b2323c9d1904c032f180c01a1e19040a6def49cd8412e8a032951bd482f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/60c91b2323c9d1904c032f180c01a1e19040a6def49cd8412e8a032951bd482f/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/60c91b2323c9d1904c032f180c01a1e19040a6def49cd8412e8a032951bd482f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/03566c429ec53a98b5255de3041900b4b7a1f37e08a3cb12b3a87dcef4c4ad4e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 4
+      },
+      {
+        "id": "mutation/03566c429ec53a98b5255de3041900b4b7a1f37e08a3cb12b3a87dcef4c4ad4e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 4
+      },
+      {
+        "id": "mutation/d13377a815a30f5eb68cc9dbd932af8bd544861b4cfc9c5b8dc52d233a9b9246/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 5
+      },
+      {
+        "id": "mutation/d13377a815a30f5eb68cc9dbd932af8bd544861b4cfc9c5b8dc52d233a9b9246/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 5
+      },
+      {
+        "id": "mutation/9085e6bf54afc80fb0e8a020e2d4349ef25b0388724bad215c06293f36011774/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/9085e6bf54afc80fb0e8a020e2d4349ef25b0388724bad215c06293f36011774/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e9f6eee986db9f23ef4a72c529788fe38cf2367546ff4df192d9d04c1c66f668/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e9f6eee986db9f23ef4a72c529788fe38cf2367546ff4df192d9d04c1c66f668/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/bb503dfff3aea1ea65d9cf295cc16ed98d59a7314598de92fcfa706ab6191d48/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/bb503dfff3aea1ea65d9cf295cc16ed98d59a7314598de92fcfa706ab6191d48/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/bb503dfff3aea1ea65d9cf295cc16ed98d59a7314598de92fcfa706ab6191d48/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/16ee38e157190cfb59845a2d66feb30809c0756bbecd16bf22fab98e2a5f663c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/16ee38e157190cfb59845a2d66feb30809c0756bbecd16bf22fab98e2a5f663c/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/56d2d39abd2230e6923991e7c3d5c88352a07fb48d664d2fe7d2a507309db9a3/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/56d2d39abd2230e6923991e7c3d5c88352a07fb48d664d2fe7d2a507309db9a3/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/56d2d39abd2230e6923991e7c3d5c88352a07fb48d664d2fe7d2a507309db9a3/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f5b83165030f4161786bdec61f0b7d632312b1e5917f3f7c87f11e126f2bed15/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/f5b83165030f4161786bdec61f0b7d632312b1e5917f3f7c87f11e126f2bed15/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/905ed614a88dbd4944da7aa785a2bb81d911b15f205cccbbd1e20a4aea22a8d7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/905ed614a88dbd4944da7aa785a2bb81d911b15f205cccbbd1e20a4aea22a8d7/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/905ed614a88dbd4944da7aa785a2bb81d911b15f205cccbbd1e20a4aea22a8d7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/efbcc2f5cc0a9162087c02962272e086b2777f6e21c095c93d53aae138e62085/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/efbcc2f5cc0a9162087c02962272e086b2777f6e21c095c93d53aae138e62085/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/efbcc2f5cc0a9162087c02962272e086b2777f6e21c095c93d53aae138e62085/replace_closer",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/efbcc2f5cc0a9162087c02962272e086b2777f6e21c095c93d53aae138e62085/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/74d45502c98db888b41810262f1eb80b8d250376f4fb03c5dd355af81696751c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/74d45502c98db888b41810262f1eb80b8d250376f4fb03c5dd355af81696751c/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/286ed610c322eceb71e92428dc9bfcd040ecd687d95356acceab693d426b577f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/286ed610c322eceb71e92428dc9bfcd040ecd687d95356acceab693d426b577f/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/286ed610c322eceb71e92428dc9bfcd040ecd687d95356acceab693d426b577f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/23ebf43d4667edf99244fcf17f0f391ea04519e991a2cb2b280a288fee6514df/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2a292e03a993bfd3422de69f6470d08249b2b02fb14a66c560a1ebe40a622126/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2a292e03a993bfd3422de69f6470d08249b2b02fb14a66c560a1ebe40a622126/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/d88ca3830f1386a3e0aa7fd7cb4ee6b8734ab81804ea367c73ff076c0d5d8263/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2a521b8dd80e4e470d2ca3155a56d53689575abfc80cb6cd663ea08c9a3e5502/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2a521b8dd80e4e470d2ca3155a56d53689575abfc80cb6cd663ea08c9a3e5502/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/746690c59bd25f50e51931bd1cd61b415a9f8775116fd9e8291c7ebff88ac959/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/746690c59bd25f50e51931bd1cd61b415a9f8775116fd9e8291c7ebff88ac959/insert_quote",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/746690c59bd25f50e51931bd1cd61b415a9f8775116fd9e8291c7ebff88ac959/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/3bd60352d7b3862d0b7c60f39b4038963ce13360311a80fd26eae61a47a07744/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/3bd60352d7b3862d0b7c60f39b4038963ce13360311a80fd26eae61a47a07744/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/d02f0c5a0372c05181b050431392b9eb074d52d8b4bcf4f5fcd1137c67eefc45/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/d02f0c5a0372c05181b050431392b9eb074d52d8b4bcf4f5fcd1137c67eefc45/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/5a1a3cd6184d3d53d9b721997cdac0f5058e14d8e6346827c85ae47992958d4a/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5a1a3cd6184d3d53d9b721997cdac0f5058e14d8e6346827c85ae47992958d4a/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5a1a3cd6184d3d53d9b721997cdac0f5058e14d8e6346827c85ae47992958d4a/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/72f4240505e0d5d07003af5a941fcc40922dfeb20250fb1457409766528f2e57/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/72f4240505e0d5d07003af5a941fcc40922dfeb20250fb1457409766528f2e57/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/579ab562c893ebfa5cbd53c1a27392636b9c02dc7d89442ca39a6fbc81abc154/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/579ab562c893ebfa5cbd53c1a27392636b9c02dc7d89442ca39a6fbc81abc154/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/37b7344e05d810576679f3a1a02d6acbaa59aeec3f022b13452924368f1260b5/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/37b7344e05d810576679f3a1a02d6acbaa59aeec3f022b13452924368f1260b5/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/37b7344e05d810576679f3a1a02d6acbaa59aeec3f022b13452924368f1260b5/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a760d45be1514b036dcc49069486cf9b207ff64c8cfb38e0e8441e916fc5460d/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/a760d45be1514b036dcc49069486cf9b207ff64c8cfb38e0e8441e916fc5460d/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e85c15cd6aecb9f867ac376b46d6a78bb8bff9d146953f23e6466e3f7b1e2375/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e85c15cd6aecb9f867ac376b46d6a78bb8bff9d146953f23e6466e3f7b1e2375/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/fbd3f9c9ea1a183b24ea6f8ac208ae331c33b43d27f61ed97d76bb7df233ce6c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/fbd3f9c9ea1a183b24ea6f8ac208ae331c33b43d27f61ed97d76bb7df233ce6c/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e034de791a48f4ed2441328f5b40eeeaf3e14f636fb6525c1a1a303266472016/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e034de791a48f4ed2441328f5b40eeeaf3e14f636fb6525c1a1a303266472016/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/e034de791a48f4ed2441328f5b40eeeaf3e14f636fb6525c1a1a303266472016/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ee711595a67e17b96d9bfd32c70f4170b6aa0ace72ee15a622f0e776531a7a08/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ee711595a67e17b96d9bfd32c70f4170b6aa0ace72ee15a622f0e776531a7a08/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/573bf460f27d430ed1c0e9532f45efcb3f7a1818e21ed3a2dedea53555831eb5/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/573bf460f27d430ed1c0e9532f45efcb3f7a1818e21ed3a2dedea53555831eb5/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/4f3413e25c83e8c5bf1e0ab9b6ea27bbd3676314c80f504c6b1a53f42434bb4f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/4f3413e25c83e8c5bf1e0ab9b6ea27bbd3676314c80f504c6b1a53f42434bb4f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/3fc249dc2940d174add6fa4bff332563b4808889698d7dc3e051737407c70720/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/3fc249dc2940d174add6fa4bff332563b4808889698d7dc3e051737407c70720/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/23fd87a10614326c434c7736258b199be0342299a1b9a5fa7c0ed2e3e956dff7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/23fd87a10614326c434c7736258b199be0342299a1b9a5fa7c0ed2e3e956dff7/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/23fd87a10614326c434c7736258b199be0342299a1b9a5fa7c0ed2e3e956dff7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2b144bf990471df9091207f6178f97982f90bc2e18fd930b3860e70cf8c350cb/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2b144bf990471df9091207f6178f97982f90bc2e18fd930b3860e70cf8c350cb/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ce4e588b1e595e5d84b99765d70b82bed1b7dfe384ccfc59ad79b5cf9fc5b932/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ce4e588b1e595e5d84b99765d70b82bed1b7dfe384ccfc59ad79b5cf9fc5b932/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ce4e588b1e595e5d84b99765d70b82bed1b7dfe384ccfc59ad79b5cf9fc5b932/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/271a04de9e1259ad3da79061efd38abaf55f8487e2b13091d374380b81baa393/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/271a04de9e1259ad3da79061efd38abaf55f8487e2b13091d374380b81baa393/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ada82c650a8b637ad142c0d435f8fba2c732abf87b7a75b24a62581ab79414b5/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ada82c650a8b637ad142c0d435f8fba2c732abf87b7a75b24a62581ab79414b5/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ada82c650a8b637ad142c0d435f8fba2c732abf87b7a75b24a62581ab79414b5/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5392b048f569abff20f405c78c8249a6836a2baca27dc822d249546a09d92cef/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5392b048f569abff20f405c78c8249a6836a2baca27dc822d249546a09d92cef/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5405c958df5f0decebfb6b8d109338a9209abc4871ce4c466c3de679abcf7d7e/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5405c958df5f0decebfb6b8d109338a9209abc4871ce4c466c3de679abcf7d7e/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/5405c958df5f0decebfb6b8d109338a9209abc4871ce4c466c3de679abcf7d7e/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2eb9072e17c3132404b5d799f8fb42faaf93e2b245a9097bc0c5066c1756577a/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2eb9072e17c3132404b5d799f8fb42faaf93e2b245a9097bc0c5066c1756577a/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/2eb9072e17c3132404b5d799f8fb42faaf93e2b245a9097bc0c5066c1756577a/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ef44bce3a06a61a17ac095ce148ec031f037a6bef6fedb92e29e5b9bc8a2cba7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ef44bce3a06a61a17ac095ce148ec031f037a6bef6fedb92e29e5b9bc8a2cba7/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/ef44bce3a06a61a17ac095ce148ec031f037a6bef6fedb92e29e5b9bc8a2cba7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/dc5ece2be7ea57eaf03e36508c834d56d5b82cfe9134485c1f043732de41d806/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/dc5ece2be7ea57eaf03e36508c834d56d5b82cfe9134485c1f043732de41d806/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2ee64830e5a92d5b6e52fde070cc3846d6c0c5dc246e64880a6c5b6dd414be6f/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/2ee64830e5a92d5b6e52fde070cc3846d6c0c5dc246e64880a6c5b6dd414be6f/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/4b37c94ef143ac65b0a9fd22b3f2a4baaf394f27fe665be5528a7263e6af85d5/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/4b37c94ef143ac65b0a9fd22b3f2a4baaf394f27fe665be5528a7263e6af85d5/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/77a5b601ec64b641f62b8919d1425015d939ff01db1a893b1827b11174f46fa7/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/77a5b601ec64b641f62b8919d1425015d939ff01db1a893b1827b11174f46fa7/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/77a5b601ec64b641f62b8919d1425015d939ff01db1a893b1827b11174f46fa7/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/ae4be9177c6a635afa2621f5ea01c905eeb780dea7b9269eb753a475054881a8/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/ae4be9177c6a635afa2621f5ea01c905eeb780dea7b9269eb753a475054881a8/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/ae4be9177c6a635afa2621f5ea01c905eeb780dea7b9269eb753a475054881a8/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/aa80c837dc608c84dc6d3404f9340426dd358122d3d18b29cb42905b1597bf16/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/aa80c837dc608c84dc6d3404f9340426dd358122d3d18b29cb42905b1597bf16/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/84b82dbe81ffb213241eb5344ca40a589cb3e7f2091190e6531672601af12c4d/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/84b82dbe81ffb213241eb5344ca40a589cb3e7f2091190e6531672601af12c4d/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/37a171bc9616196d23dad73f99521e2df4989b637b430d5ecc8fa9a22d813e36/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/37a171bc9616196d23dad73f99521e2df4989b637b430d5ecc8fa9a22d813e36/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/37a171bc9616196d23dad73f99521e2df4989b637b430d5ecc8fa9a22d813e36/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/8c9dd54be17356142c18a6053ff6c59ee2ed9cfbcc8bb3233488a2b0aca72a6c/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 2
+      },
+      {
+        "id": "mutation/197699e1bbddc1fd2635bbb4523a90dceca64bbf0d02580c32541d5684123b53/control",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/197699e1bbddc1fd2635bbb4523a90dceca64bbf0d02580c32541d5684123b53/delete",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "mutation/197699e1bbddc1fd2635bbb4523a90dceca64bbf0d02580c32541d5684123b53/append_clause",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      }
+    ],
+    "fields": [],
+    "review": [],
+    "controls": [],
+    "ddl": [
+      {
+        "id": "ddl-review/table-prefix-OR_ALTER",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE OR ALTER TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-LOCAL",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE LOCAL TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-GLOBAL",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE GLOBAL TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-TRANSIENT",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TRANSIENT TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-VOLATILE",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE VOLATILE TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-EXTERNAL",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE EXTERNAL TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-MULTISET",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE MULTISET TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-prefix-SET",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE SET TABLE t(x INT)"
+      },
+      {
+        "id": "ddl-review/table-tail-15",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) COMMENT 'hi'"
+      },
+      {
+        "id": "ddl-review/table-tail-16",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) ON COMMIT PRESERVE ROWS"
+      },
+      {
+        "id": "ddl-review/table-tail-19",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) ORDER BY x"
+      },
+      {
+        "id": "ddl-review/table-tail-23",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) INHERITS(s)"
+      },
+      {
+        "id": "ddl-review/table-tail-44",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) DISTSTYLE ALL"
+      },
+      {
+        "id": "ddl-review/table-tail-45",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) DISTKEY(x)"
+      },
+      {
+        "id": "ddl-review/table-tail-46",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) SORTKEY(x)"
+      },
+      {
+        "id": "ddl-review/table-tail-47",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) BACKUP YES"
+      },
+      {
+        "id": "ddl-review/table-tail-49",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) WITHOUT ROWID"
+      },
+      {
+        "id": "ddl-review/table-tail-50",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) STRICT"
+      },
+      {
+        "id": "ddl-review/table-tail-51",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) LOCATION 'x'"
+      },
+      {
+        "id": "ddl-review/table-tail-52",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) STORED AS PARQUET"
+      },
+      {
+        "id": "ddl-review/table-tail-53",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT) ROW FORMAT DELIMITED"
+      },
+      {
+        "id": "ddl-review/view-prefix-OR_ALTER",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE OR ALTER VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-prefix-LOCAL",
+        "submission": 0,
+        "kind": "local_view_semantics",
+        "count": 1
+      },
+      {
+        "id": "ddl-review/view-prefix-GLOBAL",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE GLOBAL VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-prefix-TEMPORARY",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TEMPORARY VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-prefix-TRANSIENT",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TRANSIENT VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-prefix-VOLATILE",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE VOLATILE VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-prefix-SECURE",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE SECURE VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-prefix-LOCAL_MATERIALIZED",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE LOCAL MATERIALIZED VIEW v AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-shape-67",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE VIEW v(x COMMENT 'a') AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-shape-69",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE VIEW v CLUSTER BY (x) AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/view-shape-72",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE VIEW v COPY GRANTS AS SELECT 1"
+      },
+      {
+        "id": "ddl-review/columns-75",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT UNIQUE)"
+      },
+      {
+        "id": "ddl-review/columns-76",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT CHECK(x>0))"
+      },
+      {
+        "id": "ddl-review/columns-77",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT REFERENCES s(x))"
+      },
+      {
+        "id": "ddl-review/columns-79",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT CONSTRAINT c PRIMARY KEY)"
+      },
+      {
+        "id": "ddl-review/columns-81",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT NOT NULL NULL)"
+      },
+      {
+        "id": "ddl-review/columns-82",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT NULL NOT NULL)"
+      },
+      {
+        "id": "ddl-review/columns-83",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT COMMENT 'a')"
+      },
+      {
+        "id": "ddl-review/columns-84",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT COLLATE c)"
+      },
+      {
+        "id": "ddl-review/columns-85",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT GENERATED ALWAYS AS (1) STORED)"
+      },
+      {
+        "id": "ddl-review/columns-88",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, UNIQUE(x))"
+      },
+      {
+        "id": "ddl-review/columns-89",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, CHECK(x>0))"
+      },
+      {
+        "id": "ddl-review/columns-90",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, CONSTRAINT c PRIMARY KEY(x))"
+      },
+      {
+        "id": "ddl-review/columns-91",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, PRIMARY KEY(x DESC))"
+      },
+      {
+        "id": "ddl-review/columns-94",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, FOREIGN KEY(x) REFERENCES s)"
+      },
+      {
+        "id": "ddl-review/columns-95",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, FOREIGN KEY(x) REFERENCES s(x) ON DELETE CASCADE)"
+      },
+      {
+        "id": "ddl-review/columns-96",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, FOREIGN KEY(x) REFERENCES s(x) MATCH FULL)"
+      },
+      {
+        "id": "ddl-review/columns-97",
+        "submission": 0,
+        "kind": "rejection",
+        "sql": "CREATE TABLE t(x INT, FOREIGN KEY(x) REFERENCES s(x) DEFERRABLE)"
+      }
+    ]
+  },
+  "sources": {
+    "crates/sql/parser-probe/Cargo.lock": "d29e1ae4771e7e2590e55fa744420bf0ac0073a6c3cea9d96a6893233d70327b",
+    "crates/sql/parser-probe/Cargo.toml": "9a66b19dcbe20b754dc82e5e6b6764f8d6bae590bca9dacaf458ebfdfe36db6d",
+    "crates/sql/parser-probe/MAINTENANCE.md": "69b47ce6143bd2d14f3a25c7e0c9d9301535c615a7a5f8b4aab9ff2f8d10c2e1",
+    "crates/sql/parser-probe/README.md": "5fe6341f1a81fabaec006d83a26d1584b8a80d56b9bf0a96aaeebefd233b2674",
+    "crates/sql/parser-probe/adversarial.jsonl": "b7a78bbe681cd272ba238dfbe1f7e94be29c1caa7e2224e4eb83b2b73b49bc50",
+    "crates/sql/parser-probe/src/lib.rs": "f2cbbc1e0b11d02482440ad195adff846d081f1b0811908d8deacef24f80aef5",
+    "crates/sql/parser-probe/src/main.rs": "d4a0a7bc415d82215db74559a72a6e0f6291280784b3212b4a5382612d875e0e",
+    "crates/sql/parser-probe/src/v062.rs": "8bb5771fe3c94dc2d9aa256503722f1f8e01892050e9a98bce967874971fbadb",
+    "crates/sql/parser-probe/src/v064/aggregate_tests.rs": "07d30b47326fa3c10e507fe291e922849c371b11173fcd782b3b90136d800d39",
+    "crates/sql/parser-probe/src/v064/ast_fields.rs": "0fc141a99e08407a9671ea778f30153be7b08628917b941d31b16969b2f62a16",
+    "crates/sql/parser-probe/src/v064/attributes.rs": "bc3606de84bbd52381a8d858fe7ae79b8e8596c5c43373d768c791ced225c2d1",
+    "crates/sql/parser-probe/src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01",
+    "crates/sql/parser-probe/src/v064/ddl.rs": "d4e82349d2e31684ee24abce664aa0dc318529b6c708f84ef2908b2651b4c733",
+    "crates/sql/parser-probe/src/v064/diagnostic.rs": "3074f0b4db3ee0385d827ad833c5f1daa79f3b97c9e9d4fd4297d6ab07ee5354",
+    "crates/sql/parser-probe/src/v064/functions.rs": "9d82246249c7453c83ba80b0fca1c7c537bc241f8f3777b1ff8d749c5d5c9472",
+    "crates/sql/parser-probe/src/v064/grammar.rs": "07c48da409ccfb011d2fac6281140db22e5073d5672d6f64f9bed49117a6e2db",
+    "crates/sql/parser-probe/src/v064/hints.rs": "a9dd800e96563c206b64aa9afd99a0022aa1d11f443767c98ae38b1b8c136f48",
+    "crates/sql/parser-probe/src/v064/lateness.rs": "eb24b6816e7e362b94a31e17f2a9138a35f529f50779d948ba12a801bca70a01",
+    "crates/sql/parser-probe/src/v064/reject.rs": "40070342fcd5e91922b77bd4ce4a1dbfb4144cdb25a5fa8d5d74628583cf4843",
+    "crates/sql/parser-probe/src/v064/relations.rs": "8b7a9d8245edce5e336ccb944d46594e84459a356a0c6920c99ed8f7e5b543ad",
+    "crates/sql/parser-probe/src/v064/reserved.rs": "0a1abb3c8a0b6e1b146d8de43f9ee43c6cdbedec48ffc9da2c6ec7c0053cc497",
+    "crates/sql/parser-probe/src/v064/settings.rs": "8b209e3786a4380bb5af8b9d154b4c8c4221a5de8b28b440bee93cd200a12c2a",
+    "crates/sql/parser-probe/src/v064/statements.rs": "c6bc216d55568929eb7cfb2ade6023299618a1ab5463c6e0bd480ddff614b5a8",
+    "crates/sql/parser-probe/src/v064/temporal_types.rs": "f1fc7f3651fbaaaaa44acd7130c48c2e4197c579f388b9cdeec7c2a06db3b0a2",
+    "crates/sql/parser-probe/src/v064/trim.rs": "9772d783d8e35d7ceeb0a4043aed287bf86ed5ddc400d9b62af42487878e810e",
+    "crates/sql/parser-probe/src/v064/unicode.rs": "683ce73547907f712fecc2b0aca8e82c3ac98ab150fe02c8cf10ccb76996ae57",
+    "crates/sql/parser-probe/src/v064/values.rs": "af5afa44e1488b49c25e035bee19049d8f2f3c1f02c39b18fde6e033d9db88fb",
+    "crates/sql/parser-probe/src/v064.rs": "7d304d66d710cdd815cc711746ca654945661a4c27745385a7442cdfd093dc6f",
+    "crates/sql/parser-probe/syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "crates/sql/parser-probe/vendor/sqlparser/Cargo.lock": "790ec02b9f106c3a5508ae133e2475829ffa5d8410ce0b4f59c03ea4f3392503",
+    "crates/sql/parser-probe/vendor/sqlparser/Cargo.toml": "f39937579d8630409ad98b82af462cda69e893cdd7a3a922d80e22d24c12bdb3",
+    "crates/sql/parser-probe/vendor/sqlparser/Cargo.toml.orig": "4e75f703320d14c42202f6a0e1079873d79afea95c7eab29ff101490104bf013",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA-PATCHES.md": "fcf6c25214a0e8c4ac702818a876b6c349877324760d5ad340273fb0ca5269b4",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA-PROVENANCE.json": "ec3308bb83a4b9b39fdf5557ad69db35db53a730176ceb7d504d67fd352ae93e",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA.patch": "5c7329458f2a581a4b66904c05ea36ca0bf30eff114719656311df8616eeaebd",
+    "crates/sql/parser-probe/vendor/sqlparser/LICENSE.TXT": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+    "crates/sql/parser-probe/vendor/sqlparser/NOTICE.TXT": "bb3ca1682483387eb1f4e538b226f83856212488f11ebad1bd71bb928a44f5e9",
+    "crates/sql/parser-probe/vendor/sqlparser/README.md": "3f22fcd32dbf34ba4be110fe741d0c41a1b815939eb6ba99f1d8c15091a65f6f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/comments.rs": "a139b9dec0855a9f82c834a667ddfe6548e1afe94a3e3a8fbcea2a862cc51937",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/data_type.rs": "3789b5b9840250e02542cec4f479eb5b8a55dc2c810afa391b1cb8d6f8f6a91f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/dcl.rs": "5929fc51faaa0a809ee0888f50a351d96908d0d55b952bc7e458854bffe92ae9",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/ddl.rs": "46b1d4be22c707e4ad85e8987e6ecdca0dc71478302ddeef5510baae51232cf1",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/dml.rs": "da1cfc93945ed088b819dad7deda258279b63503fddabb84ee9615a8ad436c16",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/attached_token.rs": "5600d2689f5643d177f23e9158c8a1b9e701a488b27336cc3b65ff93f566628a",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/key_value_options.rs": "c8216f577f9d7e96e550f6790aa3ccec56cde60620a48e3069636a1dd589296c",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/mod.rs": "51babef675e6388da59b847f1f81a53726e4975d7a18afd8cf8f431f2914b913",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/stmt_create_database.rs": "592936616b01efbfe16642e95523983ad5decc614dda797bf09aca32e8ad7c87",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/stmt_create_table.rs": "9ee988839144208883733d0c60f52a434bb03fdfd5245efa56bcdb2bdc82fe49",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/helpers/stmt_data_loading.rs": "5051029866cc6dc2aa7c9e5268e446c9decff0abbd7d376d7df06e20e44fd795",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/mod.rs": "8b57330f5d765bbd52124f48eaf56a5fa3a640c3ba976f1193cdf44b9ca5258b",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/operator.rs": "546957910a5ac953409c21f4f83e8f410f4509bda913e0865e1b890aeb8ab87b",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/query.rs": "4c71f7296d2b8584c33a75eb22b3acf87e5984dba146099a17f5f617d2b1202c",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/spans.rs": "32338e6cc8fd756655468faf5e7042db2679932b6fed214e711b349f27c32a8e",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/table_constraints.rs": "847dc5a02937a283a3842a2af54abc6eca867145773527c6d2ab7374c97542b5",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/trigger.rs": "e8902b8057caced0a39dcdd1f03a565b88ff1e2c8a1d83fb16e9915ae58114db",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/value.rs": "69367b8a0455902f10aa4b629c82f79d49696ac35007ca5bace59fab0ee98f4f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/ast/visitor.rs": "8e8dc8076343f354af40c9f73a258f1b36655d792938d4558bcbb07a63b8d512",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/ansi.rs": "cfdc197695c76125447a5f45e3183869be3b477e7dc5b162a5b09b1e4353cd2e",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/bigquery.rs": "bb64916af8cf940ee4677cb26424dc9d4bbeff460a7ecaebd4921d92b2378a80",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/clickhouse.rs": "3e476d410548b8c2fa3af58a44e90eefbf7472d9682c51248a5fc5b0326ea19c",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/databricks.rs": "fac341b036294c3980de023e4c3fdebe42c8a36c6891a35b7622b67cea06553e",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/duckdb.rs": "5723cedaf97245eec187ea0809666289261225b5d73b4f7dd221812b64c46d74",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/generic.rs": "2d33a67c09abb0fccc287349a8245afbab78809084a5638ae82d03faa87071b4",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/hive.rs": "2135fa5cb41aee546d742f412c81b04a9ba6095068d33704dfe1e39e4389f5f0",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/mod.rs": "757682553cbe20f028d6c4d0fd748eadab165af5ae91f483de3aea7d9e6b9bb8",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/mssql.rs": "7c1782b8b34499cdde6abe43b20a30b76383e78d5d788ea3e660d2646d0864f5",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/mysql.rs": "e05fbdbfa74fb0462f3b49d603043c513775de3ab3cded02457a6204e545f6ed",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/oracle.rs": "ed1529920b992d26726f7a5274f5e6eeaced33d1c93e03f361d16ba3a83808dc",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/postgresql.rs": "055a4869516b86d0857cfaca5b04783671296b971dedf5b0824b31456e6253fb",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/redshift.rs": "047473eefca3ea01e60bcd79c70e7709ed961424cd46bd4aa11a6554a5a4e9d7",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/snowflake.rs": "5748e4a49d63b29ea0a42587cf6f981977810bcda4da426102d8c7a342d2c2a1",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/spark.rs": "cb5ee7f04d1e8a4d7ab2e8dcf77d20ce21d1af1fa35282459210d97f2ca7c2fe",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/sqlite.rs": "0ee50dfa8896f7e8b5b63b27741f323f8f2a121c19e75011b8cea0edc9269a9d",
+    "crates/sql/parser-probe/vendor/sqlparser/src/dialect/teradata.rs": "a4b1dab235fd3d0d12c8cd64af05b8e1b6bccc929afec8e44ec27a2e7ea0fac3",
+    "crates/sql/parser-probe/vendor/sqlparser/src/display_utils.rs": "bf16b070b9a9a89dd5e022b4177745da044ac7c4b4fdee5f8831a11c4f1124d0",
+    "crates/sql/parser-probe/vendor/sqlparser/src/keywords.rs": "b8bb01a2d4a2f0210ec3942c2c52e93a4a25ea804d8d68ab94f390877fa79c0f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/lib.rs": "4671ee7aa82d74ee9989c61c26459e4601911bb70437ba5bcdbf98d47c9bc466",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/alter.rs": "478c172d14a4fa5b63921917f9aaa0ab888e019d63190e7971b8294a3d8d8269",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/merge.rs": "bd0b8a6da9396073ea0d66ec523e08807157f7e0f6768cc9976a9632fc4e033a",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/mod.rs": "98ebc117d39765a8da1a14b359b7610d21b1323b1ffeef09777809f0845748e5",
+    "crates/sql/parser-probe/vendor/sqlparser/src/test_utils.rs": "4ab1294f241e5f66f90aa95614c01e2dc46dd9821ba8053db2fcf29e92e974f7",
+    "crates/sql/parser-probe/vendor/sqlparser/src/tokenizer.rs": "e88380f598c11f3e224c3a8bf314e29ed86a52cea1f01656d93a5c46d26cf8a7",
+    "crates/sql/scripts/compare_parsers.py": "c0ea56e3818048462820e7c6cbb45ad2ea7811433431097f268aa2f7e659a831",
+    "crates/sql/scripts/test_compare_parsers.py": "a7927e0d35764cdaf60f98962098ef907b27bdfe787f3c1774e526d9ae093747",
+    "crates/sql/scripts/parser_ast_inventory.py": "96e4a98af99e24ed527ffd6137eaa78394844715178253552bd2a109cf5ea6e6",
+    "crates/sql/scripts/test_parser_ast_inventory.py": "fc9c9285687363f74d4527a5c8bcf978a876bd5a10ffc358d9c47bf3d62c5c35",
+    ".github/workflows/test-java.yml": "46d50f26641f3b94a47202c87e73d599456505efc580a232b9f75842088fed71",
+    "crates/sql/PARSER-REVIEW.md": "a1c7745c09a2e02a0b7ad497637e1b44b78870beb293627b80453cfd10baf35c",
+    "crates/sql/evidence/parser-ast-field-inventory.json": "cdbca698a8151e9bbbf75fd213a29e4a055c13d086722479665c1fc3e4e0074c",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbe.java": "91432b3931b1871c8eda56de7ff09d5a514917de1d0e3f906f4b142ecd0ea172",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbeTests.java": "4e07d2ec953641904e72364a6e8f51d6709b38e9dacd29a352580c81455e4bad"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-parser-ddl-final-v1/adversarial/cases.jsonl": "1bb212b55d3b217f58c9e3b2d8e6e3ee1e4dc707f6e394f288b7e3f28d4dad48",
+    "$SCRATCH/p0-parser-ddl-final-v1/adversarial/complete.json": "e56ff24f2f688c0a082a534009011b2e1f4626933284d3233b1243bf085d271d",
+    "$SCRATCH/p0-parser-ddl-final-v1/adversarial-comparison.json": "d0a91b4843675b7ba0aeee9e3c29fcdb6d00c09969dadc71972d77e5baf3e653",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-0.log": "ccac9ab5be17b65e325723778433ae9a4377fe1bcba933bd2acb45fb2ca9b8fd",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-1.log": "17430d065d7f279842d8566ed728a0aa6bbab9aa0d550f4e24c1dd99f87364f5",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-10.log": "0da84b9cec619d9c8065c505bc169c7643eb04c2da1414aa3b130a6cd047bf12",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-11.log": "3e8212aad9d49fae895c6abb4933cd39058ac628fe87eb5d9338bb379c362cbc",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-12.log": "2574a92e8f6ca555cacddf400f6ba286ac10989241ef36d5c0ce883913801b5f",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-13.log": "22bc55ad9155d13b4b4386bb9ef019767b8a493b827c3d10727dc8db6726c158",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-14.log": "d35214d8a912f48619e00dd16a91ddcf7c8d61774112f9ac0ba52c8bee07c735",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-15.log": "2dcee9ba6b3446f6b2598cba88fe3fdd9ea74a3da43ea161c6be6bacf2ada5ba",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-16.log": "aec0984f3774e45c93e5b634bfa4095c01621e2e065b482b51c71cfac34cadeb",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-17.log": "e8850bd1b9a9244850fb5f239f59d7d999efc59c0268f8fb012c760a3f031f97",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-18.log": "6d3c1ae6c7093f574d0d58f353afdd6b15f5539b03654f7aa370a99a2d410dce",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-19.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-2.log": "2e873014403b1fdb55cfe08b92ce20b1054f5d3882b2b2e96e6e816f8e859b28",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-20.log": "34ecebbdb4bc17c1a222f05c4b6dcbf315ef0daa101b69c3606c4b414b1888d1",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-21.log": "96c4fbc6f97c384b755a90db24085d127061804ba55d199b51c46f382b5f396b",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-22.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-23.log": "964aa565e1619676774b34f0758a190f11f3668c6f5fe262e01562e570d1422c",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-3.log": "50595e93d442e0ae609eccc31f9b382030a3e43c834094ad0c4dbc4ca13b7cf9",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-4.log": "a7f5e0d195f858f3c98b71fcc24feb19930304794e67d7c0876e576ccdd1886d",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-5.log": "03ed1e90b6b15f54da1157ea58919fe8434fae90e0fb63c3faafff8c9e2a2305",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-6.log": "cc501a8b07d2a253a33d517dc9dabfe1f8a8ec0ec7969d983ef3f2f6157ff694",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-7.log": "f73423fa028445ece04274bd8ba121a95c9abd14c044ec7f1cbaf5ab1c1df6d1",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-8.log": "e56ff24f2f688c0a082a534009011b2e1f4626933284d3233b1243bf085d271d",
+    "$SCRATCH/p0-parser-ddl-final-v1/command-9.log": "1491471e4a38732c7b4d2f1448bb890af5838c1e183c866b7fb5b90164ca7ad2",
+    "$SCRATCH/p0-parser-ddl-final-v1/commands.json": "cdcbaf0cf3a32d1b4fd15fd8f7dd1024e7000cf5d29b0227772a08622d485c09",
+    "$SCRATCH/p0-parser-ddl-final-v1/controls/cases.jsonl": "42ee4e71f44e90024876542d7a4e50982ea747e6e0affd636335ce9be62f3df9",
+    "$SCRATCH/p0-parser-ddl-final-v1/controls/complete.json": "aec0984f3774e45c93e5b634bfa4095c01621e2e065b482b51c71cfac34cadeb",
+    "$SCRATCH/p0-parser-ddl-final-v1/controls-comparison.json": "4b342d0b75e051c1eaafbff22cbba5b3498e168c4fe86a6238d6f388791c63c5",
+    "$SCRATCH/p0-parser-ddl-final-v1/corpus/cases.jsonl": "d634b276498b260b518bbf01d2e50c1accc844962d091fdb310de9db881dac9d",
+    "$SCRATCH/p0-parser-ddl-final-v1/corpus/complete.json": "2e873014403b1fdb55cfe08b92ce20b1054f5d3882b2b2e96e6e816f8e859b28",
+    "$SCRATCH/p0-parser-ddl-final-v1/corpus-comparison.json": "76dab972f32ea2372cfcf221dd7ff4fbeb13c5d2b59109a74533c9f254356d2e",
+    "$SCRATCH/p0-parser-ddl-final-v1/ddl/cases.jsonl": "1e05d53ec484b8903c0b5db73024270269abd85a2f94ee2874b586d6d2e9dfe4",
+    "$SCRATCH/p0-parser-ddl-final-v1/ddl/complete.json": "ccac9ab5be17b65e325723778433ae9a4377fe1bcba933bd2acb45fb2ca9b8fd",
+    "$SCRATCH/p0-parser-ddl-final-v1/ddl-comparison.json": "171d6a10aa0641406542bdf4922c3bbfb72709f893ee4fff95ed0b9e21f129d5",
+    "$SCRATCH/p0-parser-ddl-final-v1/diagnostics/cases.jsonl": "52adb22b1b1305df4b8ce9821915beab73b2375bba30d4cad61c6a72697e060b",
+    "$SCRATCH/p0-parser-ddl-final-v1/diagnostics/complete.json": "cc501a8b07d2a253a33d517dc9dabfe1f8a8ec0ec7969d983ef3f2f6157ff694",
+    "$SCRATCH/p0-parser-ddl-final-v1/diagnostics-comparison.json": "343b66272f4becf7d3f66009ce4d2a74e63bcaa394d1ab3a379c5fa7e6367584",
+    "$SCRATCH/p0-parser-ddl-final-v1/expanded-adversarial/cases.jsonl": "1ee30221d58bd3c235a977db460e25e4272e7e23071d373256e33a3687d78413",
+    "$SCRATCH/p0-parser-ddl-final-v1/expanded-adversarial/complete.json": "96c4fbc6f97c384b755a90db24085d127061804ba55d199b51c46f382b5f396b",
+    "$SCRATCH/p0-parser-ddl-final-v1/expanded-adversarial-comparison.json": "a0d5043aeb1ed47687082320d5d6d3a7ce2941298c69f3e9dc131ae4dfe1d6e5",
+    "$SCRATCH/p0-parser-ddl-final-v1/expanded-adversarial-input.jsonl": "b7a78bbe681cd272ba238dfbe1f7e94be29c1caa7e2224e4eb83b2b73b49bc50",
+    "$SCRATCH/p0-parser-ddl-final-v1/expanded-adversarial-java/cases.jsonl": "4f99f4035547382ff1dcca50d7c1272e24d24107160e17ec8679980938fd8896",
+    "$SCRATCH/p0-parser-ddl-final-v1/expanded-adversarial-java/complete.json": "0c589b2ec6f2276bc0aac1c7852382ef7781774b6c3b96424a3bb081ceb5c565",
+    "$SCRATCH/p0-parser-ddl-final-v1/feldera-parser-probe": "5359df8d1070a20f86ad4b4b0670c696e48a36f156951d24b6f8456c81a60c93",
+    "$SCRATCH/p0-parser-ddl-final-v1/fields/cases.jsonl": "27c9257d2fb057ad5e83162ea8ec81d588ff870cfda0799241c77b6a34756a0c",
+    "$SCRATCH/p0-parser-ddl-final-v1/fields/complete.json": "2574a92e8f6ca555cacddf400f6ba286ac10989241ef36d5c0ce883913801b5f",
+    "$SCRATCH/p0-parser-ddl-final-v1/fields-comparison.json": "1eee724c89af8adedceb77ceee5d94a2de906d05d520dd70b8bc04d89ebbe611",
+    "$SCRATCH/p0-parser-ddl-final-v1/keywords/cases.jsonl": "6dc303cb36c81ed5f7bd3abb84cc5813015cf6d6507826f42ad04a57f387fb11",
+    "$SCRATCH/p0-parser-ddl-final-v1/keywords/complete.json": "a7f5e0d195f858f3c98b71fcc24feb19930304794e67d7c0876e576ccdd1886d",
+    "$SCRATCH/p0-parser-ddl-final-v1/keywords-comparison.json": "3f1e6f6f1027fb29815f0163db19f8a0dab389c3de4dcfb85dfbb962169d6d95",
+    "$SCRATCH/p0-parser-ddl-final-v1/mutations/cases.jsonl": "51da8edbb3ed93d41d2a3dd5392da4ec9a33d76e84118994b88933cfd88e40f7",
+    "$SCRATCH/p0-parser-ddl-final-v1/mutations/complete.json": "0da84b9cec619d9c8065c505bc169c7643eb04c2da1414aa3b130a6cd047bf12",
+    "$SCRATCH/p0-parser-ddl-final-v1/mutations-comparison.json": "057a4d34be0b4aea4ed6bca7e39e7f488c00a8cf89193ff85b6f697fdd44418d",
+    "$SCRATCH/p0-parser-ddl-final-v1/review/cases.jsonl": "5e447a5ff7eca98e9880042e8b287de2c87765233713b57f2abb91995f519b78",
+    "$SCRATCH/p0-parser-ddl-final-v1/review/complete.json": "d35214d8a912f48619e00dd16a91ddcf7c8d61774112f9ac0ba52c8bee07c735",
+    "$SCRATCH/p0-parser-ddl-final-v1/review-comparison.json": "4be00cc3cf5fb122e423e686a69d12e300d7bfcae8883af7b6f5b6515a91e503",
+    "$SCRATCH/p0-parser-ddl-final-v1/sources.json": "e64a7fbf974dfa02d41c32ea0e0764b5a301f7e8496f494532747ee7ddb28620",
+    "$SCRATCH/p0-parser-ddl-final-v1/view-kinds/cases.jsonl": "4f7df36742a7db2ec803d32200f0aa11b6a18ce780cd9b97a3ea50799d796830",
+    "$SCRATCH/p0-parser-ddl-final-v1/view-kinds/complete.json": "6d3c1ae6c7093f574d0d58f353afdd6b15f5539b03654f7aa370a99a2d410dce",
+    "$SCRATCH/p0-parser-ddl-final-v1/view-kinds-comparison.json": "674a656289340464804fdd4c411013f74944a08557dce230fa2441ba3f78177d",
+    "$SCRATCH/p0-parser-ddl-final-v1/view-kinds-input.jsonl": "55bb45663309503203e83bd65ce9b9fd8cffaf9bba66c3a75604efef396a245b",
+    "$SCRATCH/p0-parser-ddl-final-v1/view-kinds-java/cases.jsonl": "f19c409a27d0b8ffdf3f1417910acb13ccb14225ac7d9d45c027cee58c0ef2fb",
+    "$SCRATCH/p0-parser-ddl-final-v1/view-kinds-java/complete.json": "3434d9d1d90707d38bb4dc4e501a51756da890867012244c08f58480bea06731",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/adversarial/cases.jsonl": "0cf1e692b757010bb916146131c2d0904dd59e48989308d324eb01fcf04a78aa",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/adversarial/complete.json": "5353eeed83faad2ff667f708819dae0acfa04e8021b4b2a6e606245596eb9f41",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/adversarial-comparison.json": "543c767bde4cc5d93d0d4269dca8a3948b7a7c002f1298bcce12349f14261a3e",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-0.log": "9a5e45b598dd3a6d86b0b80ce06dbe5c7606588e659626e126b81b0ad476312d",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-1.log": "17430d065d7f279842d8566ed728a0aa6bbab9aa0d550f4e24c1dd99f87364f5",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-10.log": "42ae6fefc58fd9598dde07c61e9b6ad943fccdc9f302ca902fc6374462408c7b",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-11.log": "3e8212aad9d49fae895c6abb4933cd39058ac628fe87eb5d9338bb379c362cbc",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-12.log": "8a6453e0fe920594d86f91388cc8401e76ea604f2604aa90b0dca4db68bc6898",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-13.log": "22bc55ad9155d13b4b4386bb9ef019767b8a493b827c3d10727dc8db6726c158",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-14.log": "a74785f369984d6073deaadaf40c5c1bfb5c0c0c61eb254cc64dc7f3b060eab1",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-15.log": "2dcee9ba6b3446f6b2598cba88fe3fdd9ea74a3da43ea161c6be6bacf2ada5ba",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-16.log": "6fbc03036511b0e3811132fab74e01d00448979d256d73c406445663446296ad",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-17.log": "e8850bd1b9a9244850fb5f239f59d7d999efc59c0268f8fb012c760a3f031f97",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-2.log": "32563358a5207ee18bac2ec6e5ec950dc553135565f9577149a7eb3e7cd1b0fe",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-3.log": "50595e93d442e0ae609eccc31f9b382030a3e43c834094ad0c4dbc4ca13b7cf9",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-4.log": "52d1e95f80814afd12129a5a987a4caffa47829edca9c9b3a1cd02c827576997",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-5.log": "03ed1e90b6b15f54da1157ea58919fe8434fae90e0fb63c3faafff8c9e2a2305",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-6.log": "e5acfe8e4cf5fcb8dcdccdad89975277f9008b897a12e7813252d9da1cf9a2f8",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-7.log": "f73423fa028445ece04274bd8ba121a95c9abd14c044ec7f1cbaf5ab1c1df6d1",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-8.log": "5353eeed83faad2ff667f708819dae0acfa04e8021b4b2a6e606245596eb9f41",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/command-9.log": "1491471e4a38732c7b4d2f1448bb890af5838c1e183c866b7fb5b90164ca7ad2",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/commands.json": "b219ddf7c15649f49107ec570dac2123203addb9391670bc6b5ebab6f693c88f",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/controls/cases.jsonl": "1e9c064f8ce749c7ad0e4b19f73a7a48efb8a46fc335d06c39f40ebb7e593ee2",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/controls/complete.json": "6fbc03036511b0e3811132fab74e01d00448979d256d73c406445663446296ad",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/controls-comparison.json": "f5af2414458c107e5e517ac109a23ca959107881f1d2916274eade974caeb684",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/corpus/cases.jsonl": "befa6aaf9262d2e8837f3ce6525db50e01bf6f022f4cab6cf820e875f704291f",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/corpus/complete.json": "32563358a5207ee18bac2ec6e5ec950dc553135565f9577149a7eb3e7cd1b0fe",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/corpus-comparison.json": "b23da8dac2be088a4c1123269a24476ba9c39943a02861f4e682ae8d2f701a84",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/ddl/cases.jsonl": "bcbd9806a1b0e7f8b06ddd44f1bd3be66c05668489e9096bf08ee279fde8b5dc",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/ddl/complete.json": "9a5e45b598dd3a6d86b0b80ce06dbe5c7606588e659626e126b81b0ad476312d",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/ddl-comparison.json": "8326ed76dc072a6273d3f1da629ffc3441c4d9a4b7e68040e1df0533090d18c3",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/diagnostics/cases.jsonl": "b8f952ce6036b53adcf4b7002fb79c09ac04a966df9146230f94238120caa871",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/diagnostics/complete.json": "e5acfe8e4cf5fcb8dcdccdad89975277f9008b897a12e7813252d9da1cf9a2f8",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/diagnostics-comparison.json": "58fd78a494f9299313077301bc09e79611ec1e3c9fba872e9512f80182852a34",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/feldera-parser-probe": "b6e02494d8855edbeca2bbfb1d794edc74e94a338b6109d313a3049c6c37b1f7",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/fields/cases.jsonl": "7c47d673ac15c0036332782bdbdc407defd9b376d535c42448103cd99ba9673d",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/fields/complete.json": "8a6453e0fe920594d86f91388cc8401e76ea604f2604aa90b0dca4db68bc6898",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/fields-comparison.json": "883fb574a657ca2f6386d585f479309a309fe7bf44c3f848cde72cb1d415ea37",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/keywords/cases.jsonl": "feb6ea08760f92f790386f79ae7655878eb3ff4e69ac5ff6caf87ae73b667173",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/keywords/complete.json": "52d1e95f80814afd12129a5a987a4caffa47829edca9c9b3a1cd02c827576997",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/keywords-comparison.json": "43c3fe77a336fb8805599ff5cf2fd2abb95cd315c62037a7ac5361316058612b",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/mutations/cases.jsonl": "417ec59bd2cfd2cd97cba1a4c5b0340eef480fc8dd2cdc1dcac477cca77e66e5",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/mutations/complete.json": "42ae6fefc58fd9598dde07c61e9b6ad943fccdc9f302ca902fc6374462408c7b",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/mutations-comparison.json": "f028ff428e1a984c1b08728944c18936ed864cbff06912c2cafdb3dfdbe45ad0",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/review/cases.jsonl": "47e3ba0d6ea8f4287c55ae05d6c7d27be417dc17b7ee9823b85f58deb4286cf4",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/review/complete.json": "a74785f369984d6073deaadaf40c5c1bfb5c0c0c61eb254cc64dc7f3b060eab1",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/review-comparison.json": "4d20324a16cb952cfc318ab88272467400662c899948453b1615fd1231108c39",
+    "$SCRATCH/p0-parser-ddl-repaired-v1/sources.json": "a34c976cd8c0285a61179c9f76a4a5d8b304aaefa4e61344480225d7853024bc",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/command-0.log": "bde87cee535b0f6aed804fc5bb2d2320ec6c0171bc7e13e7ea30dd6bd3ccc078",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/command-1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/commands.json": "7dabd5033d604e6215188272608e845be7fa86051e74bec2fda8342ead5c1f07",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/input.jsonl": "c542a59aa421a735c86f373cdec28c38916fb0481361b87244a0f94be763dc79",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/java/cases.jsonl": "e1cb60a2621d59429a8fa2782947f7749d27c6a6bd9f23241e96236c159c627d",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/java/complete.json": "dcabd47c97b47ca036f64f9f905aaaeb91df0aa9ab97b167834988f548159caf",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/rust/cases.jsonl": "630b5002c9d282975038891d98d842c751d591cfaee4a1d086165b9442161d2c",
+    "$SCRATCH/p0-parser-ddl-matrix-v1/rust/complete.json": "bde87cee535b0f6aed804fc5bb2d2320ec6c0171bc7e13e7ea30dd6bd3ccc078",
+    "$SCRATCH/p0-parser-ddl-build-v2/command-0.log": "97e7dd97de0ab46e350548e7384fe0bc838926e1d2ee134e4dc2eede9b08e727",
+    "$SCRATCH/p0-parser-ddl-build-v2/command-1.log": "fb9e9a05a2005aea8fc648b9947422aaddec66a50b3978a4ee437a974500a904",
+    "$SCRATCH/p0-parser-ddl-build-v2/command-2.log": "914f9fb704307c942b23bab55d52cbf2e4b31587722ff73a89e941ff78670a3f",
+    "$SCRATCH/p0-parser-ddl-build-v2/commands.json": "a9bb690094c3633d8041e2d58eecefa5a82ab59d78644fa1841c6a51cd2d1dda",
+    "$SCRATCH/p0-parser-ddl-build-v2/feldera-parser-probe": "b6e02494d8855edbeca2bbfb1d794edc74e94a338b6109d313a3049c6c37b1f7",
+    "$SCRATCH/p0-parser-ddl-build-v3/command-0.log": "469b6f02b3e54d98e4c83b454dd7d6ed12713cdc1cd6050a4670fd7f73c8bb67",
+    "$SCRATCH/p0-parser-ddl-build-v3/command-1.log": "95555f2a7b1609834bf345ad786db76b8af7e35f33fa7dff520a81589e851025",
+    "$SCRATCH/p0-parser-ddl-build-v3/command-2.log": "d55cf744b2f198ead1d2519dd1ea3e9954ac4f7d2c89fe9849d5d35104de0a5b",
+    "$SCRATCH/p0-parser-ddl-build-v3/commands.json": "a9bb690094c3633d8041e2d58eecefa5a82ab59d78644fa1841c6a51cd2d1dda",
+    "$SCRATCH/p0-parser-ddl-build-v3/feldera-parser-probe": "5359df8d1070a20f86ad4b4b0670c696e48a36f156951d24b6f8456c81a60c93",
+    "$SCRATCH/p0-parser-local-tools-v1/command-0.log": "a89ca69b4d02d2cb1b3e32348b63b56d0527953b3a2ccc1e226b95977bb9e2bf",
+    "$SCRATCH/p0-parser-local-tools-v1/command-1.log": "a0cb49dc446427a340d7c0a6ef6f25b909fc1479655f3523e4a52aa07d53b5a3",
+    "$SCRATCH/p0-parser-local-tools-v1/command-2.log": "a89ca69b4d02d2cb1b3e32348b63b56d0527953b3a2ccc1e226b95977bb9e2bf",
+    "$SCRATCH/p0-parser-local-tools-v1/commands.json": "7133e112eb9b65396a8c4a1d5972dc497fa7844107a184ea953035a700f7afec",
+    "$SCRATCH/p0-parser-local-tools-v1/java-ddl/cases.jsonl": "fcca7f7cc0e2fb80923f7c6725d7bbe38cd7184ae5df1634419cf653d1ea4d2f",
+    "$SCRATCH/p0-parser-local-tools-v1/java-ddl/complete.json": "dcabd47c97b47ca036f64f9f905aaaeb91df0aa9ab97b167834988f548159caf",
+    "$SCRATCH/p0-parser-local-tools-v1/test-classes/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbe.class": "0d351aa2e9d9fdc662f11742a75e592c30bd435bcfcae565dabede36ebc671b6",
+    "$SCRATCH/p0-parser-local-tools-v1/test-classes/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbeTests.class": "46a7a42537a532317c0c1b6b87b7894386c9bb9f8c59eb4f8b71d34143ba8c54",
+    "$SCRATCH/p0-determinism-v3-input.jsonl": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "$SCRATCH/p0-parser-values-v1/keywords-input.jsonl": "5ef1e9a789b229c9233b18a2678cbd0f12080c4874a91af5aa134952da65eb76",
+    "$SCRATCH/p0-parser-values-v1/diagnostics-input.jsonl": "8d81c2174eaba71a2b0ebc569c66afaec491f24a1a755f67f36dda450b306a82",
+    "$SCRATCH/p0-parser-fields-matrix-v1/adversarial-input.jsonl": "2234115849abd1b4643ed05dcc42b1205095938cfd5b55526c4cb33103d73557",
+    "$SCRATCH/p0-parser-mutations-v4/prepared/input.jsonl": "7c927c0ae110162e985138ddb54a59ea1cc6e47c3cf906c0f11b30650a37b31a",
+    "$SCRATCH/p0-parser-field-policy-v1/input.jsonl": "51c3a5692f9e29f1c12308df262d0f0b2fb2a76f6bf4c11e119fa1c45047c3e6",
+    "$SCRATCH/p0-parser-review-v1/input.jsonl": "ff6b9440bd94ef0124f278f5ec5b29213fef00eb8613b5b792b555e50b776c5e",
+    "$SCRATCH/p0-parser-review-controls-v1/input.jsonl": "05d03b38b6f5306e78ed7930278d9242ad2841861595ac09e2e8d24797eb49ff"
+  },
+  "classpaths": {
+    "$SCRATCH/p0-diagnostics-v7/tools/classes": "0987417408b6cfb301fd4a5dce2c14c2d4f8d65bef32c91189dfbe17c2f67908",
+    "$SCRATCH/p0-diagnostics-v7/tools/test-classes": "a83c0ce1d731698d6535a14a72bd03ec6ffb3de78dc98f809c5db1e2049a6a52",
+    "$SCRATCH/p0-parser-local-tools-v1/test-classes": "8ce36ef1c7771e8dfea2296a28fd6eeadd396b493b08d4744e6aeb0741f5a031",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "tests": {
+    "rust": "60 library and 2 binary tests, Clippy -D warnings and release build pass",
+    "java": "20 ParserProbeTests pass in isolated frozen-v7 overlay",
+    "python": "10 comparison tests and 2 source inventory tests pass; workflow actionlint passes"
+  },
+  "upstream_field_inventory": "crates/sql/evidence/parser-ast-field-inventory.json",
+  "remaining_limits": [
+    "Inventory enumerates all public AST types/fields/variants but marks unclassified contexts explicitly.",
+    "Only CREATE VIEW kind and replacement flag have new typed Java/Rust AST comparison; full S1 semantic comparison remains open.",
+    "Field source spans are not normalized into semantic equality."
+  ],
+  "prior_evidence_archive": "crates/sql/evidence/parser-review-archive.json",
+  "review": "crates/sql/PARSER-REVIEW.md"
+}

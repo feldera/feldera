@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-table-comparisons-archive.json",
+  "scope": "Mixed simple, checked INTEGER and DOUBLE ABS projections, plus signed INTEGER comparisons over a plain table",
+  "typed_compilation": {
+    "classic": {"cases": 22, "observations": 8806},
+    "gen2": {"cases": 22, "observations": 8850}
+  },
+  "new_directed_cases": 10,
+  "held_out_table_candidate_screen": {"candidates": 436, "eligible": 16, "additional_eligible": 0},
+  "signed_classic_runtime": {"programs": 2, "transactions": 6, "equal_output_bags": 12, "nonempty_output_bags": 6},
+  "scope_limits": "The 16 eligible held-out cases had already been exercised by the earlier wide-table, computed-expression and filter probes."
+}

@@ -1,0 +1,114 @@
+{
+  "driver": "crates/sql/scripts/validate_spike8.py",
+  "complete_sha256": "797fdb288e752dbd9b47ac45dd7fa0bb7c2207805e4bda5cfbbad85fa910b417",
+  "fixtures_sha256": {
+    "array_agg.json": "dfb5d4e9ea43aa59a2aebc7f86724996fc7dcf2bb1af238d4b4fef8e8e617c38",
+    "duplicate_branches.sql": "114fc65ab16460bdcacd56721499e4f7f392f82367bc8af4d4f57c6ea86f26c3",
+    "limiters.json": "c9bed0bd4854dc36e23f1a223b9b0451c5088dc1411fa4be9744732d3e9a398f"
+  },
+  "programs_by_pass": {
+    "InsertLimiters": [
+      "collectionStream",
+      "gcCompositeKeyLateness",
+      "gcKeyLateness",
+      "keymaterialized",
+      "keynonlate",
+      "simple",
+      "source",
+      "sum",
+      "twofields",
+      "viewLatenessKeepsInheritedWaterline",
+      "viewLatenessMergesWithInherited",
+      "viewLatenessTimestampMerge",
+      "viewWithoutDeclaration",
+      "viewWithoutUpstreamBound"
+    ],
+    "CSE": [
+      "fusedLambdaForGen2-0",
+      "fusedLambdaForGen2-1",
+      "issue7507-0",
+      "issue7507DivideGroup-0",
+      "issue7507DivideWindow-0",
+      "issue7507EmptyWindow-0",
+      "issue7507EmptyWindowNotNull-0",
+      "issue7507Join-0",
+      "issue7507MapIndex-0",
+      "issue7507OneOfTwo-0",
+      "issue7507Ordered-0",
+      "issue7507ReadsKey-0",
+      "issue7507Shared-0",
+      "issue7507TwoProducers-0",
+      "issue7507Window-0",
+      "issue7507Windows-0",
+      "duplicate_branches"
+    ],
+    "FuseIntoArrayAgg": [
+      "fusedLambdaForGen2-0",
+      "fusedLambdaForGen2-1",
+      "issue7507-0",
+      "issue7507DivideGroup-0",
+      "issue7507DivideWindow-0",
+      "issue7507EmptyWindow-0",
+      "issue7507EmptyWindowNotNull-0",
+      "issue7507Join-0",
+      "issue7507MapIndex-0",
+      "issue7507OneOfTwo-0",
+      "issue7507Ordered-0",
+      "issue7507ReadsKey-0",
+      "issue7507Shared-0",
+      "issue7507TwoProducers-0",
+      "issue7507Window-0",
+      "issue7507Windows-0",
+      "duplicate_branches"
+    ]
+  },
+  "engines": {
+    "classic": {
+      "InsertLimiters": {
+        "comparisons": 14,
+        "changed_java_graphs": 14,
+        "matched_graphs": 14,
+        "matched_exit_name_counters": 14,
+        "matched_checkpoint_graphs": 14,
+        "matching_refusals": []
+      },
+      "CSE": {
+        "comparisons": 102,
+        "changed_java_graphs": 4,
+        "matched_graphs": 102
+      },
+      "FuseIntoArrayAgg": {
+        "comparisons": 34,
+        "changed_java_graphs": 15,
+        "matched_graphs": 34,
+        "matched_exit_name_counters": 34
+      }
+    },
+    "gen2": {
+      "InsertLimiters": {
+        "comparisons": 10,
+        "changed_java_graphs": 10,
+        "matched_graphs": 10,
+        "matched_exit_name_counters": 10,
+        "matched_checkpoint_graphs": 10,
+        "matching_refusals": [
+          "gcCompositeKeyLateness",
+          "gcKeyLateness",
+          "keymaterialized",
+          "keynonlate"
+        ]
+      },
+      "CSE": {
+        "comparisons": 102,
+        "changed_java_graphs": 4,
+        "matched_graphs": 102
+      },
+      "FuseIntoArrayAgg": {
+        "comparisons": 34,
+        "changed_java_graphs": 15,
+        "matched_graphs": 34,
+        "matched_exit_name_counters": 34
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "cases": 8527,
+  "input_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+  "failed": 0,
+  "worker_artifacts_equal": true,
+  "java_import_hash_inputs_equal": true
+}

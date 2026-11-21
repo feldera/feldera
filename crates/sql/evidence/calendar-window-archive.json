@@ -1,0 +1,21 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-calendar-window-20261118-v1.tar.gz",
+  "sha256": "fb5e363786bac4d2e47f36a618cf01253b20425e063b3938fe3d3070efc2e624",
+  "bytes": 246905,
+  "certificates": [
+    "calendar-window-diagnostic.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "calendar-window-diagnostic.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-calendar-window-repair-v2/sources/"
+      }
+    ]
+  },
+  "scope": "Stable located calendar-window error",
+  "P0_complete": false
+}

@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "Stable located calendar-window error",
+  "repaired_tests": {
+    "tests": 9,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "old_compiler_control": {
+    "tests": 8,
+    "failures": 1
+  },
+  "repeated_compilations": 12,
+  "intervals": [
+    "MONTH",
+    "YEAR"
+  ],
+  "optimization_levels": [
+    0,
+    2
+  ],
+  "capture": {
+    "schema_version": 1,
+    "assertion_contract": "rendered-fields-v3",
+    "direct_assertion_contract": "typed-targets-v1",
+    "capture_helpers": [
+      "BaseSQLTests.statementsFailingInCompilation",
+      "BaseSQLTests.shouldWarn",
+      "TestUtil.assertMessagesContain"
+    ],
+    "producer_commit": "calendar-window-repair-v2",
+    "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+    "runtime_commit": "c6ede756d",
+    "records": 1,
+    "direct_assertions": 76,
+    "junit_tests": 9,
+    "junit_failures": 0,
+    "junit_ignored": 0,
+    "junit_successful": true
+  },
+  "sources": {
+    "src/main/java/org/dbsp/sqlCompiler/compiler/frontend/aggregates/RangeAggregates.java": "57912f80cc43b1045ef85ea4ec73ec5069935aac14550a1a1c5a98faaef13aae",
+    "src/test/java/org/dbsp/sqlCompiler/compiler/sql/ConstantRequiredTests.java": "d1dec5af15feddbc72d4ba8c5ef56abee887a7fe4ceb8e95498c44cd61af9a3b"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-calendar-window-control-v1/tests.log": "6edb3fccb698a6915350256327194bc8d290310dd41a1639c2661eea4a0b3b1d",
+    "$SCRATCH/p0-calendar-window-control-v1/CalendarWindowProbe.class": "f36ddb8e2100be96c6688847b30976af73b549e49791fe7cdd352c6205391b02",
+    "$SCRATCH/p0-calendar-window-control-v1/probe.jsonl": "4a54186fcb85bee10367d8693d8ee35cac2efc2d2ad7c37960c41c9cf1aac123",
+    "$SCRATCH/p0-calendar-window-control-v1/org/dbsp/sqlCompiler/compiler/sql/ConstantRequiredTests.class": "247c6318fe3b058e2f6d25f2b3abbcf2f44f24af073dcdf5516ca5a07d256116",
+    "$SCRATCH/p0-calendar-window-control-v2/tests.log": "d9324cc0bd69a74790bcb4f86ebb0bceb605e1e5064ec72ecfd5d3ff2980adfc",
+    "$SCRATCH/p0-calendar-window-control-v2/org/dbsp/sqlCompiler/compiler/sql/ConstantRequiredTests.class": "1bfe276b78e6e405a3100636fe1e197bef6f09d72db79dc2a7b5447c345fdaf3",
+    "$SCRATCH/p0-calendar-window-repair-v1/command.json": "68d4221b2d53e2e4a44720432b4ddc4d57cff0b782102e14c06a6c1ce06a8107",
+    "$SCRATCH/p0-calendar-window-repair-v1/tests.log": "a7aa2369ed766694b2658beaafc72c43826c4ed78df293dc3cc46f2d34eba0e1",
+    "$SCRATCH/p0-calendar-window-repair-v1/capture/calcite-messages.json": "3abc0425ce319ced0c5ace8ec24ed79823e483e5e3e4bc3e2f77113deb5089ea",
+    "$SCRATCH/p0-calendar-window-repair-v1/capture/java-diagnostics.jsonl": "74d8475be98854c0d02149bcf62f05c314b7ecf255e20555ec1b7ba367f2e090",
+    "$SCRATCH/p0-calendar-window-repair-v1/capture/direct-assertions.jsonl": "c6fe4ffa579e412d84977687e0fa0e85b3d686a603db4f0bd3281d41c9b787cc",
+    "$SCRATCH/p0-calendar-window-repair-v1/capture/complete.json": "4f41b9d48eb0e47eafe19302fa89cba75852f86db73387ebd918bb0e321fae1c",
+    "$SCRATCH/p0-calendar-window-repair-v1/surefire-reports/org.dbsp.sqlCompiler.compiler.sql.ConstantRequiredTests.txt": "9c143ca5a19d2e4642bb571a5f5ed9364ba0e23d38150a8fc46d65b9b3641f82",
+    "$SCRATCH/p0-calendar-window-repair-v1/surefire-reports/TEST-org.dbsp.sqlCompiler.compiler.sql.ConstantRequiredTests.xml": "d231ded89cfdab40a9e3a2f2f3caa3d2602da8b7482e9f7a5d2c67acb1da6475",
+    "$SCRATCH/p0-calendar-window-repair-v1/surefire-reports/org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests.txt": "eab6a01a2d49e922f545ab4935f65fe4c75da4600ecb0d4f39b998feb7d502dd",
+    "$SCRATCH/p0-calendar-window-repair-v1/surefire-reports/TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests.xml": "2546d4faae57da92ec1a0079be243f5b079cf38130ac2291569e1e048277887e",
+    "$SCRATCH/p0-calendar-window-repair-v2/command.json": "3029a3fdabcb6dca9459df40aacf6327cecfbed68aa492164a801eaf83bbce57",
+    "$SCRATCH/p0-calendar-window-repair-v2/tests.log": "f4b55234b06d6cfcbd302914eb93da9ba91a2095371701245d6c0d208f9ab0b8",
+    "$SCRATCH/p0-calendar-window-repair-v2/capture/calcite-messages.json": "3abc0425ce319ced0c5ace8ec24ed79823e483e5e3e4bc3e2f77113deb5089ea",
+    "$SCRATCH/p0-calendar-window-repair-v2/capture/java-diagnostics.jsonl": "74d8475be98854c0d02149bcf62f05c314b7ecf255e20555ec1b7ba367f2e090",
+    "$SCRATCH/p0-calendar-window-repair-v2/capture/direct-assertions.jsonl": "f9d81bb5f8d480f641c852bc083a3ea35258d9f8b44df4b1d2ecd27ff583d895",
+    "$SCRATCH/p0-calendar-window-repair-v2/capture/complete.json": "07f8409eff7b9441f9debd2f98ee0f48d6d849a5657825f7762ed442d8355e91",
+    "$SCRATCH/p0-calendar-window-repair-v2/surefire-reports/org.dbsp.sqlCompiler.compiler.sql.ConstantRequiredTests.txt": "ec62f598e00322e774716cdb0d18e73b93f0e26813ccf5058ddcef1524892d5b",
+    "$SCRATCH/p0-calendar-window-repair-v2/surefire-reports/org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests.txt": "31905f49c943f215031a1ed264d5aef13c8f45407cb086d27c76abfe2f228ae0",
+    "$SCRATCH/p0-calendar-window-repair-v2/surefire-reports/TEST-org.dbsp.sqlCompiler.compiler.sql.ConstantRequiredTests.xml": "264a74e098e35800510c81b89a3cc9a3ed91a7c856905f507663b483fc26bc6e",
+    "$SCRATCH/p0-calendar-window-repair-v2/surefire-reports/TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests.xml": "cb652960dfd485bc88e2486f282f1b9e7157a98cd47a3baa32376c37f77f8a28",
+    "$SCRATCH/CalendarWindowProbe.java": "2193766b3f345ba591293eae19ee782a8c1f9e9d697b79f5daaf21b63379742a",
+    "$SCRATCH/p0-calendar-window-repair-v1.py": "e1d8cf0d421b642a59465bdb6d15cfb08ce56f968c913b68b42062207c0c5dca",
+    "$SCRATCH/p0-calendar-window-repair-v2.py": "df120b02e4d0a4b9980c15a68cdc4cb5a71712805a9d13f8ce5daa3d015fa6d5",
+    "$SCRATCH/p0-calendar-window-certificate.py": "6b7cf3f883444b3534416cf70e8f17b9331ff339c5687f6534ea9d5d5e820bfb",
+    "$REPO/crates/sql/evidence/diagnostic-direct-capture.json": "1b160907d3e89a9b6dac70584acbe3ae1fdb415667de37edb62f6a19d12410f0"
+  },
+  "classpaths": {
+    "$SCRATCH/p0-calendar-window-repair-v2/patched-tools/classes": "c1b205b953db86da97e5db02eaeab8f7cdf3d49a57917f60f60a180b1b4a68d2",
+    "$SCRATCH/p0-calendar-window-repair-v2/patched-tools/test-classes": "0f547cd0d8e15cbb3e7b6dbc5767b0a88980e60d0bef8723caa9c721c5ac5ed3"
+  },
+  "base_certificate": {
+    "path": "$REPO/crates/sql/evidence/diagnostic-direct-capture.json",
+    "sha256": "1b160907d3e89a9b6dac70584acbe3ae1fdb415667de37edb62f6a19d12410f0"
+  },
+  "P0_complete": false,
+  "limitations": [
+    "Level 0 retains the earlier generic constant-bound error; level 2 emits the calendar-interval error.",
+    "The first fixture incorrectly expected the level-2 message at level 0. Both failed fixture runs are retained.",
+    "The full v9 diagnostic capture and concurrent full S1 replay predate this repair.",
+    "Patched bytecode is archived as an overlay on the frozen v9 compiler; the nine-test repair ran through Maven."
+  ]
+}

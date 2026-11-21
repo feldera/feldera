@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-layer-items-archive.json",
+  "scope": "Test-only file cursor exposes an owned DBSP buffer and item root. A reopened layer file supplies the original key and auxiliary bytes to two archive descriptors retained by one native item.",
+  "layer_bytes": 1024,
+  "owned_items": 3,
+  "verified": ["detached buffer ownership", "two preserved descriptor owners", "exact values", "archived ordering", "release after the last view"],
+  "focused_tests_passed": 6,
+  "clippy_warnings": 0
+}

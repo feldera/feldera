@@ -1,0 +1,30 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T17:24:48.332360+00:00",
+  "archive": ".p0-artifacts/p0-s1-expression-sharing-20261117-v1.tar.gz",
+  "sha256": "674212f7e7066d5316a4ac1ebf3d60333911a6ea2f686f44c2c58a50bb21be28",
+  "bytes": 40140443,
+  "certificates": [
+    "s1-expression-sharing.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-expression-sharing.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-expression-sharing-v1/source-snapshot/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-expression-sharing.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Original input-reference sharing census across both exported populations; no transport parity claimed",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-expression-sharing-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 82,
+  "verified_source_hashes": 46,
+  "verified_classpath_hashes": 3
+}

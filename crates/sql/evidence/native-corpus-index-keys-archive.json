@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "archive": ".bench-results/native-keys/2026-18-11-corpus-index-keys-c6ede/raw.tar.gz",
+  "bytes": 477976,
+  "sha256": "73450d60a0c01e82cd35ae2cecb0de755ca22a84b6d29e28cd703359cbdf6ede",
+  "manifest_sha256": "e9b6a02d9781a6e6806f3d36d0dd6b26009c7d1ca8585561fe2587c96f512343",
+  "verified_files": 30,
+  "all_members_verified": true
+}

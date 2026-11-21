@@ -217,7 +217,7 @@ where
     }
 
     fn stats(&self) -> &BatchMetadata {
-        &self.file.metadata
+        self.file.metadata()
     }
 }
 

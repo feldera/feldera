@@ -108,6 +108,9 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
     @SuppressWarnings("unused")
     public static DBSPTypeTimestamp fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeTimestamp.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeTimestamp.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeTimestamp(CalciteObject.EMPTY, mayBeNull);
     }
 }

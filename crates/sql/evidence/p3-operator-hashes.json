@@ -1,0 +1,121 @@
+{
+  "scope": "Independent Java and Rust comparisons of Merkle prefixes, assignment of precomputed hashes, and persistent-ID validation. Java computes the underlying Merkle hashes.",
+  "passes": {
+    "DeltaHashPrefixes": {
+      "comparator_sha256": "6e25b76287b8b31a284348e6156af767387a966da0c6e479af355ae5bc774c14",
+      "oracle_jar_sha256": "f36c81397d3ae5cf227acf41eca97641b9b8956398a394e39234f17b23ef2737",
+      "oracle_test_class_sha256": "d4cf3107fd66f78e2eba79300bc216d5417a7ebbbdda6a6b3f5d67f5ec04537a",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "b3fa7dd8e94fbba31cf809b4cfc19cc9beed524b6fe5f811285bebb4ad3b4c52"
+        ],
+        "pass": "DeltaHashPrefixes",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "b7c9019a1d3273e0a14c22ec64b266cf57ba3cee555dd072f32f8bdd85c53995"
+        ],
+        "pass": "DeltaHashPrefixes",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "GcHashPrefixes": {
+      "comparator_sha256": "6e25b76287b8b31a284348e6156af767387a966da0c6e479af355ae5bc774c14",
+      "oracle_jar_sha256": "f36c81397d3ae5cf227acf41eca97641b9b8956398a394e39234f17b23ef2737",
+      "oracle_test_class_sha256": "d4cf3107fd66f78e2eba79300bc216d5417a7ebbbdda6a6b3f5d67f5ec04537a",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "79d7255f37a69af5c6780da607375748a7c5de5cbcfb2939ca3dfed3fae3b15a"
+        ],
+        "pass": "GcHashPrefixes",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "cf67b4f565be41e4c77f8540da64b5a78cafa60a55088fc8fbec18989b52cc66"
+        ],
+        "pass": "GcHashPrefixes",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "SetOperatorHashes": {
+      "comparator_sha256": "6e25b76287b8b31a284348e6156af767387a966da0c6e479af355ae5bc774c14",
+      "oracle_jar_sha256": "f36c81397d3ae5cf227acf41eca97641b9b8956398a394e39234f17b23ef2737",
+      "oracle_test_class_sha256": "d4cf3107fd66f78e2eba79300bc216d5417a7ebbbdda6a6b3f5d67f5ec04537a",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "cfda1fefd66927a669d3450a072d23467d4b57eb2d538a573934d281f2747d7a"
+        ],
+        "pass": "SetOperatorHashes",
+        "invocations": 17142,
+        "changed": 17142,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "a7bb4313051c765df817c058818a486d6bc69b1410c6f945a502f0e9a227a6a4"
+        ],
+        "pass": "SetOperatorHashes",
+        "invocations": 17054,
+        "changed": 17054,
+        "cases_without_placement": 0
+      }
+    },
+    "CheckPersistentIds": {
+      "comparator_sha256": "75e8a16af524a103c9f55396f5fce161558042bfad322ad1d35d5f692ca739c4",
+      "oracle_jar_sha256": "9757bfb51b614028ab056cde551afc5e5bf1ffc1aec4e7aea515b5c1bf8de429",
+      "oracle_test_class_sha256": "8be0aa0ccc277cec8e5fba2f90f0e93458a62c30d374af7254d2482f2ed22105",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "b9ed9be3028420b6a9cd309bd834a289feab07815446516345e6dcaeca8e43d0"
+        ],
+        "pass": "CheckPersistentIds",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "e5e482491aeedae737329a23264d14f9c88a26c926f89e91d419c79cb81c5365"
+        ],
+        "pass": "CheckPersistentIds",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    }
+  }
+}

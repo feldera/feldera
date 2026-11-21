@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-dead-code.tar.gz",
+  "bytes": 34195541,
+  "sha256": "9aa1cf64936521e5bb2996d3af44abd8ba1636fdb5f78dc7fa8217c15003ff50",
+  "manifest_sha256": "e955e54289a483f6bb157ceb07340f6e2a0dd578004eb4fecc1a3a6e94d262a6",
+  "verified_files": 34145,
+  "all_members_verified": true
+}

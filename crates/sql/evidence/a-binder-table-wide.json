@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-table-wide-archive.json",
+  "scope": "Whole-program Binder A for one plain table and one view using direct column projections or an unqualified wildcard.",
+  "held_out_sample": 1563,
+  "java_accepted_table_view_candidates": 436,
+  "scope_refusals_in_table_view_census": 429,
+  "held_out_cases": [
+    {
+      "id": "6221",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#idTest/0"
+    },
+    {
+      "id": "6258",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#projectTest/0"
+    },
+    {
+      "id": "7247",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#idTest/0"
+    },
+    {
+      "id": "7284",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#projectTest/0"
+    },
+    {
+      "id": "7355",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#idTest/0"
+    },
+    {
+      "id": "7392",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#projectTest/0"
+    },
+    {
+      "id": "8095",
+      "source_id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testEmbeddedDb/0"
+    }
+  ],
+  "distinct_held_out_programs": 3,
+  "by_mode": {
+    "classic": {
+      "cases": 21,
+      "observations": 7846,
+      "artifact_byte_differences": 0
+    },
+    "gen2": {
+      "cases": 21,
+      "observations": 7888,
+      "artifact_byte_differences": 0
+    }
+  },
+  "rust_tests_passed": 79,
+  "rust_clippy": "passed",
+  "generated_scope_control": 59264,
+  "prior_scoped_control": 9886,
+  "prior_whole_constant_runs": 32,
+  "prior_attempt": "The new Gen-2 oracle rows omitted the engine option and compiled as classic. Corrected the manifest before comparing either profile.",
+  "generated_runtime_executed": false
+}

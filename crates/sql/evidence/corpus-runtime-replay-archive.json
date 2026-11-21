@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-corpus-runtime-replay-20261118-v1.tar.gz",
+  "bytes": 2551099,
+  "sha256": "574e2a6601bf38ac646c13b337066cb17c5d152aafddf2c6bd06fe74db973115",
+  "manifest_sha256": "7d991cc168d6ff231cd9ad7359358966b5eff932cd0f7c8f419dc265e7b6d4d1",
+  "verified_files": 380,
+  "all_members_verified": true
+}

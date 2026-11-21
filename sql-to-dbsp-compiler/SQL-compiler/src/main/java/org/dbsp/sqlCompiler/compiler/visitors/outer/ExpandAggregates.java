@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -40,7 +41,6 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Predicate;
 
 /**
  * Expand {@link DBSPStreamAggregateOperator} into multiple operators,
@@ -52,66 +52,66 @@ public class ExpandAggregates extends Passes {
         super("ExpandAggregates", compiler);
         this.appendOnly = new AppendOnly(compiler);
         this.add(this.appendOnly);
-        this.add(new ExpandStreamAggregates(compiler, weightVar, this.appendOnly::isAppendOnly));
+        this.add(new ExpandStreamAggregates(compiler, weightVar, this.appendOnly));
     }
 
     record GroupedAggregates(List<DBSPAggregateList> groups, Shuffle shuffle) {}
 
-    static GroupedAggregates reorderAggregates(DBSPAggregateList aggregates, boolean appendOnly) {
-        if (aggregates.size() == 1) {
-            return new GroupedAggregates(Linq.list(aggregates), new IdShuffle(1));
-        }
-        // Make a new list for each IAggregate which is not compatible with any other previous aggregate
-        List<List<Integer>> indexes = new ArrayList<>();
-        List<List<IAggregate>> groups = new ArrayList<>();
-
+    private static List<List<Integer>> compatibleGroups(List<IAggregate> aggregates, boolean appendOnly) {
+        List<List<Integer>> groups = new ArrayList<>();
         for (int i = 0; i < aggregates.size(); i++) {
-            IAggregate aggregate = aggregates.aggregates.get(i);
-            boolean added = false;
-            for (int groupIndex = 0; groupIndex < indexes.size(); groupIndex++) {
-                List<Integer> ix = indexes.get(groupIndex);
-                List<IAggregate> g = groups.get(groupIndex);
-                IAggregate inGroup = Utilities.last(g);
-                if (inGroup.compatible(aggregate, appendOnly)) {
-                    // This implicitly relies on the transitivity of compatibility
-                    ix.add(i);
-                    g.add(aggregate);
-                    added = true;
+            IAggregate aggregate = aggregates.get(i);
+            List<Integer> selected = null;
+            for (var group : groups) {
+                if (aggregates.get(Utilities.last(group)).compatible(aggregate, appendOnly)) {
+                    selected = group;
                     break;
                 }
             }
-            if (!added) {
-                // Create a new group.
-                List<Integer> ix = new ArrayList<>();
-                List<IAggregate> g = new ArrayList<>();
-                indexes.add(ix);
-                groups.add(g);
-                ix.add(i);
-                g.add(aggregate);
+            if (selected == null) {
+                selected = new ArrayList<>();
+                groups.add(selected);
             }
+            selected.add(i);
         }
+        return groups;
+    }
 
-        List<Integer> shuffleIndexes = new ArrayList<>(aggregates.size());
-        for (var group: indexes)
-            shuffleIndexes.addAll(group);
-        Utilities.enforce(shuffleIndexes.size() == aggregates.size());
-        Shuffle shuffle = new ExplicitShuffle(aggregates.size(), shuffleIndexes);
-        List<DBSPAggregateList> lists = Linq.map(groups,
-                g -> new DBSPAggregateList(aggregates.getNode(), aggregates.rowVar, g));
-        return new GroupedAggregates(lists, shuffle);
+    static GroupedAggregates reorderAggregates(DBSPAggregateList aggregates, boolean appendOnly, boolean useRust) {
+        if (aggregates.size() == 1)
+            return new GroupedAggregates(Linq.list(aggregates), new IdShuffle(1));
+        var groups = useRust
+                ? RustCircuitPass.aggregateGroups(aggregates.aggregates, appendOnly)
+                : compatibleGroups(aggregates.aggregates, appendOnly);
+        List<Integer> permutation = new ArrayList<>(aggregates.size());
+        List<DBSPAggregateList> lists = new ArrayList<>(groups.size());
+        for (var indexes : groups) {
+            permutation.addAll(indexes);
+            lists.add(new DBSPAggregateList(aggregates.getNode(), aggregates.rowVar,
+                    Linq.map(indexes, aggregates.aggregates::get)));
+        }
+        return new GroupedAggregates(lists, new ExplicitShuffle(aggregates.size(), permutation));
     }
 
     /** Splits the aggregates inside a DBSPStreamAggregate operator into multiple aggregate operators
      * and combines the results. */
-    static class ExpandStreamAggregates extends CircuitCloneVisitor {
-        final Predicate<OutputPort> isAppendOnly;
+    public static class ExpandStreamAggregates extends CircuitCloneVisitor {
+        private final AppendOnly appendOnly;
         final DBSPVariablePath weightVar;
 
         public ExpandStreamAggregates(DBSPCompiler compiler, DBSPVariablePath weightVar,
-                                      Predicate<OutputPort> isAppendOnly) {
+                                      AppendOnly appendOnly) {
             super(compiler, false);
-            this.isAppendOnly = isAppendOnly;
+            this.appendOnly = appendOnly;
             this.weightVar = weightVar;
+        }
+
+        /** Output zero of each producer marked by the preceding analysis. */
+        public long[] appendOnlyInputs() {
+            return this.appendOnly.appendOnly.stream().mapToLong(port -> {
+                Utilities.enforce(port.outputNumber == 0);
+                return port.operator.id;
+            }).sorted().toArray();
         }
 
         /** Implement one Min/Max/ArgMin/ArgMax aggregate for sources which are not append-only.
@@ -264,9 +264,10 @@ public class ExpandAggregates extends Passes {
             }
 
             DBSPTypeIndexedZSet inputType = i.getOutputIndexedZSetType();
-            boolean appendOnly = this.isAppendOnly.test(operator.input());
+            boolean appendOnly = this.appendOnly.isAppendOnly(operator.input());
 
-            GroupedAggregates ga = reorderAggregates(operator.getAggregateList(), appendOnly);
+            GroupedAggregates ga = reorderAggregates(operator.getAggregateList(), appendOnly,
+                    this.compiler.options.ioOptions.rustOptimizerPasses);
             CalciteRelNode node = operator.getRelNode();
             List<DBSPSimpleOperator> aggregates = Linq.map(ga.groups,
                     g -> this.implementAggregateGroup(node, inputType.keyType, i, g, appendOnly));

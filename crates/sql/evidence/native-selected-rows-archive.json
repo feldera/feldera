@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-selected-rows-20261118-v1.tar.gz",
+  "bytes": 8914131,
+  "sha256": "6d50558b4b2767b6742d7270cdc7eae34c965ad73382996f72876d4fbf5a6009",
+  "manifest_sha256": "426caa4f55e9f58d91d985b9b9a1b054bb5613f21dfddf60cc407f4e0e7f6f7b",
+  "verified_files": 38,
+  "all_members_verified": true
+}

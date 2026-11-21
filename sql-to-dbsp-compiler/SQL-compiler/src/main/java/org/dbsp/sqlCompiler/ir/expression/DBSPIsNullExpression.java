@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** Given an expression e, this is equivalent with the Rust code
  * e.is_none().  Obviously, e must have a nullable type. */
@@ -42,7 +43,12 @@ public final class DBSPIsNullExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPIsNullExpression(CalciteObject node, DBSPExpression expression) {
-        super(node, new DBSPTypeBool(CalciteObject.EMPTY, false));
+        this(node, expression, new DBSPTypeBool(CalciteObject.EMPTY, false));
+    }
+
+    private DBSPIsNullExpression(CalciteObject node, DBSPExpression expression, DBSPTypeBool type) {
+        super(node, type);
+        Utilities.enforce(!type.mayBeNull);
         this.expression = expression;
         if (!expression.getType().mayBeNull)
             throw new InternalCompilerError("isNull applied to non-nullable expression?", expression);
@@ -102,6 +108,7 @@ public final class DBSPIsNullExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static DBSPIsNullExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
-        return new DBSPIsNullExpression(CalciteObject.EMPTY, expression);
+        DBSPTypeBool type = getJsonType(node, decoder).to(DBSPTypeBool.class);
+        return new DBSPIsNullExpression(CalciteObject.EMPTY, expression, type);
     }
 }

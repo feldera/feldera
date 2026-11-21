@@ -604,7 +604,8 @@ public class IncrementalRegression2Tests extends SqlIoTest {
         // Run a series of random incremental tests using RANK and DENSE_RANK and compare
         // the results with the embedded database.
         Random random = new Random();
-        var seed = random.nextInt(10000);
+        // Keep each exported transaction sequence stable across independent captures.
+        int seed = this.exportsCorpus() ? 8247 : random.nextInt(10_000);
         // This is like a proptest: print seed in case we need to reproduce a bug
         System.out.println(this.currentTestInformation + " random seed: " + seed);
         random.setSeed(seed);

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-indexed-inputs-archive.json",
+  "scope": "Eager indexed input expansion with a single supported consumer. Classic keeps the whole value row. Gen-2 removes key columns from the value and reconstructs the original column order.",
+  "strict_graph_and_name_counter_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "active_frozen_graphs": {
+    "classic": 4,
+    "gen2": 4
+  },
+  "directed_graphs_equal": {
+    "classic": 4,
+    "gen2": 4
+  },
+  "composed_placements": 54,
+  "composed_java_codec_control_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "composed_rust_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "generated_program_runtime_executed": false
+}

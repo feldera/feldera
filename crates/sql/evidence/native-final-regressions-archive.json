@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-final-regressions-20261118-v3.tar.gz",
+  "bytes": 363120,
+  "sha256": "1ee44aef363c00a08a3585bb49c5807bbf4f70145501e9dcc7064d560223fa06",
+  "manifest_sha256": "0047f000466d1bd68bb6c29863add33860378d4b9ff103665e2694029e953ca7",
+  "verified_files": 35,
+  "all_members_verified": true
+}

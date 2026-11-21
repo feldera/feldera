@@ -1,0 +1,2413 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "scope": "Isolated runtime-described NativeRow and owned archived-view feasibility using actual DBSP dynamic traits; requires a factory/storage API extension",
+  "captured_at_utc": "2026-11-18T11:54:34.625667+00:00",
+  "results": {
+    "focused_tests": 5,
+    "full_dbsp_probe_tests": 17,
+    "failed_final": 0,
+    "ignored_final": 0,
+    "clippy_all_targets_warnings_denied": true,
+    "format_check": true,
+    "reference_shapes": [
+      "Tup1<i64>",
+      "Tup2<i32, i64>",
+      "Tup1<Option<i64>>"
+    ]
+  },
+  "attempts": {
+    "1": "Compile failure: DynDeserialize alias not publicly re-exported",
+    "2": "Four focused tests pass via public ArchiveTrait associated type",
+    "3": "Five focused tests pass including actual DBSP serializer",
+    "full_suite": "17 tests pass, none ignored; Clippy all targets and format check pass"
+  },
+  "checks": [
+    "Descriptor-preserving default, clone and move through DynData",
+    "Actual ArchiveTrait::Archived archived/live and archived/archived comparisons",
+    "Native archive bytes and decoded Xxh3Default hash equal reference tuples",
+    "Factory and live-row drop while archive retains code and storage; final release via Weak",
+    "Actual DbspSerializer serialization with alignment and mutable dynamic decode",
+    "Reference raw row archive file reopening with fresh native descriptor",
+    "Wrong layout, offset overflow, truncation and invalid option-tag rejection"
+  ],
+  "limitations": [
+    "No prior failed source snapshot",
+    "Raw row file reopening is not DBSP checkpoint or spill",
+    "Not existing Factory API",
+    "No full ten-program C7 or full-type state decision",
+    "No timings or memory measurements",
+    "No zero-copy comparison performance claim; bounded decoder fallback allocates cells",
+    "SizeOf excludes code mappings/private encoder allocations; no memory measurement",
+    "Synthetic integer rows, not corpus update sequences"
+  ],
+  "archive": {
+    "path": ".p0-artifacts/p0-native-context-20261118-v1.tar.gz",
+    "bytes": 595443038,
+    "sha256": "4104349c98869906b5186ed0107c9721abdef885f28d7cf9809574f90ca9cadf",
+    "manifest": "p0-native-context-v1/snapshot.json",
+    "manifest_sha256": "286cd150517e9f9f1690ad2f04dfb5833a447d4784bf921209f464be09e46100",
+    "source_files": 457,
+    "artifacts": 14
+  },
+  "local_source_hashes_verified": 457,
+  "sources": [
+    {
+      "path": ".cargo/config.toml",
+      "bytes": 382,
+      "sha256": "dea02b0185ecb1ec1ee40e55bf73fe430297a63caf711fd93dd90c9a1723cb3e"
+    },
+    {
+      "path": "Cargo.lock",
+      "bytes": 364878,
+      "sha256": "04c4d4d22dacf1823df9e0d9a703d122cce4ed75c454a006b6cff580dfb2f2e0"
+    },
+    {
+      "path": "Cargo.toml",
+      "bytes": 16267,
+      "sha256": "308160ef6289a92d973a2b32b70189e7802b1a2e38fffe1f82ade214d7bcc339"
+    },
+    {
+      "path": "crates/buffer-cache/Cargo.toml",
+      "bytes": 629,
+      "sha256": "f5f45bc3908f0903baaeb919cbe4b38043431ce868110fa0400350bdaf979568"
+    },
+    {
+      "path": "crates/buffer-cache/README.md",
+      "bytes": 1080,
+      "sha256": "c0fed056648a6652d43907be3d22abf11b81f2ab04ebd0d77dfceefb06f4c401"
+    },
+    {
+      "path": "crates/buffer-cache/src/builder.rs",
+      "bytes": 6686,
+      "sha256": "9a7328a175c4adb55b1f157600c8c8cf3628c5f1f894aa7467acd96e0c2a42e3"
+    },
+    {
+      "path": "crates/buffer-cache/src/lib.rs",
+      "bytes": 2813,
+      "sha256": "db51492325e7439bcfbd6116a8f8388d40a61204fc9577b5ae9acb7ec4bb4079"
+    },
+    {
+      "path": "crates/buffer-cache/src/lru.rs",
+      "bytes": 9515,
+      "sha256": "301161cc541fc0dd35643d6ce0f19e3882620959a4616de873d23dc3f801bc17"
+    },
+    {
+      "path": "crates/buffer-cache/src/s3_fifo.rs",
+      "bytes": 9045,
+      "sha256": "63e7b7640c1ad5896362926c0f80d518d55ee0df2d3c2f0e85370ae1108f7436"
+    },
+    {
+      "path": "crates/buffer-cache/src/tests/builder.rs",
+      "bytes": 3243,
+      "sha256": "6eb2d74540c2479671f3324683fe5d389def63c0d2fecb8703ba91492630e53c"
+    },
+    {
+      "path": "crates/buffer-cache/src/tests/lru.rs",
+      "bytes": 4419,
+      "sha256": "01d6c3479fc9e6d1d160a36ea4c9d4be8cfe2f52b880cc01968f3c5ca9603faf"
+    },
+    {
+      "path": "crates/buffer-cache/src/tests/s3_fifo.rs",
+      "bytes": 6347,
+      "sha256": "ee734eb339eff849ef91bb3d74b7400741ebaaaf2a131527bc95a9cc56b0ae92"
+    },
+    {
+      "path": "crates/buffer-cache/src/tests/s3_fifo_proptests.rs",
+      "bytes": 7534,
+      "sha256": "f36d40ad8e27402cb919dad86579532d2442ca32c3d0b7ed13154614ba9ec47c"
+    },
+    {
+      "path": "crates/buffer-cache/src/tests.rs",
+      "bytes": 58,
+      "sha256": "8e1a3f766eaee23df5ed2907368c0ffb714f6ecd3f7dc32e3017f8a26972121a"
+    },
+    {
+      "path": "crates/buffer-cache/src/thread_type.rs",
+      "bytes": 624,
+      "sha256": "13ad0e831aec7902ae11750581967880e998f9cf5f71bc5e9cd391bfb9658555"
+    },
+    {
+      "path": "crates/dbsp/Cargo.toml",
+      "bytes": 7109,
+      "sha256": "c817fa491adfe5f09bf676a9e36f133eb7beed47fb2a7c9313a192195069128c"
+    },
+    {
+      "path": "crates/dbsp/README.md",
+      "bytes": 2206,
+      "sha256": "42ea4ce1edd782506e379e70ba9cf215a6523dd82446b356d068abec4e928500"
+    },
+    {
+      "path": "crates/dbsp/benches/buffer_cache.rs",
+      "bytes": 16369,
+      "sha256": "bf76408dd85f06b367f56c70bb5ac89bbbd3add33ca5639ac74c19867fc2f6e3"
+    },
+    {
+      "path": "crates/dbsp/benches/column_layer.rs",
+      "bytes": 8419,
+      "sha256": "7f05891d93659976191915a9966ae7e84804678ea3ae141b1b1956500c288ce2"
+    },
+    {
+      "path": "crates/dbsp/benches/commit_steps.rs",
+      "bytes": 16932,
+      "sha256": "ef10eec871a7c5e88474028ed2d45a2ce5ca49a13be4481b10d90276dd3a89ab"
+    },
+    {
+      "path": "crates/dbsp/benches/consolidation.rs",
+      "bytes": 6905,
+      "sha256": "52fa1755570b5b110dc5376e0ff43e7700c2369d94770f72a0530fbcc73063cc"
+    },
+    {
+      "path": "crates/dbsp/benches/cursor_list.rs",
+      "bytes": 7030,
+      "sha256": "f0be9509ab9797244eed25723bcaf1972de24ee93b83c7d182d67b274898e73b"
+    },
+    {
+      "path": "crates/dbsp/benches/filter_predictor.rs",
+      "bytes": 72915,
+      "sha256": "fc9eb7a20c56b39442b4fe6fbb5c03a6f580aae989e32d7bc94d71f4b5323f52"
+    },
+    {
+      "path": "crates/dbsp/benches/fraud.rs",
+      "bytes": 13815,
+      "sha256": "653b4fcf18ced9cff3b2f87ab33e1a62df2ffc521d794462b4b1a13219c115b1"
+    },
+    {
+      "path": "crates/dbsp/benches/galen.rs",
+      "bytes": 13937,
+      "sha256": "248e8219adb22568d596a98ed8015443d0016eef89d86edb088285d594fe9cf8"
+    },
+    {
+      "path": "crates/dbsp/benches/graph_coloring.rs",
+      "bytes": 14192,
+      "sha256": "aaa2c34da319abbc5bcd8206c59d2970e9d2bf7dcf7207debb7228ab1fb77e7a"
+    },
+    {
+      "path": "crates/dbsp/benches/input_map_ingest.rs",
+      "bytes": 6245,
+      "sha256": "89a3684c0a810d02b1e20c295c2f58e55a953a1d753dc2a12639b3a4f6b79526"
+    },
+    {
+      "path": "crates/dbsp/benches/join_updates.rs",
+      "bytes": 19848,
+      "sha256": "02d9a47d56ca65ba0b9a8f22df791aa5e8e731ffc43e40f9291fe16f4c2d7419"
+    },
+    {
+      "path": "crates/dbsp/benches/lazy_input_map.rs",
+      "bytes": 53040,
+      "sha256": "5244d6a39a9f23393c709d477e464a55119f728dd53d574fd8b3e42d00e88c89"
+    },
+    {
+      "path": "crates/dbsp/benches/ldbc-graphalytics/bfs.rs",
+      "bytes": 3924,
+      "sha256": "5a9e6393adc7214b4ef48ed489b8c994220c27ef3ce2448ac2fd055b6c5ecef9"
+    },
+    {
+      "path": "crates/dbsp/benches/ldbc-graphalytics/data.rs",
+      "bytes": 28705,
+      "sha256": "0888816975969136e019b5f34304759b0705eba8c69c1b1573bf02f1a5f0df2e"
+    },
+    {
+      "path": "crates/dbsp/benches/ldbc-graphalytics/main.rs",
+      "bytes": 20041,
+      "sha256": "489f9e5a1374645e156acfd6f1c1f70d7589de105f6831066cca0c1af09efe28"
+    },
+    {
+      "path": "crates/dbsp/benches/ldbc-graphalytics/pagerank.rs",
+      "bytes": 12212,
+      "sha256": "58c087e6a129b1dd79fa9dd1418c6c29fb886b3067e655a30fd4621df753b3df"
+    },
+    {
+      "path": "crates/dbsp/benches/list_merger.rs",
+      "bytes": 8032,
+      "sha256": "8ab3f8ce58b93d583350f0de4b46fcd815abf5f4ced359eabb218e55d3fa2fe3"
+    },
+    {
+      "path": "crates/dbsp/benches/path.rs",
+      "bytes": 5623,
+      "sha256": "199000a02889ca68f7777fde6097be18bb475d52bdd0ad925b27ce401d87b6b4"
+    },
+    {
+      "path": "crates/dbsp/benches/rolling_aggregate_backfill.rs",
+      "bytes": 26392,
+      "sha256": "74639d2f0f102e4a6d14612d3b0d8edb2a5b2254350707e7930bce066846450f"
+    },
+    {
+      "path": "crates/dbsp/benches/seek_key_exact.rs",
+      "bytes": 9064,
+      "sha256": "52ceb969de7208ab92dda0825e01a4d10e71d826fe25ebbcb92c8e1b5ea18669"
+    },
+    {
+      "path": "crates/dbsp/benches/spine_batches.rs",
+      "bytes": 37021,
+      "sha256": "2605826398b98baba3bbc5eff6362968ff9bb61161bde0c6d0e9e2fa710b6808"
+    },
+    {
+      "path": "crates/dbsp/benches/star_join.rs",
+      "bytes": 9445,
+      "sha256": "2c66ead6592c39775672b0499a1420adfb43f076ac2c77586bf279a4f170acd8"
+    },
+    {
+      "path": "crates/dbsp/benches/support/measure.rs",
+      "bytes": 32894,
+      "sha256": "654f85e5776328103a462f60ae418d77068abf8ccd2a6bc51918d747c391a7ff"
+    },
+    {
+      "path": "crates/dbsp/benches/transitive_closure_acyclic.rs",
+      "bytes": 13907,
+      "sha256": "e216ed1a49e4392f982d491a560451002d0bad6f5f655ff7b1ede8eb453cc711"
+    },
+    {
+      "path": "crates/dbsp/benches/transitive_closure_cyclic.rs",
+      "bytes": 15169,
+      "sha256": "649bfba9110595b33f7a11c7621dbcb4e0a7b67f8994da1c086a4a327a04c8be"
+    },
+    {
+      "path": "crates/dbsp/benches/window_min.rs",
+      "bytes": 8655,
+      "sha256": "775c5744e55558ca28d24547a1d4686b732d16d711eddd590dc0952ebdd7a55d"
+    },
+    {
+      "path": "crates/dbsp/benches/window_retractions.rs",
+      "bytes": 12296,
+      "sha256": "78dace98dace3290899112328a585756a5bc5330f24ef758f012576c7ae0d415"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/checked_int.rs",
+      "bytes": 5327,
+      "sha256": "29563227cac55acf9956ac56dd7650e93356fa0c3655984313b38aedbcef2490"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/floats.rs",
+      "bytes": 17197,
+      "sha256": "f41585169f8f765fae62fed71f2f2dd74f4a38919e92e52f2cb9394c05e777ac"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/lattice.rs",
+      "bytes": 7023,
+      "sha256": "0060ad5738751425efbe9c485a71485b313b0174b00cf4aedec2b2f0324a7911"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/order.rs",
+      "bytes": 1449,
+      "sha256": "4ec216c70c1f6b2ec45f163f30fc714debff9452e947e09a3304295c1977ab45"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/present.rs",
+      "bytes": 2247,
+      "sha256": "16f944e0af4707807e107bb4b891aa3ff437e24d50978f7b77e618367206eb61"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/zset/zset_macro.rs",
+      "bytes": 3833,
+      "sha256": "b33be157a1ab1aac77103f4c6d2ea88272db849a075b3a0eb1c7c4ab0096c207"
+    },
+    {
+      "path": "crates/dbsp/src/algebra/zset.rs",
+      "bytes": 11573,
+      "sha256": "cf0e004af566f429ecbade91b9b49c1a6147b3baaf12b3de3db3e01d3c4082da"
+    },
+    {
+      "path": "crates/dbsp/src/algebra.rs",
+      "bytes": 16874,
+      "sha256": "230d7c5fad078fd01cf763ed2c2f126aa60ba8a3ef03abe74aff7c39716f57a4"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/bootstrap.rs",
+      "bytes": 56796,
+      "sha256": "5f816f5e0e41c6e04a87e200e82b44c905739dade01336b64dbdc1b52bac610a"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/cache.rs",
+      "bytes": 6726,
+      "sha256": "17507d64df022f8b5c64c13d5e79dffd34e27bed820721728f8ab00a6b17ada3"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/checkpointer.rs",
+      "bytes": 59660,
+      "sha256": "7c4c3c36580108205e92d3b1635bf17a16e9585248296f36398da0e7ee60c276"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/circuit_builder.rs",
+      "bytes": 280305,
+      "sha256": "d7a2e8bfc80dc66bfcb8bc5e9b8f2e03d2ca02acf3cd093e0c44cfe21ac55202"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/dbsp_handle.rs",
+      "bytes": 176127,
+      "sha256": "04111aba288edbf84825b0c37f46666024bb3461a831af05010a64508fd06a8c"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/fingerprinter.rs",
+      "bytes": 806,
+      "sha256": "3bf234e9580da0f575d1c1c97daf4cdc1d5905d3e5d46e80215ea33a564a7afa"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/metadata.rs",
+      "bytes": 44791,
+      "sha256": "0ba4d25a75c48950a5b8bdc45c4d30f549e45251390f2092a2adaeb1bd0350c1"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/metrics.rs",
+      "bytes": 2063,
+      "sha256": "2fe0779fc751c7431009327571056a9272e89e655f5012f4c0c01cad8b94dc53"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/operator_traits.rs",
+      "bytes": 31098,
+      "sha256": "a27bb0c7cea9fcaa4b547161dde837c58e0d00c194a9f9eb3d374641736efeb7"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/replay_tests.rs",
+      "bytes": 250080,
+      "sha256": "3f84d352d91bef2fd17da982052edb595ce3620a16e44695586c40111072e790"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/runtime.rs",
+      "bytes": 120996,
+      "sha256": "cbd5f7407548ec433024fc5e49253ef4b2d2fb9e72af591e7582cd67fceb7055"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/schedule/dynamic_scheduler.rs",
+      "bytes": 36018,
+      "sha256": "f59b2c385baffe23231709515a689c05cac83ba4d50f3d39fd5f9fbf06e1385f"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/schedule.rs",
+      "bytes": 23848,
+      "sha256": "7784558a351a13a495f7abc317a3cb3086616eb9942eb286aece19df5b7c9973"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/tokio.rs",
+      "bytes": 188,
+      "sha256": "e440d151cb0586dd07b9504ea72790e545983092a5d89f1651276673473f9b81"
+    },
+    {
+      "path": "crates/dbsp/src/circuit/trace.rs",
+      "bytes": 22273,
+      "sha256": "5a297377f9b8fc3b1380db7284891fc54ea69799a985375b79a23681a2a424f8"
+    },
+    {
+      "path": "crates/dbsp/src/circuit.rs",
+      "bytes": 2493,
+      "sha256": "24634cb63f19e2cd81bba6900ad01c778cad020dcbf73f113750b5acde7decef"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/clonable.rs",
+      "bytes": 2145,
+      "sha256": "cc1a502f4daa71f4353eb9e4fee5bc80c44867cbaad115a7c65997d018518917"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/comparable.rs",
+      "bytes": 3424,
+      "sha256": "36223a62634c701b110beeaa66e88ffdafa75a42d507053942a2d1a3cc8cde03"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/data.rs",
+      "bytes": 4346,
+      "sha256": "6a0b2b69d79a78a8fe7f905301f3bf8984d808fec7616034b24f84a535f4cfc6"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/declare_trait_object.rs",
+      "bytes": 5188,
+      "sha256": "fbaf75a02eafd5e7d8ded1393f4f9f8dba687aaa037bb16671c9e8c56277e072"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/downcast.rs",
+      "bytes": 2753,
+      "sha256": "7477d97d6cb05342f767ddfeebbdae1a215eef0baef5be70ebaacd3b60200199"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/erase.rs",
+      "bytes": 2003,
+      "sha256": "719b5814447c3aa939d41c32a82eb5eba1e466b9d1405cf7f9ff97d135cbd40a"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/factory.rs",
+      "bytes": 2406,
+      "sha256": "0d26e4cf4fa7fab98021747cac457953630bf318b924d6ba7ace6c6278fe6c21"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/hash_repr.rs",
+      "bytes": 19129,
+      "sha256": "7e1f691aad424920e8f2aa1b2c73de6ca8391ead95af501fe1ef2907398c285b"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/lean_vec.rs",
+      "bytes": 47792,
+      "sha256": "defd44cae073c2a22ac9046f5f1c154cb9aa60320615c4f6aa4bf82ec6370f8e"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/option.rs",
+      "bytes": 1939,
+      "sha256": "650659ac45214a9dcf1bb3172a4cfef947942e864945695b2712056e806b735b"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/ord_repr.rs",
+      "bytes": 17161,
+      "sha256": "e7ff842cccee1d1ffa2530e34c009b125fcc4d7fafbb4b84db7a636a798a4d88"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/pair.rs",
+      "bytes": 2554,
+      "sha256": "6a96954b08ec8ac4c906c33508a60f14d45098f9bd7f9199a2e2319bc085cfd7"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/pairs.rs",
+      "bytes": 5209,
+      "sha256": "ac808401c1ddfbe38c7976013ccb5a708ffa007ab0a536767fef8a2b7488343f"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/rkyv.rs",
+      "bytes": 6658,
+      "sha256": "61e6a64d89a2a97b7aaeca28120db923a0b12f0f4307e51936cf2fb72e97f323"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/set.rs",
+      "bytes": 4303,
+      "sha256": "95eaf57fd25dca18166d9a2af9c4ab164fbfb3bf984fe27283638197572c88d8"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/vec.rs",
+      "bytes": 21703,
+      "sha256": "e6cb3d971a2a715471eb30c3c3bfd4ac924f526620463c09db1c5c78899ce003"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/weight.rs",
+      "bytes": 3211,
+      "sha256": "c9e47398f8169ae8593d6d337c11383dd8b3e9e4d3ced9185860e5d4e4a90cfe"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic/weighted_pairs.rs",
+      "bytes": 2189,
+      "sha256": "dca85097f407577413e72714c34239a986212b05103c4bd4bde31dfe6e211fb2"
+    },
+    {
+      "path": "crates/dbsp/src/dynamic.rs",
+      "bytes": 8228,
+      "sha256": "4d1a1b7ea3bcdca4bd17197050fe971711030c7aa849aa147ccdbc9f982e1c51"
+    },
+    {
+      "path": "crates/dbsp/src/error.rs",
+      "bytes": 4644,
+      "sha256": "ae6bb344b96bc55cb7b9d318b32f766337a45d738c22387416334b85c588638c"
+    },
+    {
+      "path": "crates/dbsp/src/hash.rs",
+      "bytes": 368,
+      "sha256": "427780f193085f8b9ed3b44a7c6243ee2f9e68a2d470a7e705ed5ff4460fcc65"
+    },
+    {
+      "path": "crates/dbsp/src/ir.rs",
+      "bytes": 6320,
+      "sha256": "71d2b6d5a30ddbda2f8e9e129d816c1a73d9730669feb39cb0828def9342b5d9"
+    },
+    {
+      "path": "crates/dbsp/src/lib.rs",
+      "bytes": 4865,
+      "sha256": "26a7961f60b2e7088f4f44d11b5939ae22c44b45c496dc1d623dd858ebc863b6"
+    },
+    {
+      "path": "crates/dbsp/src/monitor/circuit_graph.rs",
+      "bytes": 17939,
+      "sha256": "48c34215d8d9eeb17f6a155f93cfd71ccdad8464af29b2873c3dd119719e6c1d"
+    },
+    {
+      "path": "crates/dbsp/src/monitor/visual_graph.rs",
+      "bytes": 6110,
+      "sha256": "32451197db98264b4d673e54dd973a28384bf98534227b3febc84be13e9cf30f"
+    },
+    {
+      "path": "crates/dbsp/src/monitor.rs",
+      "bytes": 28610,
+      "sha256": "972ca64e38916001c54c33d0ee2ac12e9f40dfcf57267ba7bfac7144202b156b"
+    },
+    {
+      "path": "crates/dbsp/src/mono.rs",
+      "bytes": 46090,
+      "sha256": "b3b3c18d0034644dab6c61f6db199ce58e954a73dbb1ef832143083627fe11c3"
+    },
+    {
+      "path": "crates/dbsp/src/num_entries.rs",
+      "bytes": 8791,
+      "sha256": "2c0057c0d13b2fa4257ad5a1d37128020307122e0f2416f709026cd94be30918"
+    },
+    {
+      "path": "crates/dbsp/src/operator/accumulate_trace.rs",
+      "bytes": 20870,
+      "sha256": "ff04b96f027b4a4af95a85f4d14a0d736dfcd08ee2caec2689ad8607fe1071cd"
+    },
+    {
+      "path": "crates/dbsp/src/operator/accumulate_trace_balanced.rs",
+      "bytes": 1170,
+      "sha256": "f07e0429f701785e459fb74baba4cb83869a4ac2b61eb2739a899589256a5e96"
+    },
+    {
+      "path": "crates/dbsp/src/operator/accumulator.rs",
+      "bytes": 4786,
+      "sha256": "1b35f175a2fe9dd127054679c40d2448bc1d1771d47ab4dafeccf89908eff5b8"
+    },
+    {
+      "path": "crates/dbsp/src/operator/aggregate.rs",
+      "bytes": 17722,
+      "sha256": "19473ae4b98e663371d80fd81c8a3f244f1c86f47345d24dfb3e1458aa4f3c0f"
+    },
+    {
+      "path": "crates/dbsp/src/operator/apply.rs",
+      "bytes": 9335,
+      "sha256": "30df7575e902a5da5d5037f673b140a714fd7a90149fdbb5af295272a1f6cacc"
+    },
+    {
+      "path": "crates/dbsp/src/operator/apply2.rs",
+      "bytes": 4573,
+      "sha256": "a57e3ddb9dc0bd9d11de9e2e53f9594d4adfc8a3f955c14344286dbc6d7001d0"
+    },
+    {
+      "path": "crates/dbsp/src/operator/apply3.rs",
+      "bytes": 3958,
+      "sha256": "cbf3e0df8995729b1fd8119e2ecd53459e29b7bb6e30feb575495ac3b0a6bc5f"
+    },
+    {
+      "path": "crates/dbsp/src/operator/apply_n.rs",
+      "bytes": 1446,
+      "sha256": "9d63f36ee71c2a096b6fc39e3ae4a8559c833be43b8c44e1476121a26d756b12"
+    },
+    {
+      "path": "crates/dbsp/src/operator/asof_join.rs",
+      "bytes": 3519,
+      "sha256": "9f03712c2c95bc823cc6370e5684e2f318514097350aac323296b317313b4942"
+    },
+    {
+      "path": "crates/dbsp/src/operator/async_stream_operators.rs",
+      "bytes": 31981,
+      "sha256": "57523859184887af5f53c079d811b51d97f2cbde16ca6dfeea37fbb1e6b2f048"
+    },
+    {
+      "path": "crates/dbsp/src/operator/average.rs",
+      "bytes": 2203,
+      "sha256": "d863b63bdc81a3ea390d08d163a462c40c6acb9d74dab2892917bce18ad71b91"
+    },
+    {
+      "path": "crates/dbsp/src/operator/chain_aggregate.rs",
+      "bytes": 2356,
+      "sha256": "5a9d2f604f2966927dffa4af957cd3753249662aefffd1f8727e98fa9447c369"
+    },
+    {
+      "path": "crates/dbsp/src/operator/communication/exchange.rs",
+      "bytes": 163498,
+      "sha256": "01fb3bd3cf7975abc33b0c53644026b3cb5ef0b6f3f375030ff29c1f0c42ff66"
+    },
+    {
+      "path": "crates/dbsp/src/operator/communication/gather.rs",
+      "bytes": 680,
+      "sha256": "45a0f593664e33b0d1c4a57eb0f8000c909e79a5038a48645f0975a02c63b86c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/communication/shard.rs",
+      "bytes": 4765,
+      "sha256": "61d10909189ef01abc9466eceb35f87516c0b64a9e8c1327c82342ab5070957c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/communication.rs",
+      "bytes": 307,
+      "sha256": "e2fe53e45ebce66192a4db3e4d5a74fa29f04c753814c8ae57ee27d894cc10e0"
+    },
+    {
+      "path": "crates/dbsp/src/operator/condition.rs",
+      "bytes": 9404,
+      "sha256": "982995c243a20bac7a9004eeefd9952ec07f367e34c13966865b3ab74a759e19"
+    },
+    {
+      "path": "crates/dbsp/src/operator/consolidate.rs",
+      "bytes": 1180,
+      "sha256": "7664216af00fabbe0aed1df166a35e792dfe0f8b29a3e852830af71a01e9403e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/controlled_filter.rs",
+      "bytes": 5552,
+      "sha256": "63456457e6ec349645eb03858d94ebe0d9fb203be5a356ed6aa80b45ce492142"
+    },
+    {
+      "path": "crates/dbsp/src/operator/count.rs",
+      "bytes": 6753,
+      "sha256": "4dc3904766891c2c7a9945f06661b3230f059bea5f88d6ada377491be2526dd8"
+    },
+    {
+      "path": "crates/dbsp/src/operator/csv.rs",
+      "bytes": 3559,
+      "sha256": "fbad33944395c33dad68315db8d32664b467b0b3f3ef64d4a40dc4c7996c51af"
+    },
+    {
+      "path": "crates/dbsp/src/operator/delta0.rs",
+      "bytes": 3480,
+      "sha256": "318fa0fd3fb689519ef8c3973266d06f33dfcf982206be8dca2ca5ceb3a8ac8f"
+    },
+    {
+      "path": "crates/dbsp/src/operator/differentiate.rs",
+      "bytes": 4126,
+      "sha256": "5618970ce6bbe128618582d2c89767568006954fa091ef866eb9169efb447d1d"
+    },
+    {
+      "path": "crates/dbsp/src/operator/distinct.rs",
+      "bytes": 3187,
+      "sha256": "d1ce2d4d9d44aa54f19b6a0521fcd4e8fbdf8064f32c8154525119b368518526"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/accumulate_trace.rs",
+      "bytes": 80522,
+      "sha256": "6af3bf39732e1d5add7d77a04df5c739e5216896084da5786a8ef28674186b96"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/accumulator.rs",
+      "bytes": 13059,
+      "sha256": "54449dda47316fbc43761a850278b15530b3071e2fd15f8dec02ce268949976c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate/aggregator.rs",
+      "bytes": 9854,
+      "sha256": "3976dc72a20438be3a5983b214a83e9c31e6290011d9febb260c0b52187dd5a9"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate/average.rs",
+      "bytes": 12664,
+      "sha256": "a4666b808a42c15963018eb7159a17f1cbc62a2d994eed0f7c2ab4285a81af5c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate/chain_aggregate.rs",
+      "bytes": 14223,
+      "sha256": "dd0f8ed3043783693e63b9170de07f4008ce46ddb38ad538fec6c3c8ea27671d"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate/fold.rs",
+      "bytes": 3140,
+      "sha256": "00c67537d9bfd1975d75399e81098489c3feeefea66089393a2706df7f50fa87"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate/max.rs",
+      "bytes": 1601,
+      "sha256": "9327b8145157231315ba25b3849c90c7e0bf8f6fadd45519f38907c13c10d038"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate/min.rs",
+      "bytes": 7190,
+      "sha256": "9fea20a3b2ffdb912e9f79433b9148b4e2f7892a0e6fd473c2bb1a2c89e1e24f"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/aggregate.rs",
+      "bytes": 80540,
+      "sha256": "034add3ecbcd27b4780d45ae5e3e467601b15f78b73fa1a6adde1eba67c45915"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/asof_join.rs",
+      "bytes": 49024,
+      "sha256": "a84f296a9949385874dda4a9ac7ffef564f190c1ea476fa8f52f23293e4d611f"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/balance/accumulate_trace_balanced.rs",
+      "bytes": 63785,
+      "sha256": "6cd7ca7a948339ab99dd3ed242ff1198d30abca7e951ace7a53f2807c6640d9c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/balance/balancer.rs",
+      "bytes": 68123,
+      "sha256": "dc5f251cde6aa74081382af59536ac5b576a3dc3dabbbd2b168cc98d0c9f8ded"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/balance/maxsat.rs",
+      "bytes": 31203,
+      "sha256": "4051c688411c1d68519378546ddff9f13653a61f1aee43fd9a22ae59aba15aa2"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/balance/rebalancing_accumulator.rs",
+      "bytes": 8309,
+      "sha256": "8c7f4cf504f5458fd9709242886bf3504c257f161b42e7cb60889ae873d5f90b"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/balance/test.rs",
+      "bytes": 58038,
+      "sha256": "7c9fe1a57a9b680dbfb1ffcc6d885851e96ddfbabc86faf92ad1cba52c33dd03"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/balance.rs",
+      "bytes": 428,
+      "sha256": "4e0a6d6f98bf801737e61195c2f386febbb92375d7e976f070bdd639bddbbf31"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/communication/gather.rs",
+      "bytes": 16133,
+      "sha256": "b9660a40cb7381dac2807ef5ae9f1657442ddd17a3a7d22ba742be7c4f2ace25"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/communication/shard.rs",
+      "bytes": 24283,
+      "sha256": "331568f07e3f68606646b821e6f14611d53a82f89299bae07ab1192f59e27be5"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/communication.rs",
+      "bytes": 31,
+      "sha256": "05cd8c27f68d6cc2d5eeb433fbde2cd97efaf5ee0edb57cfb40a41c802836e65"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/concat.rs",
+      "bytes": 17912,
+      "sha256": "000e602961c479f4ba8f0ef64b24501e37e160d65b32c2698b432016187652d2"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/consolidate.rs",
+      "bytes": 2050,
+      "sha256": "0b31799ed673e60f5202e8a931e17f24a87fb2e78ef79a50cdd0cb30f1d71388"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/controlled_filter.rs",
+      "bytes": 13455,
+      "sha256": "30f06e81d08089b864ea1782d8ce6ae8a15c6626ae6f389c9099397999ce42b1"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/count.rs",
+      "bytes": 11787,
+      "sha256": "1aa6253a2e7ed978a9b11ab44a6c3d5351d2622486bfcd903faa98be9b00feba"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/distinct.rs",
+      "bytes": 75871,
+      "sha256": "e3655d6b7ac1075ad5e84b5de9977d862246725d7e16f90cc6e9f299955df1a9"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/filter_map.rs",
+      "bytes": 47742,
+      "sha256": "6c42f806135eb3e2483e1db2b363a5fa77e6ab1db79ae54b81a1661221cab2e8"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/group/lag.rs",
+      "bytes": 26668,
+      "sha256": "a0f73ed24d4e90e21745f359afb6d28be335ed8a5cd1af4677da4a1e17222cba"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/group/rank.rs",
+      "bytes": 67893,
+      "sha256": "9419a622039fdb7d9a64d35e39d6b3cfa33d4ff5a38db7711be7a9b588a0ef58"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/group/row_number.rs",
+      "bytes": 27568,
+      "sha256": "d2aa6f32ce2e8e86715e0afb8c00fbe869444c44dd9176e24a31711632a39c43"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/group/test.rs",
+      "bytes": 43590,
+      "sha256": "045b0f8bacf1ab8c7a11499037d6ec02e2ca291a5aa1cd52acc9787f424b76c5"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/group/topk.rs",
+      "bytes": 19469,
+      "sha256": "f7732d27e6d234037ea293b26aa556b210dac2c7e5b6ce78118b76bb52f84d0b"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/group.rs",
+      "bytes": 25217,
+      "sha256": "ae16d10ad7fb4037eb005a54f536de0dad2df0dfda58c5b715208cf85dd416e8"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/index.rs",
+      "bytes": 12771,
+      "sha256": "e4ada19ec298c3d968766d71086ae90913dc4839a3d105c0689ac54132e27f69"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/input.rs",
+      "bytes": 89684,
+      "sha256": "8c6ae6449e398b52e653f038bcd953a1832ea624664eb56f0eb98294eccf6027"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/input_upsert.rs",
+      "bytes": 39078,
+      "sha256": "244aa0d840142301f60055fefed3401bf09021b7025e291d14be83ddceb38fac"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/join.rs",
+      "bytes": 112895,
+      "sha256": "16f0bdadeda7074aca6290f00abf7d4cf8e19db0e46f0b489a88549d56517ca3"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/join_range.rs",
+      "bytes": 12404,
+      "sha256": "b329e6e3c60fa4845785c15887c96d08f334a27c55b02da0ac6077c5a5b9e608"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/lazy_input_upsert/test.rs",
+      "bytes": 64695,
+      "sha256": "f2895335903b43b667a61bf651640ebd849ac5793d46f8227ca2338732e94cb7"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/lazy_input_upsert.rs",
+      "bytes": 95868,
+      "sha256": "a78875f63fe9ba3293163200c17a2af9a57cd7cb33066fa515c796f77091c556"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/multijoin/match_keys.rs",
+      "bytes": 33253,
+      "sha256": "a2b177861e54d120c5dad7b9d19a91f5294409a06ead216ebcd0c20fc545cb6e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/multijoin/star_join.rs",
+      "bytes": 55698,
+      "sha256": "dbc069936e6dfac15a5fdcc6bf07d3207167fe54c4208277d0edab6cb0620850"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/multijoin.rs",
+      "bytes": 122,
+      "sha256": "e6767a34f426fcc5def0eae4c1c646ac5513a7b82b8ed1627e9b3b6da425252c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/neighborhood.rs",
+      "bytes": 32398,
+      "sha256": "2fb4be9806cef3ff02f0ab69159b52f88a0ec0db9bf2855a3b5193fe2353d8cf"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/outer_join.rs",
+      "bytes": 19196,
+      "sha256": "23daab0599bf85d878fb6dc5e72c92564f73ad8123de5eaf57c8a318965c5905"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/output.rs",
+      "bytes": 321,
+      "sha256": "90c7625987307936246d9b47a87b03a74e1dd24e12c9d7e737f6b498371f0265"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/recorder.rs",
+      "bytes": 21825,
+      "sha256": "af4e7eac8055dc12d9f8a30f3701cfc02b0d30c7925577320b51a0eadfd9aac2"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/recursive.rs",
+      "bytes": 31621,
+      "sha256": "7d1fbbd1e095783f35578467e307ce551bfbe0437cff76cc348ae56e23b07883"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/replay.rs",
+      "bytes": 3431,
+      "sha256": "31629cce8978d8e7c4ec8096ef2d69c9df85375c238ced4dd8313fd74b479fde"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/sample.rs",
+      "bytes": 19387,
+      "sha256": "68cd6404d510d172721e84516ff986291865d4644b2704fa62cda1c76bb5307e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/saturate.rs",
+      "bytes": 14356,
+      "sha256": "df94f1ccd700fcd5d0a066bbf6073205fded3a5545d9629c9588f25157a3547e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/semijoin.rs",
+      "bytes": 9771,
+      "sha256": "ea0db24450dc193145231d17df5730bf5ec070690416fe60bb90ee203bd3e235"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/sharded_accumulator.rs",
+      "bytes": 155086,
+      "sha256": "804386339b08fee48a4f06bc293143d1faf5012382f9b6ce6173754e2700ba1c"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/partitioned.rs",
+      "bytes": 7588,
+      "sha256": "a9006cb1f5ac3b4dbc34aec07945a9fe11fef5dde93bcdbec2432396935d8cc7"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/radix_tree/partitioned_tree_aggregate.rs",
+      "bytes": 35490,
+      "sha256": "3ea3aef23bf4a3625e587cd063cb9e28fb8a8c22f44aaad7a39846e90ae32920"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/radix_tree/prefix.rs",
+      "bytes": 12969,
+      "sha256": "bac6d96eb8a60074bcbda6145af0f1420d76609ed7435f2a5c891764f97bff6a"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/radix_tree/tree_aggregate.rs",
+      "bytes": 20899,
+      "sha256": "1b77444f99f964b3e83f85ee1c8293f9ecadcc9c60c1399ada0fb62243b90e12"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/radix_tree/treenode.rs",
+      "bytes": 15036,
+      "sha256": "d756212a4839cdd38693d449d6a22b3de52833183a9272af1a458a5e375af6f3"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/radix_tree/updater.rs",
+      "bytes": 16448,
+      "sha256": "859b0be86b38c58f2789f7fd9f3fd11f41a1e0aba4e1411f3e587d7b1f781b1a"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/radix_tree.rs",
+      "bytes": 20884,
+      "sha256": "9fc414dc4a9cede39da3c051cb9b4c51003e1ca0a99167713419ceb32fb3f790"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/range.rs",
+      "bytes": 12380,
+      "sha256": "a87b72313a1cf9697772e3ea50815c72a5d4373813eb426d870fb85417123e67"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/rolling_aggregate.rs",
+      "bytes": 73136,
+      "sha256": "73ee5576fee01e4c7821ee0ed57debfea321fd90490ed9283754cd5ad3316885"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/waterline.rs",
+      "bytes": 11163,
+      "sha256": "1d37daabb70d5a784c5f53088b70a8a40ff5cf250333e0d6f0631f7177d8a307"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series/window.rs",
+      "bytes": 43444,
+      "sha256": "db754b0903ddf6c417a31ea136d484d45192a135075290c679c0ab0af17f4d6e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/time_series.rs",
+      "bytes": 593,
+      "sha256": "8d7a92f8ad415df9baa13e13e3e6700a3c6ed9b578a9c58b0d471494e492050d"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/trace.rs",
+      "bytes": 65628,
+      "sha256": "fd91cb1d05a4e15b22722368ed38cf70f3132a272553c029391b4fa9bc2cc566"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic/upsert.rs",
+      "bytes": 11566,
+      "sha256": "cf4ccad46052a68ef7764c33b32d27224c3ac980cd5c58ac2b4cab0c1e34f038"
+    },
+    {
+      "path": "crates/dbsp/src/operator/dynamic.rs",
+      "bytes": 1252,
+      "sha256": "749bd2851ff6f26b0df8826229e79b0ddb969977f6386cdb78221cdd97f659c0"
+    },
+    {
+      "path": "crates/dbsp/src/operator/filter_map.rs",
+      "bytes": 15268,
+      "sha256": "3d62027d1e753a54118506facd60cc511b15f6c8d2cd87d37a9241fd34213c39"
+    },
+    {
+      "path": "crates/dbsp/src/operator/generator.rs",
+      "bytes": 12874,
+      "sha256": "b772b4d19ef0da1a5253837e0b3846ac480a39eee20216a568abbda9a06b82b4"
+    },
+    {
+      "path": "crates/dbsp/src/operator/group/custom_ord.rs",
+      "bytes": 4715,
+      "sha256": "930a3570a13d838cc6a6ce3aa161e5174780a5ef09fa8feda9fcae2259b470e4"
+    },
+    {
+      "path": "crates/dbsp/src/operator/group/lag.rs",
+      "bytes": 4932,
+      "sha256": "e9d50d87607694774f13c1f47b09f9b501ac9bb458e6fb6dda35dd599e07fb3b"
+    },
+    {
+      "path": "crates/dbsp/src/operator/group/rank.rs",
+      "bytes": 7915,
+      "sha256": "b3f61e709f6478e91b03309fd56f9c2502d78b1e7523d42a10f01119fd826499"
+    },
+    {
+      "path": "crates/dbsp/src/operator/group/row_number.rs",
+      "bytes": 2666,
+      "sha256": "67265dfe7c0f4dc4b5970b8e87560d2fbfaf117f7be6861d6ee23b079fdd26cf"
+    },
+    {
+      "path": "crates/dbsp/src/operator/group/topk.rs",
+      "bytes": 10824,
+      "sha256": "b0246b127a9620ff96b05d9a60ced86db748cb705d7b16678bb9e0de16fe2a10"
+    },
+    {
+      "path": "crates/dbsp/src/operator/group.rs",
+      "bytes": 108,
+      "sha256": "a6828d2c0ce98f4ec4d9512f153559df342edbe01307f4bc71392494cf9e00ce"
+    },
+    {
+      "path": "crates/dbsp/src/operator/input.rs",
+      "bytes": 39057,
+      "sha256": "55e786f2f67bac0a51e20ccef440d4370d038ce92ddf0831cfc6e8bd0ec92606"
+    },
+    {
+      "path": "crates/dbsp/src/operator/inspect.rs",
+      "bytes": 2316,
+      "sha256": "0ef3095af0be0a10912bf3948dd588691fa3d380f3d372fbf6fd637e7305bab9"
+    },
+    {
+      "path": "crates/dbsp/src/operator/integral_weight_validator.rs",
+      "bytes": 5719,
+      "sha256": "5489f33f22c95b1fa56e01d21d0f0b5305c44fbbffbe149f1402d920690edd2d"
+    },
+    {
+      "path": "crates/dbsp/src/operator/integrate.rs",
+      "bytes": 12652,
+      "sha256": "bd5ec32ba38f692249d47471453cd9359045217c57972cb8afadbbcacdceb275"
+    },
+    {
+      "path": "crates/dbsp/src/operator/join.rs",
+      "bytes": 14798,
+      "sha256": "f5aa3b1bd5adf944368bcf80369de251a136b4f1f0c0eef085b1696611ce54f8"
+    },
+    {
+      "path": "crates/dbsp/src/operator/join_range.rs",
+      "bytes": 5578,
+      "sha256": "09268d09dd2d367c94b70f8faf30301ece2373cf6341e8265653e2a857a0c7f1"
+    },
+    {
+      "path": "crates/dbsp/src/operator/neg.rs",
+      "bytes": 2588,
+      "sha256": "bf44902312c1be0b9cd59f62c253c552f7d45769f5ca691aee8df7a19f500eb1"
+    },
+    {
+      "path": "crates/dbsp/src/operator/neighborhood.rs",
+      "bytes": 4126,
+      "sha256": "7f2b0a05ebc7506cbc812fd0c7b0cab9ee58d9dd7175a89092e241746e7c7cc1"
+    },
+    {
+      "path": "crates/dbsp/src/operator/non_incremental.rs",
+      "bytes": 13345,
+      "sha256": "9bd344d0910e29e9ade075f7e0e3b45dbe8c12243cdcd756b5dcf569a9e7f7fa"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/bill_of_materials.rs",
+      "bytes": 10372,
+      "sha256": "debc76ebbaafc2dbc79bde1005dcfd3c395646dfbf954ab7932c03b7e4ca936d"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/closure.rs",
+      "bytes": 17444,
+      "sha256": "f0497b998d48d4f19c565cc48750c9885b4c6569985404236736d226ac056b3e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/galen.rs",
+      "bytes": 12941,
+      "sha256": "82e060f842aa26580580d19e5d90d4253de2d45b37cf858dc8fd2dc301ce0d6e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/harness.rs",
+      "bytes": 10323,
+      "sha256": "fb430173efeb48122ea3f6f45fa96e497e4129cd110dcb7b33788f4367607a98"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/parsing.rs",
+      "bytes": 10782,
+      "sha256": "977846805ef540b40c01bdb966a5c522f39b17a630de004a3bf659876af689db"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/points_to.rs",
+      "bytes": 12664,
+      "sha256": "2994d867be891b7c422d57a1b15b96f89306a09457c7142f41dfacc775e00c44"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/state_machine.rs",
+      "bytes": 8034,
+      "sha256": "65fba91d2929b88ac5288ada218e2d19fe96da02564c032d24366aa97fa76c24"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/tree.rs",
+      "bytes": 23128,
+      "sha256": "12d60e71c3e5c459b9da9241bd27b94814c64ba6791d4a0f9d5d19982b54bd07"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/trips.rs",
+      "bytes": 9825,
+      "sha256": "72b1762fc0017f909e7f5b3ef1f4e535931e86d3e7d87dfd6d07dc5f3abdf3ea"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests/walk_counts.rs",
+      "bytes": 8851,
+      "sha256": "5c8815b93725980ca07e364859978e7bbf1c0296e97876e7899e35be032ff87b"
+    },
+    {
+      "path": "crates/dbsp/src/operator/nonlinear_recursion_tests.rs",
+      "bytes": 884,
+      "sha256": "cb684aa4811bf16d8d306fd59c7ceffa60c73846144efabd41597125024dccd8"
+    },
+    {
+      "path": "crates/dbsp/src/operator/output.rs",
+      "bytes": 34723,
+      "sha256": "8932678fd49d24d180b47d59d7a09b319fa1bb01c9d252b028925b08b213db40"
+    },
+    {
+      "path": "crates/dbsp/src/operator/plus.rs",
+      "bytes": 11481,
+      "sha256": "e4b5a05d8add5f650cb91ede29a07ba74fd9c3465e2d05d608a22a7e1fb5ddec"
+    },
+    {
+      "path": "crates/dbsp/src/operator/recursive.rs",
+      "bytes": 20182,
+      "sha256": "b68018986f7f1b2b6341b4dde22ef4a7ab62173472bcc057f074142de35d4d6e"
+    },
+    {
+      "path": "crates/dbsp/src/operator/sample.rs",
+      "bytes": 5497,
+      "sha256": "5a8bdcb7162262ab29bb89effc162695f4af1f5a1b97dd1bb8ad28ba3a0f3803"
+    },
+    {
+      "path": "crates/dbsp/src/operator/semijoin.rs",
+      "bytes": 1357,
+      "sha256": "a61bc1abd0aeb96ab2695e24134cefc0e52739297242ff8f222064d76a1284e5"
+    },
+    {
+      "path": "crates/dbsp/src/operator/star_join_macros.rs",
+      "bytes": 38274,
+      "sha256": "b2c7ff10f428c95a1426c973dff6d7749c9a9196ac256346172e9359a4536713"
+    },
+    {
+      "path": "crates/dbsp/src/operator/stream_fold.rs",
+      "bytes": 1827,
+      "sha256": "b3add52132d8f74ec8c2bc438b9cc9a88b6e08f6bdf7faab05f6ec97d133ea2a"
+    },
+    {
+      "path": "crates/dbsp/src/operator/sum.rs",
+      "bytes": 6766,
+      "sha256": "a1c19392d7ec2cc7f338500bf53a7b470380b3fadfb92c4d2d17e8c7cf695191"
+    },
+    {
+      "path": "crates/dbsp/src/operator/time_series/rolling_aggregate.rs",
+      "bytes": 12272,
+      "sha256": "4b39f105ed94f7e37b4096d0866b56b752859e665095b9183bcd7c0ebf55cc08"
+    },
+    {
+      "path": "crates/dbsp/src/operator/time_series/waterline.rs",
+      "bytes": 5019,
+      "sha256": "2d70556c007ba8dc11c56b02e4ab919388fc0b36722f3975930b85ae2a36fa28"
+    },
+    {
+      "path": "crates/dbsp/src/operator/time_series/window.rs",
+      "bytes": 4040,
+      "sha256": "dd5eaab31963b58a609da960c5db3d13ea6cea12b16e0e36032d0787d56c952d"
+    },
+    {
+      "path": "crates/dbsp/src/operator/time_series.rs",
+      "bytes": 210,
+      "sha256": "828aa542905313c34956ce14848c1dab25ffae71408087ff29a702aeb618f560"
+    },
+    {
+      "path": "crates/dbsp/src/operator/trace.rs",
+      "bytes": 13699,
+      "sha256": "25639b8418d1069e035e09029221730e6be75acfd4fb383e1a5590c8f5f686b2"
+    },
+    {
+      "path": "crates/dbsp/src/operator/transaction_z1.rs",
+      "bytes": 6757,
+      "sha256": "3739826def7499e4bf0962bf90ac643e194ea6d1a002d6e50cb084b6bf4cd377"
+    },
+    {
+      "path": "crates/dbsp/src/operator/z1.rs",
+      "bytes": 23916,
+      "sha256": "6c00e9b06c2e7b0d7b1ca6fa521c0eb9b6294ba38afe60b3768006b20e455780"
+    },
+    {
+      "path": "crates/dbsp/src/operator.rs",
+      "bytes": 2986,
+      "sha256": "0748739cbb797203d0451e625c1fa54922172cb7e6dce74ed7f16cd1a6768be5"
+    },
+    {
+      "path": "crates/dbsp/src/process_stats.rs",
+      "bytes": 2888,
+      "sha256": "f5f3e28ca4fd05353ae3fcf7d4723f00fb20c1b214f1534e38709e51253a9869"
+    },
+    {
+      "path": "crates/dbsp/src/profile/cpu.rs",
+      "bytes": 32512,
+      "sha256": "b3d1040613b682a3ec5dafc45592302dc87db91bc5ee469942a6caab41bf259e"
+    },
+    {
+      "path": "crates/dbsp/src/profile.rs",
+      "bytes": 31301,
+      "sha256": "189461caf5b864b6bde5a406d6eca08430b8cb28386fb9fb8d59d8ed86a9c2e2"
+    },
+    {
+      "path": "crates/dbsp/src/ref_pair.rs",
+      "bytes": 706,
+      "sha256": "a573af9c57b1bb9ee06cba33f0e6ed4fcb5cec007309ba292850a7dcafe62634"
+    },
+    {
+      "path": "crates/dbsp/src/storage/backend/memory_impl.rs",
+      "bytes": 8759,
+      "sha256": "b3f4828ff3b306535c7ddd3d3d5798dee1d2fba1a6d6100054dd0f8a8e0d4510"
+    },
+    {
+      "path": "crates/dbsp/src/storage/backend/posixio_impl.rs",
+      "bytes": 56549,
+      "sha256": "7c6ec7ad42b6ad83fb8e2947765fb8d6d4f091d99c7e8493f1b47decc2291bb8"
+    },
+    {
+      "path": "crates/dbsp/src/storage/backend/tests.rs",
+      "bytes": 4631,
+      "sha256": "0265e02d3ffe37679ced0af94c71dac70630c566b4c94fdca080f90e1694bf89"
+    },
+    {
+      "path": "crates/dbsp/src/storage/backend.rs",
+      "bytes": 1722,
+      "sha256": "d6212727bb9b5e93f9ebba9c19d5e8f106a2eb97dce24c9d5b0048f47ff32077"
+    },
+    {
+      "path": "crates/dbsp/src/storage/buffer_cache/cache.rs",
+      "bytes": 13015,
+      "sha256": "ef593416afd8d2ef576a87f1ec6c50d8704d23eca2ce4c9aac5d16a8d2f81eb6"
+    },
+    {
+      "path": "crates/dbsp/src/storage/buffer_cache.rs",
+      "bytes": 345,
+      "sha256": "3fddabca0428b88eea99e867446620dd50122a9035d5c2ddafb09e8da5f3627b"
+    },
+    {
+      "path": "crates/dbsp/src/storage/dirlock/test.rs",
+      "bytes": 1782,
+      "sha256": "727c3c4331d03130dad7eaa80edbe33cba46b9d354d0dae6868e5b2f8cdbe918"
+    },
+    {
+      "path": "crates/dbsp/src/storage/dirlock.rs",
+      "bytes": 7652,
+      "sha256": "687b1ef3a67fb50ae0654faffccd5031159b549ef2f618732063fa9cad10af9a"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/filter/bloom.rs",
+      "bytes": 10819,
+      "sha256": "1d681fbbff3673d2b62c7019a53e1991ad04face6dfef9ab17a3405eb7d94627"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/filter/roaring.rs",
+      "bytes": 25921,
+      "sha256": "3ebe093b7a0e247e46910a014224fd4678e20743b12f4c71978098b1c38e0945"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/filter/stats.rs",
+      "bytes": 2248,
+      "sha256": "3e8deb256f8105469eb47b64c2a93462322cb736ded8c6b7a9a690a83769dfe4"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/filter.rs",
+      "bytes": 20677,
+      "sha256": "d4fac98cb55cf6929af05f41eb3531dc09b31538e7c1590adcb7d7b1a626ec32"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/format.rs",
+      "bytes": 30195,
+      "sha256": "4287c58fde9f2426592a678261a3f7df4bf88d8b8657c5ac713569697fb59d6e"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/item.rs",
+      "bytes": 8615,
+      "sha256": "c5e5a06718a6c0aa50590df6e7c231d629d628a6d28d08c3b2dfc56c7fd0c66d"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/reader/bulk_rows.rs",
+      "bytes": 17303,
+      "sha256": "68c6204716942808c9887458463447f881a9b33fdb18e4cef15f0c6c552c5f6b"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/reader/fetch_indexed_zset.rs",
+      "bytes": 30099,
+      "sha256": "c0020d00222a499c46184843271a62a4ef151f87233c92f200da1126635d62c4"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/reader/fetch_zset.rs",
+      "bytes": 9481,
+      "sha256": "93f1b89b18658aeb6dfe11472332c0af60b5b4e7be3b60311eaba823957cc12b"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/reader.rs",
+      "bytes": 130985,
+      "sha256": "b9404a030ea4d27b7475fa7d3e1924c06f4c4b60cac24bb6cd64d1ed75d6628d"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/test.rs",
+      "bytes": 112098,
+      "sha256": "28a90bbae9d14e51b3fcd6a4c090e92f4f6a17b179ba60f7eed97b7a919fb5a6"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file/writer.rs",
+      "bytes": 62680,
+      "sha256": "35c2cf0278544679eb62bad78c42608eccdc88d5ff98afd3c07c251243168d0b"
+    },
+    {
+      "path": "crates/dbsp/src/storage/file.rs",
+      "bytes": 22321,
+      "sha256": "e489215375bd59db794ca9086bf00170965a68bffc4a26271ddea41856fde77b"
+    },
+    {
+      "path": "crates/dbsp/src/storage/page_cache.rs",
+      "bytes": 15217,
+      "sha256": "8a7eb0432b03ffa9f18d5c0394b825d46ab3342b2c0a481e26acfa3a6d6086ce"
+    },
+    {
+      "path": "crates/dbsp/src/storage/tracking_bloom_filter.rs",
+      "bytes": 6731,
+      "sha256": "8404671fb8e78f84b57b60159cf67bfe51ed9b86b2c0b3d5e1e5f390c97f3fa4"
+    },
+    {
+      "path": "crates/dbsp/src/storage.rs",
+      "bytes": 1645,
+      "sha256": "a9c11494ac6b5adf32f99ad7ef434e211a78b39d2db0ca790241f5c5f52c76a2"
+    },
+    {
+      "path": "crates/dbsp/src/time/antichain.rs",
+      "bytes": 15060,
+      "sha256": "265cff99a5aea87da08e17368baebefdd4ec5e0e3f0b2eae56122b5daf9449ce"
+    },
+    {
+      "path": "crates/dbsp/src/time/product.rs",
+      "bytes": 4180,
+      "sha256": "e323f3de6424686fee155baf7ea8d8a93cc2a59e86b6fb866307138b9d9bcc4e"
+    },
+    {
+      "path": "crates/dbsp/src/time.rs",
+      "bytes": 8145,
+      "sha256": "63c5bd1d59f7f3b95f7987d891ca4da2291c30d3a0ac85421e4859e66256297f"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/cursor_empty.rs",
+      "bytes": 2755,
+      "sha256": "16f72efec7b257aa7850c090b7ee53048697962554b71fb718256595e0ae2f37"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/cursor_group.rs",
+      "bytes": 4502,
+      "sha256": "d45af5dfa90e4726b84b658636387cdcc47da0f99d0604401abfa0ea6a8ed0b1"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/cursor_list.rs",
+      "bytes": 39959,
+      "sha256": "424d720023efb4d1126d44173515cd3f36176497d9a9824e4a8c250a38fb2ede"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/cursor_pair.rs",
+      "bytes": 20062,
+      "sha256": "a8a071fd4c0e6da394494b4c1acf9d28ccf9f8d1ffa1f0ecb52483aae53343cd"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/cursor_with_polarity.rs",
+      "bytes": 4743,
+      "sha256": "107706c74380cbae650bb55a88438b193846ce27081efd50497083e14d11c765"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/projected_val.rs",
+      "bytes": 68764,
+      "sha256": "6e7796be93e8e7b25a3483535f4db1891c894b98f3fdad2e5ebdc836c4f5c0b3"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/reverse.rs",
+      "bytes": 3898,
+      "sha256": "f3abca09e3a547a8674412ec745331ea51d09c76d30d5bf1c054e53c194d18c5"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor/saturating_cursor.rs",
+      "bytes": 7315,
+      "sha256": "3e7dbf6cb662431f066a9e0de146386edd272851681306c2c3dda4865339089e"
+    },
+    {
+      "path": "crates/dbsp/src/trace/cursor.rs",
+      "bytes": 49319,
+      "sha256": "048076c6534325cab2f77622552b9a2741e73b7e8cf61b42377150cfa361065d"
+    },
+    {
+      "path": "crates/dbsp/src/trace/filter/batch.rs",
+      "bytes": 9547,
+      "sha256": "9fa4118bd7159bef813796fbf156580b66e87c24ca9cc27cf3dbc3a95ee1a9ff"
+    },
+    {
+      "path": "crates/dbsp/src/trace/filter/key_range.rs",
+      "bytes": 1515,
+      "sha256": "9c254a86a0c16c6dae4396a4bcd592bbb09cfcf8b74611e56cf14e8398dfb4c7"
+    },
+    {
+      "path": "crates/dbsp/src/trace/filter.rs",
+      "bytes": 5032,
+      "sha256": "431b92b35a353bc4a61da61865f7f1027c505950606115f0f01ffc49d76d1a37"
+    },
+    {
+      "path": "crates/dbsp/src/trace/layers/layer.rs",
+      "bytes": 46906,
+      "sha256": "e35f8124722c3e30880dba05d7a3b311e98f5df76b413273ac63abfcff1a1e80"
+    },
+    {
+      "path": "crates/dbsp/src/trace/layers/leaf.rs",
+      "bytes": 25653,
+      "sha256": "f7b5e031af1b0e2205aa77b17b1fa4db4bee62d7571a2b6a8d41d7932192605c"
+    },
+    {
+      "path": "crates/dbsp/src/trace/layers/test.rs",
+      "bytes": 17599,
+      "sha256": "b1578d09eaf54a11eff134ac04504451bba4ea5b8d5e8fc13e3ffc7927cea956"
+    },
+    {
+      "path": "crates/dbsp/src/trace/layers.rs",
+      "bytes": 12471,
+      "sha256": "d447b28954e64dd0fb4bf7bbf19c4150d865465c265c2a7ecfe75ba5b3d763ef"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/fallback/indexed_wset.rs",
+      "bytes": 43097,
+      "sha256": "e9403f5ff0c98a3efb856a766900174bd957fe1bb85d09f67fca6e4d2ff3e7ae"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/fallback/key_batch.rs",
+      "bytes": 17246,
+      "sha256": "7de881300f8c302371ec4cb360a6d61677a65f953584f8061cdbcd4d59b5980a"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/fallback/utils.rs",
+      "bytes": 5058,
+      "sha256": "0c41dfe11f4fea0546176f508a954b7bf511e07cb6d1925eb7ef1ed33582db5d"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/fallback/val_batch.rs",
+      "bytes": 17860,
+      "sha256": "d01d36aa723615a624cd2b991d8087333e6004572f024b0ff3d0132158ac2f9c"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/fallback/wset.rs",
+      "bytes": 22062,
+      "sha256": "85fb33999b3aa12acb2bf6478aff883d256ce768724f6b4ba1cd43dcae4e5140"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/fallback.rs",
+      "bytes": 253,
+      "sha256": "0548c777b6f8d15f0fba03c431ce7822e7e7d5d66c868e1075ce72d0e82d3b6c"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/file/indexed_wset_batch.rs",
+      "bytes": 37349,
+      "sha256": "1beebc0b2b40a3525d7358475a5dd5a1deb138551b3ea77af4b40124d29c46b7"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/file/key_batch.rs",
+      "bytes": 24013,
+      "sha256": "11b0779e4d8e7edff2e52ce40642f18c58e6bde83ae560ca9a63ba044a015f41"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/file/val_batch.rs",
+      "bytes": 26767,
+      "sha256": "444caf070d9d8f0514b7be2221a1af01131b1cbb5b3f6093c2c39a977ff17f8b"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/file/wset_batch.rs",
+      "bytes": 26876,
+      "sha256": "66e8329fd758c885ccc2a2ac3db7067ca4ed9572f69ecae4548e20fb6cb22131"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/file.rs",
+      "bytes": 2491,
+      "sha256": "bc5e71a53fc714f9763419df4abbd8d6825ac51a34e9963d8a2ff26640510331"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/merge_batcher/merge_sorter.rs",
+      "bytes": 15855,
+      "sha256": "20cd67a98d10fc4bfcde0a8c983adf3b05a9410d9f95f42f2fdee0de24c5182c"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/merge_batcher/tests.rs",
+      "bytes": 15174,
+      "sha256": "914798d1bb236bd091804ae837642c8d80ea91f93f4a8c3dca7ae10508c86fa7"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/merge_batcher.rs",
+      "bytes": 2881,
+      "sha256": "2662ea14403674eec311bb001acc20bfe7e5040bb29a6a12501eb2db52571352"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/vec/indexed_wset_batch.rs",
+      "bytes": 28918,
+      "sha256": "9bc0f6bf69385fd1c1f1f75bf3c7162816964ad264dc2fa7e99a352a54c52a28"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/vec/key_batch.rs",
+      "bytes": 20035,
+      "sha256": "8e7232043699d70173e20e5ac062e47d3de493b4933073927f1cbb63d72c6ec8"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/vec/val_batch.rs",
+      "bytes": 22599,
+      "sha256": "465ddcee71a5626852308b006347210b3213ad5cf7607a4566fe5ab68ed746b8"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/vec/wset_batch.rs",
+      "bytes": 24052,
+      "sha256": "8f693918dcdbb89a4ef976cd9fbdd2ce650e71109c1aa3d78f1b7c43c282d4fa"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord/vec.rs",
+      "bytes": 1575,
+      "sha256": "d8eea405843d74d4f5bb71d0428c5c22db038782d8ad405f9b55f48e37794622"
+    },
+    {
+      "path": "crates/dbsp/src/trace/ord.rs",
+      "bytes": 1253,
+      "sha256": "a929686686eda1db1427423f8eab936f44465c4238d187a65974acf55e5639b7"
+    },
+    {
+      "path": "crates/dbsp/src/trace/sampling.rs",
+      "bytes": 17599,
+      "sha256": "1c812a3cd95c253d2a1553a0019b4a5d150894c17db60c7eda6265055a7b3052"
+    },
+    {
+      "path": "crates/dbsp/src/trace/spine_async/index_set.rs",
+      "bytes": 3287,
+      "sha256": "0e05450ec173c2895943bfcc1121708da175497a7cf275ce58b0649b587d87a3"
+    },
+    {
+      "path": "crates/dbsp/src/trace/spine_async/list_merger.rs",
+      "bytes": 26447,
+      "sha256": "6e65ed019e4f170e08595b17a1436d245e41764b4d577da5c7153c98aa692602"
+    },
+    {
+      "path": "crates/dbsp/src/trace/spine_async/push_merger.rs",
+      "bytes": 32849,
+      "sha256": "42962e5d1fdc4bdb73817ce48829766fcfb2dc1a028a21e9328abfe649d59d2a"
+    },
+    {
+      "path": "crates/dbsp/src/trace/spine_async/snapshot.rs",
+      "bytes": 15424,
+      "sha256": "25f4dccdba1e4871e4aa0ee4de7b12e40e5db8455d566eef66138ee637b9d3e5"
+    },
+    {
+      "path": "crates/dbsp/src/trace/spine_async.rs",
+      "bytes": 133634,
+      "sha256": "a84251042e366600657bdd64692098a4338539613f2b2e7a09584e8527e64489"
+    },
+    {
+      "path": "crates/dbsp/src/trace/test/test_batch.rs",
+      "bytes": 53452,
+      "sha256": "1cbc9dd63e22584c16dffe773c83d9e28523c2d8dfb014f9edc4101469940a40"
+    },
+    {
+      "path": "crates/dbsp/src/trace/test.rs",
+      "bytes": 182162,
+      "sha256": "fe861cb6ab25d2312338072ff1ac1dc5d1442be3ac0221e4a030d1d6547aabed"
+    },
+    {
+      "path": "crates/dbsp/src/trace.rs",
+      "bytes": 73122,
+      "sha256": "8c45fb6721232034577e237e1e4309b898d24bb6d697e1dcd65a84acf548b2be"
+    },
+    {
+      "path": "crates/dbsp/src/tutorial.rs",
+      "bytes": 86554,
+      "sha256": "dd8e0926fa1ed292de7fb16da553841ca5a62368e1021166967869bc9550d1d2"
+    },
+    {
+      "path": "crates/dbsp/src/typed_batch.rs",
+      "bytes": 24768,
+      "sha256": "7f691636d6b3eaefbcd4ccf0ba45bbe9b6bdf703744349a556738eb312d3ccb1"
+    },
+    {
+      "path": "crates/dbsp/src/utils/advance_retreat.rs",
+      "bytes": 21334,
+      "sha256": "3191f734e3444b3815c3d2d8d3d4c7230af1b7d8a9b30093444540ec19b89439"
+    },
+    {
+      "path": "crates/dbsp/src/utils/binary_heap.rs",
+      "bytes": 40220,
+      "sha256": "ba51a93876f4aef0e5873c4c71e6a8894371ac5ac28a8924d23302c681eb69f9"
+    },
+    {
+      "path": "crates/dbsp/src/utils/consolidation/quicksort.rs",
+      "bytes": 39387,
+      "sha256": "24268f00f8690e70731691c1def30dfb1baf3366cb20b6e37df6d3bb225718ff"
+    },
+    {
+      "path": "crates/dbsp/src/utils/consolidation/tests/proptests.rs",
+      "bytes": 9925,
+      "sha256": "ec2fadc0f28a9fc1659e5bf7530357452a4393feae88e0ad02cb14deda8b9139"
+    },
+    {
+      "path": "crates/dbsp/src/utils/consolidation/tests.rs",
+      "bytes": 12261,
+      "sha256": "ed24c4fc5b43c045da7807f7feb9c97838ee332a01f70ceec3fa01a27a48c222"
+    },
+    {
+      "path": "crates/dbsp/src/utils/consolidation/utils.rs",
+      "bytes": 20343,
+      "sha256": "89740debe777a3019319125e1fbfdbac1ad86d85c8d88d97d1189b96feb083b6"
+    },
+    {
+      "path": "crates/dbsp/src/utils/consolidation.rs",
+      "bytes": 12663,
+      "sha256": "76d6c3ad2443ca5a47043e5edaf45d22dc0413c13e05b245644517f3d61cf1e7"
+    },
+    {
+      "path": "crates/dbsp/src/utils/dot.rs",
+      "bytes": 3885,
+      "sha256": "e78e18bab9dd3023c26ca441605b53a7546cfa93ec4cb04d0845a9838c7aa712"
+    },
+    {
+      "path": "crates/dbsp/src/utils/graph.rs",
+      "bytes": 10086,
+      "sha256": "1bb2badb716310995b70b3d3f1fac5ec089a800b5862dfa852c7a7fbec4e4d87"
+    },
+    {
+      "path": "crates/dbsp/src/utils/is_none.rs",
+      "bytes": 3976,
+      "sha256": "eb4cfaeeb975f2dae824994a0e5cfb2ce52abcbc02fcbe4140b3504dc9152427"
+    },
+    {
+      "path": "crates/dbsp/src/utils/sample.rs",
+      "bytes": 685,
+      "sha256": "c1960f96f51514a73af960d3386fa3d8ce1bf9ddaf2b63eb7b86fc51d239d71d"
+    },
+    {
+      "path": "crates/dbsp/src/utils/sort.rs",
+      "bytes": 27121,
+      "sha256": "368ae5e01421d065f1ab9ca7b3fff0c6a14ed356bdd0d93f806c12616cce1d84"
+    },
+    {
+      "path": "crates/dbsp/src/utils/supports_roaring.rs",
+      "bytes": 15153,
+      "sha256": "706fa144d4e571045606963d1c54e5f43c24e7f92e17278496cf6d029670f176"
+    },
+    {
+      "path": "crates/dbsp/src/utils/test/multihost.rs",
+      "bytes": 26543,
+      "sha256": "75c302d961e26c5f4e5e16e9cbb87d316eb1b54fa22c3ebcea374098e1a2f3d7"
+    },
+    {
+      "path": "crates/dbsp/src/utils/test.rs",
+      "bytes": 1240,
+      "sha256": "c1c99a5ca3dee8e19f14eef4d5fc6e83c2a611088ad6c3dca2ccebf82f3cc315"
+    },
+    {
+      "path": "crates/dbsp/src/utils/tests.rs",
+      "bytes": 4388,
+      "sha256": "d94d6bc3e0f2d3477c1ad13e1436a02116019ab1764a4b8430d2a85faedb427b"
+    },
+    {
+      "path": "crates/dbsp/src/utils/tuple.rs",
+      "bytes": 6101,
+      "sha256": "27b949c343ce339dcd91647872dfcd4527a7ba5f5bf8ab260b45621ee015dce2"
+    },
+    {
+      "path": "crates/dbsp/src/utils/unstable_sort.rs",
+      "bytes": 44921,
+      "sha256": "7de23126fe92f3e8104158b4a21656bb6e65458f148a05367bb859d5a560353a"
+    },
+    {
+      "path": "crates/dbsp/src/utils/vec_ext.rs",
+      "bytes": 4814,
+      "sha256": "89ef1fd77da10fac376a3c16d184b16f28dd7d00c2e8e8b8419e4337ba383ee9"
+    },
+    {
+      "path": "crates/dbsp/src/utils.rs",
+      "bytes": 5627,
+      "sha256": "b633ebec772e9937622ba0084d11eee8065e1d6004deed3407d14cfe26f65866"
+    },
+    {
+      "path": "crates/dbsp/tests/checkpoint_blocking_phase.rs",
+      "bytes": 5595,
+      "sha256": "e2a9a2874b0f99fcaaaff69100dfece463b5b11d6342df99d59007b819b13fc2"
+    },
+    {
+      "path": "crates/dbsp/tests/checkpoint_sync.rs",
+      "bytes": 4386,
+      "sha256": "d88ea57dd45ff1cc46db02cc7bd7cc1d346f04950153f7c04f6ad9b9cdf9563f"
+    },
+    {
+      "path": "crates/dbsp/tests/circuit_wait_time.rs",
+      "bytes": 8594,
+      "sha256": "506e26d142c76288a51af4a7801451cbca1f55b769fdb303b2680c051c55d463"
+    },
+    {
+      "path": "crates/dbsp/tests/fsync_placement.rs",
+      "bytes": 2406,
+      "sha256": "e12d9e83a7552f176c5fa7b9f288f687fce5a20e019050b5e494f1e8561b6d8f"
+    },
+    {
+      "path": "crates/dbsp/tests/panic_hook_chain.rs",
+      "bytes": 996,
+      "sha256": "7d460faaa55266d1b607458dd1d17f985e991dccf304b9255fa6883c89c5f50f"
+    },
+    {
+      "path": "crates/feldera-macros/Cargo.toml",
+      "bytes": 582,
+      "sha256": "c22e60ede07ab53bf004aa83669abc62ea6ffb5ac950e482a5f562fdd3ff471a"
+    },
+    {
+      "path": "crates/feldera-macros/src/engine_test.rs",
+      "bytes": 10785,
+      "sha256": "fcca72723e5c5a41ebec64e2325d61ad1e5f828cb963b996559fcb8994dd6511"
+    },
+    {
+      "path": "crates/feldera-macros/src/lib.rs",
+      "bytes": 4394,
+      "sha256": "dfa71778b41a9a18be8f63679bb922f51db3cc9dd1c9b8ec7a0dcada56b00a43"
+    },
+    {
+      "path": "crates/feldera-macros/src/ord_repr.rs",
+      "bytes": 10085,
+      "sha256": "2dd4047a7a0cdbafcb4a03955f9218d25fd9d77c3bf04fd75d07ba549876092b"
+    },
+    {
+      "path": "crates/feldera-macros/src/tuples.rs",
+      "bytes": 45538,
+      "sha256": "6890c1eba30d427513887df6db7955b3b0c98ac31a7e3619277e8346b982645e"
+    },
+    {
+      "path": "crates/feldera-observability/Cargo.toml",
+      "bytes": 694,
+      "sha256": "df92a6e05d054b68d64a199411bd201d9238f32fc72245da9067088a45675df3"
+    },
+    {
+      "path": "crates/feldera-observability/src/fips.rs",
+      "bytes": 665,
+      "sha256": "9a7b48166172c5f488ef5d938de660df59a151f5b9b3dd513c8682a99aafe47b"
+    },
+    {
+      "path": "crates/feldera-observability/src/json_logging.rs",
+      "bytes": 12607,
+      "sha256": "066a9cced1b9648f11eeff715abbba96d54ce2a13b46231c1ad17867ed67aebe"
+    },
+    {
+      "path": "crates/feldera-observability/src/lib.rs",
+      "bytes": 52,
+      "sha256": "f61d17286a4d3acf62ccd58e6f4076cbabffb932afb309d8c8a9363317271801"
+    },
+    {
+      "path": "crates/feldera-observability/src/system.rs",
+      "bytes": 6273,
+      "sha256": "6aeb6e9df2437e50f2f2be076ca067bddd9b7a609c4c24c7d2ad0e82ecb32e83"
+    },
+    {
+      "path": "crates/feldera-types/Cargo.toml",
+      "bytes": 1517,
+      "sha256": "43c6c330749dd7459db95e6ba2e39275b0c3adff564db3eded0501e6ae157e76"
+    },
+    {
+      "path": "crates/feldera-types/README.md",
+      "bytes": 241,
+      "sha256": "ec971ad6f748fb4aa87ce5e5ea80749d707a2cf51237132a8e5db32cc6759577"
+    },
+    {
+      "path": "crates/feldera-types/src/adapter_stats.rs",
+      "bytes": 47636,
+      "sha256": "cedbf0b11a2c55e7f3a49bead764e23643f6b56d4d0564c55d72e15844c73c8a"
+    },
+    {
+      "path": "crates/feldera-types/src/checkpoint.rs",
+      "bytes": 13378,
+      "sha256": "7e176e858bfda58b431faec8bd4d9efdb93b11551c419b567e973450164a4488"
+    },
+    {
+      "path": "crates/feldera-types/src/circuit.rs",
+      "bytes": 8310,
+      "sha256": "1340695e2138041b5a1e83da989aa00cc8b29f8842a29411359f9f2467f93060"
+    },
+    {
+      "path": "crates/feldera-types/src/completion_token.rs",
+      "bytes": 2431,
+      "sha256": "34ea65a2a9b7465c82712448d4a989816ac0a87b3998d4bd80fec3e378d8bf61"
+    },
+    {
+      "path": "crates/feldera-types/src/config/dev_tweaks.rs",
+      "bytes": 34345,
+      "sha256": "e8da56e2a791c9f48258c744e95dd16e780b067632cc591b7b17997b75626772"
+    },
+    {
+      "path": "crates/feldera-types/src/config/ignored.rs",
+      "bytes": 6847,
+      "sha256": "2f4dec076159d884f27bc1ca157a4283bb33bd676217a199c11535c9332a3599"
+    },
+    {
+      "path": "crates/feldera-types/src/config.rs",
+      "bytes": 186851,
+      "sha256": "830c746a4acaf6acd09a344b700e5992ce7d52e3287231530f7db9ee4c07b843"
+    },
+    {
+      "path": "crates/feldera-types/src/constants.rs",
+      "bytes": 1632,
+      "sha256": "34b11bb62028a914fda20e3ac11189f6617a27daa165eccb63341dbfa00f1a13"
+    },
+    {
+      "path": "crates/feldera-types/src/coordination.rs",
+      "bytes": 32025,
+      "sha256": "a1a4efc16591683b312201988848d798bd35c313cf1cbfea44b70750dd82fed0"
+    },
+    {
+      "path": "crates/feldera-types/src/duration.rs",
+      "bytes": 54429,
+      "sha256": "8a4231e5070d4c861a658ac15544924b38c99e723285b5f6d24aa2afac9ea5c4"
+    },
+    {
+      "path": "crates/feldera-types/src/error.rs",
+      "bytes": 5153,
+      "sha256": "9a7c0aa99778788b9f5564658347587a5378e75397b7889db0065110893a1506"
+    },
+    {
+      "path": "crates/feldera-types/src/format/avro.rs",
+      "bytes": 15096,
+      "sha256": "99018dcb379eedc76aff197aa614f4c6888c281375f200015a1ee593f667e927"
+    },
+    {
+      "path": "crates/feldera-types/src/format/csv.rs",
+      "bytes": 4494,
+      "sha256": "f9a3f518a908b48eaaded718ddf2a62c168ae284c48cf749b82e88fba1f9af42"
+    },
+    {
+      "path": "crates/feldera-types/src/format/json.rs",
+      "bytes": 9741,
+      "sha256": "42a311c6c0c8f0efa2272fe3e88885ce79b7d7c1825e218d28533bbf1eeca5c9"
+    },
+    {
+      "path": "crates/feldera-types/src/format/parquet.rs",
+      "bytes": 562,
+      "sha256": "b1116cbb00e839c9061397a430a51a4f9f5be46f449ef0fc4152f8bce6b3076d"
+    },
+    {
+      "path": "crates/feldera-types/src/format/raw.rs",
+      "bytes": 1099,
+      "sha256": "ce42401dbb489a6fcc21148c9c20c97bc21eccaf01124ffb153f5cd16aa73bbf"
+    },
+    {
+      "path": "crates/feldera-types/src/format.rs",
+      "bytes": 71,
+      "sha256": "a91b924283c627c44f57e9372d1977382648586e827cd498c6a3d0c67f4ae0b1"
+    },
+    {
+      "path": "crates/feldera-types/src/lib.rs",
+      "bytes": 1939,
+      "sha256": "f7f3735e46a5fbb218f43404a7a621d1968b8fb6985e9742b1d01a9d1c5729fe"
+    },
+    {
+      "path": "crates/feldera-types/src/memory_pressure.rs",
+      "bytes": 2351,
+      "sha256": "4192301884a40296c439e361036d1461e18387d91642dfec3d959a2627485c35"
+    },
+    {
+      "path": "crates/feldera-types/src/pipeline_diff.rs",
+      "bytes": 29139,
+      "sha256": "5167a4c7306f67e6ceea25a67bd9a11c4e8ccedc1b7c44c145a820bcd637498c"
+    },
+    {
+      "path": "crates/feldera-types/src/postprocess.rs",
+      "bytes": 546,
+      "sha256": "30b291e0f73ddc4c9a2dfe5a30b77296c8cf1890c3508fa29bdfe7725b32936b"
+    },
+    {
+      "path": "crates/feldera-types/src/preprocess.rs",
+      "bytes": 3290,
+      "sha256": "07312b71aa38f6e8db443e5f46820c74e6ce24c6d3bccb1b048a024a4d069150"
+    },
+    {
+      "path": "crates/feldera-types/src/program_schema.rs",
+      "bytes": 55040,
+      "sha256": "0a09391e5fe5db108256999bf7fead2afbfc87f73146c34c9890eee3f1cbdfe4"
+    },
+    {
+      "path": "crates/feldera-types/src/query.rs",
+      "bytes": 3614,
+      "sha256": "640e4dad0f4f91867d60b5c49d8638cb6c90a8d6a339fc47b5640dfa0367e895"
+    },
+    {
+      "path": "crates/feldera-types/src/query_params.rs",
+      "bytes": 4767,
+      "sha256": "dd5f064dd493bc80b5fd54cd834ce48e008fd4b7b04fd4b235f4bf2289a4bbee"
+    },
+    {
+      "path": "crates/feldera-types/src/runtime_status.rs",
+      "bytes": 16837,
+      "sha256": "1b5447b8831613e03ad57188ab8b5e71d89d7355b916fda9adebfbe8038686dd"
+    },
+    {
+      "path": "crates/feldera-types/src/secret_ref.rs",
+      "bytes": 25358,
+      "sha256": "ed496f185b2469d6e0616dbae6ecc362ba1c1737d8a2cde0a547d4aeb29f5b14"
+    },
+    {
+      "path": "crates/feldera-types/src/secret_resolver.rs",
+      "bytes": 25130,
+      "sha256": "b46169e8bf6c78107f9731302ed6a6b2d66ecefd8d35b6a807b999c68c6207d3"
+    },
+    {
+      "path": "crates/feldera-types/src/serde_with_context/deserialize.rs",
+      "bytes": 39886,
+      "sha256": "25ac88917769fbd353a8d494da84aa8592797e94dd77b7095e3482bb71c0c6b4"
+    },
+    {
+      "path": "crates/feldera-types/src/serde_with_context/serde_config.rs",
+      "bytes": 11256,
+      "sha256": "ace3e116a0fc407225fca9238db2ce6a5ad4d2fa5a9386733d508d88bcefaa1a"
+    },
+    {
+      "path": "crates/feldera-types/src/serde_with_context/serialize.rs",
+      "bytes": 17506,
+      "sha256": "e203f2aada10e243bf94307db914ef9645ee0dffb16523bab8f7aa30cf282a3e"
+    },
+    {
+      "path": "crates/feldera-types/src/serde_with_context.rs",
+      "bytes": 434,
+      "sha256": "47cd387aca0e3648fb9f4f5ab47f7a4467a4ac876e02e1bcdd065b34a6a1b60c"
+    },
+    {
+      "path": "crates/feldera-types/src/size.rs",
+      "bytes": 42692,
+      "sha256": "d866b07945c7d1b23bb6815203eb070cda50379701b47c7e607b203efe739215"
+    },
+    {
+      "path": "crates/feldera-types/src/suspend.rs",
+      "bytes": 4092,
+      "sha256": "266db2370edac933fdbca6010a6420f1a8ad8186d7aa3e8b8948f8ed70a148ca"
+    },
+    {
+      "path": "crates/feldera-types/src/time_series.rs",
+      "bytes": 1062,
+      "sha256": "270633157cd20c3ef6ce865a9a333e5efdb4a882208befbf5c7a1091cbc930f1"
+    },
+    {
+      "path": "crates/feldera-types/src/transaction.rs",
+      "bytes": 3365,
+      "sha256": "617da51e99258ca73312018db5ac17e676c775e93817dd9a54347355b1b67d85"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/adhoc.rs",
+      "bytes": 469,
+      "sha256": "52296a8c0d7710e0153583d3927271a1dabe29b804522da5636007475cf45690"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/clock.rs",
+      "bytes": 10045,
+      "sha256": "c5ff9dfda329876700e882ddca256ed1f626491364dfd5cd7b266551561d5513"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/datagen.rs",
+      "bytes": 12124,
+      "sha256": "6e56aace963383098cf9cc4cce63b85980a40724c98277eecea8389cc580c045"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/delta_table.rs",
+      "bytes": 56555,
+      "sha256": "0122c939e2c80644238a084edacc19be29b47dbc46365c39fb36a93e4b8040c6"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/dynamodb.rs",
+      "bytes": 17248,
+      "sha256": "7cd1cbcf5f236d7640ac64092c78e46c2193c5729733efb2e0e023dad094f2dd"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/file.rs",
+      "bytes": 1582,
+      "sha256": "098300f4b18c2943c0ca290bcd840fc7d70d3ce07a852093fa5018a6c26fd9d2"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/http.rs",
+      "bytes": 3397,
+      "sha256": "042a5c5da2afd2051437d75c0c12ade343aea09d5c093db7806ffa37c19cc0b8"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/iceberg.rs",
+      "bytes": 27698,
+      "sha256": "d732fb232acef962bcd86f578f96e80470e72978288a9c7e195ddc8eb9a3a742"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/kafka.rs",
+      "bytes": 57143,
+      "sha256": "ca958bc834955ffde09b74d80c83050dce4d03f499d397f654978019c9cb040d"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/nats.rs",
+      "bytes": 23066,
+      "sha256": "c0a3c26e1cb17359a0f532010e8a142873a37701b0dd12433df819ddb777a934"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/nexmark.rs",
+      "bytes": 2432,
+      "sha256": "53b6214fce2334789dfdb23e4119810db2f92485ea3ebc6adb873320e081e18e"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/postgres.rs",
+      "bytes": 29786,
+      "sha256": "4ff4ea98ccbb424e029763a1fdb619d4b220ff5b1f7766c205eac031b302a7a5"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/pubsub.rs",
+      "bytes": 5287,
+      "sha256": "f5c7a9b3b71d3b73ce71e4f9f463cc2a4c05a7e682c4e5a960cf8ebb6cb300f9"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/redis.rs",
+      "bytes": 683,
+      "sha256": "1cbc0d157a74dff7657452062acd53e4edf107ec0019b9e6f1941e396a7d923e"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/s2.rs",
+      "bytes": 1735,
+      "sha256": "e8369ce5c13a1ff6804e4e85baad00e36c39a51cd2dc3a601b0fcf5238f7031e"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/s3.rs",
+      "bytes": 1977,
+      "sha256": "acd843ef8090449c00f815235eda4bf1a04caf55078bb8f88420459723041f1f"
+    },
+    {
+      "path": "crates/feldera-types/src/transport/url.rs",
+      "bytes": 2741,
+      "sha256": "550b190f88947511415c5a16957464ae8ea5741a24bc55b764df69554d3b247a"
+    },
+    {
+      "path": "crates/feldera-types/src/transport.rs",
+      "bytes": 263,
+      "sha256": "25de78d1ade6c79eb3ea745d708fea87b39dc4e12515ed13fc1bd16c974ec949"
+    },
+    {
+      "path": "crates/feldera-types/src/variant.rs",
+      "bytes": 8884,
+      "sha256": "330a4dba10e1a5229aa98b1d1379ea8cf30f6f949007f95bb9be12300f12934b"
+    },
+    {
+      "path": "crates/ir/Cargo.toml",
+      "bytes": 887,
+      "sha256": "a401ed2111899d207682e8d862293c6c1569f1f9c23f58fb9145edb4b8c7fdb4"
+    },
+    {
+      "path": "crates/ir/src/hir.rs",
+      "bytes": 3209,
+      "sha256": "9a6e5995720f38e9ec1557b21c2ee30aaca13eea0242c4df65212cdaf96c71b8"
+    },
+    {
+      "path": "crates/ir/src/lib.rs",
+      "bytes": 10341,
+      "sha256": "7eec4edee0983eed2863b4b920869c9fb93e4ab8bebae81fa17fc1a9cc231eef"
+    },
+    {
+      "path": "crates/ir/src/lir.rs",
+      "bytes": 1887,
+      "sha256": "ec7a06a0a4e545298f123c78ba8844185d9155f1370786c2f8b47bfef5d93f1e"
+    },
+    {
+      "path": "crates/ir/src/mir.rs",
+      "bytes": 1242,
+      "sha256": "adc4b2f2352be6d7f568f19ae36b5dd512eb9e3d3479dcffee122aa8b5082ea3"
+    },
+    {
+      "path": "crates/modular-bloom/Cargo.toml",
+      "bytes": 745,
+      "sha256": "910797c6bc948fd5e3dd0c64a464d100a3e15c5eab34ca732998f5e875cc5d5c"
+    },
+    {
+      "path": "crates/modular-bloom/benches/modular_bloom.rs",
+      "bytes": 8811,
+      "sha256": "5d3961bacae8cf6c0e3a4512c3d66a38f0ca28a5cb329831ba2e29387e19aad0"
+    },
+    {
+      "path": "crates/modular-bloom/src/bits.rs",
+      "bytes": 6579,
+      "sha256": "ca1f01d74f9e71e0665d9d68fc364e87058394c3e915b43f81601c1425ef14a4"
+    },
+    {
+      "path": "crates/modular-bloom/src/density.rs",
+      "bytes": 6439,
+      "sha256": "846dc87f95c3aad4c9fe31964eea2089061c31626b97515c82c0fe811adadfbd"
+    },
+    {
+      "path": "crates/modular-bloom/src/error.rs",
+      "bytes": 2886,
+      "sha256": "334ee8da3aed6649f405a454fcd8a3730dba8149fd1f70a2f9a0a953d38f38eb"
+    },
+    {
+      "path": "crates/modular-bloom/src/filter.rs",
+      "bytes": 17804,
+      "sha256": "69f09813899f743b9e94a3f3d2840b989e42c8de88264f5a5f52e98d2e395de8"
+    },
+    {
+      "path": "crates/modular-bloom/src/layout.rs",
+      "bytes": 7059,
+      "sha256": "38dccf9880768733089b1c0638434fd30fbc6563ce76742aadad9d4ddef3e64c"
+    },
+    {
+      "path": "crates/modular-bloom/src/lib.rs",
+      "bytes": 3182,
+      "sha256": "aa5398f6a007b102851bec94754893fde3547746cebbc1d10317868eb8ae01f1"
+    },
+    {
+      "path": "crates/modular-bloom/tests/bloom_common.rs",
+      "bytes": 5700,
+      "sha256": "bd72a69f70b7f625a68df436d5222fff1f463629f31647055e6bea4f973852d4"
+    },
+    {
+      "path": "crates/modular-bloom/tests/bloom_invariants.rs",
+      "bytes": 15444,
+      "sha256": "4b91966305ef57576b1ded20ebf8a47d3af91bb1f253bdcfee8608a8242db665"
+    },
+    {
+      "path": "crates/modular-bloom/tests/bloom_large.rs",
+      "bytes": 6763,
+      "sha256": "435b0354db63c4fc144a92f1fc3c1172671744ecf7a56497a7b3e7f1ca01b8c4"
+    },
+    {
+      "path": "crates/modular-bloom/tests/bloom_layout.rs",
+      "bytes": 6370,
+      "sha256": "3b0846e024e767379acd6f121531a97695286f4e1019e9beea4f83c278eab911"
+    },
+    {
+      "path": "crates/modular-bloom/tests/bloom_properties.rs",
+      "bytes": 8534,
+      "sha256": "61ee0d978c1615939069ea7fa9c45ffeef62f906f5a3bf4f94ea266f0de6038e"
+    },
+    {
+      "path": "crates/modular-bloom/tests/bloom_statistical.rs",
+      "bytes": 14835,
+      "sha256": "7ec81f6c422f36bf38e5dfb5bfcc4cded1648d9aaaca6203e6482a82f3181d83"
+    },
+    {
+      "path": "crates/samply/Cargo.toml",
+      "bytes": 1065,
+      "sha256": "1861e67373c94b83617e9ac1d2e5d0eea0374e6732d50501aa10328def2816ad"
+    },
+    {
+      "path": "crates/samply/src/lib.rs",
+      "bytes": 46975,
+      "sha256": "59c99d2aea0ff8dd99ea6e3ac0f7ec01fd1a1c7acd507ff628e1d2ebc406bc87"
+    },
+    {
+      "path": "crates/sql/NATIVE-ARCHIVES.md",
+      "bytes": 6748,
+      "sha256": "786e5eed3f090fd010d7f340e9b2c48c9eb92d0cb2f25379e3d1d90dd6c69227"
+    },
+    {
+      "path": "crates/sql/NATIVE-CONTEXT.md",
+      "bytes": 7087,
+      "sha256": "51f0d7532cf70e92afc296e7a262b93fa460ada6b62569db5c6b77aca90bc149"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/Cargo.lock",
+      "bytes": 126293,
+      "sha256": "99337fed209c3463c1755f48c15a141d3a878be9c10d3bbab193115f7c4a2f0f"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/Cargo.toml",
+      "bytes": 612,
+      "sha256": "501a0379aed851dd4ed7d145cf42d87da7dad542d9e6bdca0ade5972c2c0c5a7"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/README.md",
+      "bytes": 4762,
+      "sha256": "9c105f8a40d16eb9f7c7d0a9527a6405e1904a4bbcd3c0073d799fd6a3b89e96"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/src/lib.rs",
+      "bytes": 2749,
+      "sha256": "356732d0248069fadf9bd0341ef499913849fc2e6e5583311a2bfed069fe829a"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/tests/archive.rs",
+      "bytes": 10564,
+      "sha256": "4b3c1d5fd7380c04c915094aedd02a82b3ff86de14a53840b7876be3fb426a80"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/tests/checkpoint.rs",
+      "bytes": 6987,
+      "sha256": "2cffea1276591593d885e12e02a04c1a5c88b4bf3bdc89c485565f6bb58c17af"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/tests/circuits.rs",
+      "bytes": 5321,
+      "sha256": "4bb4aaa07c67d7edd7fd27f1b521cdf49beec15df1340433e314cfc41e6d6739"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/tests/native_context/mod.rs",
+      "bytes": 10140,
+      "sha256": "7029ecc60c683453ebba9e4978a2d7066cbfda3332407b41e4f63c31752879d8"
+    },
+    {
+      "path": "crates/sql/native-dbsp-probe/tests/native_context.rs",
+      "bytes": 8826,
+      "sha256": "4e95347d4a89a69ace2ae9c8c3af0b200bab3cd21002eaad7c447328f635d821"
+    },
+    {
+      "path": "crates/sql/native-probe/Cargo.lock",
+      "bytes": 15216,
+      "sha256": "07fa42707323e9b0e6fc7a80afbb3f4f6fe6670c9fd1ed57cb410f5816e4ee38"
+    },
+    {
+      "path": "crates/sql/native-probe/Cargo.toml",
+      "bytes": 409,
+      "sha256": "8b1eb4090d8a71c6108ac74c43bb824f91a1eb65185cd3b80d6dd500340c17b1"
+    },
+    {
+      "path": "crates/sql/native-probe/README.md",
+      "bytes": 7254,
+      "sha256": "c7a89d36eb6fc4dba71f30fc007f8936770fcda99e4d355d26c20fe1c50b963e"
+    },
+    {
+      "path": "crates/sql/native-probe/src/archive.rs",
+      "bytes": 9649,
+      "sha256": "c3f99ee9b491c58117b1643b58f2a34369d0c56ad44b8ddc04775f4ce6d69038"
+    },
+    {
+      "path": "crates/sql/native-probe/src/codegen.rs",
+      "bytes": 9580,
+      "sha256": "139351d4da84f0a9e481afdcbbd2d9208cd90ba3806273cb744d893c93fbfe0f"
+    },
+    {
+      "path": "crates/sql/native-probe/src/keys.rs",
+      "bytes": 3268,
+      "sha256": "c89bed9130b9b805fbcb56b1cd13ed25ccf5b6c13d5762baddef9224c4cffa44"
+    },
+    {
+      "path": "crates/sql/native-probe/src/lib.rs",
+      "bytes": 1950,
+      "sha256": "bb447abbe8323d6099546b1b6adc2876e0ed24f4d9363127dcd9172f676f28c4"
+    },
+    {
+      "path": "crates/sql/native-probe/src/model.rs",
+      "bytes": 7511,
+      "sha256": "7d8b8877e1e1b27b3081837819c7a906616564074219866f3c3a6651cdfacaaf"
+    },
+    {
+      "path": "crates/sql/native-probe/src/runtime.rs",
+      "bytes": 4523,
+      "sha256": "6d1b5b823ddcaa6874a8c5a6f8fd3a95117bded4cf680a6c3956319b41e2f912"
+    },
+    {
+      "path": "crates/sql/native-probe/tests/keys.rs",
+      "bytes": 5457,
+      "sha256": "04df41fe91b95185fe88e63be74365a7734f4555b2b3abc35493782de8fd2f41"
+    },
+    {
+      "path": "crates/sql/native-probe/tests/native.rs",
+      "bytes": 9817,
+      "sha256": "c32899667ed4d5c8711e2fc19c5cf25a618d141c2143817ae9f146cc4cc2fbc4"
+    },
+    {
+      "path": "crates/storage/Cargo.toml",
+      "bytes": 1140,
+      "sha256": "53bb1a7505f4e1c5704686432b1dc7bfbf71c3ed34ff97c4a40f79ac8a9a9710"
+    },
+    {
+      "path": "crates/storage/README.md",
+      "bytes": 201,
+      "sha256": "05bd9203f4b004b2149c036ae0fb23b4664bb94ecd761e23969d702d3603c3a4"
+    },
+    {
+      "path": "crates/storage/src/block.rs",
+      "bytes": 1443,
+      "sha256": "5d4b8c0349d69664833af412407ba58503cb2d7db780e73df91c8fdf4df3b522"
+    },
+    {
+      "path": "crates/storage/src/checkpoint_synchronizer.rs",
+      "bytes": 4667,
+      "sha256": "108d82918a2cfd87adeb829d8e8e408bfe6acbba80745a07018d35ca8cfdbc89"
+    },
+    {
+      "path": "crates/storage/src/disk.rs",
+      "bytes": 2514,
+      "sha256": "4ddbe80aee6526863d20d974564d7911b92ce40c058a715640d5ed3b829fec14"
+    },
+    {
+      "path": "crates/storage/src/error.rs",
+      "bytes": 6256,
+      "sha256": "a7cf29cda04af9bcb93b1aced452b6070c080758f56828ac71f200fa327fcf1d"
+    },
+    {
+      "path": "crates/storage/src/fbuf/slab.rs",
+      "bytes": 21073,
+      "sha256": "85e12f6b4919e5508baba27f35de46b9352f548e00912d01905c0f932a0d9423"
+    },
+    {
+      "path": "crates/storage/src/fbuf.rs",
+      "bytes": 26911,
+      "sha256": "0048745b5b376bbc962639280827bec969e8b63247922ea35fbdd8b52c4b82f2"
+    },
+    {
+      "path": "crates/storage/src/file.rs",
+      "bytes": 585,
+      "sha256": "17b716c33ceb79bd5fe38297c79ed7f82a10ef2b3c8c122b3747d0f2099c901e"
+    },
+    {
+      "path": "crates/storage/src/histogram.rs",
+      "bytes": 11520,
+      "sha256": "608c563f4b464bc5aff25f422ff8fe0818bdaf1188e1698b3d66cb688e48359c"
+    },
+    {
+      "path": "crates/storage/src/lib.rs",
+      "bytes": 17874,
+      "sha256": "28376901ef94382c27f0df879fa093a7d4c3c86015319f700d7517ef53998d58"
+    },
+    {
+      "path": "crates/storage/src/metrics.rs",
+      "bytes": 1217,
+      "sha256": "6f335efa6a1fdffc3f88264428a5b58082905fbb5fbb28d1131fdebaf918fc81"
+    },
+    {
+      "path": "crates/storage/src/tokio.rs",
+      "bytes": 1839,
+      "sha256": "a48b32af127b934b7f5334cc92ef44e726506fe2b418f00cd522342b1a5d3c5e"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "bytes": 86,
+      "sha256": "fe6bc6b5879f0933d4aff17e5ea3240a3bf2445a913d3d69474d71e275c33aee"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "binaries/archive-43831efffaf9685a",
+      "bytes": 513123472,
+      "sha256": "9b24887b7294fb42281d560a888778122c03bc97e66501113bc6e0b1f1eb0fb0"
+    },
+    {
+      "path": "binaries/checkpoint-c19b31651490b495",
+      "bytes": 560671248,
+      "sha256": "ec202de141c30bae9631bff2fafceb2178548bead54101b456db5481eb540bd2"
+    },
+    {
+      "path": "binaries/circuits-34d6e473bfa0b6e7",
+      "bytes": 571020904,
+      "sha256": "219c9c5622373f486fbd484e532af2c06c9209e16bf32840f952897f0f858693"
+    },
+    {
+      "path": "binaries/native_context-93e5b54c89d9d3dd",
+      "bytes": 512386032,
+      "sha256": "351c6d1d0f996709f4b6668d46bebd80203aa8a41026f4007ce1ed576416c7e5"
+    },
+    {
+      "path": "cargo-metadata.json",
+      "bytes": 2415836,
+      "sha256": "10c44578ab9bedb0dc943968a3ed9da2a27665a63f0bb3d8a3d8c7cfd876098a"
+    },
+    {
+      "path": "cargo-version.txt",
+      "bytes": 36,
+      "sha256": "1f88eaf7fe1aaec83184752cf4c944cd22f00184136ff36a3e4c318cc60ef566"
+    },
+    {
+      "path": "clippy-attempt1.log",
+      "bytes": 256,
+      "sha256": "560ecd44f11b43d0f3677d3756502666ef0dd713d301ad1de75459b227ee8bff"
+    },
+    {
+      "path": "fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "rustc-version.txt",
+      "bytes": 197,
+      "sha256": "60586c5678459d91006a242307c9d42841a6a719f612863d27ff30ffb3f4bf4f"
+    },
+    {
+      "path": "tests-all.log",
+      "bytes": 2643,
+      "sha256": "81a1d4ba0ecd440ee997addddc45bf72ece361fa5ab795badac711e034da0ef7"
+    },
+    {
+      "path": "tests-attempt1.log",
+      "bytes": 1318,
+      "sha256": "3da71854febab74fb97dc32b07c1929c05d3d7b9d9bf596be7e9ee782714722e"
+    },
+    {
+      "path": "tests-attempt2.log",
+      "bytes": 692,
+      "sha256": "a2ba160828a79fc28599b5ea9b9c3117c6508d4af85361cae9e61ecce7bc645a"
+    },
+    {
+      "path": "tests-attempt3.log",
+      "bytes": 770,
+      "sha256": "9c876250add2947b02edc0236c3472ea5798585301c4b738140faf4129bde446"
+    },
+    {
+      "path": "uname.txt",
+      "bytes": 128,
+      "sha256": "6c5c238846c7cf95c5b501294d131dd098b9e8d9d806e8f9474a78d5fdf393a2"
+    }
+  ]
+}

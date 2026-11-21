@@ -32,6 +32,9 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.util.Properties;
 
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+
 import javax.annotation.Nullable;
 import java.util.List;
 
@@ -49,14 +52,27 @@ public class CreateTableStatement extends CreateRelationStatement {
     public static final String SOFT_DELETE = "soft_delete";
 
     public final List<ForeignKey> foreignKeys;
+    /** Provenance of the declared name, consumed by circuit lowering. */
+    public final CalciteObject nameNode;
 
     public CreateTableStatement(ParsedStatement node,
                                 ProgramIdentifier tableName,
                                 List<RelColumnMetadata> columns,
                                 List<ForeignKey> foreignKeys,
                                 @Nullable Properties properties) {
+        this(node, tableName, columns, foreignKeys, properties,
+                node.statement() instanceof SqlCreateTable table
+                        ? CalciteObject.create(table.name)
+                        : CalciteObject.EMPTY);
+    }
+
+    public CreateTableStatement(ParsedStatement node, ProgramIdentifier tableName,
+                                List<RelColumnMetadata> columns, List<ForeignKey> foreignKeys,
+                                @Nullable Properties properties,
+                                CalciteObject nameNode) {
         super(node, tableName, columns, properties);
         this.foreignKeys = foreignKeys;
+        this.nameNode = java.util.Objects.requireNonNull(nameNode);
     }
 
     public boolean isMaterialized() {

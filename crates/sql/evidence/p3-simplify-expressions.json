@@ -1,0 +1,46 @@
+{
+  "scope": "Four scheduled scalar simplification passes per frozen program. Direct Java snapshots supply the input and expected output, generated-name counter and diagnostics at each placement.",
+  "comparator_sha256": "eef1edcfb184e33eefd23d741857d3d3ab473b0860f3c344da534d4b0a190a54",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "a101f5175f9dd419c79af93263ce9c3569969f1e65c8ec632726659396ef23bb",
+      "3a3727d6bce1c62ad581b64b29e2dba0ec2c4542f8af52f2f1d5f698c37e904b",
+      "ae701e8677a77b81db5a382b4ef988bd43ad3416ca4d26cd63a43751a60ae36c",
+      "d9d1ea8ff507d7dc38926643765636f5e2553999a8a7b1c4a6cf343ff80ebbfd"
+    ],
+    "pass": "Simplify",
+    "invocations": 34284,
+    "changed": 2333,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "7ee1714bc1ff51983879a21774f9d293562a3ff738caad0d4532eaf1181e7aa7",
+      "59eabc02940acf4bd97ac4e1645607ec387953e90a8e828ffe0c2bc895d646e0",
+      "4d339c6e8128bfa989f46c9f868d9db77de6bf9438f45ca461a87b57aa4b0cd1",
+      "acb7fad46a295874e354edc3193521c9640e8beda80eb0fe22d0699f63205d77"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "3521a444cdeda4acb23f9a8e21ac7b09d303611021fa0ec0489645d236bd68aa",
+      "f3221aa8749d75bef24e9c624e5b48f8b37f73cb6c2e4b818ec4aeaccf9671a8",
+      "4244b8bbedcc2011d55db41713208c29db8683e2805ef094fe03b20ba76eca11",
+      "79c595583f1479710fefef81882961a2d99e0b4fa03e7222ecab0fa8560fb4e2"
+    ],
+    "pass": "Simplify",
+    "invocations": 34108,
+    "changed": 2330,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "0d437316352173d08de3a2fa432ec0580aeb6d5be0e7dc0f738614f839127aa6",
+      "944beaf938a52b07ed996478d0e4b73b4d32ed8905780c82e4ba62cfcf68b5ad",
+      "e950baa437d057ffe526ba65a01a9dbf8e06d31366713bd4fccbb613ded56fba",
+      "1ef8d3a3deab4a7317128a3823d14550f9f410309c52e898679491bdf39ed3e2"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-corpus-full-steps-20261118-v1.tar.gz",
+  "bytes": 56528692,
+  "sha256": "cfe878c25082484238c035d36e5dea39a3f9553792a055f42f9aa931669e2c13",
+  "manifest_sha256": "9fe970b2be530ea96baf05b56c2edbbd06209aaa690236245a1d01cbcfdd3fee",
+  "verified_files": 80,
+  "all_members_verified": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-empty-error-limiter.tar.gz",
+  "bytes": 69748285,
+  "sha256": "b916ac9bb402a98d571af2d69b94b64842ab28d86993cb66357412c08ed4babc",
+  "manifest_sha256": "5ca3d0b655698a5054de4d316280147eda45f8cd22958917dd1dcfb5814f4f28",
+  "verified_files": 75049,
+  "all_members_verified": true
+}

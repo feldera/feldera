@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "started": "2026-11-18T09:12:26.233395+00:00",
+  "scope": "repaired Rust decoder acceptance and exact parsed transport of frozen statement-program-v5 corpus",
+  "input_root": "$SCRATCH/p0-statement-program-v9",
+  "java_replayed": false,
+  "optimizer_replayed": false,
+  "runtime_executed": false,
+  "P0_complete": false,
+  "shards": [
+    {
+      "mode": "classic",
+      "shard": "shard-000",
+      "equal": true,
+      "cases": 1429,
+      "statements": 22162,
+      "ordered_identity_sha256": "0b7d5c4dfdc390569848d71f5c87649872910b02828343083828c94466ddd36b",
+      "input_sha256": "ce26552c80f66b9e31c21631f66f7b3e51840cb4e69fa44a0bf3cb8424d917ad",
+      "output_sha256": "de694ab1dc6217bfd7ad3c72fb6342522855b0a1c52476ef861553163615d391",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/classic/shard-000/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/classic/shard-000"
+      ]
+    },
+    {
+      "mode": "classic",
+      "shard": "shard-001",
+      "equal": true,
+      "cases": 1429,
+      "statements": 20580,
+      "ordered_identity_sha256": "c189567384bc4fb90246cd892e521644961efd4c87b3447fa3a137b8c108db18",
+      "input_sha256": "7ca5bc5b54c57f2bd5040715652f78d4fdace1eb5a6ce2268f07bdf9f22a1c70",
+      "output_sha256": "252bc3873bb73720896aedc8bed31806993a8564f5485ac4d5013655665a0807",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/classic/shard-001/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/classic/shard-001"
+      ]
+    },
+    {
+      "mode": "classic",
+      "shard": "shard-002",
+      "equal": true,
+      "cases": 1429,
+      "statements": 20526,
+      "ordered_identity_sha256": "721bc3548bc562b07966af99d8626b9dfe237f42dc2b2abf0c15db0e4ca2b960",
+      "input_sha256": "143374ae41499a754b889b9d514994c80b17f3c4f61f01f1081ed203aa0d7f22",
+      "output_sha256": "2af3eb3d1256bb8f73476d4d75e9a310b1bfd1989f193d7133b25c7f677fd2ea",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/classic/shard-002/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/classic/shard-002"
+      ]
+    },
+    {
+      "mode": "classic",
+      "shard": "shard-003",
+      "equal": true,
+      "cases": 1428,
+      "statements": 20253,
+      "ordered_identity_sha256": "9c7401be9d799bc5648576d2cde96dd477a9cb9bae81d762caf0838d719026c7",
+      "input_sha256": "1d774ce771178ab17133cc0609f9fbf413842ef8f0a05dafeae4c6b8abe110ce",
+      "output_sha256": "b1faabc290401bfe77692e341435a859f444defa8bbddf9307a8b81611987d41",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/classic/shard-003/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/classic/shard-003"
+      ]
+    },
+    {
+      "mode": "classic",
+      "shard": "shard-004",
+      "equal": true,
+      "cases": 1428,
+      "statements": 20424,
+      "ordered_identity_sha256": "f7eb5eda8232c46308936e38355f42587a041cad06f4c68f56b469274b5fe918",
+      "input_sha256": "ee283c090a8d47178926a7a3eaa75f2753c71b30d946e756e1c144fbf6b6bd50",
+      "output_sha256": "38e5b64a4a2b3ff09dd396cd7d2db5c302a6767baa4ae82ba7d755aec23320dd",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/classic/shard-004/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/classic/shard-004"
+      ]
+    },
+    {
+      "mode": "classic",
+      "shard": "shard-005",
+      "equal": true,
+      "cases": 1428,
+      "statements": 23619,
+      "ordered_identity_sha256": "126a1d938c8ce31a7ea4ce0836f835aaff66a673f1673881489f50b7d33fea21",
+      "input_sha256": "718c93308142ef06f0bfc9fecc2e4f3fb7ac7d9cbbbb7be4d5164834fbc058cf",
+      "output_sha256": "7efc3b4ad618abfe5ed416aff0d3d8642b43d585abcb178aa614589cbaf0acf9",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/classic/shard-005/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/classic/shard-005"
+      ]
+    },
+    {
+      "mode": "gen2",
+      "shard": "shard-000",
+      "equal": true,
+      "cases": 2132,
+      "statements": 32169,
+      "ordered_identity_sha256": "c7b1c8390abb28dfd25d2c520d96155f2fea5f14a47bb5e24e47df586b1eb741",
+      "input_sha256": "0b3a7d7ce0291c1a053a5c6e80a89b962248539c8597ed66e6767d5e5bc49b35",
+      "output_sha256": "d42f169965681909be172c8828e1947879eb31c2b4addda09f4e4fd7a9eb34af",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/gen2/shard-000/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/gen2/shard-000"
+      ]
+    },
+    {
+      "mode": "gen2",
+      "shard": "shard-001",
+      "equal": true,
+      "cases": 2132,
+      "statements": 30292,
+      "ordered_identity_sha256": "ace48ea1a05c6d941ae9f024640e4167012fb4b9e49886fbcdb86f86ad58f9d9",
+      "input_sha256": "6d4a31a18c98137b1defee09bab2c3b063107e8247857ae612e73c4afccc9f6f",
+      "output_sha256": "9e40d6ad808a0418f2b001042f3e61f8d7699c70d46372192d7856244dfa8cd0",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/gen2/shard-001/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/gen2/shard-001"
+      ]
+    },
+    {
+      "mode": "gen2",
+      "shard": "shard-002",
+      "equal": true,
+      "cases": 2132,
+      "statements": 30843,
+      "ordered_identity_sha256": "0e60d93546bf6abe97daa418776ea59d54cf069e03cc3e4d8f56b2ada9cd00ce",
+      "input_sha256": "1ee4dd71c7bb136bf5963d8cd1348ea9ebf470b2ee97e5b9d2cbf40a6f730e3d",
+      "output_sha256": "9a68058db2cd4a52b7669a9885523e03285477ff73c83c238b6ac89af88ff009",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/gen2/shard-002/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/gen2/shard-002"
+      ]
+    },
+    {
+      "mode": "gen2",
+      "shard": "shard-003",
+      "equal": true,
+      "cases": 2131,
+      "statements": 33992,
+      "ordered_identity_sha256": "bdef61ce878b67be768330af92b471d7f63283b22c8d6b0c573aac691d3083d3",
+      "input_sha256": "fada35f27f4ea0c92df92a2855260ea6cb927fcd340e5780400cba020026e29a",
+      "output_sha256": "d7d05497a016dfbd2ad6a216bc286966a803900eaf4ffaa279ba5660380e0a6a",
+      "command": [
+        "$SCRATCH/p0-s1-validation-v1/program_roundtrip",
+        "$SCRATCH/p0-statement-program-v9/gen2/shard-003/export/cases.jsonl",
+        "$SCRATCH/p0-s1-validation-v1/gen2/shard-003"
+      ]
+    }
+  ],
+  "binary_sha256": "bbd5d438126a8d42cd11aab4b7e0fb71e2d545e09f0415c6ef4c3d7617aedaaf",
+  "source_files": 69,
+  "source_manifest_sha256": "bc6f2e84c1729a960572e3ad9213a8e786840dc775ef49c3d92e8e5dd75018a8",
+  "producer_complete_sha256": "fc82c202606b375c0c99da63660d11ca078dfb1f68a458414d2cec55a5b139b8",
+  "cases": 17098,
+  "cases_by_mode": {
+    "classic": 8571,
+    "gen2": 8527
+  },
+  "statements": 254860,
+  "source_snapshot_verified": true,
+  "inputs_unchanged": true,
+  "input_manifest_sha256": "3294acf91fe8f600ec24f2f9e7bf7c09e3bb4e9276f032563420f3b5355bed7d",
+  "finished": "2026-11-18T09:12:51.544353+00:00"
+}

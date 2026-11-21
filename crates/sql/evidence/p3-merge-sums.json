@@ -1,0 +1,28 @@
+{
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "1db302af2538fb5f8702c0159c6ee39ab8b87df320788ed037168b88071b71ad",
+      "d627f1b19e97b7d592ab88c757c4a1eff9d52759cdbb3f5f0bcc6d4e70808315"
+    ],
+    "pass": "MergeSums",
+    "invocations": 8571,
+    "changed": 4,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "8aaa10f7c5550220f7d285f16b5c926be444763edf5923e0fdd6904b9e789026",
+      "4f5373bab1f6980ee736b0d776307a9ab09242d7cd4c740a56781748b09fc670"
+    ],
+    "pass": "MergeSums",
+    "invocations": 8527,
+    "changed": 4,
+    "cases_without_placement": 0
+  }
+}

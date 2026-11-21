@@ -48,7 +48,13 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
     public DBSPFieldComparatorExpression(
             CalciteObject node, DBSPComparatorExpression source, int fieldNo,
             boolean ascending, boolean nullsFirst) {
-        super(node, DBSPComparatorType.generateType(source.getComparatorType(), fieldNo, ascending, nullsFirst));
+        this(node, source, fieldNo, ascending, nullsFirst,
+                DBSPComparatorType.generateType(source.getComparatorType(), fieldNo, ascending, nullsFirst));
+    }
+
+    private DBSPFieldComparatorExpression(CalciteObject node, DBSPComparatorExpression source,
+            int fieldNo, boolean ascending, boolean nullsFirst, DBSPComparatorType type) {
+        super(node, type);
         this.source = source;
         this.fieldNo = fieldNo;
         this.ascending = ascending;
@@ -114,6 +120,9 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
         int fieldNo = Utilities.getIntProperty(node, "fieldNo");
         boolean ascending = Utilities.getBooleanProperty(node, "ascending");
         boolean nullsFirst = Utilities.getBooleanProperty(node, "nullsFirst");
-        return new DBSPFieldComparatorExpression(CalciteObject.EMPTY, source, fieldNo, ascending, nullsFirst);
+        DBSPComparatorType type = getJsonType(node, decoder).to(DBSPComparatorType.class);
+        Utilities.enforce(type.sameType(DBSPComparatorType.generateType(
+                source.getComparatorType(), fieldNo, ascending, nullsFirst)));
+        return new DBSPFieldComparatorExpression(CalciteObject.EMPTY, source, fieldNo, ascending, nullsFirst, type);
     }
 }

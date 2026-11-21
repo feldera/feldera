@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-composite-archives-20261118-v3.tar.gz",
+  "bytes": 4586666,
+  "sha256": "558984bbd5bb9f4c9d83e614b8e26944f7823e00b4448eeea5c069346d07af93",
+  "manifest_sha256": "b91483aebf2d2a2113f9dd8237838085476485741b3a1ba37f8fbdb769d9d4c0",
+  "verified_files": 33,
+  "all_members_verified": true
+}

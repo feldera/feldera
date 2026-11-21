@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "archive_index": "p0-maven-current-archive.json",
+  "environment": "Offline Linux ARM64 devcontainer, CI corpus-export mode",
+  "junit": {"total": 3082, "passed": 3003, "skipped": 79, "failures": 0, "errors": 0},
+  "validated": {"cases": 8573, "portable_bags": 10402, "portable_rows": 18789},
+  "generated_rust_tests_executed": false,
+  "first_attempt": "Missing repository-relative documentation and packaged-demo fixtures. The rerun mounts both directories."
+}

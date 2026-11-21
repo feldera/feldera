@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "program": "OptimizedIncrementalTests#overDecimalTest",
+  "profile": "Linux ARM64, optimized, forced spill, persistent, 4 pinned workers",
+  "seed_rows": 2048,
+  "pairs_per_storage_and_size": 21,
+  "limits": {
+    "throughput_ratio": 0.85,
+    "transaction_p95_ratio": 1.2,
+    "peak_rss_ratio": 1.25,
+    "maximum_paired_checkpoint_ratio": 1.01
+  },
+  "runs": {
+    "native-rolling-calibration": {
+      "archive_index": "native-rolling-calibration-archive.json",
+      "configurations": [
+        {
+          "storage": "overlay",
+          "rows_per_step": 256,
+          "throughput_ratio": 0.9577325781150384,
+          "transaction_p95_ratio": 1.0328024791491852,
+          "peak_rss_ratio": 1.0121132652742655,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "overlay",
+          "rows_per_step": 2048,
+          "throughput_ratio": 0.8267101862465585,
+          "transaction_p95_ratio": 1.0414977579007254,
+          "peak_rss_ratio": 1.0050167563724992,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": false
+        },
+        {
+          "storage": "host-bind",
+          "rows_per_step": 256,
+          "throughput_ratio": 0.9923190985846704,
+          "transaction_p95_ratio": 0.9083312343032501,
+          "peak_rss_ratio": 1.01310697790538,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "host-bind",
+          "rows_per_step": 2048,
+          "throughput_ratio": 0.9812225160097694,
+          "transaction_p95_ratio": 0.9989867600636533,
+          "peak_rss_ratio": 1.0043521386206757,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        }
+      ],
+      "binary_sha256": "15719b50c6241f0a7f608bc92dab4dedb40a20df605d7f90e20f52c7385a2c94"
+    },
+    "native-rolling-optimized": {
+      "archive_index": "native-rolling-optimized-archive.json",
+      "configurations": [
+        {
+          "storage": "overlay",
+          "rows_per_step": 256,
+          "throughput_ratio": 0.9882292887697484,
+          "transaction_p95_ratio": 1.0028545134963234,
+          "peak_rss_ratio": 1.0120151047030552,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "overlay",
+          "rows_per_step": 2048,
+          "throughput_ratio": 0.9438246450445793,
+          "transaction_p95_ratio": 1.0268232620580338,
+          "peak_rss_ratio": 1.0058466473131813,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 20,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "host-bind",
+          "rows_per_step": 256,
+          "throughput_ratio": 1.002105716216149,
+          "transaction_p95_ratio": 0.9447414484277087,
+          "peak_rss_ratio": 1.012438043579912,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "host-bind",
+          "rows_per_step": 2048,
+          "throughput_ratio": 1.0067024664775237,
+          "transaction_p95_ratio": 0.8995665006305177,
+          "peak_rss_ratio": 1.0044323011536127,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        }
+      ],
+      "binary_sha256": "0658fa36afc08c832e24e2f810c92ce745905d0213b325cb36ff265663aa57e6"
+    },
+    "native-rolling-final": {
+      "archive_index": "native-rolling-final-archive.json",
+      "configurations": [
+        {
+          "storage": "overlay",
+          "rows_per_step": 256,
+          "throughput_ratio": 0.9923497204549098,
+          "transaction_p95_ratio": 1.0219263292887442,
+          "peak_rss_ratio": 1.0123287243671775,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "overlay",
+          "rows_per_step": 2048,
+          "throughput_ratio": 0.9363950338047491,
+          "transaction_p95_ratio": 1.0297162891398828,
+          "peak_rss_ratio": 1.0062350217311833,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 20,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "host-bind",
+          "rows_per_step": 256,
+          "throughput_ratio": 1.0060298623147432,
+          "transaction_p95_ratio": 1.0748334572954394,
+          "peak_rss_ratio": 1.0129740518962076,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        },
+        {
+          "storage": "host-bind",
+          "rows_per_step": 2048,
+          "throughput_ratio": 0.9891966388684895,
+          "transaction_p95_ratio": 0.9843060692239239,
+          "peak_rss_ratio": 1.0039689771783813,
+          "checkpoint_median_ratio": 1.0,
+          "equal_checkpoint_sizes": 21,
+          "maximum_paired_checkpoint_ratio": 1.0,
+          "runtime_budget_met": true
+        }
+      ],
+      "binary_sha256": "7ea55081ee177219bddc88eab6fa7d275cc40b42470c02f256dfb8a7f6d79fa6"
+    }
+  }
+}

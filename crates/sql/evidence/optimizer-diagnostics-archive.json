@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-diagnostics-20261118-v1.tar.gz",
+  "bytes": 39244331,
+  "sha256": "876b4d5617256a493b6a2210d81b104739ef2c366e503ac6ea72e6868c3761f3",
+  "manifest_sha256": "00c39bf7ec5aff92017ad157aae8e49ecb0dc49201d8fbfcb4bffd62ec49ce43",
+  "verified_files": 19429,
+  "all_members_verified": true
+}

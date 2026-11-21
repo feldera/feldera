@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "scope": "Archived release worker for the pinned parser, bounded A binder entry point and canonical circuit decoder on Linux ARM64.",
+  "archive_index": "resource-calibration-cpu-hour-archive.json",
+  "worker_sha256": "dbf2237437afce56a1c9b1733c15250ab9091a0fe3a7bc09bf5622a98746b535",
+  "os": "Linux 7.2.7-200.fc44.aarch64 aarch64",
+  "cpus": {
+    "parser": 8,
+    "binder": 9,
+    "decoder": 10
+  },
+  "batches_complete": true,
+  "address_space_limit_bytes": 1073741824,
+  "total_mutation_attempts": 667337504,
+  "targets": {
+    "parser": {
+      "target": "parser",
+      "elapsed_wall_seconds": 5489.129586831026,
+      "elapsed_child_cpu_seconds": 3600.010541,
+      "target_cpu_seconds": 3600,
+      "final_sampled_worker_cpu_seconds": 3600.0,
+      "max_rss_kib": 22656,
+      "max_responded_batch_wall_seconds": 0.013508696982171386,
+      "deadline_seconds": 2,
+      "cases_per_batch": 32,
+      "seeds": 5973,
+      "seeds_sha256": "86bd9863bb67f3036904a5682a03bc2c534c3297751109de4382389b2887fdc6",
+      "rng_seed": 672831,
+      "batches_complete": true,
+      "full_budget_reached": true,
+      "cases": 351746464,
+      "accepted": 128778414,
+      "exit_code": 0,
+      "mutations": {
+        "truncate": 70339226,
+        "nest": 70353947,
+        "control": 70349633,
+        "insert": 70352464,
+        "replace": 70351194
+      }
+    },
+    "binder": {
+      "target": "binder",
+      "elapsed_wall_seconds": 5082.230192126008,
+      "elapsed_child_cpu_seconds": 3600.0094240000003,
+      "target_cpu_seconds": 3600,
+      "final_sampled_worker_cpu_seconds": 3600.0,
+      "max_rss_kib": 17676,
+      "max_responded_batch_wall_seconds": 0.01313940598629415,
+      "deadline_seconds": 2,
+      "cases_per_batch": 32,
+      "seeds": 4559,
+      "seeds_sha256": "3ac70d6ae31cd21afd8e1b0367a83e0f4ff4b84307f81123ca335afdb9aead1e",
+      "rng_seed": 672831,
+      "batches_complete": true,
+      "full_budget_reached": true,
+      "cases": 310597696,
+      "accepted": 52149134,
+      "exit_code": 0,
+      "mutations": {
+        "truncate": 62108668,
+        "nest": 62117743,
+        "replace": 62123623,
+        "control": 62124021,
+        "insert": 62123641
+      }
+    },
+    "decoder": {
+      "target": "decoder",
+      "elapsed_wall_seconds": 4601.533572172979,
+      "elapsed_child_cpu_seconds": 3600.015728,
+      "target_cpu_seconds": 3600,
+      "final_sampled_worker_cpu_seconds": 3600.01,
+      "max_rss_kib": 26312,
+      "max_responded_batch_wall_seconds": 0.05020433198660612,
+      "deadline_seconds": 2,
+      "cases_per_batch": 32,
+      "seeds": 90,
+      "seeds_sha256": "a6d4368e8d404e0c28b85559a07aed3a28073536d13be580f1c0b147b2e4bcae",
+      "rng_seed": 672831,
+      "batches_complete": true,
+      "full_budget_reached": true,
+      "cases": 4993344,
+      "accepted": 2656469,
+      "exit_code": 0,
+      "mutations": {
+        "unknown_class": 713687,
+        "duplicate_identity": 713609,
+        "change_port": 712293,
+        "remove_operator": 713865,
+        "change_input": 713551,
+        "truncate": 713357,
+        "control": 712982
+      }
+    }
+  }
+}

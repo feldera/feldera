@@ -1,0 +1,497 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-44-warm-benchmark-archive.json",
+  "scope": "Three workloads, two compiler modes, four variants, one pinned devcontainer CPU, 32 paired measured and eight warmup iterations per workload and variant.",
+  "scheduled_placements": 44,
+  "measured_compilations": 1536,
+  "warmup_compilations": 384,
+  "graph_and_diagnostic_comparisons": 1440,
+  "profiles": {
+    "host_backed": {
+      "classic": {
+        "passed_graph_and_diagnostic_comparisons": 360,
+        "workloads": {
+          "integer-union": {
+            "latency_ns": {
+              "direct": {
+                "p50": 5338949.5,
+                "p95": 14148810
+              },
+              "java": {
+                "p50": 367182842.0,
+                "p95": 612613722
+              },
+              "fork": {
+                "p50": 565310155.5,
+                "p95": 725243867
+              },
+              "worker": {
+                "p50": 492987756.0,
+                "p95": 792436670
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8756127869758927,
+              "bootstrap_95_interval": [
+                0.8707756433187245,
+                0.8801259787604518
+              ]
+            },
+            "worker_over_direct": {
+              "median": 96.2719100000521,
+              "bootstrap_95_interval": [
+                77.47049236726104,
+                120.32712580455049
+              ]
+            },
+            "worker_over_direct_p95": 56.00730167413373,
+            "java_over_direct_p95": 43.29789727899378
+          },
+          "lateness": {
+            "latency_ns": {
+              "direct": {
+                "p50": 6186468.5,
+                "p95": 13258270
+              },
+              "java": {
+                "p50": 472470061.5,
+                "p95": 667038172
+              },
+              "fork": {
+                "p50": 679603609.5,
+                "p95": 868447585
+              },
+              "worker": {
+                "p50": 601129949.5,
+                "p95": 975910362
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8923500658930084,
+              "bootstrap_95_interval": [
+                0.8862576484628458,
+                0.9064455661317629
+              ]
+            },
+            "worker_over_direct": {
+              "median": 96.52024324494474,
+              "bootstrap_95_interval": [
+                87.68370123800287,
+                136.16832211670533
+              ]
+            },
+            "worker_over_direct_p95": 73.60766992978722,
+            "java_over_direct_p95": 50.31110182550212
+          },
+          "two-tables": {
+            "latency_ns": {
+              "direct": {
+                "p50": 4446263.0,
+                "p95": 10205774
+              },
+              "java": {
+                "p50": 344838838.0,
+                "p95": 402357908
+              },
+              "fork": {
+                "p50": 534355103.0,
+                "p95": 791559088
+              },
+              "worker": {
+                "p50": 459235229.0,
+                "p95": 669835876
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8662344960450681,
+              "bootstrap_95_interval": [
+                0.8560056235758935,
+                0.8715682275102914
+              ]
+            },
+            "worker_over_direct": {
+              "median": 105.80320951693076,
+              "bootstrap_95_interval": [
+                87.47982790353994,
+                141.6692109077983
+              ]
+            },
+            "worker_over_direct_p95": 65.63303047862905,
+            "java_over_direct_p95": 39.424536345797975
+          }
+        },
+        "resources": {
+          "return_code": 0,
+          "wall_seconds": 204.59115792898228,
+          "user_seconds": 71.773145,
+          "system_seconds": 40.82061,
+          "max_child_rss_kib": 347368
+        }
+      },
+      "gen2": {
+        "passed_graph_and_diagnostic_comparisons": 360,
+        "workloads": {
+          "integer-union": {
+            "latency_ns": {
+              "direct": {
+                "p50": 4761117.0,
+                "p95": 11120232
+              },
+              "java": {
+                "p50": 369000339.5,
+                "p95": 488405681
+              },
+              "fork": {
+                "p50": 569079295.0,
+                "p95": 686828806
+              },
+              "worker": {
+                "p50": 499695432.0,
+                "p95": 597678663
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8762564477728243,
+              "bootstrap_95_interval": [
+                0.8702323492598192,
+                0.8848474312537332
+              ]
+            },
+            "worker_over_direct": {
+              "median": 106.99739274908603,
+              "bootstrap_95_interval": [
+                77.48586480122779,
+                120.76884961419168
+              ]
+            },
+            "worker_over_direct_p95": 53.74695986558554,
+            "java_over_direct_p95": 43.92045786454815
+          },
+          "lateness": {
+            "latency_ns": {
+              "direct": {
+                "p50": 6612426.5,
+                "p95": 11185273
+              },
+              "java": {
+                "p50": 470550418.5,
+                "p95": 575109410
+              },
+              "fork": {
+                "p50": 684809434.5,
+                "p95": 810370807
+              },
+              "worker": {
+                "p50": 594404044.0,
+                "p95": 739405926
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8837066935359557,
+              "bootstrap_95_interval": [
+                0.872048207671112,
+                0.8942779516371635
+              ]
+            },
+            "worker_over_direct": {
+              "median": 94.5121572980848,
+              "bootstrap_95_interval": [
+                81.2168743448057,
+                112.42330863396234
+              ]
+            },
+            "worker_over_direct_p95": 66.10530882885023,
+            "java_over_direct_p95": 51.41666278507462
+          },
+          "two-tables": {
+            "latency_ns": {
+              "direct": {
+                "p50": 4288013.5,
+                "p95": 9031901
+              },
+              "java": {
+                "p50": 341368697.5,
+                "p95": 418783589
+              },
+              "fork": {
+                "p50": 536259433.5,
+                "p95": 715605841
+              },
+              "worker": {
+                "p50": 460228373.5,
+                "p95": 566978299
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8681862374345193,
+              "bootstrap_95_interval": [
+                0.8636438835308679,
+                0.8718243194094584
+              ]
+            },
+            "worker_over_direct": {
+              "median": 115.73285152046296,
+              "bootstrap_95_interval": [
+                97.46639794553433,
+                153.64453726378787
+              ]
+            },
+            "worker_over_direct_p95": 62.77507902267751,
+            "java_over_direct_p95": 46.36715891815023
+          }
+        },
+        "resources": {
+          "return_code": 0,
+          "wall_seconds": 201.92902602098184,
+          "user_seconds": 70.736086,
+          "system_seconds": 40.057644,
+          "max_child_rss_kib": 348472
+        }
+      }
+    },
+    "memory_backed": {
+      "classic": {
+        "passed_graph_and_diagnostic_comparisons": 360,
+        "workloads": {
+          "integer-union": {
+            "latency_ns": {
+              "direct": {
+                "p50": 5349407.0,
+                "p95": 10363065
+              },
+              "java": {
+                "p50": 329921820.5,
+                "p95": 387211700
+              },
+              "fork": {
+                "p50": 510691359.0,
+                "p95": 580446530
+              },
+              "worker": {
+                "p50": 451022276.0,
+                "p95": 510282152
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8787445480792899,
+              "bootstrap_95_interval": [
+                0.8695940136074978,
+                0.886836103085004
+              ]
+            },
+            "worker_over_direct": {
+              "median": 82.59963229579628,
+              "bootstrap_95_interval": [
+                77.76216370406866,
+                108.77365951741882
+              ]
+            },
+            "worker_over_direct_p95": 49.24046621342238,
+            "java_over_direct_p95": 37.36459242511747
+          },
+          "lateness": {
+            "latency_ns": {
+              "direct": {
+                "p50": 6417342.5,
+                "p95": 11165439
+              },
+              "java": {
+                "p50": 442017979.5,
+                "p95": 508606238
+              },
+              "fork": {
+                "p50": 627530884.5,
+                "p95": 706199935
+              },
+              "worker": {
+                "p50": 560547481.0,
+                "p95": 640786882
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8958079370682395,
+              "bootstrap_95_interval": [
+                0.8846063492496883,
+                0.9008276470137351
+              ]
+            },
+            "worker_over_direct": {
+              "median": 87.69003432493787,
+              "bootstrap_95_interval": [
+                78.42832209954499,
+                116.40684771190274
+              ]
+            },
+            "worker_over_direct_p95": 57.39020937734737,
+            "java_over_direct_p95": 45.55183526594879
+          },
+          "two-tables": {
+            "latency_ns": {
+              "direct": {
+                "p50": 3744389.5,
+                "p95": 11021314
+              },
+              "java": {
+                "p50": 302650159.5,
+                "p95": 356899795
+              },
+              "fork": {
+                "p50": 481598035.0,
+                "p95": 548942792
+              },
+              "worker": {
+                "p50": 413347466.5,
+                "p95": 470193430
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8623352873724448,
+              "bootstrap_95_interval": [
+                0.857220559601843,
+                0.8734108793862609
+              ]
+            },
+            "worker_over_direct": {
+              "median": 115.20628118104901,
+              "bootstrap_95_interval": [
+                96.55655259951655,
+                130.58697714507088
+              ]
+            },
+            "worker_over_direct_p95": 42.662193455335725,
+            "java_over_direct_p95": 32.38269003133383
+          }
+        },
+        "resources": {
+          "return_code": 0,
+          "wall_seconds": 177.51718955102842,
+          "user_seconds": 69.582531,
+          "system_seconds": 36.538426,
+          "max_child_rss_kib": 351140
+        }
+      },
+      "gen2": {
+        "passed_graph_and_diagnostic_comparisons": 360,
+        "workloads": {
+          "integer-union": {
+            "latency_ns": {
+              "direct": {
+                "p50": 4372450.5,
+                "p95": 9051526
+              },
+              "java": {
+                "p50": 326153535.0,
+                "p95": 355216547
+              },
+              "fork": {
+                "p50": 503377664.0,
+                "p95": 519300053
+              },
+              "worker": {
+                "p50": 438926318.0,
+                "p95": 474501298
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8744847507226439,
+              "bootstrap_95_interval": [
+                0.8680093984204036,
+                0.8812460289675401
+              ]
+            },
+            "worker_over_direct": {
+              "median": 100.50720781539304,
+              "bootstrap_95_interval": [
+                80.79584437829482,
+                115.67487753395913
+              ]
+            },
+            "worker_over_direct_p95": 52.42224327698998,
+            "java_over_direct_p95": 39.243829935416414
+          },
+          "lateness": {
+            "latency_ns": {
+              "direct": {
+                "p50": 6582196.5,
+                "p95": 12827561
+              },
+              "java": {
+                "p50": 420935973.5,
+                "p95": 447450761
+              },
+              "fork": {
+                "p50": 606296171.5,
+                "p95": 638949761
+              },
+              "worker": {
+                "p50": 538337873.5,
+                "p95": 558889608
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8888219103989596,
+              "bootstrap_95_interval": [
+                0.8853049119266474,
+                0.8916001030449926
+              ]
+            },
+            "worker_over_direct": {
+              "median": 82.0004610362544,
+              "bootstrap_95_interval": [
+                70.5948491453873,
+                96.5932926699154
+              ]
+            },
+            "worker_over_direct_p95": 43.56943677757603,
+            "java_over_direct_p95": 34.88198270894989
+          },
+          "two-tables": {
+            "latency_ns": {
+              "direct": {
+                "p50": 3876889.0,
+                "p95": 9592442
+              },
+              "java": {
+                "p50": 301471787.0,
+                "p95": 332373671
+              },
+              "fork": {
+                "p50": 471080970.0,
+                "p95": 523892962
+              },
+              "worker": {
+                "p50": 405791875.5,
+                "p95": 434211576
+              }
+            },
+            "worker_over_fork": {
+              "median": 0.8646258107603414,
+              "bootstrap_95_interval": [
+                0.8588209449596244,
+                0.8690972236533351
+              ]
+            },
+            "worker_over_direct": {
+              "median": 107.53670975776366,
+              "bootstrap_95_interval": [
+                85.49511846478818,
+                139.94566230698464
+              ]
+            },
+            "worker_over_direct_p95": 45.26601005249758,
+            "java_over_direct_p95": 34.649536687321124
+          }
+        },
+        "resources": {
+          "return_code": 0,
+          "wall_seconds": 173.81701701896964,
+          "user_seconds": 68.351831,
+          "system_seconds": 35.638863,
+          "max_child_rss_kib": 352928
+        }
+      }
+    }
+  },
+  "partial_hybrid_p95_threshold_met": false,
+  "limitation": "Each optimizer pass still crosses the boundary separately. File replay, graph encoding and Java reconstruction are included. The warm probes stop at S3. The two storage profiles are separate runs, and this is not a production hybrid measurement."
+}

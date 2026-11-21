@@ -1,0 +1,1020 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "complete": true,
+  "scope": "61 Python runtime cases only; not a runtime source-wide census",
+  "execution_certificate_sha256": "67f09518c85ca7a15a25113ecfb72733bcc1c90e964d34111a5196eff08159dc",
+  "attribution_tool_sha256": "14e4b94b28c23216bf436c7a5bce9f4fca58fbf691e4fe38d9f046ec82878641",
+  "counts": {
+    "cases": 61,
+    "repository_error_body_roots": 10,
+    "delegated_error_body_roots": 1,
+    "shared_repository_wrappers": 6
+  },
+  "error_body_roots": {
+    "plus": {
+      "anchor": "fn plus<T>",
+      "line": 229,
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "path": "crates/sqllib/src/operators.rs",
+      "format": "'{left} + {right}' causes overflow for type {sql_type}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_small_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_big_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_intt",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_un_intt"
+      ],
+      "dependencies": [
+        "sql_type_name",
+        "integer_operator_instantiations",
+        "nullable_operator_wrappers"
+      ]
+    },
+    "minus": {
+      "anchor": "fn minus<T>",
+      "line": 257,
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "path": "crates/sqllib/src/operators.rs",
+      "format": "'{left} - {right}' causes overflow for type {sql_type}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_small_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_big_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_intt",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_un_intt"
+      ],
+      "dependencies": [
+        "sql_type_name",
+        "integer_operator_instantiations",
+        "nullable_operator_wrappers"
+      ]
+    },
+    "times": {
+      "anchor": "fn times<T>",
+      "line": 359,
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "path": "crates/sqllib/src/operators.rs",
+      "format": "'{left} * {right}' causes overflow for type {sql_type}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_small_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_big_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_intt",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_un_intt"
+      ],
+      "dependencies": [
+        "sql_type_name",
+        "integer_operator_instantiations",
+        "nullable_operator_wrappers"
+      ]
+    },
+    "div": {
+      "anchor": "fn div<T>",
+      "line": 420,
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "path": "crates/sqllib/src/operators.rs",
+      "format": "'{left} / {right}' causes overflow for type {sql_type}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_small_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_big_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_intt",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_un_intt"
+      ],
+      "dependencies": [
+        "sql_type_name",
+        "integer_operator_instantiations",
+        "nullable_operator_wrappers"
+      ]
+    },
+    "decimal_string": {
+      "anchor": "pub fn cast_to_SqlDecimal_s<const",
+      "line": 557,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs",
+      "format": "Error converting '{value}' to DECIMAL({P}, {S}): {decimal_parse_error}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/illarg_tests/test_agg.py:illarg_sum_illegal1"
+      ],
+      "dependencies": [
+        "nullable_decimal_string",
+        "decimal_parse_error"
+      ]
+    },
+    "decimal_real": {
+      "anchor": "pub fn cast_to_SqlDecimal_f<const",
+      "line": 534,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs",
+      "format": "Error converting {value} to DECIMAL({P}, {S}): {decimal_range_error}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/illarg_tests/test_cast.py:illarg_cast_real_illegal"
+      ],
+      "dependencies": [
+        "nullable_decimal_real",
+        "decimal_real_conversion",
+        "decimal_range_error"
+      ]
+    },
+    "uuid_binary": {
+      "anchor": "pub fn cast_to_Uuid_bytes(",
+      "line": 4440,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs",
+      "format": "Need exactly 16 bytes in BINARY value to create an UUID",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/illarg_tests/test_cast.py:illarg_cast_binary_illegal"
+      ],
+      "dependencies": [
+        "nullable_cast_wrappers"
+      ]
+    },
+    "time_string": {
+      "anchor": "pub fn cast_to_Time_s(",
+      "line": 414,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs",
+      "format": "Error converting {value} to TIME: {chrono_parse_error}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/illarg_tests/test_cast.py:illarg_cast_array_illegal"
+      ],
+      "dependencies": [
+        "nullable_cast_wrappers",
+        "chrono_parse_error"
+      ]
+    },
+    "uuid_string": {
+      "anchor": "pub fn try_from_ref(",
+      "line": 178,
+      "sha256": "a2e34b0ad7c1e47b95d3bba063e0d05a46cd20707703ac2555eb91e09d3d2b8d",
+      "path": "crates/sqllib/src/uuid.rs",
+      "format": "Invalid UUID string '{value}'",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py:illarg_union_all_illegal"
+      ],
+      "dependencies": [
+        "uuid_string_cast"
+      ]
+    },
+    "integer_narrowing": {
+      "anchor": "macro_rules! cast_to_i_i",
+      "line": 1598,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs",
+      "format": "Error converting {value} to {sql_type}: {TryFromIntError}",
+      "ownership": "repository",
+      "cases": [
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_small_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_big_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_intt",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_un_intt"
+      ],
+      "dependencies": [
+        "sql_type_name",
+        "rust_try_from_int_error"
+      ]
+    },
+    "rust_remainder_zero": {
+      "ownership": "Rust toolchain",
+      "symbol": "core::panicking::panic_const::panic_const_rem_by_zero",
+      "format": "attempt to calculate the remainder with a divisor of zero",
+      "source_body_available": false,
+      "cases": [
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_small_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_big_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_intt",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_un_intt",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_tiny_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_small_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_big_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_intt",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_tiny_un_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_small_un_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_big_un_int",
+        "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_un_intt"
+      ],
+      "dependencies": [
+        "remainder_callsite",
+        "integer_operator_instantiations",
+        "nullable_operator_wrappers",
+        "rust_toolchain"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "python/tests/runtime_aggtest/illarg_tests/test_agg.py:illarg_sum_illegal1",
+      "root": "decimal_string",
+      "generated_helper": "cast_to_SqlDecimalN_sN",
+      "generated_source_sha256": "f34364611dfe3f9415ceb8059a23346ad4cb259ba0e81c004f1694eef8198c61",
+      "expected": "Error converting 'hello ' to DECIMAL(38, 19): Syntax error in numeric value",
+      "observed_panic_message": "line 48 column 5: Error converting 'hello ' to DECIMAL(38, 19): Syntax error in numeric value",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/illarg_tests/test_cast.py:illarg_cast_real_illegal",
+      "root": "decimal_real",
+      "generated_helper": "cast_to_SqlDecimalN_fN",
+      "generated_source_sha256": "c9ca9f0f1b04dba9e398b6fbec4cfc74ecdb919f02df353d67ce941161dbf3e7",
+      "expected": "Error converting -57681.18 to DECIMAL(6, 2): Value out of range",
+      "observed_panic_message": "line 48 column 1: Error converting -57681.18 to DECIMAL(6, 2): Value out of range",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/illarg_tests/test_cast.py:illarg_cast_binary_illegal",
+      "root": "uuid_binary",
+      "generated_helper": "cast_to_UuidN_bytesN",
+      "generated_source_sha256": "1cb469cacc3ac8cc45f006d01ba71f55d8e566c2127efe86dce6b458fb72516d",
+      "expected": "Need exactly 16 bytes in BINARY value to create an UUID",
+      "observed_panic_message": "line 48 column 1: Need exactly 16 bytes in BINARY value to create an UUID",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/illarg_tests/test_cast.py:illarg_cast_array_illegal",
+      "root": "time_string",
+      "generated_helper": "cast_to_TimeN_sN",
+      "generated_source_sha256": "1f2e3bddd693d8a90f1f7a2e1c385b9cf5361d4f2d4159be8a8ddf5608765cb4",
+      "expected": "Error converting 2020-10-01 00:00:00 to TIME: input contains invalid characters",
+      "observed_panic_message": "line 48 column 1: Error converting 2020-10-01 00:00:00 to TIME: input contains invalid characters",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py:illarg_union_all_illegal",
+      "root": "uuid_string",
+      "generated_helper": "cast_to_Uuid_s",
+      "generated_source_sha256": "b7d0cc44cc9d23aa6b491c33995aa333e1fa83442810082f158f9f1f096be635",
+      "expected": "Invalid UUID string 'hello '",
+      "observed_panic_message": "line 50 column 8: Invalid UUID string 'hello '",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_tiny_int",
+      "root": "plus",
+      "generated_helper": "plus_i8N_i8N",
+      "generated_source_sha256": "3fa46ced99eb753dd33d34c909af6ee61e89c6be16fe2d4edf40a8346eeeba26",
+      "expected": "'120 + 100' causes overflow for type TINYINT",
+      "observed_panic_message": "'120 + 100' causes overflow for type TINYINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_small_int",
+      "root": "plus",
+      "generated_helper": "plus_i16N_i16N",
+      "generated_source_sha256": "3b325d2577de8d96e8a31992df13e3df5aa4bfdea2cfe847a6aec1791c7d69bc",
+      "expected": "'32750 + 32700' causes overflow for type SMALLINT",
+      "observed_panic_message": "'32750 + 32700' causes overflow for type SMALLINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_big_int",
+      "root": "plus",
+      "generated_helper": "plus_i64N_i64N",
+      "generated_source_sha256": "a8a519823b3a355d6caeabee2347ec842c3a684a970eb6babced000c288c0af5",
+      "expected": "'8123302036854775807 + 9223372036854775807' causes overflow for type BIGINT",
+      "observed_panic_message": "'8123302036854775807 + 9223372036854775807' causes overflow for type BIGINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_intt",
+      "root": "plus",
+      "generated_helper": "plus_i32N_i32N",
+      "generated_source_sha256": "d748ac1696cf4042c836a93f16afd463e1c03af92b301f26ba6316e80fea8df5",
+      "expected": "'2147483647 + 2147483000' causes overflow for type INTEGER",
+      "observed_panic_message": "'2147483647 + 2147483000' causes overflow for type INTEGER",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_tiny_un_int",
+      "root": "plus",
+      "generated_helper": "plus_u8N_u8N",
+      "generated_source_sha256": "8c90636242e3c5f7f655cfe54a1db2edf7d8efb3b5791667a52e43f0b2d13391",
+      "expected": "'250 + 200' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_message": "'250 + 200' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_small_un_int",
+      "root": "plus",
+      "generated_helper": "plus_u16N_u16N",
+      "generated_source_sha256": "13a798295a6bf466a6a297b311315326a1bd71d8b1d8b0c49ac22899a4865f97",
+      "expected": "'65430 + 65435' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_message": "'65430 + 65435' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_big_un_int",
+      "root": "plus",
+      "generated_helper": "plus_u64N_u64N",
+      "generated_source_sha256": "ceda5b8902b06fef8db0f06c02cedf1b5e5b75ae39153bcf1d5c1b94d4b52ce2",
+      "expected": "'12446742073709541615 + 18446742073709541615' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_message": "'12446742073709541615 + 18446742073709541615' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_add_un_intt",
+      "root": "plus",
+      "generated_helper": "plus_u32N_u32N",
+      "generated_source_sha256": "fd1c41b2654891b71cbfbf98a362f950c450f07be767d02b3ccb92b0af2dd3c5",
+      "expected": "'4294966290 + 4292966290' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_message": "'4294966290 + 4292966290' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:235:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_tiny_int",
+      "root": "times",
+      "generated_helper": "times_i8N_i8N",
+      "generated_source_sha256": "8aec215fb7dac3eda5b140ad01bbf58abab5226b3054bf85fd0e9b6f56734b9f",
+      "expected": "'120 * 100' causes overflow for type TINYINT",
+      "observed_panic_message": "'120 * 100' causes overflow for type TINYINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_small_int",
+      "root": "times",
+      "generated_helper": "times_i16N_i16N",
+      "generated_source_sha256": "3efcc8decdc613578d83bbacdd668bc61be964965decfebfdab71a3d40647bb9",
+      "expected": "'32750 * 32700' causes overflow for type SMALLINT",
+      "observed_panic_message": "'32750 * 32700' causes overflow for type SMALLINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_big_int",
+      "root": "times",
+      "generated_helper": "times_i64N_i64N",
+      "generated_source_sha256": "d685929deb582305b961a334dff84267793f8802d69a60037ad6b46d829b939c",
+      "expected": "'8123302036854775807 * 9223372036854775807' causes overflow for type BIGINT",
+      "observed_panic_message": "'8123302036854775807 * 9223372036854775807' causes overflow for type BIGINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_intt",
+      "root": "times",
+      "generated_helper": "times_i32N_i32N",
+      "generated_source_sha256": "d45b497b2976100e58678d7a9e1225c5a1c3cfb77c6cbaf4df32628d76504c2b",
+      "expected": "'2147483647 * 2147483000' causes overflow for type INTEGER",
+      "observed_panic_message": "'2147483647 * 2147483000' causes overflow for type INTEGER",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_tiny_un_int",
+      "root": "times",
+      "generated_helper": "times_u8N_u8N",
+      "generated_source_sha256": "db3235bcec8aa17af8023c3b31d0ca67115979a0e9d76f2a03f262d6cb5b6f30",
+      "expected": "'250 * 200' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_message": "'250 * 200' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_small_un_int",
+      "root": "times",
+      "generated_helper": "times_u16N_u16N",
+      "generated_source_sha256": "9fdcdc534a66dad4869db4de4bfd9b0f91aa1c72a67dfd1f46fc084d93e2352d",
+      "expected": "'65430 * 65435' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_message": "'65430 * 65435' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_big_un_int",
+      "root": "times",
+      "generated_helper": "times_u64N_u64N",
+      "generated_source_sha256": "ce061400cab632749b2cbb7a02e9dedc727ef0b59d83ce36331e3fd9ef144a0b",
+      "expected": "'12446742073709541615 * 18446742073709541615' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_message": "'12446742073709541615 * 18446742073709541615' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mul_un_intt",
+      "root": "times",
+      "generated_helper": "times_u32N_u32N",
+      "generated_source_sha256": "364b88f207f5bcc1188f5abd8b3ca721d3505c7360f86c7655a0500095f38c97",
+      "expected": "'4294966290 * 4292966290' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_message": "'4294966290 * 4292966290' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:364:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_tiny_int",
+      "root": "div",
+      "generated_helper": "div_i8N_i8N",
+      "generated_source_sha256": "3d75fc81d4abe77d09fe950f8297c7d76f5bafe21868c4f97290590f67215ea5",
+      "expected": "'-128 / -1' causes overflow for type TINYINT",
+      "observed_panic_message": "'-128 / -1' causes overflow for type TINYINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_small_int",
+      "root": "div",
+      "generated_helper": "div_i16N_i16N",
+      "generated_source_sha256": "eb72c7e8ce74f7f984e8a31888ce3a660c73e4d2c584cdf873bfb63cc8541df6",
+      "expected": "'-32768 / -1' causes overflow for type SMALLINT",
+      "observed_panic_message": "'-32768 / -1' causes overflow for type SMALLINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_big_int",
+      "root": "div",
+      "generated_helper": "div_i64N_i64N",
+      "generated_source_sha256": "c5ddd5ab2a486fd025a1c2f1586bdb77eadac8b696958ac2abfada7954ea1a54",
+      "expected": "'-9223372036854775808 / -1' causes overflow for type BIGINT",
+      "observed_panic_message": "'-9223372036854775808 / -1' causes overflow for type BIGINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_intt",
+      "root": "div",
+      "generated_helper": "div_i32N_i32N",
+      "generated_source_sha256": "a19058b45aef5a28f91c054b36d8a51fb534387de4efdc7ecf39de88faffc91b",
+      "expected": "'-2147483648 / -1' causes overflow for type INTEGER",
+      "observed_panic_message": "'-2147483648 / -1' causes overflow for type INTEGER",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_tiny_un_int",
+      "root": "div",
+      "generated_helper": "div_u8N_u8",
+      "generated_source_sha256": "1e780ce0a0d27b3783d6f82894a9d97e8d3e6560fa2e611bd4270b6c9bd44587",
+      "expected": "'250 / 0' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_message": "'250 / 0' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_small_un_int",
+      "root": "div",
+      "generated_helper": "div_u16N_u16",
+      "generated_source_sha256": "1d7e782531ca4e5361a4b128aac53c74f51ecfe7f123770e25d8b70b51f6ff8a",
+      "expected": "'65430 / 0' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_message": "'65430 / 0' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_big_un_int",
+      "root": "div",
+      "generated_helper": "div_u64N_u64",
+      "generated_source_sha256": "8fdabde102c326969ca480f5e20313fcf2153fba0dadbc19da1c0f99bd018464",
+      "expected": "'12446742073709541615 / 0' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_message": "'12446742073709541615 / 0' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_div_un_intt",
+      "root": "div",
+      "generated_helper": "div_u32N_u32",
+      "generated_source_sha256": "5b4c5a38bbc3bfd1820bf2a132005a208c28a04fdabd1067d4d530dd9da07552",
+      "expected": "'4294966290 / 0' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_message": "'4294966290 / 0' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:425:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_tiny_int",
+      "root": "minus",
+      "generated_helper": "minus_i8N_i8N",
+      "generated_source_sha256": "45884100a7e9568114a3ece01f70d34378072e21602807b15be346fe6056b05f",
+      "expected": "'-120 - 100' causes overflow for type TINYINT",
+      "observed_panic_message": "'-120 - 100' causes overflow for type TINYINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_small_int",
+      "root": "minus",
+      "generated_helper": "minus_i16N_i16N",
+      "generated_source_sha256": "8c769c09918f8f180fbb0166fd51f61fd3bed67c46d9500f69064bf8f23c09c2",
+      "expected": "'-32750 - 32700' causes overflow for type SMALLINT",
+      "observed_panic_message": "'-32750 - 32700' causes overflow for type SMALLINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_big_int",
+      "root": "minus",
+      "generated_helper": "minus_i64N_i64N",
+      "generated_source_sha256": "ecbbe2923f5ef1580a8e153ca9b5725d563fba01d2769da6bea72f5a11c9eba9",
+      "expected": "'-8123302036854775807 - 9223372036854775807' causes overflow for type BIGINT",
+      "observed_panic_message": "'-8123302036854775807 - 9223372036854775807' causes overflow for type BIGINT",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_intt",
+      "root": "minus",
+      "generated_helper": "minus_i32N_i32N",
+      "generated_source_sha256": "115059e5be4c23e38aecd31725d565b6a8e82821179135262efe2c139c86e276",
+      "expected": "'-2147483647 - 2147483000' causes overflow for type INTEGER",
+      "observed_panic_message": "'-2147483647 - 2147483000' causes overflow for type INTEGER",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_tiny_un_int",
+      "root": "minus",
+      "generated_helper": "minus_u8N_u8N",
+      "generated_source_sha256": "43ce5301c5738fbf42d34ff886cd799e3895a949301a0b242d2fe1f295b0ffd6",
+      "expected": "'200 - 250' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_message": "'200 - 250' causes overflow for type TINYINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_small_un_int",
+      "root": "minus",
+      "generated_helper": "minus_u16N_u16N",
+      "generated_source_sha256": "ff3e65ae756e580e82c1ad1a6acd888ea2e82b95d15d9ebe985386a74658477a",
+      "expected": "'65430 - 65435' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_message": "'65430 - 65435' causes overflow for type SMALLINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_big_un_int",
+      "root": "minus",
+      "generated_helper": "minus_u64N_u64N",
+      "generated_source_sha256": "650a8a315a056494524c82e229d32affb6bc64eb63f0967398a06c3601fe4796",
+      "expected": "'12446742073709541615 - 18446742073709541615' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_message": "'12446742073709541615 - 18446742073709541615' causes overflow for type BIGINT UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_sub_un_intt",
+      "root": "minus",
+      "generated_helper": "minus_u32N_u32N",
+      "generated_source_sha256": "911aba16c6801ef546ee3d9bf9efe27d0593fed964b361e5853db25a7e088321",
+      "expected": "'4292966290 - 4294966290' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_message": "'4292966290 - 4294966290' causes overflow for type INTEGER UNSIGNED",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:263:17",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_tiny_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i8N_i8",
+      "generated_source_sha256": "39745c202c6e8862e6645a791a2b36144a0158b3ea747207000a29db7a282b96",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_small_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i16N_i16",
+      "generated_source_sha256": "ad0c2fc17f57af87795233878f15c496a1d8e76670ffb1eb85b634885f37db0f",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_big_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i64N_i64",
+      "generated_source_sha256": "287cd5f98bceb3e7ffb2a838774d3430fa6d9d99fbaf667a71ce409d336f7a2a",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_intt",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i32N_i32",
+      "generated_source_sha256": "edd737dccbf0eb322dfb7baf65b673c8e11d1014c896e491c24e1c2a4834a3a9",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_tiny_un_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_u8N_u8",
+      "generated_source_sha256": "185f256e9fbdac1f100bd50453f6a99d45aa7a427e4c9ca4ccffb183db1809c7",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_small_un_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_u16N_u16",
+      "generated_source_sha256": "0b55513b13a7d9e5e99406d76ad2410986a2a31358934db6e7031e652d193605",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_big_un_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_u64N_u64",
+      "generated_source_sha256": "cd2383b065212df52a70fd47941832f07093ee31945cf246a07de8d46d19f385",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests/test_neg_arithmetic.py:neg_mod_un_intt",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_u32N_u32",
+      "generated_source_sha256": "1818f1671cc3d0fbbc29f205ae61866203a1636908e47878660ad42043a3fff1",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_tiny_int",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_i8N_i64",
+      "generated_source_sha256": "5b1c522449dbd12fdc404c80c091dac41ccfb33dc73f12b9f44f2f41bbbdd681",
+      "expected": "Error converting 128 to TINYINT: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 128 to TINYINT: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_small_int",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_i16N_i64",
+      "generated_source_sha256": "c4cb6ef5563be959dc9838d7a65da5dcf69d1abe7f0fd345ec348d3c7d135edc",
+      "expected": "Error converting 32768 to SMALLINT: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 32768 to SMALLINT: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_big_int",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_i64N_i128",
+      "generated_source_sha256": "db69ebfc2099124562123921bfa6cbe528d2a3088c1d57a6f0b52fa028fc7b63",
+      "expected": "Error converting 9223372036854775808 to BIGINT: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 9223372036854775808 to BIGINT: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_intt",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_i32N_i64",
+      "generated_source_sha256": "970acf995575ba6773b6bd99b61f9243b3b5287627403af0e53606590b4ad7d5",
+      "expected": "Error converting 2147483648 to INTEGER: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 2147483648 to INTEGER: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_tiny_un_int",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_u8N_i64",
+      "generated_source_sha256": "9ec0b18fcf192480d3ef4288e99c9f8752f0142db956ae8c1d14c17138891cf3",
+      "expected": "Error converting 256 to TINYINT UNSIGNED: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 256 to TINYINT UNSIGNED: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_small_un_int",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_u16N_i64",
+      "generated_source_sha256": "132b45569437040af5ea7960d30c29ae3b1e583c322cd525b1aefbd4a5567cc9",
+      "expected": "Error converting 65536 to SMALLINT UNSIGNED: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 65536 to SMALLINT UNSIGNED: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_big_un_int",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_u64N_i128",
+      "generated_source_sha256": "3d89755fea056e7b7d973052b1d02e0e1c11e7f0a857a730e20ec0055c1f8883",
+      "expected": "Error converting 18446744073709551616 to BIGINT UNSIGNED: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 18446744073709551616 to BIGINT UNSIGNED: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_agg_arithmetic.py:neg_sum_un_intt",
+      "root": "integer_narrowing",
+      "generated_helper": "cast_to_u32N_i64",
+      "generated_source_sha256": "491279a2d185708b48ecd939d2fd40df0b4936fbce9fa7346413ead25f244d5b",
+      "expected": "Error converting 4294967296 to INTEGER UNSIGNED: number too large to fit in target type",
+      "observed_panic_message": "line 43 column 1: Error converting 4294967296 to INTEGER UNSIGNED: number too large to fit in target type",
+      "observed_panic_location": "$REPO/crates/sqllib/src/casts.rs:161:31",
+      "position_wrapper": "source_position_panic"
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_tiny_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i32N_i32",
+      "generated_source_sha256": "e6f6c5247b5336ed6ba966bc9b63e0467c021d8f7d957f010e0f24b33f01f1b3",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_small_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i32N_i32",
+      "generated_source_sha256": "c06e777d34686b2f1962464aa8d02be543f71fa1cf922b6a271c5fe15a5a6b70",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_big_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i64N_i64",
+      "generated_source_sha256": "856784ca101f0c775cbe82c64dff0c41c5433d86c7030f9ee737a3a49040afc5",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_intt",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i32N_i32",
+      "generated_source_sha256": "edd737dccbf0eb322dfb7baf65b673c8e11d1014c896e491c24e1c2a4834a3a9",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_tiny_un_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i32N_i32",
+      "generated_source_sha256": "e36812123b52426fcc6876f220fd223404ab2f5de50c86a9f38249e82d154ee4",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_small_un_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_i32N_i32",
+      "generated_source_sha256": "614d0eb22d0862b15dc3286d98c5acb8109447a76de377ec8e9f355d56fef163",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_big_un_int",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_u64N_u64",
+      "generated_source_sha256": "9b8b28ee7d44cfdaaa13a046fc8153a79f0f9ce1c63bd7f1f601e21f9bb59b16",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    },
+    {
+      "id": "python/tests/runtime_aggtest/negative_tests2/test_div_by_zero.py:neg_mod_un_intt",
+      "root": "rust_remainder_zero",
+      "generated_helper": "modulo_u32N_u32",
+      "generated_source_sha256": "9944638882018e4f9c51ca9f692808fb80de4f4408670ae54c045dbb72be3067",
+      "expected": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_message": "attempt to calculate the remainder with a divisor of zero",
+      "observed_panic_location": "$REPO/crates/sqllib/src/operators.rs:338:5",
+      "position_wrapper": null
+    }
+  ],
+  "shared_wrappers": {
+    "sql_result_display": {
+      "anchor": "pub enum SqlRuntimeError",
+      "line": 5,
+      "sha256": "66efdb04506e9f11072c692f2b830a5b15c0bfcb1e9db10b02b064fcdd27de20",
+      "path": "crates/sqllib/src/error.rs"
+    },
+    "source_position_panic": {
+      "anchor": "pub fn handle_error_with_position<T>",
+      "line": 152,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs"
+    },
+    "source_position_display": {
+      "anchor": "impl fmt::Display for SourcePosition {",
+      "line": 36,
+      "sha256": "bd2b5420639a284fa86ef31e9545c303d51d9974a95c110cca81e49e3caf13af",
+      "path": "crates/sqllib/src/source.rs"
+    },
+    "worker_panic_display": {
+      "anchor": "impl Display for WorkerPanicInfo",
+      "line": 261,
+      "sha256": "cbd5f7407548ec433024fc5e49253ef4b2d2fb9e72af591e7582cd67fceb7055",
+      "path": "crates/dbsp/src/circuit/runtime.rs"
+    },
+    "worker_runtime_error_display": {
+      "anchor": "impl Display for Error {",
+      "line": 126,
+      "sha256": "cbd5f7407548ec433024fc5e49253ef4b2d2fb9e72af591e7582cd67fceb7055",
+      "path": "crates/dbsp/src/circuit/runtime.rs"
+    },
+    "dbsp_error_display": {
+      "anchor": "impl Display for Error {",
+      "line": 78,
+      "sha256": "ae6bb344b96bc55cb7b9d318b32f766337a45d738c22387416334b85c588638c",
+      "path": "crates/dbsp/src/error.rs"
+    }
+  },
+  "dependencies": {
+    "sql_type_name": {
+      "anchor": "pub(crate) fn type_name(",
+      "line": 49,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs"
+    },
+    "integer_operator_instantiations": {
+      "anchor": "macro_rules! for_all_int_operator",
+      "line": 13,
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "path": "crates/sqllib/src/operators.rs"
+    },
+    "nullable_operator_wrappers": {
+      "anchor": "macro_rules! some_operator",
+      "line": 808,
+      "sha256": "dbfb573133103f0c0ad56b5873a0747d7ae123eb6c84762285572a6fab296391",
+      "path": "crates/sqllib/src/lib.rs"
+    },
+    "nullable_cast_wrappers": {
+      "anchor": "macro_rules! cast_function",
+      "line": 187,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs"
+    },
+    "nullable_decimal_string": {
+      "anchor": "pub fn cast_to_SqlDecimalN_sN<const",
+      "line": 766,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs"
+    },
+    "nullable_decimal_real": {
+      "anchor": "pub fn cast_to_SqlDecimalN_fN<const",
+      "line": 749,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs"
+    },
+    "decimal_parse_error": {
+      "anchor": "impl std::fmt::Display for ParseDecimalError",
+      "line": 270,
+      "sha256": "be313306a73b824c6624915b1319a4f3cb0d7b64253d150422d95c883cdbffac",
+      "path": "crates/fxp/src/lib.rs"
+    },
+    "decimal_range_error": {
+      "anchor": "impl std::fmt::Display for OutOfRange",
+      "line": 284,
+      "sha256": "be313306a73b824c6624915b1319a4f3cb0d7b64253d150422d95c883cdbffac",
+      "path": "crates/fxp/src/lib.rs"
+    },
+    "decimal_real_conversion": {
+      "anchor": "impl<const P: usize, const S: usize> TryFrom<f64>",
+      "line": 911,
+      "sha256": "4d11071cfb2097f7938e724489286317f7739938348dd0c114f882fbffda1267",
+      "path": "crates/fxp/src/fixed.rs"
+    },
+    "remainder_callsite": {
+      "anchor": "fn modulo<T>",
+      "line": 330,
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "path": "crates/sqllib/src/operators.rs"
+    },
+    "uuid_string_cast": {
+      "anchor": "pub fn cast_to_Uuid_s(",
+      "line": 4433,
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "path": "crates/sqllib/src/casts.rs"
+    }
+  },
+  "external_dependencies": {
+    "chrono_parse_error": {
+      "anchor": "impl fmt::Display for ParseError",
+      "line": 474,
+      "sha256": "485fdb1e2a85d72114e41f15a632d0c53cc4114fd4c381014aaf91e9c2f691af",
+      "path": "$CARGO_HOME/registry/src/index.crates.io-1949cf8c6b5b557f/chrono-0.4.45/src/format/mod.rs",
+      "package_version": "0.4.45",
+      "observed_variant": "ParseErrorKind::Invalid"
+    },
+    "rust_try_from_int_error": {
+      "symbol": "core::num::error::TryFromIntError::fmt",
+      "observed_text": "number too large to fit in target type",
+      "source_body_available": false
+    },
+    "rust_primitive_display": {
+      "role": "integer and floating operand rendering",
+      "source_body_available": false
+    },
+    "dependency_versions": {
+      "chrono": [
+        "0.4.45"
+      ],
+      "num-traits": [
+        "0.2.19"
+      ],
+      "thiserror": [
+        "1.0.69",
+        "2.0.18"
+      ]
+    },
+    "rust_toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n"
+  },
+  "generator_wrapper_selection": {
+    "anchor": "public String getFunction()",
+    "line": 100,
+    "sha256": "c35cc015f2376f2d0835a00ae8878d2ebc841e3201bcc16d88d8de1ad5e087fb",
+    "path": "frozen-java/main/org/dbsp/sqlCompiler/ir/expression/DBSPHandleErrorExpression.java",
+    "role": "PanicWithSource selects handle_error_with_position; not an additional error-body template"
+  },
+  "counting_rule": "one reviewed source function or macro body per error root; concrete type/nullability instances and shared wrappers do not multiply error-body roots",
+  "normal_suite_executes_negative_views": false,
+  "platform_transport_executed": false,
+  "full_runtime_template_inventory_complete": false,
+  "P0_complete": false,
+  "archive": {
+    "path": ".p0-artifacts/p0-python-runtime-attribution-20261118-v1.tar.gz",
+    "sha256": "a7ca64b40a56feda331c0e6c3717413ad00e71309508b28eddc5deef1ceb2542",
+    "bytes": 310912,
+    "verified_files": 16,
+    "files": {
+      "report.json": "f593216a6f2182485a3e651f3481cfa91d767dfb6cff75b359599b3d6bf7e06e",
+      "execution-certificate.json": "67f09518c85ca7a15a25113ecfb72733bcc1c90e964d34111a5196eff08159dc",
+      "source/crates/sqllib/src/operators.rs": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "source/crates/sqllib/src/casts.rs": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "source/crates/sqllib/src/uuid.rs": "a2e34b0ad7c1e47b95d3bba063e0d05a46cd20707703ac2555eb91e09d3d2b8d",
+      "source/crates/sqllib/src/error.rs": "66efdb04506e9f11072c692f2b830a5b15c0bfcb1e9db10b02b064fcdd27de20",
+      "source/crates/sqllib/src/source.rs": "bd2b5420639a284fa86ef31e9545c303d51d9974a95c110cca81e49e3caf13af",
+      "source/crates/dbsp/src/circuit/runtime.rs": "cbd5f7407548ec433024fc5e49253ef4b2d2fb9e72af591e7582cd67fceb7055",
+      "source/crates/dbsp/src/error.rs": "ae6bb344b96bc55cb7b9d318b32f766337a45d738c22387416334b85c588638c",
+      "source/crates/sqllib/src/lib.rs": "dbfb573133103f0c0ad56b5873a0747d7ae123eb6c84762285572a6fab296391",
+      "source/crates/fxp/src/lib.rs": "be313306a73b824c6624915b1319a4f3cb0d7b64253d150422d95c883cdbffac",
+      "source/crates/fxp/src/fixed.rs": "4d11071cfb2097f7938e724489286317f7739938348dd0c114f882fbffda1267",
+      "source/frozen-java/main/org/dbsp/sqlCompiler/ir/expression/DBSPHandleErrorExpression.java": "c35cc015f2376f2d0835a00ae8878d2ebc841e3201bcc16d88d8de1ad5e087fb",
+      "source/dependencies/chrono-0.4.45/src/format/mod.rs": "485fdb1e2a85d72114e41f15a632d0c53cc4114fd4c381014aaf91e9c2f691af",
+      "source/crates/sql/scripts/attribute_python_runtime_errors.py": "14e4b94b28c23216bf436c7a5bce9f4fca58fbf691e4fe38d9f046ec82878641",
+      "source/crates/sql/PYTHON-RUNTIME-TEMPLATES.md": "90979019ffeaed4d3b41e1bcf8030b4ba3f007f7b8f946f3ed939fad90e364a5"
+    }
+  }
+}

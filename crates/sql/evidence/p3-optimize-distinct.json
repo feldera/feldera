@@ -1,0 +1,87 @@
+{
+  "scope": "OptimizeDistinctVisitor at its scheduled boundary on the complete frozen populations and with set outputs enabled on every 43rd case. Activated cases also compare direct SQL and detached S2 through the packaged back end.",
+  "comparator_sha256": "e83ebb474e3eda2f72faeaac5e8ecb90b96b442c6f01dab49c2b326692695479",
+  "optimizer_library_sha256": "f2e702e25928bb8864b4db58387244a742cff502171698f3879f2e475960e911",
+  "classic": {
+    "frozen": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "cd8947eff10e939365e13e7363a0b8a92a3e079103fc94bbe92e07cf2bceeffd"
+      ],
+      "pass": "OptimizeDistinctVisitor",
+      "invocations": 8571,
+      "changed": 32,
+      "cases_without_placement": 0
+    },
+    "set_outputs": {
+      "cases": 200,
+      "mismatches": 0,
+      "population_sha256": "f922ae2816322c0f54b8cebe074a7db8c1ba2ec02276c3ee2ef3314e3a184538",
+      "result_shards_sha256": [
+        "5c622fd6920cbe78803583255a734b01d474bc97ba03f3c217beec3acef09977"
+      ],
+      "pass": "OptimizeDistinctVisitor",
+      "invocations": 200,
+      "changed": 13,
+      "cases_without_placement": 0
+    },
+    "set_outputs_replay": {
+      "cases": 200,
+      "mismatches": 0,
+      "population_sha256": "f922ae2816322c0f54b8cebe074a7db8c1ba2ec02276c3ee2ef3314e3a184538",
+      "shards": [
+        {
+          "manifest_sha256": "e3dff38d9a9d76b9d81f98419e88e5f49755f40ae34f7b7d83485a790cfb9a1a",
+          "records_sha256": "3af2d81c78bb43923b81d8969d356458aeae07113de55f89521bf450011d45d9"
+        },
+        {
+          "manifest_sha256": "77b1a1b8bcc4bbed836b23f74bd426cacb9c708178dc27d862cb214e31a31d2d",
+          "records_sha256": "819062a71000a026ba05cb0d3d43de80e2d69927afa5b4d2b5fa48caab0970d4"
+        }
+      ]
+    }
+  },
+  "gen2": {
+    "frozen": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "d2b95412f4feddfd20a42181c19b22bbb02b589f66f82251205cecab2f64b214"
+      ],
+      "pass": "OptimizeDistinctVisitor",
+      "invocations": 8527,
+      "changed": 32,
+      "cases_without_placement": 0
+    },
+    "set_outputs": {
+      "cases": 199,
+      "mismatches": 0,
+      "population_sha256": "af6df95684e90f36ad08d8660cd3cf26775891449969005924a0b6af01cac123",
+      "result_shards_sha256": [
+        "ed49a3a12d2f7172c83db246465aef6664fc33aa24cdc97dc7a4351da15abfb3"
+      ],
+      "pass": "OptimizeDistinctVisitor",
+      "invocations": 199,
+      "changed": 13,
+      "cases_without_placement": 0
+    },
+    "set_outputs_replay": {
+      "cases": 199,
+      "mismatches": 0,
+      "population_sha256": "af6df95684e90f36ad08d8660cd3cf26775891449969005924a0b6af01cac123",
+      "shards": [
+        {
+          "manifest_sha256": "4b2ef28e5db6116f8047bddfa6f0e0bc8b16f96326b44d78dc2c9d131cc0766c",
+          "records_sha256": "2425cf4161ca4a229fc33e9af8d86e38c6fe0bc0c757ce8f3dea67dbb10d5c36"
+        },
+        {
+          "manifest_sha256": "3e29518de338b18b15a37b35cdf2c59f4666bc592019d93d33411349cd36f646",
+          "records_sha256": "d4ecf8982e444d0ffe18f331f6ee6480ce1e7155c2ba2072132014c4739d327e"
+        }
+      ]
+    }
+  }
+}

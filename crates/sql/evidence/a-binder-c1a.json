@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-c1a-archive.json",
+  "scope": "A independently constructs the complete schema for the fixed CREATE TABLE and CREATE VIEW projection probes under the Java S2 capture profile.",
+  "java_reference": "type-s2-complete.json",
+  "input_identity": "For every selected probe the source program and ID equal the independent Java record. The selection matches a-binder-c0.json.",
+  "generated_probes": 59264,
+  "java_acceptances": 39776,
+  "accepted_schemas_equal": 39776,
+  "java_rejections": 19488,
+  "rejection_verdicts_equal": 19488,
+  "differences": 0,
+  "prior_a_binding_and_diagnostic_records_preserved": 59264,
+  "comparison": "Exact complete schema, with only column unused flags, defaults and lateness text removed under C1a. Rejected statements are checked for verdict only.",
+  "held_out_frel_certified": false,
+  "clippy": "passed"
+}

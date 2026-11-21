@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "reviewer": "automated licensing reviewer",
+  "criterion": "PLAN section 12 spike 9: a count; more than 150 starts a new estimate of row 9",
+  "measurement_status": "satisfied_for_compiler_message_catalog_scope",
+  "required_compiler_body_roots": 252,
+  "reestimate_started": true,
+  "accepted_baseline_replaced": false,
+  "runtime_contracts_separately_inventoried": 232,
+  "exhaustive_retained_runtime_attribution_required_for_this_spike": false,
+  "new_runtime_or_production_execution_gate": false,
+  "human_maintainer_accepted": false,
+  "estimate_accepted": false,
+  "P0_complete": false,
+  "rationale_document": "../SPIKE9-ADJUDICATION.md",
+  "inputs": {
+    "SPIKE9-ADJUDICATION.md": "0f7e07c20fcdb65e6bb29110a3e937f36c303b480c9faab4f334b99355828d37",
+    "evidence/diagnostic-scope-extension.json": "b70d7f93bc1f616461bafba9e8a841cd68fc69b77b0a313979e5d7100f7ce664",
+    "evidence/diagnostic-reviewed-catalog.json": "d211f0e3f005a2922f565b3ee6345acfc8de878b4e33e00c4bff00492fa7d581",
+    "MESSAGE-PARITY-ESTIMATE.md": "4293ef47072419d2dae3d04abe06a87bb7366daafc8a979be130b97a534742cf"
+  }
+}

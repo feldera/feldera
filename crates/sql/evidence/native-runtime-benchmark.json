@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-runtime-benchmark-archive.json",
+  "case_id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/0",
+  "measurement_sha256": "8880bb386b39e6fc7c22908192babf75546fe5d5c64309e956ec9e37ae5b40f3",
+  "runtime_binary_sha256": "d6e46c0391016736071fe9b4f44d676610c2181d7334c895c80f00209fee3324",
+  "cpu": 0,
+  "workers": 1,
+  "step_mode": "full_steps",
+  "rust_profile": "unoptimized dev, debug info disabled",
+  "runtime_runs": 124,
+  "classic_warm_dependency_rebuilds": 15,
+  "runtime": {
+    "64": {
+      "classic": {
+        "init_ns": {
+          "p50": 1785619,
+          "p95": 1935369,
+          "min": 1637328,
+          "max": 2054243
+        },
+        "step_latency_ns": {
+          "p50": 261144.11,
+          "p95": 264282.01,
+          "min": 256959.535,
+          "max": 264881.8
+        },
+        "rows_per_second": {
+          "p50": 245075.41066118627,
+          "p95": 248992.56247544358,
+          "min": 241617.20435303595,
+          "max": 249066.4532063385
+        },
+        "peak_rss_kib": {
+          "p50": 37296,
+          "p95": 37808,
+          "min": 36896,
+          "max": 50160
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 8393596,
+          "p95": 8706762,
+          "min": 8070681,
+          "max": 8706929
+        },
+        "step_latency_ns": {
+          "p50": 231355.455,
+          "p95": 232828.16,
+          "min": 229618.175,
+          "max": 235395.03
+        },
+        "rows_per_second": {
+          "p50": 276630.60721866274,
+          "p95": 278695.5194622117,
+          "min": 271883.39532911975,
+          "max": 278723.58100572834
+        },
+        "peak_rss_kib": {
+          "p50": 41968,
+          "p95": 45536,
+          "min": 41072,
+          "max": 45664
+        }
+      }
+    },
+    "4096": {
+      "classic": {
+        "init_ns": {
+          "p50": 1867411,
+          "p95": 1936118,
+          "min": 1726495,
+          "max": 2010451
+        },
+        "step_latency_ns": {
+          "p50": 7854381.48,
+          "p95": 7925977.08,
+          "min": 7781811.72,
+          "max": 7968266.92
+        },
+        "rows_per_second": {
+          "p50": 521492.3683589659,
+          "p95": 525281.7476768036,
+          "min": 514039.00510903064,
+          "max": 526355.5772588134
+        },
+        "peak_rss_kib": {
+          "p50": 39460,
+          "p95": 43300,
+          "min": 39088,
+          "max": 52272
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 8677262,
+          "p95": 9039886,
+          "min": 8287513,
+          "max": 9051219
+        },
+        "step_latency_ns": {
+          "p50": 5872128.24,
+          "p95": 5927911.4,
+          "min": 5815280.94,
+          "max": 5962028.78
+        },
+        "rows_per_second": {
+          "p50": 697532.4503471674,
+          "p95": 703575.9543325888,
+          "min": 687014.4628855683,
+          "max": 704351.1813549631
+        },
+        "peak_rss_kib": {
+          "p50": 44144,
+          "p95": 53164,
+          "min": 43880,
+          "max": 53424
+        }
+      }
+    }
+  },
+  "classic_build": {
+    "wall_ns": {
+      "p50": 1598921659,
+      "p95": 1619030673,
+      "min": 1589538982,
+      "max": 1619030673
+    },
+    "peak_rss_kib": {
+      "p50": 571288,
+      "p95": 575304,
+      "min": 569128,
+      "max": 575304
+    }
+  },
+  "scope": "Same scheduler, output accumulator and output reader on both sides. Cranelift initialization includes code generation, object linking, loading and circuit startup. Classic build time includes cargo overhead and rustc code generation and linking for the generated circuit with dependencies warm. Peak RSS is whole-process runtime RSS or the build's waited child maximum. These bounded samples do not set the full C13 budget.",
+  "retained_preliminary_scope": "The initial comparison used different scheduler and output accumulation paths. Its samples are retained for audit and excluded from the summary."
+}

@@ -11,7 +11,9 @@ use crate::{
 };
 
 use num_traits::{CheckedDiv, CheckedMul};
+#[cfg(feature = "random")]
 use rand::Rng;
+#[cfg(feature = "random")]
 use rand::distributions::uniform::{UniformInt, UniformSampler};
 
 /// Decimal real number with 38 digits of precision and dynamic scale.
@@ -572,11 +574,13 @@ impl Ord for DynamicDecimal {
 // This is almost like UniformSampler, but we need to pass additional information
 // to the constructor, so we cannot use that trait.
 #[derive(Clone, Debug)]
+#[cfg(feature = "random")]
 pub struct UniformDecimal {
     significand: UniformInt<i128>,
     scale: u8,
 }
 
+#[cfg(feature = "random")]
 impl UniformDecimal {
     /// Create a new UniformDecimal which will sample between
     /// DynamicDecimal::new(low, scale) and DynamicDecimal::new(high, scale).

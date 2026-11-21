@@ -104,8 +104,13 @@ public final class DBSPTimeLiteral extends DBSPLiteral {
     @SuppressWarnings("unused")
     public static DBSPTimeLiteral fromJson(JsonNode node, JsonDecoder decoder) {
         TimeString value = null;
-        if (node.has("value"))
-            value = new TimeString(Utilities.getStringProperty(node, "value"));
+        if (node.has("value")) {
+            String text = Utilities.getStringProperty(node, "value");
+            // Calcite can render a whole second with an empty fractional part.
+            if (text.length() == 9 && text.charAt(8) == '.')
+                text = text.substring(0, 8);
+            value = new TimeString(text);
+        }
         DBSPType type = getJsonType(node, decoder);
         return new DBSPTimeLiteral(CalciteObject.EMPTY, type, value);
     }

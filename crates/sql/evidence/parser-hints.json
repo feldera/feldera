@@ -1,0 +1,676 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "typed optimizer hints and original-token attachment in the disposable parser candidate",
+  "raw_directory": "$SCRATCH/p0-parser-hints-matrix-v1",
+  "build": {
+    "path": "$SCRATCH/p0-parser-hints-build-v5/build.json",
+    "sha256": "2f8b1a5da83191c3461361b7998593f5a8c5570fbb593229d044c47e99bf1a31"
+  },
+  "binary": {
+    "path": "$SCRATCH/p0-parser-hints-build-v5/feldera-parser-probe",
+    "sha256": "0077918009dfc5192a489b4e33987c58180236387de7b0ae4b11b87a40acbafe"
+  },
+  "comparisons": {
+    "corpus": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/corpus-comparison.json",
+        "sha256": "963ca1ff0166e5d13784acd4f83fd037bd90ec4f496a645abaae560166c270c0"
+      },
+      "cases": 8571,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 31127,
+          "accepted_submissions": 31127,
+          "accepted_cases": 5807,
+          "java_only": 2888,
+          "rejected_submissions": 2888,
+          "rejected_cases": 2764
+        },
+        "0.62.0/generic": {
+          "both_accept": 31317,
+          "accepted_submissions": 31317,
+          "accepted_cases": 5978,
+          "java_only": 2698,
+          "rejected_submissions": 2698,
+          "rejected_cases": 2593
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 33923,
+          "accepted_submissions": 33923,
+          "accepted_cases": 8479,
+          "java_only": 92,
+          "rejected_submissions": 92,
+          "rejected_cases": 92
+        },
+        "0.64.0/generic": {
+          "both_accept": 33308,
+          "accepted_submissions": 33308,
+          "accepted_cases": 7876,
+          "java_only": 707,
+          "rejected_submissions": 707,
+          "rejected_cases": 695
+        }
+      },
+      "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "java_rendering": {
+        "complete": true,
+        "failures": []
+      }
+    },
+    "keywords": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/keywords-comparison.json",
+        "sha256": "881df64273cddf94dc1b34bac31752cd1c8ad4e3c5f8b08ed3ab8f86680c2e10"
+      },
+      "cases": 13660,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13651,
+          "accepted_cases": 13651,
+          "rust_only": 504,
+          "java_only": 3,
+          "rejected_submissions": 9,
+          "rejected_cases": 9,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13147,
+          "accepted_cases": 13147,
+          "both_reject": 510,
+          "rejected_submissions": 513,
+          "rejected_cases": 513,
+          "java_only": 3
+        },
+        "0.64.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        }
+      },
+      "input_sha256": "5ef1e9a789b229c9233b18a2678cbd0f12080c4874a91af5aa134952da65eb76",
+      "java_rendering": {
+        "complete": true,
+        "failures": []
+      }
+    },
+    "diagnostics": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/diagnostics-comparison.json",
+        "sha256": "bbc8f53cc451dd135d3d6bdc1f28163432cd5c012d12d714ca688335e17807a7"
+      },
+      "cases": 1143,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "java_only": 677,
+          "rejected_submissions": 683,
+          "rejected_cases": 682,
+          "both_accept": 1355,
+          "accepted_submissions": 1363,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "java_only": 676,
+          "rejected_submissions": 682,
+          "rejected_cases": 682,
+          "both_accept": 1356,
+          "accepted_submissions": 1364,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 2023,
+          "accepted_submissions": 2023,
+          "accepted_cases": 1120,
+          "java_only": 9,
+          "rejected_submissions": 23,
+          "rejected_cases": 23,
+          "both_reject": 14
+        },
+        "0.64.0/generic": {
+          "java_only": 639,
+          "rejected_submissions": 645,
+          "rejected_cases": 645,
+          "both_accept": 1393,
+          "accepted_submissions": 1401,
+          "accepted_cases": 498,
+          "rust_only": 8,
+          "both_reject": 6
+        }
+      },
+      "input_sha256": "8d81c2174eaba71a2b0ebc569c66afaec491f24a1a755f67f36dda450b306a82",
+      "java_rendering": {
+        "complete": true,
+        "failures": []
+      }
+    },
+    "adversarial": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/adversarial-comparison.json",
+        "sha256": "7cc3319e6db9738098d55f9545054de49482aa0f161cffd97e9208deebb482cb"
+      },
+      "cases": 614,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 159,
+          "accepted_submissions": 275,
+          "accepted_cases": 275,
+          "rust_only": 116,
+          "java_only": 177,
+          "rejected_submissions": 339,
+          "rejected_cases": 339,
+          "both_reject": 162
+        },
+        "0.62.0/generic": {
+          "both_accept": 202,
+          "accepted_submissions": 344,
+          "accepted_cases": 344,
+          "rust_only": 142,
+          "java_only": 134,
+          "rejected_submissions": 270,
+          "rejected_cases": 270,
+          "both_reject": 136
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 302,
+          "accepted_submissions": 302,
+          "accepted_cases": 302,
+          "java_only": 34,
+          "rejected_submissions": 312,
+          "rejected_cases": 312,
+          "both_reject": 278
+        },
+        "0.64.0/generic": {
+          "both_accept": 208,
+          "accepted_submissions": 357,
+          "accepted_cases": 357,
+          "rust_only": 149,
+          "java_only": 128,
+          "rejected_submissions": 257,
+          "rejected_cases": 257,
+          "both_reject": 129
+        }
+      },
+      "input_sha256": "dfaa6600324f5568c4fc412419fb0a240038c6a717a2f6ed6ae83c18f19688df",
+      "java_rendering": {
+        "complete": true,
+        "failures": []
+      }
+    },
+    "mutations": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/mutations-comparison.json",
+        "sha256": "63b481ba6e7bfc4c2f1268bd636722d0c1edf85d9d8dd13c2741f839e66e18be"
+      },
+      "cases": 27760,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 9067,
+          "accepted_submissions": 9413,
+          "accepted_cases": 9413,
+          "both_reject": 16880,
+          "rejected_submissions": 18347,
+          "rejected_cases": 18347,
+          "java_only": 1467,
+          "rust_only": 346
+        },
+        "0.62.0/generic": {
+          "both_accept": 9275,
+          "accepted_submissions": 9638,
+          "accepted_cases": 9638,
+          "both_reject": 16863,
+          "rejected_submissions": 18122,
+          "rejected_cases": 18122,
+          "java_only": 1259,
+          "rust_only": 363
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 10260,
+          "accepted_submissions": 10260,
+          "accepted_cases": 10260,
+          "both_reject": 17226,
+          "rejected_submissions": 17500,
+          "rejected_cases": 17500,
+          "java_only": 274
+        },
+        "0.64.0/generic": {
+          "both_accept": 9415,
+          "accepted_submissions": 9810,
+          "accepted_cases": 9810,
+          "both_reject": 16831,
+          "rejected_submissions": 17950,
+          "rejected_cases": 17950,
+          "java_only": 1119,
+          "rust_only": 395
+        }
+      },
+      "input_sha256": "7c927c0ae110162e985138ddb54a59ea1cc6e47c3cf906c0f11b30650a37b31a",
+      "java_rendering": {
+        "complete": true,
+        "failures": []
+      }
+    },
+    "hints": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/hints-comparison.json",
+        "sha256": "47df29fbe4a3d8fbae9087f6fdec210e2e71906d7bc5b57b7b9c4515d5659152"
+      },
+      "cases": 75,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 41,
+          "accepted_submissions": 73,
+          "accepted_cases": 73,
+          "rust_only": 32,
+          "java_only": 2,
+          "rejected_submissions": 2,
+          "rejected_cases": 2
+        },
+        "0.62.0/generic": {
+          "both_accept": 43,
+          "accepted_submissions": 75,
+          "accepted_cases": 75,
+          "rust_only": 32
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 43,
+          "accepted_submissions": 43,
+          "accepted_cases": 43,
+          "both_reject": 32,
+          "rejected_submissions": 32,
+          "rejected_cases": 32
+        },
+        "0.64.0/generic": {
+          "both_accept": 43,
+          "accepted_submissions": 75,
+          "accepted_cases": 75,
+          "rust_only": 32
+        }
+      },
+      "input_sha256": "ff15a23b6b545e240f48b794995a156f63cdab8a533333b97b2c6d5dcc396949",
+      "java_rendering": {
+        "complete": false,
+        "failures": [
+          {
+            "id": "hints/55",
+            "submission": 0,
+            "statement": 0,
+            "failure": {
+              "type": "java.lang.ClassCastException",
+              "message": "class org.apache.calcite.sql.SqlBasicCall cannot be cast to class org.apache.calcite.sql.SqlLiteral (org.apache.calcite.sql.SqlBasicCall and org.apache.calcite.sql.SqlLiteral are in unnamed module of loader 'app')",
+              "stack": [
+                "org.apache.calcite.sql.SqlHint.lambda$getOptionList$1(SqlHint.java:133)",
+                "java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)",
+                "java.base/java.util.AbstractList$RandomAccessSpliterator.forEachRemaining(AbstractList.java:722)",
+                "java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:509)",
+                "java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)",
+                "java.base/java.util.stream.ReduceOps$ReduceOp.evaluateSequential(ReduceOps.java:921)",
+                "java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)",
+                "java.base/java.util.stream.ReferencePipeline.collect(ReferencePipeline.java:682)",
+                "org.apache.calcite.sql.SqlHint.getOptionList(SqlHint.java:137)",
+                "org.apache.calcite.sql.dialect.AnsiSqlDialect.unparseTableScanHints(AnsiSqlDialect.java:54)",
+                "org.apache.calcite.sql.SqlTableRef.unparse(SqlTableRef.java:83)",
+                "org.apache.calcite.sql.SqlAsOperator.unparse(SqlAsOperator.java:81)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlCall.unparse(SqlCall.java:160)",
+                "org.apache.calcite.sql.SqlUtil.unparseFromClause(SqlUtil.java:470)",
+                "org.apache.calcite.sql.SqlSelectOperator.unparse(SqlSelectOperator.java:170)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlSelect.unparse(SqlSelect.java:345)",
+                "org.apache.calcite.sql.SqlNode.toSqlString(SqlNode.java:157)",
+                "org.apache.calcite.sql.SqlNode.toString(SqlNode.java:132)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.parse(ParserProbe.java:61)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.main(ParserProbe.java:200)"
+              ]
+            }
+          },
+          {
+            "id": "hints/56",
+            "submission": 0,
+            "statement": 0,
+            "failure": {
+              "type": "java.lang.ClassCastException",
+              "message": "class org.apache.calcite.sql.SqlBasicCall cannot be cast to class org.apache.calcite.sql.SqlLiteral (org.apache.calcite.sql.SqlBasicCall and org.apache.calcite.sql.SqlLiteral are in unnamed module of loader 'app')",
+              "stack": [
+                "org.apache.calcite.sql.SqlHint.lambda$getOptionList$1(SqlHint.java:133)",
+                "java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)",
+                "java.base/java.util.AbstractList$RandomAccessSpliterator.forEachRemaining(AbstractList.java:722)",
+                "java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:509)",
+                "java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)",
+                "java.base/java.util.stream.ReduceOps$ReduceOp.evaluateSequential(ReduceOps.java:921)",
+                "java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)",
+                "java.base/java.util.stream.ReferencePipeline.collect(ReferencePipeline.java:682)",
+                "org.apache.calcite.sql.SqlHint.getOptionList(SqlHint.java:137)",
+                "org.apache.calcite.sql.dialect.AnsiSqlDialect.unparseTableScanHints(AnsiSqlDialect.java:54)",
+                "org.apache.calcite.sql.SqlTableRef.unparse(SqlTableRef.java:83)",
+                "org.apache.calcite.sql.SqlAsOperator.unparse(SqlAsOperator.java:81)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlCall.unparse(SqlCall.java:160)",
+                "org.apache.calcite.sql.SqlUtil.unparseFromClause(SqlUtil.java:470)",
+                "org.apache.calcite.sql.SqlSelectOperator.unparse(SqlSelectOperator.java:170)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlSelect.unparse(SqlSelect.java:345)",
+                "org.apache.calcite.sql.SqlNode.toSqlString(SqlNode.java:157)",
+                "org.apache.calcite.sql.SqlNode.toString(SqlNode.java:132)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.parse(ParserProbe.java:61)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.main(ParserProbe.java:200)"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "expanded_adversarial": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-expanded-v1/comparison.json",
+        "sha256": "79dec823b77e1a0afb1fc9e56a3ca941831fde3a06605a8f70c68a18d97c6432"
+      },
+      "cases": 689,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 200,
+          "accepted_submissions": 348,
+          "accepted_cases": 348,
+          "rust_only": 148,
+          "java_only": 179,
+          "rejected_submissions": 341,
+          "rejected_cases": 341,
+          "both_reject": 162
+        },
+        "0.62.0/generic": {
+          "both_accept": 245,
+          "accepted_submissions": 419,
+          "accepted_cases": 419,
+          "rust_only": 174,
+          "java_only": 134,
+          "rejected_submissions": 270,
+          "rejected_cases": 270,
+          "both_reject": 136
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 345,
+          "accepted_submissions": 345,
+          "accepted_cases": 345,
+          "java_only": 34,
+          "rejected_submissions": 344,
+          "rejected_cases": 344,
+          "both_reject": 310
+        },
+        "0.64.0/generic": {
+          "both_accept": 251,
+          "accepted_submissions": 432,
+          "accepted_cases": 432,
+          "rust_only": 181,
+          "java_only": 128,
+          "rejected_submissions": 257,
+          "rejected_cases": 257,
+          "both_reject": 129
+        }
+      },
+      "java_rendering": {
+        "complete": false,
+        "failures": [
+          {
+            "id": "hints/55",
+            "submission": 0,
+            "statement": 0,
+            "failure": {
+              "type": "java.lang.ClassCastException",
+              "message": "class org.apache.calcite.sql.SqlBasicCall cannot be cast to class org.apache.calcite.sql.SqlLiteral (org.apache.calcite.sql.SqlBasicCall and org.apache.calcite.sql.SqlLiteral are in unnamed module of loader 'app')",
+              "stack": [
+                "org.apache.calcite.sql.SqlHint.lambda$getOptionList$1(SqlHint.java:133)",
+                "java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)",
+                "java.base/java.util.AbstractList$RandomAccessSpliterator.forEachRemaining(AbstractList.java:722)",
+                "java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:509)",
+                "java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)",
+                "java.base/java.util.stream.ReduceOps$ReduceOp.evaluateSequential(ReduceOps.java:921)",
+                "java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)",
+                "java.base/java.util.stream.ReferencePipeline.collect(ReferencePipeline.java:682)",
+                "org.apache.calcite.sql.SqlHint.getOptionList(SqlHint.java:137)",
+                "org.apache.calcite.sql.dialect.AnsiSqlDialect.unparseTableScanHints(AnsiSqlDialect.java:54)",
+                "org.apache.calcite.sql.SqlTableRef.unparse(SqlTableRef.java:83)",
+                "org.apache.calcite.sql.SqlAsOperator.unparse(SqlAsOperator.java:81)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlCall.unparse(SqlCall.java:160)",
+                "org.apache.calcite.sql.SqlUtil.unparseFromClause(SqlUtil.java:470)",
+                "org.apache.calcite.sql.SqlSelectOperator.unparse(SqlSelectOperator.java:170)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlSelect.unparse(SqlSelect.java:345)",
+                "org.apache.calcite.sql.SqlNode.toSqlString(SqlNode.java:157)",
+                "org.apache.calcite.sql.SqlNode.toString(SqlNode.java:132)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.parse(ParserProbe.java:61)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.main(ParserProbe.java:200)"
+              ]
+            }
+          },
+          {
+            "id": "hints/56",
+            "submission": 0,
+            "statement": 0,
+            "failure": {
+              "type": "java.lang.ClassCastException",
+              "message": "class org.apache.calcite.sql.SqlBasicCall cannot be cast to class org.apache.calcite.sql.SqlLiteral (org.apache.calcite.sql.SqlBasicCall and org.apache.calcite.sql.SqlLiteral are in unnamed module of loader 'app')",
+              "stack": [
+                "org.apache.calcite.sql.SqlHint.lambda$getOptionList$1(SqlHint.java:133)",
+                "java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)",
+                "java.base/java.util.AbstractList$RandomAccessSpliterator.forEachRemaining(AbstractList.java:722)",
+                "java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:509)",
+                "java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)",
+                "java.base/java.util.stream.ReduceOps$ReduceOp.evaluateSequential(ReduceOps.java:921)",
+                "java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)",
+                "java.base/java.util.stream.ReferencePipeline.collect(ReferencePipeline.java:682)",
+                "org.apache.calcite.sql.SqlHint.getOptionList(SqlHint.java:137)",
+                "org.apache.calcite.sql.dialect.AnsiSqlDialect.unparseTableScanHints(AnsiSqlDialect.java:54)",
+                "org.apache.calcite.sql.SqlTableRef.unparse(SqlTableRef.java:83)",
+                "org.apache.calcite.sql.SqlAsOperator.unparse(SqlAsOperator.java:81)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlCall.unparse(SqlCall.java:160)",
+                "org.apache.calcite.sql.SqlUtil.unparseFromClause(SqlUtil.java:470)",
+                "org.apache.calcite.sql.SqlSelectOperator.unparse(SqlSelectOperator.java:170)",
+                "org.apache.calcite.sql.SqlDialect.unparseCall(SqlDialect.java:483)",
+                "org.apache.calcite.sql.SqlSelect.unparse(SqlSelect.java:345)",
+                "org.apache.calcite.sql.SqlNode.toSqlString(SqlNode.java:157)",
+                "org.apache.calcite.sql.SqlNode.toString(SqlNode.java:132)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.parse(ParserProbe.java:61)",
+                "org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe.main(ParserProbe.java:200)"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "preservation": {
+    "rust_AST": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/preservation.json",
+        "sha256": "23c57b852ca71df95dbc0a713b363a53d5e760df0c6d3139848cfe96e62c84cc"
+      },
+      "summary": {
+        "corpus": {
+          "counts": {
+            "control_measurements_equal": 102045,
+            "submissions": 34015,
+            "verdict_equal": 34015,
+            "AST_equal_except_empty_field": 33921,
+            "hint_AST_changes": 2
+          },
+          "verdict_changes": []
+        },
+        "keywords": {
+          "counts": {
+            "control_measurements_equal": 40980,
+            "submissions": 13660,
+            "verdict_equal": 13660,
+            "AST_equal_except_empty_field": 13147
+          },
+          "verdict_changes": []
+        },
+        "diagnostics": {
+          "counts": {
+            "control_measurements_equal": 6138,
+            "submissions": 2046,
+            "verdict_equal": 2046,
+            "AST_equal_except_empty_field": 2019,
+            "hint_AST_changes": 4
+          },
+          "verdict_changes": []
+        },
+        "adversarial": {
+          "counts": {
+            "control_measurements_equal": 1842,
+            "submissions": 614,
+            "verdict_equal": 614,
+            "AST_equal_except_empty_field": 299,
+            "hint_AST_changes": 3
+          },
+          "verdict_changes": []
+        }
+      }
+    },
+    "java_oracle": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-hints-matrix-v1/oracle-preservation.json",
+        "sha256": "1d18283dc9c23a54021ee69311630092cb85dac8e1c2cd4d9c925148f87ead2e"
+      },
+      "summary": {
+        "corpus": {
+          "cases": 8571,
+          "structured_equal": true,
+          "old": {
+            "path": "$SCRATCH/p0-parser-oracle-v48-preservation/corpus/cases.jsonl",
+            "sha256": "ade37866d4eb7c0c0d0a194b006a914c4cf142b3bc5a511d8ffbf2337cabb921"
+          },
+          "new": {
+            "path": "$SCRATCH/p0-parser-hints-matrix-v1/java-corpus/cases.jsonl",
+            "sha256": "ade37866d4eb7c0c0d0a194b006a914c4cf142b3bc5a511d8ffbf2337cabb921"
+          }
+        },
+        "keywords": {
+          "cases": 13660,
+          "structured_equal": true,
+          "old": {
+            "path": "$SCRATCH/p0-parser-oracle-v48-preservation-v2/keywords/cases.jsonl",
+            "sha256": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695"
+          },
+          "new": {
+            "path": "$SCRATCH/p0-parser-hints-matrix-v1/java-keywords/cases.jsonl",
+            "sha256": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695"
+          }
+        },
+        "diagnostics": {
+          "cases": 1143,
+          "structured_equal": true,
+          "old": {
+            "path": "$SCRATCH/p0-parser-oracle-v48-preservation-v2/diagnostics/cases.jsonl",
+            "sha256": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7"
+          },
+          "new": {
+            "path": "$SCRATCH/p0-parser-hints-matrix-v1/java-diagnostics/cases.jsonl",
+            "sha256": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7"
+          }
+        },
+        "adversarial": {
+          "cases": 614,
+          "structured_equal": true,
+          "old": {
+            "path": "$SCRATCH/p0-parser-mutation-matrix-v2/java-adversarial/cases.jsonl",
+            "sha256": "0fe8250061ab646d2972cb18603098f9dce27edbf1cba1c76bd0ff7bb4d7b93c"
+          },
+          "new": {
+            "path": "$SCRATCH/p0-parser-hints-matrix-v1/java-adversarial/cases.jsonl",
+            "sha256": "0fe8250061ab646d2972cb18603098f9dce27edbf1cba1c76bd0ff7bb4d7b93c"
+          }
+        },
+        "mutations": {
+          "cases": 27760,
+          "structured_equal": true,
+          "old": {
+            "path": "$SCRATCH/p0-parser-mutations-v4/java/cases.jsonl",
+            "sha256": "fc990d6655d7f40866d71385c7c66e12c79d37ee86167603b54d1232ec377674"
+          },
+          "new": {
+            "path": "$SCRATCH/p0-parser-hints-matrix-v1/java-mutations/cases.jsonl",
+            "sha256": "fc990d6655d7f40866d71385c7c66e12c79d37ee86167603b54d1232ec377674"
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "rust_tests": 55,
+    "clippy": true,
+    "python_tests": 80,
+    "java_tests": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "rust_logs": [
+      {
+        "path": "$SCRATCH/p0-parser-hints-build-v5/test.log",
+        "sha256": "e985a8a846fdf739158935a370fc02b4c86001d3af7730e8d2f32eb19dafdb9b"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-hints-build-v5/clippy.log",
+        "sha256": "823fd28f4d44536574c0728cffee601436b8899150ce2cd378251e3437745ab8"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-hints-build-v5/release.log",
+        "sha256": "e521ab7e89c69f9188d7523845afbbca6b4e9b0cc1168672cbe8edc5e35dc418"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-hints-build-v5/python.log",
+        "sha256": "9881c3dc46873d962150b6f44dd35618c2f1139b4b1511cf4ca87d2de3d94cd3"
+      }
+    ],
+    "java_log": {
+      "path": "$SCRATCH/p0-parser-hints-java-v1/maven.log",
+      "sha256": "de8d9393063c71da78f6be29b37a7e454078612e86c74c35b93f327f7ccce2c8"
+    }
+  },
+  "retained_failures": {
+    "oracle_unparse_crash": "$SCRATCH/p0-parser-hints-oracle-v1",
+    "build_attempts": [
+      "$SCRATCH/p0-parser-hints-build-v1",
+      "$SCRATCH/p0-parser-hints-build-v2",
+      "$SCRATCH/p0-parser-hints-build-v3",
+      "$SCRATCH/p0-parser-hints-build-v4",
+      "$SCRATCH/p0-parser-hints-build-v5"
+    ]
+  },
+  "sources": {
+    "crates/sql/scripts/compare_parsers.py": "9107b965e0887207632391cf2b44086249cd26e9825f4b63abcc30239edfef9c",
+    "crates/sql/scripts/test_compare_parsers.py": "8fa3ee4fcaed32d2ef980246aecdba6704bd18dfac614e370b77cba4f0bec9e4",
+    "crates/sql/parser-probe/adversarial.jsonl": "3c825b32e729dea4ed18b4b16d426097162bdd5b67c8d74ec30e041db2e2a595",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbe.java": "9039b8ae5f3b62bc5c948be98ad2fa80e1889f8c4baad6932848e631e54d0a18",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbeTests.java": "1fb2c8f6b9babec2896513c3c06d6ccbc9e88e83c27319745338fff1021a2b9e"
+  },
+  "limitations": [
+    "Finite hint coverage does not establish exhaustive syntax/span or S1 equivalence.",
+    "Java accepted two table-hint string chains whose pretty-printer fails; failures are retained with rendering_complete=false.",
+    "Only the measured exported populations are covered; 92 positive corpus refusals remain.",
+    "Source positions use the existing upstream token units; no complete Java UTF-16 span equivalence is claimed."
+  ]
+}

@@ -4,10 +4,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.util.Linq;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** Ensure that all Sink nodes produce sets.  Inserts distinct nodes
@@ -18,6 +20,19 @@ public class EnsureDistinctOutputs extends CircuitCloneVisitor {
     public EnsureDistinctOutputs(DBSPCompiler compiler, MultisetAnalysis multisets) {
         super(compiler, false);
         this.multisets = multisets;
+    }
+
+    /** The preceding analysis owns the multiplicity of each live input port. */
+    public List<Long> multisetSinks(DBSPCircuit circuit) {
+        var sinks = new ArrayList<Long>();
+        new CircuitVisitor(this.compiler) {
+            @Override
+            public void postorder(DBSPSinkOperator sink) {
+                if (multisets.isMultiset(sink.input()))
+                    sinks.add(sink.id);
+            }
+        }.apply(circuit);
+        return sinks;
     }
 
     @Override

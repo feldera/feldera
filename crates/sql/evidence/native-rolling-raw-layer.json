@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-rolling-raw-layer-archive.json",
+  "scope": "Persistent rolling COUNT on Linux ARM64, with shared parsed DBSP layer blocks and the updated list merger in the measured build. The paired classic and native circuits keep their existing case-specific adapters.",
+  "binary_sha256": "4e6328c9d9e43a8c1481c1b48feaae1b372109f6d1b39e4693d7bd315ce0f4d4",
+  "process_pairs": 84,
+  "limits": {
+    "throughput": 0.85,
+    "transaction_p95": 1.2,
+    "peak_rss": 1.25,
+    "checkpoint": 1.01
+  },
+  "configurations": [
+    {
+      "storage": "overlay",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9738142662262288,
+        "transaction_p95": 1.0179191014996551,
+        "peak_rss": 1.012155388471178,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    },
+    {
+      "storage": "overlay",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.93658288671626,
+        "transaction_p95": 1.0412434462091715,
+        "peak_rss": 1.0060044779157338,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 1.0271686096458301,
+        "transaction_p95": 0.8974742075833649,
+        "peak_rss": 1.0119140686075236,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9902637151776638,
+        "transaction_p95": 0.8941740646933883,
+        "peak_rss": 1.0026577399066747,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    }
+  ]
+}

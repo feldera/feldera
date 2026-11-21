@@ -1158,6 +1158,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         program_code: Optional[str] = None,
         runtime_version: Optional[str] = None,
+        program_config: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Compute the diff between the pipeline's current program and a proposed
@@ -1179,7 +1180,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param runtime_version: Runtime version to compile the new program with:
             a version tag (``vX.Y.Z``) or a 40-character git SHA. If ``None``
-            (the default), the platform's default runtime is used.
+            (the default), use the runtime from the selected program configuration.
+            An explicit value overrides that configuration's runtime version.
+
+        :param program_config: Compilation configuration for the proposed program.
+            ``None`` and ``{}`` use the platform defaults. To use the pipeline's
+            settings, pass its program configuration.
 
         :return: The pipeline diff as a dict (see the ``PipelineDiff`` schema).
 
@@ -1193,6 +1199,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body["program_code"] = program_code
         if runtime_version is not None:
             body["runtime_version"] = runtime_version
+        if program_config is not None:
+            body["program_config"] = dict(program_config)
 
         return self.http.post(
             path=f"/pipelines/{pipeline_name}/diff",
@@ -1205,6 +1213,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         program_code: str,
         runtime_version: Optional[str] = None,
         ir: bool = False,
+        program_config: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Validate a SQL program by compiling it, without creating a pipeline or
@@ -1222,9 +1231,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param runtime_version: Runtime version to compile the program with: a
             version tag (``vX.Y.Z``) or a 40-character git SHA. If ``None`` (the
-            default), the platform's default runtime is used.
+            default), use the runtime from ``program_config`` or the platform
+            default. An explicit value overrides the configuration's runtime.
 
         :param ir: Also return the program IR (dataflow) in the result.
+
+        :param program_config: Compilation configuration, such as
+            ``runtime_version`` and ``use_platform_compiler``. ``None`` uses
+            the platform defaults.
 
         :return: The validation result as a dict (see the
             ``ValidateProgramResponse`` schema): one of ``{"Success": {...}}``,
@@ -1234,6 +1248,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         body: Dict[str, Any] = {"program_code": program_code, "ir": ir}
         if runtime_version is not None:
             body["runtime_version"] = runtime_version
+        if program_config is not None:
+            body["program_config"] = dict(program_config)
 
         return self.http.post(
             path="/validate_program",

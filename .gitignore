@@ -110,3 +110,9 @@ js-packages/support-bundle-triage/
 .envrc
 .direnv
 .env
+
+# Local compiler benchmark archives
+.bench-results/
+
+# Local Phase 0 evidence archives
+.p0-artifacts/

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-activity-20261118-v1.tar.gz",
+  "bytes": 555859,
+  "sha256": "7e0c493f8aee4384755fe2951c3ab1f1390a766407b25aab01a51d2ab5f1c012",
+  "manifest_sha256": "c4d1c1843e19c4ed5cdb80bdf6038284ef3dcca17ed425cc0039f0c1bb8993cc",
+  "verified_files": 14,
+  "all_members_verified": true
+}

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-submission-aware-archive.json",
+  "scope": "Original ordered SQL API submissions and scoped scalar projections.",
+  "directed": {
+    "java_imports": 3,
+    "typed_tree_and_source_matches": 3,
+    "submission_boundary_refusals": 2
+  },
+  "original_population": {
+    "transported": 9886,
+    "held_out": 1563,
+    "development_fragments": 1,
+    "held_out_fragments": 0
+  },
+  "caught_semantic_difference": {
+    "case": "diagnostic/206/org.dbsp.sqlCompiler.compiler.sql.NegativeParserTests#niladicFunctionColumnTest",
+    "prior_incorrect_acceptance_retained": true,
+    "revised_rejection": true,
+    "exact_c0_fields": [
+      "warning",
+      "error_type",
+      "start_line_number",
+      "start_column",
+      "snippet"
+    ],
+    "java_diagnostic": {
+      "start_line_number": 2,
+      "start_column": 25,
+      "end_line_number": 2,
+      "end_column": 28,
+      "warning": false,
+      "error_type": "Compilation error",
+      "message": "Function 'USER' is not supported.  If you meant a column with this name, qualify it with a table name or quote it: \"user\"",
+      "snippet": "    1|CREATE TABLE T(user INT);\n    2|CREATE VIEW V AS SELECT user FROM T;\n                              ^^^^\n"
+    },
+    "rust_diagnostic": {
+      "end_column": 28,
+      "end_line_number": 2,
+      "error_type": "Compilation error",
+      "message": "Function 'USER' is not supported",
+      "snippet": "    1|CREATE TABLE T(user INT);\n    2|CREATE VIEW V AS SELECT user FROM T;\n                              ^^^^\n",
+      "start_column": 25,
+      "start_line_number": 2,
+      "warning": false
+    },
+    "follow_up_after_observing_the_held_out_error": true
+  },
+  "generated_controls": {
+    "records": 59264,
+    "byte_equal": true
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T12:29:48.409447+00:00",
+  "archive": ".p0-artifacts/p0-s1-fieldwalk-expressions-20261117-v1.tar.gz",
+  "sha256": "4a895aa6ae9dd3c50c1af8539467e993e3d3e41ed5dbd34a581bcd951d2aa6ed",
+  "bytes": 53605888,
+  "certificates": [
+    "s1-rel-field-walk.json",
+    "s1-expression-codec.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-rel-field-walk.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-field-walk-v1/source-snapshot/"
+      }
+    ],
+    "s1-expression-codec.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-expression-reader-v1/source-snapshot/"
+      }
+    ]
+  },
+  "scope": "Expanded optimized-view field traversal and general expression-fragment codec, not full S1 or P0",
+  "P0_complete": false,
+  "classpath_hash_algorithms": {
+    "s1-rel-field-walk.json": "path-space-hex-sha256-newline",
+    "s1-expression-codec.json": "path-space-hex-sha256-newline"
+  },
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-fieldwalk-expression-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 484,
+  "verified_source_hashes": 119,
+  "verified_classpath_hashes": 11
+}

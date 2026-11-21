@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** A comparator that does not compare any fields. */
 public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
@@ -42,7 +43,11 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
      * @param tupleType Type of the data that is being compared.
      */
     public DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType) {
-        super(node, DBSPComparatorType.generateType(tupleType));
+        this(node, tupleType, DBSPComparatorType.generateType(tupleType));
+    }
+
+    private DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType, DBSPComparatorType type) {
+        super(node, type);
         this.tupleType = tupleType;
     }
 
@@ -93,6 +98,8 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     @SuppressWarnings("unused")
     public static DBSPNoComparatorExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType tupleType = fromJsonInner(node, "tupleType", decoder, DBSPType.class);
-        return new DBSPNoComparatorExpression(CalciteObject.EMPTY, tupleType);
+        DBSPComparatorType type = getJsonType(node, decoder).to(DBSPComparatorType.class);
+        Utilities.enforce(type.sameType(DBSPComparatorType.generateType(tupleType)));
+        return new DBSPNoComparatorExpression(CalciteObject.EMPTY, tupleType, type);
     }
 }

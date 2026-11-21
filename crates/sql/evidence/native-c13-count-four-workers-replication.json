@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "cpus": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "workers": 4,
+  "pairs_per_size": 31,
+  "binary_sha256": "61d6fb49de12d0e9b9483596c2292103c48c9329cc932fc1fdc4a24dd7007bce",
+  "results": {
+    "256": {
+      "classic": {
+        "init_ns": {
+          "p50": 5449495,
+          "p95": 6639411
+        },
+        "step_latency_ns": {
+          "p50": 22312951.2375,
+          "p95": 25797117.1125
+        },
+        "checkpoint_ns": {
+          "p50": 23469148,
+          "p95": 26573270
+        },
+        "rows_per_second": {
+          "p50": 11473.157328007628,
+          "p95": 12113.097958652173
+        },
+        "peak_rss_kib": {
+          "p50": 100956,
+          "p95": 101288
+        },
+        "checkpoint_bytes": {
+          "p50": 324888,
+          "p95": 324888
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 14800612,
+          "p95": 17777152
+        },
+        "step_latency_ns": {
+          "p50": 25204003.025,
+          "p95": 28236413.0375
+        },
+        "checkpoint_ns": {
+          "p50": 23343106,
+          "p95": 26402936
+        },
+        "rows_per_second": {
+          "p50": 10157.116698727265,
+          "p95": 10912.432888164754
+        },
+        "peak_rss_kib": {
+          "p50": 109124,
+          "p95": 109424
+        },
+        "checkpoint_bytes": {
+          "p50": 324799,
+          "p95": 324799
+        }
+      }
+    },
+    "2048": {
+      "classic": {
+        "init_ns": {
+          "p50": 5083163,
+          "p95": 5499409
+        },
+        "step_latency_ns": {
+          "p50": 22317978.375,
+          "p95": 22872760.275
+        },
+        "checkpoint_ns": {
+          "p50": 31399723,
+          "p95": 34917846
+        },
+        "rows_per_second": {
+          "p50": 91764.58394162236,
+          "p95": 92959.03645108217
+        },
+        "peak_rss_kib": {
+          "p50": 109268,
+          "p95": 109516
+        },
+        "checkpoint_bytes": {
+          "p50": 428928,
+          "p95": 428928
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 14129047,
+          "p95": 15033237
+        },
+        "step_latency_ns": {
+          "p50": 24740396.1,
+          "p95": 24959968.925
+        },
+        "checkpoint_ns": {
+          "p50": 30390433,
+          "p95": 36256303
+        },
+        "rows_per_second": {
+          "p50": 82779.59624098339,
+          "p95": 83517.0299344314
+        },
+        "peak_rss_kib": {
+          "p50": 121112,
+          "p95": 121484
+        },
+        "checkpoint_bytes": {
+          "p50": 428839,
+          "p95": 428839
+        }
+      }
+    }
+  },
+  "scope": "Same four-worker optimized ARM64 COUNT DISTINCT workload, binary, affinity and sample count as the initial run.",
+  "archive_index": "native-c13-count-four-workers-replication-archive.json",
+  "original": "native-c13-count-four-workers.json",
+  "measured_fresh_process_samples": 124,
+  "step_latency_summary": "Percentiles across each process average step latency",
+  "ratios": {
+    "256": {
+      "original": {
+        "median_throughput": 0.8798312968427595,
+        "p95_step_latency": 1.0567555024288435
+      },
+      "replication": {
+        "median_throughput": 0.8852939437980407,
+        "p95_step_latency": 1.094556919455858
+      }
+    },
+    "2048": {
+      "original": {
+        "median_throughput": 0.899648358327015,
+        "p95_step_latency": 1.208604436194147
+      },
+      "replication": {
+        "median_throughput": 0.902086542381591,
+        "p95_step_latency": 1.0912530287077475
+      }
+    }
+  }
+}

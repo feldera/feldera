@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-stream-groups-warm-20261118-v1.tar.gz",
+  "bytes": 6167528,
+  "sha256": "a2b1e64df4c1d99abfeab43357f1c0696099b06cdd00895ed3fbebcc46937f18",
+  "manifest_sha256": "1c8d9fbfabf2e67dfc61a0a33257aae1e0fa07777eb09bf9af21ef8e66cc99e6",
+  "verified_files": 5134,
+  "all_members_verified": true
+}

@@ -1,0 +1,153 @@
+{
+  "diagnostics": {
+    "classic": {
+      "connector_in_view": [
+        {
+          "start_line_number": 1,
+          "start_column": 25,
+          "end_line_number": 1,
+          "end_column": 44,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "Calls to function 'connector_metadata' are only allowed in DEFAULT column initializers",
+          "snippet": "    1|CREATE VIEW v AS SELECT CONNECTOR_METADATA()['a'];\n                              ^^^^^^^^^^^^^^^^^^^^\n"
+        }
+      ],
+      "two_connector_calls": [
+        {
+          "start_line_number": 1,
+          "start_column": 30,
+          "end_line_number": 1,
+          "end_column": 49,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "Calls to function 'connector_metadata' are only allowed in DEFAULT column initializers",
+          "snippet": "    1|CREATE VIEW v AS SELECT CAST(CONNECTOR_METADATA()['a'] AS INT) + CAST(CONNECTOR_METADATA()['b'] AS INT);\n                                   ^^^^^^^^^^^^^^^^^^^^\n"
+        }
+      ],
+      "transitive_udf": [
+        {
+          "start_line_number": 1,
+          "start_column": 17,
+          "end_line_number": 1,
+          "end_column": 17,
+          "warning": false,
+          "error_type": "Non-deterministic UDF",
+          "message": "Non-deterministic user-defined functions are not supported: 'f'",
+          "snippet": "    1|CREATE FUNCTION f(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;\n                      ^\n    2|CREATE FUNCTION g(x INT) RETURNS BIGINT AS f(x);\n"
+        },
+        {
+          "start_line_number": 2,
+          "start_column": 17,
+          "end_line_number": 2,
+          "end_column": 17,
+          "warning": false,
+          "error_type": "Non-deterministic UDF",
+          "message": "Non-deterministic user-defined functions are not supported: 'g'",
+          "snippet": "    1|CREATE FUNCTION f(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;\n    2|CREATE FUNCTION g(x INT) RETURNS BIGINT AS f(x);\n                      ^\n"
+        }
+      ],
+      "nondeterministic_udf": [
+        {
+          "start_line_number": 1,
+          "start_column": 17,
+          "end_line_number": 1,
+          "end_column": 17,
+          "warning": false,
+          "error_type": "Non-deterministic UDF",
+          "message": "Non-deterministic user-defined functions are not supported: 'f'",
+          "snippet": "    1|CREATE FUNCTION f(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;\n                      ^\n"
+        }
+      ],
+      "nondeterministic_default": [
+        {
+          "start_line_number": 1,
+          "start_column": 37,
+          "end_line_number": 1,
+          "end_column": 41,
+          "warning": false,
+          "error_type": "Non-deterministic initializer",
+          "message": "Default value for column 'x' must be a compile-time constant.\nSee https://github.com/feldera/feldera/issues/2051",
+          "snippet": "    1|CREATE TABLE t (x TIMESTAMP DEFAULT NOW());\n                                          ^^^^^\n"
+        }
+      ]
+    },
+    "gen2": {
+      "connector_in_view": [
+        {
+          "start_line_number": 1,
+          "start_column": 25,
+          "end_line_number": 1,
+          "end_column": 44,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "Calls to function 'connector_metadata' are only allowed in DEFAULT column initializers",
+          "snippet": "    1|CREATE VIEW v AS SELECT CONNECTOR_METADATA()['a'];\n                              ^^^^^^^^^^^^^^^^^^^^\n"
+        }
+      ],
+      "two_connector_calls": [
+        {
+          "start_line_number": 1,
+          "start_column": 30,
+          "end_line_number": 1,
+          "end_column": 49,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "Calls to function 'connector_metadata' are only allowed in DEFAULT column initializers",
+          "snippet": "    1|CREATE VIEW v AS SELECT CAST(CONNECTOR_METADATA()['a'] AS INT) + CAST(CONNECTOR_METADATA()['b'] AS INT);\n                                   ^^^^^^^^^^^^^^^^^^^^\n"
+        }
+      ],
+      "transitive_udf": [
+        {
+          "start_line_number": 1,
+          "start_column": 17,
+          "end_line_number": 1,
+          "end_column": 17,
+          "warning": false,
+          "error_type": "Non-deterministic UDF",
+          "message": "Non-deterministic user-defined functions are not supported: 'f'",
+          "snippet": "    1|CREATE FUNCTION f(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;\n                      ^\n    2|CREATE FUNCTION g(x INT) RETURNS BIGINT AS f(x);\n"
+        },
+        {
+          "start_line_number": 2,
+          "start_column": 17,
+          "end_line_number": 2,
+          "end_column": 17,
+          "warning": false,
+          "error_type": "Non-deterministic UDF",
+          "message": "Non-deterministic user-defined functions are not supported: 'g'",
+          "snippet": "    1|CREATE FUNCTION f(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;\n    2|CREATE FUNCTION g(x INT) RETURNS BIGINT AS f(x);\n                      ^\n"
+        }
+      ],
+      "nondeterministic_udf": [
+        {
+          "start_line_number": 1,
+          "start_column": 17,
+          "end_line_number": 1,
+          "end_column": 17,
+          "warning": false,
+          "error_type": "Non-deterministic UDF",
+          "message": "Non-deterministic user-defined functions are not supported: 'f'",
+          "snippet": "    1|CREATE FUNCTION f(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;\n                      ^\n"
+        }
+      ],
+      "nondeterministic_default": [
+        {
+          "start_line_number": 1,
+          "start_column": 37,
+          "end_line_number": 1,
+          "end_column": 41,
+          "warning": false,
+          "error_type": "Non-deterministic initializer",
+          "message": "Default value for column 'x' must be a compile-time constant.\nSee https://github.com/feldera/feldera/issues/2051",
+          "snippet": "    1|CREATE TABLE t (x TIMESTAMP DEFAULT NOW());\n                                          ^^^^^\n"
+        }
+      ]
+    }
+  },
+  "compiler_sha256": "d91996292b7b15f7c32c480dd60b11e581a7ea58c7ad9027a8958b45added3e9",
+  "optimizer_library_sha256": "8b26c608c09b629fb12fe9a477bfe27632845edc1b1fa4a0b17c2c871f112080",
+  "classpath_sha256": {
+    "/stage/p3-maven-metadata/sql-compiler.jar": "b507cb8a782b0c6af3c4a3396d0b8a938c32147f693fa9e75f6a643f2918c8c8"
+  }
+}

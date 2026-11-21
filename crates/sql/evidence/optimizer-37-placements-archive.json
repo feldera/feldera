@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-37-placements-20261118-v1.tar.gz",
+  "bytes": 2633679,
+  "sha256": "5de6ffd239163b44e07ab32ca9e64dab2d0004c6db91fd36f3df4c2f84db2f7e",
+  "manifest_sha256": "366d9725763c84c60351f5f6fada8728143bc3ec2da23704f2a8f1c239a083ad",
+  "verified_files": 1123,
+  "all_members_verified": true
+}

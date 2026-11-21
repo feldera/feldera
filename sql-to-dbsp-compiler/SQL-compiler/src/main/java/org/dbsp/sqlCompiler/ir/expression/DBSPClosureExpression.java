@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
+import org.dbsp.util.Utilities;
 
 import java.util.HashSet;
 import java.util.List;
@@ -90,7 +91,13 @@ public final class DBSPClosureExpression extends DBSPExpression {
     }
 
     public DBSPClosureExpression(CalciteObject node, DBSPExpression body, DBSPParameter... parameters) {
-        super(node, new DBSPTypeFunction(body.getType(), Linq.map(parameters, DBSPParameter::getType, DBSPType.class)));
+        this(node, body, parameters,
+                new DBSPTypeFunction(body.getType(), Linq.map(parameters, DBSPParameter::getType, DBSPType.class)));
+    }
+
+    private DBSPClosureExpression(CalciteObject node, DBSPExpression body,
+                                  DBSPParameter[] parameters, DBSPTypeFunction type) {
+        super(node, type);
         this.body = body;
         this.parameters = parameters;
     }
@@ -255,11 +262,13 @@ public final class DBSPClosureExpression extends DBSPExpression {
 
     @SuppressWarnings("unused")
     public static DBSPClosureExpression fromJson(JsonNode node, JsonDecoder decoder) {
-        // Read in the order accept(InnerVisitor) writes; the type is read only to define the
-        // nodes that the parameters and the body refer to
-        fromJsonInner(node, "type", decoder, DBSPType.class);
+        // Read in writer order and retain the function type, which enclosing expressions may share.
+        DBSPTypeFunction type = fromJsonInner(node, "type", decoder, DBSPTypeFunction.class);
         List<DBSPParameter> parameters = fromJsonInnerList(node, "parameters", decoder, DBSPParameter.class);
         DBSPExpression body = fromJsonInner(node, "body", decoder, DBSPExpression.class);
-        return new DBSPClosureExpression(CalciteObject.EMPTY, body, parameters.toArray(new DBSPParameter[0]));
+        DBSPParameter[] array = parameters.toArray(new DBSPParameter[0]);
+        Utilities.enforce(type.sameType(new DBSPTypeFunction(body.getType(),
+                Linq.map(array, DBSPParameter::getType, DBSPType.class))));
+        return new DBSPClosureExpression(CalciteObject.EMPTY, body, array, type);
     }
 }

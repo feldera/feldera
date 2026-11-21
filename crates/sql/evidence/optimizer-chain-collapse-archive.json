@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-chain-collapse-20261118.tar.gz",
+  "bytes": 5385152,
+  "sha256": "4a5ad113fa875c1e5b4c40b2412fe3b551ce1ff8fa95d2c65e0b430b025ac219",
+  "manifest_sha256": "da81c5c0f61b90b35e1699ffeb25cb44d439d28c2f16f4cb96f62b47dbd7f7f8",
+  "verified_files": 1861,
+  "all_members_verified": true
+}

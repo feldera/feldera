@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-count-four-workers-replication-20261118-v1.tar.gz",
+  "bytes": 47858282,
+  "sha256": "9e9766bb07e3db01b66f458737bc70833eec35a3e6b0b0a3eff3fd92aa2047a8",
+  "manifest_sha256": "dec9b5b1637b8dc55584a877ca1d5612afb3422d2aa270ce1a7c11e314b9231d",
+  "verified_files": 255,
+  "all_members_verified": true
+}

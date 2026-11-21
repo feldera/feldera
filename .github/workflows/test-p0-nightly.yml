@@ -1,0 +1,833 @@
+name: Nightly P0 SQL compiler checks
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+    inputs:
+      full_determinism:
+        description: Replay the complete corpus in independent JVMs
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  RUSTC_WRAPPER: sccache
+  # sccache: native GCS backend, credentials come from the runner pod via
+  # Workload Identity (no secrets).
+  SCCACHE_GCS_BUCKET: ${{ vars.SCCACHE_GCS_BUCKET }}
+  SCCACHE_GCS_RW_MODE: READ_WRITE
+  RUST_MIN_STACK: 8388608
+  # sccache cannot cache rustc invocations when incremental is on.
+  CARGO_INCREMENTAL: 0
+  # Cap cargo parallelism at the k8s runner core budget. Java tests drive a
+  # Rust build via mvn → sql-to-dbsp; without this cap arm64 runners OOM from
+  # too many parallel linkers. Override via the CI_RUNNER_CORES repo variable;
+  # the fallback matches the current 20-core pod.
+  CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
+  # Pin Maven's local repo so it matches the cache path regardless of the
+  # container runner's $HOME.
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
+
+jobs:
+  probes:
+    name: Compiler probes and corpus replay
+    strategy:
+      matrix:
+        include:
+          - runner: [gke-runners-amd64]
+          - runner: [gke-runners-arm64]
+    runs-on: ${{ matrix.runner }}
+
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Cache Cargo registry
+        uses: ./.github/actions/feldera-gcs-cache
+        with:
+          # Crate downloads only, NOT target/: caching the multi-GB target/
+          # trees never paid off, and sccache already caches compiled crates.
+          # registry/src is excluded, cargo regenerates it from registry/cache.
+          path: |
+            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
+            # env), while ~ expands to the runner's HOME (/github/home in container
+            # jobs), so tilde paths would cache a directory cargo never writes.
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/git/db
+          key: test-java-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            test-java-cargo-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Check crypto dependencies
+        run: scripts/validate-crypto-deps.sh
+
+      - name: Cache JVM build dependencies
+        uses: ./.github/actions/feldera-gcs-cache
+        with:
+          path: |
+            /home/ubuntu/.gradle
+            /home/ubuntu/.m2/repository
+            ./sql-to-dbsp-compiler/calcite
+          key: test-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/**/pom.xml') }}
+          restore-keys: |
+            test-java-jvm-${{ runner.os }}-${{ runner.arch }}-
+
+      # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
+      - name: Run build.sh
+        run: ./build.sh
+        working-directory: ./sql-to-dbsp-compiler
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        env:
+          CALCITE_BUILD_DIR: ./calcite
+          GRADLE_HOME: /home/ubuntu/.gradle
+
+      - name: Stop gradle daemon
+        run: gradle --stop
+
+      - name: Run mvn test
+        shell: bash
+        run: |
+          source calcite_version.env
+          if [[ "$CALCITE_BUILD_NEXT" == "y" ]]; then
+            calcite_revision="$CALCITE_NEXT_COMMIT"
+          else
+            calcite_revision="release:$CALCITE_CURRENT"
+          fi
+          mvn test --no-transfer-progress -B -pl SQL-compiler \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            "-Dfeldera.optimizer.trace=$RUNNER_TEMP/sql-optimizer.jsonl" \
+            "-Dfeldera.rule.inventory=$RUNNER_TEMP/sql-rule-implementations.json" \
+            "-Dfeldera.operator.inventory=$RUNNER_TEMP/sql-validator-operators.json" \
+            "-Dfeldera.corpus.dir=$RUNNER_TEMP/sql-corpus" \
+            "-Dfeldera.corpus.producer=$GITHUB_SHA" \
+            "-Dfeldera.corpus.calcite=$calcite_revision" \
+            "-Dfeldera.corpus.runtime=$GITHUB_SHA" \
+            "-Dfeldera.diagnostics.dir=$RUNNER_TEMP/sql-diagnostics" \
+            "-Dfeldera.diagnostics.producer=$GITHUB_SHA" \
+            "-Dfeldera.diagnostics.calcite=$calcite_revision" \
+            "-Dfeldera.diagnostics.runtime=$GITHUB_SHA"
+        working-directory: ./sql-to-dbsp-compiler
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+
+      - name: Audit frontend constant simplification sites
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          python3 crates/sql/scripts/fold_site_inventory.py > "$RUNNER_TEMP/sql-fold-site-inventory.json"
+
+      - name: Validate compiler corpus and differential harness
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo test --locked -p feldera-sql-difftest -p feldera-sql-ir -p feldera-sql-source -p feldera-sql-lower -p feldera-sql-opt -p feldera-sql-parser -p feldera-sql-binder -p sql2dbsp
+          cargo run --locked -p feldera-sql-difftest --bin sql-difftest -- \
+            --validate-corpus "$RUNNER_TEMP/sql-corpus" > "$RUNNER_TEMP/sql-corpus-summary.json"
+          cargo run --locked -p feldera-sql-difftest --bin sql-type-probes -- \
+            "$RUNNER_TEMP/sql-type-probes.jsonl" > "$RUNNER_TEMP/sql-type-probe-counts.json"
+          python3 -m unittest discover -s crates/sql/scripts -p 'test_*.py'
+          python3 crates/sql/scripts/diagnostic_census.py \
+            "$RUNNER_TEMP/sql-diagnostics" "$RUNNER_TEMP/sql-diagnostic-census.json"
+          python3 crates/sql/scripts/diagnostic_direct_assertions.py \
+            "$RUNNER_TEMP/sql-diagnostics" "$RUNNER_TEMP/sql-direct-diagnostic-assertions.json"
+          cargo run --locked -p feldera-sql-difftest --bin sql-difftest -- \
+            --summarize-optimizer "$RUNNER_TEMP/sql-optimizer.jsonl" > "$RUNNER_TEMP/sql-optimizer-census.json"
+          python3 crates/sql/scripts/correlation_inventory.py \
+            "$RUNNER_TEMP/sql-optimizer.jsonl" "$RUNNER_TEMP/sql-correlation-rule-shapes.json"
+          python3 crates/sql/scripts/rule_port_inventory.py \
+            "$RUNNER_TEMP/sql-rule-implementations.json" "$RUNNER_TEMP/sql-optimizer-census.json" \
+            sql-to-dbsp-compiler/calcite "$RUNNER_TEMP/sql-rule-port-inventory.json"
+          python3 crates/sql/scripts/optimizer_stage_contracts.py crates/sql/optimizer-stage-contracts.json \
+            "$RUNNER_TEMP/sql-rule-implementations.json" "$RUNNER_TEMP/sql-optimizer-census.json" \
+            "$RUNNER_TEMP/sql-optimizer-stage-contracts.json"
+
+      - name: Audit diagnostic templates and Python compiler expectations
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          source_root="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/src/main/java"
+          java -ea -Xmx1g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticTemplates \
+            "$source_root" "$RUNNER_TEMP/sql-diagnostic-templates.json"
+          python3 crates/sql/scripts/diagnostic_templates.py \
+            "$RUNNER_TEMP/sql-diagnostic-templates.json" "$RUNNER_TEMP/sql-diagnostic-census.json" \
+            "$source_root" "$RUNNER_TEMP/sql-diagnostic-template-matches.json"
+          python3 crates/sql/scripts/python_diagnostic_inputs.py \
+            "$RUNNER_TEMP/sql-diagnostic-census.json" "$RUNNER_TEMP/sql-python-diagnostic-inputs.json"
+          java -ea -Xmx1g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.PythonDiagnosticProbe \
+            "$RUNNER_TEMP/sql-python-diagnostic-inputs.json" "$RUNNER_TEMP/sql-python-diagnostic-results.jsonl"
+          python3 crates/sql/scripts/python_diagnostics.py \
+            "$RUNNER_TEMP/sql-python-diagnostic-inputs.json" "$RUNNER_TEMP/sql-python-diagnostic-results.jsonl" \
+            "$RUNNER_TEMP/sql-python-diagnostics.json" --require-compiler-matches
+          python3 crates/sql/scripts/diagnostic_expectation_attribution.py \
+            "$RUNNER_TEMP/sql-diagnostics/java-diagnostics.jsonl" "$RUNNER_TEMP/sql-diagnostic-census.json" \
+            "$RUNNER_TEMP/sql-diagnostic-template-matches.json" "$RUNNER_TEMP/sql-python-diagnostic-inputs.json" \
+            "$RUNNER_TEMP/sql-python-diagnostic-results.jsonl" "$RUNNER_TEMP/sql-diagnostics/calcite-messages.json" \
+            "$RUNNER_TEMP/sql-diagnostic-expectation-attribution.json"
+
+      - name: Run scalar type oracle
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        working-directory: ./sql-to-dbsp-compiler
+        run: |
+          source calcite_version.env
+          if [[ "$CALCITE_BUILD_NEXT" == "y" ]]; then
+            calcite_revision="$CALCITE_NEXT_COMMIT"
+          else
+            calcite_revision="release:$CALCITE_CURRENT"
+          fi
+          probe_count=$(python3 -c 'import json, os; print(json.load(open(os.environ["RUNNER_TEMP"] + "/sql-type-probe-counts.json"))["probes"])')
+          mvn test --no-transfer-progress -B -pl SQL-compiler -Dtest=TypeProbeTests,TypeBindingProbeTests \
+            "-Dfeldera.probes.input=$RUNNER_TEMP/sql-type-probes.jsonl" \
+            "-Dfeldera.probes.output=$RUNNER_TEMP/sql-type-goldens" \
+            "-Dfeldera.probes.expectedCount=$probe_count" \
+            "-Dfeldera.probes.producer=$GITHUB_SHA" \
+            "-Dfeldera.probes.calcite=$calcite_revision" \
+            "-Dfeldera.probes.runtime=$GITHUB_SHA"
+          cargo run --locked -p feldera-sql-difftest --release --bin sql-difftest -- \
+            --validate-probes "$RUNNER_TEMP/sql-type-goldens" > "$RUNNER_TEMP/sql-type-golden-summary.json"
+
+      - name: Compare Rust type inference with the scalar oracle
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo fmt --manifest-path crates/sql/type-derivation-probe/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path crates/sql/type-derivation-probe/Cargo.toml
+          cargo clippy --locked --all-targets --manifest-path crates/sql/type-derivation-probe/Cargo.toml -- -D warnings
+          cargo run --locked --release --manifest-path crates/sql/type-derivation-probe/Cargo.toml -- \
+            "$RUNNER_TEMP/sql-type-probes.jsonl" "$RUNNER_TEMP/sql-type-derivation.jsonl"
+          python3 crates/sql/scripts/type_derivation_compare.py \
+            "$RUNNER_TEMP/sql-type-goldens/golden.jsonl" "$RUNNER_TEMP/sql-type-derivation.jsonl" \
+            "$RUNNER_TEMP/sql-type-derivation-comparison" --require-equal
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          probe_count=$(python3 -c 'import json, os; print(json.load(open(os.environ["RUNNER_TEMP"] + "/sql-type-probe-counts.json"))["probes"])')
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.TypeBindingProbe \
+            "$RUNNER_TEMP/sql-type-probes.jsonl" "$RUNNER_TEMP/sql-type-bindings" "$probe_count"
+          python3 crates/sql/scripts/compare_type_bindings.py \
+            "$RUNNER_TEMP/sql-type-bindings/bindings.jsonl" "$RUNNER_TEMP/sql-type-derivation.jsonl" \
+            "$RUNNER_TEMP/sql-type-binding-comparison" --require-equal
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.TypeBindingProbe \
+            "$RUNNER_TEMP/sql-type-probes.jsonl" "$RUNNER_TEMP/sql-type-s2" "$probe_count" --s2-expressions
+          python3 crates/sql/scripts/compare_type_s2.py \
+            "$RUNNER_TEMP/sql-type-s2/s2-expressions.jsonl" "$RUNNER_TEMP/sql-type-derivation.jsonl" \
+            "$RUNNER_TEMP/sql-type-s2-comparison" --scope all --expected "$probe_count"
+
+      - name: Measure parser coverage
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          python3 crates/sql/scripts/parser_ast_inventory.py > "$RUNNER_TEMP/parser-ast-inventory.json"
+          cargo test --locked --manifest-path crates/sql/parser-probe/Cargo.toml
+          cargo build --locked --release -p feldera-sql-difftest --bin sql-difftest
+          target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          python3 crates/sql/scripts/determinism.py prepare \
+            "$RUNNER_TEMP/sql-corpus" "$RUNNER_TEMP/sql-determinism-input.jsonl" \
+            --comparator "$target_dir/release/sql-difftest"
+          cargo run --locked --manifest-path crates/sql/parser-probe/Cargo.toml -- \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/parser-corpus"
+          cargo run --locked --manifest-path crates/sql/parser-probe/Cargo.toml -- \
+            crates/sql/parser-probe/syntax.jsonl "$RUNNER_TEMP/parser-syntax" --include-ast
+          source sql-to-dbsp-compiler/calcite_version.env
+          if [[ "$CALCITE_BUILD_NEXT" == "y" ]]; then
+            calcite_revision="$CALCITE_NEXT_COMMIT"
+          else
+            calcite_revision="release:$CALCITE_CURRENT"
+          fi
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          java -ea -Xmx2g "-Dfeldera.parser.producer=$GITHUB_SHA" \
+            "-Dfeldera.parser.calcite=$calcite_revision" -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/parser-java-corpus"
+          java -ea -Xmx2g "-Dfeldera.parser.producer=$GITHUB_SHA" \
+            "-Dfeldera.parser.calcite=$calcite_revision" -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe \
+            crates/sql/parser-probe/syntax.jsonl "$RUNNER_TEMP/parser-java-syntax"
+          python3 crates/sql/scripts/compare_parsers.py \
+            "$RUNNER_TEMP/parser-corpus" "$RUNNER_TEMP/parser-java-corpus" "$RUNNER_TEMP/parser-corpus-comparison.json" --compare-view-fields
+          python3 crates/sql/scripts/compare_parsers.py \
+            "$RUNNER_TEMP/parser-syntax" "$RUNNER_TEMP/parser-java-syntax" "$RUNNER_TEMP/parser-syntax-comparison.json"
+          parser_target=$(cargo metadata --manifest-path crates/sql/parser-probe/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          parser_binary="$parser_target/debug/feldera-parser-probe"
+          "$parser_binary" crates/sql/parser-probe/adversarial.jsonl \
+            "$RUNNER_TEMP/parser-adversarial-rust" --include-ast
+          java -ea -Xmx2g "-Dfeldera.parser.producer=$GITHUB_SHA" \
+            "-Dfeldera.parser.calcite=$calcite_revision" -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe \
+            crates/sql/parser-probe/adversarial.jsonl "$RUNNER_TEMP/parser-adversarial-java"
+          python3 crates/sql/scripts/compare_parsers.py \
+            "$RUNNER_TEMP/parser-adversarial-rust" "$RUNNER_TEMP/parser-adversarial-java" "$RUNNER_TEMP/parser-adversarial-comparison.json" --compare-view-fields \
+            --reject-overacceptance 0.64.0/feldera_prototype
+          python3 crates/sql/scripts/parser_semantic_corpus.py \
+            crates/sql/parser-probe/adversarial.jsonl "$RUNNER_TEMP/parser-adversarial-rust" \
+            "$RUNNER_TEMP/parser-adversarial-semantic-inputs"
+          python3 crates/sql/scripts/parser_semantic_run.py \
+            "$RUNNER_TEMP/parser-adversarial-semantic-inputs" "$RUNNER_TEMP/parser-adversarial-semantic" \
+            --classpath "$classpath" --workers 2 --ast-only
+          "$parser_binary" crates/sql/parser-probe/semantic.jsonl \
+            "$RUNNER_TEMP/parser-semantic-rust" --include-ast
+          python3 crates/sql/scripts/parser_semantic_inputs.py \
+            crates/sql/parser-probe/semantic.jsonl "$RUNNER_TEMP/parser-semantic-rust" \
+            "$RUNNER_TEMP/parser-semantic-pairs.jsonl"
+          java -ea -Xmx2g -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserSemanticProbe \
+            "$RUNNER_TEMP/parser-semantic-pairs.jsonl" "$RUNNER_TEMP/parser-semantic-java"
+          python3 crates/sql/scripts/parser_semantic_corpus.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/parser-corpus" \
+            "$RUNNER_TEMP/parser-semantic-corpus-inputs"
+          python3 crates/sql/scripts/parser_semantic_run.py \
+            "$RUNNER_TEMP/parser-semantic-corpus-inputs" "$RUNNER_TEMP/parser-semantic-corpus" \
+            --classpath "$classpath" --workers 2
+          python3 crates/sql/scripts/parser_diagnostic_inputs.py \
+            "$RUNNER_TEMP/sql-diagnostics" "$RUNNER_TEMP/parser-diagnostics"
+          "$parser_binary" "$RUNNER_TEMP/parser-diagnostics/input.jsonl" \
+            "$RUNNER_TEMP/parser-diagnostics/rust"
+          java -ea -Xmx2g "-Dfeldera.parser.producer=$GITHUB_SHA" \
+            "-Dfeldera.parser.calcite=$calcite_revision" -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe \
+            "$RUNNER_TEMP/parser-diagnostics/input.jsonl" "$RUNNER_TEMP/parser-diagnostics/java"
+          python3 crates/sql/scripts/compare_parsers.py \
+            "$RUNNER_TEMP/parser-diagnostics/rust" "$RUNNER_TEMP/parser-diagnostics/java" \
+            "$RUNNER_TEMP/parser-diagnostics/comparison.json"
+          python3 crates/sql/scripts/parser_mutations.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/parser-mutations"
+          "$parser_binary" "$RUNNER_TEMP/parser-mutations/input.jsonl" \
+            "$RUNNER_TEMP/parser-mutations/rust"
+          java -ea -Xmx2g "-Dfeldera.parser.producer=$GITHUB_SHA" \
+            "-Dfeldera.parser.calcite=$calcite_revision" -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe \
+            "$RUNNER_TEMP/parser-mutations/input.jsonl" "$RUNNER_TEMP/parser-mutations/java"
+          python3 crates/sql/scripts/compare_parsers.py \
+            "$RUNNER_TEMP/parser-mutations/rust" "$RUNNER_TEMP/parser-mutations/java" \
+            "$RUNNER_TEMP/parser-mutations/comparison.json" \
+            --reject-overacceptance 0.64.0/feldera_prototype
+          python3 crates/sql/scripts/parser_keywords.py sql-to-dbsp-compiler/calcite \
+            "$parser_binary" "$RUNNER_TEMP/parser-keywords.jsonl" "$RUNNER_TEMP/parser-keyword-inventory.json"
+          "$parser_binary" "$RUNNER_TEMP/parser-keywords.jsonl" "$RUNNER_TEMP/parser-keywords-rust"
+          java -ea -Xmx2g "-Dfeldera.parser.producer=$GITHUB_SHA" \
+            "-Dfeldera.parser.calcite=$calcite_revision" -cp "$classpath" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbe \
+            "$RUNNER_TEMP/parser-keywords.jsonl" "$RUNNER_TEMP/parser-keywords-java"
+          python3 crates/sql/scripts/compare_parsers.py \
+            "$RUNNER_TEMP/parser-keywords-rust" "$RUNNER_TEMP/parser-keywords-java" "$RUNNER_TEMP/parser-keyword-comparison.json"
+
+      - name: Record case-identified decorrelation shapes
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          mkdir -p "$RUNNER_TEMP/sql-correlation/shard-000"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.CorrelationProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-correlation/shard-000/output"
+          python3 crates/sql/scripts/correlation_inventory.py --case-corpus \
+            "$RUNNER_TEMP/sql-correlation" "$RUNNER_TEMP/sql-correlation-cases.json"
+
+      - name: Compare S2 and S3 file replay with direct compilation
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          cargo build --locked --release -p sql2dbsp
+          python3 crates/sql/scripts/validate_syntax_diagnostics.py "$RUNNER_TEMP/sql-syntax-diagnostics" \
+            --compiler "$target_dir/release/sql2dbsp" \
+            --classpath "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          java -ea -cp "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            org.dbsp.sqlCompiler.compiler.sql.tools.TableNameConflicts > "$RUNNER_TEMP/table-name-conflicts.txt"
+          cmp "$RUNNER_TEMP/table-name-conflicts.txt" crates/sql/sql-binder/src/program/reserved_table_names.txt
+          python3 crates/sql/scripts/validate_bound_programs.py "$RUNNER_TEMP/sql-bound-replay" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          python3 crates/sql/scripts/measure_submission_binding.py "$RUNNER_TEMP/sql-determinism-input.jsonl" \
+            "$RUNNER_TEMP/sql-submissions" --compiler "$target_dir/release/sql2dbsp"
+          python3 crates/sql/scripts/compare_submission_binding.py "$RUNNER_TEMP/sql-submissions" \
+            "$RUNNER_TEMP/sql-submissions-compared" --comparator "$target_dir/release/sql-difftest" --classpath "$classpath"
+          python3 crates/sql/scripts/compare_submission_lowering.py "$RUNNER_TEMP/sql-submissions" \
+            "$RUNNER_TEMP/sql-submissions-lowered" --compiler "$target_dir/release/sql2dbsp" \
+            --comparator "$target_dir/release/sql-difftest" --classpath "$classpath"
+          python3 crates/sql/scripts/validate_s1_lowering.py "$RUNNER_TEMP/sql-lower-s1" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          python3 crates/sql/scripts/validate_region_pass.py "$RUNNER_TEMP/sql-lower-s1/filtered_projection/rust.s2.json" \
+            "$RUNNER_TEMP/sql-region-pass" --compiler "$target_dir/release/sql2dbsp" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          python3 crates/sql/scripts/validate_s3_worker.py "$RUNNER_TEMP/sql-lower-s1" "$RUNNER_TEMP/sql-s3-worker" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest"
+          python3 crates/sql/scripts/validate_gen2_tail.py "$RUNNER_TEMP/sql-join-window-tail" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest" --classpath "$classpath"
+          python3 crates/sql/scripts/validate_table_lowering.py "$RUNNER_TEMP/sql-lower-replay" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest" \
+            --jar "$java_target/sql2dbsp-jar-with-dependencies.jar"
+          python3 crates/sql/scripts/validate_s2_replay.py "$RUNNER_TEMP/sql-s2-replay" --through-rust \
+            --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+          python3 crates/sql/scripts/validate_spike8.py "$RUNNER_TEMP/sql-spike8" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$classpath" --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+          python3 crates/sql/scripts/validate_optimizer_observations.py "$RUNNER_TEMP/sql-s2-replay" \
+            --compiler "$target_dir/release/sql2dbsp" --comparator "$target_dir/release/sql-difftest" \
+            > "$RUNNER_TEMP/sql-optimizer-observations.json"
+          python3 crates/sql/scripts/validate_s2_replay.py "$RUNNER_TEMP/sql-s3-replay" --stage S3 --through-rust \
+            --compiler "$target_dir/release/sql2dbsp" \
+            --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+
+      - name: Compare the exported CastTests corpus through S2
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Dfeldera.determinism.passCoverage=true" \
+          python3 crates/sql/scripts/run_s2_corpus.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-s2-corpus" \
+            --source-class org.dbsp.sqlCompiler.compiler.sql.simple.CastTests \
+            --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+
+          python3 crates/sql/scripts/s4_coverage.py \
+            "$RUNNER_TEMP/sql-s2-corpus/capture" "$RUNNER_TEMP/sql-s2-corpus/replay-s2" \
+            "$RUNNER_TEMP/sql-s2-corpus/s4-coverage.json"
+          python3 crates/sql/scripts/s4_inventory.py crates/sql/s4-inventory.json \
+            "$RUNNER_TEMP/sql-s2-corpus/s4-coverage.json" "$RUNNER_TEMP/sql-s2-corpus/s4-inventory.json"
+
+      - name: Compare the Rust optimizer with direct Java on the exported population
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo build --release --locked -p feldera-sql-difftest -p feldera-sql-opt-jni
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          python3 crates/sql/scripts/run_s2_corpus.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-mixed-optimizer" \
+            --rust-optimizer --comparator "$target_dir/release/sql-difftest" \
+            --classpath "$java_target/test-classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --timeout 5400
+
+      - name: Audit optimizer option and metadata activation paths
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S4PassInventory \
+            "$RUNNER_TEMP/sql-s4-construction.json"
+          python3 crates/sql/scripts/s4_fields.py "$RUNNER_TEMP/sql-s4-construction.json" \
+            "$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/src/main/java" "$RUNNER_TEMP/sql-s4-fields.json"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S4ActivationInputs \
+            "$RUNNER_TEMP/sql-s4-activation-input.jsonl"
+          JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Dfeldera.determinism.passCoverage=true" \
+          python3 crates/sql/scripts/run_s2_corpus.py \
+            "$RUNNER_TEMP/sql-s4-activation-input.jsonl" "$RUNNER_TEMP/sql-s4-activation" \
+            --comparator "$target_dir/release/sql-difftest" --classpath "$classpath" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+          python3 crates/sql/scripts/s4_coverage.py \
+            "$RUNNER_TEMP/sql-s4-activation/capture" "$RUNNER_TEMP/sql-s4-activation/replay-s2" \
+            "$RUNNER_TEMP/sql-s4-activation/s4-coverage.json"
+          python3 crates/sql/scripts/s4_inventory.py crates/sql/s4-inventory.json \
+            "$RUNNER_TEMP/sql-s4-activation/s4-coverage.json" "$RUNNER_TEMP/sql-s4-activation/s4-inventory.json" \
+            --constructed "$RUNNER_TEMP/sql-s4-construction.json"
+
+      - name: Inventory and replay all observed circuit forms
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          python3 crates/sql/scripts/run_seam_inventory.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-seam-inventory" \
+            --classpath "$classpath" --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+          for stage in S2 S3; do
+            python3 crates/sql/scripts/run_s2_corpus.py \
+              "$RUNNER_TEMP/sql-seam-inventory/$stage-selected.jsonl" "$RUNNER_TEMP/sql-seam-$stage-coverage" \
+              --stage "$stage" --classpath "$classpath" \
+              --comparator "$target_dir/release/sql-difftest" \
+              --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+          done
+
+      - name: Check the relational model contract
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo fmt --manifest-path crates/sql/sql-rel-model/Cargo.toml -- --check
+          cargo test --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml
+          cargo clippy --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --all-targets -- -D warnings
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          classpath="$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1LiteralProbe \
+            export-typed "$RUNNER_TEMP/sql-literal-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example literal_roundtrip -- \
+            "$RUNNER_TEMP/sql-literal-export/cases.jsonl" "$RUNNER_TEMP/sql-literal-rust"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1LiteralProbe \
+            verify-typed "$RUNNER_TEMP/sql-literal-rust/cases.jsonl" "$RUNNER_TEMP/sql-literal-import"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1TypeProbe \
+            export "$RUNNER_TEMP/sql-type-arena-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example type_roundtrip -- \
+            "$RUNNER_TEMP/sql-type-arena-export/types.json" "$RUNNER_TEMP/sql-type-arena-rust"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1TypeProbe \
+            verify "$RUNNER_TEMP/sql-type-arena-rust/types.json" "$RUNNER_TEMP/sql-type-arena-import"
+          java -ea -Xmx4g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1TypeCorpusProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-type-corpus-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example type_corpus_roundtrip -- \
+            "$RUNNER_TEMP/sql-type-corpus-export/cases.jsonl" "$RUNNER_TEMP/sql-type-corpus-rust"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1TypeCorpusImport \
+            "$RUNNER_TEMP/sql-type-corpus-export/cases.jsonl" "$RUNNER_TEMP/sql-type-corpus-rust/cases.jsonl" \
+            "$RUNNER_TEMP/sql-type-corpus-import"
+          java -ea -Xmx4g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1LiteralCorpusProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-literal-corpus-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example literal_corpus_roundtrip -- \
+            "$RUNNER_TEMP/sql-literal-corpus-export/cases.jsonl" "$RUNNER_TEMP/sql-literal-corpus-rust"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1LiteralCorpusImport \
+            "$RUNNER_TEMP/sql-literal-corpus-export/cases.jsonl" "$RUNNER_TEMP/sql-literal-corpus-rust/cases.jsonl" \
+            "$RUNNER_TEMP/sql-literal-corpus-import"
+
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1OperatorRegistryProbe \
+            > "$RUNNER_TEMP/sql-operator-registry.json"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionProbe \
+            export "$RUNNER_TEMP/sql-expression-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example expression_roundtrip -- \
+            "$RUNNER_TEMP/sql-expression-export/expressions.json" "$RUNNER_TEMP/sql-expression-rust"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionProbe \
+            verify "$RUNNER_TEMP/sql-expression-rust/expressions.json" "$RUNNER_TEMP/sql-expression-import"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1BuiltinOperatorRegistryProbe \
+            "$RUNNER_TEMP/sql-builtin-operators.json"
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionTransportProbe \
+            export "$RUNNER_TEMP/sql-expression-graphs-export"
+          mkdir "$RUNNER_TEMP/sql-expression-graphs-rust"
+          for expression in "$RUNNER_TEMP/sql-expression-graphs-export/"*.json; do
+            name=${expression##*/}
+            if [[ "$name" == complete.json ]]; then continue; fi
+            cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example expression_roundtrip -- \
+              "$expression" "$RUNNER_TEMP/sql-expression-graphs-rust/${name%.json}"
+          done
+          java -ea -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionTransportProbe \
+            verify "$RUNNER_TEMP/sql-expression-graphs-rust" "$RUNNER_TEMP/sql-expression-graphs-import"
+
+          java -ea -Xmx4g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionCorpusProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-expression-corpus-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example expression_corpus_roundtrip -- \
+            "$RUNNER_TEMP/sql-expression-corpus-export/cases.jsonl" "$RUNNER_TEMP/sql-expression-corpus-rust"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionCorpusImport \
+            "$RUNNER_TEMP/sql-expression-corpus-export/cases.jsonl" "$RUNNER_TEMP/sql-expression-corpus-rust/cases.jsonl" \
+            "$RUNNER_TEMP/sql-expression-corpus-import"
+
+          java -ea -Xmx4g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionCorpusProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-expression-fields-export" --all-fields
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example expression_corpus_roundtrip -- \
+            "$RUNNER_TEMP/sql-expression-fields-export/cases.jsonl" "$RUNNER_TEMP/sql-expression-fields-rust"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionCorpusImport \
+            "$RUNNER_TEMP/sql-expression-fields-export/cases.jsonl" "$RUNNER_TEMP/sql-expression-fields-rust/cases.jsonl" \
+            "$RUNNER_TEMP/sql-expression-fields-import"
+
+          java -ea -Xmx4g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1ExpressionSharingProbe \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-expression-objects-export" --objects
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example expression_objects_roundtrip -- \
+            "$RUNNER_TEMP/sql-expression-objects-export/cases.jsonl" "$RUNNER_TEMP/sql-expression-objects-rust"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1InputUsesImport \
+            "$RUNNER_TEMP/sql-expression-objects-export/cases.jsonl" "$RUNNER_TEMP/sql-expression-objects-rust/cases.jsonl" \
+            "$RUNNER_TEMP/sql-expression-objects-import"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1RelNodesProbe \
+            "$RUNNER_TEMP/sql-expression-objects-rust/cases.jsonl" "$RUNNER_TEMP/sql-relation-construction"
+
+          java -ea -Xmx4g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1Program \
+            export "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-statement-program-export"
+          cargo run --locked --manifest-path crates/sql/sql-rel-model/Cargo.toml --example program_roundtrip -- \
+            "$RUNNER_TEMP/sql-statement-program-export/cases.jsonl" "$RUNNER_TEMP/sql-statement-program-rust"
+          java -ea -Xmx2g -cp "$classpath" org.dbsp.sqlCompiler.compiler.sql.tools.S1Program \
+            import "$RUNNER_TEMP/sql-statement-program-rust/cases.jsonl" "$RUNNER_TEMP/sql-statement-program-import"
+          s1_target=$(cargo metadata --manifest-path crates/sql/sql-rel-model/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          python3 crates/sql/scripts/parser_s1_run.py \
+            "$RUNNER_TEMP/parser-semantic-corpus-inputs" "$RUNNER_TEMP/parser-s1-corpus" \
+            --classpath "$classpath" --decoder "$s1_target/debug/examples/program_roundtrip"
+
+      - name: Check native batch integration with DBSP
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo fmt --manifest-path crates/sql/native-dbsp-probe/Cargo.toml -- --check
+          cargo test --locked --manifest-path crates/sql/native-dbsp-probe/Cargo.toml
+          cargo clippy --locked --manifest-path crates/sql/native-dbsp-probe/Cargo.toml --all-targets -- -D warnings
+
+      - name: Check the native batch ABI spike
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo fmt --manifest-path crates/sql/native-probe/Cargo.toml -- --check
+          cargo test --locked --manifest-path crates/sql/native-probe/Cargo.toml
+          cargo clippy --locked --manifest-path crates/sql/native-probe/Cargo.toml --all-targets -- -D warnings
+          cargo build --locked --manifest-path crates/sql/native-probe/Cargo.toml --example integer_vectors
+          cargo build --locked -p feldera-sqllib --example native_integer_reference
+          native_target=$(cargo metadata --manifest-path crates/sql/native-probe/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          runtime_target=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          python3 crates/sql/scripts/run_native_probe.py "$RUNNER_TEMP/sql-native-probe" \
+            --probe "$native_target/debug/examples/integer_vectors" \
+            --runtime-reference "$runtime_target/debug/examples/native_integer_reference"
+
+      - name: Compare the Rust multiset analysis with Java
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path crates/sql/multiset-probe/Cargo.toml
+          cargo clippy --locked --manifest-path crates/sql/multiset-probe/Cargo.toml --all-targets -- -D warnings
+          cargo build --locked --manifest-path crates/sql/multiset-probe/Cargo.toml
+          probe_target=$(cargo metadata --manifest-path crates/sql/multiset-probe/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          python3 crates/sql/scripts/run_multiset_probe.py "$RUNNER_TEMP/sql-multiset-probe" \
+            --probe "$probe_target/debug/feldera-multiset-probe" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA"
+          python3 crates/sql/scripts/run_multiset_probe.py "$RUNNER_TEMP/sql-multiset-probe-sets" \
+            --probe "$probe_target/debug/feldera-multiset-probe" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --sets
+
+      - name: Compare constant folding with Java and the SQL runtime
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path crates/sql/fold-probe/Cargo.toml
+          cargo clippy --locked --manifest-path crates/sql/fold-probe/Cargo.toml --all-targets -- -D warnings
+          cargo build --locked --manifest-path crates/sql/fold-probe/Cargo.toml
+          cargo build --locked -p feldera-sqllib --example fold_reference
+          rustup target add wasm32-unknown-unknown x86_64-pc-windows-msvc
+          cargo build --locked --manifest-path crates/sql/fold-probe/Cargo.toml --lib --target wasm32-unknown-unknown
+          cargo build --locked --manifest-path crates/sql/fold-probe/Cargo.toml --lib --target x86_64-pc-windows-msvc
+          probe_target=$(cargo metadata --manifest-path crates/sql/fold-probe/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          runtime_target=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          python3 crates/sql/scripts/run_fold_probe.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-fold-probe" \
+            --stage S3 \
+            --semantics-profile legacy-janino-v1 \
+            --probe "$probe_target/debug/feldera-fold-probe" \
+            --runtime-reference "$runtime_target/debug/examples/fold_reference" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+
+      - name: Compare connector validation with Java
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path crates/sql/connector-probe/Cargo.toml
+          cargo clippy --locked --manifest-path crates/sql/connector-probe/Cargo.toml --all-targets -- -D warnings
+          cargo build --locked --manifest-path crates/sql/connector-probe/Cargo.toml
+          cargo build --locked -p feldera-types --example connector_schema
+          probe_target=$(cargo metadata --manifest-path crates/sql/connector-probe/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          runtime_target=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          python3 crates/sql/scripts/run_connector_probe.py "$RUNNER_TEMP/sql-connector-probe" \
+            --probe "$probe_target/debug/feldera-connector-probe" \
+            --runtime-schema "$runtime_target/debug/examples/connector_schema" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar"
+
+      - name: Check full-corpus determinism
+        if: ${{ (github.event_name == 'schedule' || inputs.full_determinism) && vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          cargo build --locked --release -p feldera-sql-difftest --bin sql-difftest
+          target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+          comparator="$target_dir/release/sql-difftest"
+          java_target="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target"
+          python3 crates/sql/scripts/run_determinism.py \
+            "$RUNNER_TEMP/sql-determinism-input.jsonl" "$RUNNER_TEMP/sql-determinism" \
+            --comparator "$comparator" \
+            --classpath "$java_target/test-classes:$java_target/classes:$java_target/sql2dbsp-jar-with-dependencies.jar" \
+            --producer "$GITHUB_SHA" --runtime "$GITHUB_SHA" --workers 4 --compress --verify-ir
+
+      - name: Preserve compiler corpus evidence
+        if: ${{ always() && vars.CI_DRY_RUN != 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sql-corpus-${{ runner.arch }}
+          path: |
+            ${{ runner.temp }}/sql-corpus
+            ${{ runner.temp }}/sql-corpus-summary.json
+            ${{ runner.temp }}/sql-type-probes.jsonl
+            ${{ runner.temp }}/sql-type-probe-counts.json
+            ${{ runner.temp }}/sql-type-goldens
+            ${{ runner.temp }}/sql-type-golden-summary.json
+            ${{ runner.temp }}/sql-type-derivation.jsonl
+            ${{ runner.temp }}/sql-type-derivation-comparison
+            ${{ runner.temp }}/sql-type-bindings
+            ${{ runner.temp }}/sql-type-binding-comparison
+            ${{ runner.temp }}/sql-type-s2
+            ${{ runner.temp }}/sql-type-s2-comparison
+            ${{ runner.temp }}/sql-diagnostics
+            ${{ runner.temp }}/sql-diagnostic-census.json
+            ${{ runner.temp }}/sql-direct-diagnostic-assertions.json
+            ${{ runner.temp }}/sql-diagnostic-templates.json
+            ${{ runner.temp }}/sql-diagnostic-template-matches.json
+            ${{ runner.temp }}/sql-diagnostic-expectation-attribution.json
+            ${{ runner.temp }}/sql-python-diagnostic-inputs.json
+            ${{ runner.temp }}/sql-python-diagnostic-results.jsonl
+            ${{ runner.temp }}/sql-python-diagnostics.json
+            ${{ runner.temp }}/sql-optimizer.jsonl
+            ${{ runner.temp }}/sql-optimizer-census.json
+            ${{ runner.temp }}/sql-mixed-optimizer
+            ${{ runner.temp }}/sql-rule-implementations.json
+            ${{ runner.temp }}/sql-rule-port-inventory.json
+            ${{ runner.temp }}/sql-optimizer-stage-contracts.json
+            ${{ runner.temp }}/sql-correlation-rule-shapes.json
+            ${{ runner.temp }}/sql-correlation
+            ${{ runner.temp }}/sql-correlation-cases.json
+            ${{ runner.temp }}/sql-validator-operators.json
+            ${{ runner.temp }}/sql-determinism
+            ${{ runner.temp }}/sql-determinism-input.jsonl
+            ${{ runner.temp }}/sql-s2-replay
+            ${{ runner.temp }}/sql-s3-replay
+            ${{ runner.temp }}/sql-s2-corpus
+            ${{ runner.temp }}/sql-s4-construction.json
+            ${{ runner.temp }}/sql-s4-fields.json
+            ${{ runner.temp }}/sql-s4-activation-input.jsonl
+            ${{ runner.temp }}/sql-s4-activation
+            ${{ runner.temp }}/sql-seam-inventory
+            ${{ runner.temp }}/sql-seam-S2-coverage
+            ${{ runner.temp }}/sql-seam-S3-coverage
+            ${{ runner.temp }}/sql-multiset-probe
+            ${{ runner.temp }}/sql-multiset-probe-sets
+            ${{ runner.temp }}/sql-native-probe
+            ${{ runner.temp }}/sql-literal-export
+            ${{ runner.temp }}/sql-literal-rust
+            ${{ runner.temp }}/sql-literal-import
+            ${{ runner.temp }}/sql-literal-corpus-export
+            ${{ runner.temp }}/sql-literal-corpus-rust
+            ${{ runner.temp }}/sql-literal-corpus-import
+            ${{ runner.temp }}/sql-expression-export
+            ${{ runner.temp }}/sql-expression-rust
+            ${{ runner.temp }}/sql-expression-import
+            ${{ runner.temp }}/sql-expression-corpus-export
+            ${{ runner.temp }}/sql-expression-corpus-rust
+            ${{ runner.temp }}/sql-expression-corpus-import
+            ${{ runner.temp }}/sql-expression-fields-export
+            ${{ runner.temp }}/sql-expression-fields-rust
+            ${{ runner.temp }}/sql-expression-fields-import
+            ${{ runner.temp }}/sql-input-uses-export
+            ${{ runner.temp }}/sql-input-uses-rust
+            ${{ runner.temp }}/sql-input-uses-import
+            ${{ runner.temp }}/sql-operator-registry.json
+            ${{ runner.temp }}/sql-builtin-operators.json
+            ${{ runner.temp }}/sql-expression-graphs-export
+            ${{ runner.temp }}/sql-expression-graphs-rust
+            ${{ runner.temp }}/sql-expression-graphs-import
+            ${{ runner.temp }}/sql-type-arena-export
+            ${{ runner.temp }}/sql-type-arena-rust
+            ${{ runner.temp }}/sql-type-arena-import
+            ${{ runner.temp }}/sql-type-corpus-export
+            ${{ runner.temp }}/sql-type-corpus-rust
+            ${{ runner.temp }}/sql-type-corpus-import
+            ${{ runner.temp }}/sql-connector-probe
+            ${{ runner.temp }}/sql-fold-probe
+            ${{ runner.temp }}/sql-fold-site-inventory.json
+            ${{ runner.temp }}/sql-submissions/complete.json
+            ${{ runner.temp }}/sql-submissions/cases.jsonl
+            ${{ runner.temp }}/sql-submissions-compared/complete.json
+            ${{ runner.temp }}/sql-submissions-lowered/complete.json
+            ${{ runner.temp }}/sql-join-window-tail/complete.json
+            ${{ runner.temp }}/sql-s3-worker/complete.json
+            ${{ runner.temp }}/sql-lower-s1/complete.json
+            ${{ runner.temp }}/parser-ast-inventory.json
+            ${{ runner.temp }}/parser-corpus
+            ${{ runner.temp }}/parser-syntax
+            ${{ runner.temp }}/parser-java-corpus
+            ${{ runner.temp }}/parser-java-syntax
+            ${{ runner.temp }}/parser-corpus-comparison.json
+            ${{ runner.temp }}/parser-syntax-comparison.json
+            ${{ runner.temp }}/parser-keywords.jsonl
+            ${{ runner.temp }}/parser-keyword-inventory.json
+            ${{ runner.temp }}/parser-keywords-rust
+            ${{ runner.temp }}/parser-keywords-java
+            ${{ runner.temp }}/parser-keyword-comparison.json
+            ${{ runner.temp }}/parser-adversarial-rust
+            ${{ runner.temp }}/parser-adversarial-java
+            ${{ runner.temp }}/parser-adversarial-comparison.json
+            ${{ runner.temp }}/parser-adversarial-semantic-inputs
+            ${{ runner.temp }}/parser-adversarial-semantic
+            ${{ runner.temp }}/parser-semantic-rust
+            ${{ runner.temp }}/parser-semantic-pairs.jsonl
+            ${{ runner.temp }}/parser-semantic-java
+            ${{ runner.temp }}/parser-semantic-corpus-inputs
+            ${{ runner.temp }}/parser-semantic-corpus
+            ${{ runner.temp }}/parser-s1-corpus
+            ${{ runner.temp }}/parser-diagnostics
+            ${{ runner.temp }}/parser-mutations
+          retention-days: 7
+          if-no-files-found: error
+
+  compare-with-base:
+    name: Compare compiler output with the merge base
+    runs-on: [gke-runners-amd64]
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Install the pinned Calcite dependencies
+        working-directory: ./sql-to-dbsp-compiler
+        env:
+          CALCITE_BUILD_DIR: ./calcite
+          GRADLE_HOME: /home/ubuntu/.gradle
+        run: ./build.sh -pl SQL-compiler
+
+      - name: Compare compiler output
+        run: sql-to-dbsp-compiler/compare-with-base.sh
+
+  shadow:
+    name: SQL compiler shadow integration
+    strategy:
+      matrix:
+        include:
+          - runner: [gke-runners-amd64]
+          - runner: [gke-runners-arm64]
+    runs-on: ${{ matrix.runner }}
+
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-4c59cc4f717bdd391dd0b00c65b65af61f35aee2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Run build.sh
+        run: ./build.sh -pl SQL-compiler
+        working-directory: ./sql-to-dbsp-compiler
+        env:
+          CALCITE_BUILD_DIR: ./calcite
+          GRADLE_HOME: /home/ubuntu/.gradle
+
+      - name: Run the shadow tests with the local compiler
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export FELDERA_SHADOW_TEST_JAR="$GITHUB_WORKSPACE/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar"
+          if [[ ! -s "$FELDERA_SHADOW_TEST_JAR" ]]; then
+            echo "The SQL compiler JAR is missing or empty. Check the Maven package output at $FELDERA_SHADOW_TEST_JAR." >&2
+            exit 1
+          fi
+          export WEBCONSOLE_BUILD_DIR="$RUNNER_TEMP/webconsole"
+          mkdir -p "$WEBCONSOLE_BUILD_DIR"
+          touch "$WEBCONSOLE_BUILD_DIR/index.html"
+          cargo build --locked -p sql2dbsp -p feldera-sql-opt-jni
+          target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+          export PATH="$target_dir/debug:$PATH"
+          cargo test --locked -p pipeline-manager --lib compiler::shadow -- --include-ignored --test-threads=1 | tee "$RUNNER_TEMP/shadow.log"
+          if ! grep -Eq '^test .*::real_java_shadow_is_bounded_and_does_not_publish \.\.\. ok$' "$RUNNER_TEMP/shadow.log"; then
+            echo "The real Java shadow test did not run. Check the ignored test name and the shadow filter." >&2
+            exit 1
+          fi
+          grep -Eq '^test .*::full_primary_matches_rust_optimizer_shadow_in_both_engines \.\.\. ok$' "$RUNNER_TEMP/shadow.log"

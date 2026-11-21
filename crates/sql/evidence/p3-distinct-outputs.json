@@ -1,0 +1,63 @@
+{
+  "scope": "Set outputs enabled on every 43rd case (starting at index 0) of each frozen engine population. Independent direct-Java exports supply schema and diagnostics for the changed option.",
+  "comparator_sha256": "663b840e19ed8e0f36ba6f05b260679067156d87b60407b5407b1d372938334a",
+  "optimizer_library_sha256": "9334a8fd367030863673a449007111fa870904dcf49ada825d0c86bcfc7c8e37",
+  "classic": {
+    "boundary": {
+      "cases": 200,
+      "mismatches": 0,
+      "population_sha256": "ce3eefc2c075d049a0b862d5747e35022b69fa1185c6c58c9bb67b37ec149864",
+      "result_shards_sha256": [
+        "53db8d287092636c54adbb989c3aff60f9f251b21c271da376253e52635f4bf9"
+      ],
+      "pass": "EnsureDistinctOutputs",
+      "invocations": 200,
+      "changed": 200,
+      "cases_without_placement": 0
+    },
+    "packaged": {
+      "cases": 200,
+      "population_sha256": "f922ae2816322c0f54b8cebe074a7db8c1ba2ec02276c3ee2ef3314e3a184538",
+      "mismatches": 0,
+      "shards": [
+        {
+          "manifest_sha256": "e3dff38d9a9d76b9d81f98419e88e5f49755f40ae34f7b7d83485a790cfb9a1a",
+          "records_sha256": "3af2d81c78bb43923b81d8969d356458aeae07113de55f89521bf450011d45d9"
+        },
+        {
+          "manifest_sha256": "77b1a1b8bcc4bbed836b23f74bd426cacb9c708178dc27d862cb214e31a31d2d",
+          "records_sha256": "d372f6b292a01eda163b292ff7e020a0ff7778a8fa1db58f9ccbeb61015abd8c"
+        }
+      ]
+    }
+  },
+  "gen2": {
+    "boundary": {
+      "cases": 199,
+      "mismatches": 0,
+      "population_sha256": "e12a85fb26f4ab3f66271cdf69604c7dc3f4322561f12c15b1c554523458f8da",
+      "result_shards_sha256": [
+        "00d97c20a20c4737c87ac8ce8b3662fb45df5a74eec3f411936e639d7122472c"
+      ],
+      "pass": "EnsureDistinctOutputs",
+      "invocations": 199,
+      "changed": 199,
+      "cases_without_placement": 0
+    },
+    "packaged": {
+      "cases": 199,
+      "population_sha256": "af6df95684e90f36ad08d8660cd3cf26775891449969005924a0b6af01cac123",
+      "mismatches": 0,
+      "shards": [
+        {
+          "manifest_sha256": "4b2ef28e5db6116f8047bddfa6f0e0bc8b16f96326b44d78dc2c9d131cc0766c",
+          "records_sha256": "2425cf4161ca4a229fc33e9af8d86e38c6fe0bc0c757ce8f3dea67dbb10d5c36"
+        },
+        {
+          "manifest_sha256": "3e29518de338b18b15a37b35cdf2c59f4666bc592019d93d33411349cd36f646",
+          "records_sha256": "6c4af2d4242a443adaee0eaba32fbf786a02d9e20701d267337036b11fe35acb"
+        }
+      ]
+    }
+  }
+}

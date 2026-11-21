@@ -11,6 +11,12 @@ import org.dbsp.util.Utilities;
 public class SetOperatorHashes extends CircuitVisitor {
     final MerkleOuter merkle;
 
+    public record ComputedHashes(boolean global, java.util.Map<Long, String> hashes) {}
+
+    public ComputedHashes computedHashes() {
+        return new ComputedHashes(this.merkle.includeInputs, this.merkle.hashesById(op -> true));
+    }
+
     public SetOperatorHashes(DBSPCompiler compiler, MerkleOuter merkle) {
         super(compiler);
         this.merkle = merkle;
@@ -19,6 +25,15 @@ public class SetOperatorHashes extends CircuitVisitor {
     @Override
     public void postorder(DBSPOperator operator) {
         HashString hash = Utilities.getExists(this.merkle.operatorHash, operator);
-        operator.annotations.add(new OperatorHash(hash, this.merkle.includeInputs));
+        OperatorHash replacement = new OperatorHash(hash, this.merkle.includeInputs);
+        // Rehashing a decoded S3 must replace stale ids while retaining annotation order.
+        var annotations = operator.annotations.annotations;
+        for (int i = 0; i < annotations.size(); i++) {
+            if (annotations.get(i) instanceof OperatorHash previous && previous.global == replacement.global) {
+                annotations.set(i, replacement);
+                return;
+            }
+        }
+        operator.annotations.add(replacement);
     }
 }

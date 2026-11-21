@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-sql-index-archive.json",
+  "scope": "Rust AdjustSqlIndex on directed signed array-index and map controls inside the original Java schedule.",
+  "strict_pass_graphs_equal": {
+    "classic": 8,
+    "gen2": 8
+  },
+  "final_s3_equal": {
+    "java_codec": {"classic": 8, "gen2": 8},
+    "rust_index": {"classic": 8, "gen2": 8},
+    "rust_index_and_both_chains": {"classic": 8, "gen2": 8}
+  },
+  "first_attempt": {
+    "strict_pass_graphs_equal": 14,
+    "difference": "The folded SAFE_OFFSET literal inherited the call origin instead of the index operand origin."
+  },
+  "runtime_executed": false
+}

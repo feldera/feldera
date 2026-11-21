@@ -69,7 +69,10 @@ public class DBSPTypeUuid extends DBSPTypeBaseType
     @SuppressWarnings("unused")
     public static DBSPTypeUuid fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeUuid.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeUuid.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeUuid(CalciteObject.EMPTY, mayBeNull);
     }
 
     @Override

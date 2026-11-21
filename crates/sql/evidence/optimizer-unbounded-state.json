@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-unbounded-state-archive.json",
+  "strict_diagnostic_snapshots_equal": {"classic": 50, "gen2": 50},
+  "warning_and_continuation_pairs": {"classic": 1, "gen2": 1},
+  "composed_placements": 67,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "scope": "Flat retention and output-distinct graph analysis in Rust, reusing Java's provenance and diagnostic renderer."
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-c13-nullable-sum-20261118-v1.tar.gz",
+  "bytes": 118862,
+  "sha256": "9df8210f8c46b69d15b4c9441e9aeb9c40894be5cced9fcb0ff2f7059c690e06",
+  "manifest_sha256": "a63af147b6900c1c9a997a01aa254391a4baeca4e1938c51a30897016cf01118",
+  "verified_files": 279,
+  "all_members_verified": true
+}

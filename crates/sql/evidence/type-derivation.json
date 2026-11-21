@@ -1,0 +1,720 @@
+{
+  "accepted": 60840,
+  "additional_probes": 41344,
+  "archive_index": "type-derivation-archive.json",
+  "binary_sha256": "060011084aed5064009ea561b2068e1d80b957977c7091bbe661612ab0668968",
+  "compared": [
+    "SQL acceptance",
+    "result SQL type including nullability and parameters"
+  ],
+  "complete_measurement": true,
+  "counts": {
+    "additional": {
+      "equal": 41344,
+      "unsupported": 42880
+    },
+    "rewritten": {
+      "equal": 42880,
+      "unsupported": 41344
+    },
+    "translated": {
+      "equal": 42880,
+      "unsupported": 41344
+    }
+  },
+  "full_c9_verified": false,
+  "function_probes": 42880,
+  "functions": 40,
+  "historical_java_provenance": "Original completed Java golden and manifest retained byte-for-byte. No exact original frozen classpath/source snapshot was recorded by that run; current Java reference sources are labeled separately and do not supply that missing provenance.",
+  "human_engineer_days": {
+    "repair": null,
+    "review": null,
+    "rewritten": null,
+    "translated": null
+  },
+  "java_compiler_bugs": 0,
+  "java_source_sha256": "274efe41faa75eccf5f2f7eb5b670218a446d4becfbc04b962a3517fa5aa7fc0",
+  "not_compared": [
+    "diagnostic parity",
+    "inserted casts",
+    "resolved function identity",
+    "runtime values"
+  ],
+  "operations": {
+    "*": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "+": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "-": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "/": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "<": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "=": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "ABS": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "ACOS": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "ARRAY_AGG": {
+      "additional": {
+        "equal": 64
+      },
+      "rewritten": {
+        "unsupported": 64
+      },
+      "translated": {
+        "unsupported": 64
+      }
+    },
+    "ASCII": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "ASIN": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "ATAN": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "ATAN2": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "AVG": {
+      "additional": {
+        "equal": 64
+      },
+      "rewritten": {
+        "unsupported": 64
+      },
+      "translated": {
+        "unsupported": 64
+      }
+    },
+    "CASE": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "CBRT": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "CEIL": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "CHAR_LENGTH": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "COALESCE": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "CONCAT": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "COS": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "COT": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "COUNT": {
+      "additional": {
+        "equal": 64
+      },
+      "rewritten": {
+        "unsupported": 64
+      },
+      "translated": {
+        "unsupported": 64
+      }
+    },
+    "DEGREES": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "EXCEPT ALL": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "EXP": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "FLOOR": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "INITCAP": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "INTERSECT ALL": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "LEFT": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "LENGTH": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "LN": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "LOG": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "LOG10": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "LOWER": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "MAX": {
+      "additional": {
+        "equal": 64
+      },
+      "rewritten": {
+        "unsupported": 64
+      },
+      "translated": {
+        "unsupported": 64
+      }
+    },
+    "MD5": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "MIN": {
+      "additional": {
+        "equal": 64
+      },
+      "rewritten": {
+        "unsupported": 64
+      },
+      "translated": {
+        "unsupported": 64
+      }
+    },
+    "MOD": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "NULLIF": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "OCTET_LENGTH": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "POWER": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "RADIANS": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "REPEAT": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "REVERSE": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "RIGHT": {
+      "additional": {
+        "unsupported": 4096
+      },
+      "rewritten": {
+        "equal": 4096
+      },
+      "translated": {
+        "equal": 4096
+      }
+    },
+    "ROUND": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "SIGN": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "SIN": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "SQRT": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "SUM": {
+      "additional": {
+        "equal": 64
+      },
+      "rewritten": {
+        "unsupported": 64
+      },
+      "translated": {
+        "unsupported": 64
+      }
+    },
+    "TAN": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "TRIM": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "TRUNCATE": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    },
+    "UNION ALL": {
+      "additional": {
+        "equal": 4096
+      },
+      "rewritten": {
+        "unsupported": 4096
+      },
+      "translated": {
+        "unsupported": 4096
+      }
+    },
+    "UPPER": {
+      "additional": {
+        "unsupported": 64
+      },
+      "rewritten": {
+        "equal": 64
+      },
+      "translated": {
+        "equal": 64
+      }
+    }
+  },
+  "prior_attempts": [
+    {
+      "cause": "DATE/TIMESTAMP arguments were widened before the original NULLIF/COALESCE operand checker rejected their distinct families.",
+      "function_acceptance_differences": 64,
+      "repaired": true,
+      "version": 1
+    },
+    {
+      "additional_acceptance_differences": 1408,
+      "additional_result_differences": 2408,
+      "causes": [
+        "Directional numeric/datetime least-restrictive rules for CASE/set operations",
+        "INTERSECT and EXCEPT-specific result nullability",
+        "ARRAY_AGG outer nullability follows input"
+      ],
+      "repaired": true,
+      "version": 2
+    }
+  ],
+  "probes": 84224,
+  "rejected": 23384,
+  "remaining": [
+    "Observed inserted casts and selected function identity comparison",
+    "Value vectors",
+    "Remaining type families from the generation rule",
+    "Measured human engineering cost comparison",
+    "Validator/coercion/SqlToRel mode disposition and independent maintainer acceptance",
+    "A/H equal-budget held-out binders and D1 decision"
+  ],
+  "runtime_verified": false,
+  "rust_outcomes_sha256": "9a5a67eb530ad3a5b2692e05e4a8d33882a1518fb7c8b6da9154c497f7da5a18",
+  "schema_version": 1,
+  "scope": "Declared scalar type inference: acceptance and result type; not full C9 or a binder",
+  "sources": {
+    "Cargo.lock": "a158a02e9db857bf854ed38971cb2db81f62c1538b6496455503492406e61945",
+    "Cargo.toml": "aa5c340fffc9a32937fd03dcc806b4559175415ee11e44e93148ecab70125d9b",
+    "README.md": "31b34ac86692528b8961f734b2211d86c5cfe93143c1bb552b5fab5acde63702",
+    "src/extras.rs": "efa8a8de27d02272feff7c20bfab1b0361e5db73ebbb480da7708dcbe37874eb",
+    "src/lib.rs": "28c3c43804373de3fff5dd997879b7bec92828ebdcf62d66e2cce40cfc88fcd4",
+    "src/main.rs": "5c3e568b59643918f1c343a75c88354fac71be342664ead486b307b130f21ac8",
+    "src/model.rs": "7bbea1f129758d5fe05297d8ee9271ce10d155cb2007a6c9381be19ee9a1cacd",
+    "src/rewritten.rs": "3d4db3c7c3bebb4af41eb62bc291b13fa9bc40e170287bd28de90013dd13915e",
+    "src/translated.rs": "e575d6a2f90c93c98917ef1089437023ca2a7dfef35458e692f97f8b29f505af",
+    "tests/additional.rs": "8d4488172502857ea86f911cb64390088da5999e79763620ba5514840f098b10",
+    "tests/protocol.rs": "66732c6f81ba631b806ea17635ecedd5f1bc2386ef3bc3b606f6e2229785f502",
+    "tests/review.rs": "0af372bc2de0fd0b7328170221d657500caf3fe8c7cdd09ba0fe3b0848e9c3a5"
+  },
+  "spike_5_complete": false,
+  "strategy_outcome_differences": 0,
+  "uncovered_probes": 0,
+  "validation": {
+    "clippy_all_targets_warnings_denied": true,
+    "environment": "Linux ARM64 devcontainer, Rust 1.99",
+    "fmt_check": true,
+    "python_tests": 7,
+    "remote_ci_run": false,
+    "rust_tests": 23,
+    "workflow_lint": true
+  }
+}

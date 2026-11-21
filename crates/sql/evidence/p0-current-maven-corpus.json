@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "archive_index": "p0-current-maven-corpus-archive.json",
+  "maven_profile": "Linux ARM64 offline devcontainer, CI=true, corpus-only tests, host-backed $SCRATCH",
+  "junit": {
+    "discovered": 3082,
+    "passed": 3003,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 79
+  },
+  "corpus_validation": {
+    "build_identity": [
+      "c6ede756d-local-p0-latest",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "not-executed"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8573,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10410,
+    "tests": 2628
+  },
+  "portable_validation": {
+    "build_identity": [
+      "c6ede756d-local-p0-latest",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "not-executed"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8573,
+    "portable_bags": 10402,
+    "portable_rows": 18789,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10410,
+    "tests": 2628
+  },
+  "rust_tests_passed": 44,
+  "rust_clippy": "passed on the isolated validator package",
+  "rustfmt": "passed for the checkout's SQL validator package",
+  "corpus_index_sha256": "2fa5cb958bf7d32606509eefd700c91c9850e4e0633f7a52d0482d3ebdcb25e1",
+  "local_corpus": "$REPO/.bench-results/p0-current-maven/corpus",
+  "additional_export_cases": [
+    "org.dbsp.sqlCompiler.compiler.sql.simple.FunctionIdentityRuntimeTests#arrayIdentityPreservesValuesAndNulls",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.FunctionIdentityRuntimeTests#binaryIdentityRetainsItsScalarType"
+  ],
+  "comparison_base": "p0-corpus-seams-v5",
+  "earlier_attempt_dispositions": [
+    "Container overlay $SCRATCH ran out of space; a host-backed scratch mount preserved the original circuit dump tests.",
+    "Non-CI Rust workspace check attempted a network-dependent Git checkout of deltalake; the standard CI profile skips that workspace check. Package formatting, tests and Clippy ran separately."
+  ]
+}

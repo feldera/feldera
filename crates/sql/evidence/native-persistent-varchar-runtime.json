@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-persistent-varchar-runtime-archive.json",
+  "scope": "Persistent four-worker join comparing the reference nullable VARCHAR row with the Cranelift archive adapter on the same circuit builder. Keys include inline strings, longer UTF-8 and embedded NUL. The paired signed deltas are checked against expected Z-sets.",
+  "pairs_per_batch_size_and_storage_profile": 21,
+  "checkpoint_pairs_equal": 84,
+  "checkpoint_scope": "Bytes of manifest and dependencies after DBSP compaction completes. Total allocated bytes also agree in all pairs.",
+  "rows": [
+    {"storage": "overlay", "batch": 256, "throughput": 0.983662, "step_p95": 1.032276, "peak_rss": 1.029915, "checkpoint": 1.0},
+    {"storage": "overlay", "batch": 2048, "throughput": 0.980103, "step_p95": 0.971370, "peak_rss": 1.021351, "checkpoint": 1.0},
+    {"storage": "host bind", "batch": 256, "throughput": 0.997862, "step_p95": 0.964488, "peak_rss": 1.028524, "checkpoint": 1.0},
+    {"storage": "host bind", "batch": 2048, "throughput": 0.995094, "step_p95": 1.010473, "peak_rss": 1.020589, "checkpoint": 1.0}
+  ],
+  "history": "Initial overlay throughput at 2,048 rows was 0.569563 of classic. Root-only native serialization removes transient vectors and writes payloads once. Moving ownership to the fixture scope and the archive resolver removes per-key Arc copies. Timings use the same writer without observation atomics. An uncompacted pair had additional native files. The final paired run records live checkpoint and allocated bytes separately."
+}

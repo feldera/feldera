@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-implicit-archive-20261118-v1.tar.gz",
+  "bytes": 125989294,
+  "sha256": "f8a9d0aa399b5df8a7ac6de81540ae59f1c3c6733f4f1e68b05c5b631a889e6a",
+  "manifest_sha256": "9f24c5f764baf6d6cf0ea25b8f635ba28409c21ff6c15565ad82167d73944416",
+  "verified_files": 16,
+  "all_members_verified": true
+}

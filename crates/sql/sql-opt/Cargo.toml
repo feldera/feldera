@@ -1,0 +1,15 @@
+[package]
+name = "feldera-sql-opt"
+description = "Circuit optimization passes for the Feldera SQL compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+indexmap.workspace = true
+feldera-sql-expr = { path = "../sql-expr" }
+feldera-sql-ir = { path = "../sql-ir" }
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }

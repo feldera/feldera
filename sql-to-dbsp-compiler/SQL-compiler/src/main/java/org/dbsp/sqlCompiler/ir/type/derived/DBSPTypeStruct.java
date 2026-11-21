@@ -135,7 +135,7 @@ public class DBSPTypeStruct extends DBSPType {
     public final String hashName;
     public final LinkedHashMap<ProgramIdentifier, Field> fields;
 
-    private String generateStructHashName(ProgramIdentifier name, List<DBSPTypeStruct.Field> fields) {
+    public static String generateStructHashName(ProgramIdentifier name, List<DBSPTypeStruct.Field> fields) {
         StringBuilder builder = new StringBuilder();
         builder.append(name.name());
         builder.append("[");

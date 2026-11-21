@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-decimal-join-execution-20261118-v1.tar.gz",
+  "bytes": 46252188,
+  "sha256": "a3ab3d2162d194e04ae8dc20f4886128003dd001ee173f34f3c8aa565936bcdc",
+  "manifest_sha256": "cf1bb7d56db3613339a60ad812ed9bc9b8e14a0c68ff8e1d2b9cfd18bed63f43",
+  "verified_files": 72,
+  "all_members_verified": true
+}

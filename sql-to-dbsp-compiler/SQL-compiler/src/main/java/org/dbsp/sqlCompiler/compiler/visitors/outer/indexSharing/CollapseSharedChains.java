@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /** Given a chain of Map/MapIndex operator, try to collapse it to a single MapIndex operator */
-class CollapseSharedChains extends CircuitCloneVisitor {
+public final class CollapseSharedChains extends CircuitCloneVisitor {
     final List<FindMapChains.MapChain> chains;
     /** Key is last operation in each chain */
     final Map<DBSPUnaryOperator, FindMapChains.MapChain> tail;
@@ -28,6 +28,10 @@ class CollapseSharedChains extends CircuitCloneVisitor {
         super(compiler, false);
         this.chains = chains;
         this.tail = new HashMap<>();
+    }
+
+    public List<List<Long>> chainIds() {
+        return this.chains.stream().map(c -> c.operators().stream().map(op -> op.id).toList()).toList();
     }
 
     @Override

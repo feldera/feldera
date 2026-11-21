@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-distinct-20261118-v1.tar.gz",
+  "bytes": 33469875,
+  "sha256": "2009c15eb0325f18dbb8eb4da5f0cb74cc579d6d0f9ac3b7531bc0a5d07a3bb7",
+  "manifest_sha256": "728976daedecec417ba7c7dc0b2bff4493482bb396c20df7c24ae5ac59ce158f",
+  "verified_files": 21726,
+  "all_members_verified": true
+}

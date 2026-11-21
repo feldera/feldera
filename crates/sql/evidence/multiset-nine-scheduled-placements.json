@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "scheduled_archive_index": "multiset-nine-scheduled-placements-archive.json",
+  "detached_s3_archive_index": "multiset-nine-pass-detached-tail-archive.json",
+  "detached_hybrid_chain_archive_index": "multiset-detached-hybrid-chain-archive.json",
+  "programs": 146,
+  "engine_modes": ["classic", "gen2"],
+  "outputs_are_sets": true,
+  "placements": {
+    "RemoveOperators#1": 292,
+    "EnsureDistinctOutputs": 292,
+    "PropagateEmptySources#1": 10,
+    "MergeSums": 46,
+    "RemoveViewOperators#1": 284,
+    "PropagateEmptySources#2": 6,
+    "RemoveIAfterD": 22,
+    "RemoveConstantFilters": 0,
+    "PropagateEmptySources#3": 0
+  },
+  "placement_counts_measure": "Graphs changed by the Java implementation at its scheduled position",
+  "scheduled_same_input_comparisons": 2628,
+  "scheduled_graph_changes": 952,
+  "scheduled_rust_tail_comparisons": 292,
+  "scheduled_java_codec_tail_comparisons": 292,
+  "detached_s3_rust_rewrite_and_java_tail_comparisons": 292,
+  "rust_s2_to_hybrid_to_rust_s3_to_java_tail_comparisons": 292,
+  "directed_cleanup_graph_comparisons": 6,
+  "differences": 0,
+  "complete_rust_prefix_replayed": false,
+  "human_hours_measured": false,
+  "scope": "The exact scheduled placements run without moving intervening Java transformations. Java retains unused-table warning emission and compiler-owned metadata. The detached S3 experiment rewrites the hybrid S3 with Rust dead-code removal before a fresh Java tail. The end-to-end chain also starts from Rust-pruned version-4 S2. The directed fixtures exercise literal filters and empty snapshot/delta and integration cases."
+}

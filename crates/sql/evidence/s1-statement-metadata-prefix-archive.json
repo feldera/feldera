@@ -1,0 +1,29 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-statement-metadata-prefix-20261118-v1.tar.gz",
+  "sha256": "c5daee4ac2aedafff2799fdc49f0f53317c2ded822669825ca42f60c63cb3be3",
+  "bytes": 73383139,
+  "certificates": [
+    "s1-statement-metadata-prefix.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-statement-metadata-prefix.json": [
+      {
+        "source_prefix": "before/",
+        "archive_prefix": "$SCRATCH/p0-rel-construction-v4/sources/"
+      },
+      {
+        "source_prefix": "after/",
+        "archive_prefix": "$SCRATCH/p0-statement-metadata-v2/comparison-release/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-statement-metadata-prefix.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Production statement-metadata refactor before/after full optimizer-prefix and backend comparison",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-statement-metadata-prefix-archive.json"
+}

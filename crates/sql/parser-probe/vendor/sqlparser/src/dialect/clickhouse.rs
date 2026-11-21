@@ -1,0 +1,222 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+use crate::dialect::Dialect;
+use crate::keywords::Keyword;
+use crate::parser::Parser;
+
+/// A [`Dialect`] for [ClickHouse](https://clickhouse.com/).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ClickHouseDialect {}
+
+impl Dialect for ClickHouseDialect {
+    fn is_identifier_start(&self, ch: char) -> bool {
+        // See https://clickhouse.com/docs/en/sql-reference/syntax/#syntax-identifiers
+        ch.is_ascii_lowercase() || ch.is_ascii_uppercase() || ch == '_'
+    }
+
+    /// Aliases are identifiers, quoted with `"` or a backtick, see
+    /// <https://clickhouse.com/docs/reference/syntax#identifiers>
+    fn supports_string_literal_column_alias(&self, _explicit: bool) -> bool {
+        false
+    }
+
+    /// See <https://clickhouse.com/docs/reference/syntax#identifiers>
+    fn supports_string_literal_table_alias(&self, _explicit: bool) -> bool {
+        false
+    }
+
+    fn is_identifier_part(&self, ch: char) -> bool {
+        // Undocumented, but the server accepts `$` in identifiers for MySQL compatibility
+        // since https://github.com/ClickHouse/ClickHouse/pull/14232
+        self.is_identifier_start(ch) || ch.is_ascii_digit() || ch == '$'
+    }
+
+    /// ClickHouse keywords are not reserved, so any of them can be a table name.
+    /// See <https://clickhouse.com/docs/en/sql-reference/syntax>
+    fn is_table_factor(&self, _kw: &Keyword, _parser: &mut Parser) -> bool {
+        true
+    }
+
+    /// ClickHouse accepts both backticks and double quotes, but its own
+    /// formatter emits backticks by default.
+    /// See <https://clickhouse.com/docs/en/sql-reference/syntax#identifiers>
+    fn identifier_quote_style(&self, _identifier: &str) -> Option<char> {
+        Some('`')
+    }
+
+    fn supports_string_literal_backslash_escape(&self) -> bool {
+        true
+    }
+
+    fn supports_select_wildcard_except(&self) -> bool {
+        true
+    }
+
+    fn describe_requires_table_keyword(&self) -> bool {
+        true
+    }
+
+    fn require_interval_qualifier(&self) -> bool {
+        true
+    }
+
+    fn supports_limit_comma(&self) -> bool {
+        true
+    }
+
+    fn supports_insert_table_function(&self) -> bool {
+        true
+    }
+
+    fn supports_insert_format(&self) -> bool {
+        true
+    }
+
+    fn supports_numeric_literal_underscores(&self) -> bool {
+        true
+    }
+
+    fn supports_partition_by_after_order_by(&self) -> bool {
+        true
+    }
+
+    fn supports_array_join_syntax(&self) -> bool {
+        true
+    }
+
+    fn supports_array_typedef_with_parentheses(&self) -> bool {
+        true
+    }
+
+    fn supports_map_typedef_with_parentheses(&self) -> bool {
+        true
+    }
+
+    // ClickHouse uses this for some FORMAT expressions in `INSERT` context, e.g. when inserting
+    // with FORMAT JSONEachRow a raw JSON key-value expression is valid and expected.
+    //
+    // [ClickHouse formats](https://clickhouse.com/docs/en/interfaces/formats)
+    fn supports_dictionary_syntax(&self) -> bool {
+        true
+    }
+
+    // See <https://clickhouse.com/docs/sql-reference/operators/in>
+    fn supports_in_unparenthesized_expr(&self) -> bool {
+        true
+    }
+
+    // See <https://clickhouse.com/docs/sql-reference/operators/in#distributed-subqueries>
+    fn supports_global_in(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/functions#higher-order-functions---operator-and-lambdaparams-expr-function>
+    fn supports_lambda_functions(&self) -> bool {
+        true
+    }
+
+    fn supports_from_first_select(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by>
+    fn supports_order_by_all(&self) -> bool {
+        true
+    }
+
+    // See <https://clickhouse.com/docs/en/sql-reference/aggregate-functions/grouping_function#grouping-sets>
+    fn supports_group_by_expr(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/group-by#rollup-modifier>
+    fn supports_group_by_with_modifier(&self) -> bool {
+        true
+    }
+
+    /// Supported since 2020.
+    /// See <https://clickhouse.com/docs/whats-new/changelog/2020#backward-incompatible-change-2>
+    fn supports_nested_comments(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/sql-reference/syntax#comments>
+    fn supports_hash_comment(&self) -> bool {
+        true
+    }
+
+    /// See <https://github.com/ClickHouse/ClickHouse/blob/master/src/Parsers/Lexer.cpp>
+    fn requires_hash_comment_space(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/optimize>
+    fn supports_optimize_table(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/prewhere>
+    fn supports_prewhere(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier>
+    fn supports_with_fill(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/limit-by>
+    fn supports_limit_by(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier>
+    fn supports_interpolate(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select#settings-in-select-query>
+    fn supports_settings(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/en/sql-reference/statements/select/format>
+    fn supports_select_format(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/sql-reference/statements/select#replace>
+    fn supports_select_wildcard_replace(&self) -> bool {
+        true
+    }
+
+    fn supports_comma_separated_trim(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/sql-reference/statements/alter/column>
+    fn supports_alter_column_position(&self) -> bool {
+        true
+    }
+
+    /// See <https://clickhouse.com/docs/sql-reference/data-types/tuple#addressing-tuple-elements>
+    fn supports_tuple_element_access(&self) -> bool {
+        true
+    }
+}

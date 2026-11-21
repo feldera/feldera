@@ -1,0 +1,46 @@
+{
+  "scope": "Expand stream aggregates using the scheduled append-only analysis and the compiler's weight binding. Compare output graphs, sharing, generated names and diagnostics against Java at the pass boundary.",
+  "comparator_sha256": "26e8f014263134f27ac6251972bb468cfbaaa6b45c6da03bf5f27df9791db5bb",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "0c001fd52f6b6d5db3a218cfd931b9acbce214f593ed1b151645a9529a7f2e96",
+      "b1428345b9db31031594eeb7842c45b5abf44263f02e88094d12dca423611cb9",
+      "b9edade1d2e6f9f53dd7a9d955d836e76b97bdd5537d0de608755aed0c0504de",
+      "732a976095faae9cb1249fdbcd911ca4bbc6b78252a25de2b64edb6f6f142087"
+    ],
+    "pass": "ExpandStreamAggregates",
+    "invocations": 8571,
+    "changed": 958,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "4a08115fb5a74a0bd5e5b1bd6676c25ce8ce02bb5f034e4c7357b63d1a01b52e",
+      "4cdf10a383b0a48456714448f2578fd06ef59dec799502b063172b8058f31dca",
+      "91899a16bbbf165ed51a14c49428b0e12ea126e4c7a35372b917f879222bebd1",
+      "734c7d488db026cd8fed3257a43e36eca611e65b144bb58d2bb4eeb58b5284b8"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "5a3efdbeeebf1ac03c8d435f6c3d351797837b5e1640aa31f86ae03b42da0c8e",
+      "690f38f308ca9811eb147a4aeb98b48df13535ab2d5ce29c32c78fd215de9495",
+      "ca9e342f37e863473860ff263862d8b670fd09bdfeef3cafc9e2ed6ffbb72556",
+      "28d82d43c6165a72d1a0804cbfbf80a957fd3cdad28a4f040b7c9bac490126cf"
+    ],
+    "pass": "ExpandStreamAggregates",
+    "invocations": 8527,
+    "changed": 949,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "dd5b3ee51d87dc9a215eb15b9cd4754b07fe771ed48244ab9ef5fc6f529770a9",
+      "3e452a4024e97b58cf162e01000bc88c26a42298190bb68ff5dcdc30ea5aaded",
+      "38967e31f5d706223fb76ce9f04a0d78bb0496529d301ec63691f038e45a1bb0",
+      "9d2ea2644f7499e768ac93f52dad6fccfc0a7aaf580d63bdbbc4e01264c67943"
+    ]
+  }
+}

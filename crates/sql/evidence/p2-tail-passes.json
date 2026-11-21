@@ -1,0 +1,146 @@
+{
+  "classic/constant/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/decimal/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/lateness/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/nested/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/projection/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/provenance/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/settings/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "classic/union/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/constant/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/decimal/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/lateness/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/nested/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/projection/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/provenance/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/settings/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ],
+  "gen2/union/direct/compilation-0000": [
+    "CheckHints",
+    "ComparatorDeclarations",
+    "Gen2Passes",
+    "CompactNames",
+    "MerkleHashes",
+    "TagRegions",
+    "CircuitStatistics"
+  ]
+}

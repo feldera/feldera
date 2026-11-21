@@ -1,0 +1,5360 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Program",
+  "type": "object",
+  "required": [
+    "catalog",
+    "context",
+    "diagnostics",
+    "expressions",
+    "id",
+    "producers",
+    "properties",
+    "schema_version",
+    "statements",
+    "table",
+    "table_scan_order"
+  ],
+  "properties": {
+    "catalog": {
+      "$ref": "#/definitions/Catalog"
+    },
+    "context": {
+      "$ref": "#/definitions/CompilationContext"
+    },
+    "diagnostics": {
+      "$ref": "#/definitions/FrontendDiagnostics"
+    },
+    "expressions": {
+      "$ref": "#/definitions/ExpressionObjects"
+    },
+    "id": {
+      "type": "string"
+    },
+    "producers": {
+      "$ref": "#/definitions/InputProducers"
+    },
+    "properties": {
+      "$ref": "#/definitions/RelationProperties"
+    },
+    "schema_version": {
+      "$ref": "#/definitions/ProgramVersion"
+    },
+    "statements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Statement"
+      }
+    },
+    "table": {
+      "$ref": "#/definitions/InputUses"
+    },
+    "table_scan_order": {
+      "description": "Relative table-scan creation order controls combined provenance. Entries are all scan relation IDs, not global allocation IDs.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Aggregate": {
+      "type": "object",
+      "required": [
+        "approximate",
+        "arguments",
+        "collation",
+        "direct_arguments",
+        "distinct",
+        "distinct_keys",
+        "filter",
+        "ignore_nulls",
+        "name",
+        "operator",
+        "position",
+        "ty"
+      ],
+      "properties": {
+        "approximate": {
+          "type": "boolean"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "collation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SortField"
+          }
+        },
+        "direct_arguments": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "distinct": {
+          "type": "boolean"
+        },
+        "distinct_keys": {
+          "$ref": "#/definitions/OptionalFields"
+        },
+        "filter": {
+          "$ref": "#/definitions/OptionalField"
+        },
+        "ignore_nulls": {
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/definitions/OptionalName"
+        },
+        "operator": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "position": {
+          "$ref": "#/definitions/Coordinates"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Attribute": {
+      "type": "object",
+      "required": [
+        "name",
+        "named_type",
+        "nullable"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "named_type": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nullable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Cardinality": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "unbounded"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "bounded"
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Catalog": {
+      "type": "object",
+      "required": [
+        "scans",
+        "schema_version",
+        "schemas",
+        "tables"
+      ],
+      "properties": {
+        "scans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Scan"
+          }
+        },
+        "schema_version": {
+          "$ref": "#/definitions/CatalogVersion"
+        },
+        "schemas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CatalogSchema"
+          }
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Table"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CatalogSchema": {
+      "type": "object",
+      "required": [
+        "columns",
+        "diagnostic",
+        "name",
+        "properties",
+        "source",
+        "values"
+      ],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Column"
+          }
+        },
+        "diagnostic": {
+          "$ref": "#/definitions/DiagnosticSource"
+        },
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "properties": {
+          "description": "Preserve the distinction between absent and present-but-empty properties.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Property"
+          }
+        },
+        "source": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "values": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "CatalogVersion": {
+      "type": "string",
+      "enum": [
+        "catalog-v1"
+      ]
+    },
+    "CharacterMetadata": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "charset",
+            "coercibility",
+            "collation",
+            "identity",
+            "kind"
+          ],
+          "properties": {
+            "charset": {
+              "type": "string"
+            },
+            "coercibility": {
+              "$ref": "#/definitions/Coercibility"
+            },
+            "collation": {
+              "type": "string"
+            },
+            "identity": {
+              "$ref": "#/definitions/CollationIdentity"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Coercibility": {
+      "type": "string",
+      "enum": [
+        "explicit",
+        "implicit",
+        "coercible",
+        "none"
+      ]
+    },
+    "CollationIdentity": {
+      "description": "Calcite omits built-in singleton collations from type digests, but includes separately constructed named collations with the same name and coercibility.",
+      "type": "string",
+      "enum": [
+        "builtin_implicit",
+        "builtin_coercible",
+        "named"
+      ]
+    },
+    "CollectionKind": {
+      "type": "string",
+      "enum": [
+        "ARRAY",
+        "MULTISET",
+        "MAP"
+      ]
+    },
+    "Column": {
+      "type": "object",
+      "required": [
+        "default_position",
+        "default_value",
+        "diagnostic",
+        "index",
+        "lateness",
+        "name",
+        "primary_key",
+        "ty",
+        "unused"
+      ],
+      "properties": {
+        "default_position": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Origin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default_value": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "diagnostic": {
+          "$ref": "#/definitions/DiagnosticSource"
+        },
+        "index": {
+          "description": "Zero-based position in the schema, within Calcite's signed-int domain.",
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "lateness": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "primary_key": {
+          "type": "boolean"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "unused": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ColumnMapping": {
+      "type": "object",
+      "required": [
+        "column",
+        "derived",
+        "input",
+        "output"
+      ],
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "derived": {
+          "type": "boolean"
+        },
+        "input": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "output": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ColumnMappings": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "mappings"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            },
+            "mappings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ColumnMapping"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CompilationContext": {
+      "type": "object",
+      "required": [
+        "input_source",
+        "options",
+        "sources",
+        "unresolved_view_lateness"
+      ],
+      "properties": {
+        "input_source": {
+          "$ref": "#/definitions/InputSource"
+        },
+        "options": {
+          "$ref": "#/definitions/CompilerOptions"
+        },
+        "sources": {
+          "$ref": "#/definitions/SourceState"
+        },
+        "unresolved_view_lateness": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PendingLateness"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CompilerOptions": {
+      "type": "object",
+      "required": [
+        "help",
+        "ioOptions",
+        "languageOptions"
+      ],
+      "properties": {
+        "help": {
+          "type": "boolean"
+        },
+        "ioOptions": {
+          "$ref": "#/definitions/IoOptions"
+        },
+        "languageOptions": {
+          "$ref": "#/definitions/LanguageOptions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ComponentPositions": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "positions"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            },
+            "positions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/NamePosition"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Coordinates": {
+      "description": "Parser coordinates are intrinsic; a statement/function use supplies source.",
+      "type": "object",
+      "required": [
+        "column",
+        "end_column",
+        "end_line",
+        "line",
+        "quoted"
+      ],
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "end_column": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "end_line": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "quoted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Correlation": {
+      "type": "object",
+      "required": [
+        "identity",
+        "row"
+      ],
+      "properties": {
+        "identity": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiagnosticBoundary": {
+      "type": "object",
+      "required": [
+        "context",
+        "messages"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/definitions/Origin"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FrontendWarning"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiagnosticSource": {
+      "description": "Text used in diagnostics, never an executable function body or SQL fallback.",
+      "type": "object",
+      "required": [
+        "empty",
+        "internal_text",
+        "origin",
+        "text"
+      ],
+      "properties": {
+        "empty": {
+          "type": "boolean"
+        },
+        "internal_text": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/definitions/Origin"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Direction": {
+      "type": "string",
+      "enum": [
+        "ASCENDING",
+        "STRICTLY_ASCENDING",
+        "DESCENDING",
+        "STRICTLY_DESCENDING",
+        "CLUSTERED"
+      ]
+    },
+    "Distribution": {
+      "type": "object",
+      "required": [
+        "distribution",
+        "keys"
+      ],
+      "properties": {
+        "distribution": {
+          "$ref": "#/definitions/DistributionKind"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DistributionKind": {
+      "type": "string",
+      "enum": [
+        "SINGLETON",
+        "HASH_DISTRIBUTED",
+        "RANGE_DISTRIBUTED",
+        "RANDOM_DISTRIBUTED",
+        "ROUND_ROBIN_DISTRIBUTED",
+        "BROADCAST_DISTRIBUTED",
+        "ANY"
+      ]
+    },
+    "ElementType": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "object_array",
+        "object"
+      ]
+    },
+    "Environment": {
+      "type": "object",
+      "required": [
+        "correlations",
+        "input",
+        "source"
+      ],
+      "properties": {
+        "correlations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Correlation"
+          }
+        },
+        "input": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "source": {
+          "$ref": "#/definitions/SourceContext"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExactDecimal": {
+      "description": "Integer text is a signed base-ten coefficient, without exponent notation. Scale is explicit and may be negative; decoding never routes through f64.",
+      "type": "object",
+      "required": [
+        "coefficient",
+        "scale"
+      ],
+      "properties": {
+        "coefficient": {
+          "type": "string"
+        },
+        "scale": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExpressionObject": {
+      "type": "object",
+      "required": [
+        "kind",
+        "position",
+        "ty"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/ObjectKind"
+        },
+        "position": {
+          "$ref": "#/definitions/ObjectPosition"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExpressionObjects": {
+      "type": "object",
+      "required": [
+        "environments",
+        "expressions",
+        "operator_objects",
+        "operators",
+        "relation_uses",
+        "schema_version",
+        "value_uses"
+      ],
+      "properties": {
+        "environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Environment"
+          }
+        },
+        "expressions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExpressionObject"
+          }
+        },
+        "operator_objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperatorObject"
+          }
+        },
+        "operators": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ResolvedOperator"
+          }
+        },
+        "relation_uses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RelationUse"
+          }
+        },
+        "schema_version": {
+          "$ref": "#/definitions/ObjectsVersion"
+        },
+        "value_uses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ValueUse"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Field": {
+      "type": "object",
+      "required": [
+        "name",
+        "ty"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/Identifier"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "FloatFlavor": {
+      "type": "string",
+      "enum": [
+        "real",
+        "float",
+        "double"
+      ]
+    },
+    "ForeignKey": {
+      "type": "object",
+      "required": [
+        "source",
+        "target"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/definitions/TableColumns"
+        },
+        "target": {
+          "$ref": "#/definitions/TableColumns"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FrontendDiagnostics": {
+      "type": "object",
+      "required": [
+        "after",
+        "before"
+      ],
+      "properties": {
+        "after": {
+          "$ref": "#/definitions/DiagnosticBoundary"
+        },
+        "before": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DiagnosticBoundary"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "FrontendWarning": {
+      "type": "object",
+      "required": [
+        "context",
+        "continuation",
+        "message",
+        "range",
+        "type"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/definitions/Origin"
+        },
+        "continuation": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/definitions/Origin"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FunctionBody": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "external"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Body in the whole-plan object graph. Its input/source environment is explicit and isolated from callers' lambda frames.",
+          "type": "object",
+          "required": [
+            "environment",
+            "kind",
+            "root",
+            "source"
+          ],
+          "properties": {
+            "environment": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "object_sql"
+              ]
+            },
+            "root": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "source": {
+              "$ref": "#/definitions/FunctionSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "input",
+            "kind",
+            "root",
+            "scope",
+            "source"
+          ],
+          "properties": {
+            "input": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "sql"
+              ]
+            },
+            "root": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "scope": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "source": {
+              "$ref": "#/definitions/FunctionSource"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "FunctionParameter": {
+      "type": "object",
+      "required": [
+        "index",
+        "name",
+        "ty"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "type": "string"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "FunctionSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "inherited"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "captured"
+              ]
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "GeometryRepresentation": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "sql"
+          ]
+        },
+        {
+          "description": "A planner host value. The adapter permits only its known geometry class.",
+          "type": "string",
+          "enum": [
+            "host"
+          ]
+        }
+      ]
+    },
+    "Hint": {
+      "type": "object",
+      "required": [
+        "inherit_path",
+        "list",
+        "name",
+        "options",
+        "position"
+      ],
+      "properties": {
+        "inherit_path": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "list": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "options": {
+          "description": "A map has no semantic order. The wire sorts keys and rejects duplicates.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HintOption"
+          }
+        },
+        "position": {
+          "$ref": "#/definitions/Coordinates"
+        }
+      },
+      "additionalProperties": false
+    },
+    "HintOption": {
+      "type": "object",
+      "required": [
+        "key",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Identifier": {
+      "description": "Retain the spelling and quoting independently. Case folding belongs to the binder and must not be repeated during decoding.",
+      "type": "object",
+      "required": [
+        "name",
+        "origin",
+        "quoted"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/definitions/Origin"
+        },
+        "quoted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "IndexColumn": {
+      "type": "object",
+      "required": [
+        "name",
+        "position"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "position": {
+          "$ref": "#/definitions/Coordinates"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputEnvironment": {
+      "type": "object",
+      "required": [
+        "owner",
+        "row"
+      ],
+      "properties": {
+        "owner": {
+          "$ref": "#/definitions/InputOwner"
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputOwner": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "inputs",
+            "kind"
+          ],
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "relations"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "inputs",
+            "kind",
+            "relation"
+          ],
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "window"
+              ]
+            },
+            "relation": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "function",
+            "kind"
+          ],
+          "properties": {
+            "function": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "function"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A statement value has no relational inputs or function parameters.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "constant"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "InputProducer": {
+      "type": "object",
+      "required": [
+        "constants",
+        "form",
+        "inputs",
+        "row"
+      ],
+      "properties": {
+        "constants": {
+          "description": "Window constants follow ordinary input fields in slot numbering.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "form": {
+          "$ref": "#/definitions/RelationForm"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputProducers": {
+      "type": "object",
+      "required": [
+        "function_rows",
+        "relations",
+        "roots",
+        "schema_version"
+      ],
+      "properties": {
+        "function_rows": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InputProducer"
+          }
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "schema_version": {
+          "$ref": "#/definitions/ProducerVersion"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputReference": {
+      "type": "object",
+      "required": [
+        "field",
+        "ty"
+      ],
+      "properties": {
+        "field": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputSource": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Stdin",
+            "File",
+            "API"
+          ]
+        },
+        {
+          "description": "Java's single-statement submission API leaves this marker unset.",
+          "type": "string",
+          "enum": [
+            "None"
+          ]
+        }
+      ]
+    },
+    "InputUse": {
+      "type": "object",
+      "required": [
+        "environment",
+        "object"
+      ],
+      "properties": {
+        "environment": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "object": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputUses": {
+      "type": "object",
+      "required": [
+        "environments",
+        "functions",
+        "objects",
+        "relations",
+        "schema_version",
+        "type_table",
+        "uses"
+      ],
+      "properties": {
+        "environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InputEnvironment"
+          }
+        },
+        "functions": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InputReference"
+          }
+        },
+        "relations": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "schema_version": {
+          "$ref": "#/definitions/InputUsesVersion"
+        },
+        "type_table": {
+          "$ref": "#/definitions/TypeTable"
+        },
+        "uses": {
+          "description": "One record per distinct object/environment pair, in first-use order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InputUse"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputUsesVersion": {
+      "type": "string",
+      "enum": [
+        "input-uses-v1"
+      ]
+    },
+    "IntegerWidth": {
+      "type": "string",
+      "enum": [
+        "i8",
+        "i16",
+        "i32",
+        "i64"
+      ]
+    },
+    "IntervalEnd": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "single"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "through"
+              ]
+            },
+            "value": {
+              "$ref": "#/definitions/IntervalUnit"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "IntervalStorageUnit": {
+      "type": "string",
+      "enum": [
+        "months",
+        "milliseconds"
+      ]
+    },
+    "IntervalUnit": {
+      "type": "string",
+      "enum": [
+        "year",
+        "quarter",
+        "month",
+        "week",
+        "day",
+        "hour",
+        "minute",
+        "second"
+      ]
+    },
+    "IoOptions": {
+      "type": "object",
+      "required": [
+        "anonymize",
+        "checkSerialization",
+        "correlatedColumns",
+        "crates",
+        "dumpCircuits",
+        "dumpProducerCommit",
+        "dumpRuntimeAbi",
+        "emitDataflow",
+        "emitHandles",
+        "emitJpeg",
+        "emitJsonErrors",
+        "emitJsonSchema",
+        "emitPlan",
+        "emitPng",
+        "emitSvg",
+        "enterprise",
+        "errorFile",
+        "format",
+        "gen2",
+        "inputCircuit",
+        "inputFile",
+        "interpreterJson",
+        "loggingLevel",
+        "noRust",
+        "nowStream",
+        "outputFile",
+        "quiet",
+        "raw",
+        "readS2",
+        "readS3",
+        "runtimePath",
+        "showVersion",
+        "skipCalciteOptimizations",
+        "sqlNames",
+        "testing",
+        "trimInputs",
+        "verbosity",
+        "writeS2",
+        "writeS3"
+      ],
+      "properties": {
+        "anonymize": {
+          "type": "boolean"
+        },
+        "checkSerialization": {
+          "type": "boolean"
+        },
+        "correlatedColumns": {
+          "type": "boolean"
+        },
+        "crates": {
+          "type": "string"
+        },
+        "dumpCircuits": {
+          "type": "string"
+        },
+        "dumpProducerCommit": {
+          "type": "string"
+        },
+        "dumpRuntimeAbi": {
+          "type": "string"
+        },
+        "emitDataflow": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emitHandles": {
+          "type": "boolean"
+        },
+        "emitJpeg": {
+          "type": "boolean"
+        },
+        "emitJsonErrors": {
+          "type": "boolean"
+        },
+        "emitJsonSchema": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emitPlan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emitPng": {
+          "type": "boolean"
+        },
+        "emitSvg": {
+          "type": "boolean"
+        },
+        "enterprise": {
+          "type": "boolean"
+        },
+        "errorFile": {
+          "type": "string"
+        },
+        "format": {
+          "type": "boolean"
+        },
+        "gen2": {
+          "type": "boolean"
+        },
+        "inputCircuit": {
+          "type": "boolean"
+        },
+        "inputFile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interpreterJson": {
+          "type": "boolean"
+        },
+        "loggingLevel": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "noRust": {
+          "type": "boolean"
+        },
+        "nowStream": {
+          "type": "boolean"
+        },
+        "outputFile": {
+          "type": "string"
+        },
+        "quiet": {
+          "type": "boolean"
+        },
+        "raw": {
+          "type": "boolean"
+        },
+        "readS2": {
+          "type": "boolean"
+        },
+        "readS3": {
+          "type": "boolean"
+        },
+        "runtimePath": {
+          "type": "string"
+        },
+        "showVersion": {
+          "type": "boolean"
+        },
+        "skipCalciteOptimizations": {
+          "type": "string"
+        },
+        "sqlNames": {
+          "type": "boolean"
+        },
+        "testing": {
+          "type": "boolean"
+        },
+        "trimInputs": {
+          "type": "boolean"
+        },
+        "verbosity": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "writeS2": {
+          "type": "string"
+        },
+        "writeS3": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "JoinKind": {
+      "type": "string",
+      "enum": [
+        "INNER",
+        "LEFT",
+        "RIGHT",
+        "FULL",
+        "SEMI",
+        "ANTI",
+        "ASOF",
+        "LEFT_ASOF"
+      ]
+    },
+    "LanguageOptions": {
+      "type": "object",
+      "required": [
+        "cteViews",
+        "generateInputForEveryTable",
+        "ignoreOrderBy",
+        "incrementalize",
+        "lenient",
+        "optimizationLevel",
+        "outputsAreSets",
+        "streaming",
+        "throwOnError",
+        "unaryPlusNoop",
+        "unrestrictedIOTypes"
+      ],
+      "properties": {
+        "cteViews": {
+          "type": "boolean"
+        },
+        "generateInputForEveryTable": {
+          "type": "boolean"
+        },
+        "ignoreOrderBy": {
+          "type": "boolean"
+        },
+        "incrementalize": {
+          "type": "boolean"
+        },
+        "lenient": {
+          "type": "boolean"
+        },
+        "optimizationLevel": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "outputsAreSets": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "throwOnError": {
+          "type": "boolean"
+        },
+        "unaryPlusNoop": {
+          "type": "boolean"
+        },
+        "unrestrictedIOTypes": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Literal": {
+      "type": "object",
+      "required": [
+        "origin",
+        "ty",
+        "value"
+      ],
+      "properties": {
+        "origin": {
+          "$ref": "#/definitions/Origin"
+        },
+        "ty": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "value": {
+          "$ref": "#/definitions/LiteralValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LiteralValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "boolean"
+              ]
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "integer"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "decimal"
+              ]
+            },
+            "value": {
+              "$ref": "#/definitions/ExactDecimal"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "bits",
+            "kind"
+          ],
+          "properties": {
+            "bits": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "float32"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "bits",
+            "kind"
+          ],
+          "properties": {
+            "bits": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "float64"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "character"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "binary"
+              ]
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "epoch_days",
+            "kind"
+          ],
+          "properties": {
+            "epoch_days": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "date"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "nanoseconds_since_midnight"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "time"
+              ]
+            },
+            "nanoseconds_since_midnight": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Local calendar fields; no implicit timezone conversion occurs here.",
+          "type": "object",
+          "required": [
+            "epoch_days",
+            "kind",
+            "nanoseconds_since_midnight"
+          ],
+          "properties": {
+            "epoch_days": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "timestamp"
+              ]
+            },
+            "nanoseconds_since_midnight": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "The instant and timezone presentation remain distinct.",
+          "type": "object",
+          "required": [
+            "epoch_seconds",
+            "kind",
+            "nanoseconds",
+            "zone"
+          ],
+          "properties": {
+            "epoch_seconds": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "timestamp_with_zone"
+              ]
+            },
+            "nanoseconds": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "zone": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Preserve a local calendar value and its zone label before resolving DST gaps or overlaps. This differs from an already resolved instant.",
+          "type": "object",
+          "required": [
+            "epoch_days",
+            "kind",
+            "nanoseconds_since_midnight",
+            "zone"
+          ],
+          "properties": {
+            "epoch_days": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "local_timestamp_with_zone"
+              ]
+            },
+            "nanoseconds_since_midnight": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "zone": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Calcite stores year/month intervals as months and day/time intervals as milliseconds. Preserve its exact decimal payload without rounding.",
+          "type": "object",
+          "required": [
+            "kind",
+            "unit",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            },
+            "unit": {
+              "$ref": "#/definitions/IntervalStorageUnit"
+            },
+            "value": {
+              "$ref": "#/definitions/ExactDecimal"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "JTS Point subset used by current Java lowering. Ordinates are raw IEEE bits in coordinate-sequence order; empty points have no ordinates.",
+          "type": "object",
+          "required": [
+            "dimension",
+            "kind",
+            "measures",
+            "ordinates",
+            "srid"
+          ],
+          "properties": {
+            "dimension": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "geometry_point"
+              ]
+            },
+            "measures": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
+            "ordinates": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "srid": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "bytes",
+            "kind"
+          ],
+          "properties": {
+            "bytes": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 16,
+              "minItems": 16
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uuid"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "elements",
+            "kind"
+          ],
+          "properties": {
+            "elements": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Literal"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "array"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Rows retain each field's own type, including typed NULLs.",
+          "type": "object",
+          "required": [
+            "fields",
+            "kind"
+          ],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Literal"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "row"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Preserve entry ordering and duplicates until the adapter proves its map semantics; deserialization must not collapse keys into a HashMap.",
+          "type": "object",
+          "required": [
+            "entries",
+            "kind"
+          ],
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/MapEntry"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "map"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "entries",
+            "kind"
+          ],
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/MultisetEntry"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "multiset"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "domain",
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "domain": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "symbol"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MapEntry": {
+      "type": "object",
+      "required": [
+        "key",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/Literal"
+        },
+        "value": {
+          "$ref": "#/definitions/Literal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MultisetEntry": {
+      "type": "object",
+      "required": [
+        "multiplicity",
+        "value"
+      ],
+      "properties": {
+        "multiplicity": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/definitions/Literal"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Name": {
+      "type": "object",
+      "required": [
+        "name",
+        "quoted"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "quoted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NamePosition": {
+      "type": "object",
+      "required": [
+        "origin",
+        "quoted"
+      ],
+      "properties": {
+        "origin": {
+          "$ref": "#/definitions/Origin"
+        },
+        "quoted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NullOrder": {
+      "type": "string",
+      "enum": [
+        "FIRST",
+        "LAST",
+        "UNSPECIFIED"
+      ]
+    },
+    "ObjectKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "object"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "input_ref"
+              ]
+            },
+            "object": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "identity",
+            "kind"
+          ],
+          "properties": {
+            "identity": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "correlation"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "literal"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "literal"
+              ]
+            },
+            "literal": {
+              "$ref": "#/definitions/Literal"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "null_as",
+            "ranges"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "search_argument"
+              ]
+            },
+            "null_as": {
+              "$ref": "#/definitions/UnknownAs"
+            },
+            "ranges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SearchRange"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "input",
+            "kind"
+          ],
+          "properties": {
+            "field": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "input": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "field_access"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "arguments",
+            "kind",
+            "operator"
+          ],
+          "properties": {
+            "arguments": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "call"
+              ]
+            },
+            "operator": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "arguments",
+            "distinct",
+            "ignore_nulls",
+            "kind",
+            "operator",
+            "ordinal"
+          ],
+          "properties": {
+            "arguments": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "distinct": {
+              "type": "boolean"
+            },
+            "ignore_nulls": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "window_aggregate"
+              ]
+            },
+            "operator": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "ordinal": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "index",
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "index": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "lambda_ref"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "body",
+            "kind",
+            "parameters"
+          ],
+          "properties": {
+            "body": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "lambda"
+              ]
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ObjectPosition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "internal",
+            "kind",
+            "position"
+          ],
+          "properties": {
+            "internal": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            },
+            "position": {
+              "$ref": "#/definitions/Coordinates"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ObjectsVersion": {
+      "type": "string",
+      "enum": [
+        "expression-objects-v2"
+      ]
+    },
+    "OperatorArena": {
+      "description": "Fragments own their aggregate operators; whole programs share the expression arena so declarations and every call retain the same operator identity.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "objects"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "owned"
+              ]
+            },
+            "objects": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/OperatorObject"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "shared"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "OperatorObject": {
+      "oneOf": [
+        {
+          "description": "A separately allocated, stateless SUM0. The standard-table singleton continues to use Builtin; equal fresh objects must not be interned.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "sum_zero"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "key",
+            "kind",
+            "registry",
+            "registry_version"
+          ],
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "builtin"
+              ]
+            },
+            "registry": {
+              "type": "string"
+            },
+            "registry_version": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "declared_type",
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "declared_type": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "type_constructor"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fields",
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "fields": {
+              "$ref": "#/definitions/RowFieldNames"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "row_constructor"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "linear",
+            "name",
+            "parameters",
+            "return_type"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "aggregate_function"
+              ]
+            },
+            "linear": {
+              "type": "boolean"
+            },
+            "name": {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/FunctionParameter"
+              }
+            },
+            "return_type": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "body",
+            "diagnostic",
+            "generated",
+            "kind",
+            "name",
+            "origin",
+            "parameters",
+            "return_type"
+          ],
+          "properties": {
+            "body": {
+              "$ref": "#/definitions/FunctionBody"
+            },
+            "diagnostic": {
+              "$ref": "#/definitions/DiagnosticSource"
+            },
+            "generated": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "function"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "origin": {
+              "$ref": "#/definitions/Origin"
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/FunctionParameter"
+              }
+            },
+            "return_type": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "OptionalField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "kind"
+          ],
+          "properties": {
+            "field": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "OptionalFields": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fields",
+            "kind"
+          ],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "OptionalName": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Origin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "end",
+            "kind",
+            "source",
+            "start"
+          ],
+          "properties": {
+            "end": {
+              "$ref": "#/definitions/Position"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "source"
+              ]
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start": {
+              "$ref": "#/definitions/Position"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A compiler-derived range with partially unknown coordinates. Zero is an explicit unknown component here, not a one-based source coordinate. Retain the known components and source identity without inventing text locations. Fully unknown positions use Absent instead.",
+          "type": "object",
+          "required": [
+            "end",
+            "kind",
+            "source",
+            "start"
+          ],
+          "properties": {
+            "end": {
+              "$ref": "#/definitions/Position"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "generated"
+              ]
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start": {
+              "$ref": "#/definitions/Position"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "PendingLateness": {
+      "type": "object",
+      "required": [
+        "range",
+        "view"
+      ],
+      "properties": {
+        "range": {
+          "$ref": "#/definitions/Origin"
+        },
+        "view": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Position": {
+      "type": "object",
+      "required": [
+        "column",
+        "line"
+      ],
+      "properties": {
+        "column": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        },
+        "line": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Precision": {
+      "description": "An omitted precision differs from an explicitly specified precision. This tagged representation also makes an accidental missing field an error.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "unspecified"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "specified"
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint32",
+              "maximum": 2147483647.0,
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProducerVersion": {
+      "type": "string",
+      "enum": [
+        "input-producers-v0"
+      ]
+    },
+    "ProgramVersion": {
+      "type": "string",
+      "enum": [
+        "statement-program-v5"
+      ]
+    },
+    "Properties": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "scan"
+              ]
+            },
+            "name": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "expressions",
+            "kind",
+            "variables"
+          ],
+          "properties": {
+            "expressions": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "project"
+              ]
+            },
+            "variables": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "variables"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "filter"
+              ]
+            },
+            "variables": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "tuples"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "values"
+              ]
+            },
+            "tuples": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "all",
+            "kind"
+          ],
+          "properties": {
+            "all": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "set"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "join_kind",
+            "kind",
+            "semi_join_done",
+            "system_fields",
+            "variables"
+          ],
+          "properties": {
+            "join_kind": {
+              "$ref": "#/definitions/JoinKind"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "join"
+              ]
+            },
+            "semi_join_done": {
+              "type": "boolean"
+            },
+            "system_fields": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "variables": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "calls",
+            "group",
+            "groups",
+            "kind"
+          ],
+          "properties": {
+            "calls": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Aggregate"
+              }
+            },
+            "group": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "aggregate"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "groups",
+            "kind"
+          ],
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/WindowGroup"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "window"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "collation",
+            "fetch",
+            "kind",
+            "offset"
+          ],
+          "properties": {
+            "collation": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SortField"
+              }
+            },
+            "fetch": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "sort"
+              ]
+            },
+            "offset": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "aliases",
+            "collections",
+            "expand_struct_fields",
+            "kind",
+            "ordinality",
+            "outer",
+            "passthrough"
+          ],
+          "properties": {
+            "aliases": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "collections": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "expand_struct_fields": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uncollect"
+              ]
+            },
+            "ordinality": {
+              "type": "boolean"
+            },
+            "outer": {
+              "type": "boolean"
+            },
+            "passthrough": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "collection",
+            "field",
+            "kind"
+          ],
+          "properties": {
+            "collection": {
+              "$ref": "#/definitions/CollectionKind"
+            },
+            "field": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "collect"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "correlation",
+            "join_kind",
+            "kind",
+            "required"
+          ],
+          "properties": {
+            "correlation": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "join_kind": {
+              "$ref": "#/definitions/JoinKind"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "correlate"
+              ]
+            },
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "element",
+            "kind",
+            "mappings"
+          ],
+          "properties": {
+            "element": {
+              "$ref": "#/definitions/ElementType"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "table_function"
+              ]
+            },
+            "mappings": {
+              "$ref": "#/definitions/ColumnMappings"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "PropertiesVersion": {
+      "type": "string",
+      "enum": [
+        "relation-properties-v1"
+      ]
+    },
+    "Property": {
+      "type": "object",
+      "required": [
+        "key_position",
+        "name",
+        "value",
+        "value_position"
+      ],
+      "properties": {
+        "key_position": {
+          "$ref": "#/definitions/Origin"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "value_position": {
+          "$ref": "#/definitions/Origin"
+        }
+      },
+      "additionalProperties": false
+    },
+    "QualifiedName": {
+      "description": "Retain both the overall name position and the optional component positions. An absent component-position list is distinct from a list of absent origins.",
+      "type": "object",
+      "required": [
+        "components",
+        "names",
+        "position"
+      ],
+      "properties": {
+        "components": {
+          "$ref": "#/definitions/ComponentPositions"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "position": {
+          "$ref": "#/definitions/NamePosition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelRoot": {
+      "type": "object",
+      "required": [
+        "collation",
+        "fields",
+        "hints",
+        "kind",
+        "relation",
+        "validated_type"
+      ],
+      "properties": {
+        "collation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SortField"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ResultField"
+          }
+        },
+        "hints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Hint"
+          }
+        },
+        "kind": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "validated_type": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelationForm": {
+      "type": "string",
+      "enum": [
+        "LogicalTableScan",
+        "JdbcTableScan",
+        "LogicalValues",
+        "LogicalProject",
+        "LogicalFilter",
+        "LogicalUnion",
+        "LogicalIntersect",
+        "LogicalMinus",
+        "LogicalJoin",
+        "LogicalAsofJoin",
+        "LogicalAggregate",
+        "LogicalWindow",
+        "LogicalSort",
+        "Uncollect",
+        "Collect",
+        "LogicalTableFunctionScan",
+        "LogicalCorrelate"
+      ]
+    },
+    "RelationMetadata": {
+      "type": "object",
+      "required": [
+        "hints",
+        "traits"
+      ],
+      "properties": {
+        "hints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Hint"
+          }
+        },
+        "traits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Trait"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelationProperties": {
+      "type": "object",
+      "required": [
+        "operators",
+        "relations",
+        "schema_version"
+      ],
+      "properties": {
+        "operators": {
+          "$ref": "#/definitions/OperatorArena"
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RelationProperty"
+          }
+        },
+        "schema_version": {
+          "$ref": "#/definitions/PropertiesVersion"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelationProperty": {
+      "type": "object",
+      "required": [
+        "fields",
+        "metadata"
+      ],
+      "properties": {
+        "fields": {
+          "$ref": "#/definitions/Properties"
+        },
+        "metadata": {
+          "$ref": "#/definitions/RelationMetadata"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelationUse": {
+      "description": "Several uses of a shared relation may supply different source/correlation environments. Its local expression object IDs remain identical in each use.",
+      "type": "object",
+      "required": [
+        "environment",
+        "relation",
+        "roots"
+      ],
+      "properties": {
+        "environment": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "relation": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolvedOperator": {
+      "description": "One instantiated signature references a resolved operator object. Different signatures may share that object. The model checks references and signatures, not builtin registry membership or independent SQL type inference.",
+      "type": "object",
+      "required": [
+        "object",
+        "parameters",
+        "result"
+      ],
+      "properties": {
+        "object": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "result": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResultField": {
+      "type": "object",
+      "required": [
+        "index",
+        "name"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RowFieldNames": {
+      "description": "A missing list means default names for every field. Null entries in an explicit list request the default name for those individual fields.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "names"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Scan": {
+      "type": "object",
+      "required": [
+        "relation",
+        "table"
+      ],
+      "properties": {
+        "relation": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "table": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "SearchBound": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "unbounded"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "closed",
+            "kind",
+            "literal"
+          ],
+          "properties": {
+            "closed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "bounded"
+              ]
+            },
+            "literal": {
+              "$ref": "#/definitions/Literal"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SearchRange": {
+      "type": "object",
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "properties": {
+        "lower": {
+          "$ref": "#/definitions/SearchBound"
+        },
+        "upper": {
+          "$ref": "#/definitions/SearchBound"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SortField": {
+      "type": "object",
+      "required": [
+        "direction",
+        "field",
+        "null_direction"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "field": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "null_direction": {
+          "$ref": "#/definitions/NullOrder"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Source": {
+      "type": "object",
+      "required": [
+        "name",
+        "text"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceContext": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "absent"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "present"
+              ]
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SourceState": {
+      "type": "object",
+      "required": [
+        "file",
+        "lines",
+        "program"
+      ],
+      "properties": {
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "program": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SqlType": {
+      "type": "object",
+      "required": [
+        "kind",
+        "nullable",
+        "origin"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/TypeKind"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "origin": {
+          "$ref": "#/definitions/Origin"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Statement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "foreign_keys",
+            "kind",
+            "name",
+            "name_diagnostic",
+            "schema",
+            "source"
+          ],
+          "properties": {
+            "foreign_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ForeignKey"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "create_table"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "name_diagnostic": {
+              "$ref": "#/definitions/DiagnosticSource"
+            },
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "emit_final",
+            "kind",
+            "name",
+            "root",
+            "schema",
+            "source",
+            "view_kind"
+          ],
+          "properties": {
+            "emit_final": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "create_view"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "root": {
+              "$ref": "#/definitions/RelRoot"
+            },
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            },
+            "view_kind": {
+              "$ref": "#/definitions/ViewKind"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name",
+            "schema",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "declare_view"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "if_exists",
+            "kind",
+            "name",
+            "source"
+          ],
+          "properties": {
+            "if_exists": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "drop_table"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "function",
+            "kind",
+            "source"
+          ],
+          "properties": {
+            "function": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "create_aggregate"
+              ]
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "function",
+            "kind",
+            "source"
+          ],
+          "properties": {
+            "function": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "create_function"
+              ]
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "attributes",
+            "kind",
+            "name",
+            "name_diagnostic",
+            "source",
+            "ty"
+          ],
+          "properties": {
+            "attributes": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/definitions/Attribute"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "create_type"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "name_diagnostic": {
+              "$ref": "#/definitions/DiagnosticSource"
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            },
+            "ty": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "columns",
+            "kind",
+            "name",
+            "name_position",
+            "source",
+            "target",
+            "target_position"
+          ],
+          "properties": {
+            "columns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/IndexColumn"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "create_index"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "name_position": {
+              "$ref": "#/definitions/Coordinates"
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            },
+            "target": {
+              "$ref": "#/definitions/Name"
+            },
+            "target_position": {
+              "$ref": "#/definitions/Coordinates"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name",
+            "source",
+            "values"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "set_option"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            },
+            "values": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "columns",
+            "insert",
+            "kind",
+            "name",
+            "relation",
+            "source"
+          ],
+          "properties": {
+            "columns": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/definitions/TargetColumn"
+              }
+            },
+            "insert": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "modify_table"
+              ]
+            },
+            "name": {
+              "$ref": "#/definitions/Name"
+            },
+            "relation": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "source": {
+              "$ref": "#/definitions/StatementSource"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StatementSource": {
+      "type": "object",
+      "required": [
+        "diagnostic_text",
+        "kind",
+        "position",
+        "position_internal",
+        "source",
+        "statement_text",
+        "visible"
+      ],
+      "properties": {
+        "diagnostic_text": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/definitions/Coordinates"
+        },
+        "position_internal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "statement_text": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StructKind": {
+      "type": "string",
+      "enum": [
+        "fully_qualified",
+        "peek_fields",
+        "peek_fields_default",
+        "peek_fields_no_expand"
+      ]
+    },
+    "Table": {
+      "type": "object",
+      "required": [
+        "name",
+        "row",
+        "schema"
+      ],
+      "properties": {
+        "name": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "schema": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "TableColumns": {
+      "type": "object",
+      "required": [
+        "columns",
+        "position",
+        "table"
+      ],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          }
+        },
+        "position": {
+          "$ref": "#/definitions/Origin"
+        },
+        "table": {
+          "$ref": "#/definitions/QualifiedName"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TargetColumn": {
+      "type": "object",
+      "required": [
+        "display_name",
+        "name",
+        "position"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/definitions/Name"
+        },
+        "position": {
+          "$ref": "#/definitions/Coordinates"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TimeZone": {
+      "type": "string",
+      "enum": [
+        "none",
+        "local",
+        "with_time_zone"
+      ]
+    },
+    "Trait": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "convention_none"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "values"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "collation"
+              ]
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/SortField"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "values"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "distribution"
+              ]
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Distribution"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TypeKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "boolean"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "signed",
+            "width"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "integer"
+              ]
+            },
+            "signed": {
+              "type": "boolean"
+            },
+            "width": {
+              "$ref": "#/definitions/IntegerWidth"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "explicit_scale",
+            "kind",
+            "precision",
+            "scale"
+          ],
+          "properties": {
+            "explicit_scale": {
+              "description": "Distinguish DECIMAL(p) from DECIMAL(p, 0) while retaining resolved scale.",
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "decimal"
+              ]
+            },
+            "precision": {
+              "type": "integer",
+              "format": "uint32",
+              "maximum": 2147483647.0,
+              "minimum": 0.0
+            },
+            "scale": {
+              "type": "integer",
+              "format": "uint32",
+              "maximum": 2147483647.0,
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "FLOAT and DOUBLE lower alike but remain distinct SQL type names.",
+          "type": "object",
+          "required": [
+            "flavor",
+            "kind"
+          ],
+          "properties": {
+            "flavor": {
+              "$ref": "#/definitions/FloatFlavor"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "float"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fixed",
+            "kind",
+            "length",
+            "metadata"
+          ],
+          "properties": {
+            "fixed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "character"
+              ]
+            },
+            "length": {
+              "$ref": "#/definitions/Precision"
+            },
+            "metadata": {
+              "$ref": "#/definitions/CharacterMetadata"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fixed",
+            "kind",
+            "length"
+          ],
+          "properties": {
+            "fixed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "binary"
+              ]
+            },
+            "length": {
+              "$ref": "#/definitions/Precision"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "cardinality",
+            "element",
+            "kind"
+          ],
+          "properties": {
+            "cardinality": {
+              "$ref": "#/definitions/Cardinality"
+            },
+            "element": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "array"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "cardinality",
+            "element",
+            "kind"
+          ],
+          "properties": {
+            "cardinality": {
+              "$ref": "#/definitions/Cardinality"
+            },
+            "element": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "multiset"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "key",
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "key": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "map"
+              ]
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fields",
+            "kind",
+            "struct_kind"
+          ],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Field"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "row"
+              ]
+            },
+            "struct_kind": {
+              "$ref": "#/definitions/StructKind"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name",
+            "representation"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "named"
+              ]
+            },
+            "name": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Identifier"
+              }
+            },
+            "representation": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "end",
+            "fractional_precision",
+            "kind",
+            "leading_precision",
+            "start"
+          ],
+          "properties": {
+            "end": {
+              "$ref": "#/definitions/IntervalEnd"
+            },
+            "fractional_precision": {
+              "$ref": "#/definitions/Precision"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            },
+            "leading_precision": {
+              "$ref": "#/definitions/Precision"
+            },
+            "start": {
+              "$ref": "#/definitions/IntervalUnit"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "date"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "precision",
+            "zone"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "time"
+              ]
+            },
+            "precision": {
+              "$ref": "#/definitions/Precision"
+            },
+            "zone": {
+              "$ref": "#/definitions/TimeZone"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "precision",
+            "zone"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "timestamp"
+              ]
+            },
+            "precision": {
+              "$ref": "#/definitions/Precision"
+            },
+            "zone": {
+              "$ref": "#/definitions/TimeZone"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "representation"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "geometry"
+              ]
+            },
+            "representation": {
+              "$ref": "#/definitions/GeometryRepresentation"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uuid"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "variant"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "These planner forms are represented explicitly, but are not a promise that arbitrary values of them can pass the lowering verifier.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "symbol"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "any"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "unknown"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Planner descriptors, not ordinary runtime scalar values.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "column_list"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "cursor"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "parameters",
+            "result"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "function"
+              ]
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            },
+            "result": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TypeSchemaVersion": {
+      "type": "string",
+      "enum": [
+        "types-v0"
+      ]
+    },
+    "TypeTable": {
+      "type": "object",
+      "required": [
+        "roots",
+        "schema_version",
+        "sources",
+        "types"
+      ],
+      "properties": {
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "schema_version": {
+          "$ref": "#/definitions/TypeSchemaVersion"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Source"
+          }
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SqlType"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "UnknownAs": {
+      "type": "string",
+      "enum": [
+        "TRUE",
+        "FALSE",
+        "UNKNOWN"
+      ]
+    },
+    "ValueUse": {
+      "description": "Ordered values owned by a statement or catalog declaration. Their ownership and slot meanings are checked by the enclosing program adapter.",
+      "type": "object",
+      "required": [
+        "environment",
+        "roots"
+      ],
+      "properties": {
+        "environment": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ViewKind": {
+      "type": "string",
+      "enum": [
+        "MATERIALIZED",
+        "LOCAL",
+        "STANDARD"
+      ]
+    },
+    "WindowBound": {
+      "type": "string",
+      "enum": [
+        "unbounded_preceding",
+        "preceding",
+        "current_row",
+        "following",
+        "unbounded_following"
+      ]
+    },
+    "WindowExclusion": {
+      "type": "string",
+      "enum": [
+        "EXCLUDE_NO_OTHER",
+        "EXCLUDE_CURRENT_ROW",
+        "EXCLUDE_TIES",
+        "EXCLUDE_GROUP"
+      ]
+    },
+    "WindowGroup": {
+      "type": "object",
+      "required": [
+        "calls",
+        "collation",
+        "exclusion",
+        "keys",
+        "lower",
+        "rows",
+        "upper"
+      ],
+      "properties": {
+        "calls": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "collation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SortField"
+          }
+        },
+        "exclusion": {
+          "$ref": "#/definitions/WindowExclusion"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "lower": {
+          "$ref": "#/definitions/WindowBound"
+        },
+        "rows": {
+          "type": "boolean"
+        },
+        "upper": {
+          "$ref": "#/definitions/WindowBound"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

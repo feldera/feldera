@@ -1,0 +1,19 @@
+[package]
+name = "feldera-sql-opt-jni"
+description = "In-process bridge from the Java optimizer to Rust circuit passes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+feldera-sql-ir = { path = "../sql-ir" }
+feldera-sql-opt = { path = "../sql-opt" }
+jni = "0.22.4"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,684 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "Raw parser field-policy repairs; no S1 equivalence or complete source-span claim",
+  "raw_directory": "$SCRATCH/p0-parser-review-repaired-v1",
+  "comparisons": {
+    "corpus": {
+      "cases": 8571,
+      "candidate": {
+        "both_accept": 33923,
+        "accepted_submissions": 33923,
+        "accepted_cases": 8479,
+        "java_only": 92,
+        "rejected_submissions": 92,
+        "rejected_cases": 92
+      },
+      "positions": {}
+    },
+    "keywords": {
+      "cases": 13660,
+      "candidate": {
+        "both_accept": 13147,
+        "accepted_submissions": 13147,
+        "accepted_cases": 13147,
+        "both_reject": 510,
+        "rejected_submissions": 513,
+        "rejected_cases": 513,
+        "java_only": 3
+      },
+      "positions": {
+        "java_rejected_submissions": 510,
+        "different": 410,
+        "equal": 100
+      }
+    },
+    "diagnostics": {
+      "cases": 1143,
+      "candidate": {
+        "both_accept": 2023,
+        "accepted_submissions": 2023,
+        "accepted_cases": 1120,
+        "java_only": 9,
+        "rejected_submissions": 23,
+        "rejected_cases": 23,
+        "both_reject": 14
+      },
+      "positions": {
+        "java_rejected_submissions": 14,
+        "java_position_missing": 2,
+        "equal": 10,
+        "different": 2
+      }
+    },
+    "adversarial": {
+      "cases": 745,
+      "candidate": {
+        "both_accept": 359,
+        "accepted_submissions": 359,
+        "accepted_cases": 359,
+        "java_only": 34,
+        "rejected_submissions": 386,
+        "rejected_cases": 386,
+        "both_reject": 352
+      },
+      "positions": {
+        "java_rejected_submissions": 352,
+        "different": 190,
+        "equal": 159,
+        "java_position_missing": 3
+      }
+    },
+    "mutations": {
+      "cases": 27760,
+      "candidate": {
+        "both_accept": 10260,
+        "accepted_submissions": 10260,
+        "accepted_cases": 10260,
+        "both_reject": 17226,
+        "rejected_submissions": 17500,
+        "rejected_cases": 17500,
+        "java_only": 274
+      },
+      "positions": {
+        "java_rejected_submissions": 17226,
+        "equal": 10370,
+        "different": 6856
+      }
+    },
+    "fields": {
+      "cases": 48,
+      "candidate": {
+        "both_reject": 39,
+        "rejected_submissions": 40,
+        "rejected_cases": 40,
+        "both_accept": 8,
+        "accepted_submissions": 8,
+        "accepted_cases": 8,
+        "java_only": 1
+      },
+      "positions": {
+        "java_rejected_submissions": 39,
+        "different": 33,
+        "equal": 6
+      }
+    },
+    "review": {
+      "cases": 60,
+      "candidate": {
+        "both_reject": 42,
+        "rejected_submissions": 45,
+        "rejected_cases": 45,
+        "both_accept": 15,
+        "accepted_submissions": 15,
+        "accepted_cases": 15,
+        "java_only": 3
+      },
+      "positions": {
+        "java_rejected_submissions": 42,
+        "different": 30,
+        "equal": 12
+      }
+    },
+    "controls": {
+      "cases": 12,
+      "candidate": {
+        "both_reject": 4,
+        "rejected_submissions": 5,
+        "rejected_cases": 5,
+        "both_accept": 7,
+        "accepted_submissions": 7,
+        "accepted_cases": 7,
+        "java_only": 1
+      },
+      "positions": {
+        "java_rejected_submissions": 4,
+        "different": 4
+      }
+    }
+  },
+  "preservation": {
+    "corpus": {
+      "counts": {
+        "submissions": 34015,
+        "control_measurements_identical": 102045,
+        "candidate_measurements_identical": 34015
+      },
+      "changes": []
+    },
+    "keywords": {
+      "counts": {
+        "submissions": 13660,
+        "control_measurements_identical": 40980,
+        "candidate_measurements_identical": 13660
+      },
+      "changes": []
+    },
+    "diagnostics": {
+      "counts": {
+        "submissions": 2046,
+        "control_measurements_identical": 6138,
+        "candidate_measurements_identical": 2046
+      },
+      "changes": []
+    },
+    "adversarial": {
+      "counts": {
+        "submissions": 745,
+        "control_measurements_identical": 2235,
+        "candidate_measurements_identical": 745
+      },
+      "changes": []
+    },
+    "mutations": {
+      "counts": {
+        "submissions": 27760,
+        "control_measurements_identical": 83280,
+        "candidate_measurements_identical": 27760
+      },
+      "changes": []
+    },
+    "fields": {
+      "counts": {
+        "submissions": 48,
+        "control_measurements_identical": 144,
+        "candidate_measurements_identical": 48
+      },
+      "changes": []
+    },
+    "review": {
+      "counts": {
+        "submissions": 60,
+        "control_measurements_identical": 180,
+        "new_rejections": 32,
+        "candidate_measurements_identical": 28
+      },
+      "changes": [
+        {
+          "id": "review/function_where",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT sum(x WHERE x>0) FROM t",
+          "error": "sql parser error: function argument clause is outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "review/function_limit",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT array_agg(x LIMIT 2) FROM t",
+          "error": "sql parser error: function argument clause is outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "review/function_overflow",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT f(x ON OVERFLOW ERROR) FROM t",
+          "error": "sql parser error: function argument clause is outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "review/function_json_null",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT f(x ABSENT ON NULL) FROM t",
+          "error": "sql parser error: function argument clause is outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "review/table_hints",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT * FROM t WITH (NOLOCK)",
+          "error": "sql parser error: table hint or ordinality clause is outside the Feldera grammar at Line: 1, Column: 15"
+        },
+        {
+          "id": "review/table_ordinality",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT * FROM t WITH ORDINALITY",
+          "error": "sql parser error: table hint or ordinality clause is outside the Feldera grammar at Line: 1, Column: 15"
+        },
+        {
+          "id": "review/table_fn_ordinality",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT * FROM f(1) WITH ORDINALITY",
+          "error": "sql parser error: table hint or ordinality clause is outside the Feldera grammar at Line: 1, Column: 15"
+        },
+        {
+          "id": "review/index_unique",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE UNIQUE INDEX i ON t(x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 21"
+        },
+        {
+          "id": "review/index_concurrent",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX CONCURRENTLY i ON t(x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 27"
+        },
+        {
+          "id": "review/index_async",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX ASYNC i ON t(x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 20"
+        },
+        {
+          "id": "review/index_if",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX IF NOT EXISTS i ON t(x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 28"
+        },
+        {
+          "id": "review/index_using",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t USING BTREE(x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_include",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t(x) INCLUDE(y)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_nulls",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t(x) NULLS DISTINCT",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_where",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t(x) WHERE x>0",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_order",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t(x DESC)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_expr",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t((x+1))",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_qualified",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX i ON t(t.x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/index_nameless",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE INDEX ON t(x)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 17"
+        },
+        {
+          "id": "review/create_table_like",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE TABLE t LIKE s",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/create_table_clone",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE TABLE t CLONE s",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/create_temp",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE TEMPORARY TABLE t(x INT)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 24"
+        },
+        {
+          "id": "review/create_unlogged",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE UNLOGGED TABLE t(x INT)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 23"
+        },
+        {
+          "id": "review/create_as",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE TABLE t AS SELECT 1 AS x",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 14"
+        },
+        {
+          "id": "review/view_if",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "CREATE VIEW IF NOT EXISTS v AS SELECT 1",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 27"
+        },
+        {
+          "id": "review/merge_delete",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "MERGE INTO t USING s ON t.x=s.x WHEN MATCHED THEN DELETE",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 1"
+        },
+        {
+          "id": "review/merge_condition",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "MERGE INTO t USING s ON t.x=s.x WHEN MATCHED AND s.x>0 THEN DELETE",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 1"
+        },
+        {
+          "id": "review/merge_target",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "MERGE INTO t USING s ON t.x=s.x WHEN NOT MATCHED BY TARGET THEN INSERT(x) VALUES(1)",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 1"
+        },
+        {
+          "id": "review/merge_source",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "MERGE INTO t USING s ON t.x=s.x WHEN NOT MATCHED BY SOURCE THEN DELETE",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 1"
+        },
+        {
+          "id": "review/window_groups",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT sum(x) OVER (GROUPS CURRENT ROW) FROM t",
+          "error": "sql parser error: GROUPS window frames are outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "review/array_slice",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT a[1:2] FROM t",
+          "error": "sql parser error: array slices are outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "review/like_any",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT x LIKE ANY ('a','b') FROM t",
+          "error": "sql parser error: LIKE ANY is outside the Feldera grammar at Line: 1, Column: 8"
+        }
+      ]
+    },
+    "controls": {
+      "counts": {
+        "submissions": 12,
+        "control_measurements_identical": 36,
+        "new_rejections": 4,
+        "candidate_measurements_identical": 8
+      },
+      "changes": [
+        {
+          "id": "0",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT LISTAGG(x ON OVERFLOW ERROR) FROM t",
+          "error": "sql parser error: function argument clause is outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "8",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "SELECT x ILIKE ANY ('a','b') FROM t",
+          "error": "sql parser error: LIKE ANY is outside the Feldera grammar at Line: 1, Column: 8"
+        },
+        {
+          "id": "9",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "MERGE INTO t USING s ON t.x=s.x WHEN MATCHED AND TRUE THEN UPDATE SET x=1",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 1"
+        },
+        {
+          "id": "11",
+          "submission": 0,
+          "before": "accepted",
+          "after": "rejected",
+          "sql": "MERGE INTO t USING s ON t.x=s.x WHEN MATCHED THEN UPDATE SET x=1 WHEN MATCHED THEN UPDATE SET x=2",
+          "error": "sql parser error: AST option is outside the Feldera query/DML grammar at Line: 1, Column: 1"
+        }
+      ]
+    }
+  },
+  "sources": {
+    "Cargo.lock": "d29e1ae4771e7e2590e55fa744420bf0ac0073a6c3cea9d96a6893233d70327b",
+    "Cargo.toml": "9a66b19dcbe20b754dc82e5e6b6764f8d6bae590bca9dacaf458ebfdfe36db6d",
+    "adversarial.jsonl": "457ba68c893e810f79af7609eb6ca12b3e1682f2396d7f8c8c27c1934d5e5e64",
+    "src/lib.rs": "2089cc57ee69c624b7c6454b871e122519ffda5d409e9bd8a773ea21b19633f8",
+    "src/main.rs": "d4a0a7bc415d82215db74559a72a6e0f6291280784b3212b4a5382612d875e0e",
+    "src/v062.rs": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+    "src/v064/aggregate_tests.rs": "07d30b47326fa3c10e507fe291e922849c371b11173fcd782b3b90136d800d39",
+    "src/v064/ast_fields.rs": "a4e80a56a7f3df544d03c0cc8b5803422cb8ea785f4f8a5c5925c13847d981d4",
+    "src/v064/attributes.rs": "bc3606de84bbd52381a8d858fe7ae79b8e8596c5c43373d768c791ced225c2d1",
+    "src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01",
+    "src/v064/diagnostic.rs": "3074f0b4db3ee0385d827ad833c5f1daa79f3b97c9e9d4fd4297d6ab07ee5354",
+    "src/v064/functions.rs": "9d82246249c7453c83ba80b0fca1c7c537bc241f8f3777b1ff8d749c5d5c9472",
+    "src/v064/grammar.rs": "07c48da409ccfb011d2fac6281140db22e5073d5672d6f64f9bed49117a6e2db",
+    "src/v064/hints.rs": "a9dd800e96563c206b64aa9afd99a0022aa1d11f443767c98ae38b1b8c136f48",
+    "src/v064/lateness.rs": "eb24b6816e7e362b94a31e17f2a9138a35f529f50779d948ba12a801bca70a01",
+    "src/v064/reject.rs": "40070342fcd5e91922b77bd4ce4a1dbfb4144cdb25a5fa8d5d74628583cf4843",
+    "src/v064/relations.rs": "8b7a9d8245edce5e336ccb944d46594e84459a356a0c6920c99ed8f7e5b543ad",
+    "src/v064/reserved.rs": "0a1abb3c8a0b6e1b146d8de43f9ee43c6cdbedec48ffc9da2c6ec7c0053cc497",
+    "src/v064/settings.rs": "8b209e3786a4380bb5af8b9d154b4c8c4221a5de8b28b440bee93cd200a12c2a",
+    "src/v064/statements.rs": "0969179228cc16c756477e357935e6a5f7128efab59b773fc5d27f39852ab87d",
+    "src/v064/temporal_types.rs": "f1fc7f3651fbaaaaa44acd7130c48c2e4197c579f388b9cdeec7c2a06db3b0a2",
+    "src/v064/trim.rs": "9772d783d8e35d7ceeb0a4043aed287bf86ed5ddc400d9b62af42487878e810e",
+    "src/v064/unicode.rs": "683ce73547907f712fecc2b0aca8e82c3ac98ab150fe02c8cf10ccb76996ae57",
+    "src/v064/values.rs": "af5afa44e1488b49c25e035bee19049d8f2f3c1f02c39b18fde6e033d9db88fb",
+    "src/v064.rs": "f2b9818207e2d66b66978d6c5d94d26d50c576035f7c4e5d3f0ff203dc90f1f2",
+    "syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "vendor/sqlparser/Cargo.lock": "790ec02b9f106c3a5508ae133e2475829ffa5d8410ce0b4f59c03ea4f3392503",
+    "vendor/sqlparser/Cargo.toml": "f39937579d8630409ad98b82af462cda69e893cdd7a3a922d80e22d24c12bdb3",
+    "vendor/sqlparser/src/ast/comments.rs": "a139b9dec0855a9f82c834a667ddfe6548e1afe94a3e3a8fbcea2a862cc51937",
+    "vendor/sqlparser/src/ast/data_type.rs": "3789b5b9840250e02542cec4f479eb5b8a55dc2c810afa391b1cb8d6f8f6a91f",
+    "vendor/sqlparser/src/ast/dcl.rs": "5929fc51faaa0a809ee0888f50a351d96908d0d55b952bc7e458854bffe92ae9",
+    "vendor/sqlparser/src/ast/ddl.rs": "b6a83938865749d14831a54f674b392b7547e260310438d4c304849ebeae68e2",
+    "vendor/sqlparser/src/ast/dml.rs": "da1cfc93945ed088b819dad7deda258279b63503fddabb84ee9615a8ad436c16",
+    "vendor/sqlparser/src/ast/helpers/attached_token.rs": "5600d2689f5643d177f23e9158c8a1b9e701a488b27336cc3b65ff93f566628a",
+    "vendor/sqlparser/src/ast/helpers/key_value_options.rs": "c8216f577f9d7e96e550f6790aa3ccec56cde60620a48e3069636a1dd589296c",
+    "vendor/sqlparser/src/ast/helpers/mod.rs": "51babef675e6388da59b847f1f81a53726e4975d7a18afd8cf8f431f2914b913",
+    "vendor/sqlparser/src/ast/helpers/stmt_create_database.rs": "592936616b01efbfe16642e95523983ad5decc614dda797bf09aca32e8ad7c87",
+    "vendor/sqlparser/src/ast/helpers/stmt_create_table.rs": "9ee988839144208883733d0c60f52a434bb03fdfd5245efa56bcdb2bdc82fe49",
+    "vendor/sqlparser/src/ast/helpers/stmt_data_loading.rs": "5051029866cc6dc2aa7c9e5268e446c9decff0abbd7d376d7df06e20e44fd795",
+    "vendor/sqlparser/src/ast/mod.rs": "8b57330f5d765bbd52124f48eaf56a5fa3a640c3ba976f1193cdf44b9ca5258b",
+    "vendor/sqlparser/src/ast/operator.rs": "546957910a5ac953409c21f4f83e8f410f4509bda913e0865e1b890aeb8ab87b",
+    "vendor/sqlparser/src/ast/query.rs": "4c71f7296d2b8584c33a75eb22b3acf87e5984dba146099a17f5f617d2b1202c",
+    "vendor/sqlparser/src/ast/spans.rs": "5f736f57abc18021cc68b0ab5a4ed292dc53106f1fab16f78721c15e27ea72de",
+    "vendor/sqlparser/src/ast/table_constraints.rs": "847dc5a02937a283a3842a2af54abc6eca867145773527c6d2ab7374c97542b5",
+    "vendor/sqlparser/src/ast/trigger.rs": "e8902b8057caced0a39dcdd1f03a565b88ff1e2c8a1d83fb16e9915ae58114db",
+    "vendor/sqlparser/src/ast/value.rs": "69367b8a0455902f10aa4b629c82f79d49696ac35007ca5bace59fab0ee98f4f",
+    "vendor/sqlparser/src/ast/visitor.rs": "8e8dc8076343f354af40c9f73a258f1b36655d792938d4558bcbb07a63b8d512",
+    "vendor/sqlparser/src/dialect/ansi.rs": "cfdc197695c76125447a5f45e3183869be3b477e7dc5b162a5b09b1e4353cd2e",
+    "vendor/sqlparser/src/dialect/bigquery.rs": "bb64916af8cf940ee4677cb26424dc9d4bbeff460a7ecaebd4921d92b2378a80",
+    "vendor/sqlparser/src/dialect/clickhouse.rs": "3e476d410548b8c2fa3af58a44e90eefbf7472d9682c51248a5fc5b0326ea19c",
+    "vendor/sqlparser/src/dialect/databricks.rs": "fac341b036294c3980de023e4c3fdebe42c8a36c6891a35b7622b67cea06553e",
+    "vendor/sqlparser/src/dialect/duckdb.rs": "5723cedaf97245eec187ea0809666289261225b5d73b4f7dd221812b64c46d74",
+    "vendor/sqlparser/src/dialect/generic.rs": "2d33a67c09abb0fccc287349a8245afbab78809084a5638ae82d03faa87071b4",
+    "vendor/sqlparser/src/dialect/hive.rs": "2135fa5cb41aee546d742f412c81b04a9ba6095068d33704dfe1e39e4389f5f0",
+    "vendor/sqlparser/src/dialect/mod.rs": "757682553cbe20f028d6c4d0fd748eadab165af5ae91f483de3aea7d9e6b9bb8",
+    "vendor/sqlparser/src/dialect/mssql.rs": "7c1782b8b34499cdde6abe43b20a30b76383e78d5d788ea3e660d2646d0864f5",
+    "vendor/sqlparser/src/dialect/mysql.rs": "e05fbdbfa74fb0462f3b49d603043c513775de3ab3cded02457a6204e545f6ed",
+    "vendor/sqlparser/src/dialect/oracle.rs": "ed1529920b992d26726f7a5274f5e6eeaced33d1c93e03f361d16ba3a83808dc",
+    "vendor/sqlparser/src/dialect/postgresql.rs": "055a4869516b86d0857cfaca5b04783671296b971dedf5b0824b31456e6253fb",
+    "vendor/sqlparser/src/dialect/redshift.rs": "047473eefca3ea01e60bcd79c70e7709ed961424cd46bd4aa11a6554a5a4e9d7",
+    "vendor/sqlparser/src/dialect/snowflake.rs": "5748e4a49d63b29ea0a42587cf6f981977810bcda4da426102d8c7a342d2c2a1",
+    "vendor/sqlparser/src/dialect/spark.rs": "cb5ee7f04d1e8a4d7ab2e8dcf77d20ce21d1af1fa35282459210d97f2ca7c2fe",
+    "vendor/sqlparser/src/dialect/sqlite.rs": "0ee50dfa8896f7e8b5b63b27741f323f8f2a121c19e75011b8cea0edc9269a9d",
+    "vendor/sqlparser/src/dialect/teradata.rs": "a4b1dab235fd3d0d12c8cd64af05b8e1b6bccc929afec8e44ec27a2e7ea0fac3",
+    "vendor/sqlparser/src/display_utils.rs": "bf16b070b9a9a89dd5e022b4177745da044ac7c4b4fdee5f8831a11c4f1124d0",
+    "vendor/sqlparser/src/keywords.rs": "b8bb01a2d4a2f0210ec3942c2c52e93a4a25ea804d8d68ab94f390877fa79c0f",
+    "vendor/sqlparser/src/lib.rs": "4671ee7aa82d74ee9989c61c26459e4601911bb70437ba5bcdbf98d47c9bc466",
+    "vendor/sqlparser/src/parser/alter.rs": "478c172d14a4fa5b63921917f9aaa0ab888e019d63190e7971b8294a3d8d8269",
+    "vendor/sqlparser/src/parser/merge.rs": "bd0b8a6da9396073ea0d66ec523e08807157f7e0f6768cc9976a9632fc4e033a",
+    "vendor/sqlparser/src/parser/mod.rs": "6662af9de0b0bbf934969f9735beb1ef8e3979bba0388ffa7072b9448b03b716",
+    "vendor/sqlparser/src/test_utils.rs": "4ab1294f241e5f66f90aa95614c01e2dc46dd9821ba8053db2fcf29e92e974f7",
+    "vendor/sqlparser/src/tokenizer.rs": "e88380f598c11f3e224c3a8bf314e29ed86a52cea1f01656d93a5c46d26cf8a7"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-parser-review-repaired-v1/adversarial/cases.jsonl": "e59b74b9e6dc6fa29680fc0073eba4784bf84c7e0f3f84fd40de120185d76a24",
+    "$SCRATCH/p0-parser-review-repaired-v1/adversarial/complete.json": "1f4c73c4f02660bf031aca630f47377ef9e4c257aa6ec6ba8b0ca8525b152d45",
+    "$SCRATCH/p0-parser-review-repaired-v1/adversarial-comparison.json": "df711168a807d704be004efe893754a25a13e4cbbf4735322f4e32ec58332dee",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-0.log": "0f9d296e44ed09c17987aef962590e73af5bbf8fa2e95aa32118ab6f70455b11",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-1.log": "50595e93d442e0ae609eccc31f9b382030a3e43c834094ad0c4dbc4ca13b7cf9",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-10.log": "ffddff24a0ffdbdb4b1a1edbadd16aba7028c9d1be2c901b46e0b59665536b03",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-11.log": "22bc55ad9155d13b4b4386bb9ef019767b8a493b827c3d10727dc8db6726c158",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-12.log": "b74cc17a4d9795f2986aacd335c47c658ddbd2b173af3034fb3751db9b72a27b",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-13.log": "2dcee9ba6b3446f6b2598cba88fe3fdd9ea74a3da43ea161c6be6bacf2ada5ba",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-14.log": "1b159845c551084ccc5825daabce128ca7c63dfcc6cae182fe9f291dea649684",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-15.log": "e8850bd1b9a9244850fb5f239f59d7d999efc59c0268f8fb012c760a3f031f97",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-2.log": "cf6a93617bffaeee40374b69f1cadcdca65dc51c4aaffe4bb3fb3ac870a4f231",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-3.log": "03ed1e90b6b15f54da1157ea58919fe8434fae90e0fb63c3faafff8c9e2a2305",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-4.log": "9bbe97469f8ecc3b5efc5f423601c75da278b79ec42267ad6b3724bc8437fbc1",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-5.log": "f73423fa028445ece04274bd8ba121a95c9abd14c044ec7f1cbaf5ab1c1df6d1",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-6.log": "1f4c73c4f02660bf031aca630f47377ef9e4c257aa6ec6ba8b0ca8525b152d45",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-7.log": "1491471e4a38732c7b4d2f1448bb890af5838c1e183c866b7fb5b90164ca7ad2",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-8.log": "14d6b5a99461eaa63ce77e15f535a7ef0dae950ec122b4aa7844db70f98defc0",
+    "$SCRATCH/p0-parser-review-repaired-v1/command-9.log": "3e8212aad9d49fae895c6abb4933cd39058ac628fe87eb5d9338bb379c362cbc",
+    "$SCRATCH/p0-parser-review-repaired-v1/commands.json": "9579009d55e97045c1ee1f962039eef578b1294cd52b1bc6da18ac4fc1f19022",
+    "$SCRATCH/p0-parser-review-repaired-v1/controls/cases.jsonl": "1e9c064f8ce749c7ad0e4b19f73a7a48efb8a46fc335d06c39f40ebb7e593ee2",
+    "$SCRATCH/p0-parser-review-repaired-v1/controls/complete.json": "1b159845c551084ccc5825daabce128ca7c63dfcc6cae182fe9f291dea649684",
+    "$SCRATCH/p0-parser-review-repaired-v1/controls-comparison.json": "9d8bbde4c264cfdd96847f14a6a061c52258662d9edb5801cbaad80fcdfb93ad",
+    "$SCRATCH/p0-parser-review-repaired-v1/corpus/cases.jsonl": "812a0962901566baab8cbdcc2295107aa420c0c0bf4c2ff8cd60d6c81e0e2c8f",
+    "$SCRATCH/p0-parser-review-repaired-v1/corpus/complete.json": "0f9d296e44ed09c17987aef962590e73af5bbf8fa2e95aa32118ab6f70455b11",
+    "$SCRATCH/p0-parser-review-repaired-v1/corpus-comparison.json": "27618c01e312cf52a8f6c26ee48d676c30e843c91bb343abe7a482f4c84fa90d",
+    "$SCRATCH/p0-parser-review-repaired-v1/diagnostics/cases.jsonl": "ae31eca1cfc30bc99e9c82e1231c44f7fbf0cda38e7929be619210ee019d6eb8",
+    "$SCRATCH/p0-parser-review-repaired-v1/diagnostics/complete.json": "9bbe97469f8ecc3b5efc5f423601c75da278b79ec42267ad6b3724bc8437fbc1",
+    "$SCRATCH/p0-parser-review-repaired-v1/diagnostics-comparison.json": "728eae20d95d940533bea0063db57404fca434a73083fc4decbc329a41f52415",
+    "$SCRATCH/p0-parser-review-repaired-v1/feldera-parser-probe": "e5fb3ddc760bb2f415f93e1c9ed6b684e2fe3134390385381a04b7e2c137cd7e",
+    "$SCRATCH/p0-parser-review-repaired-v1/fields/cases.jsonl": "7c47d673ac15c0036332782bdbdc407defd9b376d535c42448103cd99ba9673d",
+    "$SCRATCH/p0-parser-review-repaired-v1/fields/complete.json": "ffddff24a0ffdbdb4b1a1edbadd16aba7028c9d1be2c901b46e0b59665536b03",
+    "$SCRATCH/p0-parser-review-repaired-v1/fields-comparison.json": "d3afe4192b37d62eff1c658df726e5f4970b42e87e078929cacef7acc9c566f3",
+    "$SCRATCH/p0-parser-review-repaired-v1/keywords/cases.jsonl": "f013da03ab1b540cccf0e262c74ebb25ee3b45886a50ede67bfd794586c573de",
+    "$SCRATCH/p0-parser-review-repaired-v1/keywords/complete.json": "cf6a93617bffaeee40374b69f1cadcdca65dc51c4aaffe4bb3fb3ac870a4f231",
+    "$SCRATCH/p0-parser-review-repaired-v1/keywords-comparison.json": "901cc5ac80bf871244d07b8ba00906c54709424c922fbc6bff492c5524f8c677",
+    "$SCRATCH/p0-parser-review-repaired-v1/mutations/cases.jsonl": "8f152867d1da0ecd4880bf27fb97c8b6791dc5a8dcc1211c1a6c0f828b326f32",
+    "$SCRATCH/p0-parser-review-repaired-v1/mutations/complete.json": "14d6b5a99461eaa63ce77e15f535a7ef0dae950ec122b4aa7844db70f98defc0",
+    "$SCRATCH/p0-parser-review-repaired-v1/mutations-comparison.json": "6d54bbed1a2493a513726747c82eef380553f164c490920d8a606bd8d1eb3f52",
+    "$SCRATCH/p0-parser-review-repaired-v1/review/cases.jsonl": "85046f2da07204b537f9e0de07351b02bf706373647fc073dedc5d99e290f8f7",
+    "$SCRATCH/p0-parser-review-repaired-v1/review/complete.json": "b74cc17a4d9795f2986aacd335c47c658ddbd2b173af3034fb3751db9b72a27b",
+    "$SCRATCH/p0-parser-review-repaired-v1/review-comparison.json": "6bcee39f7d3046c9cee277eb135feb95eece2836dc4ee07a53dfbe797331c3e8",
+    "$SCRATCH/p0-parser-review-repaired-v1/sources.json": "899a470969f2a472eadd1253a862c9e5f46360802f7da8c7d034ffa9a1195bac",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-corpus/cases.jsonl": "ade37866d4eb7c0c0d0a194b006a914c4cf142b3bc5a511d8ffbf2337cabb921",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-corpus/complete.json": "d5d9acde8ca1b29c7fec3652e01a54d646ad4093252ac188554b389045ebdc33",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-keywords/cases.jsonl": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-keywords/complete.json": "c06d7059855391d10026c91dab655df36e22a9a1f058dcddc0168a92faf1ad43",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-diagnostics/cases.jsonl": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-diagnostics/complete.json": "a9cb12b706413eff5e24b83ace1fc8f7799011bba57f60d2d06f4e02d3bedb8a",
+    "$SCRATCH/p0-parser-fields-matrix-v1/java-adversarial/cases.jsonl": "a10ebbf56e05d5dd4cbc325d797e63f248660b302c7e36037e1b397c49f1e819",
+    "$SCRATCH/p0-parser-fields-matrix-v1/java-adversarial/complete.json": "570a183c391e5d413668a814628e30379982648244f590c6a028ece8b8e8e7e6",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-mutations/cases.jsonl": "fc990d6655d7f40866d71385c7c66e12c79d37ee86167603b54d1232ec377674",
+    "$SCRATCH/p0-parser-hints-matrix-v1/java-mutations/complete.json": "b4d1634ffeb12495925333baad36ebb4507585d122ce60281838e7f74035b176",
+    "$SCRATCH/p0-parser-field-policy-v1/java/cases.jsonl": "2b071b6ce57294b77844f51d757615f499335d4cd394130e40c68c7f1eaeb56b",
+    "$SCRATCH/p0-parser-field-policy-v1/java/complete.json": "779dbf55d4cc690c2ac5f72fba7056adc2fe7e9be91c30aafd7bd3e1d6f7f37b",
+    "$SCRATCH/p0-parser-review-v1/java/cases.jsonl": "77c348e16ba61d75ce9b32f46c89e74bd55b8f9e367c51cfe57b6b2859efcd82",
+    "$SCRATCH/p0-parser-review-v1/java/complete.json": "8c3c510b683f6c814492e60b6c782719f7ff2da6ed878f534d8dfbb2652218c5",
+    "$SCRATCH/p0-parser-review-controls-v1/java/cases.jsonl": "5679cb4c7c260a05ccc77f8a7964b83721fdfd20953e5be7174e486d88d803f1",
+    "$SCRATCH/p0-parser-review-controls-v1/java/complete.json": "7234454a55e7923c385ef7fe5dc84add72825d0e23021d25c85e9627ca93614f",
+    "$SCRATCH/p0-parser-review-v1/command-0.log": "c93b592153580e9d3ffb0398f6fad76af7c4baa040dd187452cef0d44abd541f",
+    "$SCRATCH/p0-parser-review-v1/command-1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "$SCRATCH/p0-parser-review-v1/command-2.log": "e2761f846dc0722a849f7af8374d3983d6563409d8f91d69db3ad3e524126f56",
+    "$SCRATCH/p0-parser-review-v1/commands.json": "dd62aeec085c5c46dbd9cbce5000cd32b75c8d3ed975cd35d3ce1988f23b8e1a",
+    "$SCRATCH/p0-parser-review-v1/comparison.json": "bf9e30e8fe13b8e650b788660b463908d1c90d01bb4e3eb0dbebf01a5ebc76cd",
+    "$SCRATCH/p0-parser-review-v1/input.jsonl": "ff6b9440bd94ef0124f278f5ec5b29213fef00eb8613b5b792b555e50b776c5e",
+    "$SCRATCH/p0-parser-review-v1/rust/cases.jsonl": "2b4267ec40a7465ac4a3a28d8cd12acc10dfa26a9317b4dba63695bf4745be86",
+    "$SCRATCH/p0-parser-review-v1/rust/complete.json": "c93b592153580e9d3ffb0398f6fad76af7c4baa040dd187452cef0d44abd541f",
+    "$SCRATCH/p0-parser-review-controls-v1/input.jsonl": "05d03b38b6f5306e78ed7930278d9242ad2841861595ac09e2e8d24797eb49ff",
+    "$SCRATCH/p0-parser-review-controls-v1/rust/cases.jsonl": "4a079d8764bd38ea0d072e8dd6928bf8c90d6a87493acb89269f1a0281d7ab39",
+    "$SCRATCH/p0-parser-review-controls-v1/rust/complete.json": "8bdd19fcd9e9b63782f3131cb63d5f934e4a1ccb5441cfd4609d507cbdac6f7e",
+    "$SCRATCH/p0-parser-fields-matrix-v2/corpus/cases.jsonl": "812a0962901566baab8cbdcc2295107aa420c0c0bf4c2ff8cd60d6c81e0e2c8f",
+    "$SCRATCH/p0-parser-fields-matrix-v2/corpus/complete.json": "d427e347faf54ba15018fba2b1e8cef814d650fa32c3a4ba415764e1db431534",
+    "$SCRATCH/p0-parser-fields-matrix-v2/keywords/cases.jsonl": "f013da03ab1b540cccf0e262c74ebb25ee3b45886a50ede67bfd794586c573de",
+    "$SCRATCH/p0-parser-fields-matrix-v2/keywords/complete.json": "d261b211ffc85783984d669e96ef94542866239c31c41818f08183ec60dd15b9",
+    "$SCRATCH/p0-parser-fields-matrix-v2/diagnostics/cases.jsonl": "ae31eca1cfc30bc99e9c82e1231c44f7fbf0cda38e7929be619210ee019d6eb8",
+    "$SCRATCH/p0-parser-fields-matrix-v2/diagnostics/complete.json": "cba2700bffa9aec67c1b3efe2062179621b9fa388c2eaa00ac96fb176252b0b4",
+    "$SCRATCH/p0-parser-fields-matrix-v2/adversarial/cases.jsonl": "e59b74b9e6dc6fa29680fc0073eba4784bf84c7e0f3f84fd40de120185d76a24",
+    "$SCRATCH/p0-parser-fields-matrix-v2/adversarial/complete.json": "e8f3d9f85d0727216d7c12e9b0ba1cafaf7558f53fb6dc95cd7ec00295151acc",
+    "$SCRATCH/p0-parser-fields-matrix-v2/mutations/cases.jsonl": "8f152867d1da0ecd4880bf27fb97c8b6791dc5a8dcc1211c1a6c0f828b326f32",
+    "$SCRATCH/p0-parser-fields-matrix-v2/mutations/complete.json": "2bd30142cb51f69d5df6eecd0bde3e1326e6dd62feeadc4b11aab414a27a1094",
+    "$SCRATCH/p0-parser-fields-matrix-v2/fields/cases.jsonl": "7c47d673ac15c0036332782bdbdc407defd9b376d535c42448103cd99ba9673d",
+    "$SCRATCH/p0-parser-fields-matrix-v2/fields/complete.json": "b43ba31660a73bfdb1e449ec6dc0a5c907cdd29da41c4d95be0ae50beac0605a",
+    "$SCRATCH/p0-determinism-v3-input.jsonl": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "$SCRATCH/p0-parser-mutations-v4/prepared/input.jsonl": "7c927c0ae110162e985138ddb54a59ea1cc6e47c3cf906c0f11b30650a37b31a",
+    "$SCRATCH/p0-parser-values-v1/diagnostics-input.jsonl": "8d81c2174eaba71a2b0ebc569c66afaec491f24a1a755f67f36dda450b306a82",
+    "$SCRATCH/p0-parser-fields-matrix-v1/adversarial-input.jsonl": "2234115849abd1b4643ed05dcc42b1205095938cfd5b55526c4cb33103d73557",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9",
+    "$SCRATCH/p0-parser-values-v1/keywords-input.jsonl": "5ef1e9a789b229c9233b18a2678cbd0f12080c4874a91af5aa134952da65eb76",
+    "$SCRATCH/p0-parser-field-policy-v1/input.jsonl": "51c3a5692f9e29f1c12308df262d0f0b2fb2a76f6bf4c11e119fa1c45047c3e6",
+    "$SCRATCH/p0-parser-review-build-v1/commands.json": "a9bb690094c3633d8041e2d58eecefa5a82ab59d78644fa1841c6a51cd2d1dda",
+    "$SCRATCH/p0-parser-review-build-v1/command-0.log": "4c6f5102e228e85d1107cee12e6ea5fd915b8cec07e6dd82ee8128e226322724",
+    "$SCRATCH/p0-parser-review-build-v1/command-1.log": "c489f8f2bcffa8f00499ad7f2ab677b7f01901285a0d35f2ce4ae40d8993bfd5",
+    "$SCRATCH/p0-parser-review-build-v1/command-2.log": "90c33c10b32832b2a7ad361d5f9d9b18c93631a548d53bd3f420c7aa15b28631",
+    "$SCRATCH/p0-parser-review-build-v1/feldera-parser-probe": "e5fb3ddc760bb2f415f93e1c9ed6b684e2fe3134390385381a04b7e2c137cd7e"
+  },
+  "failed_baselines": [
+    "$SCRATCH/p0-parser-review-v1",
+    "$SCRATCH/p0-parser-review-controls-v1"
+  ],
+  "java_classpath": "$SCRATCH/p0-diagnostics-v7/tools/classes:$SCRATCH/p0-diagnostics-v7/tools/test-classes:$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+  "review": "crates/sql/PARSER-REVIEW.md",
+  "tests": {
+    "cargo_test": "passed; see $SCRATCH/p0-parser-review-build-v1/command-0.log",
+    "clippy": "passed with -D warnings; see command-1.log",
+    "release": "passed; see command-2.log"
+  },
+  "classpaths": {
+    "$SCRATCH/p0-diagnostics-v7/tools/classes": "0987417408b6cfb301fd4a5dce2c14c2d4f8d65bef32c91189dfbe17c2f67908",
+    "$SCRATCH/p0-diagnostics-v7/tools/test-classes": "a83c0ce1d731698d6535a14a72bd03ec6ffb3de78dc98f809c5db1e2049a6a52",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  }
+}

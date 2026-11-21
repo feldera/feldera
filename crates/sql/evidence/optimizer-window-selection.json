@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-window-selection-archive.json",
+  "scope": "Rust window grouping and shared field assignment with Java closure fingerprints and graph reconstruction.",
+  "helper": "ShareWindowIntegrals",
+  "engine_results": [
+    {
+      "profile": "isolated",
+      "mode": "classic",
+      "summary": {
+        "cases": 55,
+        "active_cases": 3,
+        "groups": 4,
+        "candidates": 10,
+        "before_equal": 55,
+        "after_equal": 55
+      }
+    },
+    {
+      "profile": "isolated",
+      "mode": "gen2",
+      "summary": {
+        "cases": 55,
+        "active_cases": 3,
+        "groups": 4,
+        "candidates": 10,
+        "before_equal": 55,
+        "after_equal": 55
+      }
+    },
+    {
+      "profile": "combined",
+      "mode": "classic",
+      "summary": {
+        "cases": 45,
+        "active_cases": 0,
+        "groups": 0,
+        "candidates": 0,
+        "before_equal": 1,
+        "after_equal": 1
+      }
+    },
+    {
+      "profile": "combined",
+      "mode": "gen2",
+      "summary": {
+        "cases": 45,
+        "active_cases": 0,
+        "groups": 0,
+        "candidates": 0,
+        "before_equal": 1,
+        "after_equal": 1
+      }
+    },
+    {
+      "profile": "active-combined",
+      "mode": "classic",
+      "summary": {
+        "cases": 5,
+        "active_cases": 3,
+        "groups": 4,
+        "candidates": 10,
+        "before_equal": 0,
+        "after_equal": 0
+      }
+    },
+    {
+      "profile": "active-combined",
+      "mode": "gen2",
+      "summary": {
+        "cases": 5,
+        "active_cases": 3,
+        "groups": 4,
+        "candidates": 10,
+        "before_equal": 0,
+        "after_equal": 0
+      }
+    }
+  ],
+  "isolated_strict_graph_pairs": 110,
+  "final_s3_equal": 210,
+  "final_java_control_equal": 210,
+  "combined_original_boundary_differences": 98,
+  "combined_first_difference_by_field": {
+    "relId": 176,
+    "name": 20
+  },
+  "combined_scope": "Final outputs agree across all 100 cases in the composed schedule, including six active grouping cases. The strict boundary disagreements are counted separately.",
+  "rust_worker_sha256": "48392f93fdb24d9bfcb5bf642f476e3bab28db41b00c8c0dcf41e6180eeae60d"
+}

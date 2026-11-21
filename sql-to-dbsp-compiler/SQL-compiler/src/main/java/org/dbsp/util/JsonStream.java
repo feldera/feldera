@@ -1,6 +1,7 @@
 package org.dbsp.util;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 
 import java.util.ArrayList;
@@ -8,6 +9,7 @@ import java.util.List;
 
 /** API for producing JSON documents */
 public class JsonStream {
+    private static final ObjectWriter STRINGS = Utilities.deterministicObjectMapper().writerFor(String.class);
     static class Context implements ICastable {
         public int index;
     }
@@ -21,8 +23,39 @@ public class JsonStream {
     final List<Context> context = new ArrayList<>();
     private final IIndentStream stream;
 
+    public final boolean forCircuitSeam;
+
     public JsonStream(IIndentStream stream) {
+        this(stream, false);
+    }
+
+    public JsonStream(IIndentStream stream, boolean forCircuitSeam) {
         this.stream = stream;
+        this.forCircuitSeam = forCircuitSeam;
+    }
+
+    /** Compact snapshots go directly to JNI. Quote into the same buffer as
+     * the surrounding tokens so a string does not allocate a Jackson writer. */
+    public static JsonStream compactCircuit() {
+        var text = new StringBuilder();
+        return new JsonStream(new IndentStream(text).setIndentAmount(0), true) {
+            @Override
+            protected void writeString(String value) {
+                if (value == null) {
+                    text.append("null");
+                    return;
+                }
+                text.append('"');
+                JsonStringEncoder.getInstance().quoteAsString(value, text);
+                text.append('"');
+            }
+
+            @Override
+            protected void writeLabel(String label) {
+                this.writeString(label);
+                text.append(':');
+            }
+        };
     }
 
     public JsonStream append(SourcePositionRange range) {
@@ -41,13 +74,17 @@ public class JsonStream {
     
     public JsonStream append(String string) {
         this.value();
+        this.writeString(string);
+        return this;
+    }
+
+    protected void writeString(String string) {
         try {
-            string = Utilities.deterministicObjectMapper().writeValueAsString(string);
+            string = STRINGS.writeValueAsString(string);
             this.stream.append(string);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
-        return this;
     }
 
     @SuppressWarnings("UnusedReturnValue")
@@ -112,8 +149,12 @@ public class JsonStream {
             this.stream.increase();
         else
             this.stream.append(",");
-        this.stream.appendJsonLabelAndColon(label);
+        this.writeLabel(label);
         return this;
+    }
+
+    protected void writeLabel(String label) {
+        this.stream.appendJsonLabelAndColon(label);
     }
 
     public void beginArray() {

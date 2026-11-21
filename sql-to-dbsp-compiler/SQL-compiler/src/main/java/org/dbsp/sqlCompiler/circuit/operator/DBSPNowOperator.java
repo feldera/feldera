@@ -33,8 +33,12 @@ public final class DBSPNowOperator extends DBSPSimpleOperator implements ILinear
     }
 
     public DBSPNowOperator(CalciteRelNode node) {
-        super(node, "now", createFunction(node),
+        this(node, createFunction(node),
                 new DBSPTypeZSet(new DBSPTypeTuple(DBSPTypeTimestamp.create(node, false))));
+    }
+
+    private DBSPNowOperator(CalciteRelNode node, DBSPExpression function, DBSPTypeZSet outputType) {
+        super(node, "now", function, outputType);
     }
 
     @Override
@@ -56,7 +60,8 @@ public final class DBSPNowOperator extends DBSPSimpleOperator implements ILinear
     @SuppressWarnings("unused")
     public static DBSPNowOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        return new DBSPNowOperator(CalciteEmptyRel.INSTANCE)
+        return new DBSPNowOperator(CalciteEmptyRel.INSTANCE, info.getFunction(),
+                info.outputType().to(DBSPTypeZSet.class))
                 .addAnnotations(info.annotations(), DBSPNowOperator.class);
     }
 

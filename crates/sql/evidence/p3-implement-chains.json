@@ -1,0 +1,29 @@
+{
+  "scope": "Independent comparison of map, indexed-map and flat-map lowering at the scheduled ImplementChains boundary, including closure sharing, source locations and generated names.",
+  "comparator_sha256": "716d439f646c77b0e7e2363fcf6c833dfb062fe1ec77f24fb54ea15246409553",
+  "oracle_jar_sha256": "9757bfb51b614028ab056cde551afc5e5bf1ffc1aec4e7aea515b5c1bf8de429",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "8c747c2e22b2c28912a07ac90ccd61279343d0e3e36a87719278c27f1ea9160a"
+    ],
+    "pass": "ImplementChains",
+    "invocations": 8571,
+    "changed": 1749,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "82c0b14c490db7066273ca4c4af137237a0745b2625180b1d3f70a98b5840dc4"
+    ],
+    "pass": "ImplementChains",
+    "invocations": 8527,
+    "changed": 5574,
+    "cases_without_placement": 0
+  }
+}

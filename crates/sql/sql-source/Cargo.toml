@@ -1,0 +1,12 @@
+[package]
+name = "feldera-sql-source"
+description = "SQL source ranges and diagnostic rendering for Feldera"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }

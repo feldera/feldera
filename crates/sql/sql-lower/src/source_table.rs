@@ -1,0 +1,389 @@
+//! Lower SQL table rows to the DBSP named struct and its positional tuple.
+//! The compiler keeps separate type objects for declarations, streams and
+//! column metadata. Those identities remain distinct at the replay boundary.
+
+use super::Error;
+use feldera_sql_ir::build::CollectionType;
+use feldera_sql_ir::TypeKind as CircuitType;
+use feldera_sql_rel_model::{
+    catalog::{CatalogSchema, Name},
+    operators::DiagnosticSource,
+    source::Origin,
+    statements::StatementSource,
+    types::{FloatFlavor, IntegerWidth, Precision, SqlType, TimeZone, TypeKind, TypeTable},
+};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::fmt::Write;
+
+pub(super) struct Ids {
+    inner: u64,
+    operator: u64,
+    relation: usize,
+    origin: u64,
+    doubles: [Option<u64>; 2],
+    bools: [Option<u64>; 2],
+}
+
+impl Ids {
+    pub(super) fn after(graph: &Value, scan_count: usize) -> Self {
+        fn next(value: &Value) -> u64 {
+            match value {
+                Value::Object(obj) => obj
+                    .get("id")
+                    .and_then(Value::as_u64)
+                    .map_or(0, |n| n + 1)
+                    .max(obj.values().map(next).max().unwrap_or(0)),
+                Value::Array(values) => values.iter().map(next).max().unwrap_or(0),
+                _ => 0,
+            }
+        }
+        let ops = graph["allOperators"].as_array().expect("system operators");
+        Self {
+            inner: next(graph),
+            relation: scan_count,
+            doubles: [None; 2],
+            bools: [None; 2],
+            operator: ops
+                .iter()
+                .filter_map(|n| n["id"].as_u64())
+                .max()
+                .unwrap_or(0)
+                + 1,
+            origin: ops
+                .iter()
+                .map(|n| next(&n["provenance"]))
+                .max()
+                .unwrap_or(0),
+        }
+    }
+
+    /// Detached S1 allocates every table scan before constructing its consumers.
+    pub(super) fn next_relation(&mut self) -> usize {
+        let id = self.relation;
+        self.relation += 1;
+        id
+    }
+
+    pub(super) fn next_operator(&mut self) -> u64 {
+        let id = self.operator;
+        self.operator += 1;
+        id
+    }
+
+    pub(super) fn next_origin(&mut self) -> u64 {
+        let id = self.origin;
+        self.origin += 1;
+        id
+    }
+
+    pub(super) fn boolean(&mut self, nullable: bool) -> Value {
+        if let Some(id) = self.bools[usize::from(nullable)] {
+            return json!({"node":id});
+        }
+        self.bools[usize::from(nullable)] = Some(self.inner);
+        let mut ty = self.generated("DBSPTypeBool");
+        ty["singleton"] = true.into();
+        ty["code"] = "BOOL".into();
+        ty["mayBeNull"] = nullable.into();
+        ty
+    }
+
+    fn next_inner(&mut self) -> u64 {
+        let id = self.inner;
+        self.inner += 1;
+        id
+    }
+
+    pub(super) fn generated(&mut self, class: &str) -> Value {
+        let id = self.next_inner();
+        json!({"class":class, "id":id, "sourceEmpty":true})
+    }
+
+    pub(super) fn node(&mut self, class: &str, position: &Value) -> Value {
+        let id = self.next_inner();
+        json!({"class":class, "id":id, "sourceEmpty":false, "position":position})
+    }
+}
+
+pub(super) fn range(line: u32, column: u32, end_line: u32, end_column: u32) -> Value {
+    json!({"start_line_number":line, "start_column":column, "end_line_number":end_line, "end_column":end_column})
+}
+
+fn location(origin: &Origin) -> Value {
+    match origin {
+        Origin::Absent {} => range(0, 0, 0, 0),
+        Origin::Source { start, end, .. } | Origin::Generated { start, end, .. } => {
+            range(start.line, start.column, end.line, end.column)
+        }
+    }
+}
+
+pub(super) fn name(identifier: &Name) -> Value {
+    json!({"name":identifier.name, "isQuoted":identifier.quoted})
+}
+
+struct Scalar {
+    class: CircuitType,
+    code: String,
+    short: String,
+    properties: Value,
+    column: Value,
+    nullable: bool,
+}
+
+impl Scalar {
+    fn lower(ty: &SqlType) -> Result<Self, Error> {
+        let (class, code, mut short, properties) = match ty.kind {
+            TypeKind::Integer { width, signed } => {
+                let bits = match width {
+                    IntegerWidth::I8 => 8,
+                    IntegerWidth::I16 => 16,
+                    IntegerWidth::I32 => 32,
+                    IntegerWidth::I64 => 64,
+                };
+                let prefix = if signed { "" } else { "U" };
+                (
+                    CircuitType::Integer,
+                    format!("{prefix}INT{bits}"),
+                    format!("{}{bits}", if signed { "i" } else { "u" }),
+                    json!({"width":bits,"signed":signed}),
+                )
+            }
+            TypeKind::Date {} => (CircuitType::Date, "DATE".into(), "Date".into(), json!({})),
+            TypeKind::Boolean {} => (CircuitType::Bool, "BOOL".into(), "b".into(), json!({})),
+            TypeKind::Decimal {
+                precision, scale, ..
+            } => (
+                CircuitType::Decimal,
+                "DECIMAL".into(),
+                format!("DECIMAL({precision}, {scale})"),
+                json!({"precision":precision, "scale":scale}),
+            ),
+            TypeKind::Timestamp {
+                precision: Precision::Specified(6),
+                zone: TimeZone::None,
+            } => (
+                CircuitType::Timestamp,
+                "TIMESTAMP".into(),
+                "Timestamp".into(),
+                json!({}),
+            ),
+            TypeKind::Float {
+                flavor: FloatFlavor::Double,
+            } => (CircuitType::Double, "DOUBLE".into(), "d".into(), json!({})),
+            TypeKind::Character { fixed, length, .. } => {
+                let precision = match length {
+                    Precision::Unspecified => -1,
+                    Precision::Specified(n) => i64::from(n),
+                };
+                let short = if precision < 0 {
+                    "s".into()
+                } else {
+                    format!("s({precision},{fixed})")
+                };
+                (
+                    CircuitType::String,
+                    "STRING".into(),
+                    short,
+                    json!({"fixed":fixed,"precision":precision}),
+                )
+            }
+            _ => {
+                return Err(Error(format!(
+                    "unsupported table column type {:?}",
+                    ty.kind
+                )))
+            }
+        };
+        if ty.nullable {
+            short.push('?');
+        }
+        let column = ty
+            .scalar_column_type()
+            .ok_or_else(|| Error("unsupported scalar schema".into()))?;
+        Ok(Self {
+            class,
+            code,
+            short,
+            properties,
+            column,
+            nullable: ty.nullable,
+        })
+    }
+
+    fn node(&self, ids: &mut Ids) -> Value {
+        let mut node = if self.class == CircuitType::Double {
+            let slot = &mut ids.doubles[usize::from(self.nullable)];
+            if let Some(id) = slot {
+                return json!({"node":id});
+            }
+            let id = ids.inner;
+            ids.inner += 1;
+            *slot = Some(id);
+            json!({"class":self.class.wire_name(),"id":id,"sourceEmpty":true,"singleton":true})
+        } else {
+            ids.node(self.class.wire_name(), &range(0, 0, 0, 0))
+        };
+        node.as_object_mut()
+            .unwrap()
+            .extend(self.properties.as_object().unwrap().clone());
+        node["code"] = self.code.clone().into();
+        node["mayBeNull"] = self.nullable.into();
+        node
+    }
+}
+
+/// DBSP retains the SQL field names as well as the positional tuple layout.
+pub(super) struct RowLayout<'a> {
+    schema: &'a CatalogSchema,
+    scalars: Vec<Scalar>,
+    signature: String,
+}
+
+impl<'a> RowLayout<'a> {
+    pub(super) fn new(schema: &'a CatalogSchema, types: &TypeTable) -> Result<Self, Error> {
+        let mut signature = String::from("[");
+        let mut scalars = Vec::new();
+        for col in &schema.columns {
+            let scalar = Scalar::lower(&types.types[col.ty.0 as usize])?;
+            write!(signature, "{}:{},", col.name.name, scalar.short).expect("string write");
+            scalars.push(scalar);
+        }
+        signature.push(']');
+        Ok(Self {
+            schema,
+            scalars,
+            signature,
+        })
+    }
+
+    pub(super) fn structure(&self, ids: &mut Ids, position: &Value) -> Value {
+        self.struct_type(ids, position, false)
+    }
+
+    fn struct_type(&self, ids: &mut Ids, position: &Value, anonymous: bool) -> Value {
+        let row_name = if anonymous {
+            Name {
+                name: String::new(),
+                quoted: false,
+            }
+        } else {
+            self.schema.name.clone()
+        };
+        let digest = Sha256::digest(format!("{}{}", row_name.name, self.signature));
+        let fields: Vec<_> = self
+            .schema
+            .columns
+            .iter()
+            .zip(&self.scalars)
+            .map(|(col, scalar)| {
+                let field_position = if anonymous {
+                    position.clone()
+                } else {
+                    location(&col.diagnostic.origin)
+                };
+                let mut field = ids.node("Field", &field_position);
+                field["type"] = scalar.node(ids);
+                field["index"] = col.index.into();
+                field["name"] = name(&col.name);
+                field
+            })
+            .collect();
+        let mut node = ids.node("DBSPTypeStruct", position);
+        node["fields"] = fields.into();
+        node["hashName"] = format!("struct_{}", hex::encode(&digest[..8])).into();
+        node["name"] = name(&row_name);
+        node["code"] = "STRUCT".into();
+        node["mayBeNull"] = false.into();
+        node
+    }
+
+    pub(super) fn tuple(&self, ids: &mut Ids, position: &Value, anonymous: bool) -> Value {
+        // The Java decoder reads tuple fields before originalStruct and resolves
+        // singleton references immediately. Define shared scalar types there first.
+        let fields = self.column_types(ids);
+        let structure = self.struct_type(ids, position, anonymous);
+        let mut tuple = ids.node("DBSPTypeTuple", position);
+        tuple["tupFields"] = fields.into();
+        tuple["originalStruct"] = structure;
+        tuple["code"] = "TUPLE".into();
+        tuple["mayBeNull"] = false.into();
+        tuple
+    }
+
+    pub(super) fn column_types(&self, ids: &mut Ids) -> Vec<Value> {
+        self.scalars.iter().map(|s| s.node(ids)).collect()
+    }
+}
+
+pub(super) fn stream_type(ids: &mut Ids, element: Value, position: &Value) -> Result<Value, Error> {
+    let element = element
+        .try_into()
+        .map_err(|e: feldera_sql_ir::Error| Error(e.to_string()))?;
+    Ok(CollectionType::ZSet { element }.into_wire(ids.next_inner(), Some(position)))
+}
+
+pub(super) fn statement_position(source: &StatementSource) -> Value {
+    let position = &source.position;
+    range(
+        position.line,
+        position.column,
+        position.end_line,
+        position.end_column,
+    )
+}
+
+pub(super) fn lower(
+    schema: &CatalogSchema,
+    types: &TypeTable,
+    source: &StatementSource,
+    identifier: &DiagnosticSource,
+    ids: &mut Ids,
+) -> Result<(Value, Value), Error> {
+    let position = statement_position(source);
+    let table_name = name(&schema.name);
+    let layout = RowLayout::new(schema, types)?;
+    let original = layout.structure(ids, &position);
+    let tuple = layout.tuple(ids, &position, false);
+    let output = stream_type(ids, tuple, &position)?;
+    let mut fields = Vec::new();
+    let mut columns = Vec::new();
+    for (col, scalar) in schema.columns.iter().zip(&layout.scalars) {
+        fields.push(json!({
+            "name": col.name.name,
+            "case_sensitive": col.name.quoted,
+            "columntype": scalar.column,
+            "unused": false,
+        }));
+        columns.push(json!({
+            "name": name(&col.name),
+            "position": location(&col.diagnostic.origin),
+            "type": scalar.node(ids),
+            "isPrimaryKey": false,
+            "interned": false,
+        }));
+    }
+    let metadata = json!({
+        "name": schema.name.name, "case_sensitive": schema.name.quoted,
+        "fields": fields, "materialized": false, "foreign_keys": [],
+    });
+    let operator = json!({
+        "class": "DBSPSourceMultisetOperator", "id": ids.operator,
+        "provenance": {
+            "id": ids.origin, "kind": "RelAnd", "position": range(0, 0, 0, 0),
+            "positions": [], "children": [],
+        },
+        "annotations": [], "inputs": [],
+        "originalRowType": original, "outputType": output,
+        "tableName": table_name, "sourceNamePosition": location(&identifier.origin),
+        "sourceNameEmpty": identifier.empty,
+        "metadata": {
+            "tableName": table_name, "materialized": false, "changes": "Unrestricted",
+            "foreignKeys": [], "columnMetadata": columns,
+        },
+    });
+    ids.operator += 1;
+    ids.origin += 1;
+    Ok((operator, metadata))
+}

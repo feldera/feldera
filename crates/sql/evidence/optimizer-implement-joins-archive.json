@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-implement-joins-20261118-v1.tar.gz",
+  "bytes": 6420198,
+  "sha256": "278e3bb6e7599a717899e00cc04d1312006a6f71e859e859dc8cc7fdf7771063",
+  "manifest_sha256": "c327b5d83d7c11eda24673cef1e734d7ec85bb219c7dbf9dc99b8e32a5e8066c",
+  "verified_files": 815,
+  "all_members_verified": true
+}

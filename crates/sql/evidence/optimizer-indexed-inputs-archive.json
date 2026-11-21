@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-indexed-inputs-20261119.tar.gz",
+  "bytes": 26593146,
+  "sha256": "badda7d97606dfc3b133f398850a20fc54a9072142d43867273bc3f9ef9b19c7",
+  "manifest_sha256": "28ba3a2f586a88bbe621d869509b1c541b6fb69a0e57c3bb030eaf656e5da040",
+  "verified_files": 24785,
+  "all_members_verified": true
+}

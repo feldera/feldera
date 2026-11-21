@@ -1,0 +1,19 @@
+{"id": "semantic/row_nested_nullable", "submissions": [{"sql": "CREATE TABLE t(r ROW(\"A\" INT NULL, b ROW(c VARCHAR)) ARRAY); CREATE VIEW v AS SELECT r FROM t;", "many": true, "batch": 0}]}
+{"id": "semantic/map_row_type", "submissions": [{"sql": "CREATE TABLE t(m MAP<VARCHAR, ROW(x INT)>); CREATE VIEW v AS SELECT m FROM t;", "many": true, "batch": 0}]}
+{"id": "semantic/map_duplicates", "submissions": [{"sql": "CREATE VIEW v AS SELECT MAP[1, 'a', 1, 'b'] AS m;", "many": true, "batch": 0}]}
+{"id": "semantic/map_null", "submissions": [{"sql": "CREATE VIEW v AS SELECT MAP[1, CAST(NULL AS VARCHAR)] AS m;", "many": true, "batch": 0}]}
+{"id": "semantic/map_nested", "submissions": [{"sql": "CREATE VIEW v AS SELECT MAP[1, MAP[2, 'a', 3, 'b']] AS m;", "many": true, "batch": 0}]}
+{"id": "semantic/function_not_null", "submissions": [{"sql": "CREATE FUNCTION f(x INT NOT NULL) RETURNS INT NOT NULL AS x + 1; CREATE VIEW v AS SELECT f(1) AS n;", "many": true, "batch": 0}]}
+{"id": "semantic/function_nullable", "submissions": [{"sql": "CREATE FUNCTION f(x INT NULL) RETURNS INT NULL AS x + 1; CREATE VIEW v AS SELECT f(CAST(NULL AS INT)) AS n;", "many": true, "batch": 0}]}
+{"id": "semantic/function_row", "submissions": [{"sql": "CREATE FUNCTION f(x ROW(a INT) NULL) RETURNS ROW(a INT) NULL AS x; CREATE TABLE t(r ROW(a INT)); CREATE VIEW v AS SELECT f(r) AS r FROM t;", "many": true, "batch": 0}]}
+{"id": "semantic/function_map", "submissions": [{"sql": "CREATE FUNCTION f(x MAP<INT, VARCHAR>) RETURNS MAP<INT, VARCHAR> AS x; CREATE TABLE t(m MAP<INT, VARCHAR>); CREATE VIEW v AS SELECT f(m) AS m FROM t;", "many": true, "batch": 0}]}
+{"id": "semantic/local_view", "submissions": [{"sql": "CREATE LOCAL VIEW v AS SELECT 1 AS n; CREATE MATERIALIZED VIEW result AS SELECT n FROM v;", "many": true, "batch": 0}]}
+{"id": "semantic/local_replace", "submissions": [{"sql": "CREATE OR REPLACE LOCAL VIEW v AS SELECT 1 AS n; CREATE VIEW result AS SELECT n FROM v;", "many": true, "batch": 0}], "binding_expectation": "rejected", "expected_error_type": "Not supported"}
+{"id": "semantic/quoted_names", "submissions": [{"sql": "CREATE TABLE \"T\"(\"a\"\"b\" ROW(\"c\"\"d\" VARCHAR NULL)); CREATE VIEW \"V\" AS SELECT \"a\"\"b\" FROM \"T\";", "many": true, "batch": 0}]}
+{"id": "semantic/row_cast_selector", "submissions": [{"sql": "CREATE VIEW v AS SELECT CAST(ROW(17,29) AS ROW(a INT,b INT))['b'] AS n;", "many": true, "batch": 0}]}
+{"id": "semantic/function_literal_default", "submissions": [{"sql": "CREATE FUNCTION \"f\"(\"Mixed\" VARCHAR NULL DEFAULT 'x''y') RETURNS VARCHAR NULL AS \"Mixed\"; CREATE VIEW v AS SELECT \"f\"('a') AS s;", "many": true, "batch": 0}]}
+{"id": "semantic/api-boundaries", "submissions": [{"sql": "CREATE TABLE t(r ROW(x INT))", "many": false, "batch": 0}, {"sql": "CREATE VIEW v AS SELECT r FROM t", "many": false, "batch": 0}]}
+{"id": "semantic/empty-boundary", "submissions": [{"sql": "", "many": true, "batch": 0}, {"sql": "CREATE VIEW v AS SELECT MAP[1, 'a'] AS m;", "many": true, "batch": 0}]}
+{"id": "semantic/function_escaped_parameter", "submissions": [{"sql": "CREATE FUNCTION \"f\"(\"a\"\"b\" VARCHAR NULL DEFAULT 'x''y') RETURNS VARCHAR NULL AS \"a\"\"b\"; CREATE VIEW v AS SELECT \"f\"('a') AS s;", "many": true, "batch": 0}]}
+{"id": "semantic/decoded_double_quotes", "submissions": [{"sql": "CREATE TABLE t(\"a\"\"\"\"b\" INT); CREATE MATERIALIZED VIEW v AS SELECT * FROM t; CREATE INDEX \"x\"\"\"\"y\" ON v(\"a\"\"\"\"b\");", "many": true, "batch": 0}]}
+{"id": "semantic/string_fragment_quotes", "submissions": [{"sql": "CREATE VIEW v AS SELECT 'ab\\''cd' AS s, 'a''''b' AS q, 'first'\n'second' AS chain;", "many": true, "batch": 0}]}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-implement-joins-archive.json",
+  "scope": "Rust lowers snapshot antijoins and indexed joins at the original ImplementJoins placement. The other optimizer passes and final artifact writers are Java.",
+  "engines": ["classic", "gen2"],
+  "snapshot_programs_per_engine": 46,
+  "exact_input_graphs_compared": 92,
+  "rust_final_results_compared": 92,
+  "java_codec_controls_compared": 92,
+  "active_indexed_join_rewrites": 4,
+  "active_program_ids_per_engine": ["join-rule-1", "join-rule-5"],
+  "detached_s2_replays_compared": 4,
+  "directed_graphs": [
+    {"id": "antijoin", "equal": true},
+    {"id": "antijoin-and-indexed-join", "equal": true}
+  ],
+  "differences": 0,
+  "regressions": "Both directed graphs initially differed in the regenerated downstream noop's variable name. The repaired Rust pass uses and advances the same generated-name counter as Java. The interrupted VM-overlay run is retained separately from the complete run.",
+  "rust_tests_passed": 32,
+  "clippy": "passed"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-count-storage-recheck-archive.json",
+  "scope": "Repeat of the four-worker forced-spill COUNT DISTINCT host-bind experiment with generated allocator defaults and the current DBSP layer reader and writer.",
+  "prior_measurement": "native-count-transaction-latency.json",
+  "binary_sha256": "8bc7e5d25edd38c67958a80fbea6796b11d0349e526db2ce9fd0cf67adf109d3",
+  "limits": {
+    "minimum_throughput_ratio": 0.85,
+    "maximum_transaction_p95_ratio": 1.2,
+    "maximum_median_peak_rss_ratio": 1.25,
+    "maximum_paired_checkpoint_ratio": 1.01
+  },
+  "process_pairs": 62,
+  "paired_bootstrap_resamples": 2000,
+  "configurations": [
+    {
+      "rows_per_step": 256,
+      "process_pairs": 31,
+      "classic_transaction_p95_ns": 26160638,
+      "native_transaction_p95_ns": 28710339,
+      "throughput_ratio": 0.8954508523788871,
+      "transaction_p95_ratio": 1.0974632575856904,
+      "transaction_p95_ratio_95pct_paired_bootstrap": [
+        1.0696539490874195,
+        1.1120867846235485
+      ],
+      "median_peak_rss_ratio": 1.0795962794379577,
+      "maximum_paired_checkpoint_ratio": 0.9997260594420231,
+      "runtime_limits_pass": true
+    },
+    {
+      "rows_per_step": 2048,
+      "process_pairs": 31,
+      "classic_transaction_p95_ns": 24626392,
+      "native_transaction_p95_ns": 26677387,
+      "throughput_ratio": 0.9025673293945087,
+      "transaction_p95_ratio": 1.0832844291603902,
+      "transaction_p95_ratio_95pct_paired_bootstrap": [
+        1.0446420186699432,
+        1.1075308437639564
+      ],
+      "median_peak_rss_ratio": 1.1083720419882228,
+      "maximum_paired_checkpoint_ratio": 0.9997925059683677,
+      "runtime_limits_pass": true
+    }
+  ]
+}

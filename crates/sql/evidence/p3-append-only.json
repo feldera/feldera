@@ -1,0 +1,34 @@
+{
+  "scope": "Classify primary append-only streams before aggregate expansion, checking every reported port against Java.",
+  "comparator_sha256": "ba5242a242439f073225743126c99c80aef0a90b566d79b72db0adf570d537f8",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "cfb7e20c33731138cfc0a39ea40823b701abbbf6b51bd03f38e5772d7caa7bb8"
+    ],
+    "pass": "AppendOnly",
+    "invocations": 8571,
+    "changed": 0,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "282168625a2bd8464fdc2948043f58a388e4b4eb0030360688e6bf8939fd8b15"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "24192c6fc3f038727a878e35306f055276ef649c490f0a5eaaa622638a0f8418"
+    ],
+    "pass": "AppendOnly",
+    "invocations": 8527,
+    "changed": 0,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "0c8cbfafc46b1130e2b191a2cbe3d4ea9afa1a951e752245489dcf2b35315167"
+    ]
+  }
+}

@@ -10,6 +10,8 @@ pub use partitioned::{
     PartitionedIndexedZSet,
 };
 pub use radix_tree::TreeNode;
+#[cfg(feature = "native-abi")]
+pub use radix_tree::archive_testing;
 pub use range::{Range, RelOffset, RelRange};
 pub use rolling_aggregate::{
     OrdPartitionedOverStream, PartitionedRollingAggregateFactories,

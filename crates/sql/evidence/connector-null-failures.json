@@ -1,0 +1,187 @@
+{
+  "oracle": "$SCRATCH/p0-connector-oracle-v1:$SCRATCH/p0-seam-tools-v6/classes:$SCRATCH/p0-seam-tools-v6/dependencies.jar",
+  "population": 4435,
+  "compiler_failures": 12,
+  "cases": [
+    {
+      "input": {
+        "id": "KafkaInputConfig/topic/0",
+        "config_class": "KafkaInputConfig",
+        "json": "[\n  {\n    \"name\": \"probe \ud83e\udd80\",\n    \"transport\": {\n      \"config\": {\n        \"topic\": null\n      }\n    }\n  }\n]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "KafkaInputConfig/topic/0",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"this.topic\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "PostgresReaderConfig/query/0",
+        "config_class": "PostgresReaderConfig",
+        "json": "[\n  {\n    \"name\": \"probe \ud83e\udd80\",\n    \"transport\": {\n      \"config\": {\n        \"uri\": \"postgres://example/db\",\n        \"query\": null\n      }\n    }\n  }\n]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "PostgresReaderConfig/query/0",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"property\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "PostgresReaderConfig/uri/0",
+        "config_class": "PostgresReaderConfig",
+        "json": "[\n  {\n    \"name\": \"probe \ud83e\udd80\",\n    \"transport\": {\n      \"config\": {\n        \"uri\": null,\n        \"query\": \"SELECT 1\"\n      }\n    }\n  }\n]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "PostgresReaderConfig/uri/0",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"property\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "KafkaInputConfig/topics/4126",
+        "config_class": "KafkaInputConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"topic\": null, \"topics\": null}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "KafkaInputConfig/topics/4126",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"this.topic\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "KafkaInputConfig/topics/4127",
+        "config_class": "KafkaInputConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"topic\": null, \"topics\": []}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "KafkaInputConfig/topics/4127",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"this.topic\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "KafkaInputConfig/topics/4128",
+        "config_class": "KafkaInputConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"topic\": null, \"topics\": [\"a\"]}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "KafkaInputConfig/topics/4128",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"this.topic\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "KafkaInputConfig/topics/4129",
+        "config_class": "KafkaInputConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"topic\": null, \"topics\": [\"a\", \"b\"]}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "KafkaInputConfig/topics/4129",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"this.topic\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "KafkaInputConfig/topics/4130",
+        "config_class": "KafkaInputConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"topic\": null, \"topics\": [null]}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "KafkaInputConfig/topics/4130",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"String.isBlank()\" because \"this.topic\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "AvroParserConfig/registry/4158",
+        "config_class": "AvroParserConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"schema\": \"schema\", \"registry_urls\": null, \"registry_authorization_token\": null, \"registry_username\": null}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "AvroParserConfig/registry/4158",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"java.util.List.isEmpty()\" because \"this.registryUrls\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "AvroParserConfig/registry/4159",
+        "config_class": "AvroParserConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"schema\": \"schema\", \"registry_urls\": null, \"registry_authorization_token\": null, \"registry_username\": \"user\"}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "AvroParserConfig/registry/4159",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"java.util.List.isEmpty()\" because \"this.registryUrls\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "AvroParserConfig/registry/4160",
+        "config_class": "AvroParserConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"schema\": \"schema\", \"registry_urls\": null, \"registry_authorization_token\": \"token\", \"registry_username\": null}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "AvroParserConfig/registry/4160",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"java.util.List.isEmpty()\" because \"this.registryUrls\" is null",
+        "warnings": []
+      }
+    },
+    {
+      "input": {
+        "id": "AvroParserConfig/registry/4161",
+        "config_class": "AvroParserConfig",
+        "json": "[{\"name\": \"probe \ud83e\udd80\", \"transport\": {\"config\": {\"schema\": \"schema\", \"registry_urls\": null, \"registry_authorization_token\": \"token\", \"registry_username\": \"user\"}}}]",
+        "pointer": "/0/transport/config"
+      },
+      "failure": {
+        "id": "AvroParserConfig/registry/4161",
+        "compiler_bug": true,
+        "exception": "java.lang.NullPointerException",
+        "detail": "Cannot invoke \"java.util.List.isEmpty()\" because \"this.registryUrls\" is null",
+        "warnings": []
+      }
+    }
+  ]
+}

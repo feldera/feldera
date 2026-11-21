@@ -34,9 +34,9 @@ public class FindWindowGroups extends CircuitVisitor {
      * @param port    Left input of the window.
      * @param closure Function computing timestamp.
      * @param valueFields For each output value field a function extracting it from the indexed input. */
-    private record Candidate(DBSPWindowOperator window, OutputPort port,
-                             DBSPClosureExpression closure,
-                             List<DBSPClosureExpression> valueFields) implements
+    record Candidate(DBSPWindowOperator window, OutputPort port,
+                     DBSPClosureExpression closure,
+                     List<DBSPClosureExpression> valueFields) implements
             ReorderTemporalFilters.PortAndClosureFingerprint
     { }
 

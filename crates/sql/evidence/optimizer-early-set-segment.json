@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-early-set-segment-archive.json",
+  "scope": "Four consecutive early set-output passes in one Rust handoff, at their original position.",
+  "programs_per_engine": 45,
+  "separate_placements_tested_before_grouping": 44,
+  "optimizer_handoffs_after_grouping": 41,
+  "exact_group_graphs_equal": 90,
+  "isolated_final_outputs_equal": 90,
+  "composed_final_outputs_equal": 90,
+  "java_controls_equal_per_profile": 90,
+  "fixture_insertions_between_passes": [
+    "fold",
+    "overflow",
+    "nested",
+    "live-nullable-comparison",
+    "live-null-test"
+  ],
+  "warm_benchmark": {
+    "measured_compilations": 768,
+    "warmup_compilations": 192,
+    "comparisons": 720,
+    "pinned_cpu": 0,
+    "profiles": {
+      "classic": {
+        "passed_graph_and_diagnostic_comparisons": 360,
+        "workloads": {
+          "integer-union": {
+            "latency_ns": {
+              "direct": {
+                "p50": 4903575.0,
+                "p95": 9427317
+              },
+              "java": {
+                "p50": 23364751.0,
+                "p95": 34274565
+              },
+              "separate": {
+                "p50": 86819078.0,
+                "p95": 124192200
+              },
+              "grouped": {
+                "p50": 39338577.0,
+                "p95": 67223633
+              }
+            },
+            "grouped_over_separate": {
+              "median": 0.4581079703217862,
+              "bootstrap_95_interval": [
+                0.43130634377102134,
+                0.4761281427298015
+              ]
+            },
+            "grouped_over_direct": {
+              "median": 8.938403285377543,
+              "bootstrap_95_interval": [
+                7.020631269633763,
+                10.777161168498711
+              ]
+            },
+            "grouped_over_separate_p95": 0.5412870776103491,
+            "grouped_over_direct_p95": 7.130727968519569
+          },
+          "lateness": {
+            "latency_ns": {
+              "direct": {
+                "p50": 6233427.0,
+                "p95": 11790105
+              },
+              "java": {
+                "p50": 20202777.5,
+                "p95": 35125522
+              },
+              "separate": {
+                "p50": 72386602.5,
+                "p95": 107343522
+              },
+              "grouped": {
+                "p50": 34573377.5,
+                "p95": 56179777
+              }
+            },
+            "grouped_over_separate": {
+              "median": 0.4767015481557941,
+              "bootstrap_95_interval": [
+                0.45276986190592916,
+                0.5007140780565104
+              ]
+            },
+            "grouped_over_direct": {
+              "median": 6.432060760151131,
+              "bootstrap_95_interval": [
+                4.862929475155104,
+                8.479919219384229
+              ]
+            },
+            "grouped_over_separate_p95": 0.5233643908199695,
+            "grouped_over_direct_p95": 4.764993780801783
+          },
+          "two-tables": {
+            "latency_ns": {
+              "direct": {
+                "p50": 3809639.0,
+                "p95": 6653114
+              },
+              "java": {
+                "p50": 19099487.5,
+                "p95": 29358032
+              },
+              "separate": {
+                "p50": 67702944.5,
+                "p95": 101435156
+              },
+              "grouped": {
+                "p50": 30578863.5,
+                "p95": 55347695
+              }
+            },
+            "grouped_over_separate": {
+              "median": 0.4667386343653912,
+              "bootstrap_95_interval": [
+                0.44475088263608115,
+                0.49145759401624917
+              ]
+            },
+            "grouped_over_direct": {
+              "median": 8.86622214208964,
+              "bootstrap_95_interval": [
+                6.536573172705908,
+                11.327885691219874
+              ]
+            },
+            "grouped_over_separate_p95": 0.5456460775788623,
+            "grouped_over_direct_p95": 8.31906607943288
+          }
+        }
+      },
+      "gen2": {
+        "passed_graph_and_diagnostic_comparisons": 360,
+        "workloads": {
+          "integer-union": {
+            "latency_ns": {
+              "direct": {
+                "p50": 5447240.5,
+                "p95": 10438273
+              },
+              "java": {
+                "p50": 25473163.5,
+                "p95": 32181152
+              },
+              "separate": {
+                "p50": 90230176.0,
+                "p95": 124975115
+              },
+              "grouped": {
+                "p50": 40017389.0,
+                "p95": 57586150
+              }
+            },
+            "grouped_over_separate": {
+              "median": 0.4521157376974224,
+              "bootstrap_95_interval": [
+                0.42709567041463836,
+                0.47052464727396537
+              ]
+            },
+            "grouped_over_direct": {
+              "median": 8.155051098339953,
+              "bootstrap_95_interval": [
+                6.6498442125164985,
+                9.671532831563148
+              ]
+            },
+            "grouped_over_separate_p95": 0.46078093226799594,
+            "grouped_over_direct_p95": 5.5168273525706795
+          },
+          "lateness": {
+            "latency_ns": {
+              "direct": {
+                "p50": 6066635.0,
+                "p95": 11871229
+              },
+              "java": {
+                "p50": 19700653.5,
+                "p95": 30235448
+              },
+              "separate": {
+                "p50": 73383038.5,
+                "p95": 99619327
+              },
+              "grouped": {
+                "p50": 35812854.0,
+                "p95": 54304655
+              }
+            },
+            "grouped_over_separate": {
+              "median": 0.4971612517352143,
+              "bootstrap_95_interval": [
+                0.45861983678869556,
+                0.5282793690805401
+              ]
+            },
+            "grouped_over_direct": {
+              "median": 5.980351203687538,
+              "bootstrap_95_interval": [
+                5.413580455317776,
+                7.507138678339604
+              ]
+            },
+            "grouped_over_separate_p95": 0.5451216810569298,
+            "grouped_over_direct_p95": 4.574476239991664
+          },
+          "two-tables": {
+            "latency_ns": {
+              "direct": {
+                "p50": 3274349.0,
+                "p95": 7066071
+              },
+              "java": {
+                "p50": 20011923.5,
+                "p95": 31070363
+              },
+              "separate": {
+                "p50": 70804293.0,
+                "p95": 113184261
+              },
+              "grouped": {
+                "p50": 32008153.0,
+                "p95": 58736106
+              }
+            },
+            "grouped_over_separate": {
+              "median": 0.4540409648140614,
+              "bootstrap_95_interval": [
+                0.4383561303902451,
+                0.4664242388341845
+              ]
+            },
+            "grouped_over_direct": {
+              "median": 9.892780928364328,
+              "bootstrap_95_interval": [
+                8.501187781384267,
+                14.762736422830157
+              ]
+            },
+            "grouped_over_separate_p95": 0.51894234658651,
+            "grouped_over_direct_p95": 8.31241378695459
+          }
+        }
+      }
+    }
+  },
+  "partial_hybrid_p95_threshold_met": false
+}

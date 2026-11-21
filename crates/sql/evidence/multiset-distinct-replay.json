@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-distinct-replay-archive.json",
+  "programs": 50,
+  "engine_modes": ["classic", "gen2"],
+  "replay_schema_version": 4,
+  "distinct_replay_graph_comparisons": 100,
+  "distinct_operators_inserted": 152,
+  "rust_distinct_replays_compared_to_direct_java_s3": 100,
+  "java_distinct_control_replays_compared_to_direct_java_s3": 100,
+  "dead_code_java_tail_regressions": 400,
+  "tail_differences": 0,
+  "java_processes": 22,
+  "observables": {
+    "both_modes": ["canonical S3 circuit", "persistent ids", "hash inputs", "schema", "diagnostics", "parsed dataflow fingerprint"],
+    "classic": ["Rust source and stubs byte fingerprints"]
+  },
+  "complete_rust_prefix_replayed": false,
+  "runtime_executed": false,
+  "human_hours_measured": false,
+  "scope": "Rust inserts distinct operators into original S2 and relocates provenance definitions. The Java optimizer resumes from S2 with the same set-output option as the direct Java control. The independently captured actual schedule remains a separate comparison."
+}

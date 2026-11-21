@@ -1,0 +1,878 @@
+{
+  "counts": {
+    "tests": 2868,
+    "failures": 69,
+    "errors": 510,
+    "skipped": 71
+  },
+  "passes": 2218,
+  "pass_share_all_tests": 0.7733612273361228,
+  "pass_share_excluding_skips": 0.7929924919556668,
+  "threshold_met_all_tests": false,
+  "threshold_met_excluding_skips": false,
+  "failure_groups": [
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPWaterlineOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPWaterlineOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 180
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPPartitionedRollingAggregateOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPPartitionedRollingAggregateOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 61
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPNestedOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPNestedOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 29
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: operator `<id>` has unknown class `DBSPPositiveOperator`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: operator `<id>` has unknown class `DBSPPositiveOperator`\"}}}",
+      "count": 25
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPLagOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPLagOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 23
+    },
+    {
+      "category": "unsupported_engine_type",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported column type `DBSPTypeLongInterval`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported column type `DBSPTypeLongInterval`\"}}}",
+      "count": 20
+    },
+    {
+      "category": "unsupported_engine_type",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported column type `DBSPTypeWithCustomOrd`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported column type `DBSPTypeWithCustomOrd`\"}}}",
+      "count": 19
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPAggregateOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPAggregateOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 15
+    },
+    {
+      "category": "runtime_value_mismatch",
+      "message": "Gen-2 output differs (+ only expected, - only produced):",
+      "count": 13
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 13
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "No circuit produced",
+      "count": 8
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "",
+      "count": 7
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "expected:<1> but was:<0>",
+      "count": 7
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "View 'v' over an empty input did not collapse to a constant",
+      "count": 4
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'late_t' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 3
+    },
+    {
+      "category": "unsupported_engine_type",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported column type `DBSPTypeGeoPoint`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported column type `DBSPTypeGeoPoint`\"}}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'af8c1a96cd9a173c894ca64d58879a6afd1c160c75353bf1bda40feae90b6639': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'af8c1a96cd9a173c894ca64d58879a6afd1c160c75353bf1bda40feae90b6639': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '2b634432e1773fca2543479aae9f08e084c4be889d3b1b7f3d0bf8bb88bf0bca': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '2b634432e1773fca2543479aae9f08e084c4be889d3b1b7f3d0bf8bb88bf0bca': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'e84988b7fbe747287458375a354f67d8bbf12f0caa5e5b1e4cb8ccfc9efcfafc': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'e84988b7fbe747287458375a354f67d8bbf12f0caa5e5b1e4cb8ccfc9efcfafc': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported expression node 'DBSPClosureExpression'.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported expression node 'DBSPClosureExpression'\"}}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'ebcaf23b1510aa5ecba9dd3c164b2553290a3ddd4296a0f8e069b99150e1c85c': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'ebcaf23b1510aa5ecba9dd3c164b2553290a3ddd4296a0f8e069b99150e1c85c': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '5d59c72aba733ea0899420a04adceef77fa3b7c796de42c457e035f713fa248d': unsupported function 'json_each_date_FV'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '5d59c72aba733ea0899420a04adceef77fa3b7c796de42c457e035f713fa248d': unsupported function 'json_each_date_FV'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '15871b56e0751617e7505128477a0f27c6b1720cdc37e8285c522b5bc3b17ac8': unsupported function 'cast a MAP with the non-string key Int32(1) to VARIANT'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '15871b56e0751617e7505128477a0f27c6b1720cdc37e8285c522b5bc3b17ac8': unsupported function 'cast a MAP with the non-string key Int32(1) to VARIANT'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: flat_map node 'ff53c52aab71bd58b1d2a558b76b1d2b90ca32014c737ffde748e8f697ca29da': Invalid argument error: arguments need to have the same data type\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"flat_map node 'ff53c52aab71bd58b1d2a558b76b1d2b90ca32014c737ffde748e8f697ca29da': Invalid argument error: arguments need to have the same data type\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '137453bf0730b8fdc6104928beffb1f595d38342523131f0a2a6319305068204': unsupported function 'json_each_bigint_FV'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '137453bf0730b8fdc6104928beffb1f595d38342523131f0a2a6319305068204': unsupported function 'json_each_bigint_FV'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '3a6997302ee31bc0559cd66f7e41be15a9d70fb6dea4127aad6922d446ed3782': unsupported function 'json_each_bigint_FV'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '3a6997302ee31bc0559cd66f7e41be15a9d70fb6dea4127aad6922d446ed3782': unsupported function 'json_each_bigint_FV'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '1789f6bda4e004595e0e3d4149002a908eb2f2d5852cb3c5548fbd5105066c0d': unsupported function 'json_each_string_FV'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '1789f6bda4e004595e0e3d4149002a908eb2f2d5852cb3c5548fbd5105066c0d': unsupported function 'json_each_string_FV'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'c505c18f0d5d841ae53d7d8406c07da13a624d182f6ea20e96d3cae3b6392c4f': unsupported function 'cast Interval(YearMonth) to VARIANT'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'c505c18f0d5d841ae53d7d8406c07da13a624d182f6ea20e96d3cae3b6392c4f': unsupported function 'cast Interval(YearMonth) to VARIANT'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'b967c2eae53fa4e613ee8bde086975e04c577dd3d1f42a60d4d7d70ee3403b42': unsupported function 'cast Duration(\u00b5s) to VARIANT'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'b967c2eae53fa4e613ee8bde086975e04c577dd3d1f42a60d4d7d70ee3403b42': unsupported function 'cast Duration(\u00b5s) to VARIANT'\"}}",
+      "count": 3
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: flat_map node '57d1457580a58e7238b65689fcf0470d0501447df26bc14a2e80caf42bbb3f48': Invalid argument error: arguments need to have the same data type\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"flat_map node '57d1457580a58e7238b65689fcf0470d0501447df26bc14a2e80caf42bbb3f48': Invalid argument error: arguments need to have the same data type\"}}",
+      "count": 3
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'table_name' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 2
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Invalid regular expression in RLIKE '(': regex parse error:'; the Gen-2 pipeline did not fail",
+      "count": 2
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'dfc5eb40a727191dbd56f22926e28172eb66422132084d81abbe4e0614ade643': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'dfc5eb40a727191dbd56f22926e28172eb66422132084d81abbe4e0614ade643': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 2
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'overflow'; the Gen-2 pipeline did not fail",
+      "count": 2
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: malformed expression IR: a top-k's limit is a USIZE literal.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: malformed expression IR: a top-k's limit is a USIZE literal\"}}}",
+      "count": 2
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: join inputs must share the key columns (same arity and types).\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"join inputs must share the key columns (same arity and types)\"}}}",
+      "count": 2
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtNWU3OS03YzEzLTkwNmUtNTA0NTdkMDJhMDM0IiwiZSI6MCwiYyI6NH0 returned 500: {\"message\":\"DBSP error: Invalid argument error: arguments need to have the same data type\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"Invalid argument error: arguments need to have the same data type\"}}",
+      "count": 2
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '9e47e50f11353a877d374847c086601d1f6da3f8d64e5ddaa932c7926dde25a9': unsupported function 'cast Struct(\\\"x\\\": non-null Float64, \\\"y\\\": non-null Float64) to VARIANT'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '9e47e50f11353a877d374847c086601d1f6da3f8d64e5ddaa932c7926dde25a9': unsupported function 'cast Struct(\\\"x\\\": non-null Float64, \\\"y\\\": non-null Float64) to VARIANT'\"}}",
+      "count": 2
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: operator `<id>` has unknown class `DBSPWeightValidatorOperator`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: operator `<id>` has unknown class `DBSPWeightValidatorOperator`\"}}}",
+      "count": 2
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported expression node 'DBSPConstructorExpression 'BTreeMap::new''.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported expression node 'DBSPConstructorExpression 'BTreeMap::new''\"}}}",
+      "count": 2
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPNowOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPNowOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 2
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: SQL schema for 'varchar_pk' has 1 columns but the circuit produces 2.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"SQL schema for 'varchar_pk' has 1 columns but the circuit produces 2\"}}}",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "Index 0 out of bounds for length 0",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'orders' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '57467d1e3d7fdd1aa50724ea87285d7a683103f89970108ec065c44161047a7a': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '57467d1e3d7fdd1aa50724ea87285d7a683103f89970108ec065c44161047a7a': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '4e0c41af5ec5f936f9c6633593124f4a86eb1ff6e06cde6f2d8f907edff411c5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '4e0c41af5ec5f936f9c6633593124f4a86eb1ff6e06cde6f2d8f907edff411c5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '32eb62907f80458a3b9ed706b683c625f80bff55bc3fce219552376e7e1c513e': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '32eb62907f80458a3b9ed706b683c625f80bff55bc3fce219552376e7e1c513e': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'failed to decompress gzipped data'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '6b2c6de0da3779cd60b49f3aaad294802892da6c143f1ee4b3172c9a499e8367': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '6b2c6de0da3779cd60b49f3aaad294802892da6c143f1ee4b3172c9a499e8367': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'b8bb0df3119ebbada94e14dc7de07558b54c570dba1eeee31ba417d53fc1ea9a': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'b8bb0df3119ebbada94e14dc7de07558b54c570dba1eeee31ba417d53fc1ea9a': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '647ff30f2992adb78dd6461b191c91103d29fa5fd0317898e1861efc415e6576': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '647ff30f2992adb78dd6461b191c91103d29fa5fd0317898e1861efc415e6576': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '3461ca9ae0a5a8459993de6256d597a795307bd089b9254dd251b2664fc94028': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '3461ca9ae0a5a8459993de6256d597a795307bd089b9254dd251b2664fc94028': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPIncrementalConstantOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPIncrementalConstantOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'b961fb8d584ef2cb176aeb9a0e80ec09aafb5b9926a68ed2b0805c2cb7ebf72b': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'b961fb8d584ef2cb176aeb9a0e80ec09aafb5b9926a68ed2b0805c2cb7ebf72b': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Unable to calculate'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'out of range'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Unable to calculate ln for -1'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '0e4aeb5a3e313855329cde9fa9007493a3b156b3183244569b70447f064286ef': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '0e4aeb5a3e313855329cde9fa9007493a3b156b3183244569b70447f064286ef': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'causes overflow for type SMALLINT'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'fafb44bd2cbd763cf99907e41dbeb3e6a0af3dd82cf70f071d33c6608dd1192d': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'fafb44bd2cbd763cf99907e41dbeb3e6a0af3dd82cf70f071d33c6608dd1192d': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '46bec206031cb1ce5d39662a74aa66c15017221e7822bc2de5db3a77dded257d': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '46bec206031cb1ce5d39662a74aa66c15017221e7822bc2de5db3a77dded257d': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'f6c3cd9c01d2a7239e1438dea1afc7393df2d3387110e9f914869e961cb0d9f1': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'f6c3cd9c01d2a7239e1438dea1afc7393df2d3387110e9f914869e961cb0d9f1': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '85e6cace76fa2babd58137e2ba1424604b285942173c5ae16ae6de97bef40e33': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '85e6cace76fa2babd58137e2ba1424604b285942173c5ae16ae6de97bef40e33': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '61e8b342d0198679310561fe2a2c1adc5bd572c64e580be66188e2cb131a0ed5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '61e8b342d0198679310561fe2a2c1adc5bd572c64e580be66188e2cb131a0ed5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'More than one value in subquery'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Invalid format in PARSE_TIME'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'b60a3ba3c452c60f3ba7a0416f523cdddfb705b0e105ec955142815b8f441de8': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'b60a3ba3c452c60f3ba7a0416f523cdddfb705b0e105ec955142815b8f441de8': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '3bb68b3157037b305dcf090f584616ea313f0086518268636fc7a03dddb783f2': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '3bb68b3157037b305dcf090f584616ea313f0086518268636fc7a03dddb783f2': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "unsupported_engine_operator",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPSubtractOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPSubtractOperator' on node '<id>' is not yet supported by the loader\"}}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: operator at node 9 panicked: list array\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"operator at node 9 panicked: list array\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: SQL schema for 'people' has 1 columns but the circuit produces 2.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"SQL schema for 'people' has 1 columns but the circuit produces 2\"}}}",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "Program was expected to fail: CREATE VIEW VV AS SELECT array_exists(array(), x -> true)",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '061347d4ae6dbd354b3d8d15370d62ed9543837a6c06482e42089af18b01d949': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '061347d4ae6dbd354b3d8d15370d62ed9543837a6c06482e42089af18b01d949': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'bdc8d91fb1160786bb45fc403fc087a446c0da9e5c16d88b6760fe8ca77789f8': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'bdc8d91fb1160786bb45fc403fc087a446c0da9e5c16d88b6760fe8ca77789f8': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'array that does not have exactly 1 element'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '6fd48e48f0685a26cdc890c3791718d5d8b3313c44f118a96b2e69b77ce06672': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '6fd48e48f0685a26cdc890c3791718d5d8b3313c44f118a96b2e69b77ce06672': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "The test builds its own compiler without the Gen-2 options",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'a4098f048d900c2838e6c1733905a1b3644d5524bfdc88769205ffe3077930d3': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'a4098f048d900c2838e6c1733905a1b3644d5524bfdc88769205ffe3077930d3': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: POST /ingress/s7?format=arrow_ipc failed: java.io.IOException: HTTP/1.1 header parser received no bytes",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'e72e6b254290cf2ea98515ccf6f918c46b27393e80b4e7851b646d67313ff5c5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'e72e6b254290cf2ea98515ccf6f918c46b27393e80b4e7851b646d67313ff5c5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'b453997456c96e941217394e845133ac7f1578a21672dfbf0e416a7ccbd7cabc': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'b453997456c96e941217394e845133ac7f1578a21672dfbf0e416a7ccbd7cabc': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '1c0ddf2ab754faba60aaa8aec446ec1152bff52700724d8947757e3a268e7970': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '1c0ddf2ab754faba60aaa8aec446ec1152bff52700724d8947757e3a268e7970': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '1c06c701cad7fc3ccbf725801aa973dd3253cd24fbff00867c79c6906898a358': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '1c06c701cad7fc3ccbf725801aa973dd3253cd24fbff00867c79c6906898a358': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '534f8b7843c7c6622603cd8d63421f0ff29c801a8d0ecb5e2e2ebd38be09a050': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '534f8b7843c7c6622603cd8d63421f0ff29c801a8d0ecb5e2e2ebd38be09a050': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '9c8d2a7bc9c95f1d54fe31d9eac984101535ab2e9a5b5faa59a2a7b05a55d5c5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '9c8d2a7bc9c95f1d54fe31d9eac984101535ab2e9a5b5faa59a2a7b05a55d5c5': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'to INTERVAL DAYS'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Cannot add interval'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'produces a value outside the range'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtOTZiNS03YzkyLTgyM2YtZTQ1NTU0OTU3YWI2IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '51effde72868513e6ab288fde8d13420dacb40cc79975d299c81d6398c92dd4e': unsupported function 'jsonstring_as_t_steps'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '51effde72868513e6ab288fde8d13420dacb40cc79975d299c81d6398c92dd4e': unsupported function 'jsonstring_as_t_steps'\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtOTZiNS03YzkyLTgyM2YtZTQ1NTU0OTU3YWI2IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '085f03b91f9f1f2fe46c9d60033688dd78fb4c92bc4989b566a6be66572dc467': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '085f03b91f9f1f2fe46c9d60033688dd78fb4c92bc4989b566a6be66572dc467': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: POST /start_compaction returned 501: {\"message\":\"Compaction is not implemented in this runtime.\",\"error_code\":\"NotImplemented\",\"details\":\"Failed to serialize error. Details: 'can only flatten structs and maps (got a string)'\"}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtYTUwYy03YzQxLThhY2ItODE3NjI5OGFlM2Y0IiwiZSI6MCwiYyI6M30 returned 500: {\"message\":\"DBSP error: flat_map node '24ab12ee3cb31572cb81f056105112ae5fd63595ebd78b56e630118cbbb40c4f': Invalid argument error: arguments need to have the same data type\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"flat_map node '24ab12ee3cb31572cb81f056105112ae5fd63595ebd78b56e630118cbbb40c4f': Invalid argument error: arguments need to have the same data type\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: operator at node 1 panicked: list array\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"operator at node 1 panicked: list array\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtYWIxZS03MjcxLWIwMTktODRkYzY0NjZmMDExIiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: flat_map node 'a936f3f111620e9efaff5e88680d8ff5d03834b82cfd9c070267843c32e35485': Invalid argument error: arguments need to have the same data type\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"flat_map node 'a936f3f111620e9efaff5e88680d8ff5d03834b82cfd9c070267843c32e35485': Invalid argument error: arguments need to have the same data type\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '5bbfeb58f369feeabe89a21bb6d7d2e182e1ce03156b1928a9cc8226951ea8c6': unsupported function 'map_concat__'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '5bbfeb58f369feeabe89a21bb6d7d2e182e1ce03156b1928a9cc8226951ea8c6': unsupported function 'map_concat__'\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtYmMzOS03NTAxLWJhOTktZTUzZjYyYTViNTA2IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '51effde72868513e6ab288fde8d13420dacb40cc79975d299c81d6398c92dd4e': unsupported function 'jsonstring_as_t_steps'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '51effde72868513e6ab288fde8d13420dacb40cc79975d299c81d6398c92dd4e': unsupported function 'jsonstring_as_t_steps'\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '0df864b20e3f995e33cd8d91a4d94ff8271d025703389a13ac6286d0b6c569b9': unsupported function 'cast Struct(\\\"x\\\": non-null Float64, \\\"y\\\": non-null Float64) to VARIANT'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '0df864b20e3f995e33cd8d91a4d94ff8271d025703389a13ac6286d0b6c569b9': unsupported function 'cast Struct(\\\"x\\\": non-null Float64, \\\"y\\\": non-null Float64) to VARIANT'\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtYmMzOS03NTAxLWJhOTktZTUzZjYyYTViNTA2IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '085f03b91f9f1f2fe46c9d60033688dd78fb4c92bc4989b566a6be66572dc467': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '085f03b91f9f1f2fe46c9d60033688dd78fb4c92bc4989b566a6be66572dc467': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'd556fedb90d6e58f5ed429d04387ad63a754fd37f13a26d8e7290a1493dc395f': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'd556fedb90d6e58f5ed429d04387ad63a754fd37f13a26d8e7290a1493dc395f': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '25b8252b0d1246d0ed0e4e6bf70c88edff8114b076c8613320bff55d0bbaea43': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '25b8252b0d1246d0ed0e4e6bf70c88edff8114b076c8613320bff55d0bbaea43': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "expected:<3> but was:<0>",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "expected:<7> but was:<0>",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'baed917a118d4fdaa5f077fcc617630491a86144540fbac3e2681a9718a8b0ae': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'baed917a118d4fdaa5f077fcc617630491a86144540fbac3e2681a9718a8b0ae': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing ''18446744073709551614 * 18446744073709551614' causes overflow for type BIGINT'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'a' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'b0ff015ce88eea04dd41dc4d8ea8c3480457d55ccfb40f2e85fd3478ba50b5bf': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'b0ff015ce88eea04dd41dc4d8ea8c3480457d55ccfb40f2e85fd3478ba50b5bf': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "compiler_internal_error",
+      "message": "Assertion failed",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "expected:<2> but was:<0>",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'ee' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Panic inside the DBSP runtime.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":null}}",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '7ee94c99ccbe6f8110e75842b08c5f10cb200c192a3f03fa37789e55809f8ebd': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '7ee94c99ccbe6f8110e75842b08c5f10cb200c192a3f03fa37789e55809f8ebd': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtZjMwMS03ZGExLTlkZmYtNGY4NzlmNjVmODYxIiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: operator at node 2 panicked: called `Result::unwrap()` on an `Err` value: InvalidArgumentError(\\\"Found unmasked nulls for non-nullable StructArray field \\\\\\\"key\\\\\\\"\\\")\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"operator at node 2 panicked: called `Result::unwrap()` on an `Err` value: InvalidArgumentError(\\\"Found unmasked nulls for non-nullable StructArray field \\\\\\\"key\\\\\\\"\\\")\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Error converting 128 to TINYINT'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'cea06c514eece9e5b65b1375d9bb1cd9223466a1af82be20a88203fb2f0e89df': assembling output batch: Invalid argument error: Column 'v0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'cea06c514eece9e5b65b1375d9bb1cd9223466a1af82be20a88203fb2f0e89df': assembling output batch: Invalid argument error: Column 'v0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'Invalid format in PARSE_TIMESTAMP: '%Y-%m-%d''; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtZmExYS03YTAwLTk1NDQtYTA0ZjE3MzJlY2I3IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '2f348ccc704ffc8d4434b3fe044855a8b0f63dbc03910f73ca9088ac44bb4d31': unsupported function 'jsonstring_as_address2'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '2f348ccc704ffc8d4434b3fe044855a8b0f63dbc03910f73ca9088ac44bb4d31': unsupported function 'jsonstring_as_address2'\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTUtZmExYS03YTAwLTk1NDQtYTA0ZjE3MzJlY2I3IiwiZSI6MCwiYyI6NH0 returned 500: {\"message\":\"DBSP error: flat_map node '478f5ab0d5e87693c03e2fe849ee16e8b681ef2f9d2ebe3720db80acd4bfd5f8': unsupported function 'jsonstring_as_address'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"flat_map node '478f5ab0d5e87693c03e2fe849ee16e8b681ef2f9d2ebe3720db80acd4bfd5f8': unsupported function 'jsonstring_as_address'\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'causes overflow for type TINYINT'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_initialization_error",
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'e7afaeb005a109c174e62ab98303ca09f878896590f11ae729401624f06e30eb': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'e7afaeb005a109c174e62ab98303ca09f878896590f11ae729401624f06e30eb': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "missing_expected_runtime_error",
+      "message": "Expected a panic containing 'input (-inf) out of range [1, Infinity]'; the Gen-2 pipeline did not fail",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTYtMjBlZS03OGIzLWJmOGItNTY4NjM1Y2UyMjU0IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '51effde72868513e6ab288fde8d13420dacb40cc79975d299c81d6398c92dd4e': unsupported function 'jsonstring_as_t_steps'\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '51effde72868513e6ab288fde8d13420dacb40cc79975d299c81d6398c92dd4e': unsupported function 'jsonstring_as_t_steps'\"}}",
+      "count": 1
+    },
+    {
+      "category": "engine_step_error",
+      "message": "Gen-2 step 0 failed: GET /completion_status?token=eyJ1IjoiMDFhMWU0YTYtMjBlZS03OGIzLWJmOGItNTY4NjM1Y2UyMjU0IiwiZSI6MCwiYyI6MX0 returned 500: {\"message\":\"DBSP error: map node '085f03b91f9f1f2fe46c9d60033688dd78fb4c92bc4989b566a6be66572dc467': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '085f03b91f9f1f2fe46c9d60033688dd78fb4c92bc4989b566a6be66572dc467': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'transactions' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'auction' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'n' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    },
+    {
+      "category": "requires_individual_review",
+      "message": "LATENESS on the primary-key table 'k' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version",
+      "count": 1
+    }
+  ],
+  "completion": {
+    "returncode": 1,
+    "finished_utc": "2026-11-16T13:57:53.960999+00:00"
+  },
+  "reports_sha256": {
+    "TEST-org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperatorTests.xml": "0052630e9386b07f636ca9e0cfa58fdf752aa0315d0420971379206f4da7cec2",
+    "TEST-org.dbsp.sqlCompiler.compiler.DocumentationTests.xml": "d8cd4e2544332b75227fafed983805038969663f3095acc031cf10cc3902309b",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.OperatorInventoryTests.xml": "db41c1916aecad8502008f954654fdfc3e3cee646ec7fd0fde0dcba09c9b6b96",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelJsonWriterTests.xml": "df080b426eff335724997c645d1f3aaf84407ad5334986b2b8267bc06e6324ed",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.AntiJoinDistinctRemoveRuleTests.xml": "7d275a7932b1ed1a8a038592c983f526af9aa476e2a3ed6afade0a364942c61e",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.JaninoFoldEligibilityTests.xml": "8c6fe8f72e638616f97ba3e474502989d6c52a0275608bff5f3270ca2d2ef507",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.RuleInventoryTests.xml": "c92e18ad42fae95656cfd41e8f125973d726e8720d7396ecb5243628a45ad83c",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.connectors.config.ConfigDurationTests.xml": "8f603e113cb0c73c1987d01412c677d94e5b306ea274530d7a0e41dd5beb77df",
+    "TEST-org.dbsp.sqlCompiler.compiler.frontend.connectors.config.ConfigSizeTests.xml": "42fa55d0c408d374ab62bca2151a67a3a6445ac1e805832d6212ed2f768aa304",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.BoundedTypeTests.xml": "a37f0b3ac34118f935e814f8c6e2245f1f47a47b6cd1cc0c5e0d1f9860bc99ec",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.DecimalTests.xml": "0473183f599768561c6d5460b7f6db2e614a8d10daf27b1f0f224a63e241e6ba",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.DetectShuffleTests.xml": "7229c5f7d4f548f3d203bf9b916cdd653d9c09498d2ae3e2c8d0cf577ee0d0c2",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.EquivalenceTests.xml": "6254f50e279624fa8e36e7a8728d927bac221cbe6de9d8a8e3f8d98130526096",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.ExpressionTreeTests.xml": "7d7a87784ae31080a0909b0702aa8fdbd31d6ec82df3fde58cc60f627e5954d9",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.InliningTests.xml": "313c36717ae6a01957c0ad5da136bfe71727f5d13d03e63569f0e589ec6b7f65",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.SaturatingOperationsTests.xml": "d66026bac8cfad5a3aad7842fc854abafb90af2186f2ede4360b5aa4570d43f6",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.SimplifyTests.xml": "17c45f95e6ee435864ddd42758ea790122cd1eeb50305e828cae3e1a931ff441",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.TestSimplifyConditionals.xml": "effb6a68ae012e183c5e6c4e4ef13a766addfba26f171c87232a356ac6cff38e",
+    "TEST-org.dbsp.sqlCompiler.compiler.ir.UnusedFieldsTest.xml": "c2215aafea92a1f57076bb6f6287a69760bbf0c6f1f0986d4d61b880e4d09390",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.CatalogTests.xml": "6160986f068983eb0fa19971afd617d325ab41a6763e87f411e4e225a05a5b58",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.CircuitDumpTests.xml": "f9cd509ed91f81945f8aaf554c3534cddf2afc3cd6578ff97f20293f3f5ef41c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.CircuitReplayTests.xml": "56486a6f140a3fc4f05647441f27d7f7adea5a8138b8c863afdeb4a6df8b07fb",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest.xml": "cb16341e17360074a378c1909b04ead6ca8cdd837d16f4c1506ab8e1bf73fcc4",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.ConnectorTests.xml": "f2de918b036a0d6b764e9acca63f0a338ca637eaf6a767daf649ecd1a3312adb",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.ConstantRequiredTests.xml": "64284ab210f596f565152a36a7bb03fecdd79f6d45bdc9f25e08a2ae81b7566c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.Gen2JsonTests.xml": "563f969e2f91c7526629e1cd43a6257a197c64991076e027818bb3d8ffb21e01",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.MetadataTests.xml": "333325f2df7e092817c98098475bf13c762d491df024333df3674c85b2c163f1",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.MultiCrateTests.xml": "6319f5e550e8a3f47219077082042607e964821de5ae5e5b1a82408e6e2e2fcb",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.NegativeParserTests.xml": "e29f3aff34824ad3c44d9654be2ce5d4981dfe9f8d74972f7e88727c8a61dbde",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.OptimizerTraceTests.xml": "a7e0c215c269b6985cf475b9b4af13d3f1180e6ed55ee726ea60bfe5a77f1e6b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.OtherTests.xml": "9082e4e1d48112a7da60f9ba65bd5a1cb27423041447a0a0ed7a525d5b8b8407",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.ParserTests.xml": "045f3faaa2253b402b7cd1c2d4475cf8e73fa2c98f6fbc4e1bd277505a52e3c8",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.ProgramMetadataReplayTests.xml": "0572c08b864603e011edea635c9cdb825cceb085a0eac9904755998e2a283168",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.QATests.xml": "2b05cf0657082304137b8952318b95b09a0e3d20f20418815a1ab39391b91073",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.ReplayTypeIdentityTests.xml": "40d81c48580ae5e29cf7eb98e45fe3bb28c0a364a4c116941c407c0f4104a58c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.RustSourcePositionTests.xml": "0cb50f29a1da467f0a7bc59b88fc46781b5e68b1fbe382c67f983e8157d0c447",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.SerializationTests.xml": "4a7cd317a2021b007bc394525673973493b1ce09352f1597f067a9e53a9e9b8c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.TypeCoercionTests.xml": "82bffd1ce67731ae7246b5899330aee3f817e06560ac583afd31e3d54bb079be",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.TypeProbeTests.xml": "70937271e1786385d1ea5179996ad939f6afcd0a4aac3f805520e4ab1aad134a",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.WindowTests.xml": "92eee528f0da367ac80e3f8ec34aed963b33c62458fbd8c72fafd8f7a71e94f0",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest.xml": "48ad52bf3c111ba58e78825633c9e723de0ea1ed196831e673efe3fab550ec4e",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.mysql.DateFormatsTests.xml": "188ad1da92c55e3813bda5138a25d28eb24f4b39763ec0f0990b02870e107282",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests.xml": "a86a761312f2fd8e691ddb4005a7c21598337fec2dcd9cad171146c750b9e653",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests.xml": "9aaafe9ee6cf2c40ce3f0e4b16ab46ebe64aa0a94e8e812319148aa83aca81f9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresAggregatesTests.xml": "a331e31a815ebf77245312ae57d92f31d3910a71a5e5d15ff3c442cde19ab9b9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresArrayTests.xml": "3b4b47a03f1265fc5789f2d951501c6e458a7feb6d979f4a57824a41a1f100ef",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresBoolTests.xml": "c28777901d47ac46e2810bd88c26b69d355bc7b64bf1b8561d90c7524e40728b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests.xml": "4070ceb0f6931468a4a0876a4382b589ee7d1872245c04ecc0b4c17f98bb6fa1",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCollateTests.xml": "2efa17564096f5e39eb924be8f3b46cc5ebb173bafcca421f0e7ba846f99a1e2",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests.xml": "1279379adf636865e4e45beaf00bc03127b0a2ae0b4dc8cd024931f8275533bf",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests.xml": "71f448736da8cb5dad39adab7e01d727ea576ee92c61b8a40da84affda24c2e9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Part2Tests.xml": "245bd9d41327b2e0ff75298f63d80bb183daf73fa937d7ee023f87ece1611466",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Tests.xml": "0d28fd194d0722c2dfe1c66792d2c180485546ea602615cb2568556b96268e7c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests.xml": "dfa4b284ace6b6142c06d69995ae645c1526d6897f8d87a8710a49e5d836cdd1",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt2Tests.xml": "bb7e30c2c57d2505f867e02e47368834ffb832d768e2fb85676877c76cc73bdd",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt4Tests.xml": "104e9263dd6084db283ee4f3e0114fb43a5c43d12ac4079459614e8ad0c1b21b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests.xml": "a0a0e2b64d2212aed2e70b0ce109ce8264d0edaeb9aed0fa5fe0bdb4ca03f1fd",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresIntervalTests.xml": "1abab4fb9f17a3fb9876f589fef73cd3e06964ee31f962013535293bacc00719",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresLimitTests.xml": "9549f2219aaeb37d7586892fb4ef4efc272ab76364e066132d4d7ffe75d31993",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests.xml": "be0d39596b782c64fb75d6d26642e5a7f95f7686251ed129538293cfda08beef",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests.xml": "a25fae3c58e3fa355774e40a70b47c89d3258b666dd10f418a16d0ab0c43a007",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresTimeTests.xml": "c1438ee5e7bfdd238102bdb6a3f7b6d1183688c7e2f9c8a16bbb321a49120012",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresTimestampTests.xml": "821b45ba684ee6e37f9d308d52a9e96384fcbfe79196ac34167af6895f085ded",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresWindowTests.xml": "2f5903edf060db7677e13501413e7c16a09c3efa0b2fe970be61e569f8ef459f",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests.xml": "402e5a82b94a2bf2f0bd35143e0774df83bcb7a1fe0059ee98ae5b72ed5e279b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests.xml": "129366eb2b599ac68cf94baa51704c5215c2fc4c0f4c34927d30d6ce2d435a33",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.AsofTests.xml": "188d6895a698c700f2bb9b059413c2a96c8b63cface2ea168b75288a1dc133b7",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.BigQueryTests.xml": "40b474277df66a1ac9942110c485f3ba7d65e1f92dbfd85f51eb6d45679fd3d6",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests.xml": "63fbe54200ce755d53c1ccc2ce78c2161d66a06b2d46417a8e0fc2f751cc5664",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests.xml": "c5015031dd6be0c5d4c67b2507a8f9c8aab44ddf56ffb540a043de5b8f4876de",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.HRWinAggTests.xml": "7300024f0d643b428edb8358752efd1d44ee19f78dec2387234ea90d2d29c202",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.MiscTests.xml": "1929d40a04c62bab98939f2145a9592154235693973c2bc7a99120db3a8d289f",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests.xml": "6c33b5672dea040c5da96bcba08577204ae3ec59f0abb0d6b27bea4109b5a108",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests.xml": "223cc8b8cf9ffbf70280105d8075980742f94a2fb7b88b9931964ee63e99b1c8",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests.xml": "505cf6cff018798ee2bfa6fb23e8aa08ce1cee751711bcca7c475a2fe7d38e26",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.PostgresTests.xml": "f2331320885bdb6707fa0d5718139a2a0f955c30e6c48a9951aa778547867572",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.RedshiftTests.xml": "ebbc4c3efa9eea0c5297852e80e99be2d1d7367e69e2c9a11ee2193e9c88a9da",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests.xml": "6aa8678127411af3f18d89fd8c7e7504a414ba9ebff3d91c1666c084f5b554a1",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.SessionTests.xml": "195f2083c689941d9c81a728811c09bd03237b05f4a96e3254fce6ea1461c670",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.SortHrTests.xml": "2399e4dc9a7b0f978c500c6fe00a5eee8217619af21e12b4ccf7d0879c794eee",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests.xml": "5c78cd254f51b1a9c2fd5612fc6fe1d0e116b2a86d18cdee65df2f0bd736b4d6",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.StreamTests.xml": "db6ddb214abd355f09165f4a1684ec142450766c0d5871fbf1c67ca8d208a950",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.StructTests.xml": "3d30cf49ed0ad446ebde25a8ab683116ef7dc81362bd06c621ce0f1a1040a33b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests.xml": "f5c14bb119dbbd75fabd6beff63adf0b26acdac3959873ed269b0b321e70210c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests.xml": "8df3a11453db2ee3abbb2bc032db5697156d06d6cec0d5fc1e2ccb252762a88e",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests.xml": "dad090bc901563ed2dab0d24fa271355fd7dc18f4d9f3a66c04190094ba8157d",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests.xml": "441081c1ba062d4e6d4229a4c100d4d8b926131676d62a41eec79074c32bb5d5",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.recursive.NonLinearRecursionTests.xml": "0125d07d48c4f8e1392a83932a0a3858dcc0cf9551819c9e696e6a32714c4e21",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests.xml": "50b0af12594e05c2211e5508b29cf3ac35eb9c78ab2d6b5c1f5928cd35b58a78",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.recursive.SharedIndexPortTests.xml": "fdbe7109ccb6c44854f5c03f381ad64cdc888411c44e8ed482917d248a3f83b9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests.xml": "68a77515b920b5df36f00c5b1e9cc61847ea5c4d66e9eeae72401724de98911c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.AntiJoinDistinctTests.xml": "112beaff1289906c619d8486046c04efd21629c21c2364efa499abc7296ed853",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests.xml": "6250da4455cce3cc1071c5b05e63b1f2aad413853acb3df2cb9b2208b63979e3",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests.xml": "a0fac959cd65d90c7e41acb66ba239f5ecff8b32edc22b81b9ff0286daae9e0e",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests.xml": "49b818f20b5f4e663328fd0f63d4211acde00ae10cbe623d5d7e841157511ee2",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest.xml": "e48ec2b4e25e52bc7ea4a69725f8073b8752fa1c1f5d38473b670662ce1a18ae",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.CastTests.xml": "4c15c799f795a02875eddd190196aab1d78da459d62927076d2758bcb46fef19",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.CovarTests.xml": "7f6c2924c43ff5092d71e5fa7bb0b2837f81920a9b4022271374e4b1a5abf3ba",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.CteToLocalViewsTests.xml": "d632a1dad47e85cc8e32fb80ef5f1183742cf0c8dc03b897faf93a643aa07750",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests.xml": "5c1611859e247afa997157552dd8c728620cd1d662651dc1736b75dfbe34bf4c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.DateTimeRangeTests.xml": "460c7a44f76d40a29e1f1fed559e9e0895b05609b68daad84957b7328c5d675f",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests.xml": "184128b656e09b7d4e7ff379127fef4f23b2b95de3e46b66d436244c09b0ff1c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.FloatingPointEqualityTests.xml": "7f422545eb9e2625f03f58f3ff5bfa787bfc03a1bc6833de9c8f599cd8492d4e",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.FloatingPointValueTests.xml": "20eec7768de22ef38eb5d2f572a18f8aea6b05b1c223d079e7035a91e98ef48a",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests.xml": "01deec1b7b9a201e7979bdca009c4bef844f1c15171f17b9d67f0d8e32d3304c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests.xml": "b7ceed93d4c008ffc6e5fb2b2c0c3ada45a9427502acc1f7ddefd8a1b6082400",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.LateralAliasTests.xml": "19a4c9e9dc074f27c56eafe35110aa52880ef92258367b3bb5d6ed2813580c28",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.MapTests.xml": "cc39cebc3ea4d050930b69b3f118a8df5318928b1d309a84da7a0e32f85aa20d",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.ModeTests.xml": "f15736b17a9a0fb97d0c096255cfea5f445ec48f3d60a3cc461dd96e100398f8",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.MultiViewTests.xml": "1e18f83301a943f219b2890e09ee8dbcd37a4a20778e338d04bb5bbc663d07ac",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests.xml": "b2c5d0db828e6dd8b5ad33b9bf763081bfe59256ec1de581cf17ae2dffe67265",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests.xml": "832606440c513fd57bdd20aa96b72dc952988eb4efaa71f0efd29ec57df08e94",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests.xml": "bb8f64aa9c14cdf8dac6922cfe3791254ce211d4cebe3a9e301808f9d42f4c63",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.OuterJoinTests.xml": "ccc5f726d818469c25cda00e3fa7024d11e710897421138c92aca0db703492a6",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.PivotTests.xml": "f4396690563888f76077d6cd111ef1b9fd506738c6b1fc0aa235e6d797b68bf7",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RangeFrameTests.xml": "e6d02ccca0745706e50f968759e6f7f49f3ffded564c1aa762977a411da53db0",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.ReduceExpressionsTests.xml": "b76166fc67a15d366be5a741bde9a1caa4a195523dfc5c82822b01de26ad8ec2",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests.xml": "783f43d513979b950202b75118baeb9906bb039674dba043b8494475cc3add98",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RegexWarningTests.xml": "eda639da8f94dfb0464b2445564e6bdc701a45468cfe9e221f67a30a84671182",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests.xml": "2cf1f6dd7d7ae44d4532353abf4af72a170bc305be1ba6ad04298b204086586d",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests.xml": "7805eedcbb140d1f4ef0f45efce36a7256654865a98f756dbdd54f59e76405cd",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests.xml": "b6341c3301b7728e1d8d7c28c6770acc79d794332ca5dec10601f0515207746c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests.xml": "a0c6f95f9b03b4a68c10953f14f8e698564ed5436b2cc1c2f7823fa5b319e7a9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.RowComparisonTests.xml": "37d2be466beb15b5f97dabfef0196b2361adf05853cfaf9b0e2a7207279d0bd9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.SerdeTest.xml": "941ee9ea333f114b6933fbe9cf53a0a583d790da027501b3e5c1dcebd5ea7453",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.SetOpTests.xml": "cd13e12238eb01607e5130e4f6158a9f6e1aead16a9824d7e5c5cff6bcf9b53d",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.SimplifyTests.xml": "6ebe34d15fdadd33c9830282d377d2e72ac9d05c734759cab358c75a5a09c7be",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.StringCastTrimTests.xml": "f3580c9b70ade71f1fd53263a36897d584d57c622e3354bfbb1d56161b07b2bf",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.StringTests.xml": "6404a12d1a0f7519d2cf2096119e4d595c3c4fdfdbb32e258f5a684dc6418725",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.StructTests.xml": "553648cc2f48b3786dbfe7e3f27741eda048de93d77c28d62e58b52c4f53c62d",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TimeArithmeticTests.xml": "f8bb0e04a1d2333926df6d1303569318ddea2435e6ae80816d5f19a77fe0ed6a",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TimeTests.xml": "24f3bf67c9e3096b7b15092768327c1e6b4b27e24b2eb75cdbc6608122d4e3bc",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests.xml": "2cb89d4724489401ee83ff8fb34f97ac3d0d785d3d035bf6eec367ecade2374c",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests.xml": "b486c77e5e3463f24b32f5619ee6a443adb6d8883c6bd7f36eec56a69b1f76b8",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests.xml": "0e4f7951b501cb95ec274d82533d8a960096b6415d05855a2c2fb9056568842b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TumbleHopTests.xml": "6a937452fd385db367e6ac28bc540076de7896f0fd91ffee4e231175594303ec",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.TypeCoercionRuntimeTests.xml": "35feed26caf20f8442eca1a31de3031e4d06427050cacdb3b7b1efca528a908e",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests.xml": "e4faa94ec4a36abf95a6712eaa25c3827a63d53e7c2e2ee1d4ec9987f8872fb9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.ArgMinGCIncrementalTests.xml": "0fb88c191e2d6fbef21670d43972d55526c41f2e924a2e4091a26b1f7fae2c86",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.BalancedJoinGCIncrementalTests.xml": "ce520fa4dc775bcdd32f66b824bcf8d1e0a44e458c3b137b53b72d5f82f8c6b7",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.DeduplicationIncrementalTests.xml": "5b0d5e40eaeea8bf2e480237990e7635ad0ee01c030fec55e3bf5d0128474d18",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.EmitFinalIncrementalTests.xml": "e0f843f899303740a428ebad1387c57406c1064bdd5107f1714705e8e40ca545",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.ExpressionGCIncrementalTests.xml": "cae3f12c754a3170bdf1c8a167c027e0815558e76d738022f3024b1e9f0ed6bf",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.IncrementalUnboundedStateTests.xml": "59e24d75f312ac86c5a2f780e6daf9b9fbd960a9b707b75dfa0f519faccca632",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.InternalNowTests.xml": "674efa7487f8a0b1b73a89db0d7334f46c21007e328ef9e4793aa40904f69d88",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests.xml": "1725fd3508892af7dceb08f74bd09a34bcd55bea2d7f57ba12083588d881b5a0",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests.xml": "9d2e726556d45f4522357423955e84fe277acebd1d6575da6f82e74f05762aa6",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.LatenessTests.xml": "20d1456f19472336282dbcb0db3db432b71bfdfadc5d5c0080e781782ecdb00d",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.MergeGCIncrementalTests.xml": "15d37261ef5d976375d0e34b45724357db0d0122557fef9ae08bc020fdf31d06",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests.xml": "2824a17a0ae153e509fbae69bf83c6dc6daae20fcbd57777168f9a5661fbfd12",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.MonotoneFunctionsIncrementalTests.xml": "5fffcceddb8b427558a4e32615f04ada53f4de9b9b872b31998b1e49ade1d039",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.ProfilingTests.xml": "da29195423c5c28ddf21b55dde1608b9f1b72df71c6f49f1889433da8083ed9b",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests.xml": "50b764b95e00033942d18ed55757bbe925d1f22d97d5c1875add498b3c8211b6",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.SelfJoinGCIncrementalTests.xml": "edd3c770410f3529c83de96c5df61ec700a67e3680a4f5a217374f9f2100518f",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.StarJoinOptOutIncrementalTests.xml": "0206c85ef8ad40760909751e064fab5c03da13f16cc85075d117bbe9189b0dc3",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests.xml": "8a3518be2c871eeafed3bdf77613a31783e3c2b1fe029854878c1e9d8aeb27fa",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.streaming.UpsertLatenessIncrementalTests.xml": "7f514bb56e4e03751a489a61d4961302c950bda5a13dfb5b1149bf4277921c96",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.suites.TpcDsTest.xml": "ca3125feaca4d1abc40a1e442551d5f40e98e526c6d9cac633e6a18910bcceeb",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest.xml": "05f5f46937eb57f19d50a7b6205e1547f97ce6a9494f6ee14b32b1695197d3fb",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest.xml": "8cc39a72cd993b10f12c3d00721d64be532893a23aaf19ac7d4d7e62a7b391df",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.tools.CorpusExporterTests.xml": "d326079dc8223d06af9680cc23e6acb0ecdf7074a649aa088823fdc3c99bded9",
+    "TEST-org.dbsp.sqlCompiler.compiler.sql.tools.ParserProbeTests.xml": "d4f43441b381cf6f2a394e1bf32a376fefd19a6e22f087ce200dbddd9bfe2077",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferencesTests.xml": "428059e0960b962b511b70271586ddd6c98dd4fdb265ed4f5e4a55700e8c1d25",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphsTests.xml": "c2ca37672c5f85b0150c6ceb4faa7ab752dbf6c1cc2f59880696bd2ced5e85eb",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.CollectExpensiveExpressionsTests.xml": "f824798dc1be9ff800e17045e8adfe56c5d1f352eef38a3596ca63d5dc99b96e",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.DecomposeExpensiveFiltersTests.xml": "c7397e34e86bbff95b431bc056c7c19ab28258d0e4bfaed9f077c4eece9cc404",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.DedupKeysTests.xml": "8fed0ef501921237a5992eb6c133c59f2429802ca3821b9dfb447231001e4bfb",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests.xml": "3cc1c4b409e287fb18da5b0f5d495af803473b70ab28b7c81e0da4879b695d5d",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.IncrementalConstantTests.xml": "cd9002932e802ebd10b95266975042f5a63f0087210cfd1ef27642ad66f7d84d",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.LetTypeRewriteTests.xml": "c916045edc7c8c4580657f5bf19526ab45421317c12d6b7c7cc5bdb0b9cf6351",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.LineageTests.xml": "6d8466e8dc21a98967bfc3c6842322fbbd74d3639cd4040ddd137a58f5e40273",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.PersistentIdTests.xml": "42acba7296a0126e4a1d31c618183d11d98f7b264b4e20d6b5831554eda9fe78",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySourcesTests.xml": "7877144036d61aa127d64e8f0b625b194f570fb2e287b8897ae0c820647e3557",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsTests.xml": "77c5f79c1eb01fd33f00dfc150e0f2ed4fa467f665dd683c5655daea457db1aa",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.ReorderTemporalFiltersTests.xml": "3991dbbd619c28c844af267f4b1f26aebd97c3a923718317acbd649179ae5f57",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.ShareIndexesTests.xml": "6617817edc3a8267affd88ac9e06e332b132a2dd4dfd2b3d27d1465eda9014f3",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.ShareWindowIntegralsTests.xml": "54328aa685245776a82f4a219be6e91c71942052ff16e66d2b7af3e15ac3dc0a",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.StreamKindTests.xml": "bd9af7af5c0172d287ea2efc58b0cd33ec44d830caedb5a4beeb6c719144426b",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.TemporalFilterTests.xml": "d4f061203c8ce1cda304bb9ec12b45c58ff818736fffbd4d65dbc6ee440fd7fc",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.TestTagRegions.xml": "e19f695c04e0e53d39852221e0518b8bad92bf922284aed47643344be2158931",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.keys.ColumnEquivalenceTests.xml": "febbabb37ee61fe9ed955d354a3377e1be6a49af17d6b6c1f018056ae0ccd26f",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests.xml": "42af99646514d6b0bf3de0096cadb4ee1313097d8b8c386a59f3b09dc67c53f8",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyAnalysisTests.xml": "2052b8940f1fb8dc1da2d92395d3719785fc62fc2d0b30fe8c76610ac4497ebf",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyColumnsTests.xml": "fee13660e3a525325437ff3bc1aa9f3dd1f25390d498122399169308c4295d74",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests.xml": "b435fc2a996acb522873ce8258fbce38b7b99122ddffe38e0405f9b5bac4a206",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysisTests.xml": "562d415814c93bad5aaddd953d6da100a1cea727a933c9ff0fe0c3a5701e2c6a",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUseTests.xml": "c0aa33d0d87500f83a04e1a698f0cef8d2ba6c0347eed47d313c7e4dbe298bee",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsIncrementalTests.xml": "55622379e974c353da099538ba3bba87d6be561f37c480ef8097824acd867ebe",
+    "TEST-org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests.xml": "11708728ff0974a1340d0663f7f7c39ac9a716454025284fd346524193b3366c",
+    "TEST-org.dbsp.util.TestUtilities.xml": "f53e867c015840f23ab924e5aae05418105331fbaf8e0749cef4c3546f5d9d95"
+  },
+  "log_sha256": "d2ad60ff53c5a7d0c01899e747b036d9ae6f5ecd08ac7bdc661eb827b4ec1fb0",
+  "schema_version": 1,
+  "scope": "full current compiler Gen-2 runtime; local audit runner plus on-demand CI wiring",
+  "raw_directory": "$SCRATCH/p0-gen2-ci-runner-v2",
+  "engine_provenance": {
+    "forge_commit": "d4879df7cded0fefb176aebd2a9890caa8877665",
+    "forge_platform_commit": "43f386f2022e9c112cf9bc2aea326b0bd3178bcd",
+    "binaries_sha256": {
+      "pipeline": "d47eaa4d11013bfe2a86bebfcc4b3740f67356593e31514fd4b844cde4f9926b",
+      "ir-expander": "2bed89de775e20b340ed2023f684b5a3b1891f527195a42c6329a434b36690ae"
+    },
+    "source_certificate": "crates/sql/evidence/gen2-runtime-let-rewrite.json"
+  },
+  "baseline_counts": {
+    "tests": 2868,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 71
+  },
+  "baseline_runtime_executed": false,
+  "baseline_identities_equal": true,
+  "remote_ci_executed": false,
+  "raw_summary_sha256": "8ad643d7b314c2ac43a9ca581a28e2b55535d3cd0be5c12ba48a94cead90fbdb",
+  "revalidated_summary_sha256": "2f3a17d068722f0c2516f493f59e9589bc11bb0bab197893d90594491da8ce3b",
+  "provenance_sha256": "023c975536e007614524a6b6d61c6bac7de3ec08f18a32d8d183ec920c5c41e0",
+  "original_runner_sha256": "c3e700c443440d37e85e60d3fd8dc046c0140c4ea27413da36d2d8b906ac509f",
+  "sources": {
+    "crates/sql/scripts/run_gen2_probe.py": "bd9021c8d891bb47717c062996d707f65d71b0f12d384b9e37039abfee0a349a",
+    "crates/sql/scripts/summarize_gen2.py": "eba12f46fafd90823ea7e7474f1901fb3ef2f97b2666f2e39dd1184a42cf05b2",
+    "crates/sql/scripts/test_run_gen2_probe.py": "9b4dc6a69c1fa02861312bb9363536b2777df7175e2615cd378a090f155dc91f",
+    "sql-to-dbsp-compiler/SQL-compiler/pom.xml": "d565ca5f8822d2ba929a833c22104b7703b9aa5bb825fe2515c27f63c3aa25cc",
+    ".github/workflows/test-gen2.yml": "7d7e0b8b6046f5c9a909f9aeee7768b458edc82894cf18ce644cbaf8341e8e75",
+    ".github/workflows/test-java.yml": "1f7b04022d9195e68210028631e47501f8cc60bab79b3ea9de4b6164a9431d68"
+  },
+  "approved_dispositions": [],
+  "failed_attempt_retained": "$SCRATCH/p0-gen2-ci-runner-v1",
+  "complete": true
+}

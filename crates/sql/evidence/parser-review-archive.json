@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-parser-review-20261118-v1.tar.gz",
+  "sha256": "94f392b5e3288566f6c4b58662fb103793af7c4efcfa723c0b88b3ac9b9c6e55",
+  "bytes": 528958969,
+  "certificates": [
+    "parser-review-fields.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "parser-review-fields.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-parser-review-repaired-v1/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "parser-review-fields.json": "path-null-binary-sha256"
+  },
+  "scope": "Parser field-policy repairs: frozen failed witnesses, repaired outputs, historical Java and Rust baselines, source and binary snapshots",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/parser-review-archive.json"
+}

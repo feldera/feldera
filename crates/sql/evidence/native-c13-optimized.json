@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-c13-optimized-archive.json",
+  "environment": "Local Linux ARM64 compiler devcontainer image, one pinned CPU, one DBSP worker, optimized Rust release profile with line tables",
+  "scope": "Frozen Unicode projection and forced-spill incremental COUNT DISTINCT. Selected prototypes and a warm-dependency generated shared-library build are measured. Deployment-wide C13 remains open.",
+  "peak_rss_method": "Linux wait4 ru_maxrss collected by a small native parent, avoiding inherited Python RSS",
+  "previous_samples": "Earlier Python-parent RSS runs retained in the archive and excluded from the final runtime summary",
+  "runtime_samples": 248,
+  "classic_shared_library_builds": 15,
+  "workloads": {
+    "count": {
+      "256": {
+        "paired_median_latency_ratio": 1.1314708914965503,
+        "bootstrap_95_percent_interval": [
+          1.1256176345992346,
+          1.137622448582088
+        ],
+        "classic": {
+          "state_bytes": {
+            "p50": 259493,
+            "p95": 259493,
+            "min": 259493,
+            "max": 259493
+          },
+          "step_latency_ns": {
+            "p50": 928627.025,
+            "p95": 998041.5,
+            "min": 904112.5,
+            "max": 1023700.75
+          },
+          "peak_rss_kib": {
+            "p50": 28448,
+            "p95": 28448,
+            "min": 28308,
+            "max": 28448
+          },
+          "rows_per_second": {
+            "p50": 275675.8021338007,
+            "p95": 283109.1757453291,
+            "min": 250073.08043879035,
+            "max": 283150.6034923751
+          },
+          "init_ns": {
+            "p50": 2544122,
+            "p95": 3530621,
+            "min": 2056248,
+            "max": 3911787
+          },
+          "checkpoint_ns": {
+            "p50": 1167249,
+            "p95": 1322832,
+            "min": 1067791,
+            "max": 2975663
+          }
+        },
+        "native": {
+          "state_bytes": {
+            "p50": 259473,
+            "p95": 259473,
+            "min": 259473,
+            "max": 259473
+          },
+          "step_latency_ns": {
+            "p50": 1054261.325,
+            "p95": 1103626.775,
+            "min": 1021865.475,
+            "max": 1130061.15
+          },
+          "peak_rss_kib": {
+            "p50": 33064,
+            "p95": 33320,
+            "min": 32936,
+            "max": 33320
+          },
+          "rows_per_second": {
+            "p50": 242824.0455467718,
+            "p95": 250025.72896600567,
+            "min": 226536.41353832933,
+            "max": 250522.21281866872
+          },
+          "init_ns": {
+            "p50": 8435407,
+            "p95": 9812822,
+            "min": 7639074,
+            "max": 10327697
+          },
+          "checkpoint_ns": {
+            "p50": 1147916,
+            "p95": 1249832,
+            "min": 1096041,
+            "max": 1252207
+          }
+        },
+        "pairs_with_same_file_sizes": 0
+      },
+      "2048": {
+        "paired_median_latency_ratio": 1.1350539580854295,
+        "bootstrap_95_percent_interval": [
+          1.131779262287647,
+          1.138348041426142
+        ],
+        "classic": {
+          "state_bytes": {
+            "p50": 285481,
+            "p95": 285481,
+            "min": 285481,
+            "max": 285481
+          },
+          "step_latency_ns": {
+            "p50": 3051529.9,
+            "p95": 3120196.5,
+            "min": 3001142.4,
+            "max": 3239527.7
+          },
+          "peak_rss_kib": {
+            "p50": 34080,
+            "p95": 34336,
+            "min": 33936,
+            "max": 34336
+          },
+          "rows_per_second": {
+            "p50": 671138.76223202,
+            "p95": 680628.4001405723,
+            "min": 632190.9209172683,
+            "max": 682406.8061548829
+          },
+          "init_ns": {
+            "p50": 2365789,
+            "p95": 3828287,
+            "min": 2038498,
+            "max": 3845828
+          },
+          "checkpoint_ns": {
+            "p50": 1116040,
+            "p95": 1184540,
+            "min": 1062666,
+            "max": 1197916
+          }
+        },
+        "native": {
+          "state_bytes": {
+            "p50": 285461,
+            "p95": 285461,
+            "min": 285461,
+            "max": 285461
+          },
+          "step_latency_ns": {
+            "p50": 3454289.65,
+            "p95": 3547477.15,
+            "min": 3418844.05,
+            "max": 3892920.5
+          },
+          "peak_rss_kib": {
+            "p50": 41256,
+            "p95": 41384,
+            "min": 41000,
+            "max": 41384
+          },
+          "rows_per_second": {
+            "p50": 592886.0076919143,
+            "p95": 598954.8150739438,
+            "min": 526083.180994834,
+            "max": 599032.88071885
+          },
+          "init_ns": {
+            "p50": 8248949,
+            "p95": 9465323,
+            "min": 7656157,
+            "max": 9567656
+          },
+          "checkpoint_ns": {
+            "p50": 1138707,
+            "p95": 1205207,
+            "min": 1092124,
+            "max": 1314373
+          }
+        },
+        "pairs_with_same_file_sizes": 0
+      },
+      "binary_sha256": "f0e2eace093192d0372d874e3f47d816c9d78c61b6ab21baffc2358888306c75",
+      "raw_measurements_sha256": "e4d9f7dbfc39025b61796ec11f245065b77298a92192ca57e58b13094b2665b4"
+    },
+    "unicode": {
+      "64": {
+        "paired_median_latency_ratio": 0.9423667692630951,
+        "bootstrap_95_percent_interval": [
+          0.9341370609293707,
+          0.9465279961724322
+        ],
+        "classic": {
+          "step_latency_ns": {
+            "p50": 40738.91,
+            "p95": 41502.865,
+            "min": 39645.995,
+            "max": 42111.825
+          },
+          "peak_rss_kib": {
+            "p50": 11492,
+            "p95": 11620,
+            "min": 11480,
+            "max": 11620
+          },
+          "rows_per_second": {
+            "p50": 1570979.6850234824,
+            "p95": 1613659.01846921,
+            "min": 1519763.1544109047,
+            "max": 1614286.6385368812
+          },
+          "init_ns": {
+            "p50": 1360790,
+            "p95": 1546165,
+            "min": 1106541,
+            "max": 1655415
+          }
+        },
+        "native": {
+          "step_latency_ns": {
+            "p50": 38419.33,
+            "p95": 39611.83,
+            "min": 36763.71,
+            "max": 39624.745
+          },
+          "peak_rss_kib": {
+            "p50": 13480,
+            "p95": 13596,
+            "min": 13352,
+            "max": 13608
+          },
+          "rows_per_second": {
+            "p50": 1665828.1130878648,
+            "p95": 1726397.5491628794,
+            "min": 1615152.349876321,
+            "max": 1740847.1560677635
+          },
+          "init_ns": {
+            "p50": 6914825,
+            "p95": 7265450,
+            "min": 6511700,
+            "max": 7353825
+          }
+        }
+      },
+      "4096": {
+        "paired_median_latency_ratio": 0.845258790826026,
+        "bootstrap_95_percent_interval": [
+          0.844228572646358,
+          0.8483892533621467
+        ],
+        "classic": {
+          "step_latency_ns": {
+            "p50": 729564.14,
+            "p95": 737289.14,
+            "min": 718959.18,
+            "max": 740572.48
+          },
+          "peak_rss_kib": {
+            "p50": 13668,
+            "p95": 14052,
+            "min": 13408,
+            "max": 14052
+          },
+          "rows_per_second": {
+            "p50": 5614311.032337747,
+            "p95": 5682128.261116433,
+            "min": 5530856.345080498,
+            "max": 5697124.557196696
+          },
+          "init_ns": {
+            "p50": 1291040,
+            "p95": 1388915,
+            "min": 1136998,
+            "max": 1457290
+          }
+        },
+        "native": {
+          "step_latency_ns": {
+            "p50": 618223.46,
+            "p95": 623256.78,
+            "min": 612300.12,
+            "max": 630598.42
+          },
+          "peak_rss_kib": {
+            "p50": 15528,
+            "p95": 15784,
+            "min": 15400,
+            "max": 15784
+          },
+          "rows_per_second": {
+            "p50": 6625436.051876776,
+            "p95": 6678649.75572545,
+            "min": 6495417.479796413,
+            "max": 6689529.964488656
+          },
+          "init_ns": {
+            "p50": 6840534,
+            "p95": 7112117,
+            "min": 6260327,
+            "max": 7130075
+          }
+        }
+      },
+      "binary_sha256": "b1acf8d1fefb2dfe2086f7f86360a7b9b737c445f3776ba8fa8289d469cfee3d",
+      "raw_measurements_sha256": "d3b90c3b22b3b07e98bbce61219a7e7db0650168c1480ea9b8f43bfcd8ce9d0f"
+    }
+  },
+  "classic_warm_build": {
+    "wall_ns": {
+      "p50": 14277750044,
+      "p95": 15464418177,
+      "min": 14205839426,
+      "max": 15464418177
+    },
+    "peak_rss_kib": {
+      "p50": 1354624,
+      "p95": 1354628,
+      "min": 1354608,
+      "max": 1354628
+    },
+    "raw_measurements_sha256": "dcc7e9b7e1578fdf9d8b88c90aa1dcac67a2dfc769d00831d4e9143bf1bb61a5"
+  },
+  "count_state_file_control": "Each final pair differs by 20 bytes in total footprint. A paired control resolves the only difference to dependencies.json. All spill file length distributions match in that control."
+}

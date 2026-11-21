@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-json-execution-20261118-v1.tar.gz",
+  "bytes": 44759565,
+  "sha256": "7dd17528dd7f263a42e83f720287ce7b1f942e6f345e9955adfc5e8a19b35224",
+  "manifest_sha256": "cf0f1dcdcd426b3e915051b2a834d17eca0861e407cb0e0435706963ac321216",
+  "verified_files": 77,
+  "all_members_verified": true
+}

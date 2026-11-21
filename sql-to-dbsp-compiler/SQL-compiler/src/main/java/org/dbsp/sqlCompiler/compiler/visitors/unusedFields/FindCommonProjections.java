@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -54,8 +53,8 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
         int depth = operator.outputType(0).is(DBSPTypeZSet.class) ? 1 : 2;
         boolean failed;
         List<FieldUseMap> usage = new ArrayList<>();
-        List<ParameterFieldUse> useList = new ArrayList<>();
-        List<DBSPClosureExpression> closures = new ArrayList<>();
+        List<DBSPUnaryOperator> readers = new ArrayList<>();
+        List<ParameterFieldUse> uses = new ArrayList<>();
         for (Port<DBSPOperator> p: successors) {
             failed = !p.node().is(DBSPMapOperator.class) &&
                     !p.node().is(DBSPMapIndexOperator.class) &&
@@ -67,8 +66,8 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
                 if (!failed) {
                     FindUsedFields finder = new FindUsedFields(compiler);
                     var useMap = finder.findUsedFields(closure);
-                    useList.add(useMap);
-                    closures.add(closure);
+                    readers.add(unary);
+                    uses.add(useMap);
                     failed = !useMap.hasUnusedFields(depth);
                     if (!failed)
                         usage.add(useMap.get(closure.parameters[0]));
@@ -86,17 +85,35 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
             return;
         }
 
-        for (int index = 0; index < useList.size(); index++) {
-            var useMap = useList.get(index);
+        this.record(operator, readers, uses, depth, reduced);
+    }
 
-            // There should be just 1 parameter.
-            DBSPParameter param = useMap.getParameters().iterator().next();
-            useMap.updateParameterValue(param, reduced);
-            RewriteFields rewriter = useMap.getFieldRewriter(this.compiler, depth);
-            DBSPClosureExpression original = closures.get(index);
-            DBSPClosureExpression clo = rewriter.rewriteClosure(original);
-            DBSPOperator op = successors.get(index).node();
-            Utilities.putNew(this.inputProjection, op, clo);
+    /** Construct the Java closures that the subsequent replacement pass consumes. */
+    public void record(DBSPOperator producer, List<DBSPUnaryOperator> readers, int depth,
+                       List<List<Integer>> paths) {
+        var parameter = readers.get(0).getClosureFunction().parameters[0];
+        var uses = new ParameterFieldUse();
+        uses.set(parameter, new FieldUseMap(parameter.getType(), false));
+        for (var path : paths)
+            new ParameterField(parameter, path).markParameterUse(uses);
+        var readerUses = readers.stream().map(reader -> {
+            var use = new ParameterFieldUse();
+            var param = reader.getClosureFunction().parameters[0];
+            use.set(param, uses.get(parameter));
+            return use;
+        }).toList();
+        this.record(producer, readers, readerUses, depth, uses.get(parameter));
+    }
+
+    private void record(DBSPOperator operator, List<DBSPUnaryOperator> readers, List<ParameterFieldUse> readerUses,
+                        int depth, FieldUseMap reduced) {
+        for (int i = 0; i < readers.size(); i++) {
+            var reader = readers.get(i);
+            var closure = reader.getClosureFunction();
+            var uses = readerUses.get(i);
+            uses.updateParameterValue(closure.parameters[0], reduced);
+            var rewritten = uses.getFieldRewriter(this.compiler, depth).rewriteClosure(closure);
+            Utilities.putNew(this.inputProjection, reader, rewritten);
         }
         DBSPClosureExpression proj = reduced.getProjection(depth);
         Utilities.putNew(this.outputProjection, operator, Objects.requireNonNull(proj));
@@ -105,9 +122,13 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
 
     @Override
     public Token startVisit(IDBSPOuterNode node) {
+        this.clear();
+        return super.startVisit(node);
+    }
+
+    public void clear() {
         this.outputProjection.clear();
         this.inputProjection.clear();
         this.originalOutputSize.clear();
-        return super.startVisit(node);
     }
 }

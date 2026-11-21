@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-balanced-joins-archive.json",
+  "engines": ["classic", "gen2"],
+  "scheduled_placements": 33,
+  "flat_programs_per_engine": 50,
+  "same_input_pass_comparisons": 3242,
+  "rust_final_compiler_comparisons": 100,
+  "java_codec_final_compiler_controls": 100,
+  "active_balancing_in_matrix": 2,
+  "directed_sql_programs_per_engine": 4,
+  "directed_final_compiler_comparisons": 8,
+  "directed_stage_graph_comparisons": 16,
+  "differences": 0,
+  "scope": "Rust selects eligible root joins using exact data port identities. The Java adapter reuses join construction to apply those decisions. In each engine the directed set covers accepted inner and left joins, a join protected by trace retention, and a recursive join. The scheduled matrix retains the intervening Java passes."
+}

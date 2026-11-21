@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-structured-warning-assertions-20261118-v1.tar.gz",
+  "bytes": 14713,
+  "sha256": "1a084a2043de077018827eef37b963d20cff9d237b9a9dcca82aab16a41da0f7",
+  "manifest_sha256": "2fdffc282341af6c0c75b46ebc1d363259419991b59e2da35e2d9ee8f4d91a88",
+  "verified_files": 6,
+  "all_members_verified": true
+}

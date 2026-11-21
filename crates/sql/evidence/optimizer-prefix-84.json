@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-prefix-84-archive.json",
+  "composition": {
+    "classic_cases": 50,
+    "gen2_cases": 50,
+    "placements_with_rust_limiter": 84,
+    "placements_with_java_limiter": 83,
+    "final_rust_candidate_equal": 100,
+    "final_java_codec_control_equal": 100
+  },
+  "additional_placements": [
+    "UDFInliner",
+    "Lineage",
+    "FilterJoinVisitor#1",
+    "FilterJoinVisitor#2",
+    "LowerCircuitVisitor",
+    "ShareWindowIntegrals"
+  ],
+  "isolated_circuit_and_name_counter_comparisons": 698,
+  "frozen_window_candidates": 0,
+  "window_grouping_scope": "Java gathers the candidates and applies the groups. Rust computes grouping. The frozen composition had no candidates.",
+  "rust_limiter": {
+    "empty_error_stream": 96,
+    "nullable_timestamp_distinct": 2,
+    "system_clock_java_fallback": 2
+  }
+}

@@ -43,7 +43,7 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
                     .append("Iteration ")
                     .append(repeats)
                     .newline();
-            DBSPCircuit result = this.transform.apply(circuit);
+            DBSPCircuit result = this.compiler.applyObservedPass("Repeat", 0, repeats, this.transform, circuit);
             Logger.INSTANCE.belowLevel(this, 4)
                     .append("After ")
                     .appendSupplier(this.transform::toString)

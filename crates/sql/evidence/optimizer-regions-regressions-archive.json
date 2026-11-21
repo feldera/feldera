@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-regions-regressions-20261118-v1.tar.gz",
+  "bytes": 11609652,
+  "sha256": "44e0f1bc2008e6744d887edc3d39d74f32eedd54eb17ac7bcc8f744062ac1cc3",
+  "manifest_sha256": "58a94d41682ff7305c00bc6a586bcf87535fe07c5a5a99d1d9af54c0001ad588",
+  "verified_files": 1217,
+  "all_members_verified": true
+}

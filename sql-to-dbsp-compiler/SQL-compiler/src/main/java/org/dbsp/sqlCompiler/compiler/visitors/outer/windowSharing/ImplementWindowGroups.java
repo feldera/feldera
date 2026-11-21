@@ -15,6 +15,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 
 /** Rebuilds the windows of each {@link WindowGroup} on one shared index. */
@@ -27,6 +29,16 @@ public class ImplementWindowGroups extends CircuitCloneVisitor {
         super(compiler, false);
         this.analysis = analysis;
         this.sharedIndex = new LinkedHashMap<>();
+    }
+
+    public record Projection(long window, int[] fields) {}
+
+    /** Per-window projections in the order the analysis allocated shared columns. */
+    public List<List<Projection>> projections() {
+        return new LinkedHashSet<>(this.analysis.groups.values()).stream()
+                .map(group -> group.members.stream()
+                        .map(member -> new Projection(member.window().id, member.fieldsUsed())).toList())
+                .toList();
     }
 
     /** The left input port for every member of `group`. */

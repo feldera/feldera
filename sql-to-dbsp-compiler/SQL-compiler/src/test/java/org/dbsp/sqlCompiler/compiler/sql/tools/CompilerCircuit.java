@@ -20,8 +20,12 @@ public class CompilerCircuit {
     DBSPCircuit circuit;
 
     public CompilerCircuit(DBSPCompiler compiler) {
+        this(compiler, BaseSQLTests.getCircuit(compiler));
+    }
+
+    CompilerCircuit(DBSPCompiler compiler, DBSPCircuit circuit) {
         this.compiler = compiler;
-        this.circuit = BaseSQLTests.getCircuit(compiler);
+        this.circuit = circuit;
     }
 
     public void showErrors() {

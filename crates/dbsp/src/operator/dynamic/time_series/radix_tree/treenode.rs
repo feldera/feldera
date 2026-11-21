@@ -15,6 +15,9 @@ use crate::{
     operator::dynamic::aggregate::AggCombineFunc,
 };
 
+#[cfg(feature = "native-abi")]
+pub mod archive_testing;
+
 /// Pointer to a child node.
 #[derive(
     Clone,

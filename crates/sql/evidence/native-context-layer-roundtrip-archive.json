@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-layer-roundtrip.tar.gz",
+  "bytes": 260916,
+  "sha256": "54ec3e034ff125b05ee50380ba6df49bf7e93eaaaf72624920c75415c7a3cce2",
+  "manifest_sha256": "519425ad0e8ec196fd80456e805b5e9f4f606be4bb2bedea0f78926eb43337e5",
+  "verified_files": 32,
+  "all_members_verified": true
+}

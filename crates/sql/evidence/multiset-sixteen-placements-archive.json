@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-sixteen-placements-20261118-v1.tar.gz",
+  "bytes": 10447323,
+  "sha256": "3d509e7cd1f0b8158f45e05b83d33b625425c9b553dc2a10919757564cd07115",
+  "manifest_sha256": "72862d302b7cbd7ad2165febf8b6d375e28a10a31397a4a713182f01af2ebf00",
+  "verified_files": 5034,
+  "all_members_verified": true
+}

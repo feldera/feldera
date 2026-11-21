@@ -320,7 +320,7 @@ public final class DBSPCircuit extends DBSPNode
                 fromJsonOuterList(node, "declarations", decoder, DBSPDeclaration.class);
         List<DBSPOperator> operators =
                 fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
-        ProgramMetadata metadata = ProgramMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder.typeFactory);
+        ProgramMetadata metadata = decoder.decodeProgramMetadata(Utilities.getProperty(node, "metadata"));
         return new DBSPCircuit(metadata, incremental, declarations, operators);
     }
 }

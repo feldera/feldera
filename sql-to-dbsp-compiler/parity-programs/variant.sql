@@ -1,0 +1,3 @@
+CREATE TABLE t (v VARIANT, label VARCHAR);
+CREATE VIEW v AS SELECT t.v['f'] AS f, CAST(label AS VARIANT) AS label,
+    CAST(NULL AS VARIANT) AS missing FROM t;

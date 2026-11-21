@@ -1,0 +1,17 @@
+{
+  "jar": "SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar",
+  "jar_sha256": "4b50d094f6e4a99acdb9cdb36f0c626790927798ca54ab65031a2e04f89cd950",
+  "attribution_entries": {
+    "LICENSE": {
+      "bytes": 10796,
+      "sha256": "530c12df4df6cbfd34cb3cf42a3bb900185942f3c4c08b4d64984818940af5e1"
+    },
+    "NOTICE": {
+      "bytes": 377,
+      "sha256": "7d04aa2cc4bb1991ac646e2dfce23880d4e5c8f1c42a9746866bce4066015db1"
+    }
+  },
+  "java_source_sha256": "989b6132222cd8190d21dc6a66d6e7ca0b44f727d54f66c09e99c0f55ad14990",
+  "schema_version": 1,
+  "archive_index": "p0-java-packaging-archive.json"
+}

@@ -27,6 +27,7 @@ import org.dbsp.util.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
+import javax.annotation.Nullable;
 
 /** Optimizer using the Calcite program rewrite rules */
 public class CalciteOptimizer implements IWritesLogs {
@@ -112,11 +113,20 @@ public class CalciteOptimizer implements IWritesLogs {
     public static abstract class HepOptimizerStep implements CalciteOptimizerStep {
         /** The program that performs the optimization for the specified optimization level */
         abstract HepProgram getProgram(RelNode node, int level);
+        abstract List<RelOptRule> configuredRules(int level);
 
         @Override
         public RelNode optimize(RelNode rel, int level) {
+            return this.optimize(rel, level, null);
+        }
+
+        RelNode optimize(RelNode rel, int level, @Nullable OptimizerTrace trace) {
             HepProgram program = this.getProgram(rel, level);
             HepPlanner planner = new HepPlanner(program);
+            if (trace != null)
+                planner.addListener(trace);
+            if (trace != null)
+                trace.configured(this.configuredRules(level));
             planner.setRoot(rel);
             return planner.findBestExp();
         }
@@ -126,6 +136,7 @@ public class CalciteOptimizer implements IWritesLogs {
         final int level;
         final String name;
         final HepProgramBuilder builder;
+        final List<RelOptRule> configuredRules = new ArrayList<>();
         boolean abortOnError = false;
 
         public BaseOptimizerStep(String name, int level) {
@@ -159,6 +170,11 @@ public class CalciteOptimizer implements IWritesLogs {
             return this.builder.build();
         }
 
+        @Override
+        List<RelOptRule> configuredRules(int level) {
+            return level < this.level ? List.of() : this.configuredRules;
+        }
+
         void addRules(int level, RelOptRule... rules) {
             if (this.level > level) return;
             for (RelOptRule rule: rules) {
@@ -168,6 +184,7 @@ public class CalciteOptimizer implements IWritesLogs {
                         .appendSupplier(rule::toString)
                         .newline();
                 this.builder.addRuleInstance(rule);
+                this.configuredRules.add(rule);
             }
         }
 
@@ -192,6 +209,21 @@ public class CalciteOptimizer implements IWritesLogs {
         this.createOptimizer();
     }
 
+    /** Synchronous test observation. Callbacks must not mutate the plan. Their
+     * failures propagate rather than being treated as failed optimizer rules. */
+    public interface Observer {
+        void before(String step, RelNode plan);
+        void after(String step, RelNode plan, boolean completed);
+    }
+
+    /** Production leaves this null. Observe before execution because HEP may
+     * update planner-owned objects while applying a step. */
+    @Nullable public Observer observer;
+
+    /** Test-only plan substitution before a named step. The harness must return
+     * a non-null plan; failures propagate outside optimizer rule recovery. */
+    @Nullable public java.util.function.BiFunction<String, RelNode, RelNode> inputTransform;
+
     public RelNode apply(RelNode rel, CompilerOptions options) {
         final RelNode finalRel = rel;
         Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
@@ -203,9 +235,17 @@ public class CalciteOptimizer implements IWritesLogs {
         for (CalciteOptimizerStep step: this.steps) {
             if (step.getName().matches(options.ioOptions.skipCalciteOptimizations))
                 continue;
+            if (this.inputTransform != null)
+                rel = java.util.Objects.requireNonNull(this.inputTransform.apply(step.getName(), rel));
             RelNode optimized;
+            OptimizerTrace trace = OptimizerTrace.create(step.getName(), this.level, rel);
+            boolean completed = false;
+            if (this.observer != null)
+                this.observer.before(step.getName(), rel);
             try {
-                optimized = step.optimize(rel, this.level);
+                optimized = step instanceof HepOptimizerStep hep
+                        ? hep.optimize(rel, this.level, trace) : step.optimize(rel, this.level);
+                completed = true;
                 if (rel != optimized && !rel.deepEquals(optimized)) {
                     Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
                             .append("After ")
@@ -225,6 +265,11 @@ public class CalciteOptimizer implements IWritesLogs {
                         .append(" after exception ")
                         .appendSupplier(ex::getMessage)
                         .newline();
+            } finally {
+                if (trace != null)
+                    trace.finish(rel, completed);
+                if (this.observer != null)
+                    this.observer.after(step.getName(), rel, completed);
             }
         }
         return rel;

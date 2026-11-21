@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-held-out-coverage-20261118-v1.tar.gz",
+  "bytes": 1813013,
+  "sha256": "df7e9b6178f961bb8d7653c7cdef50660682199d431030481e0800b576265583",
+  "manifest_sha256": "32247e9bb6d1b4e5159b9c29b446e2e2ebc45ca7113c2ca1ce8cab0eb13dcb70",
+  "verified_files": 4,
+  "all_members_verified": true
+}

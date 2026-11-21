@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-sql-index-20261118.tar.gz",
+  "bytes": 2363998,
+  "sha256": "2e38784f16d9013d563d333801c951fd1026d4664d647a6f4e1f64a22101e003",
+  "manifest_sha256": "f7b62c345299d602bc9fb636efec724e8d6b66fb1df3db949776a27fb8937faf",
+  "verified_files": 307,
+  "all_members_verified": true
+}

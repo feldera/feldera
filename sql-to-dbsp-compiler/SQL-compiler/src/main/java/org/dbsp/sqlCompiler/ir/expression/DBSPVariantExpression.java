@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -63,9 +64,14 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue,
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
+        // The JSON visitor tracks the type property on the current expression.
+        boolean writingJson = visitor instanceof ToJsonInnerVisitor;
+        if (writingJson)
+            visitor.push(this);
         visitor.property("type");
         this.type.accept(visitor);
-        visitor.push(this);
+        if (!writingJson)
+            visitor.push(this);
         if (this.value != null) {
             visitor.property("value");
             this.value.accept(visitor);

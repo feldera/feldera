@@ -1,0 +1,38 @@
+{
+  "scope": "Inline SQL-defined functions at the original scheduled placement. Check graph structure, source provenance, shared expressions and the generated-name counter.",
+  "comparator_sha256": "1ae39bd7eb85beaa6a023bdef9aac82c38571f529f85313cb601876dd46d63a1",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "5ae901e09b2f6649ea8be32bbe4137fdf389ca3da6ae8c4d7a81057ab12b0f8c",
+      "c3d11a993d02f375397eea492e179901aeaab68ff1ed0ad9e8376b93d4dfe2db"
+    ],
+    "pass": "UDFInliner",
+    "invocations": 8571,
+    "changed": 11,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "39a8bf95f7017a474dbde3ffe0df8ab48802c8a067e53ec96c141d7973d46bde",
+      "a8a737aee17f73687d1d62e821e1985041a1509be9124d8d6284e21ab72a2642"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "b5e232e7667b2105c3e05c31335a5034c2a09e822ef6175681ba51edb1fde7d1",
+      "83353d49ea2a6b52a881e489394a1ccd4aeeec371bb849f7879b341f61d8f1ba"
+    ],
+    "pass": "UDFInliner",
+    "invocations": 8527,
+    "changed": 10,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "258cafe695e5ebf405797823bd88bc8c5bf85a69e6d4ed515fdd5bb9ce297206",
+      "c210c03ac0fa9d64425c26c963fcf56ebabb3d634e4b35919ef18aec266b9568"
+    ]
+  }
+}

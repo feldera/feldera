@@ -17,6 +17,10 @@ public class RemoveViewOperators extends CircuitCloneVisitor {
         this.all = all;
     }
 
+    public boolean removesAllViews() {
+        return this.all;
+    }
+
     @Override
     public void postorder(DBSPViewOperator operator) {
         if (!this.all &&

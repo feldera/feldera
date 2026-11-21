@@ -24,6 +24,8 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -194,8 +196,8 @@ public class Regression2Tests extends SqlIoTest {
         var ccs = this.getCCS(compiler);
         System.setErr(save);
         String messages = ccs.compiler.messages.toString();
-        Assert.assertTrue(messages.contains("of table 's' is unused"));
-        Assert.assertTrue(messages.contains("of table 't' is unused"));
+        DiagnosticAssertions.assertContains(Target.RENDERED, "of table 's' is unused", messages);
+        DiagnosticAssertions.assertContains(Target.RENDERED, "of table 't' is unused", messages);
     }
 
     @Test
@@ -314,8 +316,9 @@ public class Regression2Tests extends SqlIoTest {
                 ---
                  1""");
         Assert.assertEquals(1, ccs.compiler.messages.messages.size());
-        Assert.assertTrue(ccs.compiler.messages.getMessage(0).toString().contains(
-                "warning: Unknown setting: Variable 't' does not control any known settings"));
+        DiagnosticAssertions.assertContains(Target.RENDERED,
+                "warning: Unknown setting: Variable 't' does not control any known settings",
+                ccs.compiler.messages.getMessage(0).toString());
     }
 
     @Test

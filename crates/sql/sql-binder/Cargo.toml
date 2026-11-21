@@ -1,0 +1,19 @@
+[package]
+name = "feldera-sql-binder"
+description = "Feldera SQL name resolution and relational program construction"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+feldera-sql-source = { path = "../sql-source" }
+feldera-fold-probe = { path = "../fold-probe", default-features = false }
+feldera-sql-parser = { path = "../sql-parser" }
+feldera-sql-rel-model = { path = "../sql-rel-model" }
+feldera-type-derivation-probe = { path = "../type-derivation-probe" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sqlparser_064 = { package = "sqlparser", path = "../parser-probe/vendor/sqlparser", default-features = false, features = ["std", "visitor"] }

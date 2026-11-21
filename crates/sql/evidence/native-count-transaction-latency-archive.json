@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-count-transaction-latency-20261118.tar.gz",
+  "bytes": 96212437,
+  "sha256": "a65e997546157ec04085dc48ec5625f9fc46590db424a96af9374d9a29852123",
+  "manifest_sha256": "b2235ec864f28b30e0385d0f8c7643b7430970ef0dd9cdf11d4c753634558d7e",
+  "verified_files": 811,
+  "all_members_verified": true
+}

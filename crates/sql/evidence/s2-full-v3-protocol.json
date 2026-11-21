@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-seams-v20",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+    "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+  "stage": "S2",
+  "artifact_contract": "seam-v1",
+  "protocol_version": 3,
+  "raw_evidence": "$SCRATCH/p0-s2-full-v7",
+  "cases": 8571,
+  "observations": 3503220,
+  "equal": true,
+  "jvm_runs": 12,
+  "differences": [],
+  "runtime_executed": false,
+  "full_optimizer_prefix_compared": true,
+  "independent_review": false,
+  "shards": [
+    {
+      "path": "$SCRATCH/p0-s2-full-v7/shard-000/complete.json",
+      "sha256": "9c3adc4d639624213080a5204ac56837d1514d0d1602cb10fea81e5d09fc8302",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v20",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+          "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 580581,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s2-full-v7/shard-001/complete.json",
+      "sha256": "ded51ae77a27f0aefdee8120230b2f248d1063c17be3d06830a88968daf1613d",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v20",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+          "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 586572,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s2-full-v7/shard-002/complete.json",
+      "sha256": "a1ab7791ed2ce2f8cee2873790bb2333afd18c74303f3cc96e35bbba21b361fb",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v20",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+          "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 583452,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s2-full-v7/shard-003/complete.json",
+      "sha256": "e6f8bb2e05ad6760aa653c338950968f52cfd97001ef7f6eb66c9f82b2784837",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v20",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+          "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 585824,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s2-full-v7/shard-004/complete.json",
+      "sha256": "d4f858e9f636aeeea0d286306a6bda2a4821ef9e323fc8ca19c5908144518786",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v20",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+          "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 582499,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s2-full-v7/shard-005/complete.json",
+      "sha256": "645e907a10d6a10d9584b040566304e97123d4d4de4fbb52a80ea5224cc7fdb6",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v20",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+          "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S2",
+        "execution_order": [
+          "replay-s2",
+          "capture"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": true,
+        "observations": 584292,
+        "capture_transparency": false,
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    }
+  ]
+}

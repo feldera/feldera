@@ -1,0 +1,727 @@
+{
+  "id": "feldera-system-prelude",
+  "schema_version": "statement-program-v5",
+  "table": {
+    "schema_version": "input-uses-v1",
+    "relations": 1,
+    "functions": 0,
+    "type_table": {
+      "schema_version": "types-v0",
+      "sources": [
+        {
+          "name": "(no input file)",
+          "text": ""
+        },
+        {
+          "name": "compiler-generated SQL",
+          "text": "CREATE TABLE NOW(now TIMESTAMP NOT NULL); -- LATENESS INTERVAL 0 SECONDS\n-- next table will be deleted after view is hooked to proper inputs\nCREATE TABLE FELDERA_ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL);\nCREATE VIEW ERROR_VIEW AS SELECT * FROM FELDERA_ERROR_TABLE;\n"
+        }
+      ],
+      "types": [
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": []
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": []
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "table_or_view_name",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 3
+              },
+              {
+                "name": {
+                  "name": "message",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 3
+              },
+              {
+                "name": {
+                  "name": "metadata",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 3
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "character",
+            "fixed": false,
+            "length": {
+              "kind": "unspecified"
+            },
+            "metadata": {
+              "kind": "present",
+              "charset": "UTF-8",
+              "collation": "ISO-8859-1$en_US$primary",
+              "identity": "builtin_implicit",
+              "coercibility": "implicit"
+            }
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "timestamp",
+            "precision": {
+              "kind": "specified",
+              "value": 6
+            },
+            "zone": "none"
+          }
+        }
+      ],
+      "roots": [
+        0,
+        1,
+        2,
+        4,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        2,
+        4,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        2
+      ]
+    },
+    "objects": [],
+    "environments": [
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": []
+        },
+        "row": 0
+      },
+      {
+        "owner": {
+          "kind": "constant"
+        },
+        "row": 1
+      }
+    ],
+    "uses": []
+  },
+  "expressions": {
+    "schema_version": "expression-objects-v2",
+    "operator_objects": [],
+    "operators": [],
+    "expressions": [],
+    "environments": [
+      {
+        "input": 0,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 1,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 1,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 1,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      }
+    ],
+    "relation_uses": [
+      {
+        "relation": 0,
+        "environment": 0,
+        "roots": []
+      }
+    ],
+    "value_uses": [
+      {
+        "environment": 1,
+        "roots": []
+      },
+      {
+        "environment": 2,
+        "roots": []
+      },
+      {
+        "environment": 3,
+        "roots": []
+      }
+    ]
+  },
+  "producers": {
+    "schema_version": "input-producers-v0",
+    "relations": [
+      {
+        "form": "LogicalTableScan",
+        "row": 2,
+        "inputs": [],
+        "constants": []
+      }
+    ],
+    "roots": [
+      0
+    ],
+    "function_rows": []
+  },
+  "table_scan_order": [
+    0
+  ],
+  "properties": {
+    "schema_version": "relation-properties-v1",
+    "operators": {
+      "kind": "shared"
+    },
+    "relations": [
+      {
+        "fields": {
+          "kind": "scan",
+          "name": [
+            "schema",
+            "feldera_error_table"
+          ]
+        },
+        "metadata": {
+          "traits": [],
+          "hints": [
+            {
+              "name": "alias",
+              "position": {
+                "line": 4,
+                "column": 41,
+                "end_line": 4,
+                "end_column": 59,
+                "quoted": false
+              },
+              "inherit_path": [],
+              "list": [
+                "feldera_error_table"
+              ],
+              "options": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "catalog": {
+    "schema_version": "catalog-v1",
+    "schemas": [
+      {
+        "source": 1,
+        "name": {
+          "name": "now",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "absent"
+          },
+          "text": "CREATE TABLE now (now TIMESTAMP NOT NULL)",
+          "internal_text": "CREATE TABLE now (now TIMESTAMP NOT NULL)",
+          "empty": false
+        },
+        "values": 0,
+        "columns": [
+          {
+            "name": {
+              "name": "now",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 4,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "now TIMESTAMP NOT NULL",
+              "internal_text": "now TIMESTAMP NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      },
+      {
+        "source": 1,
+        "name": {
+          "name": "feldera_error_table",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "absent"
+          },
+          "text": "CREATE TABLE feldera_error_table (table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL)",
+          "internal_text": "CREATE TABLE feldera_error_table (table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL)",
+          "empty": false
+        },
+        "values": 1,
+        "columns": [
+          {
+            "name": {
+              "name": "table_or_view_name",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 3,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "table_or_view_name VARCHAR NOT NULL",
+              "internal_text": "table_or_view_name VARCHAR NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "message",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 3,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "message VARCHAR NOT NULL",
+              "internal_text": "message VARCHAR NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "metadata",
+              "quoted": false
+            },
+            "index": 2,
+            "ty": 3,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "metadata VARCHAR NOT NULL",
+              "internal_text": "metadata VARCHAR NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      },
+      {
+        "source": 1,
+        "name": {
+          "name": "error_view",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "absent"
+          },
+          "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+          "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+          "empty": false
+        },
+        "values": 2,
+        "columns": [
+          {
+            "name": {
+              "name": "table_or_view_name",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 3,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "message",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 3,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "metadata",
+              "quoted": false
+            },
+            "index": 2,
+            "ty": 3,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      }
+    ],
+    "tables": [
+      {
+        "schema": 1,
+        "row": 2,
+        "name": [
+          "schema",
+          "feldera_error_table"
+        ]
+      }
+    ],
+    "scans": [
+      {
+        "relation": 0,
+        "table": 0
+      }
+    ]
+  },
+  "diagnostics": {
+    "before": [
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      }
+    ],
+    "after": {
+      "context": {
+        "kind": "absent"
+      },
+      "messages": []
+    }
+  },
+  "context": {
+    "options": {
+      "help": false,
+      "ioOptions": {
+        "anonymize": false,
+        "checkSerialization": false,
+        "correlatedColumns": false,
+        "crates": "",
+        "dumpCircuits": "",
+        "dumpProducerCommit": "",
+        "dumpRuntimeAbi": "",
+        "emitDataflow": null,
+        "emitHandles": false,
+        "emitJpeg": false,
+        "emitJsonErrors": false,
+        "emitJsonSchema": null,
+        "emitPlan": null,
+        "emitPng": false,
+        "emitSvg": false,
+        "enterprise": false,
+        "errorFile": "",
+        "format": false,
+        "gen2": true,
+        "inputCircuit": true,
+        "inputFile": null,
+        "interpreterJson": false,
+        "loggingLevel": {},
+        "noRust": false,
+        "nowStream": true,
+        "outputFile": "",
+        "quiet": false,
+        "raw": false,
+        "readS2": false,
+        "readS3": false,
+        "runtimePath": "",
+        "showVersion": false,
+        "skipCalciteOptimizations": "",
+        "sqlNames": false,
+        "testing": false,
+        "trimInputs": false,
+        "verbosity": 0,
+        "writeS2": "",
+        "writeS3": ""
+      },
+      "languageOptions": {
+        "cteViews": false,
+        "generateInputForEveryTable": false,
+        "ignoreOrderBy": false,
+        "incrementalize": false,
+        "lenient": false,
+        "optimizationLevel": 2,
+        "outputsAreSets": false,
+        "streaming": false,
+        "throwOnError": false,
+        "unaryPlusNoop": false,
+        "unrestrictedIOTypes": false
+      }
+    },
+    "sources": {
+      "file": null,
+      "program": "\n",
+      "lines": [
+        ""
+      ]
+    },
+    "input_source": "API",
+    "unresolved_view_lateness": []
+  },
+  "statements": [
+    {
+      "source": {
+        "source": 1,
+        "kind": "CREATE_TABLE",
+        "visible": false,
+        "statement_text": "CREATE TABLE `now` (`now` TIMESTAMP NOT NULL)",
+        "diagnostic_text": "CREATE TABLE now (now TIMESTAMP NOT NULL)",
+        "position": {
+          "line": 1,
+          "column": 1,
+          "end_line": 1,
+          "end_column": 40,
+          "quoted": false
+        },
+        "position_internal": true
+      },
+      "kind": "create_table",
+      "schema": 0,
+      "name": {
+        "name": "now",
+        "quoted": false
+      },
+      "name_diagnostic": {
+        "origin": {
+          "kind": "source",
+          "source": 1,
+          "start": {
+            "line": 1,
+            "column": 14
+          },
+          "end": {
+            "line": 1,
+            "column": 16
+          }
+        },
+        "text": "now",
+        "internal_text": "now",
+        "empty": false
+      },
+      "foreign_keys": []
+    },
+    {
+      "source": {
+        "source": 1,
+        "kind": "CREATE_TABLE",
+        "visible": false,
+        "statement_text": "CREATE TABLE `feldera_error_table` (`table_or_view_name` VARCHAR NOT NULL, `message` VARCHAR NOT NULL, `metadata` VARCHAR NOT NULL)",
+        "diagnostic_text": "CREATE TABLE feldera_error_table (table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL)",
+        "position": {
+          "line": 3,
+          "column": 1,
+          "end_line": 3,
+          "end_column": 122,
+          "quoted": false
+        },
+        "position_internal": true
+      },
+      "kind": "create_table",
+      "schema": 1,
+      "name": {
+        "name": "feldera_error_table",
+        "quoted": false
+      },
+      "name_diagnostic": {
+        "origin": {
+          "kind": "source",
+          "source": 1,
+          "start": {
+            "line": 3,
+            "column": 14
+          },
+          "end": {
+            "line": 3,
+            "column": 32
+          }
+        },
+        "text": "feldera_error_table",
+        "internal_text": "feldera_error_table",
+        "empty": false
+      },
+      "foreign_keys": []
+    },
+    {
+      "source": {
+        "source": 1,
+        "kind": "CREATE_VIEW",
+        "visible": false,
+        "statement_text": "CREATE VIEW `error_view` AS\nSELECT `feldera_error_table`.`table_or_view_name`, `feldera_error_table`.`message`, `feldera_error_table`.`metadata`\nFROM `schema`.`feldera_error_table` AS `feldera_error_table`",
+        "diagnostic_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+        "position": {
+          "line": 4,
+          "column": 1,
+          "end_line": 4,
+          "end_column": 59,
+          "quoted": false
+        },
+        "position_internal": true
+      },
+      "kind": "create_view",
+      "schema": 2,
+      "view_kind": "STANDARD",
+      "emit_final": -1,
+      "name": {
+        "name": "error_view",
+        "quoted": false
+      },
+      "root": {
+        "relation": 0,
+        "validated_type": 2,
+        "kind": "SELECT",
+        "fields": [
+          {
+            "index": 0,
+            "name": "table_or_view_name"
+          },
+          {
+            "index": 1,
+            "name": "message"
+          },
+          {
+            "index": 2,
+            "name": "metadata"
+          }
+        ],
+        "collation": [],
+        "hints": []
+      }
+    }
+  ]
+}

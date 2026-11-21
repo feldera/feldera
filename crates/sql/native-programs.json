@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "selection_policy": "Ten cases chosen before native implementation: outer joins and retractions; nullable/empty aggregates; decimal arithmetic/window; Unicode string operations/order; JSON nested-row conversion. No current native support filter.",
+  "programs": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#leftOuterJoinTest/0",
+      "sha256": "198c0251f4b96a5be6b9877517b2dad81e457de3b4b46a8948d9568a02675fd1",
+      "features": [
+        "left_outer_join",
+        "null_keys",
+        "retractions"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#fullOuterJoinTest/0",
+      "sha256": "e16494ae8ceeccad109d8fa24180c0ad33361a80d185c5b79bc842a4aa5541ba",
+      "features": [
+        "full_outer_join",
+        "retractions"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#optionAggregateTest/0",
+      "sha256": "ff74ca84a7e1a74ee7bed9478cc95a8c5ad4e2bec3c839f86aeee33d1cf639a5",
+      "features": [
+        "nullable_sum",
+        "aggregate_group_presence"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#emptyAggregate/0",
+      "sha256": "8a424b2abc80ac3332d056d53e157e88c4dca35b178519a34116786fdb969179",
+      "features": [
+        "empty_count",
+        "count_distinct"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overDecimalTest/0",
+      "sha256": "bb61be22207d82695111308950e54cee2fa92b83d71f02658186ff646a965068",
+      "features": [
+        "decimal_window_aggregate"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testAdd/0",
+      "sha256": "c3abb8a846a4400834d0cf2900fdbdcccb0f18f522920d92011d5b29a71badf4",
+      "features": [
+        "decimal_add",
+        "joins"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testMultiply/0",
+      "sha256": "4f2f7f427fa77d8a7cb16516abc05a88d43c7420e61911e9b97471d66267471e",
+      "features": [
+        "decimal_multiply",
+        "joins"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.SerdeTest#jsonStructTest2/0",
+      "sha256": "2883484d5b9fcda2d7c34a487f250b1fdf05af595954b791fe1250fcd103da41",
+      "features": [
+        "json_to_nested_row"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/0",
+      "sha256": "22a9e41fa6b03ea3db445790076f3a8ac71924571d17275ec142062d99addd98",
+      "features": [
+        "unicode_string_functions",
+        "json_connector_fixture"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/1",
+      "sha256": "bade57712d40fef7fae7222dff513ddb374fdc7c97f335a09dfe7644b9a6faad",
+      "features": [
+        "unicode_string_order"
+      ]
+    }
+  ],
+  "connector": {
+    "case_id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/0",
+    "step": 0,
+    "input": 0,
+    "format": {
+      "name": "json",
+      "config": {
+        "update_format": "insert_delete",
+        "array": false
+      }
+    },
+    "scope": "Derived transport fixture for existing typed input; connector execution remains pending."
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-tail-activity-archive.json",
+  "strict_graphs_and_name_counters_equal": {
+    "CreateStarJoins": {"classic": 50, "gen2": 50},
+    "Gen2Passes": {"classic": 50, "gen2": 50},
+    "ImplementStatics": {"classic": 50, "gen2": 50},
+    "UnusedFields": {"classic": 50, "gen2": 50}
+  },
+  "composed_placements": 66,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "scope": "Isolated star-join search, Gen-2 apply-closure clone removal, named classic constants, and direct projections whose unused fields are primary keys."
+}

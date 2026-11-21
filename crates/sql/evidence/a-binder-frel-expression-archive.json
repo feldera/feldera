@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-frel-expression-20261118-v1.tar.gz",
+  "bytes": 7594064,
+  "sha256": "6ed05499eb1515a37a52a625ae518619009a5d022290a993ced6b783ab60be70",
+  "manifest_sha256": "5b2d28f45a47cae7d724896eab725ec2f3dd58078d8c256456d7cca31dd89cb4",
+  "verified_files": 311,
+  "all_members_verified": true
+}

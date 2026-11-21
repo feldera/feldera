@@ -1,0 +1,704 @@
+{
+  "schema_version": 1,
+  "scope": "deterministic raw-parser mutation experiment and scoped grammar rejection repairs",
+  "complete": true,
+  "raw_directory": "$SCRATCH/p0-parser-mutation-matrix-v3",
+  "completion": {
+    "path": "$SCRATCH/p0-parser-mutation-matrix-v3/complete.json",
+    "sha256": "371d30dd2bc3c06e1ea06963f2e5d62b09509b1294b813ec9a698760076132de"
+  },
+  "parser_binary": {
+    "path": "$SCRATCH/p0-parser-mutation-matrix-v3/feldera-parser-probe",
+    "sha256": "0aae02e1e5530e74719e50ea45d6146815d1eda2d4d2e63e4e8c40aa3d15dae3"
+  },
+  "build": {
+    "path": "$SCRATCH/p0-parser-mutation-build-v9/build.json",
+    "sha256": "dd015a2ad93715e86d47f747acbea2b1a34c3262091c3c5a01ccc069b34c2b9a"
+  },
+  "preparation": {
+    "record": {
+      "path": "$SCRATCH/p0-parser-mutations-v4/prepared/preparation.json",
+      "sha256": "87c005e08d1a8e0a2e2c6c7174024eb8b8a18df00c372413c0789e79b6a1e393"
+    },
+    "schema_version": 1,
+    "scope": "isolated raw submissions with deterministic Unicode edits and an appended QUALIFY clause",
+    "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "generator_sha256": "019abacf29c8b9240f512c7aa3ed28c50351219c67b302f72a8a82486051360e",
+    "source_cases": 8571,
+    "source_submissions": 34015,
+    "empty_submissions_skipped": 11,
+    "distinct_submissions": 5552,
+    "controls": 5552,
+    "mutations": 22208,
+    "cases": 27760,
+    "source_options_applied": false,
+    "semantic_equivalence_checked": false,
+    "generated_input_sha256": "7c927c0ae110162e985138ddb54a59ea1cc6e47c3cf906c0f11b30650a37b31a"
+  },
+  "failed_baseline": {
+    "record": {
+      "path": "$SCRATCH/p0-parser-mutations-v4/comparison.json",
+      "sha256": "ddcbc1ef4730b0f22a282fcf9a0eadb444f00a1edfd09ff2f48adb2500395c55"
+    },
+    "counts": {
+      "0.62.0/feldera_prototype": {
+        "both_accept": 9067,
+        "accepted_submissions": 9413,
+        "accepted_cases": 9413,
+        "both_reject": 16880,
+        "rejected_submissions": 18347,
+        "rejected_cases": 18347,
+        "java_only": 1467,
+        "rust_only": 346
+      },
+      "0.62.0/generic": {
+        "both_accept": 9275,
+        "accepted_submissions": 9638,
+        "accepted_cases": 9638,
+        "both_reject": 16863,
+        "rejected_submissions": 18122,
+        "rejected_cases": 18122,
+        "java_only": 1259,
+        "rust_only": 363
+      },
+      "0.64.0/feldera_prototype": {
+        "both_accept": 10260,
+        "accepted_submissions": 10602,
+        "accepted_cases": 10602,
+        "both_reject": 16884,
+        "rejected_submissions": 17158,
+        "rejected_cases": 17158,
+        "rust_only": 342,
+        "java_only": 274
+      },
+      "0.64.0/generic": {
+        "both_accept": 9415,
+        "accepted_submissions": 9810,
+        "accepted_cases": 9810,
+        "both_reject": 16831,
+        "rejected_submissions": 17950,
+        "rejected_cases": 17950,
+        "java_only": 1119,
+        "rust_only": 395
+      }
+    },
+    "provenance": {
+      "path": "$SCRATCH/p0-parser-mutations-v4/provenance.json",
+      "sha256": "71c35b540fdb2396c86a536153642e555acde46b66d9101e2cae935367d31b03"
+    }
+  },
+  "comparisons": {
+    "corpus": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v3/corpus-comparison.json",
+        "sha256": "57af338e55e1eec9874262be89b07984e86743d630d9937490fa2ac4e0d915fe"
+      },
+      "cases": 8571,
+      "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 31127,
+          "accepted_submissions": 31127,
+          "accepted_cases": 5807,
+          "java_only": 2888,
+          "rejected_submissions": 2888,
+          "rejected_cases": 2764
+        },
+        "0.62.0/generic": {
+          "both_accept": 31317,
+          "accepted_submissions": 31317,
+          "accepted_cases": 5978,
+          "java_only": 2698,
+          "rejected_submissions": 2698,
+          "rejected_cases": 2593
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 33923,
+          "accepted_submissions": 33923,
+          "accepted_cases": 8479,
+          "java_only": 92,
+          "rejected_submissions": 92,
+          "rejected_cases": 92
+        },
+        "0.64.0/generic": {
+          "both_accept": 33308,
+          "accepted_submissions": 33308,
+          "accepted_cases": 7876,
+          "java_only": 707,
+          "rejected_submissions": 707,
+          "rejected_cases": 695
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {},
+        "0.62.0/generic": {},
+        "0.64.0/feldera_prototype": {},
+        "0.64.0/generic": {}
+      },
+      "evidence_sha256": {
+        "rust_cases": "4d836f320dcbb715aa8fcc49c53e079461ecc2b2bf2be454b709e2504ec15b5b",
+        "java_cases": "ade37866d4eb7c0c0d0a194b006a914c4cf142b3bc5a511d8ffbf2337cabb921",
+        "rust_completion": "bb2d79d1223c13b29129ab185dfbb076e4f9b0fb78d78e5d2f6891d490ccbc49",
+        "java_completion": "10c7dcac56886a6edbce011622eed19c0314f9ab197ef2e622f67ca1e57a77d6",
+        "comparison": "a52bc13770b236f15db2695c984a88f2083275b0b657b3c29b41a321fb36202c"
+      }
+    },
+    "keywords": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v3/keywords-comparison.json",
+        "sha256": "9b4054bb491de1504a070d0109ce4359a21f4598f62dcacdbfe25048053de7b0"
+      },
+      "cases": 13660,
+      "input_sha256": "5ef1e9a789b229c9233b18a2678cbd0f12080c4874a91af5aa134952da65eb76",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13651,
+          "accepted_cases": 13651,
+          "rust_only": 504,
+          "java_only": 3,
+          "rejected_submissions": 9,
+          "rejected_cases": 9,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13147,
+          "accepted_cases": 13147,
+          "both_reject": 510,
+          "rejected_submissions": 513,
+          "rejected_cases": 513,
+          "java_only": 3
+        },
+        "0.64.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 504,
+          "different": 6
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "different": 410,
+          "equal": 100
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "2056085a33701f05847077f22e4f85f6ed102427ab4cf5cb2f9240e639fa36bf",
+        "java_cases": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695",
+        "rust_completion": "48bfa0316f54120b513cedae74b549d680f26be2d4d59bca2d6e93230bb9af7e",
+        "java_completion": "af35247a02e0b1653f599c3b0bb9adf47f824a39c3d4d269b12278c71adc109e",
+        "comparison": "a52bc13770b236f15db2695c984a88f2083275b0b657b3c29b41a321fb36202c"
+      }
+    },
+    "diagnostics": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v3/diagnostics-comparison.json",
+        "sha256": "7bc8449e16a4457b854edd2441b21719f38c010b478ce51c86dba15e1fb721de"
+      },
+      "cases": 1143,
+      "input_sha256": "8d81c2174eaba71a2b0ebc569c66afaec491f24a1a755f67f36dda450b306a82",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "java_only": 677,
+          "rejected_submissions": 683,
+          "rejected_cases": 682,
+          "both_accept": 1355,
+          "accepted_submissions": 1363,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "java_only": 676,
+          "rejected_submissions": 682,
+          "rejected_cases": 682,
+          "both_accept": 1356,
+          "accepted_submissions": 1364,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 2023,
+          "accepted_submissions": 2023,
+          "accepted_cases": 1120,
+          "java_only": 9,
+          "rejected_submissions": 23,
+          "rejected_cases": 23,
+          "both_reject": 14
+        },
+        "0.64.0/generic": {
+          "java_only": 639,
+          "rejected_submissions": 645,
+          "rejected_cases": 645,
+          "both_accept": 1393,
+          "accepted_submissions": 1401,
+          "accepted_cases": 498,
+          "rust_only": 8,
+          "both_reject": 6
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "java_position_missing": 2,
+          "equal": 10,
+          "different": 2
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "2245969492cb075f53e1cdec2b1372c8926db20e1285f024007cb75d871eaf40",
+        "java_cases": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7",
+        "rust_completion": "df56a28430e08a5fc8cd4c64a7201d393d0a35c04fa476caa3019d16ac5b50c8",
+        "java_completion": "fd21c06eed0e11dfea83a019d6412a1ffe4aa3cce3778a31128c2a8f1b6ce7aa",
+        "comparison": "a52bc13770b236f15db2695c984a88f2083275b0b657b3c29b41a321fb36202c"
+      }
+    },
+    "adversarial": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v3/adversarial-comparison.json",
+        "sha256": "295c537c3f2ba35efbf985532fb5f8c18610cb9637c65d959e6e9c857ca8514e"
+      },
+      "cases": 614,
+      "input_sha256": "dfaa6600324f5568c4fc412419fb0a240038c6a717a2f6ed6ae83c18f19688df",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 159,
+          "accepted_submissions": 275,
+          "accepted_cases": 275,
+          "rust_only": 116,
+          "java_only": 177,
+          "rejected_submissions": 339,
+          "rejected_cases": 339,
+          "both_reject": 162
+        },
+        "0.62.0/generic": {
+          "both_accept": 202,
+          "accepted_submissions": 344,
+          "accepted_cases": 344,
+          "rust_only": 142,
+          "java_only": 134,
+          "rejected_submissions": 270,
+          "rejected_cases": 270,
+          "both_reject": 136
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 302,
+          "accepted_submissions": 302,
+          "accepted_cases": 302,
+          "java_only": 34,
+          "rejected_submissions": 312,
+          "rejected_cases": 312,
+          "both_reject": 278
+        },
+        "0.64.0/generic": {
+          "both_accept": 208,
+          "accepted_submissions": 357,
+          "accepted_cases": 357,
+          "rust_only": 149,
+          "java_only": 128,
+          "rejected_submissions": 257,
+          "rejected_cases": 257,
+          "both_reject": 129
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 278,
+          "rust_accepts": 116,
+          "equal": 33,
+          "different": 120,
+          "java_position_missing": 1,
+          "rust_position_missing": 8
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 278,
+          "rust_accepts": 142,
+          "equal": 29,
+          "different": 97,
+          "rust_position_missing": 9,
+          "java_position_missing": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 278,
+          "different": 124,
+          "equal": 151,
+          "java_position_missing": 3
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 278,
+          "rust_accepts": 149,
+          "equal": 28,
+          "different": 91,
+          "rust_position_missing": 9,
+          "java_position_missing": 1
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "46f0f8c124b3cd2f0edf3e130e9a24a0d95bf7c6f52223135aff66a9f68117ce",
+        "java_cases": "0fe8250061ab646d2972cb18603098f9dce27edbf1cba1c76bd0ff7bb4d7b93c",
+        "rust_completion": "46aa1ee1c003c80318c778de4d9447513dfc515de6bed23b4789945921b96304",
+        "java_completion": "24276e6db23c6d75eef1bc8622ac11d6ae2bf16584145ea754023ba3d48c50bd",
+        "comparison": "a52bc13770b236f15db2695c984a88f2083275b0b657b3c29b41a321fb36202c"
+      }
+    },
+    "mutations": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v3/mutations-comparison.json",
+        "sha256": "acf9cb6f37c8122f042bfcdac6ea2f849904be01f3dbe02c90507ddf9c96edb5"
+      },
+      "cases": 27760,
+      "input_sha256": "7c927c0ae110162e985138ddb54a59ea1cc6e47c3cf906c0f11b30650a37b31a",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 9067,
+          "accepted_submissions": 9413,
+          "accepted_cases": 9413,
+          "both_reject": 16880,
+          "rejected_submissions": 18347,
+          "rejected_cases": 18347,
+          "java_only": 1467,
+          "rust_only": 346
+        },
+        "0.62.0/generic": {
+          "both_accept": 9275,
+          "accepted_submissions": 9638,
+          "accepted_cases": 9638,
+          "both_reject": 16863,
+          "rejected_submissions": 18122,
+          "rejected_cases": 18122,
+          "java_only": 1259,
+          "rust_only": 363
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 10260,
+          "accepted_submissions": 10260,
+          "accepted_cases": 10260,
+          "both_reject": 17226,
+          "rejected_submissions": 17500,
+          "rejected_cases": 17500,
+          "java_only": 274
+        },
+        "0.64.0/generic": {
+          "both_accept": 9415,
+          "accepted_submissions": 9810,
+          "accepted_cases": 9810,
+          "both_reject": 16831,
+          "rejected_submissions": 17950,
+          "rejected_cases": 17950,
+          "java_only": 1119,
+          "rust_only": 395
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 17226,
+          "equal": 7714,
+          "different": 9080,
+          "rust_position_missing": 86,
+          "rust_accepts": 346
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 17226,
+          "equal": 7749,
+          "different": 9024,
+          "rust_position_missing": 90,
+          "rust_accepts": 363
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 17226,
+          "equal": 10370,
+          "different": 6856
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 17226,
+          "equal": 7753,
+          "different": 8984,
+          "rust_position_missing": 94,
+          "rust_accepts": 395
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "1252844cc28a932a608cadc24a04b896704be0c26f7f4b61d3d3165116eef7a9",
+        "java_cases": "fc990d6655d7f40866d71385c7c66e12c79d37ee86167603b54d1232ec377674",
+        "rust_completion": "c38749701eecaa45843cb8ca6265662e0690a71774a7aa6bbd6852ae9944dd60",
+        "java_completion": "edd5e1ec27f31f7b96d6decca77e884453b6b27434edbac7c3fc0c5bf7484448",
+        "comparison": "a52bc13770b236f15db2695c984a88f2083275b0b657b3c29b41a321fb36202c"
+      }
+    }
+  },
+  "fixed_rust_only_by_mutation": {
+    "delete": 80,
+    "append_clause": 261,
+    "replace_closer": 1
+  },
+  "preservation": {
+    "grammar_repairs": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v2/preservation.json",
+        "sha256": "0176efda3c5ce75561336ac84948a3abd06ebed58178e2d9533b70ed2652d63e"
+      },
+      "counts": {
+        "corpus": {
+          "cases": 8571,
+          "stock_measurements_unchanged": 102045,
+          "custom_measurements_unchanged": 34015
+        },
+        "keywords": {
+          "cases": 13660,
+          "stock_measurements_unchanged": 40980,
+          "custom_measurements_unchanged": 13660
+        },
+        "diagnostics": {
+          "cases": 1143,
+          "stock_measurements_unchanged": 6138,
+          "custom_measurements_unchanged": 2046
+        },
+        "adversarial": {
+          "cases": 614,
+          "stock_measurements_unchanged": 1842,
+          "custom_measurements_unchanged": 569,
+          "accepted_to_rejected": 45
+        },
+        "mutations": {
+          "cases": 27760,
+          "stock_measurements_unchanged": 83280,
+          "custom_measurements_unchanged": 27353,
+          "rejected_to_rejected": 65,
+          "accepted_to_rejected": 342
+        }
+      }
+    },
+    "error_locations": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-mutation-matrix-v3/preservation.json",
+        "sha256": "1e64867b7607184fc2884aa9a45bc74c3c19a7ba08fd217e95afb1a6c942cd35"
+      },
+      "counts": {
+        "corpus": {
+          "cases": 8571,
+          "unchanged_measurements": 136060
+        },
+        "keywords": {
+          "cases": 13660,
+          "unchanged_measurements": 54640
+        },
+        "diagnostics": {
+          "cases": 1143,
+          "unchanged_measurements": 8184
+        },
+        "adversarial": {
+          "cases": 614,
+          "unchanged_measurements": 2455,
+          "rejection_location_changes": 1
+        },
+        "mutations": {
+          "cases": 27760,
+          "unchanged_measurements": 111029,
+          "rejection_location_changes": 11
+        }
+      }
+    }
+  },
+  "oracle": {
+    "provenance": {
+      "classpath": {
+        "$SCRATCH/p0-parser-oracle-v48/test-classes": "8762468c9dceede6034527a1e02e6545681fbd1f91a24a6a66ce41750dad28eb",
+        "$SCRATCH/p0-parser-oracle-v48/classes": "b98e244e0f7dfc0ccb3c972120ff58e483c91502bfba7ad1ca201a12a4ad60a9",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "parser_binary_sha256": "dc4f1bc68c317809f01846e43eb22c7827b77fe0bae5769b483c2c109df89685",
+      "sources": {
+        "crates/sql/scripts/parser_mutations.py": "019abacf29c8b9240f512c7aa3ed28c50351219c67b302f72a8a82486051360e",
+        "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbe.java": "40599ee02349aa9605403bc6a6d0bfa417b7ec641b85ee554aa4eee07031b62f",
+        "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/ParserProbeTests.java": "07ed95c6014edffb2db2109e6c6164ea546b1a0d236ef5233d461760ab8c6dbc"
+      },
+      "rust_results_reused_from": "$SCRATCH/p0-parser-mutations-v2/rust",
+      "identical_generated_input": true,
+      "java_tests": "$SCRATCH/p0-parser-mutation-java-v4"
+    },
+    "preservation": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-oracle-v48-preservation-v2/audit.json",
+        "sha256": "75abf3572df473cbbb0afcf2d45fde14405290d910cc7ed8a5819d5e848a4262"
+      },
+      "populations": {
+        "corpus": {
+          "cases": 8571,
+          "records_equal": true,
+          "bytes_equal": false,
+          "old": "$SCRATCH/p0-parser-java-corpus-v2/cases.jsonl",
+          "new": "$SCRATCH/p0-parser-oracle-v48-preservation/corpus/cases.jsonl",
+          "old_sha256": "df08b1751c61cd7187edc1f8fc359387735a4bf73fd2d3b2611190e46f16f5fb",
+          "new_sha256": "ade37866d4eb7c0c0d0a194b006a914c4cf142b3bc5a511d8ffbf2337cabb921"
+        },
+        "adversarial": {
+          "cases": 488,
+          "records_equal": true,
+          "bytes_equal": true,
+          "old": "$SCRATCH/p0-parser-values-v1/java-adversarial/cases.jsonl",
+          "new": "$SCRATCH/p0-parser-oracle-v48-preservation-v2/adversarial/cases.jsonl",
+          "old_sha256": "8f0aa3bd3addd86dada34b4b738112b824c72629e692034e59143bae7e3e0f22",
+          "new_sha256": "8f0aa3bd3addd86dada34b4b738112b824c72629e692034e59143bae7e3e0f22"
+        },
+        "keywords": {
+          "cases": 13660,
+          "records_equal": true,
+          "bytes_equal": true,
+          "old": "$SCRATCH/p0-parser-values-v1/java-keywords/cases.jsonl",
+          "new": "$SCRATCH/p0-parser-oracle-v48-preservation-v2/keywords/cases.jsonl",
+          "old_sha256": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695",
+          "new_sha256": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695"
+        },
+        "diagnostics": {
+          "cases": 1143,
+          "records_equal": true,
+          "bytes_equal": true,
+          "old": "$SCRATCH/p0-parser-values-v1/java-diagnostics/cases.jsonl",
+          "new": "$SCRATCH/p0-parser-oracle-v48-preservation-v2/diagnostics/cases.jsonl",
+          "old_sha256": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7",
+          "new_sha256": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7"
+        }
+      }
+    },
+    "junit": {
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "log": {
+      "path": "$SCRATCH/p0-parser-mutation-java-v4/maven.log",
+      "sha256": "0963f7a822f896a2951db176d2ddeca54c5a79ba260df6d26f324a83e1b46074"
+    },
+    "unknown_exceptions_abort": true
+  },
+  "validation": {
+    "rust_tests": 51,
+    "clippy": true,
+    "rust_logs": [
+      {
+        "path": "$SCRATCH/p0-parser-mutation-build-v9/command-00.log",
+        "sha256": "6423a3f2e00c4e41b84aa25958f795afe44275855e098fab75c1aa1cde6a260f"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-mutation-build-v9/command-01.log",
+        "sha256": "e01d9c0b9617f24c190699c6d97f870527401b293ffef99e5746fc89adcd1ad6"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-mutation-build-v9/command-02.log",
+        "sha256": "d5abcc30b9ea0fb2c15fe3c339b9034aa36828193b199d4836c0e9cfbb4322ed"
+      }
+    ],
+    "python_tests": 79,
+    "python_and_style_logs": [
+      {
+        "path": "$SCRATCH/p0-parser-mutation-build-v8/command-03.log",
+        "sha256": "1941896b47544c00e3403656666d48e8700b9d59c7d5df87e4ccbc291b22e23c"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-mutation-build-v8/command-04.log",
+        "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+      },
+      {
+        "path": "$SCRATCH/p0-parser-mutation-build-v8/command-05.log",
+        "sha256": "85d14254773cfdca3a1e4ad74b622614440354ff0acddef68ae9285b86d73891"
+      }
+    ],
+    "workflow_lint": "actionlint .github/workflows/test-java.yml passed on host"
+  },
+  "sources": {
+    "crates/sql/scripts/parser_mutations.py": "019abacf29c8b9240f512c7aa3ed28c50351219c67b302f72a8a82486051360e",
+    "crates/sql/scripts/compare_parsers.py": "a52bc13770b236f15db2695c984a88f2083275b0b657b3c29b41a321fb36202c",
+    "crates/sql/parser-probe/adversarial.jsonl": "dfaa6600324f5568c4fc412419fb0a240038c6a717a2f6ed6ae83c18f19688df",
+    ".github/workflows/test-java.yml": "0bb6ff94c89057335e441aca02dc48aa066d932ef53fc08658ccaca657ae235f"
+  },
+  "retained_attempts": {
+    "oracle_runs": [
+      "$SCRATCH/p0-parser-mutations-v1",
+      "$SCRATCH/p0-parser-mutations-v2",
+      "$SCRATCH/p0-parser-mutations-v3",
+      "$SCRATCH/p0-parser-mutations-v4"
+    ],
+    "java_tests": [
+      "$SCRATCH/p0-parser-mutation-java-v1",
+      "$SCRATCH/p0-parser-mutation-java-v2",
+      "$SCRATCH/p0-parser-mutation-java-v3",
+      "$SCRATCH/p0-parser-mutation-java-v4"
+    ],
+    "rust_builds": [
+      "$SCRATCH/p0-parser-mutation-build-v1",
+      "$SCRATCH/p0-parser-mutation-build-v2",
+      "$SCRATCH/p0-parser-mutation-build-v3",
+      "$SCRATCH/p0-parser-mutation-build-v4",
+      "$SCRATCH/p0-parser-mutation-build-v5",
+      "$SCRATCH/p0-parser-mutation-build-v6",
+      "$SCRATCH/p0-parser-mutation-build-v7",
+      "$SCRATCH/p0-parser-mutation-build-v8",
+      "$SCRATCH/p0-parser-mutation-build-v9"
+    ],
+    "matrices": [
+      "$SCRATCH/p0-parser-mutation-matrix-v1",
+      "$SCRATCH/p0-parser-mutation-matrix-v2",
+      "$SCRATCH/p0-parser-mutation-matrix-v3"
+    ],
+    "oracle_byte_preservation_failure": "$SCRATCH/p0-parser-oracle-v48-preservation; structured equality subsequently passed in v2"
+  },
+  "limitations": [
+    "The mutation population is deterministic and finite; zero overacceptance is not exhaustive grammar parity.",
+    "All 274 pre-existing Java-only mutation/control cases remain; 92 positive corpus cases remain unsupported.",
+    "Compiler options and catalog state are not applied to isolated raw submissions.",
+    "Hint balance is checked but typed hints, attachment and complete hint grammar are not preserved by this prototype.",
+    "Error starts still differ on 6,856 rejected mutation submissions; complete AST spans and S1 equivalence are not certified.",
+    "No full binder, runtime semantic parity or parser maintenance approval is certified."
+  ]
+}

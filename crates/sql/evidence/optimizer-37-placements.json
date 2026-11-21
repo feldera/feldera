@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-37-placements-archive.json",
+  "scope": "Composition of the previous 35 scheduled replacements with StopOnError and ImplementJoins on the same incremental set-output matrix.",
+  "engines": ["classic", "gen2"],
+  "programs_per_engine": 50,
+  "scheduled_placements": 37,
+  "rust_final_results_equal": 100,
+  "java_codec_final_results_equal": 100,
+  "observable_fields": ["diagnostics", "schema", "circuit", "persistent_ids", "hash_inputs", "generated_artifacts"],
+  "differences": 0,
+  "scope_limit": "This verifies composition and the final results on the measured incremental matrix. Active snapshot join rewrites are verified separately in optimizer-implement-joins.json. The remaining typed prefix still runs in Java."
+}

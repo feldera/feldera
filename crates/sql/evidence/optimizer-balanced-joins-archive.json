@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-balanced-joins-20261118-v1.tar.gz",
+  "bytes": 29590505,
+  "sha256": "1321fc4dc1050a06644ae9e21701d330566076acb9892f8442ba757daefe54e8",
+  "manifest_sha256": "b954869f7d839fab428206338762849d6ca467e6e0315561c250eabc20c32867",
+  "verified_files": 15224,
+  "all_members_verified": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-view-removal-20261118-v3.tar.gz",
+  "bytes": 38032577,
+  "sha256": "aea3f3b4d8cdf9f032863e34a3448b823695d781b56d4646d72ff6bdf2fe14d9",
+  "manifest_sha256": "a72f32b6c6804588d9c4b1616052513e13d68fcfbb9a2352146d47a021f6205f",
+  "verified_files": 2243,
+  "all_members_verified": true
+}

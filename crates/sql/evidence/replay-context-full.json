@@ -1,0 +1,421 @@
+{
+  "schema_version": 1,
+  "scope": "full classic and exported Gen-2 S2/S3 replay after removing replay-only Calcite initialization",
+  "complete": true,
+  "raw_directory": "$SCRATCH/p0-replay-context-full-v2",
+  "completion": {
+    "path": "$SCRATCH/p0-replay-context-full-v2/complete.json",
+    "sha256": "dd92cc1bc8d00a9569bb2a3616c9eae8ae8734f2f04384ac84d92ba43487773a"
+  },
+  "producer": "c6ede756d-p0-replay-v46",
+  "baseline_certificate": "replay-context-baseline.json",
+  "populations": {
+    "s2-classic": {
+      "record": {
+        "path": "$SCRATCH/p0-replay-context-full-v2/s2-classic.json",
+        "sha256": "9523afe810c385607a83571adf156ddc00eb077d05820643cd87238dc7940efc"
+      },
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-replay-v46",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v46/classes": "b98e244e0f7dfc0ccb3c972120ff58e483c91502bfba7ad1ca201a12a4ad60a9",
+        "$SCRATCH/p0-seam-tools-v46/test-classes": "bb0e4e87bd21e4e515e22d7a54cab6d0ab462f311ec56cb69917830386a632b9",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "stage": "S2",
+      "cases": 8571,
+      "observations_per_side": 3503220,
+      "jvm_runs": 12,
+      "equal": true,
+      "runtime_executed": false,
+      "dataflow_contract": "all-engines-v1",
+      "artifact_contract": "seam-v1",
+      "complete_prepared_population": true,
+      "inputs": {
+        "$SCRATCH/p0-s2-full-v7/shard-000/input.jsonl": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+        "$SCRATCH/p0-s2-full-v7/shard-001/input.jsonl": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+        "$SCRATCH/p0-s2-full-v7/shard-002/input.jsonl": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+        "$SCRATCH/p0-s2-full-v7/shard-003/input.jsonl": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+        "$SCRATCH/p0-s2-full-v7/shard-004/input.jsonl": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+        "$SCRATCH/p0-s2-full-v7/shard-005/input.jsonl": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52"
+      },
+      "shards": [
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-000",
+          "completion_sha256": "d135a3bdc72158494b1723e42ac31f32c3e3f78185985116f1e5140340c7a7ad",
+          "input_sha256": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+          "cases": 1429,
+          "observations": 580581,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-000/capture/complete.json": "31a231db832783ddfdb2069bb4eac55d5319408ea3ff3894aecf820a27ba361f",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-000/capture/cases.jsonl.gz": "a4af6448cd3b41361e5d33fd03d101843000ba75c87f0afe694fd99104474cb4",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-000/replay-s2/complete.json": "afe99fb76132972f794da107e7104544fca5a266701467fd7c706d39e8378eaf",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-000/replay-s2/cases.jsonl.gz": "a4af6448cd3b41361e5d33fd03d101843000ba75c87f0afe694fd99104474cb4"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-001",
+          "completion_sha256": "6780db3cac8824f7ccb56e3de5acaa77562aaac0429fb2385dc0e0d11ca13a81",
+          "input_sha256": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+          "cases": 1429,
+          "observations": 586572,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-001/capture/complete.json": "f7a336b4e3ddde3fdec0cae941152817768d56cb6f66b26c7255519cc998d328",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-001/capture/cases.jsonl.gz": "fe8c744c35f72f8420a4289c2acc0a5345de69430bd791968b7f0df915a47b15",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-001/replay-s2/complete.json": "b86673e8ac22b342b3a977c4084bfacfaa3cfee4d145d77137cb4419f0743037",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-001/replay-s2/cases.jsonl.gz": "fe8c744c35f72f8420a4289c2acc0a5345de69430bd791968b7f0df915a47b15"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-002",
+          "completion_sha256": "84a10ea04e0e088d770c2a47712a6ce0064225b78ffaf757dbba33ed92b60b12",
+          "input_sha256": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+          "cases": 1429,
+          "observations": 583452,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-002/capture/complete.json": "2a776dbafc1e52300cbd0eee0116b3059a759ec5bfb07d23696e76d138ce26f3",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-002/capture/cases.jsonl.gz": "3f580255ce0b39e088883fa69687d58b306b08c2ab830297df2a91f4cca6a942",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-002/replay-s2/complete.json": "07202a892aa73e3c7ff0ff9ed56fbecd8141e09f2fb8f958674df7a82cdcfb31",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-002/replay-s2/cases.jsonl.gz": "3f580255ce0b39e088883fa69687d58b306b08c2ab830297df2a91f4cca6a942"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-003",
+          "completion_sha256": "0a4ec39c15cf4ac4556cdc954c073ddbea9ab14fd71ab15e9ea7483f9409c411",
+          "input_sha256": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+          "cases": 1428,
+          "observations": 585824,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-003/capture/complete.json": "123e5070853937f0026983a6aa442bb9ee362662d6c4a512f91e01d746b02478",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-003/capture/cases.jsonl.gz": "ac4d9d46d3df44faec9a6d2445c08f1a049e0f015ac61f3f020910019fde1bbc",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-003/replay-s2/complete.json": "e4e1a19dd527fe86aac698d381a0941c84ba443b61d0b1ffe494449fe8fdbfae",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-003/replay-s2/cases.jsonl.gz": "ac4d9d46d3df44faec9a6d2445c08f1a049e0f015ac61f3f020910019fde1bbc"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-004",
+          "completion_sha256": "f8e52e84b0142c97f47bb1779f7cf2255cd599e0e6d7c37aae5b9bcf05c40592",
+          "input_sha256": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+          "cases": 1428,
+          "observations": 582499,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-004/capture/complete.json": "04bbe53e02ebe45aa46c0db4181851772eee57714130be19bcdb71a5ce030836",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-004/capture/cases.jsonl.gz": "200ea599973a30493db6213b053f49bbb246a5706531332cad1fc166c1780ac7",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-004/replay-s2/complete.json": "b306ca1172b2ecb65ce7111fc5bbfa7eeed7fa273995dcb6800086db2ff9e0c2",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-004/replay-s2/cases.jsonl.gz": "200ea599973a30493db6213b053f49bbb246a5706531332cad1fc166c1780ac7"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-005",
+          "completion_sha256": "c163258013979eff93e5b1ca257805beb87857441feaa92f8b0e3f03a2b85cdd",
+          "input_sha256": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52",
+          "cases": 1428,
+          "observations": 584292,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-005/capture/complete.json": "6e47c7df34cd64fb6e6d296b5e67cbaf58624b8c8d475d6eb057b82c948e2ed1",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-005/capture/cases.jsonl.gz": "9c334c220a6de8f14ccc5ac18cffdec59278c4651d320a903f78642e6a00ddd3",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-005/replay-s2/complete.json": "3f49507ecab1a6e33351931fecce8d0013a7f7161ced56c3e490807daf133b40",
+            "$SCRATCH/p0-replay-context-full-v2/S2/classic/shard-005/replay-s2/cases.jsonl.gz": "9c334c220a6de8f14ccc5ac18cffdec59278c4651d320a903f78642e6a00ddd3"
+          }
+        }
+      ]
+    },
+    "s2-gen2": {
+      "record": {
+        "path": "$SCRATCH/p0-replay-context-full-v2/s2-gen2.json",
+        "sha256": "eee625d03afe48533d38fd0f6816145433125edae15cb1050204a02c2db9eb24"
+      },
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-replay-v46",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v46/classes": "b98e244e0f7dfc0ccb3c972120ff58e483c91502bfba7ad1ca201a12a4ad60a9",
+        "$SCRATCH/p0-seam-tools-v46/test-classes": "bb0e4e87bd21e4e515e22d7a54cab6d0ab462f311ec56cb69917830386a632b9",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "stage": "S2",
+      "cases": 8527,
+      "observations_per_side": 3527714,
+      "jvm_runs": 8,
+      "equal": true,
+      "runtime_executed": false,
+      "dataflow_contract": "all-engines-v1",
+      "artifact_contract": "seam-v1",
+      "complete_prepared_population": true,
+      "inputs": {
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-000.jsonl": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-001.jsonl": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-002.jsonl": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-003.jsonl": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10"
+      },
+      "shards": [
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-000",
+          "completion_sha256": "26c66fd6d95c99dca20abea8b4c5d380338de8d3ee3867d5ce6befdd0ca4d0f6",
+          "input_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+          "cases": 2132,
+          "observations": 887064,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-000/capture/complete.json": "1121113918c8749279281a5b4c208298f4d156480941b7a7370f86fadc7440f5",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-000/capture/cases.jsonl.gz": "afc58fc85b0ca626ce02bcab4f8023b2cdc3dcc394951527cbcfdfbc42c97bb4",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-000/replay-s2/complete.json": "8b805513eb0e0b6d8f522cf11b95c935b088b27e8b9d48333d6920fff62bd825",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-000/replay-s2/cases.jsonl.gz": "2bab4dabcfcd2b5c3d1d445e21be67f4fc804bf30a2ecceb38b37a1d5438bb41"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-001",
+          "completion_sha256": "6a29fcbea90f938af34d672534bc07c4a6475852d7c8cfdc0657a6e20b172f6f",
+          "input_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+          "cases": 2132,
+          "observations": 877937,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-001/capture/complete.json": "a25be9c17d4eb2739c5ea5e8804f18eafe7138afa6965ad5e0fcfe6ff3190c3d",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-001/capture/cases.jsonl.gz": "c8b3ba412ba3de798a0a0e98e25972c50b94e6285bdf387644caac757b3fb6c9",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-001/replay-s2/complete.json": "eaf86d539c6552773c25455f69f0a1d54de784f5f2b08c7f89ad87a8a2cfe598",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-001/replay-s2/cases.jsonl.gz": "3ba972e825678ae650c270e8fdf1efeb795c9a6fd59a339a00f642fb5f39e5ba"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-002",
+          "completion_sha256": "4a4d4b48fb91cc597889803070f6289fe23018585ac51621616341a5e9a1d8e6",
+          "input_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+          "cases": 2132,
+          "observations": 882112,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-002/capture/complete.json": "4cf37b462efeb95d8d8fb664fa438510d6263f3a89323238097edeef19bdd078",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-002/capture/cases.jsonl.gz": "e3f4223f4dd67ecb9ecded25eacf05c9726ae1292f0075cbf0f8a4f9ef048b13",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-002/replay-s2/complete.json": "3283ce81312b160d0ea819affb1808938e27b4863e587f6eb06c4734a6975f92",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-002/replay-s2/cases.jsonl.gz": "5c6e6e1f4c54fcb9455e988f99b9d8e3c189402cc1660a973969ae7a14dc3138"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-003",
+          "completion_sha256": "732c330d17dac632c9d5fe4dd6161caa756f7922bf325cc37dc5f23bc92daa8d",
+          "input_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+          "cases": 2131,
+          "observations": 880601,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-003/capture/complete.json": "0890a10bcfdd4c3e258b93d0b59ee833f47c7faec4cabdadaef8e75a97eeb8d9",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-003/capture/cases.jsonl.gz": "fd9a772af24df4ddced5872a8d70b457fdfa05075d58877fd32d4b7299475816",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-003/replay-s2/complete.json": "770c4d5020761fd79c8fbba26af1b0626385396f330a59b4025f181d6a4efce2",
+            "$SCRATCH/p0-replay-context-full-v2/S2/gen2/shard-003/replay-s2/cases.jsonl.gz": "f00df133caab6a4b30b9c5cbd1b7bb6d18853b352a7949ad754b5bbf1795f62e"
+          }
+        }
+      ]
+    },
+    "s3-classic": {
+      "record": {
+        "path": "$SCRATCH/p0-replay-context-full-v2/s3-classic.json",
+        "sha256": "b97176da965113f69e14d86ecd3482512e14d814b5f105fadab3db021d34a270"
+      },
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-replay-v46",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v46/classes": "b98e244e0f7dfc0ccb3c972120ff58e483c91502bfba7ad1ca201a12a4ad60a9",
+        "$SCRATCH/p0-seam-tools-v46/test-classes": "bb0e4e87bd21e4e515e22d7a54cab6d0ab462f311ec56cb69917830386a632b9",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "stage": "S3",
+      "cases": 8571,
+      "observations_per_side": 8571,
+      "jvm_runs": 12,
+      "equal": true,
+      "runtime_executed": false,
+      "dataflow_contract": "all-engines-v1",
+      "artifact_contract": "seam-v1",
+      "complete_prepared_population": true,
+      "inputs": {
+        "$SCRATCH/p0-s2-full-v7/shard-000/input.jsonl": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+        "$SCRATCH/p0-s2-full-v7/shard-001/input.jsonl": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+        "$SCRATCH/p0-s2-full-v7/shard-002/input.jsonl": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+        "$SCRATCH/p0-s2-full-v7/shard-003/input.jsonl": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+        "$SCRATCH/p0-s2-full-v7/shard-004/input.jsonl": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+        "$SCRATCH/p0-s2-full-v7/shard-005/input.jsonl": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52"
+      },
+      "shards": [
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-000",
+          "completion_sha256": "591cbc8ca399476dde21b812ef93a23c115eb7873914b22ab0feef6a003e1440",
+          "input_sha256": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+          "cases": 1429,
+          "observations": 1429,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-000/capture-s3/complete.json": "37e3284753f54492a6db8ecf24c3ba974334f37a3b850c8c5123356f491488b6",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-000/capture-s3/cases.jsonl.gz": "da44043f3c6e3dcd29f2b2f2f4843e723f4b4e1ce3bb34b0b34a7493e6e96299",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-000/replay-s3/complete.json": "33aad283f697c4186a08203ed9451f90cbcc53b8e9f7116b25f223e8d6b9e8df",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-000/replay-s3/cases.jsonl.gz": "da44043f3c6e3dcd29f2b2f2f4843e723f4b4e1ce3bb34b0b34a7493e6e96299"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-001",
+          "completion_sha256": "634b773ccceca2ae2160f3b248bf6df1d378b22155a11aad8544dfa323e52514",
+          "input_sha256": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+          "cases": 1429,
+          "observations": 1429,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-001/capture-s3/complete.json": "ed646f62a3961a3c3e441c47725fc3a24be251639e3d043d43e8aaf51221b26f",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-001/capture-s3/cases.jsonl.gz": "9a90a9fb2cbcd51aec9dd5b96db885cbd511a6ebc4927eb324510fe3a997e5e8",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-001/replay-s3/complete.json": "eda04c3b6bd57cf9fd8a53b17ebdee1cdf09ca7e1c03d406f319a0a02ce3bbe7",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-001/replay-s3/cases.jsonl.gz": "9a90a9fb2cbcd51aec9dd5b96db885cbd511a6ebc4927eb324510fe3a997e5e8"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-002",
+          "completion_sha256": "b7e2eb4983df5cba663528e0a7485262d596692ca1c33cc7b70abeffc4b013cf",
+          "input_sha256": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+          "cases": 1429,
+          "observations": 1429,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-002/capture-s3/complete.json": "06fea1a2754f2b62b46186ba2a10b3d0bf3abd65d316ac9affa34995cd0f6af3",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-002/capture-s3/cases.jsonl.gz": "3d26467dcf4b0fcd876a48c9b70b6748050c89114f6024676a58e923b4bc5252",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-002/replay-s3/complete.json": "2a13570341ac804c3e4b0ee73cf71b7a199896a55d09678cb3215dcb4a389de3",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-002/replay-s3/cases.jsonl.gz": "3d26467dcf4b0fcd876a48c9b70b6748050c89114f6024676a58e923b4bc5252"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-003",
+          "completion_sha256": "ee7e528c6a2feb593383108945a68aab12b91e6441d495b5b489d2bdf72ac469",
+          "input_sha256": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+          "cases": 1428,
+          "observations": 1428,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-003/capture-s3/complete.json": "7f0e2d843c528cfe1a6230e42748fa2fb5e00ec5c953a9e0f4ebf73f33374130",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-003/capture-s3/cases.jsonl.gz": "7e22708df9b7171227151370dc3c491c62e725f92f320f6cb8f631e2e05d1a76",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-003/replay-s3/complete.json": "e72959cd52957fce18d599175b818393ec2a012f44903dcf598d344ac2fd8fac",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-003/replay-s3/cases.jsonl.gz": "7e22708df9b7171227151370dc3c491c62e725f92f320f6cb8f631e2e05d1a76"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-004",
+          "completion_sha256": "caa5a8cf4812bbd2249be0a16e5871bf53bfafe4de27adbbfa328fe6da46b659",
+          "input_sha256": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+          "cases": 1428,
+          "observations": 1428,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-004/capture-s3/complete.json": "3a9531ecefddab097356e19c7ff51bcc6b95e1fcf472c49cae0a06cba536b257",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-004/capture-s3/cases.jsonl.gz": "ecc9c9a7bffc0e48c2a1569d8f5ae5d7dd77f5a76a8540aee6756391b3930912",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-004/replay-s3/complete.json": "5706b10f392f6811d6ce8b52c0592147efd18ee90f9c6440b809cb2ad2d355b2",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-004/replay-s3/cases.jsonl.gz": "ecc9c9a7bffc0e48c2a1569d8f5ae5d7dd77f5a76a8540aee6756391b3930912"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-005",
+          "completion_sha256": "429fc457dc810399795ccdcfbed3b3fdcbdabfb563b51743a5048528b4481731",
+          "input_sha256": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52",
+          "cases": 1428,
+          "observations": 1428,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-005/capture-s3/complete.json": "17b10f520a0f47ba8d98b9e195aaa503f5bb04ac57423aed5e60d88fa7084997",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-005/capture-s3/cases.jsonl.gz": "7371c416fd848e50034c334bbbeae019c470a7ba1d10b78bee20cf63bd5c1ba9",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-005/replay-s3/complete.json": "fcdb27bfa297477baabcf248769203d7811c243fd0b93ca631e0ef0d966c423a",
+            "$SCRATCH/p0-replay-context-full-v2/S3/classic/shard-005/replay-s3/cases.jsonl.gz": "7371c416fd848e50034c334bbbeae019c470a7ba1d10b78bee20cf63bd5c1ba9"
+          }
+        }
+      ]
+    },
+    "s3-gen2": {
+      "record": {
+        "path": "$SCRATCH/p0-replay-context-full-v2/s3-gen2.json",
+        "sha256": "80c3aad32a80e85d4d86440260b01bf84b028f3911b2dcde89377d8247964c97"
+      },
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-replay-v46",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v46/classes": "b98e244e0f7dfc0ccb3c972120ff58e483c91502bfba7ad1ca201a12a4ad60a9",
+        "$SCRATCH/p0-seam-tools-v46/test-classes": "bb0e4e87bd21e4e515e22d7a54cab6d0ab462f311ec56cb69917830386a632b9",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "stage": "S3",
+      "cases": 8527,
+      "observations_per_side": 8527,
+      "jvm_runs": 8,
+      "equal": true,
+      "runtime_executed": false,
+      "dataflow_contract": "all-engines-v1",
+      "artifact_contract": "seam-v1",
+      "complete_prepared_population": true,
+      "inputs": {
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-000.jsonl": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-001.jsonl": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-002.jsonl": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+        "$SCRATCH/p0-gen2-full-determinism-v4/input-003.jsonl": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10"
+      },
+      "shards": [
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-000",
+          "completion_sha256": "e8f2e6d20e2d3e35e8dc00a0ffd421adf0c7dbf09cfd1f164926f3ffe6ccc8d0",
+          "input_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+          "cases": 2132,
+          "observations": 2132,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-000/capture-s3/complete.json": "079d335923114cef5f10dbf6dff2e9f9400367f21c9a3042804af5e43961e379",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-000/capture-s3/cases.jsonl.gz": "a4ca49f84417cdc221df480beccedbd7e1b46457890772546e05a2dd1d220f89",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-000/replay-s3/complete.json": "52885a119a41b602001e1f7e1a36ca88e4830c38cefad907daf4e836cad330d8",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-000/replay-s3/cases.jsonl.gz": "4228158a1c34acf60ee7921bc16cdc5767af5936f6c9c80983ecb5c9cfb8a447"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-001",
+          "completion_sha256": "4e8624b951ae2dec2b713ca9a1071a39dae6cf4f3cdb9377a8060c7151dbbcf4",
+          "input_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+          "cases": 2132,
+          "observations": 2132,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-001/capture-s3/complete.json": "b7521504124bea017efb40a53f3f0f0ede5abd3643e9183a5f4bfd1051daecbf",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-001/capture-s3/cases.jsonl.gz": "6b03821cf2d8ab13eca5c6d3bb904a6328fc905350e966b95b4928ea897a9e79",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-001/replay-s3/complete.json": "6a5ce0bbc06d9bd42d5905fce241dec8726c27142d57ff386935411e92e208ae",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-001/replay-s3/cases.jsonl.gz": "b6a1ce042ecc709b573f9bdbf28a1ab0831f5fce5b8607d9856b67de97c52208"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-002",
+          "completion_sha256": "72d8e96d9b0b52f3a2510a8553e08b77d6d329b5928b02f849c58f58cd52f86e",
+          "input_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+          "cases": 2132,
+          "observations": 2132,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-002/capture-s3/complete.json": "17f7bf1cbb46d9c3612bf0b3a42aa5d5f2085a629feeb5c3477fbc8b2c62fb31",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-002/capture-s3/cases.jsonl.gz": "60dc9dc2fda93a0509d8d3f4b68f824671fea3b7111e45fb1113a97ae84c2c7d",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-002/replay-s3/complete.json": "2beb2325b174a86ed1cb29517f7732d87fd8ab03e304f6bfdb48a8aa849bf9a7",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-002/replay-s3/cases.jsonl.gz": "35ab71c28049cbac1567eee25465887f566d1ec51c81abfa5f0d627b1745670d"
+          }
+        },
+        {
+          "directory": "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-003",
+          "completion_sha256": "375adc86cd52019878e08ed519fa064545a63894aca137ec9b5e9e8748d6ec9e",
+          "input_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+          "cases": 2131,
+          "observations": 2131,
+          "artifacts": {
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-003/capture-s3/complete.json": "9bc3c44d665138349803af3fc4e5e5a36235692804f2fa5e9129d44af566bdb6",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-003/capture-s3/cases.jsonl.gz": "175847856abd94f981ed9772166b7cf9d05a545f579657b8a94a42d1055af2a0",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-003/replay-s3/complete.json": "5fe04fd4f14e7e24346eb3b1bd7254e25f39aa0c177d126d9b01528cd98c5222",
+            "$SCRATCH/p0-replay-context-full-v2/S3/gen2/shard-003/replay-s3/cases.jsonl.gz": "244d788ad9d7c4bb2292bb4dc1c88591caebd98daea4801a1293d572fa60c2e1"
+          }
+        }
+      ]
+    }
+  },
+  "jvm_runs": 40,
+  "runtime_executed": false,
+  "limitations": [
+    "Comparisons cover the recorded exported populations, not every original Gen-2 test.",
+    "No full runtime execution, production timing, or isolated S4 checkpoint is certified.",
+    "Per-point S4 inventory and independent review remain separate requirements."
+  ],
+  "retained_prior_attempt": {
+    "path": "$SCRATCH/p0-replay-context-full-v1/interrupted.json",
+    "sha256": "d2d5d0b224f2d766d0ac5324809ff4f8667b5b5995c49c3f91a2aa428a18b250"
+  },
+  "timing_pause": {
+    "path": "$SCRATCH/p0-native-key-benchmark-pause.json",
+    "sha256": "54a8ad0ebb11e1c8faa382a30f28ddba2f0de5d93918e7f38fb8203704b7faf9"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-stop-on-error-20261118-v1.tar.gz",
+  "bytes": 3933332,
+  "sha256": "8bb85c517d4e854e236254f39ccad7b1b824a0e2c777c7882e30d541fabae7e7",
+  "manifest_sha256": "214a7abfbf8dbc09d6502ca3947486dc145a5e6b23297a71689041e2788ac917",
+  "verified_files": 1077,
+  "all_members_verified": true
+}

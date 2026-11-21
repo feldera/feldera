@@ -1,0 +1,384 @@
+{
+  "schema_version": 1,
+  "scope": "Independent adjudication of PLAN section12 spike7 measured engineering criterion; not production or maintainer acceptance",
+  "criterion": "Classified list; zero verdict-relevant differences without a fix or an allow-list entry; build result and price of the sqllib split",
+  "engineering_experiment_complete": true,
+  "reviewed_full_corpus_certificate": "fold-legacy-final-s3.json",
+  "certificate_sha256": "c1bb6c3adea7ebeadea480f19673b5580c4da0134646eed65fb30bbb987d7f2d",
+  "raw_root": "$SCRATCH/p0-fold-final-s3-v22",
+  "input_hashes": {
+    "corpus-java-folds.jsonl": "88d63cf0ae1eeafea2f7f194cf13018314155f78b29b90b00619844dd043ac09",
+    "corpus-values.jsonl": "5d96b8da989a24c3073e54bb94354bb12c6fa8743d9d428dcdc298ced31aa95d",
+    "corpus-rust-folds.jsonl.worker.jsonl": "73d897b174de545ca459922e949f4f76237b35fed09f1976b1a9de8e2832ecef"
+  },
+  "protocol_source_hashes": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/JaninoFoldEligibility.java": "1be30ace0321c517b9b6581143a73b55dfe7ebb9f4de63acd4cf9dfc880d524d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RustFoldExecutor.java": "3024f113d49fa3ef1c528e8278fafeae271fcbc0277661826eb0ec355f71d996"
+  },
+  "offline_status_by_java_changed_and_value_available": {
+    "('value', True, True)": 10855,
+    "('value', False, True)": 5941,
+    "('runtime_error', False, False)": 666,
+    "('value', False, False)": 410,
+    "('unsupported', False, False)": 141,
+    "('unsupported', True, True)": 99,
+    "('unsupported', True, False)": 7,
+    "('unsupported', False, True)": 13
+  },
+  "offline_unsupported_by_reason": {
+    "operator TIMESTAMP_DIFF / Some(\"DATEDIFF\")": {
+      "count": 40,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#testDateDiff/0",
+      "sample_expression": "DATEDIFF(FLAG(MONTH), 2001-02-01, 2001-05-01)",
+      "sample_java_result": "DATEDIFF(FLAG(MONTH), 2001-02-01, 2001-05-01)"
+    },
+    "operator EXISTS / Some(\"EXISTS\")": {
+      "count": 1,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.CteToLocalViewsTests#testAutomaticFallback/0",
+      "sample_expression": "EXISTS({\nLogicalFilter(condition=[=($0, $cor3.v)])\n  LogicalTableScan(table=[[schema, t2]], hints=[[[alias inheritPath:[] options:[t2]]]])\n})",
+      "sample_java_result": "EXISTS({\nLogicalFilter(condition=[=($0, $cor3.v)])\n  LogicalTableScan(table=[[schema, t2]], hints=[[[alias inheritPath:[] options:[t2]]]])\n})"
+    },
+    "boolean cast source": {
+      "count": 7,
+      "java_changed": 7,
+      "java_value_available": 7,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#foldedCastsMatchRuntime/0",
+      "sample_expression": "CAST(CAST(0.000:DECIMAL(10, 3)):BOOLEAN NOT NULL):BOOLEAN",
+      "sample_java_result": "CAST(false):BOOLEAN"
+    },
+    "string cast source": {
+      "count": 4,
+      "java_changed": 4,
+      "java_value_available": 4,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#foldedCastsMatchRuntime/0",
+      "sample_expression": "CAST(CAST(X'0102':VARBINARY):VARCHAR CHARACTER SET \"UTF-8\" NOT NULL):VARCHAR CHARACTER SET \"UTF-8\"",
+      "sample_java_result": "CAST(_UTF-8'0102':VARCHAR CHARACTER SET \"UTF-8\"):VARCHAR CHARACTER SET \"UTF-8\""
+    },
+    "operator OTHER_FUNCTION / Some(\"x\")": {
+      "count": 1,
+      "java_changed": 1,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#testArray/0",
+      "sample_expression": "x(1)",
+      "sample_java_result": "ROW(CAST(1):INTEGER)"
+    },
+    "binary OVERLAY range differs between Java and runtime": {
+      "count": 12,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests#testOverlay/6",
+      "sample_expression": "OVERLAY(X'123456':VARBINARY, X'1010':BINARY(2), 1, -1)",
+      "sample_java_result": "OVERLAY(X'123456':VARBINARY, X'1010':BINARY(2), 1, -1)"
+    },
+    "operator OTHER_FUNCTION / Some(\"SINH\")": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/0",
+      "sample_expression": "SINH(1)",
+      "sample_java_result": "1.1752011936438014E0:DOUBLE"
+    },
+    "operator OTHER_FUNCTION / Some(\"ASINH\")": {
+      "count": 4,
+      "java_changed": 4,
+      "java_value_available": 4,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/2",
+      "sample_expression": "ASINH(1)",
+      "sample_java_result": "0.8813735870195429E0:DOUBLE"
+    },
+    "operator OTHER_FUNCTION / Some(\"COSH\")": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/4",
+      "sample_expression": "COSH(1)",
+      "sample_java_result": "1.543080634815244E0:DOUBLE"
+    },
+    "operator OTHER_FUNCTION / Some(\"ACOSH\")": {
+      "count": 4,
+      "java_changed": 4,
+      "java_value_available": 4,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/10",
+      "sample_expression": "ACOSH(2)",
+      "sample_java_result": "1.3169578969248166E0:DOUBLE"
+    },
+    "operator OTHER_FUNCTION / Some(\"TANH\")": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/12",
+      "sample_expression": "TANH(1)",
+      "sample_java_result": "0.7615941559557649E0:DOUBLE"
+    },
+    "operator OTHER_FUNCTION / Some(\"ATANH\")": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/14",
+      "sample_expression": "ATANH(0.5:DECIMAL(2, 1))",
+      "sample_java_result": "0.5493061443340548E0:DOUBLE"
+    },
+    "operator OTHER_FUNCTION / Some(\"SECH\")": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testHyperbolicFns/20",
+      "sample_expression": "SECH(0.6:DECIMAL(2, 1))",
+      "sample_java_result": "0.8435506876218067E0:DOUBLE"
+    },
+    "cast target MAP": {
+      "count": 9,
+      "java_changed": 5,
+      "java_value_available": 9,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#coalesceTypes/0",
+      "sample_expression": "CAST(MAP(1, 2)):(INTEGER NOT NULL, INTEGER) MAP",
+      "sample_java_result": "CAST(MAP(1, CAST(2):INTEGER)):(INTEGER NOT NULL, INTEGER) MAP"
+    },
+    "nonempty array cast requires component types": {
+      "count": 15,
+      "java_changed": 7,
+      "java_value_available": 7,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#issue2980/0",
+      "sample_expression": "CAST(ARRAY(null:NULL)):BIGINT ARRAY NOT NULL",
+      "sample_java_result": "ARRAY(null:BIGINT)"
+    },
+    "array subscript variant": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#testSafeOrdinal/0",
+      "sample_expression": "SAFE_OFFSET(ARRAY(1, 2), 1)",
+      "sample_java_result": "SAFE_OFFSET(ARRAY(1, 2), 1)"
+    },
+    "operator OTHER_FUNCTION / Some(\"SIGN\")": {
+      "count": 14,
+      "java_changed": 10,
+      "java_value_available": 10,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#testNulls/0",
+      "sample_expression": "SIGN(null:NULL)",
+      "sample_java_result": "SIGN(null:NULL)"
+    },
+    "interval cast source": {
+      "count": 12,
+      "java_changed": 12,
+      "java_value_available": 12,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.quidem.BigQueryTests#testSafeCast/6",
+      "sample_expression": "SAFE_CAST(_UTF-8'a')",
+      "sample_java_result": "null:INTERVAL YEAR"
+    },
+    "string decimal parser rounding": {
+      "count": 32,
+      "java_changed": 32,
+      "java_value_available": 32,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testNumericArithmetic/0",
+      "sample_expression": "CAST(_UTF-8'0'):DECIMAL(2, 1) NOT NULL",
+      "sample_java_result": "0.0:DECIMAL(2, 1)"
+    },
+    "operator OTHER_FUNCTION / Some(\"SQRT\")": {
+      "count": 10,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#testSqrtNull/0",
+      "sample_expression": "SQRT(null:NULL)",
+      "sample_java_result": "SQRT(null:NULL)"
+    },
+    "OVERLAY range differs between Java and runtime": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testOverlay/2",
+      "sample_expression": "OVERLAY(_UTF-8'yabadoo', _UTF-8'daba', 5)",
+      "sample_java_result": "OVERLAY(_UTF-8'yabadoo', _UTF-8'daba', 5)"
+    },
+    "cast target GEOMETRY": {
+      "count": 9,
+      "java_changed": 0,
+      "java_value_available": 9,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#geoPointTest/0",
+      "sample_expression": "CAST(POINT (0 0):GEOMETRY):GEOMETRY",
+      "sample_java_result": "CAST(POINT (0 0):GEOMETRY):GEOMETRY"
+    },
+    "operator OTHER_FUNCTION / Some(\"t\")": {
+      "count": 6,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#structTests/0",
+      "sample_expression": "t(ARRAY(s(2, _UTF-8'a', ARRAY(1, null:INTEGER, 3)), s(3, _UTF-8'b', ARRAY())))",
+      "sample_java_result": "t(ARRAY(s(2, _UTF-8'a', ARRAY(1, null:INTEGER, 3)), s(3, _UTF-8'b', ARRAY())))"
+    },
+    "operator OTHER_FUNCTION / Some(\"s\")": {
+      "count": 6,
+      "java_changed": 6,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#structTests/1",
+      "sample_expression": "s(2, _UTF-8'a', ARRAY(1, 2, 3))",
+      "sample_java_result": "ROW(CAST(2):INTEGER, CAST(_UTF-8'a':VARCHAR CHARACTER SET \"UTF-8\"):VARCHAR CHARACTER SET \"UTF-8\", CAST(ARRAY(CAST(1):INTEGER, CAST(2):INTEGER, CAST(3):INTEGER)):INTEGER ARRAY)"
+    },
+    "operator OTHER / Some(\"SECOND\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/32",
+      "sample_expression": "SECOND(2020-08-11)",
+      "sample_java_result": "SECOND(2020-08-11)"
+    },
+    "operator OTHER / Some(\"MINUTE\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/36",
+      "sample_expression": "MINUTE(2020-08-11)",
+      "sample_java_result": "MINUTE(2020-08-11)"
+    },
+    "operator OTHER / Some(\"HOUR\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/40",
+      "sample_expression": "HOUR(2020-08-11)",
+      "sample_java_result": "HOUR(2020-08-11)"
+    },
+    "operator OTHER / Some(\"DAYOFMONTH\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/44",
+      "sample_expression": "DAYOFMONTH(2020-08-11)",
+      "sample_java_result": "DAYOFMONTH(2020-08-11)"
+    },
+    "operator OTHER / Some(\"MONTH\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/48",
+      "sample_expression": "MONTH(2020-08-11)",
+      "sample_java_result": "MONTH(2020-08-11)"
+    },
+    "operator OTHER / Some(\"YEAR\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/52",
+      "sample_expression": "YEAR(2020-08-11)",
+      "sample_java_result": "YEAR(2020-08-11)"
+    },
+    "operator OTHER / Some(\"DAYOFWEEK\")": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testExtract1/68",
+      "sample_expression": "DAYOFWEEK(2020-08-11)",
+      "sample_java_result": "DAYOFWEEK(2020-08-11)"
+    },
+    "TRIM character semantics": {
+      "count": 12,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4264/0",
+      "sample_expression": "TRIM(FLAG(TRAILING), _UTF-8'', _UTF-8'x')",
+      "sample_java_result": "TRIM(FLAG(TRAILING), _UTF-8'', _UTF-8'x')"
+    },
+    "negative SUBSTRING length differs between Java and runtime": {
+      "count": 8,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testNegativeSubstringLength/0",
+      "sample_expression": "SUBSTRING(_UTF-8'string', -10, -2147483646)",
+      "sample_java_result": "SUBSTRING(_UTF-8'string', -10, -2147483646)"
+    },
+    "negative binary SUBSTRING length differs between Java and runtime": {
+      "count": 4,
+      "java_changed": 0,
+      "java_value_available": 0,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests#testSubstringFail/0",
+      "sample_expression": "SUBSTRING(X'123456':BINARY(3), 3, -1)",
+      "sample_java_result": "SUBSTRING(X'123456':BINARY(3), 3, -1)"
+    },
+    "map concat arity": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#testMapConcat/8",
+      "sample_expression": "MAP_CONCAT(MAP(1, 2))",
+      "sample_java_result": "MAP(1, 2)"
+    },
+    "operator OTHER_FUNCTION / Some(\"CBRT\")": {
+      "count": 2,
+      "java_changed": 2,
+      "java_value_available": 2,
+      "sample_case": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testCbrt/0",
+      "sample_expression": "CBRT(null:NULL)",
+      "sample_java_result": "null:DOUBLE"
+    }
+  },
+  "active_worker_statuses": {
+    "value": 16720,
+    "runtime_error": 676,
+    "unsupported": 2178
+  },
+  "active_unsupported_by_reason": {
+    "dynamic, nondeterministic, or user-defined call": 1331,
+    "boolean cast source": 133,
+    "string cast source": 19,
+    "temporal operands": 320,
+    "mixed arithmetic operands": 12,
+    "operator OTHER_FUNCTION / Some(\"x\")": 1,
+    "operator LAG / Some(\"LAG\")": 38,
+    "binary OVERLAY range differs between Java and runtime": 12,
+    "operator OTHER_FUNCTION / Some(\"SINH\")": 4,
+    "operator OTHER_FUNCTION / Some(\"ASINH\")": 8,
+    "operator OTHER_FUNCTION / Some(\"COSH\")": 4,
+    "operator OTHER_FUNCTION / Some(\"ACOSH\")": 8,
+    "operator OTHER_FUNCTION / Some(\"TANH\")": 4,
+    "operator OTHER_FUNCTION / Some(\"ATANH\")": 4,
+    "operator OTHER_FUNCTION / Some(\"SECH\")": 4,
+    "cast target MAP": 15,
+    "nonempty array cast requires component types": 21,
+    "array subscript variant": 4,
+    "operator OTHER_FUNCTION / Some(\"SIGN\")": 14,
+    "interval cast source": 18,
+    "string decimal parser rounding": 128,
+    "operator OTHER_FUNCTION / Some(\"TIMESTAMP_TRUNC\")": 3,
+    "OVERLAY range differs between Java and runtime": 4,
+    "cast target GEOMETRY": 9,
+    "operator OTHER_FUNCTION / Some(\"t\")": 6,
+    "operator OTHER_FUNCTION / Some(\"s\")": 12,
+    "literal type SYMBOL": 3,
+    "literal type TIMESTAMP_TZ": 7,
+    "TRIM character semantics": 12,
+    "negative SUBSTRING length differs between Java and runtime": 8,
+    "negative binary SUBSTRING length differs between Java and runtime": 4,
+    "map concat arity": 4,
+    "operator OTHER_FUNCTION / Some(\"CBRT\")": 4
+  },
+  "protocol": {
+    "java_value_evaluation_fallback": false,
+    "eligibility_refusal": "Retain entire original executor batch; metadata inspection only",
+    "unsupported_or_budget": "Retain original Rex expression",
+    "runtime_error": "Retain original expression; restore entire original planner-executor batch",
+    "remaining_java_owners": "Validation, literal construction, conversion and DBSP simplification remain Java"
+  },
+  "conclusions": {
+    "observed_verdict_schema_diagnostic_differences": 0,
+    "comparable_values_equal": 16796,
+    "offline_unsupported": 260,
+    "offline_unsupported_java_changed": 106,
+    "offline_unsupported_changed_with_java_value": 99,
+    "offline_runtime_errors_java_unchanged": 666,
+    "offline_rust_values_without_java_reference": 410,
+    "unsupported_classification": "Unimplemented or intentionally refused registry/value forms, not value equality; no measured final verdict impact",
+    "build_evidence": "fold-portability-legacy.json",
+    "price_engineer_days": [
+      25,
+      44
+    ],
+    "full_runtime_extraction_required_for_this_spike": false,
+    "exhaustive_branch_coverage_required_for_this_spike": false,
+    "production_semantics_approval": false,
+    "maintainer_acceptance": false
+  }
+}

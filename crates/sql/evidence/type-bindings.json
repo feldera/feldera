@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "scope": "Read-only validated SQL/immediate Rel observation and strict 40-function validated-call extraction; no Rust binding comparison or complete C9",
+  "counts": {
+    "schema_version": 1,
+    "expected_probes": 84224,
+    "probes": 84224,
+    "accepted": 60840,
+    "rejected": 23384,
+    "compiler_bugs": 0,
+    "capture_errors": 0,
+    "complete": true,
+    "runtime_verified": false,
+    "scope": "Validated SQL and immediate converted Rel; no Rust cast/function comparison or C9 claim"
+  },
+  "comparison": {
+    "records": 84224,
+    "accepted": 60840,
+    "rejected": 23384,
+    "all_compared_fields_equal": false,
+    "all_verdict_schema_diagnostics_inputs_equal": true,
+    "option_schema_extensions": {
+      "{\"ioOptions\":{\"readS2\":false,\"readS3\":false,\"writeS2\":\"\",\"writeS3\":\"\"}}": 84224
+    },
+    "observation_counts": {
+      "validated_sql": 145064,
+      "converted_rel": 145064
+    },
+    "cast_counts": {
+      "validated_sql": 108900,
+      "converted_rel": 43806
+    }
+  },
+  "strict_difference_records": 84224,
+  "calls": {
+    "selected_accepted": 28960,
+    "selected_rejected": 13920,
+    "outside_function_slice": 41344,
+    "functions": 40,
+    "operators": [
+      {
+        "operation": "ABS",
+        "registry": "feldera-s1-builtins",
+        "version": "1",
+        "key": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions$AbsFunction#abs",
+        "records": 52
+      },
+      {
+        "operation": "ACOS",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.ACOS",
+        "records": 52
+      },
+      {
+        "operation": "ASCII",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.ASCII",
+        "records": 64
+      },
+      {
+        "operation": "ASIN",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.ASIN",
+        "records": 52
+      },
+      {
+        "operation": "ATAN",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.ATAN",
+        "records": 52
+      },
+      {
+        "operation": "ATAN2",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.ATAN2",
+        "records": 2704
+      },
+      {
+        "operation": "CBRT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.CBRT",
+        "records": 52
+      },
+      {
+        "operation": "CEIL",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.CEIL",
+        "records": 52
+      },
+      {
+        "operation": "CHAR_LENGTH",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.CHAR_LENGTH",
+        "records": 64
+      },
+      {
+        "operation": "COALESCE",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.COALESCE",
+        "records": 3136
+      },
+      {
+        "operation": "CONCAT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.CONCAT_FUNCTION",
+        "records": 4096
+      },
+      {
+        "operation": "COS",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.COS",
+        "records": 52
+      },
+      {
+        "operation": "COT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.COT",
+        "records": 52
+      },
+      {
+        "operation": "DEGREES",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.DEGREES",
+        "records": 52
+      },
+      {
+        "operation": "EXP",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.EXP",
+        "records": 52
+      },
+      {
+        "operation": "FLOOR",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.FLOOR",
+        "records": 52
+      },
+      {
+        "operation": "INITCAP",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.INITCAP",
+        "records": 64
+      },
+      {
+        "operation": "LEFT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.LEFT",
+        "records": 2048
+      },
+      {
+        "operation": "LENGTH",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.LENGTH",
+        "records": 64
+      },
+      {
+        "operation": "LN",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.LN",
+        "records": 52
+      },
+      {
+        "operation": "LOG",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.LOG",
+        "records": 2704
+      },
+      {
+        "operation": "LOG10",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.LOG10",
+        "records": 52
+      },
+      {
+        "operation": "LOWER",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.LOWER",
+        "records": 64
+      },
+      {
+        "operation": "MD5",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.MD5",
+        "records": 64
+      },
+      {
+        "operation": "MOD",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.MOD",
+        "records": 2704
+      },
+      {
+        "operation": "NULLIF",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.NULLIF",
+        "records": 3136
+      },
+      {
+        "operation": "OCTET_LENGTH",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.OCTET_LENGTH",
+        "records": 16
+      },
+      {
+        "operation": "POWER",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.POWER",
+        "records": 2704
+      },
+      {
+        "operation": "RADIANS",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.RADIANS",
+        "records": 52
+      },
+      {
+        "operation": "REPEAT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.REPEAT",
+        "records": 2048
+      },
+      {
+        "operation": "REVERSE",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.REVERSE",
+        "records": 64
+      },
+      {
+        "operation": "RIGHT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlLibraryOperators.RIGHT",
+        "records": 2048
+      },
+      {
+        "operation": "ROUND",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.ROUND",
+        "records": 52
+      },
+      {
+        "operation": "SIGN",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.SIGN",
+        "records": 52
+      },
+      {
+        "operation": "SIN",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.SIN",
+        "records": 52
+      },
+      {
+        "operation": "SQRT",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.SQRT",
+        "records": 52
+      },
+      {
+        "operation": "TAN",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.TAN",
+        "records": 52
+      },
+      {
+        "operation": "TRIM",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.TRIM",
+        "records": 64
+      },
+      {
+        "operation": "TRUNCATE",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.TRUNCATE",
+        "records": 52
+      },
+      {
+        "operation": "UPPER",
+        "registry": "calcite-s1-fixture",
+        "version": "1",
+        "key": "SqlStdOperatorTable.UPPER",
+        "records": 64
+      }
+    ],
+    "projection": "Exact selected validated call tree; casts/type metadata preserved; origins mapped structurally"
+  },
+  "hashes": {
+    "bindings": "43a3f026187108d163975b719891bcf0f678346b4c9a663b150579adfd7d1f09",
+    "validated_calls": "050d5a7319c03e6192e5e7886407bc3234de3326add3bcaa1db5ad9cac5f8710",
+    "comparison": "eeee03b90075e91f385457f3fad8816ef6fb348b28959bc268d5155eba7eec3e",
+    "input_manifest": "6b123b6e79ab185170b73849ed8f8a07cc8623eac9daa47f8f5b82d28f19bfe3",
+    "historical_golden": "274efe41faa75eccf5f2f7eb5b670218a446d4becfbc04b962a3517fa5aa7fc0",
+    "strict_comparator": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a"
+  },
+  "source_scope": {
+    "base": "base-java",
+    "overlay": "runs/p0-type-binding-tools-v3",
+    "description": "Complete frozen main/test classes and sources from correlation-tools-v2 plus the compiled SqlToRelCompiler observer and capture/tests overlay. Only production difference at freeze was the captured SqlToRelCompiler source; later working-tree changes are outside scope."
+  },
+  "historical_golden_provenance": "Historical manifest identity only; no retrospective claim of frozen original sources/classes.",
+  "validation": {
+    "focused_java_tests": 6,
+    "strict_S2_observer_invariance_expressions": 4,
+    "all_operation_sample": 448,
+    "python_tests": 16,
+    "original_failed_build_and_test_attempts_retained": true,
+    "full_verdict_schema_diagnostics_inputs_equal": true,
+    "strict_options_equal": false
+  },
+  "C9_limit": "PLAN8.2 also requires unoptimized S2 C6a casts and sqllib function/type suffixes, plus runtime values; validated-call observation alone does not satisfy it.",
+  "runtime_verified": false,
+  "rust_binding_parity_verified": false,
+  "full_C9_verified": false,
+  "P0_complete": false,
+  "human_maintainer_accepted": false
+}

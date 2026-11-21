@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "scope": "Closure/sort type sharing and NULL LATENESS repairs",
+  "before": {
+    "closure_sort": {
+      "tests": 12,
+      "failures": 2,
+      "errors": 0,
+      "methods": [
+        "closureKeepsSharedFunctionType",
+        "sortKeepsSharedFunctionType"
+      ]
+    },
+    "lateness": {
+      "focused_ids": [
+        "focused/lateness_timestamp/5/promote=False/suppress=False",
+        "focused/lateness_timestamp/5/promote=False/suppress=True",
+        "focused/lateness_timestamp/5/promote=True/suppress=False",
+        "focused/lateness_timestamp/5/promote=True/suppress=True"
+      ],
+      "diagnostics": [
+        [
+          {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0,
+            "warning": false,
+            "error_type": "This is a bug in the compiler (please report it to the developers)",
+            "message": "class org.apache.calcite.sql.SqlBasicCall: CAST(NULL AS INTERVAL SECOND)",
+            "snippet": ""
+          }
+        ],
+        [
+          {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0,
+            "warning": false,
+            "error_type": "This is a bug in the compiler (please report it to the developers)",
+            "message": "class org.apache.calcite.sql.SqlBasicCall: CAST(NULL AS INTERVAL SECOND)",
+            "snippet": ""
+          }
+        ],
+        [
+          {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0,
+            "warning": false,
+            "error_type": "This is a bug in the compiler (please report it to the developers)",
+            "message": "class org.apache.calcite.sql.SqlBasicCall: CAST(NULL AS INTERVAL SECOND)",
+            "snippet": ""
+          }
+        ],
+        [
+          {
+            "start_line_number": 0,
+            "start_column": 0,
+            "end_line_number": 0,
+            "end_column": 0,
+            "warning": false,
+            "error_type": "This is a bug in the compiler (please report it to the developers)",
+            "message": "class org.apache.calcite.sql.SqlBasicCall: CAST(NULL AS INTERVAL SECOND)",
+            "snippet": ""
+          }
+        ]
+      ],
+      "raw_evidence": "$SCRATCH/p0-fold-metadata-v1",
+      "complete_sha256": "2e935618760952d6b918231ce4505668ca6fa691f606dad7b4c6b73128cb54f4",
+      "regression_before_note": "The level-0 assertion fails because NULL lateness is accepted; the level-2 folding population separately reproduces the internal conversion error."
+    }
+  },
+  "after": {
+    "closure_sort_targeted": {
+      "tests": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "combined_targeted": {
+      "tests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "first_full_s3_mismatches": {
+      "schema_version": 1,
+      "producer": "c6ede756d-p0-seams-v18",
+      "runtime": "c6ede756d",
+      "classpath": {
+        "$SCRATCH/p0-seam-tools-v18/classes": "58d6a48435cd97fbb694049f9a5306bec30274aa916dd3e6a52aea25aacaa9af",
+        "$SCRATCH/p0-seam-tools-v18/test-classes": "e46459ed57fbafb9237187db6062e4244e9829f46210d1ca431711a43874de93",
+        "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+      },
+      "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+      "input_sha256": "88083e2c52f77e75946dc2344f159e8a868289b6d3ce1fecce71e8be73e14479",
+      "source_class": null,
+      "cases": 19,
+      "stage": "S3",
+      "execution_order": [
+        "replay-s3",
+        "capture-s3"
+      ],
+      "keep_going": true,
+      "artifact_contract": "seam-v1",
+      "runtime_executed": false,
+      "limits": {
+        "heap_mib": 1024,
+        "output_mib": 512,
+        "min_free_mib": 512,
+        "timeout_seconds_per_jvm": 1200
+      },
+      "equal": true,
+      "observations": 19,
+      "capture_transparency": false,
+      "observation_contract": "final-s3-v1",
+      "artifact_byte_differences": [],
+      "differences": [],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": [],
+      "jvm_runs": 2
+    },
+    "full_java": {
+      "tests": 2844,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 71,
+      "runtime_executed": false,
+      "corpus_validation": {
+        "build_identity": [
+          "c6ede756d-p0-seams-v19",
+          "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+          "c6ede756d"
+        ],
+        "compile_only": 315,
+        "expected_errors": 232,
+        "exported": 8571,
+        "runtime_verified": false,
+        "schema_version": 1,
+        "skipped": 0,
+        "steps": 10408,
+        "tests": 2619
+      }
+    },
+    "frozen_build": {
+      "$SCRATCH/p0-seam-tools-v19/classes": "be339fed87bf2867bd3e909fa2626c5797ce331d24b566e7a8fab377c3f0b260",
+      "$SCRATCH/p0-seam-tools-v19/test-classes": "d66b6d6a9a9e82a09ee426fc05434fbb9f84b7ae908e5a1209c6d1555d16d47f",
+      "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    }
+  },
+  "logs": {
+    "$SCRATCH/p0-closure-sort-before.log": "f76f68755b51e8b25d703da3376dc4dd24d6f27d7c010560ffc03d30d7c13f65",
+    "$SCRATCH/p0-seam-tools-v18-tests.log": "c657708297ef25f4f45502b0ddeffb199e24ac9ec5e9c42f0d7e36ba132a3b03",
+    "$SCRATCH/p0-lateness-null-before.log": "1d8e3aba9f2fba0eb9e265ef66c4c08077dab7b3c42670a5463e77decc33c85e",
+    "$SCRATCH/p0-seam-tools-v19-tests.log": "bd320161d2eb70685be5f9b37a52cb9217398789eb627f779a8ba9a9b7bfe11a",
+    "$SCRATCH/p0-seam-full-java-tests-v2.log": "7f4511573de7b383d0623dd80be143439fde5fa5a92e6644b619dba621ca18c0"
+  },
+  "full_seam_audits_complete": false,
+  "independent_review": false
+}

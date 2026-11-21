@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-rolling-execution-20261118-v1.tar.gz",
+  "bytes": 56145753,
+  "sha256": "c25243867ebabbfeca27f9238357b1e61bb708669173167bf17ce1404a2d40d2",
+  "manifest_sha256": "64d1a27c204c9fc03f969a95405a6b205f8396c0cf78d8a81a109971ae6165c7",
+  "verified_files": 68,
+  "all_members_verified": true
+}

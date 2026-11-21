@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-activity-archive.json",
+  "scope": "Before/after observations of top-level optimizer placements on the 50 incremental set programs and 46 non-incremental bag programs in each engine mode.",
+  "measurements": {
+    "classic_incremental": {"cases": 50, "placements": 94, "observations": 4700},
+    "gen2_incremental": {"cases": 50, "placements": 94, "observations": 4700},
+    "classic_snapshot": {"cases": 46, "placements": 91, "observations": 4186},
+    "gen2_snapshot": {"cases": 46, "placements": 91, "observations": 4186}
+  },
+  "observations": 17772,
+  "fields": ["graph_sha256", "diagnostics_sha256", "next_generated_name", "operators"],
+  "activation": {
+    "ImplementNow": {"wire_changed": 192, "names_changed": 2, "diagnostics_changed": 2},
+    "MonotoneAnalyzer": {"wire_changed": 192, "names_changed": 12, "diagnostics_changed": 0},
+    "IncrementalizeVisitor": {"wire_changed": 100}
+  },
+  "legacy_two_pass_records": 6,
+  "limits": "This is a before/after wire and diagnostic census on the source-bound state-observer build. It is neither a structural-equality nor a mutable-state proof for inactive placements."
+}

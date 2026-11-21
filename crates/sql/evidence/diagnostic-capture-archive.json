@@ -1,0 +1,21 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-diagnostic-capture-20261118-v1.tar.gz",
+  "sha256": "4b851430184fd19881b9a23ceeb3a5a5f8b09786ac8bcfc70b729b299e24a936",
+  "bytes": 33918953,
+  "certificates": [
+    "diagnostic-capture.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "diagnostic-capture.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-diagnostics-v5/sources/"
+      }
+    ]
+  },
+  "scope": "Error and warning assertions with exact rendered targets and Java field matching",
+  "P0_complete": false
+}

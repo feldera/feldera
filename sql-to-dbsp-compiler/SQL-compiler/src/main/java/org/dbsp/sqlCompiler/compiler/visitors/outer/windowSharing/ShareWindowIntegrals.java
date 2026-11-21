@@ -11,8 +11,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
  * projections after each of the widened windows. */
 public class ShareWindowIntegrals extends Passes {
     public ShareWindowIntegrals(DBSPCompiler compiler) {
+        this(compiler, new FindWindowGroups(compiler));
+    }
+
+    public ShareWindowIntegrals(DBSPCompiler compiler, FindWindowGroups find) {
         super("ShareWindowIntegrals", compiler);
-        FindWindowGroups find = new FindWindowGroups(compiler);
         this.add(find);
         this.add(new ImplementWindowGroups(compiler, find));
         this.add(new DeadCode(compiler, true));

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-seams-v6",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v6/classes": "feec35a1c07bc672ef3dec7bfe9adde748c9d9947c0d77f77acef5aff2e873d9",
+    "$SCRATCH/p0-seam-tools-v6/test-classes": "4daf42b790e7556bd6ef095eb25713cf1a549ad29ea3e19d0e7ccbb91286288c",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+  "input_sha256": "7e87c2d0326ce5a4d48c28ba6dc52ed988de79e5de76c78229bc0f1bab0d35dd",
+  "source_class": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests",
+  "cases": 167,
+  "artifact_contract": "seam-v1",
+  "runtime_executed": false,
+  "limits": {
+    "heap_mib": 1024,
+    "output_mib": 512,
+    "min_free_mib": 512,
+    "timeout_seconds_per_jvm": 1200
+  },
+  "equal": true,
+  "observations": 67509,
+  "capture_transparency": false,
+  "artifact_byte_differences": [],
+  "differences": [],
+  "exported_schema_differences": [],
+  "exported_diagnostic_differences": [],
+  "jvm_runs": 2
+}

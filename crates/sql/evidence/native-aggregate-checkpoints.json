@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-18",
+  "scope": "Two fixed accumulator weight layouts in original generated DBSP circuits",
+  "environment": "Feldera local Linux devcontainer, locked offline Cargo, one DBSP worker, forced file-backed trace spill",
+  "generated_classic_sha256": "ea6131e2131123a6b6e8b333bd157167adf06c9eee3535488faa8a835a2d84ca",
+  "classic_constructors_byte_identical": true,
+  "circuit_witnesses": [
+    {
+      "case": "simple.OptimizedIncrementalTests#optionAggregateTest/0",
+      "fixture_sha256": "ff74ca84a7e1a74ee7bed9478cc95a8c5ad4e2bec3c839f86aeee33d1cf639a5",
+      "weight": "Tup3<i64, i64, i64>",
+      "fingerprint": "8cf0fa7be63603e5",
+      "updates": "Frozen positive and negative inputs, empty transaction, and reinsertion",
+      "native_archive_writes_before_relinking": 2,
+      "native_archive_reads_before_relinking": 11,
+      "native_archive_reads_after_relinking": 4,
+      "classic_to_native": "passed",
+      "native_to_relinked_native": "passed",
+      "native_to_classic": "passed"
+    },
+    {
+      "case": "simple.OptimizedIncrementalTests#emptyAggregate/0",
+      "fixture_sha256": "8a424b2abc80ac3332d056d53e157e88c4dca35b178519a34116786fdb969179",
+      "weight": "Tup2<Tup2<i128, i64>, Tup2<i64, i64>>",
+      "fingerprint": "7bc27ca84ccbc571",
+      "updates": "Supplemental live inputs and retractions with multiplicities 2 and 1, empty transaction, and reinsertion",
+      "native_archive_writes_before_relinking": 2,
+      "native_archive_reads_before_relinking": 11,
+      "native_archive_reads_after_relinking": 4,
+      "classic_to_native": "passed",
+      "native_to_relinked_native": "passed",
+      "native_to_classic": "passed"
+    }
+  ],
+  "comparison": "Exact output bags and empty SQL error streams at every tested transaction, with an uninterrupted classic oracle and explicit expected bags",
+  "additional_checks": {
+    "unmodified_generated_tests_passed": 2,
+    "ir_aggregate_corpus_tests_passed": 3,
+    "grouped_sum_post_restore_transactions": 5,
+    "grouped_sum_native_archive_writes": 5,
+    "grouped_sum_native_archive_reads_before_relinking": 27,
+    "grouped_sum_native_archive_reads_after_relinking": 13,
+    "wide_count_signed_i128_above_i64_exact_rkyv_bytes": true,
+    "focused_clippy": "passed",
+    "ir_native_corpus_tests_passed": 10
+  },
+  "archive_index": "native-aggregate-checkpoints-archive.json",
+  "earlier_sum_only_archive_index": "native-sum-checkpoint-archive.json",
+  "replay": "Extract the archive into the devcontainer and run cargo test --offline --locked -- --nocapture --test-threads=1 in p0-native-archive-contract-v1, with the workspace at $REPO. Set P0_FROZEN_AGGREGATE_STATE_EVIDENCE to an unused directory to retain checkpoints. The archive also contains p0-native-corpus-aggregate-interchange-v1/test.log, which records all ten IR-driven cases passing after the operator change."
+}

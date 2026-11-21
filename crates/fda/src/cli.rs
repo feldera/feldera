@@ -283,9 +283,14 @@ pub enum Commands {
         #[arg(long, default_value_t = false, conflicts_with = "program_path")]
         stdin: bool,
         /// Runtime version to compile with: a version tag (`vX.Y.Z`) or a
-        /// 40-character git SHA. If omitted, the platform's default runtime is used.
+        /// 40-character git SHA. If omitted, use the runtime from --program-config
+        /// or the platform default.
         #[arg(long)]
         runtime_version: Option<String>,
+        /// JSON file containing the compilation configuration. --runtime-version
+        /// overrides the runtime version in this file.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        program_config: Option<String>,
         /// Also return the program IR (dataflow) in the output.
         #[arg(long, default_value_t = false)]
         ir: bool,
@@ -882,10 +887,15 @@ pub enum PipelineAction {
         #[arg(long, default_value_t = false, conflicts_with = "program_path")]
         stdin: bool,
         /// Runtime version to compile the new program with: a version tag
-        /// (`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's
-        /// default runtime is used.
+        /// (`vX.Y.Z`) or a 40-character git SHA. If omitted, inherit the selected
+        /// program configuration's runtime.
         #[arg(long)]
         runtime_version: Option<String>,
+        /// JSON file containing the proposed compilation configuration.
+        /// Omit this file or use an empty object to select platform defaults.
+        /// --runtime-version overrides the runtime in this file.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        program_config: Option<String>,
     },
     /// Retrieve the runtime configuration of a pipeline.
     #[clap(aliases = &["cfg"])]

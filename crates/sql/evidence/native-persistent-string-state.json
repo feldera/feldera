@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-persistent-string-state-archive.json",
+  "scope": "Four-worker persistent DBSP join with the selected nullable VARCHAR key layout and the reference SqlString readers.",
+  "direction": "classic to native to classic",
+  "fingerprint_u64": "13587671476188913930",
+  "signed_outputs_equal": true,
+  "post_restore_transactions": 3,
+  "native_archive_writes": 31,
+  "archived_reads": 79,
+  "archived_live_searches": 5,
+  "interleaved_payloads_at_nonzero_offset_match_rkyv": true,
+  "reference_fallback_exercised_above_one_mib": true,
+  "focused_clippy": "passed"
+}

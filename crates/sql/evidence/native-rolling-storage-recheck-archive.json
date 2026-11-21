@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-storage-recheck.tar.gz",
+  "bytes": 43658170,
+  "sha256": "d25bdb1107010374409d38a105afa6a222b15ce9d69d3af68640db61fdeb2dc4",
+  "manifest_sha256": "54a36bcc52d78886a345cbd3ee44c383cc4c2b1dfd8994a149fb2b56ea1e52a3",
+  "verified_files": 433,
+  "all_members_verified": true
+}

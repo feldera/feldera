@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Measure paired cold SQL-to-classic-artifact latency for the supervised Rust optimizer."""
+import argparse
+import json
+import os
+from pathlib import Path
+import platform
+import subprocess
+import tempfile
+import time
+
+from benchmark_java_baseline import latency
+from benchmark_seams import bootstrap_ratio
+from run_determinism import classpath_digest, file_digest
+
+
+def compare(direct, hybrid):
+    result = json.loads((hybrid / "result.json").read_bytes())
+    if ((result["compiler"], result["status"], result["attempts"]) != ("hybrid", "ok", 1)
+            or result.get("rust_optimizer_passes") is not True):
+        raise ValueError(f"Unexpected hybrid result {result}")
+    diagnostics = direct / "diagnostics.json"
+    messages = json.loads(diagnostics.read_bytes() or b"[]") if diagnostics.exists() else []
+    if messages != result["messages"]:
+        raise ValueError("Compiler diagnostics differ")
+    artifacts = {p.name for p in direct.iterdir() if p != diagnostics}
+    published = {p.name for p in hybrid.iterdir() if p.name != "result.json"}
+    if artifacts != set(result["artifacts"]) or artifacts != published or "circuit.rs" not in artifacts:
+        raise ValueError("Compiler output file sets differ")
+    for name in artifacts:
+        if file_digest(hybrid / name) != result["artifacts"][name]:
+            raise ValueError(f"Incorrect output digest for {name}")
+        if name in {"dataflow.json", "schema.json"}:
+            equal = json.loads((direct / name).read_bytes()) == json.loads((hybrid / name).read_bytes())
+        else:
+            equal = file_digest(direct / name) == result["artifacts"][name]
+        if not equal:
+            raise ValueError(f"{name} differs")
+    return result["artifacts"]
+
+
+def trial(args, sql, order, scratch):
+    direct, hybrid = scratch / "direct", scratch / "hybrid"
+    direct.mkdir()
+    manifest = scratch / "request.json"
+    manifest.write_text(json.dumps(dict(java_classpath=args.classpath, engine="classic",
+        producer_commit=args.producer, runtime_abi="live-benchmark", rust_optimizer_passes=True,
+        sql=str(sql), slots=str(scratch / "slots"), deadline_ms=120000)))
+    commands = {
+        "hybrid": [args.compiler, "--hybrid", manifest, hybrid],
+        "direct": ["java", "-Xss8m", "-Xmx512m", "-XX:MaxMetaspaceSize=128m",
+                   "-XX:MaxDirectMemorySize=64m", "-XX:ActiveProcessorCount=1",
+                   "-XX:-HeapDumpOnOutOfMemoryError", "-XX:ErrorFile=/dev/null", "-cp", args.classpath,
+                   "org.dbsp.sqlCompiler.CompilerMain", "-i", "-je", "--alltables", "--ignoreOrder",
+                   "--dump-producer-commit", args.producer, "--dump-runtime-abi", "live-benchmark",
+                   "--errors", direct / "diagnostics.json", "-js", direct / "schema.json",
+                   "--dataflow", direct / "dataflow.json", "-o", direct / "circuit.rs", sql],
+    }
+    times = {}
+    failures = {}
+    for mode in order:
+        start = time.monotonic_ns()
+        try:
+            result = subprocess.run(commands[mode], capture_output=True, timeout=125)
+            if result.returncode:
+                receipt = hybrid / "result/result.json"
+                failures[mode] = (json.loads(receipt.read_bytes()) if mode == "hybrid" and receipt.exists()
+                                  else {"exit_code": result.returncode, "stderr": result.stderr[-4096:].decode(errors="replace")})
+        except subprocess.TimeoutExpired:
+            failures[mode] = {"timeout_seconds": 125}
+        times[mode] = (time.monotonic_ns() - start) / 1e9
+    if not failures:
+        try:
+            return dict(seconds=times, artifacts=compare(direct, hybrid / "result"))
+        except (OSError, KeyError, ValueError) as error:
+            failures["comparison"] = str(error)
+    return dict(seconds=times, failures=failures)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("inputs", nargs="+", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--classpath", required=True)
+    parser.add_argument("--compiler", type=Path, required=True)
+    parser.add_argument("--producer", required=True)
+    parser.add_argument("--samples", type=int, default=21)
+    parser.add_argument("--warmups", type=int, default=2)
+    args = parser.parse_args()
+    if args.samples < 20 or args.warmups < 1:
+        parser.error("p95 needs at least 20 measured pairs and one warmup")
+    args.output.mkdir()
+    inputs = [p.resolve(strict=True) for p in args.inputs]
+    if len({p.name for p in inputs}) != len(inputs):
+        parser.error("workload names must be unique")
+    library = args.compiler.with_name("libfeldera_sql_opt_jni.so")
+    identity = dict(inputs={p.name: file_digest(p) for p in inputs}, compiler=file_digest(args.compiler),
+                    library=file_digest(library), classpath=classpath_digest(args.classpath),
+                    affinity=sorted(os.sched_getaffinity(0)), platform=platform.platform(),
+                    java=subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True))
+    (args.output / "environment.json").write_text(json.dumps(identity, indent=2) + "\n")
+    measured = {p.name: {"hybrid": [], "direct": []} for p in inputs}
+    failures = {}
+    with (args.output / "pairs.jsonl").open("x") as raw:
+        for iteration in range(-args.warmups, args.samples):
+            offset = iteration % len(inputs)
+            for sql in inputs[offset:] + inputs[:offset]:
+                if sql.name in failures:
+                    continue
+                order = ["direct", "hybrid"] if (iteration + inputs.index(sql)) % 2 else ["hybrid", "direct"]
+                with tempfile.TemporaryDirectory() as scratch:
+                    record = trial(args, sql, order, Path(scratch))
+                print(json.dumps(dict(workload=sql.name, iteration=iteration, order=order, **record)),
+                      file=raw, flush=True)
+                if "failures" in record:
+                    failures[sql.name] = record["failures"]
+                    continue
+                if iteration >= 0:
+                    for mode, value in record["seconds"].items():
+                        measured[sql.name][mode].append(value)
+    summary = {}
+    for name, times in measured.items():
+        if name in failures:
+            summary[name] = {"failures": failures[name], "completed_pairs": len(times["direct"])}
+            continue
+        result = {mode: latency(values) for mode, values in times.items()}
+        result["p95_ratio"] = result["hybrid"]["empirical_p95_seconds"] / result["direct"]["empirical_p95_seconds"]
+        result["mean_ratio_paired_95pct_interval"] = bootstrap_ratio(times["direct"], times["hybrid"])
+        summary[name] = result
+    (args.output / "results.json").write_text(json.dumps(summary, indent=2) + "\n")
+    if failures:
+        raise SystemExit("One or more compiler comparisons failed. See results.json and pairs.jsonl.")
+
+
+if __name__ == "__main__":
+    main()

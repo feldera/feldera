@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "cpus": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "workers": 4,
+  "pairs_per_size": 31,
+  "binary_sha256": "61d6fb49de12d0e9b9483596c2292103c48c9329cc932fc1fdc4a24dd7007bce",
+  "results": {
+    "256": {
+      "classic": {
+        "init_ns": {
+          "p50": 6244620,
+          "p95": 8679118
+        },
+        "step_latency_ns": {
+          "p50": 25495495.3,
+          "p95": 44082479.9875
+        },
+        "checkpoint_ns": {
+          "p50": 24246271,
+          "p95": 50233040
+        },
+        "rows_per_second": {
+          "p50": 10040.989476286033,
+          "p95": 11669.035616693738
+        },
+        "peak_rss_kib": {
+          "p50": 100840,
+          "p95": 101484
+        },
+        "checkpoint_bytes": {
+          "p50": 324888,
+          "p95": 324888
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 16439944,
+          "p95": 20078316
+        },
+        "step_latency_ns": {
+          "p50": 28977709.0125,
+          "p95": 46584403.2875
+        },
+        "checkpoint_ns": {
+          "p50": 25561311,
+          "p95": 48223834
+        },
+        "rows_per_second": {
+          "p50": 8834.376792505242,
+          "p95": 10418.646722506286
+        },
+        "peak_rss_kib": {
+          "p50": 109044,
+          "p95": 109312
+        },
+        "checkpoint_bytes": {
+          "p50": 324799,
+          "p95": 324799
+        }
+      }
+    },
+    "2048": {
+      "classic": {
+        "init_ns": {
+          "p50": 5574287,
+          "p95": 7855785
+        },
+        "step_latency_ns": {
+          "p50": 23268709.225,
+          "p95": 35068581.275
+        },
+        "checkpoint_ns": {
+          "p50": 32103556,
+          "p95": 46696460
+        },
+        "rows_per_second": {
+          "p50": 88015.19586654253,
+          "p95": 88985.8870783714
+        },
+        "peak_rss_kib": {
+          "p50": 109280,
+          "p95": 109568
+        },
+        "checkpoint_bytes": {
+          "p50": 428928,
+          "p95": 428928
+        }
+      },
+      "native": {
+        "init_ns": {
+          "p50": 15554611,
+          "p95": 18873317
+        },
+        "step_latency_ns": {
+          "p50": 25864226.85,
+          "p95": 42384042.9
+        },
+        "checkpoint_ns": {
+          "p50": 32251139,
+          "p95": 50350540
+        },
+        "rows_per_second": {
+          "p50": 79182.72646916566,
+          "p95": 79968.96087563982
+        },
+        "peak_rss_kib": {
+          "p50": 121132,
+          "p95": 121396
+        },
+        "checkpoint_bytes": {
+          "p50": 428839,
+          "p95": 428839
+        }
+      }
+    }
+  },
+  "archive_index": "native-c13-count-four-workers-archive.json",
+  "scope": "Four-worker ARM64 COUNT DISTINCT with forced spill and the original generated circuit as the classic control.",
+  "measured_fresh_process_samples": 124,
+  "pilot_fresh_process_samples": 8,
+  "signed_bag_and_error_assertions": "passed on every transaction",
+  "step_latency_summary": "Percentiles across each process average step latency",
+  "all_native_checkpoint_directory_bytes_delta_from_classic": -89,
+  "all_native_spill_bytes_delta_from_classic": -1,
+  "state_inventory_note": "All paired per-file length lists differ by one byte in the smallest spill file. Normalized file identities and contents were not measured."
+}

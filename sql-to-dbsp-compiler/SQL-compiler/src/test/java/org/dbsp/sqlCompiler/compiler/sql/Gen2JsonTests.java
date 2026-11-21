@@ -29,6 +29,25 @@ import java.util.Set;
  * aggregate operator keeps its per-aggregate list instead of one fold over a tuple accumulator.
  * The {@code --jit} circuit keeps the Rust forms. */
 public class Gen2JsonTests extends SqlIoTest {
+    @Test
+    public void serializesTheVariantTypeOnce() throws JsonProcessingException {
+        var mapper = Utilities.deterministicObjectMapper()
+                .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        for (boolean gen2: new boolean[] {false, true}) {
+            DBSPCompiler compiler = this.compile("""
+                    CREATE VIEW v AS SELECT TO_JSON(VARIANT_DEEP_FILTER(
+                        CAST(NULL AS VARIANT), (p, v) -> TRUE));
+                    """, gen2, false);
+            DBSPCircuit circuit = compiler.getFinalCircuit(false);
+            Assert.assertNotNull(circuit);
+            for (var writer : List.of(ToJsonOuterVisitor.createForReplay(compiler),
+                    ToJsonOuterVisitor.create(compiler, 1))) {
+                writer.apply(circuit);
+                Assert.assertNotNull(mapper.readTree(writer.getJsonString()));
+            }
+        }
+    }
+
     /** A temporal filter against NOW(): the Rust backend boxes its window bounds. */
     static final String WINDOW_PROGRAM = """
             CREATE TABLE events(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, id BIGINT NOT NULL);

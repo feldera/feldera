@@ -39,8 +39,8 @@ use crate::db::types::user::{
 };
 use crate::db::types::utils::{
     MAXIMUM_TAG_LENGTH, validate_api_key_name, validate_deployment_config, validate_pipeline_name,
-    validate_program_config, validate_program_info, validate_runtime_config,
-    validate_storage_status_details,
+    validate_program_config, validate_program_config_input, validate_program_info,
+    validate_runtime_config, validate_storage_status_details,
 };
 use crate::db::types::version::Version;
 use crate::oidc::destination::{TenantIssuerPolicy, validate_tenant_oidc_url};
@@ -491,6 +491,7 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
                 None
             },
             use_platform_compiler: false,
+            compiler: None,
         })
         .unwrap()
     }
@@ -2248,6 +2249,7 @@ async fn pipeline_retrieval() {
                     cache: true,
                     runtime_version: None,
                     use_platform_compiler: false,
+                    compiler: None,
                 })
                 .unwrap(),
             },
@@ -2293,6 +2295,7 @@ async fn pipeline_retrieval() {
                     cache: false,
                     runtime_version: None,
                     use_platform_compiler: false,
+                    compiler: None,
                 })
                 .unwrap(),
             },
@@ -2572,6 +2575,7 @@ async fn pipeline_versioning() {
         cache: false,
         runtime_version: None,
         use_platform_compiler: false,
+        compiler: None,
     })
     .unwrap();
     handle
@@ -7304,12 +7308,7 @@ impl ModelHelpers for Mutex<DbModel> {
             })?;
         }
         if let Some(program_config) = program_config {
-            validate_program_config(program_config, false).map_err(|e| {
-                DBError::InvalidProgramConfig {
-                    value: program_config.clone(),
-                    error: e,
-                }
-            })?;
+            validate_program_config_input(program_config)?;
         }
 
         // Fetch existing pipeline
@@ -8472,12 +8471,7 @@ impl Storage for Mutex<DbModel> {
                 error: e,
             }
         })?;
-        validate_program_config(&pipeline.program_config, false).map_err(|e| {
-            DBError::InvalidProgramConfig {
-                value: pipeline.program_config.clone(),
-                error: e,
-            }
-        })?;
+        validate_program_config_input(&pipeline.program_config)?;
 
         // Constraint: UUID is unique
         if state.pipelines.keys().any(|(_, pid)| pid.0 == new_id) {

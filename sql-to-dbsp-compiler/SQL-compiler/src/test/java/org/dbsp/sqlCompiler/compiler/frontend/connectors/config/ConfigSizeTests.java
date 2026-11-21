@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.connectors.config;
 
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -27,7 +29,7 @@ public class ConfigSizeTests {
             ConfigSize.parseBytes(text);
             Assert.fail("expected " + text + " to be rejected");
         } catch (ConfigQuantity.ParseException e) {
-            Assert.assertTrue(e.getMessage(), e.getMessage().contains(expected));
+            DiagnosticAssertions.assertContains(Target.CONFIG_EXCEPTION, expected, e.getMessage());
         }
     }
 
@@ -103,8 +105,8 @@ public class ConfigSizeTests {
             Assert.fail();
         } catch (ConfigQuantity.ParseException e) {
             for (String unit : new String[] { "k", "M", "G", "T", "P", "E", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei" })
-                Assert.assertTrue(unit, e.getMessage().contains("\"" + unit + "\""));
-            Assert.assertTrue(e.getMessage().contains("trailing \"B\""));
+                DiagnosticAssertions.assertContains(Target.CONFIG_EXCEPTION, unit, "\"" + unit + "\"", e.getMessage());
+            DiagnosticAssertions.assertContains(Target.CONFIG_EXCEPTION, "trailing \"B\"", e.getMessage());
         }
     }
 }

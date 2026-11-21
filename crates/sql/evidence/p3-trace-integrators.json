@@ -1,0 +1,59 @@
+{
+  "CheckRetain": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "a5833b12d8be7a9fd3571e18867314c395086973e36f2b457a69111899041c77"
+      ],
+      "pass": "CheckRetain",
+      "invocations": 8571,
+      "changed": 0,
+      "cases_without_placement": 0,
+      "oracle_stream_sha256": "8980fe7d0ab4dcfc760a56990aa43a6a3965fe36ae90c11481f31afdcbb46571"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "0f08da5d9ba54b2d2807a6be821b2d2fcfc17e4c842388e21a89913483dd1263"
+      ],
+      "pass": "CheckRetain",
+      "invocations": 8527,
+      "changed": 0,
+      "cases_without_placement": 0,
+      "oracle_stream_sha256": "642f8216e437ce8455d52e36b0191e339e6ab1d4bcaa1d4f9904b4b66f8523a8"
+    }
+  },
+  "SeparateIntegrators": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "9cd46bc1cecd80bfb9083a38be72d590176aec20a6cb8826d531e611bb738616"
+      ],
+      "pass": "SeparateIntegrators",
+      "invocations": 601,
+      "changed": 109,
+      "cases_without_placement": 7970,
+      "oracle_stream_sha256": "0bd4450d2829d031b0e4ee1042ac040685dc1c5f496afbd8b78b9e80d1d8f606"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "14d538419529a547df657c1bd772771261c3184ada8c26f9576ce932be3b8fb9"
+      ],
+      "pass": "SeparateIntegrators",
+      "invocations": 8526,
+      "changed": 474,
+      "cases_without_placement": 1,
+      "oracle_stream_sha256": "622f0596ce9d5e5b12b9cae1f063b0481e50df1dc4bc1798241a0036f585ba01"
+    }
+  },
+  "comparator_sha256": "e804a5cd9b4e27aad7b1a17e390e7ea8da2e1eaa0b08f18e60f12a2d0db69ac3"
+}

@@ -32,6 +32,7 @@
 #
 # This only resolves the lockfile, so it compiles nothing.
 set -euo pipefail
+(cd "$(git rev-parse --show-toplevel)" && python3 scripts/validate-probe-crypto.py)
 
 # `(*)` marks a subtree cargo already printed; strip it so entries dedupe.
 packages=$(cargo tree --target all --edges normal,build,dev --prefix none --format "{p}" 2>/dev/null |

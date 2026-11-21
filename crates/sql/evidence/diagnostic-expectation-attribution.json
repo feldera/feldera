@@ -1,0 +1,69 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "reviewer": "Independent Codex diagnostic-catalog review agent",
+  "scope": "candidate dependencies of assertions, with rendered fields and runtime outcomes kept separate",
+  "counts": {
+    "java_assertions": 1143,
+    "java_dispositions": {
+      "regex_requires_java_rendered_attribution": 1,
+      "message_body_candidates": 1088,
+      "non_body_fields_only": 10,
+      "rendered_boundary_or_other_field_unresolved": 44
+    },
+    "python_assignments": 281,
+    "python_dispositions": {
+      "message_body_candidates": 212,
+      "non_body_fields_only": 5,
+      "runtime_evaluation_pending": 61,
+      "not_registered": 3
+    },
+    "platform_exact_assertions": 1,
+    "distinct_candidate_bodies": 1194,
+    "source_candidates_for_asserted_bodies": 69,
+    "calcite_candidates_for_asserted_bodies": 39,
+    "distinct_candidate_bodies_without_template": 22
+  },
+  "required_template_count": null,
+  "threshold_decision": "pending",
+  "catalog_reviewed": false,
+  "P0_complete": false,
+  "inputs": {
+    "$SCRATCH/p0-diagnostics/java-diagnostics.jsonl": "a5c0c92a9f79be479cc60c95b899ab0a18c41b2133233cf2f9c193eddb9a31a9",
+    "$SCRATCH/p0-diagnostic-census-v2.json": "77fd7cfec59a04a63c5b018b59c0d23624bdf1987a3b08b18a0bd2199f1a3f82",
+    "$SCRATCH/p0-diagnostic-templates-v2/report.json": "661e82a55b29bcb8ef7e8723ce8e801eb7812adc97fbe00c3093ffca83f4c857",
+    "$SCRATCH/p0-python-diagnostic-inputs-v3.json": "f9a2ff6e35077ece61909c7ba6c43172cc50b05c16f0df7b2beb1905e7824dd2",
+    "$SCRATCH/p0-python-diagnostics-v2/results.jsonl": "ece37ac814806e412713aec05788a29bee4954a7d275dc1d9f0be2fec36daa99",
+    "$SCRATCH/p0-diagnostics/calcite-messages.json": "3abc0425ce319ced0c5ace8ec24ed79823e483e5e3e4bc3e2f77113deb5089ea"
+  },
+  "source_hashes": {
+    "crates/sql/scripts/diagnostic_expectation_attribution.py": "3b28d956570be7e8f868835474db64a5ea32dfbedaef988d46e08d514326fbf8",
+    "crates/sql/scripts/test_diagnostic_expectation_attribution.py": "6e5a7f184a0fb7906a2bf0c164ddd1da8802eb8c21bd257be4554041d83664ea",
+    "crates/sql/scripts/diagnostic_census.py": "122cced98cd2e81eec6f1f3eb90420bf825fab215853b5a6c3cd68cddb6eb3d0",
+    "crates/sql/scripts/diagnostic_templates.py": "d92e4ac5b690c444de60a32081b97b09ac2954484dd4533b544a0b88b3a17b6e",
+    "crates/sql/scripts/python_diagnostics.py": "008a77235e51c14eb3e3072b1b68ada3d592f4f4d9b5c55ddd45f2410b27e854",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/DiagnosticExporter.java": "4006db1d64e1c331c7f15cdac605a45c3a4d353ad7dbfc2a3f227bebce29add7",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/BaseSQLTests.java": "b54847a61e1a1a9abfc26231eacbfc932d6775f83f126a64415ffb64312c669d",
+    "python/tests/runtime_aggtest/aggtst_base.py": "0f45ce0bc75fd46dd43c58f4748cabb0c2568a49b0bce39b73c93cc3c9190621",
+    "python/tests/platform/negative_test.py": "24e9c5a6cb805b09c2556c20652ef62a2bb445707ed26caf707f512b5294c37c"
+  },
+  "report": {
+    "path": "$SCRATCH/p0-diagnostic-expectation-attribution-v1.json",
+    "sha256": "98cb9c195cb27af43f91076419b5939896071a349cc41cdcbdf26c598cf92e65"
+  },
+  "archive": {
+    "path": ".p0-artifacts/p0-diagnostic-expectation-attribution-20261118-v1.tar.gz",
+    "bytes": 287830,
+    "sha256": "26969ea153df1e871fac19fdccbaec4bbf86eeb6be27312fd340eb094bbd4a3a",
+    "members_verified": 16
+  },
+  "limitations": [
+    "A body substring match does not identify the emitting source; all compatible templates remain candidates.",
+    "A snippet or error-class assertion does not establish dependence on the message body.",
+    "Java regular expressions are not evaluated using Python regex semantics.",
+    "The captured Java records omit full rendered text; matches across rendering boundaries remain unresolved.",
+    "Uncaptured Java warning assertions and other helpers are outside this report's population.",
+    "Accepted Python programs have no observed runtime error in this evidence.",
+    "The platform assertion covers SDK formatting and source snippets as well as compiler message text."
+  ]
+}

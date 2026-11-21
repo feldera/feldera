@@ -34,6 +34,18 @@ Each log entry is a JSON object whose members are:
 
 > Practical rule: every log line has `timestamp`, `level`, `target`, and `fields`. Control plane logs add `feldera-service`; pipeline-related logs add `feldera-service: "pipeline"` plus `pipeline-name` and `pipeline-id`.
 
+## SQL shadow compilation
+
+To compare SQL compiler results, start the compiler server with
+`--shadow-sql-compiler java`. Shadow compilation is off by default.
+Each server runs at most one shadow at a time. Allow up to about 700 MiB of
+additional resident memory (RSS) and one CPU per compiler server.
+
+The server discards shadow output and logs a count and an outcome or skip reason.
+It skips a sample if the worker is busy, the SQL exceeds 1 MiB, or the primary
+observation exceeds 4 MiB. The default deadline is 30 seconds. Set
+`--shadow-sql-compiler-timeout-secs` to change it.
+
 ## Examples
 
 Manager pipeline lifecycle:

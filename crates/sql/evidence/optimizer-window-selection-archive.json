@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-window-selection-20261118-v1.tar.gz",
+  "bytes": 2094300,
+  "sha256": "4ed7b6200aef1f1d34a1ec43334e01aa11c7f18e23c594442269827e7787c2d1",
+  "manifest_sha256": "bf7a628022bae85f2492e4db6bdeae5834ab6fb667aad136121253d9ff59b3ba",
+  "verified_files": 1308,
+  "all_members_verified": true
+}

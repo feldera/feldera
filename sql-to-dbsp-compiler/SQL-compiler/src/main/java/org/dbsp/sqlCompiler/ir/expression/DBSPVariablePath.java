@@ -72,6 +72,19 @@ public final class DBSPVariablePath extends DBSPExpression {
         crtId = 0;
     }
 
+    /** State of the generated-name allocator at an S2 boundary. */
+    public static long nextGeneratedName() {
+        return crtId;
+    }
+
+    /** Internal replay only, in an isolated compiler process. Restores the saved
+     * allocator state; unlike reset(), this retains names consumed by the front end. */
+    public static void restoreGeneratedNames(long next) {
+        if (next < 0 || next == Long.MAX_VALUE)
+            throw new IllegalArgumentException("Invalid generated-name counter " + next);
+        crtId = next;
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);

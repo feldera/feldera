@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-mixed-keys-archive.json",
+  "runtime_ordering": {
+    "rows": 165,
+    "direction_and_null_policies": 64,
+    "pairwise_comparisons": 1742400,
+    "types": ["nullable SqlString", "nullable Fixed<6,2>", "nullable BIGINT"],
+    "mismatches": 0
+  },
+  "paired_sort_merge": {
+    "mixed_workloads": 6,
+    "measured_pairs": 186,
+    "warmup_pairs": 12,
+    "mismatches": 0,
+    "normalized_over_direct_including_encoding": [1.135, 1.353],
+    "fixed_regression_pairs": 126
+  },
+  "raw_result": "p0-native-mixed-key-benchmark-v1/complete.json",
+  "full_n2_verified": false
+}

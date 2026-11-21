@@ -101,7 +101,7 @@ public final class DBSPSourceMultisetOperator
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
-        return new DBSPSourceMultisetOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY,
+        return new DBSPSourceMultisetOperator(CalciteEmptyRel.INSTANCE, JsonDecoder.decodeSourceName(node),
                 info.getZsetType(), originalRowType, metadata, name, decoder.sourceKind(), null)
                 .addAnnotations(info.annotations(), DBSPSourceMultisetOperator.class);
     }

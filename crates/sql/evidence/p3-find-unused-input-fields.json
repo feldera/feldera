@@ -1,0 +1,46 @@
+{
+  "scope": "Compare source projection field paths and schema flags before TrimInputs against the direct Java analysis.",
+  "comparator_sha256": "890b7ed43bd3a3e3b6430d7ea0dc7cb6183debd13587a2f9e01447901662b494",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "026b4eaf96b4d853273aa034bd2b8d17d9c51809d437717633f37a92ebb25a9a",
+      "390b4dee241ce29e4adcd698ab26c95a9f9a195b5668d617895b0150dd601e91",
+      "da2fbb402b88837da2b90ba178784e7abce66811e8387ada50ecb5fa62eb71ef",
+      "992ed40b170430f7ff9a03024e4a023aaaf753f9374d8d8e077784ee7de965b0"
+    ],
+    "pass": "FindUnusedInputFields",
+    "invocations": 8571,
+    "changed": 1251,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "6cdb7443e1150b63dfebc00fb09fa91f440ea79f0db68b561e8cd113015b57c9",
+      "46237301d8b66ff40f2e4b370886ba6c2bd07138f2ac68547d245d66717bad84",
+      "486b88e892084c8ee1a56d2bf0f68e510de8b1a5cc8a282fa7e997b39a188a69",
+      "c9866befd369a989fb72e9e94ef710c7c897b373c723766400b9ec2bbe9f9c39"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "5d9620a8775fa2fe6a1161938171d4db2204ef8cd0f881d2688ff4fbfa6eaf5b",
+      "ab036b2ac5e74f9bdc60bccf72e43a7a65198265798f545ccc034443fdc521bc",
+      "3c9cecc37608e0596c6fe936238d5f238b320dbbc552f1a63cde0d0f83550f37",
+      "05e80c229f1aa2e7e26c77f592756c1b15650bb1207759ddacf72b78dbd8ce9e"
+    ],
+    "pass": "FindUnusedInputFields",
+    "invocations": 8527,
+    "changed": 1245,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "5afc25cf204e691506be6938de4a2fea3698300d6edba84cbc929b3e67f151f8",
+      "7d44b3f1a596f25da3bdd662b01646b13a19caf3fba3f6479d75eabb62a478fe",
+      "ce71357d1ab28774a53b0097bdae2e33942a8a21e4d7f6cb26c8082f3b23ad37",
+      "687e059483b05b546528e6ea19ba0416c60180ad4ceb55ec5622244bbd9836a2"
+    ]
+  }
+}

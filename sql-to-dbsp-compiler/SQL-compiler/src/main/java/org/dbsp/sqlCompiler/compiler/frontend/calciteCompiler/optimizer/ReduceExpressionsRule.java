@@ -587,7 +587,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
         // Replace predicates on CASE to CASE on predicates.
         boolean changed = new ReduceExpressionsRule.CaseShuttle().mutate(expList);
         // Apply our custom rewrite rules
-        changed = changed || new RexOptimize(simplify.rexBuilder).mutate(expList);
+        changed = changed || new RexOptimize(simplify.rexBuilder,
+                rel.getCluster().getPlanner().getExecutor()).mutate(expList);
 
         // Find reducible expressions.
         final List<RexNode> constExps = new ArrayList<>();

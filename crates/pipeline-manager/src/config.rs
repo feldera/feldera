@@ -194,6 +194,10 @@ fn default_dbsp_override_path() -> String {
     ".".to_string()
 }
 
+fn default_shadow_sql_compiler_timeout_secs() -> u64 {
+    30
+}
+
 /// Location of the SQL compiler which the compiler needs to know to
 /// perform SQL compilation.
 fn default_sql_compiler_path() -> String {
@@ -331,6 +335,7 @@ pub struct CommonConfig {
     /// These features are not yet stable and may change or be removed in the future.
     ///
     /// Currently supported features:
+    /// - `compiler_selection` allows a caller to set `program_config.compiler`.
     /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
     /// - `testing`
     /// - `rust_compiler_full_cleanup`: the Rust compiler fully cleans up the target directory if the
@@ -1908,6 +1913,16 @@ impl BasePath {
     }
 }
 
+/// Compiler used for isolated comparison with the primary result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum ShadowCompiler {
+    Java,
+    Hybrid,
+    /// Run the implemented Rust optimizer passes before the hybrid S3 worker.
+    RustOptimizer,
+}
+
 /// Compiler server configuration read from command-line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
 pub struct CompilerConfig {
@@ -1932,6 +1947,18 @@ pub struct CompilerConfig {
     #[serde(default = "default_sql_compiler_path")]
     #[arg(long, default_value_t = default_sql_compiler_path())]
     pub sql_compiler_path: String,
+
+    /// Run a second SQL compiler to compare results. The server logs the outcome
+    /// and discards the output. Allow up to about 700 MiB of extra RSS and one
+    /// CPU per compiler server. Each server runs at most one shadow at a time.
+    #[serde(default)]
+    #[arg(long, value_enum)]
+    pub shadow_sql_compiler: Option<ShadowCompiler>,
+
+    /// Maximum time in seconds for a shadow compilation. The default is 30.
+    #[arg(long, default_value_t = default_shadow_sql_compiler_timeout_secs())]
+    #[serde(default = "default_shadow_sql_compiler_timeout_secs")]
+    pub shadow_sql_compiler_timeout_secs: u64,
 
     /// Base URL of the SQL compiler JAR cache.
     ///
@@ -2580,6 +2607,8 @@ mod tests {
             compiler_working_directory: existing_path.clone(),
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: existing_path.clone(),
+            shadow_sql_compiler: None,
+            shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: String::new(),
             compilation_cargo_lock_path: existing_path.clone(),
             dbsp_override_path: existing_path.clone(),
@@ -2621,6 +2650,8 @@ mod tests {
                 compiler_working_directory: existing_path.clone(),
                 compilation_profile: CompilationProfile::Optimized,
                 sql_compiler_path: existing_path.clone(),
+                shadow_sql_compiler: None,
+                shadow_sql_compiler_timeout_secs: 30,
                 sql_compiler_cache_url: String::new(),
                 compilation_cargo_lock_path: existing_path.clone(),
                 dbsp_override_path: existing_path.clone(),

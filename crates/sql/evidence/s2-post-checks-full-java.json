@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "tests": 2845,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 71,
+  "runtime_executed": false,
+  "corpus": {
+    "build_identity": [
+      "c6ede756d-p0-post-checks-v20",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "c6ede756d"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8571,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10408,
+    "tests": 2619
+  },
+  "logs": {
+    "$SCRATCH/p0-seam-full-java-tests-v4.log": "9b4a6af837a745fbf6039733e8923ebe673d5374559f223e5d6d18c9cdee1531",
+    "$SCRATCH/p0-seam-regression-corpus-v4-validation.json": "d93883b443d123ccd2266f2b2c7a7244c5095e5f2f14ee3f19a1c1b3c65e708c"
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/DBSPCompiler.java": "75e70d17c2ea4cd97a5e7f7c21160ba53dd084061dc2320c8cb9aa1196f62209",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/CircuitReplay.java": "aa05064e0139db5da53ac64d241caf16ef0347e8d4223224f11b509a43e04ce5",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/CircuitReplayTests.java": "1a9c0d3e8fe9d2cc6f33abd2ecb261f4a2048cda16436b7dfefcc34d90ef71ff",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/CircuitDumpTests.java": "95c9fcae4afe85f61a68cec8507f01dd78db9465ec4639fba8d3e9a0a8e526e5"
+  },
+  "raw_corpus": "$SCRATCH/p0-seam-regression-corpus-v4",
+  "independent_review": false
+}

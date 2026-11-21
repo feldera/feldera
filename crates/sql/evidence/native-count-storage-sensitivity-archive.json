@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-count-storage-sensitivity-20261118.tar.gz",
+  "bytes": 231894,
+  "sha256": "318e21de569ae51f6a9a74c481adc88708cbe22963063fd5af6858dabd849323",
+  "manifest_sha256": "198c0529ee3860b8b0665d8146941fc56a9504ce086a10184939ea1777452944",
+  "verified_files": 686,
+  "all_members_verified": true
+}

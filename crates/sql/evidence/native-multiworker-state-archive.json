@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-multiworker-state-20261118-v1.tar.gz",
+  "bytes": 6369972,
+  "sha256": "a0b5ba6d4ae885ace63d0ccadc4a17e2218b961422c9bb2c32faa692835e9c94",
+  "manifest_sha256": "ee93f38dfda07c03414ea1353ca1d92edf2dd7e3ad52a40b417d623f64c1e0a4",
+  "verified_files": 398,
+  "all_members_verified": true
+}

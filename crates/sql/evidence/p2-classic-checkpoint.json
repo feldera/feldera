@@ -1,0 +1,45 @@
+{
+  "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
+  "binary_sha256": {
+    "java": "e25643e3e6d27d0d9f61a0772de29a8747b7731f4a6df1fdf6f1037a65944d64",
+    "hybrid": "e2287309d5453eef0827a712bcc139516f6770127b8851c42ac22c74d41c5db5"
+  },
+  "generated_rust_sha256": {
+    "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
+    "hybrid": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9"
+  },
+  "restores": [
+    {
+      "writer": "java",
+      "reader": "hybrid",
+      "bootstrap": false,
+      "checkpoint_id": "01a1f843-cf04-75d3-8039-582b284f43c6",
+      "restored_count_deltas": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ]
+      ]
+    },
+    {
+      "writer": "hybrid",
+      "reader": "java",
+      "bootstrap": false,
+      "checkpoint_id": "01a1f843-cf1a-7d51-bbf9-76467a615f44",
+      "restored_count_deltas": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ]
+      ]
+    }
+  ]
+}

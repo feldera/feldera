@@ -4061,7 +4061,7 @@
           }
         ],
         "requestBody": {
-          "description": "The proposed new SQL program and/or runtime version (both optional)",
+          "description": "The proposed SQL program, compilation configuration, and runtime override (all optional)",
           "content": {
             "application/json": {
               "schema": {
@@ -8609,7 +8609,7 @@
         "description": "Required role: `write` or higher.\n\nValidate a SQL program by compiling it, without creating a pipeline or\nbuilding the pipeline binary. Reports SQL errors and warnings and the derived\nschema and connectors. Set `ir` to also return the program IR (dataflow).\n\nNote that this endpoint returns HTTP 200, regardless of whether validation\nsucceeds or fails. The validation result, including any compiler warnings and errors,\nis encoded in the `ValidateProgramResponse` response body.",
         "operationId": "post_validate_program",
         "requestBody": {
-          "description": "The SQL program to validate, an optional runtime version, and whether to return the IR",
+          "description": "The SQL program and compilation configuration to validate, an optional runtime override, and whether to return the IR",
           "content": {
             "application/json": {
               "schema": {
@@ -9633,6 +9633,13 @@
           "unoptimized",
           "optimized",
           "optimized_symbols"
+        ]
+      },
+      "CompilerFamily": {
+        "type": "string",
+        "description": "SQL compiler family. This release supports `java`. To select it explicitly,\nenable the experimental `compiler_selection` feature.",
+        "enum": [
+          "java"
         ]
       },
       "CompletedWatermark": {
@@ -13780,9 +13787,18 @@
             "description": "New SQL program code to compare against. If omitted, the pipeline's\ncurrent program code is used.",
             "nullable": true
           },
+          "program_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramConfig"
+              }
+            ],
+            "description": "Optional compilation settings. Omit this field or send an empty object to use the platform defaults. A top-level `runtime_version` overrides the value in this object.",
+            "nullable": true
+          },
           "runtime_version": {
             "type": "string",
-            "description": "Runtime version to compile the new program with: a version tag\n(`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's default\nruntime is used.",
+            "description": "Runtime version to compile the new program with: a version tag\n(`vX.Y.Z`) or a 40-character git SHA. When provided, this overrides\n`runtime_version` in the selected program configuration.",
             "nullable": true
           }
         }
@@ -14807,6 +14823,15 @@
             "type": "boolean",
             "description": "If `true` (default), when a prior compilation with the same checksum\nalready exists, the output of that (i.e., binary) is used.\nSet `false` to always trigger a new compilation, which might take longer\nand as well can result in overriding an existing binary.",
             "default": true
+          },
+          "compiler": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompilerFamily"
+              }
+            ],
+            "default": null,
+            "nullable": true
           },
           "profile": {
             "allOf": [
@@ -17624,9 +17649,18 @@
             "type": "string",
             "description": "SQL program code to validate."
           },
+          "program_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramConfig"
+              }
+            ],
+            "description": "Optional compilation settings. Omit this field or send an empty object to use the platform defaults. A top-level `runtime_version` overrides the value in this object.",
+            "nullable": true
+          },
           "runtime_version": {
             "type": "string",
-            "description": "Runtime version to compile with: a version tag (`vX.Y.Z`) or a\n40-character git SHA. If omitted, the platform's default runtime is used.",
+            "description": "Runtime version to compile with: a version tag (`vX.Y.Z`) or a\n40-character git SHA. When provided, this overrides `runtime_version`\nin `program_config`.",
             "nullable": true
           }
         }

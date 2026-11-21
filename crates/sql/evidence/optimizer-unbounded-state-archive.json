@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-unbounded-state.tar.gz",
+  "bytes": 32175546,
+  "sha256": "9bedc2132b35878046cec22e2cd4e882220ed40aa858240c70d9f8f2629d3347",
+  "manifest_sha256": "7c6ad222bb403ad78901b2047bd985bbdd257c50e6eb0f1e8fe3cdac1c22d88f",
+  "verified_files": 33258,
+  "all_members_verified": true
+}

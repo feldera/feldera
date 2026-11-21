@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "scope": "Typed Feldera CREATE FUNCTION declarations",
+  "raw_directory": "$SCRATCH/p0-parser-functions-v1",
+  "sources": {
+    "crates/sql/parser-probe/Cargo.toml": "d4a5d5aca072d2558b381b168cdc168d6b5be057944e73a54e34ebdfed8cae6b",
+    "crates/sql/parser-probe/adversarial.jsonl": "a41b59def79e97662fc5a8f0ddf30cf46d88da11b5c4d1bb63d3cb79fa4b5345",
+    "crates/sql/parser-probe/Cargo.lock": "cce3727d255df64508c8d27224ba4958ef743044042106a5abfccf9f199faf08",
+    "crates/sql/parser-probe/syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b",
+    "crates/sql/parser-probe/src/v062.rs": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+    "crates/sql/parser-probe/src/lib.rs": "2089cc57ee69c624b7c6454b871e122519ffda5d409e9bd8a773ea21b19633f8",
+    "crates/sql/parser-probe/src/v064.rs": "39ba4c70a4cff7ba3da4cf12fe0956ec4fdd818a509d60650a9d00042787e0fa",
+    "crates/sql/parser-probe/src/main.rs": "a31aa5dec1b85b8a0625744c0765436de221b2299397e2839091b917f9e818fe",
+    "crates/sql/parser-probe/src/v064/temporal_types.rs": "068e169b4ef965053b698b8473498eb633d1a6cfc1feb595ea2aa748fe6c1753",
+    "crates/sql/parser-probe/src/v064/trim.rs": "9772d783d8e35d7ceeb0a4043aed287bf86ed5ddc400d9b62af42487878e810e",
+    "crates/sql/parser-probe/src/v064/aggregate_tests.rs": "07d30b47326fa3c10e507fe291e922849c371b11173fcd782b3b90136d800d39",
+    "crates/sql/parser-probe/src/v064/unicode.rs": "2c039d25dc343c2118953f186c900d1f77f0da635ebcede942911f76ea1d220b",
+    "crates/sql/parser-probe/src/v064/functions.rs": "9d82246249c7453c83ba80b0fca1c7c537bc241f8f3777b1ff8d749c5d5c9472",
+    "crates/sql/parser-probe/src/v064/lateness.rs": "93a932e183c747d502054d1ef44f2abc749653f4a7b8801f8bce551e1c324c3b",
+    "crates/sql/parser-probe/src/v064/reserved.rs": "0a1abb3c8a0b6e1b146d8de43f9ee43c6cdbedec48ffc9da2c6ec7c0053cc497",
+    "crates/sql/parser-probe/src/v064/reject.rs": "e66720ffc143de284339fb49f8817a2a88f84cfdfd712471628c1706a4ee7b0f",
+    "crates/sql/parser-probe/src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01"
+  },
+  "comparisons": {
+    "corpus": {
+      "cases": 8571,
+      "counts": {
+        "both_accept": 33763,
+        "accepted_submissions": 33763,
+        "accepted_cases": 8320,
+        "java_only": 252,
+        "rejected_submissions": 252,
+        "rejected_cases": 251
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "qualified datetime differences misparsed as aliases; function-specific inline null treatment; reserved words in declarations, relations, references and projection aliases"
+        },
+        "cases": 8571,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 5807,
+            "accepted_submissions": 31127,
+            "rejected_cases": 2764,
+            "rejected_submissions": 2888,
+            "statements_in_accepted_submissions": 94363
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 5978,
+            "accepted_submissions": 31317,
+            "rejected_cases": 2593,
+            "rejected_submissions": 2698,
+            "statements_in_accepted_submissions": 94588
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 8320,
+            "accepted_submissions": 33763,
+            "rejected_cases": 251,
+            "rejected_submissions": 252,
+            "statements_in_accepted_submissions": 101201
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 7876,
+            "accepted_submissions": 33308,
+            "rejected_cases": 695,
+            "rejected_submissions": 707,
+            "statements_in_accepted_submissions": 99741
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "19e9811a4f6e0e3dfd437b898575a6b9709ffc36a6a62c529ddb6344c64d6e96",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 8571,
+        "accepted_cases": 8571,
+        "rejected_cases": 0,
+        "accepted_submissions": 34015,
+        "rejected_submissions": 0,
+        "statements_in_accepted_submissions": 101870,
+        "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "producer": "c6ede756d-p0-parser",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-functions-v1/corpus-comparison.json",
+      "sha256": "cfed010cfc4efea4479ad21a56f24c45e2c6c608e0e7836a3ad52cbb727b1536"
+    },
+    "keywords": {
+      "cases": 13660,
+      "counts": {
+        "both_accept": 13147,
+        "accepted_submissions": 13147,
+        "accepted_cases": 13147,
+        "both_reject": 510,
+        "rejected_submissions": 513,
+        "rejected_cases": 513,
+        "java_only": 3
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "qualified datetime differences misparsed as aliases; function-specific inline null treatment; reserved words in declarations, relations, references and projection aliases"
+        },
+        "cases": 13660,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 13651,
+            "accepted_submissions": 13651,
+            "rejected_cases": 9,
+            "rejected_submissions": 9,
+            "statements_in_accepted_submissions": 13651
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 13647,
+            "accepted_submissions": 13647,
+            "rejected_cases": 13,
+            "rejected_submissions": 13,
+            "statements_in_accepted_submissions": 13647
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 13147,
+            "accepted_submissions": 13147,
+            "rejected_cases": 513,
+            "rejected_submissions": 513,
+            "statements_in_accepted_submissions": 13147
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 13647,
+            "accepted_submissions": 13647,
+            "rejected_cases": 13,
+            "rejected_submissions": 13,
+            "statements_in_accepted_submissions": 13647
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "19e9811a4f6e0e3dfd437b898575a6b9709ffc36a6a62c529ddb6344c64d6e96",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 13660,
+        "accepted_cases": 13150,
+        "rejected_cases": 510,
+        "accepted_submissions": 13150,
+        "rejected_submissions": 510,
+        "statements_in_accepted_submissions": 13150,
+        "input_sha256": "7c9f014dfdd90a243380370e695b221cc12f5dd0f1ad9319ce175e915d8c1658",
+        "producer": "c6ede756d-p0-parser",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-functions-v1/keywords-comparison.json",
+      "sha256": "e9f215f760c1f623fc4d05b4bcfa961629b5c4066483472a558705e392b70f0b"
+    },
+    "adversarial": {
+      "cases": 258,
+      "counts": {
+        "both_accept": 134,
+        "accepted_submissions": 134,
+        "accepted_cases": 134,
+        "java_only": 21,
+        "rejected_submissions": 124,
+        "rejected_cases": 124,
+        "both_reject": 103
+      },
+      "rust_build": {
+        "ast_reject_pass": true,
+        "ast_reject_scope": {
+          "0.64.0/feldera_prototype": "qualified datetime differences misparsed as aliases; function-specific inline null treatment; reserved words in declarations, relations, references and projection aliases"
+        },
+        "cases": 258,
+        "complete": true,
+        "counts": {
+          "0.62.0/feldera_prototype": {
+            "accepted_cases": 78,
+            "accepted_submissions": 78,
+            "rejected_cases": 180,
+            "rejected_submissions": 180,
+            "statements_in_accepted_submissions": 82
+          },
+          "0.62.0/generic": {
+            "accepted_cases": 136,
+            "accepted_submissions": 136,
+            "rejected_cases": 122,
+            "rejected_submissions": 122,
+            "statements_in_accepted_submissions": 141
+          },
+          "0.64.0/feldera_prototype": {
+            "accepted_cases": 134,
+            "accepted_submissions": 134,
+            "rejected_cases": 124,
+            "rejected_submissions": 124,
+            "statements_in_accepted_submissions": 138
+          },
+          "0.64.0/generic": {
+            "accepted_cases": 141,
+            "accepted_submissions": 141,
+            "rejected_cases": 117,
+            "rejected_submissions": 117,
+            "statements_in_accepted_submissions": 146
+          }
+        },
+        "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+        "executable_sha256": "19e9811a4f6e0e3dfd437b898575a6b9709ffc36a6a62c529ddb6344c64d6e96",
+        "exhaustive_ast_rejection": false,
+        "include_ast": false,
+        "input_sha256": "a41b59def79e97662fc5a8f0ddf30cf46d88da11b5c4d1bb63d3cb79fa4b5345",
+        "s1_equivalence_checked": false,
+        "schema_version": 1,
+        "token_rewrite_scope": {
+          "0.64.0/feldera_prototype": "Unicode identifiers only"
+        },
+        "token_rewrites": true
+      },
+      "java_build": {
+        "schema_version": 1,
+        "stage": "raw_parser",
+        "cases": 258,
+        "accepted_cases": 155,
+        "rejected_cases": 103,
+        "accepted_submissions": 155,
+        "rejected_submissions": 103,
+        "statements_in_accepted_submissions": 159,
+        "input_sha256": "a41b59def79e97662fc5a8f0ddf30cf46d88da11b5c4d1bb63d3cb79fa4b5345",
+        "producer": "c6ede756d-p0-seams-v30",
+        "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+        "complete": true
+      },
+      "full_report": "$SCRATCH/p0-parser-functions-v1/adversarial-comparison.json",
+      "sha256": "5b244e2f0b32e061e9a013d977be31dbedf24216c02d2d8982c96706e70b46c3"
+    }
+  },
+  "rust_tests": 33,
+  "clippy_passed": true,
+  "exhaustive_ast_rejection": false,
+  "s1_equivalence_checked": false,
+  "oracle_classpath": {
+    "$SCRATCH/p0-seam-tools-v30/classes": "31b1bd6819d17762fe82a12c7ac860564dd8659daa58559a6c03fbf12d5a69b9",
+    "$SCRATCH/p0-seam-tools-v30/test-classes": "dfa2267fba1cf747b261fcf36e054fa4f68c9a5550b42d2dc736946532582227",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "representation": "Typed CreateFunction AST; Nullable wrappers preserve parameter and return nullability; Display is not canonical Feldera SQL",
+  "known_refusals": [
+    "Queries inside function bodies, including nested contexts Calcite permits",
+    "Other unimplemented common expression/type grammar"
+  ],
+  "logs": {
+    "$SCRATCH/p0-parser-functions-tests-v2.log": "75e3b33c844f8315b1e6f126ac274c3441d35c9ea4669f57b57b046d009b2061",
+    "$SCRATCH/p0-parser-functions-clippy-v2.log": "dca16f0f5b9bed999d0b18071e818f40bb12564c8e48950c0998720303a64441"
+  }
+}

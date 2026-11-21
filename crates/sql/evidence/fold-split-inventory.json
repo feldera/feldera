@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "scope": "source boundary inventory for a provisional extraction estimate; textual references are not a dependency or macro expansion proof",
+  "sqllib_files": [
+    {
+      "path": "crates/sqllib/src/aggregates.rs",
+      "sha256": "923eed283076e21118a43240b5664546560fb986f883f5c1ba5eb0a148329971",
+      "physical_lines": 1573,
+      "dbsp_reference_lines": [
+        7
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/array.rs",
+      "sha256": "51dc2a3cbda0dd74c0da8b6ec94c5790dd3b6d22b8d8bd15d82c32921c610fce",
+      "physical_lines": 1089,
+      "dbsp_reference_lines": [
+        5
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/binary.rs",
+      "sha256": "30c0593feb06dc4909639e8750c12a9018e7a0ba49cfa287ac420aab903bd7cb",
+      "physical_lines": 869,
+      "dbsp_reference_lines": [
+        9,
+        98,
+        317,
+        326
+      ],
+      "feldera_types_reference_lines": [
+        11,
+        223
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/boolean.rs",
+      "sha256": "5f7721760c0a9d21c09a92ec327ea9c26384245cc606c67ffed295d1897c9e44",
+      "physical_lines": 251,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/casts.rs",
+      "sha256": "046a27ac2b704138b10c8315093d1344f6a68ea4845e93b7a70e188f34468fd1",
+      "physical_lines": 5465,
+      "dbsp_reference_lines": [
+        21,
+        4633,
+        5333
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/decimal.rs",
+      "sha256": "cb2135864574d129211dff8e2e359be94720604dd4a6eab38ce3b00204256d08",
+      "physical_lines": 458,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/error.rs",
+      "sha256": "66efdb04506e9f11072c692f2b830a5b15c0bfcb1e9db10b02b064fcdd27de20",
+      "physical_lines": 58,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/flat_variant/casts.rs",
+      "sha256": "118d1463eebf0974ccfc8665f6d6a0a6e9c83e391d37a27e536d81a26eee2d06",
+      "physical_lines": 955,
+      "dbsp_reference_lines": [
+        13
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/flat_variant/functions.rs",
+      "sha256": "471c2ecf2ece10b16f46853dcbac3bb9f5c14817a5652adb3d5be7b0a16d9fd5",
+      "physical_lines": 579,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/flat_variant.rs",
+      "sha256": "b4a29c2d45f6e0b5151fdf5f195cd72400eab22f6f0053e27eff7af5731a432f",
+      "physical_lines": 3232,
+      "dbsp_reference_lines": [
+        51,
+        1485,
+        2062
+      ],
+      "feldera_types_reference_lines": [
+        54,
+        55,
+        56,
+        2882,
+        2883
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/float.rs",
+      "sha256": "97bcaeeebda2db5a1d44317f085653ffad099d0fe2da28829e7e6aafb958a370",
+      "physical_lines": 638,
+      "dbsp_reference_lines": [
+        5,
+        602
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/geopoint.rs",
+      "sha256": "b2e3e7f4295ca972e0e8175ea747180384784b282169f7cda43b7807a281485d",
+      "physical_lines": 104,
+      "dbsp_reference_lines": [
+        5,
+        6
+      ],
+      "feldera_types_reference_lines": [
+        8
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/hash_repr.rs",
+      "sha256": "e2618b71fbafdb7b15beeff57d38fff154d56f0915ac7f2e22071ea62b27ee3c",
+      "physical_lines": 106,
+      "dbsp_reference_lines": [
+        3,
+        55
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/interval.rs",
+      "sha256": "010acbe5238c5ab47f42783700e910d7619572951ffe80a13354d4b29ff9023a",
+      "physical_lines": 1462,
+      "dbsp_reference_lines": [
+        12,
+        66,
+        68,
+        1258
+      ],
+      "feldera_types_reference_lines": [
+        14
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/lib.rs",
+      "sha256": "dbfb573133103f0c0ad56b5873a0747d7ae123eb6c84762285572a6fab296391",
+      "physical_lines": 1536,
+      "dbsp_reference_lines": [
+        28,
+        81,
+        82
+      ],
+      "feldera_types_reference_lines": [
+        68
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/map.rs",
+      "sha256": "cc1ec08af4eb74f40108044ad262696e465c1db5d83edfae4ae09a49fcdd0a28",
+      "physical_lines": 335,
+      "dbsp_reference_lines": [
+        5
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/operators.rs",
+      "sha256": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "physical_lines": 815,
+      "dbsp_reference_lines": [
+        3,
+        765
+      ],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/rfc3339.rs",
+      "sha256": "c9d31a04e4e2f4b0c36f6e1f0e4d4fc6245c4d27d7e145b45a0f313b963b3d2e",
+      "physical_lines": 396,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/source.rs",
+      "sha256": "bd2b5420639a284fa86ef31e9545c303d51d9974a95c110cca81e49e3caf13af",
+      "physical_lines": 90,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": []
+    },
+    {
+      "path": "crates/sqllib/src/string.rs",
+      "sha256": "1a29130b3e335f799ade9f4c1d3daa69e1e825e13b922808ed0ae86b4a9bd35c",
+      "physical_lines": 1071,
+      "dbsp_reference_lines": [
+        209,
+        894
+      ],
+      "feldera_types_reference_lines": [
+        19
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/timestamp.rs",
+      "sha256": "fb7d20e4cb65beabff23a5bf1a508340f27fda861e7f17bcc32ffb54b18d503b",
+      "physical_lines": 5588,
+      "dbsp_reference_lines": [
+        18
+      ],
+      "feldera_types_reference_lines": [
+        20,
+        4597,
+        4598,
+        4602
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/uuid.rs",
+      "sha256": "a2e34b0ad7c1e47b95d3bba063e0d05a46cd20707703ac2555eb91e09d3d2b8d",
+      "physical_lines": 299,
+      "dbsp_reference_lines": [
+        4
+      ],
+      "feldera_types_reference_lines": [
+        6
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/variant.rs",
+      "sha256": "7d8258c3227123be16aff7f013aa78a4bd943ae4b027ee40872e8666e092c63c",
+      "physical_lines": 2432,
+      "dbsp_reference_lines": [
+        13,
+        1634
+      ],
+      "feldera_types_reference_lines": [
+        16,
+        17,
+        18,
+        2404
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/variant_binary.rs",
+      "sha256": "a50c8bee51eccc406bf8b8fc69188cc78109c3ee3bdd91e3eb5b6321bdeddb2e",
+      "physical_lines": 1651,
+      "dbsp_reference_lines": [
+        30
+      ],
+      "feldera_types_reference_lines": [
+        16,
+        17,
+        360,
+        687
+      ]
+    },
+    {
+      "path": "crates/sqllib/src/variant_value.rs",
+      "sha256": "a71366b6fa524178a05b3060588f38ba0da3817e1b202df78d484ce041a151c3",
+      "physical_lines": 1294,
+      "dbsp_reference_lines": [],
+      "feldera_types_reference_lines": [
+        29,
+        430,
+        447
+      ]
+    }
+  ],
+  "sqllib_total_physical_lines": 32346,
+  "sources": {
+    "crates/sqllib/Cargo.toml": "b92426f41784e13a70bf4fd8ef71869af8c48b1eb995f4e94d06cddf9e8fb87d",
+    "crates/fxp/Cargo.toml": "a5a6afb4b76a11cd318192f54c98bd5c550153b9ca3065f5c3e845661d1597bb",
+    "crates/fxp/src/dbsp_impl.rs": "2279ae42a7b934a3c3d672e981f8aa889d9ea923355650d25b413224255ed068",
+    "crates/fxp/src/dynamic.rs": "18e81d5f24d67c6ddc124c11db6c9024fbed9b93d5ca6ef6ab1b4dd2771f3441",
+    "crates/fxp/src/fixed.rs": "4d11071cfb2097f7938e724489286317f7739938348dd0c114f882fbffda1267",
+    "crates/fxp/src/lib.rs": "be313306a73b824c6624915b1319a4f3cb0d7b64253d150422d95c883cdbffac",
+    "crates/fxp/src/rkyv_impl.rs": "c874512eb03a737c9f6995f9944749dfbb72bd46b7d8d9f91cab63f5fea7e330",
+    "crates/fxp/src/serde_impl.rs": "a05e625b9cc43c09dc3e235ea7e1c1fbd0869c1d41fb04fb47f525644b3b540c",
+    "crates/fxp/src/u256.rs": "a7b1559cdb05c72f379834e5abad7f3d3f1958329e8881f15699e9934acc4cef",
+    "crates/sql/fold-probe/Cargo.toml": "c2a6fd9ed973b89c7a73ff179a17b1b634f3321a88a5b68b268b1b0f5322a9b4"
+  },
+  "measured_build_evidence": "fold-portability-legacy.json",
+  "measured_behavior_evidence": "fold-legacy-final-s3.json",
+  "engineer_days": {
+    "low": 25,
+    "high": 44,
+    "basis": "engineering judgment from explicit work packages in fold-probe/SPLIT.md; not measured human port/review time"
+  },
+  "approved_estimate": false,
+  "complete_runtime_extraction": false
+}

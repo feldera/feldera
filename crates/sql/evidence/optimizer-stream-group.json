@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-stream-group-archive.json",
+  "scope": "Consecutive stream optimizations originally between aggregate expansion and expression simplification.",
+  "grouped_steps": {"incremental": 9, "snapshot": 8},
+  "measured": {
+    "incremental": {"exact_group_graphs": 100, "rust_final_matches": 100, "java_codec_final_matches": 100},
+    "snapshot": {"exact_group_graphs": 92, "rust_final_matches": 92, "java_codec_final_matches": 92},
+    "composition_with_early_group": {
+      "original_pass_placements": 45,
+      "handoff_sites": 34,
+      "exact_stream_group_graphs": 90,
+      "rust_final_matches": 90,
+      "java_codec_final_matches": 90
+    }
+  },
+  "rust_tests_passed": 36,
+  "clippy": "passed"
+}

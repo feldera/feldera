@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -128,6 +129,13 @@ public class CircuitStatistics extends CircuitVisitor {
         }
         Utilities.putNew(this.depth, operator, depth);
         this.stats.updateDepth(depth);
+    }
+
+    public static void logCounters(JsonNode counters) throws java.io.IOException {
+        if (Logger.INSTANCE.getLoggingLevel(CircuitStatistics.class) >= 1) {
+            Statistics result = Utilities.deterministicObjectMapper().treeToValue(counters, Statistics.class);
+            Logger.INSTANCE.belowLevel(CircuitStatistics.class, 1).appendSupplier(result::toString).append("\n");
+        }
     }
 
     @Override

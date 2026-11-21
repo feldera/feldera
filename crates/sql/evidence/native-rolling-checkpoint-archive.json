@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-rolling-checkpoint-20261118-v1.tar.gz",
+  "bytes": 23523434,
+  "sha256": "343847ad23bc1e9d01c6ef6dea04ec21c0844bc3483f19e7302715709a8e9d39",
+  "manifest_sha256": "bdd9f3e8ac58cd0dd797a8d8136c2e6fc235c1d69dcb1c4b71f9d8fec3b80823",
+  "verified_files": 82,
+  "all_members_verified": true
+}

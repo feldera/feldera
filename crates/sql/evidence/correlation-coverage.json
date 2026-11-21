@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "scope": "Independent agent review of bounded spike 6: complete four-stage classic shape census and explicitly selected first-inner-stage weighted C7 measurement.",
+  "counts": {
+    "corpus_cases": 8571,
+    "related_cases": 157,
+    "selected_cases": 60,
+    "other_related_cases": 97,
+    "invocations": 75,
+    "correlate_occurrences": 155,
+    "occurrence_dispositions": {
+      "rewritten_without_c7": 6,
+      "refused": 138,
+      "c7_equal": 9,
+      "transport_failed": 2
+    },
+    "invocation_dispositions": {
+      "rewritten_without_c7": 6,
+      "refused": 59,
+      "c7_equal": 9,
+      "transport_failed": 1
+    },
+    "verified_original_cases": 7
+  },
+  "weighted_c7": {
+    "numerator": 9,
+    "denominator": 155,
+    "fraction": 0.05806451612903226,
+    "threshold": 0.95,
+    "current_prototype_ceiling_numerator": 15,
+    "passed": false
+  },
+  "four_stage_global_c7_fraction": null,
+  "negative_experiment_complete": true,
+  "success_criterion_met": false,
+  "all_selected_invocations_accounted": true,
+  "whole_case_runtime_credit_only": true,
+  "runtime_input_and_recipe_match": "Exact typed JSON equality after removal only of top-level id label; occurrence signatures and frozen callback order also verified.",
+  "occurrence_ledger": {
+    "path": "occurrence-ledger.json",
+    "sha256": "dd2de6c7a4c14269659998d86ae15237ee9d05b3729a31ff631f22b85cc51119",
+    "archive_replay_equal": true
+  },
+  "runtime_runs": {
+    "p0-correlation-corpus-runtime-v1": {
+      "junit_class": "org.dbsp.sqlCompiler.compiler.sql.tools.CorrelationCorpusRuntimeTests",
+      "junit_tests": 1,
+      "rust_tests": 44,
+      "transactions": 44,
+      "log_sha256": "7626c954a318bb1be3c84a276c26030fa11b3f407b5038a07c0027dc49214556",
+      "surefire_sha256": "fac4805b115fc9c7849942217c9170b525b4ab18c6a5d77f0d8c04537a592cf7",
+      "generated_rust_sha256": "14f6679fd75e1cfe775dc34a6972f5f4da6ffc82be14454a4a67ab3cf8b09185"
+    },
+    "p0-correlation-scalar-corpus-runtime-v1": {
+      "junit_class": "org.dbsp.sqlCompiler.compiler.sql.tools.CorrelationScalarCorpusRuntimeTests",
+      "junit_tests": 2,
+      "rust_tests": 10,
+      "transactions": 10,
+      "log_sha256": "8fd7a280aba321a97763cf28e80d0d2532b112fdd9ad737757492ee7b2901b98",
+      "surefire_sha256": "c949e559e8b2219ec3f5133d82c18ac2048d3cc5b2f88735f226288475eb3c20",
+      "generated_rust_sha256": "227ff7bffd156841c42bd913445fac88c40b0cb25687e51dc2ecaade95325231"
+    }
+  },
+  "fixtures": [
+    {
+      "path": "runs/p0-correlation-runtime-v2",
+      "rust_tests": 24,
+      "transactions": 74,
+      "junit_tests": 2,
+      "generated_rust_sha256": "01399c56e92be4d72c7542a81b8b0ac9dd8cce105c184c170801a533a2d540e6",
+      "log_sha256": "70fe5b042496828d195bcb69245e10c1150a66b47bc81585b48a9e285b772e9c",
+      "matching_surefire_sha256": "db84c1fe781ff7245ef85771335f6452f7733ca1bf490b5234276ddad54a820f",
+      "corpus_weight": 0
+    },
+    {
+      "path": "runs/p0-correlation-scalar-runtime-v1",
+      "rust_tests": 24,
+      "transactions": 80,
+      "junit_tests": 2,
+      "generated_rust_sha256": "bbd987cc00542d2883111d9ec771f26c2500cd9ab3b268eb972b1535e78e9d5d",
+      "log_sha256": "166310557e0ea4922c77e69ac7f6f051516916f196dedc34e98476f7dbc3eb2e",
+      "matching_surefire_sha256": "8461905420fcf9929583b8547ab0e3bd7dc09d78fc8b51d735c8ac3811198ce9",
+      "corpus_weight": 0
+    }
+  ],
+  "scalar_runtime_binary": {
+    "path": "runs/p0-correlate-scalar-v1/feldera-correlate-probe",
+    "sha256": "b72133d23ece2327115948713d80dd7f9978704b040acb7ad60fcd65365e8524"
+  },
+  "final_source_verification": {
+    "path": "runs/p0-correlate-final-v3",
+    "rust_tests": 23,
+    "clippy_log_sha256": "ee8d01b74edd15de7a27fb7c1a81aedc4f3c8c6f5a670ca90b2aa8104b9d0cef",
+    "format_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "production_source_equal_to_runtime_snapshot": [
+      {
+        "source": "src/lib.rs",
+        "sha256": "48dae211a61fb4ccdd3ae65f29c876932b56a98477954b4ce860a5bacc2b472e"
+      },
+      {
+        "source": "src/main.rs",
+        "sha256": "c47e3c4f250418a50d7813de0aeac4ff3999a551802c7ed5dacba38b18eab368"
+      },
+      {
+        "source": "src/recipe.rs",
+        "sha256": "d75b8564f22fc840242a726897c20b60c87c7030addb87eabce585185241c62a"
+      },
+      {
+        "source": "src/rewrite/aggregate.rs",
+        "sha256": "4cb0058a124e4b18723decb31dca9bf51016e5a487bf0a7ea6dfc1f683597a6d"
+      },
+      {
+        "source": "src/rewrite.rs",
+        "sha256": "baf86c785fd4c565232b37275875abb6e8d774ab701f4fac192830a9859a765c"
+      }
+    ],
+    "current_working_tree_readme_may_differ": true
+  },
+  "calcite_reference": {
+    "path": "review/RelDecorrelator.java",
+    "sha256": "111b0ab303f7d636452a1500ac854d99ed7a496f6fd01d4c14365cd1b3f42b2f"
+  },
+  "independent_oracle": {
+    "script": "review/check_scalar_review_oracles.py",
+    "script_sha256": "718f177282b445216f240067256145159bbedfdec906a8bcbfda7e2edbc832c2",
+    "log": "review/scalar-oracle-check.log",
+    "fixtures": 11,
+    "incremental_deltas": 5,
+    "scope": "SQLite expected-bag validation, not Feldera C7"
+  },
+  "ledger_unit_tests": 7,
+  "historical_attempts_retained": true,
+  "historical_symlinks": "review/symlink-provenance.json",
+  "source_snapshot_limitation": "Three historical model directories were live symlinks and are recorded, not dereferenced. The runtime executable and probe source are pinned; final-v3 contains the separately copied model. This is not a claim of immutable historical model source closure.",
+  "decision": {
+    "risk_2_probability": "High",
+    "estimate_proposal": "crates/sql/DECORRELATION-ESTIMATE.md",
+    "accepted_estimate_replaced": false,
+    "estimate_accepted": false
+  },
+  "human_maintainer_accepted": false,
+  "P0_complete": false
+}

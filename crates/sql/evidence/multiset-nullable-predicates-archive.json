@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-nullable-predicates-20261118-v1.tar.gz",
+  "bytes": 30192480,
+  "sha256": "3859ff7e0e15af95666742dfcd39d096701c8f5fa95d1474ae7fd864259819e5",
+  "manifest_sha256": "262b4f5a8bb493d956fb9ecf3574f2c3338e6ca9ebcf12565814d46b23de94f9",
+  "verified_files": 12364,
+  "all_members_verified": true
+}

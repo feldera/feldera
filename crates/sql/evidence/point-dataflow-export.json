@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "failure": {
+    "case": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#testVariantGeoPoint/0",
+    "stage": "DBSPCompiler.getDataflow / RelJson.toJson",
+    "exception": "UnsupportedOperationException: type not serializable as JSON: POINT (1 2) (type org.locationtech.jts.geom.Point)"
+  },
+  "repair": "Serialize point literals in diagnostic plans with the complete coordinate sequence, dimension, measures, and SRID. Encode non-finite ordinates as strings. Other values retain Calcite serialization.",
+  "regression": {
+    "test_class": "RelJsonWriterTests",
+    "before": {
+      "tests": 3,
+      "errors": 3
+    },
+    "after": {
+      "tests": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    "engine_modes": [
+      "classic",
+      "gen2"
+    ]
+  },
+  "full_compile_export": {
+    "tests": 2803,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 71,
+    "runtime_executed": false,
+    "validation": "corpus-validation-point-json.json"
+  },
+  "s1_decoder_implemented": false,
+  "gen2_repeated_capture": {
+    "status": "passed",
+    "report": "gen2-determinism.json",
+    "cases": 8527
+  },
+  "gen2_full_capture_transparency": {
+    "equal": true,
+    "cases": 8527,
+    "report": "gen2-capture-transparency.json"
+  }
+}

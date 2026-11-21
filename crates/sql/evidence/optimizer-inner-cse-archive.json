@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-inner-cse-20261119.tar.gz",
+  "bytes": 26621456,
+  "sha256": "1e84c4750800a37032902f4dea3477a50b0cf4bb9914c2bdad08a5e1f8677686",
+  "manifest_sha256": "bd5b6949190f785f68c36649add1d3439e9f97c52cdadb6a228f6be44dce1536",
+  "verified_files": 25443,
+  "all_members_verified": true
+}

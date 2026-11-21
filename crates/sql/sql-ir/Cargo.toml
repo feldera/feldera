@@ -1,0 +1,14 @@
+[package]
+name = "feldera-sql-ir"
+description = "Circuit intermediate representation for the Feldera SQL compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+feldera-sql-source = { path = "../sql-source" }
+indexmap.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde = { workspace = true, features = ["derive"] }

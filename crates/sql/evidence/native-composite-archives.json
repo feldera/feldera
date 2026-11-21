@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-composite-archives-final-archive.json",
+  "previous_archive_index": "native-composite-archives-archive.json",
+  "full_byte_equality_rows": 1780,
+  "new_explicit_stored_shapes": [
+    "74295ece6df3b8e2e1648dc16ee14cff08d15288546b404198325871d5be7e98",
+    "2f5df2350f84e4f2c240a000922c45f8e10d3e56c9d9058e316abf4c838933ff",
+    "3518f80f7166bfcb895c7bb7b87f4086a00524e2e8e81d9c21e4cbaac5170bb3"
+  ],
+  "explicit_stored_shapes_with_component_evidence": 14,
+  "explicit_stored_shapes_total": 29,
+  "focused_runtime_tests_passed": 6,
+  "focused_runtime_and_standalone_clippy_passed": true,
+  "complete_native_corpus_programs": 0
+}

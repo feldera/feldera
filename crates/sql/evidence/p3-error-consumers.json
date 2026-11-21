@@ -1,0 +1,34 @@
+{
+  "scope": "Stable partition of the circuit for system error consumers. Compare both the reordered graph and the ordered suffix of error consumers read by the limiter pass.",
+  "comparator_sha256": "1d7b8a00d516f83dbc2c22c220233c2b5c2de26fe96aa14a387e6f4c6b68334b",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "25edcd537282663cda2b12b8f645df627d6392936cc8902cc3e4403a00718901"
+    ],
+    "pass": "OrderErrorConsumers",
+    "invocations": 8571,
+    "changed": 8565,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "cd2e976b828b5a7dcf351c408754aece8a21c78c17143f34f10039d438b1f09b"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "a65e59dc1f8f65c5ad09f2f4019a696d1fad629a5b53af8f94fed6cc360758f0"
+    ],
+    "pass": "OrderErrorConsumers",
+    "invocations": 8527,
+    "changed": 8521,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "741128edf2356c773f8e4b1c08fbb29852aade98b532d2697f3abf5d39fade51"
+    ]
+  }
+}

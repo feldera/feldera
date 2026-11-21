@@ -24,6 +24,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Replaces the {@link DBSPAggregateZeroOperator} with a graph;
@@ -37,6 +38,20 @@ public class ExpandAggregateZero extends Passes {
         super("ExpandAggregateZero", compiler);
         this.add(new CollectZeros(compiler, zeros));
         this.add(new ExpandAggregateZeros(compiler, zeros));
+    }
+
+    /** The Java visitor hoists nested constants in HashMap iteration order.
+     * Export that ordering while the original operator identities are available. */
+    public static List<Long> nestedHoistOrder(DBSPCompiler compiler, DBSPCircuit circuit) {
+        var nested = new HashMap<DBSPAggregateZeroOperator, Boolean>();
+        new CircuitVisitor(compiler) {
+            @Override
+            public void postorder(DBSPAggregateZeroOperator operator) {
+                if (this.getParent().is(DBSPNestedOperator.class))
+                    nested.put(operator, true);
+            }
+        }.apply(circuit);
+        return nested.keySet().stream().map(op -> op.id).toList();
     }
 
     static class CollectZeros extends CircuitVisitor {

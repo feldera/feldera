@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "scope": "All exported cases from the Gen-2 corpus, using their effective compilation options. Registered skips and pre-registration failures are not certified.",
+  "cases": 8527,
+  "observations": 3527714,
+  "effective_modes": {
+    "gen2": 8526,
+    "classic": 1
+  },
+  "equal": true,
+  "jvm_runs_completed_for_this_comparison": 8,
+  "repeated_capture_criterion_complete": false,
+  "shards": [
+    {
+      "shard": "shard-000",
+      "equal": true,
+      "cases": 2132,
+      "observations": 887064,
+      "capture_transparency": true,
+      "differences": [],
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    },
+    {
+      "shard": "shard-001",
+      "equal": true,
+      "cases": 2132,
+      "observations": 877937,
+      "capture_transparency": true,
+      "differences": [],
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    },
+    {
+      "shard": "shard-002",
+      "equal": true,
+      "cases": 2132,
+      "observations": 882112,
+      "capture_transparency": true,
+      "differences": [],
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    },
+    {
+      "shard": "shard-003",
+      "equal": true,
+      "cases": 2131,
+      "observations": 880601,
+      "capture_transparency": true,
+      "differences": [],
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    }
+  ],
+  "provenance": {
+    "input_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "comparator_sha256": "d2198cd6334064e44d07e4e5816a85fa277f7695fd6f22d644663bb66e3e2656",
+    "classpath": {
+      "$SCRATCH/p0-gen2-ordered-parameters-tools/test-classes": "63d8c3123c32f1411e6ff677c14b2e474631c1c4fcce3f104ecb5d7169590b3f",
+      "$SCRATCH/p0-gen2-ordered-parameters-tools/classes": "036d06a5136091564fe52cb80990dbadb0b606d981340a07a624663005c0bc9f",
+      "$SCRATCH/p0-coercion-compiler.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "workers": 4,
+    "heap": "1g",
+    "compressed_records": true,
+    "max_output_mib": 256,
+    "min_free_mib": 512,
+    "free_space_paths": [
+      "$SCRATCH/p0-gen2-full-determinism-v4",
+      "$REPO"
+    ],
+    "producer": "c6ede756d-p0-ordered-parameters",
+    "runtime": "c6ede756d",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  },
+  "full_run": "$SCRATCH/p0-gen2-full-determinism-v4",
+  "exclusions": "gen2-replay-exclusions.json",
+  "classic_effective_case": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0"
+}

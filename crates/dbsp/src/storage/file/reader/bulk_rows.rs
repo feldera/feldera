@@ -76,7 +76,7 @@ where
     /// - `data_blocks[0]` contains `row`.
     ///
     /// - `data_blocks[1..]` sequentially follow, without gaps in row numbering.
-    data_blocks: VecDeque<Arc<DataBlock<K, A>>>,
+    data_blocks: VecDeque<Arc<DataBlock>>,
 
     /// First row in the next block to be added to `data_blocks`.  If
     /// `data_blocks` is nonempty, then this is
@@ -86,11 +86,11 @@ where
     /// Data blocks that have been received out of order (that is, for each of
     /// them, their first row is greater than `next_data`).  They will be moved
     /// to `blocks` when `next_data` catches up to their starting row.
-    out_of_order_data: BTreeMap<u64, Arc<DataBlock<K, A>>>,
+    out_of_order_data: BTreeMap<u64, Arc<DataBlock>>,
 
     /// Tracks reading of index blocks.  `indexes[0]` is the root level,
     /// `indexes[1]` the level below that, and so on.
-    indexes: Vec<IndexLevel<K>>,
+    indexes: Vec<IndexLevel>,
 
     /// Phantom data.
     _phantom: PhantomData<fn(N)>,
@@ -137,13 +137,13 @@ where
         let (sender, receiver) = channel();
         let mut this = Self {
             reader,
-            cache: reader.file.cache(),
-            factories: reader.columns[column].factories.factories(),
+            cache: reader.layer.file.cache(),
+            factories: reader.factories[column].factories(),
             column,
             row: 0,
             sender,
             receiver,
-            n_rows: reader.columns[column].n_rows,
+            n_rows: reader.layer.columns[column].n_rows,
             indexes: Vec::new(),
             data_blocks: VecDeque::new(),
             next_data: 0,
@@ -151,7 +151,7 @@ where
             data_pending: 0,
             _phantom: PhantomData,
         };
-        if let Some(node) = &reader.columns[column].root {
+        if let Some(node) = &reader.layer.columns[column].root {
             let reads = this.start_block_read(node, 0)?.into_iter().collect();
             this.work_(reads)?;
         }
@@ -169,7 +169,7 @@ where
         self.indexes[level].pending += 1;
         if let Some(cache_entry) = self
             .cache
-            .get(&*self.reader.file.file_handle, node.location)
+            .get(&*self.reader.layer.file.file_handle, node.location)
         {
             self.indexes[level].received(IndexBlock::from_cache_entry(cache_entry, node.location)?);
             Ok(None)
@@ -185,7 +185,7 @@ where
         self.data_pending += 1;
         if let Some(cache_entry) = self
             .cache
-            .get(&*self.reader.file.file_handle, node.location)
+            .get(&*self.reader.layer.file.file_handle, node.location)
         {
             self.received_data(DataBlock::from_cache_entry(cache_entry, node.location)?);
             Ok(None)
@@ -212,14 +212,14 @@ where
         for (BulkRead { node, level }, result) in
             read_results.reads.into_iter().zip(read_results.results)
         {
-            let raw = decompress(self.reader.file.compression, node.location, result?)?;
-            let file_id = self.reader.file.file_handle.file_id();
+            let raw = decompress(self.reader.layer.file.compression, node.location, result?)?;
+            let file_id = self.reader.layer.file.file_handle.file_id();
             let tree_block = TreeBlock::from_raw_with_cache(
                 raw,
                 &node,
                 &self.cache,
                 file_id,
-                self.reader.file.version,
+                self.reader.layer.file.version,
             )?;
             match tree_block {
                 TreeBlock::Data(data_block) => self.received_data(data_block),
@@ -258,7 +258,7 @@ where
         }
 
         if !reads.is_empty() {
-            self.reader.file.file_handle.read_async(
+            self.reader.layer.file.file_handle.read_async(
                 reads.iter().map(|read| read.node.location).collect(),
                 {
                     let sender = self.sender.clone();
@@ -285,7 +285,7 @@ where
     }
 
     /// Adds `block` to the collection of data blocks.
-    fn received_data(&mut self, block: Arc<DataBlock<K, A>>) {
+    fn received_data(&mut self, block: Arc<DataBlock>) {
         self.data_pending -= 1;
         if block.first_row == self.next_data {
             self.next_data = block.rows().end;
@@ -465,15 +465,12 @@ where
     }
 }
 
-struct IndexLevel<K>
-where
-    K: DataTrait + ?Sized,
-{
+struct IndexLevel {
     /// Number of outstanding block reads pending completion for this level.
     pending: usize,
 
     /// Sequential blocks whose children need to be loaded.
-    blocks: VecDeque<Arc<IndexBlock<K>>>,
+    blocks: VecDeque<Arc<IndexBlock>>,
 
     index: usize,
 
@@ -483,13 +480,10 @@ where
 
     /// Blocks that have been received out of order.  They will be moved to
     /// `blocks` when `next` catches up to their starting row.
-    out_of_order: BTreeMap<u64, Arc<IndexBlock<K>>>,
+    out_of_order: BTreeMap<u64, Arc<IndexBlock>>,
 }
 
-impl<K> IndexLevel<K>
-where
-    K: DataTrait + ?Sized,
-{
+impl IndexLevel {
     fn new() -> Self {
         Self {
             pending: 0,
@@ -501,7 +495,7 @@ where
     }
 
     /// Adds `block` to the collection of blocks in this level.
-    fn received(&mut self, block: Arc<IndexBlock<K>>) {
+    fn received(&mut self, block: Arc<IndexBlock>) {
         debug_assert!(self.pending > 0);
         self.pending -= 1;
 

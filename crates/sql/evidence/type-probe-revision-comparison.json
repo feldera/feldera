@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "equal": false,
+  "compared": 84224,
+  "unchanged": 83000,
+  "expected": {
+    "accepted": 59616,
+    "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+    "compiler_bugs": 1224,
+    "expected_probes": 84224,
+    "oracle_ready": false,
+    "probes": 84224,
+    "producer_commit": "c6ede756d-p0-frozen-noassert-stable",
+    "rejected": 24608,
+    "runtime_commit": "c6ede756d",
+    "runtime_verified": false,
+    "schema_version": 1
+  },
+  "actual": {
+    "accepted": 60840,
+    "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+    "compiler_bugs": 0,
+    "expected_probes": 84224,
+    "oracle_ready": true,
+    "probes": 84224,
+    "producer_commit": "c6ede756d-p0-coercion-stable",
+    "rejected": 23384,
+    "runtime_commit": "c6ede756d",
+    "runtime_verified": false,
+    "schema_version": 1
+  },
+  "changed_probes": 1224,
+  "changes_by_operation": {
+    "EXCEPT ALL": 408,
+    "INTERSECT ALL": 816
+  },
+  "previously_successful_or_normal_rejections_changed": 0,
+  "comparison": "verdict, compiler_bug, schema, diagnostics, and canonical S2; identical inputs and options",
+  "baseline_assertions_enabled": false,
+  "candidate_assertions_enabled": true,
+  "name_isolation": "DBSPVariablePath.reset before each independent probe in both batches",
+  "baseline_jar_sha256": "160b88b8d01ca5b87052a5bbd3d0bd4171bec65d0da01a7252905b324c896448",
+  "coercion_adapter_source_sha256": "ee5a4075a3269bb35f2c796915a0368b2840024e758bf66f09766701a6c84766"
+}

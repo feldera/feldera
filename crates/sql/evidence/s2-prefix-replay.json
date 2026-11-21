@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "population": "seven focused programs in both modes; not the corpus",
+  "classpath": {
+    "$SCRATCH/p0-s2-tools-v4/classes": "26fb90b4a863660572a271d9732dd820b2969336334f1dba685f0fd80a785a0d",
+    "$SCRATCH/p0-coercion-compiler.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "d2198cd6334064e44d07e4e5816a85fa277f7695fd6f22d644663bb66e3e2656",
+  "producer": "c6ede756d-p0-s2",
+  "runtime": "c6ede756d",
+  "dataflow_compared": false,
+  "limits": {
+    "heap_mib": 1024,
+    "output_mib": 512,
+    "min_free_mib": 512
+  },
+  "cases": [
+    {
+      "mode": "classic",
+      "name": "constant",
+      "sql": "CREATE VIEW v AS SELECT 1 AS result;",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 374,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "classic",
+      "name": "projection",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, value INT DEFAULT 7);\n        CREATE VIEW v AS SELECT id FROM t WHERE id > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 424,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "classic",
+      "name": "decimal",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL PRIMARY KEY, value DECIMAL(12,2) DEFAULT 7.25);\n        CREATE VIEW v AS SELECT id, value * 2 AS doubled FROM t WHERE value > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 381,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "classic",
+      "name": "settings",
+      "sql": "\n        SET FELDERA_AVOID_STAR_JOINS = true;\n        SET custom_setting = 'retained warning';\n        CREATE TABLE t(x VARCHAR);\n        CREATE VIEW v AS SELECT x || '!' AS x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 372,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "classic",
+      "name": "union",
+      "sql": "\n        CREATE TABLE t(x INT);\n        CREATE TABLE u(x INT);\n        CREATE VIEW v AS SELECT x FROM t UNION ALL SELECT x FROM u;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 374,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "classic",
+      "name": "nested",
+      "sql": "\n        CREATE TYPE nested AS (\"Field\" INT);\n        CREATE TABLE t(x nested);\n        CREATE VIEW v AS SELECT x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 374,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "classic",
+      "name": "lateness",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 1 SECOND);\n        CREATE VIEW v AS SELECT id, ts FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 380,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "constant",
+      "sql": "CREATE VIEW v AS SELECT 1 AS result;",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 376,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "projection",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, value INT DEFAULT 7);\n        CREATE VIEW v AS SELECT id FROM t WHERE id > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 426,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "decimal",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL PRIMARY KEY, value DECIMAL(12,2) DEFAULT 7.25);\n        CREATE VIEW v AS SELECT id, value * 2 AS doubled FROM t WHERE value > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 383,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "settings",
+      "sql": "\n        SET FELDERA_AVOID_STAR_JOINS = true;\n        SET custom_setting = 'retained warning';\n        CREATE TABLE t(x VARCHAR);\n        CREATE VIEW v AS SELECT x || '!' AS x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 374,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "union",
+      "sql": "\n        CREATE TABLE t(x INT);\n        CREATE TABLE u(x INT);\n        CREATE VIEW v AS SELECT x FROM t UNION ALL SELECT x FROM u;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 376,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "nested",
+      "sql": "\n        CREATE TYPE nested AS (\"Field\" INT);\n        CREATE TABLE t(x nested);\n        CREATE VIEW v AS SELECT x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 376,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    },
+    {
+      "mode": "gen2",
+      "name": "lateness",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 1 SECOND);\n        CREATE VIEW v AS SELECT id, ts FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 382,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true
+    }
+  ],
+  "equal": true,
+  "jvm_runs": 42,
+  "observations": 5372
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-delta-expansion.tar.gz",
+  "bytes": 33605892,
+  "sha256": "3a24538c79f8ab8ca8f4ea21e20166b169ecc15bf9b3a1a93fc47cfd05d0ea70",
+  "manifest_sha256": "20427dbfe35e9b59582e9748640952f094cb863276e714a8feb762822fb56be7",
+  "verified_files": 35149,
+  "all_members_verified": true
+}

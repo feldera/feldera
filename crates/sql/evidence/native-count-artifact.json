@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-count-artifact-archive.json",
+  "program": "OptimizedIncrementalTests#emptyAggregate",
+  "profile": "Optimized Linux ARM64, four pinned workers, persistent mode and forced spill",
+  "pairs": 15,
+  "excluded_warmup_pair": 0,
+  "excluded_cargo_target_lock_pair": 12,
+  "replacement_pair": 16,
+  "classic_warm_build_load_init_ns": {"p50": 20837697650, "p95": 24829984379},
+  "native_emit_link_load_init_ns": {"p50": 11630695, "p95": 13344610},
+  "classic_library_sha256": "1d18a38a08aad93d90920762b70d4fd74abb9746bee25ad9bdd77e8168b6b305",
+  "native_executable_sha256": "5e964fc7475d6bac2a9b16222d425eb483be1542eb9f98b4f7582e09ad5a2995",
+  "classic_library_uses_private_jemalloc": true,
+  "meets_this_workload_artifact_budget": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-limiter-finality.tar.gz",
+  "bytes": 1009586,
+  "sha256": "04bbf1db9773fe2f127b766b1ef63b87900787a8df792321cbe79e33887cbb02",
+  "manifest_sha256": "5219a4aab687174f1e9a5c21714d72c21f4e1b32ebc8daab58b55aa7d3c1c8de",
+  "verified_files": 12,
+  "all_members_verified": true
+}

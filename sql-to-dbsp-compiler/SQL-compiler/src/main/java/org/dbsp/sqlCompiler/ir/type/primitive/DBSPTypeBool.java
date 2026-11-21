@@ -96,6 +96,9 @@ public class DBSPTypeBool extends DBSPTypeBaseType implements IsBoundedType {
     @SuppressWarnings("unused")
     public static DBSPTypeBool fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeBool.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeBool.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeBool(CalciteObject.EMPTY, mayBeNull);
     }
 }

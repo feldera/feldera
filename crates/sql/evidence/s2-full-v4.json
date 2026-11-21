@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "scope": "Full prepared classic and exported Gen2 populations under strict S2 replay protocol v4",
+  "producer": "c6ede756d-p0-seams-v26",
+  "runtime": "c6ede756d",
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v26/classes": "e62c4399fff62835b278dbff6bef3ccb17ee8cb46f0d41467e0cf5e2f4ec11b6",
+    "$SCRATCH/p0-seam-tools-v26/test-classes": "08ec8837c0aad1aa2633a50b187ddcbc10c3951018f77eeaebf26c12d11b117b",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "equal": true,
+  "runtime_executed": false,
+  "complete_original_test_population": false,
+  "dataflow_contract": "all-engines-v1",
+  "artifact_contract": "seam-v1",
+  "observation_contract": "full-prefix-v1",
+  "shards": 10,
+  "jvm_runs": 20,
+  "populations": {
+    "classic": {
+      "cases": 8571,
+      "observations_per_side": 3503220,
+      "certificate": "s2-classic-full-v4.json",
+      "sha256": "c62ac4b1e4de794a403ce792e54cd5dadf908f9ce6c3cadf7ea8959a4a672c1d"
+    },
+    "gen2": {
+      "cases": 8527,
+      "observations_per_side": 3527714,
+      "certificate": "s2-gen2-full-v4.json",
+      "sha256": "85e433bd2f2e72986c774315e59db8332abce8a8f682651c55bd0c0729a87422"
+    }
+  },
+  "verifier_sources": {
+    "crates/sql/scripts/summarize_seam_corpus.py": "7891983acadcdc0c879b86f2b684707108f9536a0d796bb311e50813d8d0a07f",
+    "crates/sql/scripts/test_summarize_seam_corpus.py": "2e1a92bc39b8037aa58b1a275efc8b73898d7735ba36c95d68ec78aaf5f37edd",
+    "crates/sql/scripts/determinism.py": "17ed7d3efa59a254278c0058e5a06d18d102f948354f7beacdb5c45e426f2752",
+    "crates/sql/scripts/run_determinism.py": "a4c1fde2eb8f4624e3737d14c4de4f82ba05928657035d418868b99638216924"
+  },
+  "raw_directory": "$SCRATCH/p0-seams-v4-full-v2",
+  "earlier_failures": [
+    "s2-gen2-full-v3-failures.json",
+    "$SCRATCH/p0-seams-v4-full"
+  ],
+  "limitations": [
+    "Frozen v26 compiler; later v28 let-binding additions have a separate targeted certificate",
+    "Compilation and replay only; no runtime outputs executed",
+    "Export skip/failure dispositions and individual S4 state audits remain open"
+  ]
+}

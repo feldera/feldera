@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-optimizer-prefix-20261118-v1.tar.gz",
+  "bytes": 13159197,
+  "sha256": "ff52df28f538261b77176b5c492945b06fd9bc8077f3411151dc60d894a54b7e",
+  "manifest_sha256": "d1d5eee335822ba2049fdbddd8ae98d874ce1e20da698381bb0fe7b6bee50de0",
+  "verified_files": 2496,
+  "all_members_verified": true
+}

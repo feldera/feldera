@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "reviewed": false,
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "scope": "Source attribution inventory and notice packaging. Not a complete provenance audit or independent legal review.",
+  "asf_attributed_sources": [
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/codegen/includes/parserImpls.ftl",
+      "sha256": "1a098ee448081f3ba318eba9aec98c3ad0121ee7fb3c59278b07c1cd32fbfd77"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/ConvertletTable.java",
+      "sha256": "d426ce87f39ff5fc48396504ce6f4bd0b811a8325a2730319dd9bd242152c625"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/RelJsonWriter.java",
+      "sha256": "03f893e17eb23ce9e486c1ae2a774379871dc5ba376808a7d29d89a8e53966b5"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/functions/GenericLambdaTypeChecker.java",
+      "sha256": "34520ab221160bbdecd85490ebd6acbdb8b074c2880f7bc0883b05e612591391"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/functions/SqlSafeCastFunction.java",
+      "sha256": "f9d18374857fd1d7ec4597ad507f1722613ca87d0e44551a6ed96189ef1469eb"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+      "sha256": "fb775154cb23352db64c6fb18ddbaef1ebc00b3378a57c4118e37db0dac480a4"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+      "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+      "sha256": "00c3f9a519d9eabdb42a07376929a02c14f9f98a7a6cdce3b0aecfe8f917020f"
+    },
+    {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/parser/SqlAttributeDefinition.java",
+      "sha256": "729b4effeff50d0c43ccef5717c37f5cda2e187d4e55e43c9cddd7e901899928"
+    }
+  ],
+  "restored_headers": {
+    "ValuesReduceRule.java": "core/src/main/java/org/apache/calcite/rel/rules/ValuesReduceRule.java",
+    "GenericLambdaTypeChecker.java": "core/src/main/java/org/apache/calcite/sql/type/OperandTypes.java (LambdaRelOperandTypeChecker)",
+    "SqlAttributeDefinition.java": "core/src/main/java/org/apache/calcite/sql/ddl/SqlAttributeDefinition.java"
+  },
+  "resource_files": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/resources/META-INF/feldera-calcite/LICENSE": {
+      "sha256": "530c12df4df6cbfd34cb3cf42a3bb900185942f3c4c08b4d64984818940af5e1",
+      "upstream_path": "LICENSE"
+    },
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/resources/META-INF/feldera-calcite/NOTICE": {
+      "sha256": "7d04aa2cc4bb1991ac646e2dfce23880d4e5c8f1c42a9746866bce4066015db1",
+      "upstream_path": "NOTICE"
+    }
+  },
+  "maven_resource_copy": "passed; output bytes equal checked-in inputs",
+  "jar_assembly_verified": true,
+  "assembled_jar": {
+    "path": "$SCRATCH/p0-s2-corpus-replay/compiler.jar",
+    "sha256": "7f369de5d6943416302d29d19101f1c00afbad6536a7745f0940446550b3e23e",
+    "resources": {
+      "META-INF/feldera-calcite/LICENSE": {
+        "sha256": "530c12df4df6cbfd34cb3cf42a3bb900185942f3c4c08b4d64984818940af5e1",
+        "bytes": 10796,
+        "matches_source": true
+      },
+      "META-INF/feldera-calcite/NOTICE": {
+        "sha256": "7d04aa2cc4bb1991ac646e2dfce23880d4e5c8f1c42a9746866bce4066015db1",
+        "bytes": 377,
+        "matches_source": true
+      }
+    }
+  }
+}

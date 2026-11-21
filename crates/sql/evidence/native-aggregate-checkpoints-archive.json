@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-aggregate-checkpoints-20261118-v3.tar.gz",
+  "bytes": 172742,
+  "sha256": "85c3b217c8ea1cba52f5d0e5ec6525656d26ae9e06dfec0dab76728bd4a23668",
+  "manifest_sha256": "0e2a250a47e79d142fe532255a28725c7e026d55f1eabc5e7b76f860043ccd4b",
+  "verified_files": 275,
+  "all_members_verified": true
+}

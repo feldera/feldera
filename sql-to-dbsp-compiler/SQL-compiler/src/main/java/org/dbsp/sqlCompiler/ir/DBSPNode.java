@@ -169,6 +169,12 @@ public abstract class DBSPNode
         this.node = CalciteObject.create(range);
     }
 
+    /** Restore the exact source-presence bit at an internal file boundary.
+     * Absence matters: constructors may otherwise inherit a child's position. */
+    public void restoreSourcePosition(SourcePositionRange range, boolean empty) {
+        this.node = empty ? new CalciteObject(range) : CalciteObject.create(range);
+    }
+
     @Override
     public long getId() {
         return this.id;

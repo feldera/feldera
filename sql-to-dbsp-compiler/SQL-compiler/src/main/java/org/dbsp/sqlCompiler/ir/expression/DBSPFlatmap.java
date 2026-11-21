@@ -351,7 +351,7 @@ public final class DBSPFlatmap extends DBSPExpression {
         List<DBSPClosureExpression> postProcess = null;
         if (node.has("postProcess"))
             postProcess = fromJsonInnerList(node, "postProcess", decoder, DBSPClosureExpression.class);
-        Shuffle shuffle = Shuffle.fromJson(Utilities.getProperty(node, "shuffle"));
+        Shuffle shuffle = decoder.decodeShuffle(node);
         return new DBSPFlatmap(CalciteObject.EMPTY, inputRowType,
                 collectionExpression, passthroughIndexes, postProcess, ordinalityIndexType, shuffle);
     }

@@ -1,0 +1,201 @@
+//! Feldera's alternating key/value MAP constructor, using structured AST entries.
+
+use sqlparser_064::{
+    ast::{Expr, Map, MapEntry},
+    keywords::Keyword,
+    parser::{Parser, ParserError},
+    tokenizer::Token,
+};
+
+pub(super) fn parse_map(parser: &mut Parser) -> Result<Expr, ParserError> {
+    parser.expect_keyword_is(Keyword::MAP)?;
+    parser.expect_token(&Token::LBracket)?;
+    let mut entries = Vec::new();
+    let mut trailing_key = None;
+    if !parser.consume_token(&Token::RBracket) {
+        loop {
+            let key = parser.parse_expr()?;
+            if parser.consume_token(&Token::RBracket) {
+                trailing_key = Some(Box::new(key));
+                break;
+            }
+            parser.expect_token(&Token::Comma)?;
+            let value = parser.parse_expr()?;
+            entries.push(MapEntry {
+                key: Box::new(key),
+                value: Box::new(value),
+            });
+            if parser.consume_token(&Token::RBracket) {
+                break;
+            }
+            parser.expect_token(&Token::Comma)?;
+        }
+    }
+    Ok(Expr::Map(Map {
+        entries,
+        trailing_key,
+    }))
+}
+
+/// ROW field aliases require an explicit AS. Each field keeps its identifier span.
+pub(super) fn parse_row(parser: &mut Parser) -> Result<Expr, ParserError> {
+    use sqlparser_064::ast::{ExprWithAlias, Spanned};
+    let start = parser.next_token().span;
+    parser.expect_token(&Token::LParen)?;
+    let mut first = true;
+    let fields = parser.parse_comma_separated(|parser| {
+        let mut expr = if first && matches!(parser.peek_token().token, Token::Word(w) if matches!(w.keyword, Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::TABLE)) {
+            Expr::Subquery(parser.parse_query()?)
+        } else {
+            parser.parse_wildcard_expr()?
+        };
+        first = false;
+        if matches!(&expr, Expr::QualifiedWildcard(_, _) | Expr::Wildcard(_))
+            && parser
+                .parse_one_of_keywords(&[Keyword::EXCEPT, Keyword::EXCLUDE])
+                .is_some()
+        {
+            parser.expect_token(&Token::LParen)?;
+            let columns = parser.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+            let end = parser.expect_token(&Token::RParen)?.span;
+            let span = expr.span().union(&end);
+            expr = Expr::WildcardExclusion {
+                wildcard: Box::new(expr),
+                columns,
+                span,
+            };
+        }
+        let alias = if parser.parse_keyword(Keyword::AS) {
+            let name = parser.parse_identifier()?;
+            if let std::ops::ControlFlow::Break(error) = super::reserved::identifier(&name) {
+                return Err(error);
+            }
+            Some(name)
+        } else {
+            None
+        };
+        Ok(ExprWithAlias { expr, alias })
+    })?;
+    let end = parser.expect_token(&Token::RParen)?.span;
+    Ok(Expr::RowConstructor {
+        fields,
+        span: start.union(&end),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::FelderaDialect;
+    use sqlparser_064::ast::{ArrayElemTypeDef, DataType, SelectItem, SetExpr, Statement, Value};
+
+    fn projection(sql: &str) -> Expr {
+        let statements = Parser::parse_sql(&FelderaDialect, sql).unwrap();
+        let Statement::Query(query) = &statements[0] else {
+            panic!("expected query")
+        };
+        let SetExpr::Select(select) = query.body.as_ref() else {
+            panic!("expected select")
+        };
+        let SelectItem::UnnamedExpr(expr) = &select.projection[0] else {
+            panic!("expected projection")
+        };
+        expr.clone()
+    }
+
+    #[test]
+    fn map_entries_preserve_order_duplicates_nulls_and_nested_expressions() {
+        let Expr::Map(map) = projection("SELECT MAP[1, 'a', 1, 'b', NULL, MAP[2 + 3, NULL]]")
+        else {
+            panic!("constructor lost its map shape")
+        };
+        assert_eq!(map.entries.len(), 3);
+        assert_eq!(map.entries[0].key.to_string(), "1");
+        assert_eq!(map.entries[1].key.to_string(), "1");
+        assert_eq!(map.entries[0].value.to_string(), "'a'");
+        assert_eq!(map.entries[1].value.to_string(), "'b'");
+        assert!(matches!(map.entries[2].key.as_ref(), Expr::Value(v) if v.value == Value::Null));
+        let Expr::Map(nested) = map.entries[2].value.as_ref() else {
+            panic!("nested map missing")
+        };
+        assert_eq!(nested.entries[0].key.to_string(), "2 + 3");
+        assert!(
+            matches!(nested.entries[0].value.as_ref(), Expr::Value(v) if v.value == Value::Null)
+        );
+        assert!(matches!(projection("SELECT MAP[]"), Expr::Map(m) if m.entries.is_empty()));
+    }
+
+    #[test]
+    fn map_type_preserves_nested_keys_values_and_array_layers() {
+        let statements = Parser::parse_sql(
+            &FelderaDialect,
+            "CREATE TABLE t (m MAP<INT, MAP<VARCHAR, ROW(x INT NULL) ARRAY>> ARRAY)",
+        )
+        .unwrap();
+        let Statement::CreateTable(table) = &statements[0] else {
+            panic!("expected table")
+        };
+        let DataType::Array(ArrayElemTypeDef::Qualified(map, _)) = &table.columns[0].data_type
+        else {
+            panic!("outer array missing")
+        };
+        let DataType::Map(key, value, _) = map.as_ref() else {
+            panic!("outer map missing")
+        };
+        assert!(matches!(
+            key.as_ref(),
+            DataType::Int(_) | DataType::Integer(_)
+        ));
+        let DataType::Map(key, value, _) = value.as_ref() else {
+            panic!("nested map missing")
+        };
+        assert!(matches!(key.as_ref(), DataType::Varchar(_)));
+        let DataType::Array(ArrayElemTypeDef::Qualified(row, _)) = value.as_ref() else {
+            panic!("row array missing")
+        };
+        let DataType::Struct(fields, _) = row.as_ref() else {
+            panic!("row missing")
+        };
+        assert_eq!(fields[0].field_name.as_ref().unwrap().value, "x");
+        assert_eq!(fields[0].nullable, Some(true));
+    }
+
+    #[test]
+    fn map_hook_preserves_access_and_other_expression_contexts() {
+        assert!(matches!(
+            projection("SELECT MAP[1, 2][1]"),
+            Expr::CompoundFieldAccess { .. }
+        ));
+        assert!(matches!(
+            projection("SELECT \"MAP\"[1]"),
+            Expr::CompoundFieldAccess { .. }
+        ));
+        assert!(matches!(projection("SELECT map(1, 2)"), Expr::Function(_)));
+        assert!(matches!(projection("SELECT 8 > 1"), Expr::BinaryOp { .. }));
+        assert!(matches!(
+            projection("SELECT ARRAY[MAP[1, 2]]"),
+            Expr::Array(_)
+        ));
+    }
+
+    #[test]
+    fn malformed_maps_fail_without_losing_an_operand() {
+        for (sql, rendered) in [
+            ("SELECT MAP[1]", "MAP[1]"),
+            ("SELECT MAP[1,2,3]", "MAP[1, 2, 3]"),
+        ] {
+            assert_eq!(projection(sql).to_string(), rendered);
+        }
+        for sql in [
+            "SELECT MAP[1,]",
+            "SELECT MAP[1,2,]",
+            "SELECT MAP[,1]",
+            "SELECT MAP[1:2]",
+            "CREATE TABLE t (m MAP<INT>)",
+            "CREATE TABLE t (m MAP<INT, INT, INT>)",
+            "CREATE TABLE t (m MAP<INT, MAP<INT, INT>)",
+        ] {
+            assert!(Parser::parse_sql(&FelderaDialect, sql).is_err(), "{sql}");
+        }
+    }
+}

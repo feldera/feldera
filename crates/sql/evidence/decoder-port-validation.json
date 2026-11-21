@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "archive_index": "decoder-port-validation-archive.json",
+  "seed_graphs": 100,
+  "engines": ["classic", "gen2"],
+  "accepted_originals": 100,
+  "rejected_mutations": {
+    "duplicate_operator": 100,
+    "undefined_input": 100,
+    "nonexistent_output_port": 100,
+    "missing_operator_class": 100,
+    "duplicate_json_key": 100,
+    "truncated_json": 100
+  },
+  "prior_comparator_accepted_nonexistent_output_port": true,
+  "byte_preserving_optimizer_trace_validations": 13776,
+  "comparator_rust_tests": 41,
+  "optimizer_probe_rust_tests": 31,
+  "bag_and_set_tail_regressions": 600,
+  "calibration": {
+    "address_space_limit_bytes": 1073741824,
+    "file_size_limit_bytes": 134217728,
+    "case_deadline_seconds": 3,
+    "child_cpu_seconds": 1.015919,
+    "peak_child_rss_kib": 46180
+  },
+  "scope": "The initial run found that the comparator accepted nonexistent output ports in a reflexive comparison. The strict comparator validates operator declarations and ports, including multi-output operators and pruned recursive outputs. The retest is a finite debug-build calibration under process limits. The standard regression retry completed after verified archived copies were reclaimed."
+}

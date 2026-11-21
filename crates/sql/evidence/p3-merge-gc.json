@@ -1,0 +1,117 @@
+{
+  "scope": "Independent Java placements in MergeGC. The comparison checks aliases and discarded policies, retention group membership and order, rewritten circuits and generated names.",
+  "passes": {
+    "FindEquivalentNoops": {
+      "comparator_sha256": "055af152b1e81f63f95662e43ca4d85f6e5e0ba87024d0e1a92d6f98c35da3b4",
+      "oracle_jar_sha256": "1096f7ad4f17ba55f575f659529477e9d264071da078eef1dfa29d70333d0d93",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "2e4745d653120698b1c7e055988def8e7f7b6a974704b96372ce4c7a1eecdcd3"
+        ],
+        "pass": "FindEquivalentNoops",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "cebf770c60f1fc5e2a0ccdd3ad41657342004d92c576a8031b8cfdde3e676043"
+        ],
+        "pass": "FindEquivalentNoops",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "MergeNoops": {
+      "comparator_sha256": "3a3ba4a08ba1f12fd855287bd6513d471a84588a3bb92746f2c2483060231235",
+      "oracle_jar_sha256": "bd33c021dfea02726595c2be566eec91ca8a0e77871c5b1d389964ff8c726e1c",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "dd42f23a47ca24778e21e83529eea7e619ad7e274935a9134040ba1d6d5bc65d"
+        ],
+        "pass": "MergeNoops",
+        "invocations": 8571,
+        "changed": 63,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "4958b9582ffb3c405928d64f775a86b7bc218630b59d85a5c98f507b38b5fca0"
+        ],
+        "pass": "MergeNoops",
+        "invocations": 8527,
+        "changed": 215,
+        "cases_without_placement": 0
+      }
+    },
+    "FindMultipleRetains": {
+      "comparator_sha256": "71e092555d69568b3dcba8d81f55a18dc2693485f54d48aec4b3ff043ea849db",
+      "oracle_jar_sha256": "671afb89b371cc5e412eae81a6d8c6e74597e953160cdcdfe84903d84421c1de",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "993b8e8707c85e1eca44d60aee66da468ab89147216d4fc089538a1962723fb9"
+        ],
+        "pass": "FindMultipleRetains",
+        "invocations": 8571,
+        "changed": 0,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "15483c6a0a2eef458d91d4c95aa026f480e905c9a9453ce119d4169c114be5b9"
+        ],
+        "pass": "FindMultipleRetains",
+        "invocations": 8527,
+        "changed": 0,
+        "cases_without_placement": 0
+      }
+    },
+    "MergeRetain": {
+      "comparator_sha256": "656a02a449fe152f905a1bc6ef0235a99971788dcd883c20449307fb286c49e7",
+      "oracle_jar_sha256": "1096f7ad4f17ba55f575f659529477e9d264071da078eef1dfa29d70333d0d93",
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "98336621478ebb8a542556c4f96a5f0458b586ca96159fa23d51bff41c666506"
+        ],
+        "pass": "MergeRetain",
+        "invocations": 8571,
+        "changed": 15,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "8a098663e4759815e99e5148c5bdf6356dc8ed56b3d8bb9a7b4e23769811fc74"
+        ],
+        "pass": "MergeRetain",
+        "invocations": 8527,
+        "changed": 15,
+        "cases_without_placement": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,1537 @@
+{
+  "classes": [
+    {
+      "class": "AvroEncoderConfig",
+      "prototype": true,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "cdc_field",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "key_mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.AvroEncoderKeyMode",
+          "default": null,
+          "enum_values": [
+            "none",
+            "key_fields"
+          ]
+        },
+        {
+          "name": "namespace",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_authorization_token",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_headers",
+          "java_type": "java.util.Map<java.lang.String, java.lang.String>",
+          "default": {}
+        },
+        {
+          "name": "registry_password",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_proxy",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "registry_timeout_secs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "registry_urls",
+          "java_type": "java.util.List<java.lang.String>",
+          "default": []
+        },
+        {
+          "name": "registry_username",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "schema",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "skip_schema_id",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "subject_name_strategy",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.SubjectNameStrategy",
+          "default": null,
+          "enum_values": [
+            "topic_name",
+            "record_name",
+            "topic_record_name"
+          ]
+        },
+        {
+          "name": "threads",
+          "java_type": "int",
+          "default": 4
+        },
+        {
+          "name": "update_format",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.AvroUpdateFormat",
+          "default": "raw",
+          "enum_values": [
+            "raw",
+            "debezium",
+            "confluent_jdbc"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "AvroParserConfig",
+      "prototype": true,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "registry_authorization_token",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_headers",
+          "java_type": "java.util.Map<java.lang.String, java.lang.String>",
+          "default": {}
+        },
+        {
+          "name": "registry_password",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_proxy",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "registry_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "registry_timeout_secs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "registry_urls",
+          "java_type": "java.util.List<java.lang.String>",
+          "default": []
+        },
+        {
+          "name": "registry_username",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "schema",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "skip_schema_id",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "update_format",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.AvroUpdateFormat",
+          "default": "raw",
+          "enum_values": [
+            "raw",
+            "debezium",
+            "confluent_jdbc"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "ClockConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "clock_resolution",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "clock_resolution_usecs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "http_driven",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "now_offset_ms",
+          "java_type": "java.lang.Long",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "CsvEncoderConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "buffer_size_records",
+          "java_type": "long",
+          "default": 10000
+        },
+        {
+          "name": "delimiter",
+          "java_type": "char",
+          "default": ","
+        }
+      ]
+    },
+    {
+      "class": "CsvParserConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "comment",
+          "java_type": "java.lang.Character",
+          "default": null
+        },
+        {
+          "name": "delimiter",
+          "java_type": "char",
+          "default": ","
+        },
+        {
+          "name": "double_quote",
+          "java_type": "boolean",
+          "default": true
+        },
+        {
+          "name": "escape",
+          "java_type": "java.lang.Character",
+          "default": null
+        },
+        {
+          "name": "flexible",
+          "java_type": "boolean",
+          "default": true
+        },
+        {
+          "name": "headers",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "quote",
+          "java_type": "char",
+          "default": "\""
+        },
+        {
+          "name": "quoting",
+          "java_type": "boolean",
+          "default": true
+        },
+        {
+          "name": "trim",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.CsvTrim",
+          "default": "none",
+          "enum_values": [
+            "none",
+            "headers",
+            "fields",
+            "all"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "DeltaTableReaderConfig",
+      "prototype": false,
+      "accepts_unknown": true,
+      "fields": [
+        {
+          "name": "cdc_delete_filter",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "cdc_order_by",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "datetime",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "end_version",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "filter",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "max_concurrent_readers",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "max_retries",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.DeltaTableIngestMode",
+          "default": null,
+          "enum_values": [
+            "snapshot",
+            "follow",
+            "snapshot_and_follow",
+            "cdc"
+          ]
+        },
+        {
+          "name": "num_parsers",
+          "java_type": "int",
+          "default": 4
+        },
+        {
+          "name": "skip_unused_columns",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "snapshot_filter",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "timestamp_column",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "transaction_mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.DeltaTableTransactionMode",
+          "default": "none",
+          "enum_values": [
+            "none",
+            "snapshot",
+            "always",
+            "catchup"
+          ]
+        },
+        {
+          "name": "uri",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "verbose",
+          "java_type": "int",
+          "default": 0
+        },
+        {
+          "name": "version",
+          "java_type": "java.lang.Long",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "DeltaTableWriterConfig",
+      "prototype": false,
+      "accepts_unknown": true,
+      "fields": [
+        {
+          "name": "checkpoint_interval",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "enable_expired_log_cleanup",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "log_retention_duration",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "max_retries",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.DeltaTableWriteMode",
+          "default": "append",
+          "enum_values": [
+            "append",
+            "truncate",
+            "error_if_exists"
+          ]
+        },
+        {
+          "name": "threads",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "uri",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "DynamoDBWriterConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "aws_access_key_id",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "aws_secret_access_key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "batch_size",
+          "java_type": "java.lang.Integer",
+          "default": null
+        },
+        {
+          "name": "endpoint_url",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "max_buffer_size",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "max_buffer_size_bytes",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "max_concurrent_requests",
+          "java_type": "int",
+          "default": 64
+        },
+        {
+          "name": "max_retries",
+          "java_type": "java.lang.Integer",
+          "default": 10
+        },
+        {
+          "name": "region",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "table",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "threads",
+          "java_type": "int",
+          "default": 1
+        },
+        {
+          "name": "write_mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.DynamoDBWriteMode",
+          "default": "batch",
+          "enum_values": [
+            "batch",
+            "transactional"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "FileInputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "buffer_size",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "buffer_size_bytes",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "follow",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "path",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "FileOutputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "path",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "HttpOutputConfig",
+      "prototype": true,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "backpressure",
+          "java_type": "boolean",
+          "default": false
+        }
+      ]
+    },
+    {
+      "class": "IcebergReaderConfig",
+      "prototype": true,
+      "accepts_unknown": true,
+      "fields": [
+        {
+          "name": "catalog_type",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.IcebergCatalogType",
+          "default": null,
+          "enum_values": [
+            "rest",
+            "glue",
+            "s3tables"
+          ]
+        },
+        {
+          "name": "datetime",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.access-key-id",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.endpoint",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.id",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.profile-name",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.region",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.secret-access-key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.session-token",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "glue.warehouse",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "metadata_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.IcebergIngestMode",
+          "default": null,
+          "enum_values": [
+            "snapshot",
+            "follow",
+            "snapshot_and_follow"
+          ]
+        },
+        {
+          "name": "rest.audience",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.credential",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.headers",
+          "java_type": "java.lang.Object",
+          "default": null
+        },
+        {
+          "name": "rest.oauth2-server-uri",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.prefix",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.resource",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.scope",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.token",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.uri",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "rest.warehouse",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.access-key-id",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.endpoint",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.profile-name",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.region",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.secret-access-key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.session-token",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "s3tables.table-bucket-arn",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "snapshot_filter",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "snapshot_id",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "table_name",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "timestamp_column",
+          "java_type": "java.lang.String",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "JsonEncoderConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "array",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "buffer_size_records",
+          "java_type": "long",
+          "default": 10000
+        },
+        {
+          "name": "json_flavor",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.JsonFlavor",
+          "default": null,
+          "enum_values": [
+            "default",
+            "debezium_mysql",
+            "debezium_postgres",
+            "snowflake",
+            "kafka_connect_json_converter",
+            "pandas",
+            "blockchain",
+            "c_hex",
+            "ClockInput",
+            "datagen",
+            "postgres"
+          ]
+        },
+        {
+          "name": "key_fields",
+          "java_type": "java.util.List<java.lang.String>",
+          "default": null
+        },
+        {
+          "name": "tombstones_on_delete",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "update_format",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.JsonUpdateFormat",
+          "default": "insert_delete",
+          "enum_values": [
+            "insert_delete",
+            "debezium",
+            "snowflake",
+            "raw",
+            "redis"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "JsonParserConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "array",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "json_flavor",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.JsonFlavor",
+          "default": "default",
+          "enum_values": [
+            "default",
+            "debezium_mysql",
+            "debezium_postgres",
+            "snowflake",
+            "kafka_connect_json_converter",
+            "pandas",
+            "blockchain",
+            "c_hex",
+            "ClockInput",
+            "datagen",
+            "postgres"
+          ]
+        },
+        {
+          "name": "lines",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.JsonLines",
+          "default": "multiple",
+          "enum_values": [
+            "multiple",
+            "single"
+          ]
+        },
+        {
+          "name": "update_format",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.JsonUpdateFormat",
+          "default": "insert_delete",
+          "enum_values": [
+            "insert_delete",
+            "debezium",
+            "snowflake",
+            "raw",
+            "redis"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "KafkaInputConfig",
+      "prototype": true,
+      "accepts_unknown": true,
+      "fields": [
+        {
+          "name": "group_join_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "group_join_timeout_secs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "include_headers",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "include_offset",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "include_partition",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "include_timestamp",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "include_topic",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "log_level",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.KafkaLogLevel",
+          "default": null,
+          "enum_values": [
+            "emerg",
+            "alert",
+            "critical",
+            "error",
+            "warning",
+            "notice",
+            "info",
+            "debug"
+          ]
+        },
+        {
+          "name": "partitions",
+          "java_type": "java.util.List<java.lang.Integer>",
+          "default": null
+        },
+        {
+          "name": "poller_threads",
+          "java_type": "java.lang.Integer",
+          "default": null
+        },
+        {
+          "name": "region",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "resume_earliest_if_data_expires",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "start_from",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "synchronize_partitions",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "topic",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "topics",
+          "java_type": "java.util.List<java.lang.String>",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "KafkaOutputConfig",
+      "prototype": false,
+      "accepts_unknown": true,
+      "fields": [
+        {
+          "name": "fault_tolerance",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "headers",
+          "java_type": "java.util.List<com.fasterxml.jackson.databind.JsonNode>",
+          "default": null
+        },
+        {
+          "name": "initialization_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "initialization_timeout_secs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "kafka_service",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "log_level",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.KafkaLogLevel",
+          "default": null,
+          "enum_values": [
+            "emerg",
+            "alert",
+            "critical",
+            "error",
+            "warning",
+            "notice",
+            "info",
+            "debug"
+          ]
+        },
+        {
+          "name": "region",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "topic",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "NatsInputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "connection_config",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.NatsConnectOptionsConfig",
+          "default": null
+        },
+        {
+          "name": "consumer_config",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.NatsConsumerConfig",
+          "default": null
+        },
+        {
+          "name": "inactivity_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "inactivity_timeout_secs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "retry_interval",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "retry_interval_secs",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "stream_name",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "ParquetEncoderConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "buffer_size_records",
+          "java_type": "long",
+          "default": 100000
+        }
+      ]
+    },
+    {
+      "class": "ParquetParserConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": []
+    },
+    {
+      "class": "PostgresCdcReaderConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "batch",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.PostgresCdcBatchConfig",
+          "default": {
+            "max_bytes": null,
+            "max_fill_ms": 10000,
+            "max_size": null,
+            "memory_budget_ratio": 0.2
+          }
+        },
+        {
+          "name": "memory_backpressure",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.PostgresCdcMemoryBackpressureConfig",
+          "default": {
+            "activate_threshold": 0.85,
+            "resume_threshold": 0.75
+          }
+        },
+        {
+          "name": "publication",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "run_source_migrations",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        },
+        {
+          "name": "source_table",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "ssl_ca_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_ca_pem",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_certificate_chain_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_key_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_pem",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "uri",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "verify_hostname",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "PostgresReaderConfig",
+      "prototype": true,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "query",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "ssl_ca_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_ca_pem",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_certificate_chain_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_key_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_pem",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "uri",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "verify_hostname",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "PostgresWriterConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "cdc_op_column",
+          "java_type": "java.lang.String",
+          "default": "__feldera_op"
+        },
+        {
+          "name": "cdc_ts_column",
+          "java_type": "java.lang.String",
+          "default": "__feldera_ts"
+        },
+        {
+          "name": "extra_columns",
+          "java_type": "java.util.List<java.lang.String>",
+          "default": null
+        },
+        {
+          "name": "max_buffer_size",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "max_buffer_size_bytes",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "max_records_in_buffer",
+          "java_type": "java.lang.Long",
+          "default": null
+        },
+        {
+          "name": "mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.PostgresWriteMode",
+          "default": "materialized",
+          "enum_values": [
+            "materialized",
+            "cdc"
+          ]
+        },
+        {
+          "name": "on_conflict_do_nothing",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "ssl_ca_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_ca_pem",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_certificate_chain_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_key_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_location",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "ssl_client_pem",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "table",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "threads",
+          "java_type": "int",
+          "default": 1
+        },
+        {
+          "name": "uri",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "verify_hostname",
+          "java_type": "java.lang.Boolean",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "PubSubInputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "connect_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "connect_timeout_seconds",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "credentials",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "emulator",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "endpoint",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "pool_size",
+          "java_type": "java.lang.Integer",
+          "default": null
+        },
+        {
+          "name": "project_id",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "snapshot",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "subscription",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "timeout_seconds",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "timestamp",
+          "java_type": "java.lang.String",
+          "default": null
+        }
+      ]
+    },
+    {
+      "class": "RawParserConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "column_name",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "mode",
+          "java_type": "org.dbsp.sqlCompiler.compiler.frontend.connectors.config.RawParserMode",
+          "default": "blob",
+          "enum_values": [
+            "blob",
+            "lines"
+          ]
+        }
+      ]
+    },
+    {
+      "class": "RedisOutputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "connection_string",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "key_separator",
+          "java_type": "java.lang.String",
+          "default": ":"
+        }
+      ]
+    },
+    {
+      "class": "S2InputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "auth_token",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "basin",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "endpoint",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "start_from",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "stream",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "S2OutputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "auth_token",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "basin",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "endpoint",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "stream",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "S3InputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "aws_access_key_id",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "aws_secret_access_key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "bucket_name",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "endpoint_url",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "key",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "max_concurrent_fetches",
+          "java_type": "int",
+          "default": 8
+        },
+        {
+          "name": "max_retries",
+          "java_type": "int",
+          "default": 5
+        },
+        {
+          "name": "no_sign_request",
+          "java_type": "boolean",
+          "default": false
+        },
+        {
+          "name": "prefix",
+          "java_type": "java.lang.String",
+          "default": null
+        },
+        {
+          "name": "region",
+          "java_type": "java.lang.String",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "class": "UrlInputConfig",
+      "prototype": false,
+      "accepts_unknown": false,
+      "fields": [
+        {
+          "name": "path",
+          "java_type": "java.lang.String",
+          "default": ""
+        },
+        {
+          "name": "pause_linger",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        },
+        {
+          "name": "pause_timeout",
+          "java_type": "com.fasterxml.jackson.databind.JsonNode",
+          "default": null
+        }
+      ]
+    }
+  ]
+}

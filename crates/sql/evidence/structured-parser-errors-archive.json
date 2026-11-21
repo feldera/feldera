@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-structured-parser-errors-20261118-v1.tar.gz",
+  "bytes": 38458,
+  "sha256": "7b264f85c4833f787dc9efcea9ec95fea14f6c73b3f3a4083f2f682b21551de0",
+  "manifest_sha256": "29e2b4e03a44233677558f8e968ce1cac13fe24f26e3b58b05217e06b9f053ac",
+  "verified_files": 14,
+  "all_members_verified": true
+}

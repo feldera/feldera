@@ -1,0 +1,79 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "scope": "Java v9 captured shared-helper and direct assertions; source-wide completeness is not inferred",
+  "counts": {
+    "shared_assertions": 1333,
+    "direct_assertions": 382,
+    "covered_assertions": 1715,
+    "shared_body_roots": 228,
+    "additional_direct_body_roots": 12,
+    "covered_required_body_roots": 240,
+    "direct_fragment_templates": 26,
+    "direct_fragment_assertions": 116,
+    "direct_body_assertions": 176,
+    "direct_contracts": {
+      "formatter_fragment_requirement": 116,
+      "rendered_text_requires_attribution": 127,
+      "non_body_contract": 36,
+      "message_body_requirement": 49,
+      "snapshot_stability": 19,
+      "absence_contract": 35
+    },
+    "roots_by_kind": {
+      "calcite_resource": 32,
+      "reviewed_formatter": 22,
+      "source_expression": 186
+    },
+    "shared_dependency_nodes": 174
+  },
+  "counting_rule": "Diagnostic-body roots are deduplicated with the shared-helper catalog. Direct checker/quantity fragments are component contracts, reported separately and not added to the body-root count. Snapshot stability, absence, class and source contracts add no positive body root.",
+  "review_status": "Independent agent source review; no human maintainer acceptance",
+  "validation": {
+    "focused_python_tests": 24,
+    "catalog_replays_from_staged_inputs": 3,
+    "substantive_replayed_json_exact": true
+  },
+  "known_v7_v9_differences": {
+    "shared_body_differences": 1,
+    "location_only_source_records": 33
+  },
+  "uncounted_populations": [
+    {
+      "population": "Python compiler assertions",
+      "status": "281 assignments exist, but this Java catalog does not count their extra roots."
+    },
+    {
+      "population": "Python runtime assertions",
+      "status": "61 assignments require runtime evaluation; no runtime execution is claimed."
+    },
+    {
+      "population": "platform SDK rendering",
+      "status": "Exact composite contract remains separate from this Java catalog."
+    }
+  ],
+  "covered_threshold_result": "Under the declared counting rule, the covered body-root count alone exceeds 150; remaining populations cannot reverse that lower bound.",
+  "whole_suite_required_template_count": null,
+  "human_maintainer_accepted": false,
+  "P0_complete": false,
+  "archive": ".p0-artifacts/p0-diagnostic-reviewed-catalog-20261118-v1.tar.gz",
+  "sha256": "51cf3df21b76118d92dd6702a6d97ad7c7bcaf2cb0a66fa2b7ab0b3e37c01acb",
+  "bytes": 5556452,
+  "verified_files": 2230,
+  "archive_root": "p0-diagnostic-reviewed-catalog-20261118-v1",
+  "catalog_artifacts": {
+    "v7": "outputs/catalog-v7.json",
+    "v9_shared": "outputs/catalog-v9-shared.json",
+    "v9_combined": "outputs/catalog-v9-combined.json"
+  },
+  "sources": {
+    "crates/sql/DIAGNOSTIC-REVIEW.md": "19a67264343d85e08cedd18588c4a97d4c6e7e32f86be222d78e1452e2ac1b4e",
+    "crates/sql/diagnostic-catalog-review.json": "bb8ca2e3985ef7735487edc9fef843045ef8cc7492cca6ad9b1962dedd2d74c5",
+    "crates/sql/diagnostic-catalog-review-v9.json": "0e1bdddd84221cbe2bfbebb395a2a72ca8ec96afcb54e1dcb46ca5574a6fbcbf",
+    "crates/sql/diagnostic-direct-catalog-review.json": "f91b6af1fd993a58931077bee20f3d427b87294e79f3b5359862f34a51b910b5",
+    "crates/sql/diagnostic-template-dispositions.json": "0d7bc3a44a108957fc53acb749d13b3f548afbb86e3cbb37c15ae3f80e52f657",
+    "crates/sql/diagnostic-formatter-dispositions.json": "1ea6ab548bd6c62dbc6fab9175d4e8750e42168f5dea29439221b753b154848f"
+  },
+  "parent_capture_certificate": "diagnostic-direct-capture-archive.json",
+  "required_template_count_for_covered_java_body_population": 240
+}

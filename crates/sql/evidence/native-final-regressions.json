@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-final-regressions-archive.json",
+  "dbsp_runtime_tests_passed": 39,
+  "native_probe_tests_passed": 15,
+  "python_tests_passed": 256,
+  "rust_failures": 0,
+  "suite_totals": {
+    "archive-tests": 8,
+    "checkpoint-tests": 1,
+    "circuits-tests": 3,
+    "decimal_archive-tests": 10,
+    "decimal_state-tests": 1,
+    "mixed_keys-tests": 1,
+    "native-tests": 15,
+    "native_context-tests": 5,
+    "native_state-tests": 1,
+    "string_archive-tests": 7,
+    "string_range_corpus-tests": 2
+  }
+}

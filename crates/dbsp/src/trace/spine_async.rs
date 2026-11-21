@@ -99,6 +99,8 @@ pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 use super::{BatchLayout, BatchLocation, cursor::CursorFactory};
 
 pub use list_merger::ListMerger;
+#[cfg(feature = "native-abi")]
+pub use list_merger::{MergeOutput, merge_untimed_cursors};
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;

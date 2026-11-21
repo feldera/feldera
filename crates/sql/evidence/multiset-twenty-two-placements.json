@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-twenty-two-placements-archive.json",
+  "engine_modes": ["classic", "gen2"],
+  "set_output_programs_per_mode": 36,
+  "scheduled_placements": 22,
+  "same_input_graph_comparisons": 1610,
+  "changed_graphs": 598,
+  "second_iterations": 26,
+  "error_input_and_schema_removals": 72,
+  "constant_view_warnings": 12,
+  "compact_naming_changes": 72,
+  "no_integral_checks": 72,
+  "rust_hybrid_final_comparisons": 72,
+  "java_codec_final_comparisons": 72,
+  "detached_s2_s3_chains": 10,
+  "differences": 0,
+  "scope": "Flat graphs on the selected set-output workload. Java runs intervening optimizer passes and emits Rust-selected constant-view warnings using live source positions. This run includes the signed 32-bit arithmetic witnesses and precedes the signed 8-bit extensions."
+}

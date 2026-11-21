@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "scope": "0.64 grouping sets and function-scoped inline null treatment",
+  "sources": {
+    "crates/sql/parser-probe/Cargo.lock": "cce3727d255df64508c8d27224ba4958ef743044042106a5abfccf9f199faf08",
+    "crates/sql/parser-probe/Cargo.toml": "d4a5d5aca072d2558b381b168cdc168d6b5be057944e73a54e34ebdfed8cae6b",
+    "crates/sql/parser-probe/README.md": "ee53175fbe5fc86cbd027c8fa2ba14434efb097c2912ad63c1db4e841648e8a0",
+    "crates/sql/parser-probe/adversarial.jsonl": "642a3069430b78a121f69804e67290662e2b3d5063d29e827df4d16e491140fb",
+    "crates/sql/parser-probe/src/lib.rs": "e6b3ceb78f1eb3dfd4c15dd2f8090b265ee47760da1b68f25c394d080f3f333e",
+    "crates/sql/parser-probe/src/main.rs": "a4b009985c2fab2410e4f50d15d028a21d741a3e238cbb6b2d956e3f0b1ea014",
+    "crates/sql/parser-probe/src/v062.rs": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+    "crates/sql/parser-probe/src/v064/aggregate_tests.rs": "858e5bc7edaf8c186ec9c3532670d5aee2027c331391eb22033bfd4e9e935a6e",
+    "crates/sql/parser-probe/src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01",
+    "crates/sql/parser-probe/src/v064/reject.rs": "a22d8dacfdcfa0c6de2d8cc8c90995e5600bef838de684e098e40969777bc472",
+    "crates/sql/parser-probe/src/v064/unicode.rs": "2c039d25dc343c2118953f186c900d1f77f0da635ebcede942911f76ea1d220b",
+    "crates/sql/parser-probe/src/v064.rs": "9909f1f6760fa29e8f9661bd8665e25f842b4865185f1c8031e56334a452cb0e",
+    "crates/sql/parser-probe/syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b"
+  },
+  "validation": {
+    "rust_tests": 21,
+    "clippy": "pass"
+  },
+  "corpus": {
+    "cases": 8571,
+    "accepted": 7904,
+    "rejected": 667,
+    "additional_acceptances": 72
+  },
+  "adversarial": {
+    "cases": 83,
+    "both_accept": 44,
+    "both_reject": 28,
+    "java_only": 11,
+    "rust_only": 0
+  },
+  "raw_run": "$SCRATCH/p0-parser-aggregates-v2",
+  "before_run": "$SCRATCH/p0-parser-aggregates-v1",
+  "before_rust_only": 5,
+  "semantic_equivalence_checked": false,
+  "exhaustive_ast_rejection": false,
+  "s1_equivalence_checked": false,
+  "independent_review": false,
+  "limitations": [
+    "Inline PERCENTILE null treatment unsupported",
+    "Source-span parity and full S1 equality unproven",
+    "The earlier Unicode, ROW, interval and MAP limitations still apply"
+  ]
+}

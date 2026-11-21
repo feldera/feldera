@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-nested-reachability-20261118-v1.tar.gz",
+  "bytes": 1870596,
+  "sha256": "614de8c6b3c20e307bac7b33fcb588523dcb7caa771efadfdeb814da3b5af306",
+  "manifest_sha256": "d1f5a1dd124dda2151d5ad5bb7970c61eb402d9496f8f2a9650ae900587a5b48",
+  "verified_files": 26,
+  "all_members_verified": true
+}

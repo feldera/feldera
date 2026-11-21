@@ -1,0 +1,34 @@
+{
+  "scope": "Shared MapIndex duplication at each indexed join input.",
+  "comparator_sha256": "fcdd9e9dc7e3cf25fe4e61402ee706cb35daa11f17a0ab546d3b1047178638f3",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "e2de4e5a89e7ad852edbcf0ecf5e3ce15ead7c3143f763641685c8908dcc257d"
+    ],
+    "pass": "DuplicateSharedIndexes",
+    "invocations": 8571,
+    "changed": 154,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "8d978d88e71f22f0a7ea4d2d60091bd03dfce3a31d6fccc5dbe53b6973396c89"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "928541c209e2ddefdf9ac3f09355ca423a8daa82e6657f1f475e7422f5ccf2cf"
+    ],
+    "pass": "DuplicateSharedIndexes",
+    "invocations": 8527,
+    "changed": 121,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "2a7b94ca64dee07a70313c76a36a22c1c4847bbee0cc2fb91ed4603ecc20fc0b"
+    ]
+  }
+}

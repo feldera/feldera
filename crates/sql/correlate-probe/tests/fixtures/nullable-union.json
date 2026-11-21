@@ -1,0 +1,895 @@
+{
+  "id": "uncorrelated_union_branch_repeats_per_domain/correlation-stage/1",
+  "table": {
+    "schema_version": "input-uses-v1",
+    "relations": 7,
+    "functions": 0,
+    "type_table": {
+      "schema_version": "types-v0",
+      "sources": [
+        {
+          "name": "(no input file)",
+          "text": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER); CREATE VIEW v AS SELECT l.k, l.p, q.v FROM L l CROSS JOIN LATERAL (SELECT l.k AS v UNION ALL SELECT 99 AS v) q;"
+        }
+      ],
+      "types": [
+        {
+          "nullable": true,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "integer",
+            "signed": true,
+            "width": "i32"
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "k",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "p",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "v",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": [
+              {
+                "name": {
+                  "name": "k",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "p",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "v",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": []
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": [
+              {
+                "name": {
+                  "name": "v",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "v",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 5
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "integer",
+            "signed": true,
+            "width": "i32"
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "ZERO",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 5
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": []
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "k",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "p",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "v",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "v",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 5
+              }
+            ]
+          }
+        }
+      ],
+      "roots": [
+        0,
+        0,
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        1,
+        1,
+        8,
+        9,
+        9,
+        10,
+        6,
+        0,
+        0,
+        0,
+        0,
+        1,
+        5,
+        5,
+        0,
+        0,
+        8
+      ]
+    },
+    "objects": [
+      {
+        "ty": 0,
+        "field": 0
+      },
+      {
+        "ty": 0,
+        "field": 1
+      },
+      {
+        "ty": 0,
+        "field": 2
+      }
+    ],
+    "environments": [
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": [
+            1
+          ]
+        },
+        "row": 1
+      },
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": [
+            2,
+            3
+          ]
+        },
+        "row": 2
+      },
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": []
+        },
+        "row": 3
+      },
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": [
+            4,
+            5
+          ]
+        },
+        "row": 4
+      },
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": [
+            6
+          ]
+        },
+        "row": 6
+      },
+      {
+        "owner": {
+          "kind": "constant"
+        },
+        "row": 7
+      }
+    ],
+    "uses": [
+      {
+        "object": 0,
+        "environment": 0
+      },
+      {
+        "object": 1,
+        "environment": 0
+      },
+      {
+        "object": 2,
+        "environment": 0
+      }
+    ]
+  },
+  "expressions": {
+    "schema_version": "expression-objects-v2",
+    "operator_objects": [],
+    "operators": [],
+    "expressions": [
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "input_ref",
+          "object": 0
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "input_ref",
+          "object": 1
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "input_ref",
+          "object": 2
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "field_access",
+          "input": 4,
+          "field": 0
+        }
+      },
+      {
+        "ty": 1,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "correlation",
+          "identity": 0
+        }
+      },
+      {
+        "ty": 5,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "99"
+            },
+            "ty": 5
+          }
+        }
+      },
+      {
+        "ty": 5,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "0"
+            },
+            "ty": 5
+          }
+        }
+      }
+    ],
+    "environments": [
+      {
+        "input": 0,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 1,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 3,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 4,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": [
+          {
+            "identity": 0,
+            "row": 1
+          }
+        ]
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 5,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      }
+    ],
+    "relation_uses": [
+      {
+        "relation": 0,
+        "environment": 0,
+        "roots": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "relation": 1,
+        "environment": 1,
+        "roots": []
+      },
+      {
+        "relation": 2,
+        "environment": 2,
+        "roots": []
+      },
+      {
+        "relation": 3,
+        "environment": 3,
+        "roots": []
+      },
+      {
+        "relation": 4,
+        "environment": 4,
+        "roots": [
+          3
+        ]
+      },
+      {
+        "relation": 5,
+        "environment": 5,
+        "roots": [
+          5
+        ]
+      },
+      {
+        "relation": 6,
+        "environment": 6,
+        "roots": [
+          6
+        ]
+      }
+    ],
+    "value_uses": [
+      {
+        "environment": 7,
+        "roots": []
+      }
+    ]
+  },
+  "producers": {
+    "schema_version": "input-producers-v0",
+    "relations": [
+      {
+        "form": "LogicalProject",
+        "row": 1,
+        "inputs": [
+          1
+        ],
+        "constants": []
+      },
+      {
+        "form": "LogicalCorrelate",
+        "row": 1,
+        "inputs": [
+          2,
+          3
+        ],
+        "constants": []
+      },
+      {
+        "form": "LogicalTableScan",
+        "row": 8,
+        "inputs": [],
+        "constants": []
+      },
+      {
+        "form": "LogicalUnion",
+        "row": 9,
+        "inputs": [
+          4,
+          5
+        ],
+        "constants": []
+      },
+      {
+        "form": "LogicalProject",
+        "row": 9,
+        "inputs": [
+          6
+        ],
+        "constants": []
+      },
+      {
+        "form": "LogicalValues",
+        "row": 10,
+        "inputs": [],
+        "constants": []
+      },
+      {
+        "form": "LogicalValues",
+        "row": 6,
+        "inputs": [],
+        "constants": []
+      }
+    ],
+    "roots": [
+      0
+    ],
+    "function_rows": []
+  },
+  "properties": {
+    "schema_version": "relation-properties-v1",
+    "operators": {
+      "kind": "shared"
+    },
+    "relations": [
+      {
+        "fields": {
+          "kind": "project",
+          "expressions": 3,
+          "variables": []
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "correlate",
+          "correlation": 0,
+          "join_kind": "INNER",
+          "required": [
+            0
+          ]
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "scan",
+          "name": [
+            "schema",
+            "l"
+          ]
+        },
+        "metadata": {
+          "traits": [],
+          "hints": [
+            {
+              "name": "alias",
+              "position": {
+                "line": 1,
+                "column": 120,
+                "end_line": 1,
+                "end_column": 122,
+                "quoted": false
+              },
+              "inherit_path": [],
+              "list": [
+                "l"
+              ],
+              "options": []
+            }
+          ]
+        }
+      },
+      {
+        "fields": {
+          "kind": "set",
+          "all": true
+        },
+        "metadata": {
+          "traits": [],
+          "hints": [
+            {
+              "name": "alias",
+              "position": {
+                "line": 1,
+                "column": 144,
+                "end_line": 1,
+                "end_column": 186,
+                "quoted": false
+              },
+              "inherit_path": [],
+              "list": [
+                "q"
+              ],
+              "options": []
+            }
+          ]
+        }
+      },
+      {
+        "fields": {
+          "kind": "project",
+          "expressions": 1,
+          "variables": []
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "values",
+          "tuples": 1
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "values",
+          "tuples": 1
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      }
+    ]
+  },
+  "catalog": {
+    "schema_version": "catalog-v1",
+    "schemas": [
+      {
+        "source": 0,
+        "name": {
+          "name": "l",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "source",
+            "source": 0,
+            "start": {
+              "line": 1,
+              "column": 1
+            },
+            "end": {
+              "line": 1,
+              "column": 36
+            }
+          },
+          "text": "CREATE TABLE l (k INTEGER, p INTEGER)",
+          "internal_text": "CREATE TABLE l (k INTEGER, p INTEGER)",
+          "empty": false
+        },
+        "values": 0,
+        "columns": [
+          {
+            "name": {
+              "name": "k",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 0,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "source",
+                "source": 0,
+                "start": {
+                  "line": 1,
+                  "column": 16
+                },
+                "end": {
+                  "line": 1,
+                  "column": 24
+                }
+              },
+              "text": "k INTEGER",
+              "internal_text": "k INTEGER",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "p",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 0,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "source",
+                "source": 0,
+                "start": {
+                  "line": 1,
+                  "column": 27
+                },
+                "end": {
+                  "line": 1,
+                  "column": 35
+                }
+              },
+              "text": "p INTEGER",
+              "internal_text": "p INTEGER",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      }
+    ],
+    "tables": [
+      {
+        "schema": 0,
+        "row": 8,
+        "name": [
+          "schema",
+          "l"
+        ]
+      }
+    ],
+    "scans": [
+      {
+        "relation": 2,
+        "table": 0
+      }
+    ]
+  }
+}

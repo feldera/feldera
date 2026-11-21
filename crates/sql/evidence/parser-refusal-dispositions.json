@@ -1,0 +1,786 @@
+{
+  "schema_version": 1,
+  "scope": "First reported syntax refusal per program in the final 8,571-program parser corpus",
+  "corpus_cases": 8571,
+  "refused_cases": 101,
+  "source_certificate": "parser-grammar-review.json",
+  "source_artifacts": {
+    "$SCRATCH/p0-parser-types-repaired-v1/corpus-input.jsonl": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "$SCRATCH/p0-parser-types-repaired-v1/corpus/cases.jsonl": "3e1837dbcee7638e8aa21f29b5cf50d6b02d369089abed106efb4a1151bf9954"
+  },
+  "grammar_gaps": {
+    "qualified_datetime_difference": {
+      "cases": 42,
+      "proposed_repair": "Parse an explicitly qualified subtraction into a typed expression that retains the qualifier unit, optional precision and span in SELECT, CAST and window ordering. Leave ordinary aliases governed by the original alias grammar."
+    },
+    "create_type_field_nullability": {
+      "cases": 9,
+      "proposed_repair": "Parse explicit NULL and NOT NULL on named CREATE TYPE fields and retain the modifier on each field through AST emission."
+    },
+    "named_row_constructor_fields": {
+      "cases": 7,
+      "proposed_repair": "Add optional field aliases to ROW constructor elements, including nested constructors inside arrays and field access."
+    },
+    "grouped_unpivot": {
+      "cases": 8,
+      "proposed_repair": "Retain ordered tuple inputs and FOR columns and the values or tuple attached by each IN alias. Verify tuple arity before lowering."
+    },
+    "unicode_string_escape": {
+      "cases": 8,
+      "proposed_repair": "Defer U& string decoding until the optional UESCAPE clause has been consumed, retain its span, and implement Calcite-compatible pairing of supplementary Unicode escapes."
+    },
+    "range_symmetry": {
+      "cases": 4,
+      "proposed_repair": "Parse the BETWEEN symmetry modifier before the first bound and preserve it with the expression and any NOT modifier."
+    },
+    "grouping_distinct": {
+      "cases": 4,
+      "proposed_repair": "Consume DISTINCT as a grouping quantifier immediately after GROUP BY and preserve it on the grouping clause."
+    },
+    "limit_offset_first": {
+      "cases": 4,
+      "proposed_repair": "Support the offset-first LIMIT syntax while preserving the row-limit and offset roles, including ALL."
+    },
+    "rlike_null_operand": {
+      "cases": 4,
+      "proposed_repair": "Parse NULL as the right operand of RLIKE. Reserve IGNORE/RESPECT NULLS for the specified function and window contexts."
+    },
+    "nested_grouping_sets": {
+      "cases": 2,
+      "proposed_repair": "Parse grouping items recursively within GROUPING SETS and preserve nested structure, empty groups and repetition."
+    },
+    "wildcard_exclusion": {
+      "cases": 3,
+      "proposed_repair": "Disambiguate wildcard EXCEPT/EXCLUDE from set operators at the wildcard element and preserve qualified exclusion names in SELECT and ROW constructors."
+    },
+    "row_type_field_nullability": {
+      "cases": 2,
+      "proposed_repair": "Retain field nullability in ROW type declarations, including fields whose type is ARRAY or MAP, separately from the ROW's nullability."
+    },
+    "inline_foreign_key": {
+      "cases": 1,
+      "proposed_repair": "Accept the column-level FOREIGN KEY REFERENCES form in table DDL and attach it to the same field with its referenced columns and source span."
+    },
+    "map_query_constructor": {
+      "cases": 1,
+      "proposed_repair": "Parse MAP with an explicit query operand and retain it as a subquery constructor for binding."
+    },
+    "scalar_create_type": {
+      "cases": 1,
+      "proposed_repair": "Accept a datatype as the scalar alias body of CREATE TYPE and keep that body distinct from a structured type."
+    },
+    "double_slash_comment": {
+      "cases": 1,
+      "proposed_repair": "Recognize Calcite's double-slash line comments at lexer boundaries while preserving offsets and leaving quoted tokens intact."
+    }
+  },
+  "cases": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3744/0",
+      "submission": 0,
+      "submission_sha256": "2c7cacde55ffc3ebed67e51ae35af489da574030f405e3111289e6b8700cf211",
+      "diagnostic": "sql parser error: Expected: ), found: NOT at Line: 2, Column: 35",
+      "grammar_gap": "row_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/14",
+      "submission": 1,
+      "submission_sha256": "e4441452a7c837530b1fb986ecbdefadf1c10428cf531d8662025f8f684f948a",
+      "diagnostic": "sql parser error: Expected: an expression, found: EOF at Line: 1, Column: 40",
+      "grammar_gap": "rlike_null_operand"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/15",
+      "submission": 1,
+      "submission_sha256": "e4441452a7c837530b1fb986ecbdefadf1c10428cf531d8662025f8f684f948a",
+      "diagnostic": "sql parser error: Expected: an expression, found: EOF at Line: 1, Column: 40",
+      "grammar_gap": "rlike_null_operand"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/16",
+      "submission": 1,
+      "submission_sha256": "6b027471a3eeffe2bbc60c54aaa8553c0b62137b5afc63d7982b49768af78471",
+      "diagnostic": "sql parser error: Expected: an expression, found: EOF at Line: 1, Column: 41",
+      "grammar_gap": "rlike_null_operand"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testLikeNull/17",
+      "submission": 1,
+      "submission_sha256": "6b027471a3eeffe2bbc60c54aaa8553c0b62137b5afc63d7982b49768af78471",
+      "diagnostic": "sql parser error: Expected: an expression, found: EOF at Line: 1, Column: 41",
+      "grammar_gap": "rlike_null_operand"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#issue1922/0",
+      "submission": 0,
+      "submission_sha256": "404e490edc95572263219e3d8b7a54a60fd75d28092f5773fe1ec9680d97863d",
+      "diagnostic": "sql parser error: Expected: ), found: NOT at Line: 2, Column: 15",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/2",
+      "submission": 0,
+      "submission_sha256": "a5c689e16ef492a46314b2eeb2a0ba6bde4ed1d83632f302c1fb3b883a332384",
+      "diagnostic": "sql parser error: Expected: AND, found: 2 at Line: 1, Column: 46",
+      "grammar_gap": "range_symmetry"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/3",
+      "submission": 0,
+      "submission_sha256": "a5c689e16ef492a46314b2eeb2a0ba6bde4ed1d83632f302c1fb3b883a332384",
+      "diagnostic": "sql parser error: Expected: AND, found: 2 at Line: 1, Column: 46",
+      "grammar_gap": "range_symmetry"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/4",
+      "submission": 0,
+      "submission_sha256": "f2055a6466fce6cf2a3765cbda4f549cc15fc950bd6919b42a214b7928c5db9b",
+      "diagnostic": "sql parser error: Expected: AND, found: 2 at Line: 1, Column: 47",
+      "grammar_gap": "range_symmetry"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testBetween/5",
+      "submission": 0,
+      "submission_sha256": "f2055a6466fce6cf2a3765cbda4f549cc15fc950bd6919b42a214b7928c5db9b",
+      "diagnostic": "sql parser error: Expected: AND, found: 2 at Line: 1, Column: 47",
+      "grammar_gap": "range_symmetry"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3030/0",
+      "submission": 0,
+      "submission_sha256": "c745fd5c0063ab3c0c096d580c1a583b8c69b6e36b35129a1665ef44572bf543",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 4, Column: 11",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#unicodeNewEscapeTest/0",
+      "submission": 1,
+      "submission_sha256": "b859327bc1fb10498db89a074a2197eb910b2f3f020d6f7dc149814930e48bf2",
+      "diagnostic": "sql parser error: expected end of statement, found: '!' at Line: 1, Column: 51",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#unicodeNewEscapeTest/1",
+      "submission": 1,
+      "submission_sha256": "b859327bc1fb10498db89a074a2197eb910b2f3f020d6f7dc149814930e48bf2",
+      "diagnostic": "sql parser error: expected end of statement, found: '!' at Line: 1, Column: 51",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5390/0",
+      "submission": 0,
+      "submission_sha256": "40a31780ae6714421f9469c7f1a1b8efa134f3757f3edcb5ddd971ac9b6738ef",
+      "diagnostic": "sql parser error: Expected: ), found: NULL at Line: 1, Column: 44",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue5398/0",
+      "submission": 0,
+      "submission_sha256": "3b0a0d29d3e4d789b1e03fcb8b543b6214f0ef309982248ad84c0939445955fb",
+      "diagnostic": "sql parser error: Expected: ), found: EXCLUDE at Line: 3, Column: 39",
+      "grammar_gap": "wildcard_exclusion"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#issue1755_2/0",
+      "submission": 0,
+      "submission_sha256": "3083bc1288d04dbf294f22ed4b3e3133be836fe8e8a4b78e89c71c48541cb44b",
+      "diagnostic": "sql parser error: Expected: ), found: not at Line: 7, Column: 21",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0",
+      "submission": 0,
+      "submission_sha256": "9528687d312729f424c6f527a2d169cd106675f81575000a18b56a9f8a5ab294",
+      "diagnostic": "sql parser error: Expected: an SQL statement, found: / at Line: 78, Column: 1",
+      "grammar_gap": "double_slash_comment"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testCornerCases/4",
+      "submission": 1,
+      "submission_sha256": "3e0d2d2af3f8f46fc357452f42f490145066edf6d7bbbdf70a2a5e28d6f14cc9",
+      "diagnostic": "sql parser error: reserved word distinct requires quoting at Line: 2, Column: 65",
+      "grammar_gap": "grouping_distinct"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testCornerCases/5",
+      "submission": 1,
+      "submission_sha256": "3e0d2d2af3f8f46fc357452f42f490145066edf6d7bbbdf70a2a5e28d6f14cc9",
+      "diagnostic": "sql parser error: reserved word distinct requires quoting at Line: 2, Column: 65",
+      "grammar_gap": "grouping_distinct"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#calcite7784/0",
+      "submission": 0,
+      "submission_sha256": "6f2b340662f91a36cac5406e812d24be94f30e7254764f6b040b075f52d8ee93",
+      "diagnostic": "sql parser error: Expected: ), found: AS at Line: 4, Column: 61",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/0",
+      "submission": 1,
+      "submission_sha256": "340b8af4221701b66cf4f9a6f5687cb34005422e6aad9f1eec668edfc47d9eac",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 15, Column: 7",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/1",
+      "submission": 1,
+      "submission_sha256": "340b8af4221701b66cf4f9a6f5687cb34005422e6aad9f1eec668edfc47d9eac",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 15, Column: 7",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/6",
+      "submission": 1,
+      "submission_sha256": "096d49605e5d5795268294cc4534ebb5bb16d69b500644729ba0d4873737c8c7",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 15, Column: 7",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/7",
+      "submission": 1,
+      "submission_sha256": "096d49605e5d5795268294cc4534ebb5bb16d69b500644729ba0d4873737c8c7",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 15, Column: 7",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/8",
+      "submission": 1,
+      "submission_sha256": "8581251847d26bcfac72612d3557ef7e5ebbe75edc3a49468b64c0c7e04ef73d",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 15, Column: 7",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/9",
+      "submission": 1,
+      "submission_sha256": "8581251847d26bcfac72612d3557ef7e5ebbe75edc3a49468b64c0c7e04ef73d",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 15, Column: 7",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/20",
+      "submission": 1,
+      "submission_sha256": "979bad4e654d7c2994ad1c7ae2aea4583066fd3f1f15efd0d4b0bb5482671af0",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 8, Column: 9",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/21",
+      "submission": 1,
+      "submission_sha256": "979bad4e654d7c2994ad1c7ae2aea4583066fd3f1f15efd0d4b0bb5482671af0",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 8, Column: 9",
+      "grammar_gap": "grouped_unpivot"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3083/0",
+      "submission": 0,
+      "submission_sha256": "6bcb880c30fd3045cc12a9bbdd9b47eec2377af1f2a68f6ce8dae68596bdb23f",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 3, Column: 10",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.ExpressionGCIncrementalTests#sameOutputWithoutLateness/0",
+      "submission": 0,
+      "submission_sha256": "4c5af10b50e538b29444c2c5fe3ca8706e34fda0198163e3e1146a7073c08673",
+      "diagnostic": "sql parser error: Expected: identifier, found: ( at Line: 72, Column: 121",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/0",
+      "submission": 0,
+      "submission_sha256": "c4b719a7d17e01fc63b0ac7455a5be1e98eaa0159b9c2faa04e10c443010f240",
+      "diagnostic": "sql parser error: Expected: an expression, found: ROW at Line: 2, Column: 31",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/1",
+      "submission": 0,
+      "submission_sha256": "822bb1e4b813e24d61c23edb02ef5c90f6e0320e2e39ef50bbe7d2d460cc1e03",
+      "diagnostic": "sql parser error: Expected: ), found: AS at Line: 2, Column: 59",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/2",
+      "submission": 0,
+      "submission_sha256": "4f38e9a047389f328a75ab6195335808e59c257ede323a4114168bc5d6867b24",
+      "diagnostic": "sql parser error: Expected: an expression, found: ROW at Line: 3, Column: 9",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/3",
+      "submission": 0,
+      "submission_sha256": "3ba9b7b1242eb5885c4c51f4c19b50910d011f68923a3d7c423e5e7987c73ddc",
+      "diagnostic": "sql parser error: Expected: an expression, found: ROW at Line: 3, Column: 9",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/4",
+      "submission": 0,
+      "submission_sha256": "0b2b561c02df997dee511ef3c4b8f3c6f582ba9191f0688f3d6447e0b484e705",
+      "diagnostic": "sql parser error: Expected: an expression, found: ROW at Line: 3, Column: 9",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#nestedArrayInNullableRow/5",
+      "submission": 0,
+      "submission_sha256": "c3878af6886a43b0d5eccea9d6581d09e52f288d84090e81ef82f04ebfd6a34d",
+      "diagnostic": "sql parser error: Expected: an expression, found: ROW at Line: 2, Column: 31",
+      "grammar_gap": "named_row_constructor_fields"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#rollingInterval/0",
+      "submission": 0,
+      "submission_sha256": "361e3b5df4ed3169df807960f4ccc927eed4b5e34d7889ca8df7b9acce5b5123",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 6, Column: 71",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/0",
+      "submission": 0,
+      "submission_sha256": "815eefa74842a43d41e2e3ae1d5486b8e9fb335068e04a50d6de7309d6397ac1",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: HOURS at Line: 11, Column: 65",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/1",
+      "submission": 0,
+      "submission_sha256": "e5ba004f08ce5c7d0fc172277196327947c28aa267505e89b72f52ba2dc66850",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: HOURS at Line: 11, Column: 65",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/2",
+      "submission": 0,
+      "submission_sha256": "895429ee9294e97beb0115f4a39138b0d5d327ca097615c962ef9eb79a836d0a",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: HOURS at Line: 11, Column: 65",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#testMapSubquery/0",
+      "submission": 0,
+      "submission_sha256": "33c667602f35b1aa68435fe2d55f240eea46d1793acd5c48a981a01aafb3e20b",
+      "diagnostic": "sql parser error: Expected: ), found: T at Line: 2, Column: 43",
+      "grammar_gap": "map_query_constructor"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#issue1755/0",
+      "submission": 0,
+      "submission_sha256": "ea4ec3a2bfba642ca7a4d22f1864e9485dbf8c7b5c44eb654eb273fc7887fe70",
+      "diagnostic": "sql parser error: Expected: ), found: not at Line: 2, Column: 21",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3461/0",
+      "submission": 0,
+      "submission_sha256": "0e7da21d11b6ab3f1d1f3b69b7670b335b33d3bbcd0eb6a9a15f1f7ca59c8441",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 7, Column: 19",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/0",
+      "submission": 0,
+      "submission_sha256": "30b08b6d15e883a9bd71b265b562087b5da924ab6ee5929eede8d287f1c4d76d",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/1",
+      "submission": 0,
+      "submission_sha256": "30b08b6d15e883a9bd71b265b562087b5da924ab6ee5929eede8d287f1c4d76d",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/2",
+      "submission": 0,
+      "submission_sha256": "2f097405ed9a01f17126e64af012b72a86365a761035541e24c176084d5f65ee",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/3",
+      "submission": 0,
+      "submission_sha256": "2f097405ed9a01f17126e64af012b72a86365a761035541e24c176084d5f65ee",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/4",
+      "submission": 0,
+      "submission_sha256": "c1cfc06bcad904d5a48036155a84a28a1808c8c2fc801be36e607e2e3586d0b2",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/5",
+      "submission": 0,
+      "submission_sha256": "c1cfc06bcad904d5a48036155a84a28a1808c8c2fc801be36e607e2e3586d0b2",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/6",
+      "submission": 0,
+      "submission_sha256": "24523403c66652c559883c30114ac26b3c1708b752a038398fef4bc46b358aa4",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/7",
+      "submission": 0,
+      "submission_sha256": "24523403c66652c559883c30114ac26b3c1708b752a038398fef4bc46b358aa4",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/8",
+      "submission": 0,
+      "submission_sha256": "2a0a6bd57a4b0634181305c62f212ce4bda58cbce211326cb97c6b1642f75b1c",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/9",
+      "submission": 0,
+      "submission_sha256": "2a0a6bd57a4b0634181305c62f212ce4bda58cbce211326cb97c6b1642f75b1c",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/10",
+      "submission": 0,
+      "submission_sha256": "8098f876175050e37266d867fba24f02cef365ff694ce8f04a71a6727a0f923e",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/11",
+      "submission": 0,
+      "submission_sha256": "8098f876175050e37266d867fba24f02cef365ff694ce8f04a71a6727a0f923e",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/12",
+      "submission": 0,
+      "submission_sha256": "c8e59e51a387f772cd72167cea9c5c9d3a7df87e93bcf30911a4e2c2ef4ee4e0",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 94",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/13",
+      "submission": 0,
+      "submission_sha256": "c8e59e51a387f772cd72167cea9c5c9d3a7df87e93bcf30911a4e2c2ef4ee4e0",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 94",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TimeArithmeticTests#datetimeDifferenceCountsFieldUnits/0",
+      "submission": 0,
+      "submission_sha256": "89ef92f77b92f45ee080709c8414c17f2ce605939dff2f7fb031635132121e0a",
+      "diagnostic": "sql parser error: Expected: AS, found: YEAR at Line: 4, Column: 50",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/0",
+      "submission": 0,
+      "submission_sha256": "67e8e9fadf046ced00e24d41c40e5b4caccdab3e9eca8900f8bbcf43fcfe740b",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/1",
+      "submission": 0,
+      "submission_sha256": "67e8e9fadf046ced00e24d41c40e5b4caccdab3e9eca8900f8bbcf43fcfe740b",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 66",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/2",
+      "submission": 0,
+      "submission_sha256": "22258e71be2bc108d1851c799355d2cfb58bb89b4b23de86d49806a01e775832",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 63",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/3",
+      "submission": 0,
+      "submission_sha256": "22258e71be2bc108d1851c799355d2cfb58bb89b4b23de86d49806a01e775832",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 63",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/4",
+      "submission": 0,
+      "submission_sha256": "f3072502cb74504c1306ba66f085e7e8e97e86399efce3b8c1996612ea2582b7",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 95",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/5",
+      "submission": 0,
+      "submission_sha256": "f3072502cb74504c1306ba66f085e7e8e97e86399efce3b8c1996612ea2582b7",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 95",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5087/4",
+      "submission": 0,
+      "submission_sha256": "d3677fdcbfba3492bc8891be97ba40fba640be3833a829d481295e8a7c484afb",
+      "diagnostic": "sql parser error: expected end of statement, found: '!' at Line: 1, Column: 49",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5087/5",
+      "submission": 0,
+      "submission_sha256": "d3677fdcbfba3492bc8891be97ba40fba640be3833a829d481295e8a7c484afb",
+      "diagnostic": "sql parser error: expected end of statement, found: '!' at Line: 1, Column: 49",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue4146a/12",
+      "submission": 0,
+      "submission_sha256": "cbf5b07895be60505aab4b51d340faa16e416e07a5304cf23a07ab0ea9d54c89",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 161",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue4146a/13",
+      "submission": 0,
+      "submission_sha256": "cbf5b07895be60505aab4b51d340faa16e416e07a5304cf23a07ab0ea9d54c89",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 161",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#intervalTest/0",
+      "submission": 0,
+      "submission_sha256": "568ad8a7f2bd6bbc0e75d91fc50a1e226a8bc083257db2805050fd0818d93fcd",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 8, Column: 10",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/20",
+      "submission": 1,
+      "submission_sha256": "6dd086a89e089637d34767ca0ea6adb68c23a1b7066b874426c0fe3f12b841f3",
+      "diagnostic": "sql parser error: Expected: ), found: sets at Line: 6, Column: 14",
+      "grammar_gap": "nested_grouping_sets"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/21",
+      "submission": 1,
+      "submission_sha256": "6dd086a89e089637d34767ca0ea6adb68c23a1b7066b874426c0fe3f12b841f3",
+      "diagnostic": "sql parser error: Expected: ), found: sets at Line: 6, Column: 14",
+      "grammar_gap": "nested_grouping_sets"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpLiterals/2",
+      "submission": 0,
+      "submission_sha256": "7414f6ab583ed5b5ce298ac0e5df9fe20b5818a6f2130a7f8dbb4e046357c4a5",
+      "diagnostic": "sql parser error: Invalid unicode character: d83d at Line: 1, Column: 72",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpLiterals/3",
+      "submission": 0,
+      "submission_sha256": "7414f6ab583ed5b5ce298ac0e5df9fe20b5818a6f2130a7f8dbb4e046357c4a5",
+      "diagnostic": "sql parser error: Invalid unicode character: d83d at Line: 1, Column: 72",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#backslashWithSpacesTest/0",
+      "submission": 1,
+      "submission_sha256": "e06ef2349fa780a7399e5eaecae3ac0039ac98fe732ba97f1728784debe4b098",
+      "diagnostic": "sql parser error: Invalid hex digit in escaped unicode string: ' at Line: 1, Column: 32",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#backslashWithSpacesTest/1",
+      "submission": 1,
+      "submission_sha256": "e06ef2349fa780a7399e5eaecae3ac0039ac98fe732ba97f1728784debe4b098",
+      "diagnostic": "sql parser error: Invalid hex digit in escaped unicode string: ' at Line: 1, Column: 32",
+      "grammar_gap": "unicode_string_escape"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testDiff/0",
+      "submission": 1,
+      "submission_sha256": "3947b1daec15705c28e97142c2180274ceca429f4436cafa7e2d31bfc90f0697",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 51",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSort/28",
+      "submission": 1,
+      "submission_sha256": "6771d30677dfacfc547b128303e44b1526001340953dd20ec02029b57078e643",
+      "diagnostic": "sql parser error: expected end of statement, found: , at Line: 3, Column: 24",
+      "grammar_gap": "limit_offset_first"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSort/29",
+      "submission": 1,
+      "submission_sha256": "6771d30677dfacfc547b128303e44b1526001340953dd20ec02029b57078e643",
+      "diagnostic": "sql parser error: expected end of statement, found: , at Line: 3, Column: 24",
+      "grammar_gap": "limit_offset_first"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue3153/0",
+      "submission": 0,
+      "submission_sha256": "c7dfc7141914bd01053507d80bb79e3044f17795349ec4104dcb2ba5affac17d",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 5, Column: 10",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue3952/0",
+      "submission": 0,
+      "submission_sha256": "505a9e0286e82b21aec7c1c9f7c0e405abd3303a8c4f40dc11ecc685553e3919",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 4, Column: 40",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/0",
+      "submission": 0,
+      "submission_sha256": "967f747db189a75e16c4abe3346c79e7bbfea586e59fd7343927e85e3e073716",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: MONTHS at Line: 11, Column: 65",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/1",
+      "submission": 0,
+      "submission_sha256": "6c6780024631263f2a8f900b08c2b0a7c75e06a7ae4e36f2129be8836626ef34",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: MONTHS at Line: 11, Column: 65",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/2",
+      "submission": 0,
+      "submission_sha256": "c1c8f8ee5b1e5be968e8ef5a5bfe4d18428ce1230cf928aadb436a4c5a6073d0",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: MONTHS at Line: 11, Column: 65",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StructTests#issue3671/0",
+      "submission": 0,
+      "submission_sha256": "58283a7713658d436ff9fbd8a6d116e33d794013f32c6a25438d0038920e3c81",
+      "diagnostic": "sql parser error: Expected: ), found: NOT at Line: 2, Column: 44",
+      "grammar_gap": "row_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testRollup/22",
+      "submission": 1,
+      "submission_sha256": "239962692d791ed1b8adf87e6ed1115032bdd66f47ee938c12f20d5e9c8f39bf",
+      "diagnostic": "sql parser error: reserved word distinct requires quoting at Line: 2, Column: 69",
+      "grammar_gap": "grouping_distinct"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testRollup/23",
+      "submission": 1,
+      "submission_sha256": "239962692d791ed1b8adf87e6ed1115032bdd66f47ee938c12f20d5e9c8f39bf",
+      "diagnostic": "sql parser error: reserved word distinct requires quoting at Line: 2, Column: 69",
+      "grammar_gap": "grouping_distinct"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/0",
+      "submission": 0,
+      "submission_sha256": "39e5508d1456b14adbe873a91084616df2a94b92db4382ca1de0e28ffdc7cc06",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: MONTHS at Line: 11, Column: 63",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/1",
+      "submission": 0,
+      "submission_sha256": "70b596f3f3ee9df5c5aa3f6ce384f5a00b514ff962b775c2aaaced2c91bff623",
+      "diagnostic": "sql parser error: Expected: ROWS, RANGE, GROUPS, found: SECONDS at Line: 11, Column: 63",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2004/0",
+      "submission": 0,
+      "submission_sha256": "d83a220dd6b3ed5cba091d8c21cf8d607f8b93900c7e1e04c3b134daaf2d70be",
+      "diagnostic": "sql parser error: Expected: ',' or ')' after column definition, found: FOREIGN at Line: 10, Column: 16",
+      "grammar_gap": "inline_foreign_key"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2943/0",
+      "submission": 0,
+      "submission_sha256": "eac4bc939aa82fcae89c7471b72861d11709fdea766043b1e40d43ea5f0a2d7e",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 2, Column: 35",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/10",
+      "submission": 1,
+      "submission_sha256": "f98c269b8a6cdb3442c33572faac5dd8314ef3cbcd9d5df5d399b842f05500b4",
+      "diagnostic": "sql parser error: Expected: SELECT, VALUES, or a subquery in the query body, found: e at Line: 2, Column: 19",
+      "grammar_gap": "wildcard_exclusion"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/11",
+      "submission": 1,
+      "submission_sha256": "f98c269b8a6cdb3442c33572faac5dd8314ef3cbcd9d5df5d399b842f05500b4",
+      "diagnostic": "sql parser error: Expected: SELECT, VALUES, or a subquery in the query body, found: e at Line: 2, Column: 19",
+      "grammar_gap": "wildcard_exclusion"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSortOffset/2",
+      "submission": 1,
+      "submission_sha256": "fe68a9928c780034d9b8226165c9124e57c47ae8bfcb5d41f487dbee6adbb6da",
+      "diagnostic": "sql parser error: expected end of statement, found: , at Line: 3, Column: 24",
+      "grammar_gap": "limit_offset_first"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SortTests#testSortOffset/3",
+      "submission": 1,
+      "submission_sha256": "fe68a9928c780034d9b8226165c9124e57c47ae8bfcb5d41f487dbee6adbb6da",
+      "diagnostic": "sql parser error: expected end of statement, found: , at Line: 3, Column: 24",
+      "grammar_gap": "limit_offset_first"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3031/0",
+      "submission": 0,
+      "submission_sha256": "157ae050feb212dc8a3c50f098e36cf2d53571b9a4de116a301e76badf5980a4",
+      "diagnostic": "sql parser error: qualified datetime differences are unsupported at Line: 4, Column: 11",
+      "grammar_gap": "qualified_datetime_difference"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StructTests#issue7037/0",
+      "submission": 0,
+      "submission_sha256": "991d80fbe01686861b042568f0319a32bde38284efb7801ced789ef903d816dd",
+      "diagnostic": "sql parser error: Expected: ), found: NULL at Line: 1, Column: 29",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5484/0",
+      "submission": 0,
+      "submission_sha256": "4544a74699289481a72c398e155fb554bfd05d09c0c7f8fef5458fa0cb780385",
+      "diagnostic": "sql parser error: Expected: ), found: NULL at Line: 1, Column: 44",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5120/0",
+      "submission": 0,
+      "submission_sha256": "3edfc3952d246e96278b18ca2343892ea6331e927602c3717dcc53237c57f27e",
+      "diagnostic": "sql parser error: Expected: ), found: NOT at Line: 1, Column: 25",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5120/1",
+      "submission": 0,
+      "submission_sha256": "3981e78046cb12d506f1c9c7b0af860fb6c2da050c87af5a24555e3b2eb373dd",
+      "diagnostic": "sql parser error: Expected: ), found: NOT at Line: 2, Column: 19",
+      "grammar_gap": "create_type_field_nullability"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2651/0",
+      "submission": 0,
+      "submission_sha256": "be7eaed536503bb8643edf6cfff21ca724be14699ffe7513cfa682f9477cc139",
+      "diagnostic": "sql parser error: Expected: ENUM, RANGE, or '(' after AS, found: INTEGER at Line: 1, Column: 22",
+      "grammar_gap": "scalar_create_type"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5307/0",
+      "submission": 0,
+      "submission_sha256": "7935be7a5e54f9ce5a311870ee605421a22b837460c259256bb8e0322ca17573",
+      "diagnostic": "sql parser error: Expected: ), found: NOT at Line: 2, Column: 15",
+      "grammar_gap": "create_type_field_nullability"
+    }
+  ]
+}

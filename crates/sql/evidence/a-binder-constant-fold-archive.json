@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-constant-fold-20261118-v1.tar.gz",
+  "bytes": 8437741,
+  "sha256": "c249059db4cc0a0c647072e04476330b4deb407512d53dd9fb4915bf544fa1e9",
+  "manifest_sha256": "3c2596374eb4d0eff8343353bb618ebc0c01f7805a32225a3571535f061ce80d",
+  "verified_files": 100,
+  "all_members_verified": true
+}

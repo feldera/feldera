@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "archive_index": "corpus-zsets-archive.json",
+  "scope": "Typed Z-set wire validation and bag comparison of original Java exports and controlled reorder/weight changes",
+  "corpora": {
+    "p0-corpus-seams-v5": {
+      "totals": {
+        "cases": 8571,
+        "exported": 8571,
+        "steps": 10408,
+        "zsets": 36269,
+        "rows": 128880,
+        "empty_zsets": 7844,
+        "negative_weights": 2434,
+        "greater_than_one": 1342,
+        "zero_weights": 0
+      },
+      "row_root_classes": {
+        "DBSPTupleExpression": 128850,
+        "DBSPArrayExpression": 30
+      },
+      "archive_identity": "25a7bdbf9dd876cbd94d6017d2adb4e6ac2f929dd2aea63f39365d2d690bb7f8",
+      "witness": {
+        "equal_zsets": 36269,
+        "cases_with_multiple_rows_reversed": 12994,
+        "changed_weights_rejected": 28425
+      }
+    },
+    "p0-corpus-gen2-runtime-v3": {
+      "totals": {
+        "cases": 8546,
+        "exported": 8529,
+        "steps": 10343,
+        "zsets": 36098,
+        "rows": 128629,
+        "empty_zsets": 7810,
+        "negative_weights": 2415,
+        "greater_than_one": 1362,
+        "zero_weights": 0,
+        "skipped": 17
+      },
+      "row_root_classes": {
+        "DBSPTupleExpression": 128599,
+        "DBSPArrayExpression": 30
+      },
+      "archive_identity": "53cadc292f396c01fb32646ea875c02418cf1251e5957b5861f932635b7ddf89",
+      "witness": {
+        "equal_zsets": 36098,
+        "cases_with_multiple_rows_reversed": 12940,
+        "changed_weights_rejected": 28288
+      }
+    }
+  },
+  "compiler_corpus_cases_exported": 17100,
+  "zsets_compared": 72367,
+  "multirow_orders_reversed": 25934,
+  "changed_weights_rejected": 56713,
+  "runtime_executed": false,
+  "rust_tests_passed": 43,
+  "clippy": "passed",
+  "witness_binary_sha256": "63b4927e7567cfa7294d358f9727b99d6d5d7e4839d8378359fd22895c5fb328"
+}

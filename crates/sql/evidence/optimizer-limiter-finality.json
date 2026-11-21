@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-limiter-finality-archive.json",
+  "unchanged_replays": 400,
+  "directed_emit_final_refusals": 4,
+  "rust_tests_passed": 37,
+  "focused_clippy_passed": true,
+  "scope": "The same 50 circuits per mode are replayed from both Java-control and Rust-optimizer runs for Monotonicity and InsertLimiters. Directed wire mutations request a finality column on ordinary and active TIMESTAMP LATENESS graphs in both modes. Both Rust commands continue to use the Java path for these unsupported shapes."
+}

@@ -1,0 +1,158 @@
+{
+  "artifacts": {
+    "$SCRATCH/p0-parser-repairs-v4/corpus-rust": {
+      "cases.jsonl": "95e232944a58bc14f855b8a9f4dee8efe608ed90ad6c4e7caefc314e7c26e457",
+      "complete.json": "5d290268eaff23f774089016dbdd2d0af73644dd8241143951b47d1e27752884"
+    },
+    "$SCRATCH/p0-parser-repairs-v4/syntax-rust": {
+      "cases.jsonl": "2de591b75cb3d8df3afd3f30bb7e10ce7fbe368ebf489d5a04c39d05a5c58c33",
+      "complete.json": "df8067fea5bb2231a69c080f9cdd6c3d70942f086db650cd8cf4cec2b4e2e2ce"
+    },
+    "$SCRATCH/p0-parser-repairs-v4/syntax-java": {
+      "cases.jsonl": "9ea22be953309f364a39acc879f5416b9fa10ec684538d9a1670840158ddd6fd",
+      "complete.json": "64a16586b1d7455c4e0e7d4215a84168c41f332e576c664da04229ff8a1b3de1"
+    },
+    "$SCRATCH/p0-parser-adversarial-v5/rust": {
+      "cases.jsonl": "4403d28b5f534ae056aaf8085de8ec9a7e101555b8df5214d291effe24a9b22f",
+      "complete.json": "a386c8dc4ad57df8e28c37a2b94d846226ff9f5825376caa233783967f808a4e"
+    },
+    "$SCRATCH/p0-parser-adversarial-v5/java": {
+      "cases.jsonl": "dafbd4e1e5c0da30aa367d277732a7ecb4664901d5abb9363985bdcd3c007e1e",
+      "complete.json": "643e5baf029c95d2933fba3ff596422fd3bfffcdda9923182c89df8e9d80f740"
+    }
+  },
+  "examples": [
+    {
+      "id": "syntax/row_type",
+      "measurement": {
+        "ast": "[\n    CreateTable(\n        CreateTable {\n            or_replace: false,\n            temporary: false,\n            unlogged: false,\n            external: false,\n            dynamic: false,\n            global: None,\n            if_not_exists: false,\n            transient: false,\n            volatile: false,\n            iceberg: false,\n            snapshot: false,\n            name: ObjectName(\n                [\n                    Identifier(\n                        Ident {\n                            value: \"t\",\n                            quote_style: None,\n                            span: Span(Location(1,14)..Location(1,15)),\n                        },\n                    ),\n                ],\n            ),\n            columns: [\n                ColumnDef {\n                    name: Ident {\n                        value: \"r\",\n                        quote_style: None,\n                        span: Span(Location(1,17)..Location(1,18)),\n                    },\n                    data_type: Struct(\n                        [\n                            StructField {\n                                field_name: Some(\n                                    Ident {\n                                        value: \"a\",\n                                        quote_style: None,\n                                        span: Span(Location(1,23)..Location(1,24)),\n                                    },\n                                ),\n                                field_type: Integer(\n                                    None,\n                                ),\n                                options: None,\n                            },\n                            StructField {\n                                field_name: Some(\n                                    Ident {\n                                        value: \"b\",\n                                        quote_style: None,\n                                        span: Span(Location(1,34)..Location(1,35)),\n                                    },\n                                ),\n                                field_type: Varchar(\n                                    None,\n                                ),\n                                options: None,\n                            },\n                        ],\n                        Parentheses,\n                    ),\n                    options: [],\n                },\n            ],\n            constraints: [],\n            hive_distribution: NONE,\n            hive_formats: None,\n            table_options: None,\n            file_format: None,\n            location: None,\n            query: None,\n            sqlite_table_options: SqliteTableOptions {\n                leading_comma: false,\n                options: [],\n            },\n            like: None,\n            clone: None,\n            version: None,\n            comment: None,\n            on_commit: None,\n            on_cluster: None,\n            primary_key: None,\n            order_by: None,\n            partition_by: None,\n            cluster_by: None,\n            clustered_by: None,\n            inherits: None,\n            partition_of: None,\n            for_values: None,\n            copy_grants: false,\n            enable_schema_evolution: None,\n            change_tracking: None,\n            data_retention_time_in_days: None,\n            max_data_extension_time_in_days: None,\n            default_ddl_collation: None,\n            with_aggregation_policy: None,\n            with_row_access_policy: None,\n            with_storage_lifecycle_policy: None,\n            with_tags: None,\n            external_volume: None,\n            with_connection: None,\n            base_location: None,\n            catalog: None,\n            catalog_sync: None,\n            storage_serialization_policy: None,\n            target_lag: None,\n            warehouse: None,\n            refresh_mode: None,\n            initialize: None,\n            require_user: false,\n            diststyle: None,\n            distkey: None,\n            sortkey: None,\n            backup: None,\n            multiset: None,\n            fallback: None,\n            with_data: None,\n        },\n    ),\n]",
+        "dialect": "feldera_prototype",
+        "statements": [
+          "CREATE TABLE t (r STRUCT(a INTEGER, b VARCHAR))"
+        ],
+        "verdict": "accepted",
+        "version": "0.64.0"
+      }
+    },
+    {
+      "id": "syntax/interval_difference",
+      "measurement": {
+        "dialect": "feldera_prototype",
+        "error": "sql parser error: qualified datetime differences are unsupported at Line: 1, Column: 16",
+        "verdict": "rejected",
+        "version": "0.64.0"
+      }
+    },
+    {
+      "id": "syntax/unicode_identifier",
+      "measurement": {
+        "ast": "[\n    Query(\n        Query {\n            with: None,\n            body: Select(\n                Select {\n                    select_token: TokenWithSpan {\n                        token: Word(\n                            Word {\n                                value: \"SELECT\",\n                                quote_style: None,\n                                keyword: SELECT,\n                            },\n                        ),\n                        span: Span(Location(1,1)..Location(1,7)),\n                    },\n                    optimizer_hints: [],\n                    distinct: None,\n                    select_modifiers: None,\n                    top: None,\n                    top_before_distinct: false,\n                    projection: [\n                        UnnamedExpr(\n                            Identifier(\n                                Ident {\n                                    value: \"dat\",\n                                    quote_style: Some(\n                                        '\"',\n                                    ),\n                                    span: Span(Location(1,8)..Location(1,19)),\n                                },\n                            ),\n                        ),\n                    ],\n                    exclude: None,\n                    into: None,\n                    from: [\n                        TableWithJoins {\n                            relation: Table {\n                                name: ObjectName(\n                                    [\n                                        Identifier(\n                                            Ident {\n                                                value: \"t\",\n                                                quote_style: None,\n                                                span: Span(Location(1,25)..Location(1,26)),\n                                            },\n                                        ),\n                                    ],\n                                ),\n                                alias: None,\n                                args: None,\n                                with_hints: [],\n                                version: None,\n                                with_ordinality: false,\n                                partitions: [],\n                                json_path: None,\n                                sample: None,\n                                index_directives: [],\n                                inheritance: None,\n                            },\n                            joins: [],\n                        },\n                    ],\n                    lateral_views: [],\n                    prewhere: None,\n                    selection: None,\n                    connect_by: [],\n                    group_by: Expressions(\n                        [],\n                        [],\n                    ),\n                    cluster_by: [],\n                    distribute_by: [],\n                    sort_by: [],\n                    having: None,\n                    named_window: [],\n                    qualify: None,\n                    window_before_qualify: false,\n                    value_table_mode: None,\n                    flavor: Standard,\n                },\n            ),\n            order_by: None,\n            limit_clause: None,\n            fetch: None,\n            locks: [],\n            for_clause: None,\n            settings: None,\n            format_clause: None,\n            pipe_operators: [],\n        },\n    ),\n]",
+        "dialect": "feldera_prototype",
+        "statements": [
+          "SELECT \"dat\" FROM t"
+        ],
+        "verdict": "accepted",
+        "version": "0.64.0"
+      }
+    },
+    {
+      "id": "syntax/adjacent_strings",
+      "measurement": {
+        "ast": "[\n    Query(\n        Query {\n            with: None,\n            body: Select(\n                Select {\n                    select_token: TokenWithSpan {\n                        token: Word(\n                            Word {\n                                value: \"SELECT\",\n                                quote_style: None,\n                                keyword: SELECT,\n                            },\n                        ),\n                        span: Span(Location(1,1)..Location(1,7)),\n                    },\n                    optimizer_hints: [],\n                    distinct: None,\n                    select_modifiers: None,\n                    top: None,\n                    top_before_distinct: false,\n                    projection: [\n                        UnnamedExpr(\n                            Value(\n                                ValueWithSpan {\n                                    value: SingleQuotedString(\n                                        \"ab\",\n                                    ),\n                                    span: Span(Location(1,8)..Location(2,4)),\n                                },\n                            ),\n                        ),\n                    ],\n                    exclude: None,\n                    into: None,\n                    from: [],\n                    lateral_views: [],\n                    prewhere: None,\n                    selection: None,\n                    connect_by: [],\n                    group_by: Expressions(\n                        [],\n                        [],\n                    ),\n                    cluster_by: [],\n                    distribute_by: [],\n                    sort_by: [],\n                    having: None,\n                    named_window: [],\n                    qualify: None,\n                    window_before_qualify: false,\n                    value_table_mode: None,\n                    flavor: Standard,\n                },\n            ),\n            order_by: None,\n            limit_clause: None,\n            fetch: None,\n            locks: [],\n            for_clause: None,\n            settings: None,\n            format_clause: None,\n            pipe_operators: [],\n        },\n    ),\n]",
+        "dialect": "feldera_prototype",
+        "statements": [
+          "SELECT 'ab'"
+        ],
+        "verdict": "accepted",
+        "version": "0.64.0"
+      }
+    }
+  ],
+  "delta_from_string_fragment_repair": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#unicodeIdentifierTest/0",
+      "before": false,
+      "after": true
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#unicodeIdentifierTest/1",
+      "before": false,
+      "after": true
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/2",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/3",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/4",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/5",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/6",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/7",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/8",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/9",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/12",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.DateArithmeticTests#testDateSub/13",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/2",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/3",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/4",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.TimestampDiffTests#diffTests/5",
+      "before": true,
+      "after": false
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#testSanitizeNames/0",
+      "before": false,
+      "after": true
+    }
+  ]
+}

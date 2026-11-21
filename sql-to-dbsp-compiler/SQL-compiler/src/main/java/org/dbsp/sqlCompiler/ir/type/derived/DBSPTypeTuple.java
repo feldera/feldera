@@ -204,6 +204,8 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     public static DBSPTypeTuple fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         List<DBSPType> fields = fromJsonInnerList(node, "tupFields", decoder, DBSPType.class);
-        return new DBSPTypeTuple(CalciteObject.EMPTY, mayBeNull, fields);
+        DBSPTypeStruct original = node.has("originalStruct")
+                ? fromJsonInner(node, "originalStruct", decoder, DBSPTypeStruct.class) : null;
+        return new DBSPTypeTuple(CalciteObject.EMPTY, mayBeNull, original, fields);
     }
 }

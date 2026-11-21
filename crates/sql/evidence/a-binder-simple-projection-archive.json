@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-simple-projection-20261118-v1.tar.gz",
+  "bytes": 7675705,
+  "sha256": "c4b91521ee2297f5d3d650b520035355284cf6297a9a990fe6554db7fd96e5ee",
+  "manifest_sha256": "674b47389d61e7d5f527a9c97983543dede4133242d05c61c837401428f181fe",
+  "verified_files": 77,
+  "all_members_verified": true
+}

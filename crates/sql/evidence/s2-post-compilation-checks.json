@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "scope": "Pending LATENESS diagnostics across the S2 optimizer boundary",
+  "protocol_version": 3,
+  "before": {
+    "log": "$SCRATCH/p0-post-checks-before/tests.log",
+    "tests": 12,
+    "failures": 1,
+    "log_sha256": "b9c461d46e0ecb60ff5dd316413caa6b630319e39d94cdd4e93564a51a195ae1"
+  },
+  "after": {
+    "log": "$SCRATCH/p0-post-checks-after/tests.log",
+    "tests": 36,
+    "failures": 0,
+    "log_sha256": "74fb2408493795ce21831a90419e1519f2b108c549f6b11dd6161b57d110d09b"
+  },
+  "exact_corpus_replay": {
+    "schema_version": 1,
+    "producer": "c6ede756d-p0-seams-v20",
+    "runtime": "c6ede756d",
+    "classpath": {
+      "$SCRATCH/p0-seam-tools-v20/classes": "39fb18b0ffc7ea6e719316376273da58a5f25054c8f7a7e788bcad3452e565e1",
+      "$SCRATCH/p0-seam-tools-v20/test-classes": "52017ae5844a7518458c8958f9b28ff68d65fdff07cd1692eff624c764e51b41",
+      "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+    "input_sha256": "cdcc0c95b323bad3828a3c5d84d9cc9302fa7f640b3028b7eaa2f321119db4e3",
+    "source_class": null,
+    "cases": 1,
+    "stage": "S2",
+    "execution_order": [
+      "replay-s2",
+      "capture"
+    ],
+    "keep_going": true,
+    "artifact_contract": "seam-v1",
+    "runtime_executed": false,
+    "limits": {
+      "heap_mib": 1024,
+      "output_mib": 512,
+      "min_free_mib": 512,
+      "timeout_seconds_per_jvm": 1200
+    },
+    "equal": true,
+    "observations": 380,
+    "capture_transparency": false,
+    "observation_contract": "full-prefix-v1",
+    "artifact_byte_differences": [],
+    "differences": [],
+    "failed_cases": {
+      "expected": [],
+      "actual": []
+    },
+    "exported_schema_differences": [],
+    "exported_diagnostic_differences": [],
+    "jvm_runs": 2
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/DBSPCompiler.java": "75e70d17c2ea4cd97a5e7f7c21160ba53dd084061dc2320c8cb9aa1196f62209",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/backend/CircuitReplay.java": "aa05064e0139db5da53ac64d241caf16ef0347e8d4223224f11b509a43e04ce5",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/CircuitReplayTests.java": "1a9c0d3e8fe9d2cc6f33abd2ecb261f4a2048cda16436b7dfefcc34d90ef71ff",
+    "crates/sql/multiset-probe/src/main.rs": "d30527918d09d7b956d7d8c5fdf41799e9ca1e83de9d29d30cab9d008e35ac0c"
+  },
+  "full_corpus_validation_complete": false,
+  "note": "The staged 36-test run preceded the added malformed-pending-state assertions. Those assertions are included in the subsequent full Maven suite, still running at this recording."
+}

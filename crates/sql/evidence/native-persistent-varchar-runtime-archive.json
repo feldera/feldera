@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-persistent-varchar-runtime.tar.gz",
+  "bytes": 6025654,
+  "sha256": "a5e0bf48d7b002cb97bcfe7413afc032045a42d468e9008377d751854d26ed96",
+  "manifest_sha256": "151b66101f1250b1e2ef1a30fa10a4da8cb42ca32537d6f6b58a59539317436b",
+  "verified_files": 1454,
+  "all_members_verified": true
+}

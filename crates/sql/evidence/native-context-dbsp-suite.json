@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-dbsp-suite-archive.json",
+  "scope": "Full DBSP library suite in the offline Linux ARM64 devcontainer.",
+  "host_bind_suite": {
+    "passed": 1028,
+    "failed": 1,
+    "ignored": 3
+  },
+  "host_bind_failure": "storage::page_cache::tests::drops_page_cache",
+  "xfs_exact_page_cache": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  "xfs_suite": {
+    "passed": 1029,
+    "failed": 0,
+    "ignored": 3
+  },
+  "xfs_test_binary_sha256": "79d9ba07bfd147e54ba41c3a423f4434958201cd8a2ddab98175deb58a1d2a59",
+  "workspace_lock_sha256": "741a5ae34ea54fc64d3ee8cbb8e97e9e0c42f6460410b0393dabeef92c0dcfac"
+}

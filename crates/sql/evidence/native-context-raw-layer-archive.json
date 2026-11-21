@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-raw-layer.tar.gz",
+  "bytes": 5523205,
+  "sha256": "9096bdd8975c24f1095055a164ff80ad2d30e7a6b1d1cf497d9d7b304c812988",
+  "manifest_sha256": "2b4e6d15d4ff83a83263ea57157e424c265d4805b3e8923efba027bc0b032f34",
+  "verified_files": 38,
+  "all_members_verified": true
+}

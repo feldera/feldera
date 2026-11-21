@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "archive_index": "structured-parser-errors-archive.json",
+  "scope": "Migrate selected NegativeParserTests assertions to verdict and ordered C0 fields.",
+  "junit_methods_passed": 22,
+  "assertion_methods_migrated": 12,
+  "compilation_error_assertions_migrated": 15,
+  "diagnostics_compared": 24,
+  "source_submissions_and_diagnostics_equal_to_original": true,
+  "python_tests_passed": 7
+}

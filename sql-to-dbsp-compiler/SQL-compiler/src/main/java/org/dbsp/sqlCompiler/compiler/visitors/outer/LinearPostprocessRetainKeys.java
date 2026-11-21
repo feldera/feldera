@@ -13,6 +13,7 @@ import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /** Replaces the following pattern:
  * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator} followed by
@@ -32,33 +33,37 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
     }
 
     /** Does the actual replacement work */
-    static class ReplaceLinear extends CircuitCloneWithGraphsVisitor {
-        ReplaceLinear(DBSPCompiler compiler, CircuitGraphs graphs) {
+    protected static class ReplaceLinear extends CircuitCloneWithGraphsVisitor {
+        protected ReplaceLinear(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
+        }
+
+        protected Optional<DBSPIntegrateTraceRetainKeysOperator> selectRetainer(
+                DBSPAggregateLinearPostprocessOperator operator) {
+            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
+            for (Port<DBSPOperator> port : destinations) {
+                if (port.node().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
+                    return Optional.of(port.node().to(DBSPIntegrateTraceRetainKeysOperator.class));
+                }
+            }
+            return Optional.empty();
         }
 
         @Override
         public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
-            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
-            for (Port<DBSPOperator> port : destinations) {
-                if (port.node().is(DBSPIntegrateTraceRetainKeysOperator.class)) {
-                    DBSPIntegrateTraceRetainKeysOperator integrator = port.node()
-                            .to(DBSPIntegrateTraceRetainKeysOperator.class);
-                    OutputPort left = this.mapped(operator.input());
-                    // Because we sorted the graph we know that this has already been processed
-                    OutputPort right = this.mapped(integrator.right());
-                    DBSPAggregateLinearPostprocessRetainKeysOperator replacement =
-                            new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getRelNode(),
-                                    operator.getOutputIndexedZSetType(),
-                                    operator.getFunction(),
-                                    operator.postProcess,
-                                    integrator.getClosureFunction(),
-                                    left, right);
-                    this.map(operator, replacement);
-                    return;
-                }
+            var selected = this.selectRetainer(operator);
+            if (selected.isEmpty()) {
+                super.postorder(operator);
+                return;
             }
-            super.postorder(operator);
+            OutputPort left = this.mapped(operator.input());
+            // The waterline precedes the aggregate after topological sorting.
+            var integrator = selected.get();
+            OutputPort right = this.mapped(integrator.right());
+            var replacement = new DBSPAggregateLinearPostprocessRetainKeysOperator(operator.getRelNode(),
+                    operator.getOutputIndexedZSetType(), operator.getFunction(), operator.postProcess,
+                    integrator.getClosureFunction(), left, right);
+            this.map(operator, replacement);
         }
     }
 
@@ -70,7 +75,7 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         Graph graphs = new Graph(this.compiler);
-        graphs.apply(circuit);
+        this.compiler.applyObservedPass(this.getName(), 0, 0, graphs, circuit);
         CircuitGraph graph = graphs.graphs.getGraph(circuit);
 
         // We are not doing recursive components now
@@ -96,10 +101,11 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
         for (var p: toAdd)
             graph.addEdge(p.left, p.right, 0);
         circuit.resort(graph);
+        this.compiler.observeCircuit(this.getName(), 1, "OrderWaterlineDependencies", circuit);
 
-        graphs.apply(circuit);
+        this.compiler.applyObservedPass(this.getName(), 2, 0, graphs, circuit);
         ReplaceLinear replace = new ReplaceLinear(this.compiler, graphs.getGraphs());
-        return replace.apply(circuit);
+        return this.compiler.applyObservedPass(this.getName(), 3, 0, replace, circuit);
     }
 
     @Override

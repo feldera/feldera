@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-simplify.tar.gz",
+  "bytes": 29378078,
+  "sha256": "3e83e01b224497f59ab9057d0cf4feab48e87c7adf1ccbe230b1fc246bff25df",
+  "manifest_sha256": "efc1206561fce8b427dbe9b5868dc5239bf79b38ad26490535bf38f7dd70da6f",
+  "verified_files": 29850,
+  "all_members_verified": true
+}

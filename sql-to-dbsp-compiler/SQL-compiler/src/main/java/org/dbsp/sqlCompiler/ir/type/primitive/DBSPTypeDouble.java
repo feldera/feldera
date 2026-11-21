@@ -112,6 +112,9 @@ public class DBSPTypeDouble extends DBSPTypeFP implements IsNumericType {
     @SuppressWarnings("unused")
     public static DBSPTypeDouble fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeDouble.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeDouble.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeDouble(CalciteObject.EMPTY, mayBeNull);
     }
 }

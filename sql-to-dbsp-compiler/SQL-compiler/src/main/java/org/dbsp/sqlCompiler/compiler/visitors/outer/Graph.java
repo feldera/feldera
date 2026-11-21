@@ -45,6 +45,36 @@ public class Graph extends CircuitVisitor {
         return this.graphs;
     }
 
+    /** Bind Rust's body-local consumer positions to the live operators used by later passes. */
+    public void restore(DBSPCircuit circuit, Map<Long, int[][][]> successors) {
+        this.graphs.clear();
+        this.restoreBody(circuit, successors);
+        if (this.graphs.graphs.size() != successors.size())
+            throw new IllegalStateException("Unknown circuit body in consumer graph");
+    }
+
+    private void restoreBody(ICircuit body, Map<Long, int[][][]> successors) {
+        this.graphs.newCircuit(body);
+        var graph = this.graphs.getGraph(body);
+        var members = new java.util.ArrayList<DBSPOperator>();
+        for (var op : body.getAllOperators()) {
+            members.add(op);
+            graph.addNode(op);
+            if (op instanceof DBSPNestedOperator nested)
+                this.restoreBody(nested, successors);
+        }
+        var edges = successors.get(body.getId());
+        if (edges == null || edges.length != members.size())
+            throw new IllegalStateException("Missing consumer lists for circuit body " + body.getId());
+        for (int source = 0; source < edges.length; source++) {
+            for (var edge : edges[source]) {
+                if (edge.length != 2)
+                    throw new IllegalStateException("Expected a consumer position and input slot");
+                graph.addEdge(members.get(source), members.get(edge[0]), edge[1]);
+            }
+        }
+    }
+
     void addOperator(DBSPOperator operator) {
         CircuitGraph graph = this.currentGraph();
         graph.addNode(operator);

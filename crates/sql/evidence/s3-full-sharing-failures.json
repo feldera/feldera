@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "raw_evidence": "$SCRATCH/p0-s3-full-v2",
+  "cases": 8571,
+  "equal": false,
+  "differences": 47,
+  "failed_cases": 0,
+  "runtime_executed": false,
+  "shards": [
+    {
+      "path": "$SCRATCH/p0-s3-full-v2/shard-000/complete.json",
+      "sha256": "0d49a14fb474e3540333e8d00ea26eb86074245a59547a0fd0e8d99d888e26ff",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "3a232f5b74d486af975ac4b0b8771f4e7cf3929ef81029e1f958087b136c1937",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 1429,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#issue7528/8",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#limitTest2/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4794_2/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#coalesceTypes/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#orderbyDescendingTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKeyTable/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CastTests#testAllCasts/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4817/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/20",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue5378/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v2/shard-001/complete.json",
+      "sha256": "c0b3312cf35e7fea65d02faa06625a2d6c4c19c5b080d17aea884444827c718d",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "19e6274434b63b29dd2b4e4ee9fa567c1a19be58a595c51e484ddba6837fcf0e",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 1429,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#issue7528/9",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#limitTest2/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#orderby2Test/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#limitTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4814/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/15",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/21",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#limitTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#testMapConcat/3",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v2/shard-002/complete.json",
+      "sha256": "282530d611bcd07cb42926ca5a89dcd3c7cd2380b2a1b5b83870a8f7d31ac114",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "2db5d932c0201a5830681c530e1529955bb9e7029d5034c63d5a9a984a7c5a5b",
+        "source_class": null,
+        "cases": 1429,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 1429,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#orderbyTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#orderbyDescendingTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#issue7528/8",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#limitTestColumn/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#testUnnestMap/5",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#orderbyTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/22",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#limitTestColumn/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#testMapCast/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v2/shard-003/complete.json",
+      "sha256": "4f0d926965ae662102cf76c94a9f77215728df01382dd47e9e849280d9682d2e",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "346a314f77d271261295c01b531e04b70a5b74db6d3782ab8adf17ff566a201d",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 1428,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#orderby2Test/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5479/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#issue7528/9",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#orderby2Test/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#issue7528/8",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/23",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#limitTest/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v2/shard-004/complete.json",
+      "sha256": "8c0d30a7b99e99c2b8f51eba4730d5f04c8def4fc3f90429fad6b342daec3524",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "8165b5e92f2253eaa7898f3221b2eaac48b210a67193428790f34fc0a6cb69a2",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 1428,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#limitTestColumn/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#issue7528/9",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#orderbyTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#limitTest2/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/12",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/18",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    },
+    {
+      "path": "$SCRATCH/p0-s3-full-v2/shard-005/complete.json",
+      "sha256": "d0a8c520e038cedaa1750192760b224a06dc617dd23f5927aae9777f53e16c7e",
+      "result": {
+        "schema_version": 1,
+        "producer": "c6ede756d-p0-seams-v17",
+        "runtime": "c6ede756d",
+        "classpath": {
+          "$SCRATCH/p0-seam-tools-v17/classes": "8eedc0b82d94a686490b2d75aa1ce497f4c91ef26e73f731810e9262e8e6744e",
+          "$SCRATCH/p0-seam-tools-v17/test-classes": "6a8c0fcde5dc7c545fae1aafb5584595c89bd14fcc57fa99d45fc96bea6d59d2",
+          "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+        },
+        "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+        "input_sha256": "9213b118cc92fd3f85d32410d379498fa3e5f90eed0fa2fa887783257b133e52",
+        "source_class": null,
+        "cases": 1428,
+        "stage": "S3",
+        "execution_order": [
+          "replay-s3",
+          "capture-s3"
+        ],
+        "keep_going": true,
+        "artifact_contract": "seam-v1",
+        "runtime_executed": false,
+        "limits": {
+          "heap_mib": 1024,
+          "output_mib": 512,
+          "min_free_mib": 512,
+          "timeout_seconds_per_jvm": 7200
+        },
+        "equal": false,
+        "observations": 1428,
+        "capture_transparency": false,
+        "observation_contract": "final-s3-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#orderbyDescendingTest/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#issue4794/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5493/0",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/13",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CalciteSqlOperatorTest#testMapContainsKey/19",
+            "fields": [
+              "observations"
+            ]
+          },
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#testMapConcat/7",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": [],
+        "jvm_runs": 2
+      }
+    }
+  ]
+}

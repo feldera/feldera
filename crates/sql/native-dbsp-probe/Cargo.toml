@@ -1,0 +1,26 @@
+[package]
+name = "feldera-native-dbsp-probe"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Isolated P0 experiment; adds no JIT dependencies to production crates.
+[workspace]
+
+[dependencies]
+dbsp = { path = "../../dbsp", features = ["native-abi"] }
+feldera-native-probe = { path = "../native-probe" }
+feldera-sqllib = { path = "../../sqllib" }
+feldera-fxp = { path = "../../fxp", default-features = false, features = ["dbsp"] }
+
+feldera-types = { path = "../../feldera-types" }
+serde = "1"
+
+[dev-dependencies]
+tempfile = "3"
+rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+size-of = { version = "0.1.7", package = "feldera-size-of" }
+feldera-sql-difftest = { path = "../sql-difftest" }
+serde_json = "1"

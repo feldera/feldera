@@ -1,0 +1,488 @@
+{
+  "schema_version": 1,
+  "equal": false,
+  "cases": 411,
+  "jvm_runs": 24,
+  "observations": 210512,
+  "isolation": "three independent JVMs per ordered shard plus one capture-disabled baseline",
+  "shards": [
+    {
+      "shard": 0,
+      "seconds": 403.67774023999937,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 69,
+          "observations": 35299,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 69,
+          "observations": 35299,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": false,
+          "cases": 69,
+          "observations": 35299,
+          "capture_transparency": true,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nullableLatenessTest/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/6",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CovarTests#testCovarDouble/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2502/0",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 1,
+      "seconds": 440.4961297150003,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 69,
+          "observations": 35548,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 69,
+          "observations": 35548,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": false,
+          "cases": 69,
+          "observations": 35548,
+          "capture_transparency": true,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6350a/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#temporal/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#castRow/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#correlatedAggregate/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/7",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CovarTests#testCovarDouble/1",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#bitTests/2",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507TwoProducers/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggNoValues/0",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 2,
+      "seconds": 412.70876928100006,
+      "comparisons": {
+        "b": {
+          "equal": false,
+          "cases": 69,
+          "observations": 35112,
+          "capture_transparency": false,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#spreadsheetReduced/0",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 69,
+          "observations": 35112,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": false,
+          "cases": 69,
+          "observations": 35112,
+          "capture_transparency": true,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#spreadsheetReduced/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#issue2980/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#duplicateFoldAggregates/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests#testBitAndAgg/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testHopWindows/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowFilterNextToArrayAgg/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#tumblingTest/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#errorStreamTest/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggIgnoreNullsOrderBy/3",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#bitTests/3",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 3,
+      "seconds": 495.3970536780007,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 68,
+          "observations": 35248,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 68,
+          "observations": 35248,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": false,
+          "cases": 68,
+          "observations": 35248,
+          "capture_transparency": true,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue1956/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue6655d/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests#testBitAndAgg/1",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/9",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507ReadsKey/0",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 4,
+      "seconds": 565.6780340159994,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 68,
+          "observations": 35460,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 68,
+          "observations": 35460,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": false,
+          "cases": 68,
+          "observations": 35460,
+          "capture_transparency": true,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#groupBySumTest/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testConditionalAggregate/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/10",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 5,
+      "seconds": 443.92227597300007,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 68,
+          "observations": 33845,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 68,
+          "observations": 33845,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": false,
+          "cases": 68,
+          "observations": 33845,
+          "capture_transparency": true,
+          "differences": [
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#aggregateDistinctTest/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507OneOfTwo/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue1956/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testConditionalAggregate/1",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/11",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#groupBySumTest/0",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAgg/7",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#issue7330/8",
+              "fields": [
+                "gen2"
+              ]
+            },
+            {
+              "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507MapIndex/0",
+              "fields": [
+                "gen2"
+              ]
+            }
+          ],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "input_sha256": "e5abe5c90a6874812176e4ddcef52cb495e145e9fee60cb5f4c0a7c79f42226f",
+    "comparator_sha256": "d2198cd6334064e44d07e4e5816a85fa277f7695fd6f22d644663bb66e3e2656",
+    "classpath": {
+      "$SCRATCH/p0-gen2-parameter-order-tools/test-classes": "492b4479c3d7008c02f70c298ed34023839c976ea2d1d6f546e406be46def098",
+      "$SCRATCH/p0-gen2-parameter-order-tools/classes": "8743ca6e46ae492916505284cb4b97b56c5ec9f72e4298c2925dfe763fb9f972",
+      "$SCRATCH/p0-coercion-compiler.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "workers": 6,
+    "heap": "2g",
+    "compressed_records": true,
+    "producer": "c6ede756d-p0-parameter-order",
+    "runtime": "c6ede756d",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  }
+}

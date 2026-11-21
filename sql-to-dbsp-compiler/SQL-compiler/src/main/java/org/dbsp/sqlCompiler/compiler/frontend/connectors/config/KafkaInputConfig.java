@@ -91,14 +91,15 @@ public class KafkaInputConfig implements IValidateConfig {
                 "group_join_timeout", this.groupJoinTimeout,
                 "group_join_timeout_secs", this.groupJoinTimeoutSecs);
         List<String> topicList = topics != null ? topics : List.of();
+        boolean hasTopic = topic != null && !topic.isBlank();
         if (topicList.isEmpty()) {
-            if (topic.isBlank()) {
+            if (!hasTopic) {
                 reporter.warn("Invalid configuration",
                         "required field \"topic\" is missing or empty"
                                 + " (or use the legacy \"topics\" form)");
                 ok = false;
             }
-        } else if (!topic.isBlank()) {
+        } else if (hasTopic) {
             reporter.warnPath("topics", "Invalid configuration",
                     "\"topic\" and the legacy \"topics\" are mutually exclusive");
             ok = false;

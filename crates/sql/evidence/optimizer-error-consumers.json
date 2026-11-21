@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "scope": "The Rust selector replaces the error-table reachability step inside MonotoneAnalyzer on flat graphs. Java retains the stable partition and uses the live operators.",
+  "archive_index": "optimizer-error-consumers-archive.json",
+  "profiles": {
+    "incremental": {
+      "programs": 100,
+      "same_exact_inputs": 100,
+      "same_selection": 100,
+      "nonempty_selections": 100,
+      "active_partitions": 100,
+      "rust_final_results_equal": 100,
+      "java_codec_controls_equal": 100
+    },
+    "snapshot": {
+      "programs": 92,
+      "same_exact_inputs": 92,
+      "same_selection": 92,
+      "nonempty_selections": 92,
+      "active_partitions": 92,
+      "rust_final_results_equal": 92,
+      "java_codec_controls_equal": 92
+    }
+  }
+}

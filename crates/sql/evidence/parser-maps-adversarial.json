@@ -1,0 +1,772 @@
+{
+  "schema_version": 1,
+  "cases": 54,
+  "input_sha256": "76d8ca2928837bd4d6db8ef6d5778407eb1a83768e7770d7ab75a48c1c0857b1",
+  "rust_build": {
+    "ast_reject_pass": true,
+    "ast_reject_scope": {
+      "0.64.0/feldera_prototype": "qualified datetime differences misparsed as aliases"
+    },
+    "cases": 54,
+    "complete": true,
+    "counts": {
+      "0.62.0/feldera_prototype": {
+        "accepted_cases": 31,
+        "accepted_submissions": 31,
+        "rejected_cases": 23,
+        "rejected_submissions": 23,
+        "statements_in_accepted_submissions": 31
+      },
+      "0.62.0/generic": {
+        "accepted_cases": 31,
+        "accepted_submissions": 31,
+        "rejected_cases": 23,
+        "rejected_submissions": 23,
+        "statements_in_accepted_submissions": 31
+      },
+      "0.64.0/feldera_prototype": {
+        "accepted_cases": 34,
+        "accepted_submissions": 34,
+        "rejected_cases": 20,
+        "rejected_submissions": 20,
+        "statements_in_accepted_submissions": 34
+      },
+      "0.64.0/generic": {
+        "accepted_cases": 31,
+        "accepted_submissions": 31,
+        "rejected_cases": 23,
+        "rejected_submissions": 23,
+        "statements_in_accepted_submissions": 31
+      }
+    },
+    "dialect_scope": "fixed prototype; corpus compiler options are not translated",
+    "executable_sha256": "5d77b27c7276645485a967ed8c6116fb8d6184c986b5812e8c4f231d255a5c0f",
+    "exhaustive_ast_rejection": false,
+    "include_ast": true,
+    "input_sha256": "76d8ca2928837bd4d6db8ef6d5778407eb1a83768e7770d7ab75a48c1c0857b1",
+    "s1_equivalence_checked": false,
+    "schema_version": 1,
+    "token_rewrite_scope": {
+      "0.64.0/feldera_prototype": "Unicode identifiers only"
+    },
+    "token_rewrites": true
+  },
+  "java_build": {
+    "schema_version": 1,
+    "stage": "raw_parser",
+    "cases": 54,
+    "accepted_cases": 44,
+    "rejected_cases": 10,
+    "accepted_submissions": 44,
+    "rejected_submissions": 10,
+    "statements_in_accepted_submissions": 44,
+    "input_sha256": "76d8ca2928837bd4d6db8ef6d5778407eb1a83768e7770d7ab75a48c1c0857b1",
+    "producer": "c6ede756d-p0-seams-v24",
+    "calcite": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+    "complete": true
+  },
+  "semantic_equivalence_checked": false,
+  "counts": {
+    "0.62.0/feldera_prototype": {
+      "both_accept": 26,
+      "accepted_submissions": 31,
+      "accepted_cases": 31,
+      "rust_only": 5,
+      "java_only": 18,
+      "rejected_submissions": 23,
+      "rejected_cases": 23,
+      "both_reject": 5
+    },
+    "0.62.0/generic": {
+      "both_accept": 26,
+      "accepted_submissions": 31,
+      "accepted_cases": 31,
+      "rust_only": 5,
+      "java_only": 18,
+      "rejected_submissions": 23,
+      "rejected_cases": 23,
+      "both_reject": 5
+    },
+    "0.64.0/feldera_prototype": {
+      "both_accept": 34,
+      "accepted_submissions": 34,
+      "accepted_cases": 34,
+      "java_only": 10,
+      "rejected_submissions": 20,
+      "rejected_cases": 20,
+      "both_reject": 10
+    },
+    "0.64.0/generic": {
+      "both_accept": 26,
+      "accepted_submissions": 31,
+      "accepted_cases": 31,
+      "rust_only": 5,
+      "java_only": 18,
+      "rejected_submissions": 23,
+      "rejected_cases": 23,
+      "both_reject": 5
+    }
+  },
+  "disagreement_groups": [
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ',' or ')' after column definition, found: < at Line: N, Column: N",
+      "count": 3,
+      "examples": [
+        {
+          "id": "maps/14",
+          "submission": 0
+        },
+        {
+          "id": "maps/15",
+          "submission": 0
+        },
+        {
+          "id": "maps/16",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 7,
+      "examples": [
+        {
+          "id": "maps/1",
+          "submission": 0
+        },
+        {
+          "id": "maps/2",
+          "submission": 0
+        },
+        {
+          "id": "maps/3",
+          "submission": 0
+        },
+        {
+          "id": "maps/4",
+          "submission": 0
+        },
+        {
+          "id": "maps/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: an expression, found: ] at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "maps/0",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: & at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/7",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: '!' at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: 'c' at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/10",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: ( at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/6",
+          "submission": 0
+        },
+        {
+          "id": "interval/9",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: AS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/11",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: TO at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "interval/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \": 2\" at line 1, column 13.\nWas expecting one of:\n    \"]\" ...\n    \",\" ...\n    \":\" <IDENTIFIER> ...\n    \":\" <HYPHENATED_IDENTIFIER> ...\n    \":\" <QUOTED_IDENTIFIER> ...\n    \":\" <BACK_QUOTED_IDENTIFIER> ...\n    \":\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \":\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \":\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \":\" \"[\" ...\n    \".\" ...\n    \"NOT\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"BETWEEN\" ...\n    \"LIKE\" ...\n    \"ILIKE\" ...\n    \"RLIKE\" ...\n    \"SIMILAR\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"AND\" ...\n    \"OR\" ...\n    \"IS\" ...\n    \"MEMBER\" ...\n    \"SUBMULTISET\" ...\n    \"CONTAINS\" ...\n    \"OVERLAPS\" ...\n    \"^\" ...\n    \"EQUALS\" ...\n    \"&\" ...\n    \"PRECEDES\" ...\n    \"SUCCEEDS\" ...\n    \"IMMEDIATELY\" ...\n    \"MULTISET\" ...\n    \"[\" ...\n    \"FORMAT\" ...\n    \":\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "maps/10",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Encountered \"\\'x\\'\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/6",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Illegal expression. Was expecting \"(DATETIME - DATETIME) INTERVALQUALIFIER\"",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/4",
+          "submission": 0
+        },
+        {
+          "id": "interval/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/feldera_prototype",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'AS' at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" ...\n    \"EXTEND\" ...\n    \"(\" ...\n    \"FOR\" ...\n    \"AS\" <IDENTIFIER> ...\n    \"AS\" <HYPHENATED_IDENTIFIER> ...\n    \"AS\" <QUOTED_IDENTIFIER> ...\n    \"AS\" <BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"AS\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"AS\" ...\n    \"PIVOT\" ...\n    \"UNPIVOT\" ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: < at Line: N, Column: N",
+      "count": 3,
+      "examples": [
+        {
+          "id": "maps/14",
+          "submission": 0
+        },
+        {
+          "id": "maps/15",
+          "submission": 0
+        },
+        {
+          "id": "maps/16",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 7,
+      "examples": [
+        {
+          "id": "maps/1",
+          "submission": 0
+        },
+        {
+          "id": "maps/2",
+          "submission": 0
+        },
+        {
+          "id": "maps/3",
+          "submission": 0
+        },
+        {
+          "id": "maps/4",
+          "submission": 0
+        },
+        {
+          "id": "maps/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: an expression, found: ] at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "maps/0",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: & at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/7",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: '!' at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: 'c' at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/10",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: ( at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/6",
+          "submission": 0
+        },
+        {
+          "id": "interval/9",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: AS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/11",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: TO at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "interval/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \": 2\" at line 1, column 13.\nWas expecting one of:\n    \"]\" ...\n    \",\" ...\n    \":\" <IDENTIFIER> ...\n    \":\" <HYPHENATED_IDENTIFIER> ...\n    \":\" <QUOTED_IDENTIFIER> ...\n    \":\" <BACK_QUOTED_IDENTIFIER> ...\n    \":\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \":\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \":\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \":\" \"[\" ...\n    \".\" ...\n    \"NOT\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"BETWEEN\" ...\n    \"LIKE\" ...\n    \"ILIKE\" ...\n    \"RLIKE\" ...\n    \"SIMILAR\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"AND\" ...\n    \"OR\" ...\n    \"IS\" ...\n    \"MEMBER\" ...\n    \"SUBMULTISET\" ...\n    \"CONTAINS\" ...\n    \"OVERLAPS\" ...\n    \"^\" ...\n    \"EQUALS\" ...\n    \"&\" ...\n    \"PRECEDES\" ...\n    \"SUCCEEDS\" ...\n    \"IMMEDIATELY\" ...\n    \"MULTISET\" ...\n    \"[\" ...\n    \"FORMAT\" ...\n    \":\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "maps/10",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"\\'x\\'\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/6",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Illegal expression. Was expecting \"(DATETIME - DATETIME) INTERVALQUALIFIER\"",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/4",
+          "submission": 0
+        },
+        {
+          "id": "interval/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.62.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'AS' at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" ...\n    \"EXTEND\" ...\n    \"(\" ...\n    \"FOR\" ...\n    \"AS\" <IDENTIFIER> ...\n    \"AS\" <HYPHENATED_IDENTIFIER> ...\n    \"AS\" <QUOTED_IDENTIFIER> ...\n    \"AS\" <BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"AS\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"AS\" ...\n    \"PIVOT\" ...\n    \"UNPIVOT\" ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: ,, found: ] at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "maps/6",
+          "submission": 0
+        },
+        {
+          "id": "maps/7",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: ( at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/6",
+          "submission": 0
+        },
+        {
+          "id": "interval/9",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: TO at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "interval/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: String literal continued on same line at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: qualified datetime differences are unsupported at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/0",
+          "submission": 0
+        },
+        {
+          "id": "interval/7",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: six-digit Unicode escapes are unsupported",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/2",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/feldera_prototype",
+      "outcome": "java_only",
+      "reason": "sql parser error: unpaired surrogate in Unicode identifier",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/4",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: (, found: < at Line: N, Column: N",
+      "count": 3,
+      "examples": [
+        {
+          "id": "maps/14",
+          "submission": 0
+        },
+        {
+          "id": "maps/15",
+          "submission": 0
+        },
+        {
+          "id": "maps/16",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: :, found: , at Line: N, Column: N",
+      "count": 7,
+      "examples": [
+        {
+          "id": "maps/1",
+          "submission": 0
+        },
+        {
+          "id": "maps/2",
+          "submission": 0
+        },
+        {
+          "id": "maps/3",
+          "submission": 0
+        },
+        {
+          "id": "maps/4",
+          "submission": 0
+        },
+        {
+          "id": "maps/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: an expression, found: ] at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "maps/0",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: & at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/7",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: '!' at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "unicode/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: 'c' at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/10",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: ( at Line: N, Column: N",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/6",
+          "submission": 0
+        },
+        {
+          "id": "interval/9",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: AS at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/11",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "java_only",
+      "reason": "sql parser error: Expected: end of statement, found: TO at Line: N, Column: N",
+      "count": 1,
+      "examples": [
+        {
+          "id": "interval/1",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \": 2\" at line 1, column 13.\nWas expecting one of:\n    \"]\" ...\n    \",\" ...\n    \":\" <IDENTIFIER> ...\n    \":\" <HYPHENATED_IDENTIFIER> ...\n    \":\" <QUOTED_IDENTIFIER> ...\n    \":\" <BACK_QUOTED_IDENTIFIER> ...\n    \":\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \":\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \":\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \":\" \"[\" ...\n    \".\" ...\n    \"NOT\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"BETWEEN\" ...\n    \"LIKE\" ...\n    \"ILIKE\" ...\n    \"RLIKE\" ...\n    \"SIMILAR\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"AND\" ...\n    \"OR\" ...\n    \"IS\" ...\n    \"MEMBER\" ...\n    \"SUBMULTISET\" ...\n    \"CONTAINS\" ...\n    \"OVERLAPS\" ...\n    \"^\" ...\n    \"EQUALS\" ...\n    \"&\" ...\n    \"PRECEDES\" ...\n    \"SUCCEEDS\" ...\n    \"IMMEDIATELY\" ...\n    \"MULTISET\" ...\n    \"[\" ...\n    \"FORMAT\" ...\n    \":\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "maps/10",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Encountered \"\\'x\\'\" at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" ...\n    \"(\" ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/6",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Illegal expression. Was expecting \"(DATETIME - DATETIME) INTERVALQUALIFIER\"",
+      "count": 2,
+      "examples": [
+        {
+          "id": "interval/4",
+          "submission": 0
+        },
+        {
+          "id": "interval/5",
+          "submission": 0
+        }
+      ]
+    },
+    {
+      "variant": "0.64.0/generic",
+      "outcome": "rust_only",
+      "reason": "Incorrect syntax near the keyword 'AS' at line 1, column 17.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \"WHERE\" ...\n    \"GROUP\" ...\n    \"HAVING\" ...\n    \"WINDOW\" ...\n    \"QUALIFY\" ...\n    \",\" ...\n    \"NATURAL\" ...\n    \"LEFT\" ...\n    \"JOIN\" ...\n    \"INNER\" ...\n    \"ASOF\" ...\n    \"RIGHT\" ...\n    \"FULL\" ...\n    \"CROSS\" ...\n    \"OUTER\" ...\n    \"/*+\" ...\n    \"EXTEND\" ...\n    \"(\" ...\n    \"FOR\" ...\n    \"AS\" <IDENTIFIER> ...\n    \"AS\" <HYPHENATED_IDENTIFIER> ...\n    \"AS\" <QUOTED_IDENTIFIER> ...\n    \"AS\" <BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"AS\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"MATCH_RECOGNIZE\" ...\n    \".\" ...\n    \"AS\" ...\n    \"PIVOT\" ...\n    \"UNPIVOT\" ...\n    \"TABLESAMPLE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"EXCEPT\" ...\n    \"MINUS\" ...\n    ",
+      "count": 1,
+      "examples": [
+        {
+          "id": "fragments/5",
+          "submission": 0
+        }
+      ]
+    }
+  ]
+}

@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,14 +12,18 @@ import java.util.Map;
 
 /** Indicates that a {@link DBSPOperator} implements part of a specified {@link RelNode} */
 public class IntermediateRel extends CalciteRelNode {
-    final RelNode relNode;
+    final RelReference relNode;
 
     IntermediateRel(RelNode relNode, SourcePositionRange range) {
+        this(new RelReference.Live(relNode), range);
+    }
+
+    IntermediateRel(RelReference relNode, SourcePositionRange range) {
         super(range);
         this.relNode = relNode;
     }
 
-    IntermediateRel(RelNode relNode) {
+    IntermediateRel(RelReference relNode) {
         this(relNode, SourcePositionRange.INVALID);
     }
 
@@ -36,7 +39,7 @@ public class IntermediateRel extends CalciteRelNode {
 
     @Override
     public String toString() {
-        return this.getId() + " PartOf(" + this.relNode.getDigest() + ")";
+        return this.getId() + " PartOf(" + this.relNode.digest() + ")";
     }
 
     @Override
@@ -48,21 +51,21 @@ public class IntermediateRel extends CalciteRelNode {
     public IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap) {
         return stream.append("{").increase()
                 .appendJsonLabelAndColon("partial")
-                .append(Utilities.getExists(idRemap, this.relNode))
+                .append(this.relNode.planId(idRemap))
                 .decrease().newline()
                 .append("}");
     }
 
     @Override
-    public CalciteRelNode remove(RelNode node) {
-        if (this.relNode == node)
+    public CalciteRelNode remove(RelReference node) {
+        if (this.relNode.equals(node))
             return CalciteEmptyRel.INSTANCE;
         return this;
     }
 
     @Override
-    public boolean contains(RelNode node) {
-        return this.relNode == node;
+    public boolean contains(RelReference node) {
+        return this.relNode.equals(node);
     }
 
     @Override
@@ -94,7 +97,7 @@ public class IntermediateRel extends CalciteRelNode {
 
     @Override
     public String toInternalString() {
-        return this.relNode.toString();
+        return this.relNode.text();
     }
 
     @Override
@@ -112,11 +115,11 @@ public class IntermediateRel extends CalciteRelNode {
 
     @Override
     public long getId() {
-        return this.relNode.getId();
+        return this.relNode.id();
     }
 
     @Override
-    public List<RelNode> getRelNodes() {
+    public List<RelReference> getReferences() {
         return List.of(this.relNode);
     }
 }

@@ -138,6 +138,8 @@ public final class DBSPFieldExpression extends DBSPExpression {
     public static DBSPFieldExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
         int fieldNo = Utilities.getIntProperty(node, "fieldNo");
-        return new DBSPFieldExpression(CalciteObject.EMPTY, expression, fieldNo);
+        DBSPType type = getJsonType(node, decoder);
+        Utilities.enforce(type.sameType(getFieldType(expression.getType(), fieldNo)));
+        return new DBSPFieldExpression(CalciteObject.EMPTY, expression, fieldNo, type);
     }
 }

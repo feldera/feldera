@@ -1,0 +1,21 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-diagnostic-shared-helper-20261118-v1.tar.gz",
+  "sha256": "6817a03b522d6ef7b4e841ea12cd05b87e5fef93c2535fa97a240c6602604ffb",
+  "bytes": 33888895,
+  "certificates": [
+    "diagnostic-shared-helper.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "diagnostic-shared-helper.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-diagnostics-v7/sources/"
+      }
+    ]
+  },
+  "scope": "Full Java suite capture of three shared diagnostic assertion helpers",
+  "P0_complete": false
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-canonical-form-20261118.tar.gz",
+  "bytes": 27918807,
+  "sha256": "f1420b29fea98cd726816d437cedfbb1fe85b1d86668f2e060707c156cdeb106",
+  "manifest_sha256": "7ac1399a7ce084e8ce370411580327ca9868ba44bbce653a04083a17c188fe47",
+  "verified_files": 24350,
+  "all_members_verified": true
+}

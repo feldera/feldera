@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-final-java.tar.gz",
+  "bytes": 41673415,
+  "sha256": "f4d832e9adac95cddae5f431f51f44a2a2ca09cec8e42b2e8137d6d6cbd674de",
+  "manifest_sha256": "6ed31325acf66c541e761efc339267474c5373248fb40081e0d451bd01b3f841",
+  "verified_files": 11686,
+  "all_members_verified": true
+}

@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
+import org.dbsp.util.IJson;
 
 import javax.annotation.Nullable;
 
@@ -86,6 +87,14 @@ public class InputColumnMetadata implements IColumnMetadata {
         visitor.stream.beginObject()
                 .label("name");
         this.name.asJson(visitor);
+        if (visitor.replayMetadata) {
+            visitor.stream.label("position");
+            IJson.toJsonStream(this.getPositionRange().asJson(), visitor.stream);
+            if (this.defaultValuePosition != null) {
+                visitor.stream.label("defaultValuePosition");
+                IJson.toJsonStream(this.defaultValuePosition.asJson(), visitor.stream);
+            }
+        }
         visitor.stream.label("type");
         this.type.accept(visitor);
         visitor.stream.label("isPrimaryKey")
@@ -120,8 +129,12 @@ public class InputColumnMetadata implements IColumnMetadata {
         DBSPExpression defaultValue = null;
         if (node.has("defaultValue"))
             defaultValue = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
-        var result = new InputColumnMetadata(CalciteObject.EMPTY, name, type, isPrimaryKey,
-                lateness, defaultValue, SourcePositionRange.INVALID);
+        CalciteObject source = node.has("position")
+                ? CalciteObject.create(SourcePositionRange.fromJson(node.get("position"))) : CalciteObject.EMPTY;
+        SourcePositionRange defaultPosition = node.has("defaultValuePosition")
+                ? SourcePositionRange.fromJson(node.get("defaultValuePosition")) : null;
+        var result = new InputColumnMetadata(source, name, type, isPrimaryKey,
+                lateness, defaultValue, defaultPosition);
         if (node.has("unused")) {
             boolean unused = Utilities.getBooleanProperty(node, "unused");
             if (unused)

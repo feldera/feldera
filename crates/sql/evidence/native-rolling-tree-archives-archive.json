@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-tree-archives.tar.gz",
+  "bytes": 47811,
+  "sha256": "fe5eaf5bf4f90a09a3189f6cecf3812eff1a72ce9b605e26531fddc405af6ea7",
+  "manifest_sha256": "8f67a2dd2d5cd9bf36751235190b925e9b61cba3416b4bbbd231271a93edb4e3",
+  "verified_files": 7,
+  "all_members_verified": true
+}

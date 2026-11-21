@@ -4,8 +4,9 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
-import org.junit.Assert;
 import org.junit.Test;
 
 /** Tests for the {@link FindUnboundedState#WARNING} warnings.
@@ -58,11 +59,37 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
         for (CompilerMessages.Message message : compiler.messages.messages)
             if (message.warning && message.errorType.equals(FindUnboundedState.WARNING))
                 rendered.append(message);
-        Assert.assertEquals(expected, rendered.toString());
+        DiagnosticAssertions.assertEquals(Target.RENDERED, expected, rendered.toString());
     }
 
     void assertNoUnboundedStateWarnings(String sql) {
         this.assertUnboundedStateWarnings(sql, "");
+    }
+
+    @Test
+    public void replayFallbackWarningsDoNotContainAllocationIds() {
+        String sql = """
+                CREATE TABLE warehouse(id INT NOT NULL PRIMARY KEY, parentId INT);
+                CREATE TABLE t(i INT) WITH ('append_only' = 'true');
+                CREATE VIEW v AS SELECT i FROM t;
+                """;
+        com.fasterxml.jackson.databind.JsonNode previous = null;
+        for (int i = 0; i < 2; i++) {
+            CompilerOptions options = this.testOptions();
+            options.languageOptions.incrementalize = false;
+            options.ioOptions.writeS3 = "capture.json";
+            options.ioOptions.dumpProducerCommit = "test-compiler-revision";
+            options.ioOptions.dumpRuntimeAbi = "test-runtime-build";
+            DBSPCompiler compiler = new DBSPCompiler(options);
+            compiler.submitStatementsForCompilation(sql);
+            compiler.getFinalCircuit(false);
+            compiler.throwIfErrorsOccurred();
+            var diagnostics = compiler.messages.toJson(compiler.sources);
+            DiagnosticAssertions.assertContains(Target.RENDERED, "; source_map", diagnostics.toString());
+            if (previous != null)
+                DiagnosticAssertions.assertSnapshotEquals(previous, diagnostics);
+            previous = diagnostics;
+        }
     }
 
     // ---- Programs that must not produce warnings ----

@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.PositionOnlyRel;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -222,6 +223,17 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
 
     public CalciteRelNode getRelNode() {
         return this.node.to(CalciteRelNode.class);
+    }
+
+    /** Restore the detached relational provenance of an internal seam. */
+    public void restoreProvenance(CalciteRelNode provenance) {
+        this.node = provenance;
+    }
+
+    /** Restore positions from an internal seam without inventing a Calcite plan. */
+    public void restoreSourcePositions(SourcePositionRange position, List<SourcePositionRange> positions,
+                                       boolean sourceEmpty) {
+        this.node = new PositionOnlyRel(position, positions, sourceEmpty);
     }
 
     public List<SourcePositionRange> getSourcePositions() {

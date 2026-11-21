@@ -1,0 +1,1882 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "Frozen reviewed S1 full-prefix replay, with two source-reviewed ROW-selector input replacements",
+  "populations": {
+    "classic": {
+      "cases": 8571,
+      "statements": 127564,
+      "observations": 3503220
+    },
+    "gen2": {
+      "cases": 8527,
+      "statements": 127296,
+      "observations": 3527714
+    }
+  },
+  "shards": [
+    {
+      "mode": "classic",
+      "shard": 0,
+      "original_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 580581,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 580581,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 580581,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "classic",
+      "shard": 1,
+      "original_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 586572,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 586572,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 586572,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "classic",
+      "shard": 2,
+      "original_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 583452,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 583452,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 1429,
+        "observations": 583452,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "classic",
+      "shard": 3,
+      "original_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 585824,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 585824,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 585824,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "classic",
+      "shard": 4,
+      "original_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 582499,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 582499,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 582499,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "classic",
+      "shard": 5,
+      "original_comparison": {
+        "equal": false,
+        "cases": 1428,
+        "observations": 584292,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 1428,
+        "observations": 584292,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": {
+        "original_sha256": "7efc3b4ad618abfe5ed416aff0d3d8642b43d585abcb178aa614589cbaf0acf9",
+        "replacement_sha256": "c7c44c74ad2e44a5aa59c998fe11ccdcf9538717c2f70e9d2b53880db4b345fc",
+        "output_sha256": "cbe416481c5dda1bfc64e08bbe37836a31341ce995a783fd0fcd068fef477c50",
+        "programs": 1428,
+        "changed_programs": 1,
+        "changed_identity": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0"
+      },
+      "old_production_comparison": {
+        "equal": false,
+        "cases": 1428,
+        "observations": 584292,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+            "fields": [
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+          "case_index": 1374,
+          "changed": {
+            "observations": {
+              "S2": {
+                "old": {
+                  "count": 1,
+                  "bytes": 409877,
+                  "sha256": "a7ecffb8eb6bfff63d22320d4abb5afd533d76643accf99fc17da2250d18d45d"
+                },
+                "reviewed": {
+                  "count": 1,
+                  "bytes": 410008,
+                  "sha256": "370bc68ca1446f7e806da07f3f3163de7e9f8623006d52733452b1c4b4c172ba"
+                }
+              },
+              "S4": {
+                "old": {
+                  "count": 438,
+                  "bytes": 143619387,
+                  "sha256": "e37d373a6ab9975710870dde34fa3b1418f4f0e354edfe684504cd181e86873c"
+                },
+                "reviewed": {
+                  "count": 438,
+                  "bytes": 143645718,
+                  "sha256": "7df20fef649d2024bfaf1e7cce637ee92a642e02240f6dee3af074d9f2109a94"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "gen2",
+      "shard": 0,
+      "original_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 887064,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 887064,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 887064,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "gen2",
+      "shard": 1,
+      "original_comparison": {
+        "equal": false,
+        "cases": 2132,
+        "observations": 877937,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/2",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/6",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/10",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/14",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/18",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/22",
+          "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testNow5/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAppend/3",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAppend/7",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonFilter/3",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonFilter/7",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testRepeat/1",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Part2Tests#testSelectFails/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggNoValues/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testTwoWindows/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2651/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testFPArithmetic/3",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testFPArithmetic/7",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#testArray/0",
+          "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#issue1192/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testCbrt/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#mapLiteralTest/1",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#testCastMap/1",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#mapVariant/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonEachStringBoolean/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#top3/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#structTests/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#structTests/4",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testDateToString/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/6",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/10",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TumbleHopTests#tumbleGroupBefore1970/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/3",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/7",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/11",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/15",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/19",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/23",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/27",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/31",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/35",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/39",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/43",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/47",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/51",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/55",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/59",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/63",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/67",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/71",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/75",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/79",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/83",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/87",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/91",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/95",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/99",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/103",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/107",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/111",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/1",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/5",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/9",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/6",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/10",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/14",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/18",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/22",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/26",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/30",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/34",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/38",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/42",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/46",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/50",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/54",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/58",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#missingFrom/0"
+        ],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+            "fields": [
+              "gen2",
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 877937,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": {
+        "original_sha256": "9e40d6ad808a0418f2b001042f3e61f8d7699c70d46372192d7856244dfa8cd0",
+        "replacement_sha256": "8c09b061b5ce5b7f73ad292f30d1d63e7854e3f843a9fe37b48af66431424693",
+        "output_sha256": "d01d1d7d19fffa1e8c715b07b887dc6fa40b5aebbe1e001eb9017f8d760f872d",
+        "programs": 2132,
+        "changed_programs": 1,
+        "changed_identity": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0"
+      },
+      "old_production_comparison": {
+        "equal": false,
+        "cases": 2132,
+        "observations": 877937,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [
+          "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/2",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/6",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/10",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/14",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/18",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/22",
+          "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testNow5/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAppend/3",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAppend/7",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonFilter/3",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonFilter/7",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testRepeat/1",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Part2Tests#testSelectFails/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggNoValues/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testTwoWindows/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2651/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testFPArithmetic/3",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testFPArithmetic/7",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#testArray/0",
+          "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#issue1192/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testCbrt/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#mapLiteralTest/1",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#testCastMap/1",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#mapVariant/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonEachStringBoolean/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#top3/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#structTests/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#structTests/4",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testDateToString/0",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/6",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/10",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TumbleHopTests#tumbleGroupBefore1970/0",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/3",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/7",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/11",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/15",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/19",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/23",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/27",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/31",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/35",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/39",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/43",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/47",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/51",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/55",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/59",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/63",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/67",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/71",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/75",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/79",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/83",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/87",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/91",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/95",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/99",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/103",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/107",
+          "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/111",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/1",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/5",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/9",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/2",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/6",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/10",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/14",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/18",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/22",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/26",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/30",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/34",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/38",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/42",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/46",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/50",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/54",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/58",
+          "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#missingFrom/0"
+        ],
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+            "fields": [
+              "gen2",
+              "observations"
+            ]
+          }
+        ],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0",
+          "case_index": 2051,
+          "changed": {
+            "gen2": {
+              "dataflow.json": {
+                "old": "8a47e047a1b4fd238893acc282f8b08e4bc7cf43c0086c3aadf6286a8cd29b93",
+                "reviewed": "bc744fc92399ef6493fd086e28d0e6297d7cb07fd2666dd3fb6100ed0771632d"
+              }
+            },
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "e51d6783384112f495ebd0147816adec134d8ce87a3cd288eb651d9cc531a17b",
+                "reviewed": "5d0bb6c02312c2635139a8bf76d0b4735437989620f6d4f00bfc50990140d411"
+              },
+              "dataflow.json": {
+                "old": "b3d277eb9af69b0cc47d7fcaef0f8d8bc2d4af3b78e23ec9d4250521a84cd75f",
+                "reviewed": "ad7c8f28904b6256018dd80040053de57ce7488c202f6bb7664c88698b1c0a48"
+              }
+            },
+            "observations": {
+              "S2": {
+                "old": {
+                  "count": 1,
+                  "bytes": 409873,
+                  "sha256": "abad23b159cad4d58d6414163e2864b674e3e08e4fa8ec592236c2bc2c920c5c"
+                },
+                "reviewed": {
+                  "count": 1,
+                  "bytes": 410004,
+                  "sha256": "a6f9e9d6de586cac09a8ca0a3156798c7498295ea5c14e51339ef1df94b1ecfe"
+                }
+              },
+              "S4": {
+                "old": {
+                  "count": 444,
+                  "bytes": 145460433,
+                  "sha256": "ea5739a86dd751059fac7b3f0441bd8621a8a58556a62b4d7063e40546a0de6a"
+                },
+                "reviewed": {
+                  "count": 444,
+                  "bytes": 145486895,
+                  "sha256": "7f3c2f6e8ea385331812e2605281953dbf22438b25905cf02723379e6a34f56a"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/2",
+          "case_index": 2052,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "62a77404332e37c362754f1cc2ab44aea50c85471d39e99fa0ff2c5cfce2cd46",
+                "reviewed": "9791d7425b0fc22dc14ffe9153bac571996a41c52b80057cf155766121eb1db8"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/6",
+          "case_index": 2053,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "2d61ad95ac611d7392e87f064063249b2cd0d624ab1fc7dec04f66362cdfd63f",
+                "reviewed": "b7fbc8e12ac93b84a6fc11511a377228e5610264a71fc64d4e0e1c0a65bbf475"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/10",
+          "case_index": 2054,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "80bd239ac8435e08a9a910f4a776edb2752f63a8713ea8694ee2de44cbd90ac2",
+                "reviewed": "3f18869517144140c90d676fa35a25cb09d745432f58cda0ccfac371d0ec9fba"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/14",
+          "case_index": 2055,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "aa40b24289256d84a904c40e77df52941648650906827e4d58f09b1444284c39",
+                "reviewed": "8cba42d2945dd6875cf29998ab884fb59ca38052fa9b2db865f6844312a75aea"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/18",
+          "case_index": 2056,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "d7abb992d2d4048721269761e494a8b3db15a2588facba516cd508736b8ce87e",
+                "reviewed": "bb3242b111d5f20a06150e7edd03879d0dbfc421f2b2a96acaba668870408ea9"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/22",
+          "case_index": 2057,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "cde5eb5efcf4db09e70cc42b0a436d81fbda2d8d466ef110891630635d619592",
+                "reviewed": "050ef0b8e05fe7a0b5a47fe9811eba54357610703aca16b36e0026502436784a"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testNow5/0",
+          "case_index": 2058,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "d04c197d4ab2e538fee9deabc32a8cc2ecd97f8066f21a82088a482b0b9afc12",
+                "reviewed": "c47a16262127a1d7d187da0075fe9910dbb860751157eeb0bcee39714ebf5dd5"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAppend/3",
+          "case_index": 2059,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "89571a19033bd30c8a7fd05ab2b5ecc232b69bfe92541d0010b575f4dbf2d682",
+                "reviewed": "14bb82dd088424f3badcc9d96618662f7902eed2aca462287656559c8ce512e5"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAppend/7",
+          "case_index": 2060,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "218a97f73c51a60f8d93bf92f0a22d6abcb2cc44e5b315a0d9b6f735eb298527",
+                "reviewed": "4cf6369a8d22f187e7c54fe60cfba63f1a2b00941dc34b651a9bea3d601b6817"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonFilter/3",
+          "case_index": 2061,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "1721f9c505f4060b8e1c8aa1c8270a9a8e6e6309bc6015552a213e2f756bd8b4",
+                "reviewed": "0d68aee0960f6cdd8d63f6eb1cdadce6ac1c581ab81406e51eba24d96dbadbe4"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonFilter/7",
+          "case_index": 2062,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "635a5523191ccf0eea5b534bc1f56ac13f4e9f9e7e42b49b1076202b3bac6746",
+                "reviewed": "b2daf6aa47194a3f6fd2d2b13a191cdd0edf25354f2f52dd590b22503bfb7c27"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresStringTests#testRepeat/1",
+          "case_index": 2063,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "f68b131bc1d8bf5031401d8ad57924ed1d086287f536322364c03c738f30b176",
+                "reviewed": "c4609ac6d85a4475767e02dd07a1e8318a3dc91016c4ab0800d503afdc3cfb9d"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat8Part2Tests#testSelectFails/0",
+          "case_index": 2064,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "b94373ca7a1832bbd3add1c46084b81d326eab866f9ac747ae524e72d4696c5c",
+                "reviewed": "01df052cf8b0f547c82b65179ba1cc45f1566fdc86c48a3d2a59fc024001c02b"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggNoValues/2",
+          "case_index": 2065,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "0ae4939a36b348fa33c35413dc78c5759d83100f8aadc984413c24c1f5f536cc",
+                "reviewed": "91a507497c9620c159113bb56eb08fd1a8de9f725ce801c1df4023e98bebb20d"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testTwoWindows/0",
+          "case_index": 2066,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "b1ceebc9f2b44b2a3c7bbe8c9800e8b239f23f4ee3e037955f358e0e5cf1ecf7",
+                "reviewed": "5135225a653fb19ef271dc01a7d15ee7ebeca9ffe17ac98721da0a03da761828"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2651/0",
+          "case_index": 2067,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "253163c2da7e11dce1b871090bd17083d6ee10bf0807857c36a269e06b9326dc",
+                "reviewed": "7ea0bd2437102e499a4dff048e693963904730f2d43276e331e5a61621e0130c"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testFPArithmetic/3",
+          "case_index": 2068,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "c370b8ab3b6a909c300b37e4e7a10aef5cbd5f505bf6617ad25af937232dcb2d",
+                "reviewed": "72bee0a52e805fb4f8a0d045b37ec15724e47e02bca2d4367cae574998118dd3"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testFPArithmetic/7",
+          "case_index": 2069,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "538e309b0bc4ae325d828dacc8cce5318ac87935c05d7c76e8cd3d69be0cb488",
+                "reviewed": "6b65657c810e8f2c952fce45fce7c8147f5d82a530816d81b074353fc638600e"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayTests#testArray/0",
+          "case_index": 2070,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "d365b668d91ae8ec99429e957d540856a502759ca1f25440e8e77126cfeb8d72",
+                "reviewed": "ea20fe76b0de4973cc3a7634fcffe8b47b921c327c74e762e71337d1a575e2dc"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#issue1192/0",
+          "case_index": 2071,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "24cc4e27397687e80f1ca9163b86073be6eda93a42d4076608a09f520aa7e360",
+                "reviewed": "6bd521339ac8217212aeef4acad42bf6cf2822a55cccb0215d7cce23d5da0523"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresFloat4Tests#testCbrt/2",
+          "case_index": 2072,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "9cbe7a288e4a89f5055d45d71d49dc770052df047c424f1f5836a3071ec75a42",
+                "reviewed": "ea7c1baf5525b27d94aa0e7d69eb3334d7febcb5db74b10ad04b8a7fac0c2301"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.MapTests#mapLiteralTest/1",
+          "case_index": 2073,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "cb8c520f45e34e370c4fea9b1f5376c13282a73437aafd8257acae031a01eed9",
+                "reviewed": "f2b5ef910994fa9cf86f02e19ea7079ef019f58685a07167b106be4ea6e636c2"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.FlatVariantTests#testCastMap/1",
+          "case_index": 2074,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "01d914145c23c5d40ec794b0768e34c00622d7c74490b7dc3e2ea8861f9f6111",
+                "reviewed": "14d4bb39fab3719c4636b27aacec1ad5471e1f6a826657d2c498aeb0f42ba904"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#mapVariant/0",
+          "case_index": 2075,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "e3e6252e5e324379202bb63a35b1f392150cb992e6f70ebf4d1f80966207a52c",
+                "reviewed": "9afc690c7657a54c6d8006557f04a111c6c2a5cb5af9a59c9c48eaf7f117612d"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#testJsonEachStringBoolean/0",
+          "case_index": 2076,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "21258b255ccf8fe13ed44baeb0c42e7c4dc881e16ab2d21db306647df7a7ff8f",
+                "reviewed": "cebf05c049facd320244c1277a1ba6b1b642349617f8674af92d2055877816a3"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#top3/0",
+          "case_index": 2077,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "f0b535fab99d4632077e78e0819ac0959afd997cabae8fc827094f2ed61b74ca",
+                "reviewed": "f403f99282d9e2e2e281219160cd1e2a281bbf9d579be6ba907e32cf19d23c3b"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#structTests/0",
+          "case_index": 2078,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "d6c35b0fe275e0ab5947343c14d4b5a4da36821d82fe81506084908783b3c689",
+                "reviewed": "29963a3a91eb75f3450beb7590b51b7146fddcb56232a978d450e1b340fd731f"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#structTests/4",
+          "case_index": 2079,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "1ce275cd650bb46fbc241a87a3652d5a4ddc94196ec5501705b30298db3b7ca7",
+                "reviewed": "4fdb218b4780e75d7554ffb79dc78432a3a2f8cd80120f33d1191d68c3d67a6a"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresDateTests#testDateToString/0",
+          "case_index": 2080,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "afe5cd19ab2a18be73eae186ae800688bba8ccf9e9a9de3b2de8334a325d138a",
+                "reviewed": "4ac3610ac280f3d29e9c2ad3829d7415652f728eb9bf6551fa836a0d939823a9"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/2",
+          "case_index": 2081,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "67324a0f36a8597504bc70808b2de9dd0f32a2d756718f5e3f69f21aeda67930",
+                "reviewed": "cad48391b63770ce52abe11be93cd44a9f596b278a6412e125f8c1361f40a8c4"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/6",
+          "case_index": 2082,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "07a61ce7fd078f36811118ecc75508d94e4021f69d391d59d716ced522ad22c6",
+                "reviewed": "bcfd46cba549375e5f508310098680ef26e932ea73d443f6c6a50c30ee975a43"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedVariantTests#unparseJsonTests/10",
+          "case_index": 2083,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "49484abe5ed71b3eeec133556966ca9b529dd2d943edeb34a78298780cdd04b8",
+                "reviewed": "908d02380d5f25efe6a130ce2f24d0ec454f9a4080d9ef39946426cab73e75f6"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TumbleHopTests#tumbleGroupBefore1970/0",
+          "case_index": 2084,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "20c999c471f9b40463397288b27514062606a5c7328c57a35e41fc4f30fb6a4a",
+                "reviewed": "f10783031efb6ab600d042a33773ba9094ef997c8dfdf865eb33777227becd8a"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/3",
+          "case_index": 2085,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "dc4124115851fa934a91e33dbce206ce3f9fd177f76b0063d31ef3921cb7de54",
+                "reviewed": "c68d5022f4dfa4de52680f7e2dd518457032a2f6405f62e409889176965e2f3f"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/7",
+          "case_index": 2086,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "547917de5377a9cd579cc217e09452896f730522b445f19d0ffc9504da4ae939",
+                "reviewed": "f7e0014b0059b0b797434d8b852afd00e6fd8aaf486063033141d3b8dfad36e9"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/11",
+          "case_index": 2087,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "ce97d23d211f863b1b66da127c032ca2bb2a47e1276c3a18cb85ee6f0e9acc6f",
+                "reviewed": "2a385d791751b54007761c789b97fabef63325c40bfec20e7939649676470613"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/15",
+          "case_index": 2088,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "5bd5fafd955132cca674960b946a92242081a3301363f8b9672fe96e58a038d1",
+                "reviewed": "2ede219f05b9e149ab66a4e6b6f79079184cb9a0cfe874a2cf01946e972abe4e"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/19",
+          "case_index": 2089,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "22e7c6dc286e0e6d677b6d15c4a0b85e837f666960a552452919f0043d7ff830",
+                "reviewed": "ab4f0b9baede46f070439a12ff40a9a0362bf9b25a3d5e0d7c073a0390daaf30"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/23",
+          "case_index": 2090,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "2d0a97f26c824f9657e4d0c18adc59d1c4c5282d40464a5c232a02a13c9a68a6",
+                "reviewed": "afc0cbf5702040f3d63a12b3685b53f9bfdc27203d400e76a058a3c0116d279d"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/27",
+          "case_index": 2091,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "1c9eeea5bf9b339bcdfbd29f88527ffe651db9ad963c7e2740326ab45f784271",
+                "reviewed": "bacdf3a6b5b44d0c44e3a47c8c655cce84689782bc91cc9c3666d7878cecc4ca"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/31",
+          "case_index": 2092,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "f57a4ee4ed0c49de18a0211a742207a9e9fdb19805b2b35353c2bb76c96dd192",
+                "reviewed": "74d132d23192251e6a19817671f7fd3be20e37bb93bc48fb21c54673a8641844"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/35",
+          "case_index": 2093,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "f96b957e9d19b92dd32f760a2116179eee295075b4d95f45333dd65e877129a2",
+                "reviewed": "ea0d9c0fc7c6a3efd80cc22f08b1491ab46f122d666d8cdf3e8569972c1e3a7b"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/39",
+          "case_index": 2094,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "4ea458e9f7bd9ad8791886909e9a261e2410115eca6f7e506ba93bb05797e3ce",
+                "reviewed": "3d2218bb4a6d19cf04df4102371724ef4f41caaf983d3d655e4774755b224f5b"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/43",
+          "case_index": 2095,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "48fdf4d6a623d44488b67b9606fe4234db14c794fa28df4163570812699a0786",
+                "reviewed": "9014ce96fcc71f22d527a0b79a1803ade3e15a38d0b7cdb792427149b19aaa5b"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/47",
+          "case_index": 2096,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "45a7511a17601e5c366933647f7af63b2c0456cba29300a18a2db3e4b7e54c67",
+                "reviewed": "d1a9d4758926b3638c20ea3c1d9227762580821ef9e0b66e87df223d0e1ebe3e"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/51",
+          "case_index": 2097,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "89c01649289b019d0eb82c64ce9db6a6f0e632e6ff9ea99ce97af4f2dd4c546b",
+                "reviewed": "53ee7ebe29466067e8d49ad5e569c2c164016f643d4d4d5fc9c986db2f3f13bb"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/55",
+          "case_index": 2098,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "b18dc8372fa944c1d34b266df8985aa8d93d14933d74f7c306e965047c4d31f5",
+                "reviewed": "c56c9fd207c42606b2b6f7dc09860fc33950d33923c50b774d8063a05010fc66"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/59",
+          "case_index": 2099,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "ade34ed6e390d1ea77c4d7e2293753be5a485fa520e2c7d166abcd0b54e346e0",
+                "reviewed": "369fdabed632b55ec0eb011fac3eed7a0df54e2364cd349f2d2b9354c78557e4"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/63",
+          "case_index": 2100,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "44ed03f65f8d0abc6926249bdc49fd44b5fda87eebca0c87cb9549cd4947d11e",
+                "reviewed": "9e51cdae5e6d1bee8ebbf065b466c4123349935a59a019d6759d1d9acd125e7a"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/67",
+          "case_index": 2101,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "aa7700aec9cff351291ed7e349565d4cf50f8e3619307d7c2cb8128dccafcdb1",
+                "reviewed": "7eb8a8871020465daf77c38ae1c3d15d36313a0c19652937694ddc263c78a96d"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/71",
+          "case_index": 2102,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "c07427aa20d8e755bf08c0f14fc6ff278311492affd5442a81b9a40b0d89beea",
+                "reviewed": "1d386141ce2ce026dbd479985dd55851dcca13e4e1a102c6202765c909f7a351"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/75",
+          "case_index": 2103,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "2e111597d58de384819590bcbafc6a89feac06098a144ff0ea284fce31433fd1",
+                "reviewed": "79921a4302f88d2b5f9ffb260db469a9422da04b8221e4e2a2d39e00884156bd"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/79",
+          "case_index": 2104,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "c69ff2293bdbbcf1d0a15cc361f2ef95b99f24cb6267a05d711c4a0bf0938b18",
+                "reviewed": "5bb90933075e4b095b574563d6c5df7f6b65c8ce93bf053f598bc3cf51f9297b"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/83",
+          "case_index": 2105,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "71fe24e3a962cdd2212cc9db36194603d1e2a918ff4230789c01df4959d8e3a0",
+                "reviewed": "d383b6d867dcc8e76d126c07db1434ba7223d23544dd4f22d78b56586b2d21dc"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/87",
+          "case_index": 2106,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "ed4a44c7812a5a91ce8f729b1d86fc515ca81bb83435812cc549bb2edd729447",
+                "reviewed": "b4a918fd261c8d81e85b1d0ddffff628327db7eb2f32c84bfdf89a234b4ab2dd"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/91",
+          "case_index": 2107,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "c1164ba33832a929e668d616942be4ecceeb7454b8ddaf54b63932fb69984d13",
+                "reviewed": "32926c5af140e4589fac1fcbec0fd0c01d44ce4fe36dd0f57dd317d5a3a95d75"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/95",
+          "case_index": 2108,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "1b2330fa939cf0e18fedd1bd5ed7e6b2181acca769576980d845828753783a96",
+                "reviewed": "ced9f8fb9a3c7b439cd11d6bf3292ac225a7212c34a027dece8620fd656ef2c1"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/99",
+          "case_index": 2109,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "602c2395e5121e8e62fa20cfdc4ff201aad5f72bcbf0f8158c5b408af4a99b24",
+                "reviewed": "f98338964e465c6c5714e0abe763aff14ffc2eb8a5aa8913db6da7cd65611314"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/103",
+          "case_index": 2110,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "0af8330955881cad52e2423a43c0cb4c229cead93ff9f6b0aed09fe546d3ee79",
+                "reviewed": "29746a6d0c9acedc2039f13e7176b383b4aecdea911f870542beffc9d6ab61f8"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/107",
+          "case_index": 2111,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "d6ac804b27a82b3a4f6c395cf52556e69a3696aca267da9e79cf23c65754ad76",
+                "reviewed": "0031f8bd6d5bebcba2f5958eb394889517aaf5530083b92855312537202de134"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresInt8Tests#testSelect/111",
+          "case_index": 2112,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "3e343d023eb84780a2db02f79185dfda7f97c370574ddfee701de559e6055a83",
+                "reviewed": "fdafcce5b3cee9c8746e10954d9813b446183b946ed90947dad076f8af4ebf9f"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/1",
+          "case_index": 2113,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "12e8f88cc7a88e658a9326457bdc1d4ce4771f30899bd25043b20ed4a0a6138e",
+                "reviewed": "1657623fa7aca6901ecbc7d3d730bc6b264d605008a935675be727c31f478911"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/5",
+          "case_index": 2114,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "c1678632c5de54e2146e839283dabffd274f792317b07e76c7a43a526b77aab6",
+                "reviewed": "2ffe2bf49fb805221a191de328fd446e8364b2be735fd31c61fc2be134df36ce"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.VariantTests#parseJsonTests/9",
+          "case_index": 2115,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "62c90b80a32ba913ef95e81fea9ff4487ef1487cac89ff88c0e1f61c73e29df6",
+                "reviewed": "6f9b2432e09135ff51b9ccea8c02ea1b01f5d2823d0e5825473e6f7b03d7b80f"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/2",
+          "case_index": 2116,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "7be4a2ee67c1935dc50f1b35d15d691e635995c09b85ba2178448b64bc05a6ef",
+                "reviewed": "47a0303afbf684e0e9f316a292648175da1c2d3b56548c26ffdc774a9e7399f5"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/6",
+          "case_index": 2117,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "68e4ce680156fa16e1c0fdf24e8cff5d589d86abead4b7e6a48de674d2da0a93",
+                "reviewed": "c6591b15af5e1c3118b29ecf8c4f0abb22e83b8a562ccbdfda7b308a11bb6def"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/10",
+          "case_index": 2118,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "ac6d1aec6ab77297a17e2bb3ed31c755c404ab9277ee4c7f6dd4452bb97bc979",
+                "reviewed": "35dbb15456994b45efc31d900b0dfdd7bb4ab021c5f31a98cffae4c1892d18fe"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/14",
+          "case_index": 2119,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "5381830bac5d8436c26d599e2a6a98a179e2c77ebf7cd629d678f5f93391e28a",
+                "reviewed": "792de014422f008976fcd6cc93b4b0a18a68de9ae5416dfc113ecb21deae286c"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/18",
+          "case_index": 2120,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "9a729980341e3edfa43d28f57be906eda95bdb51330771f50e2a8391df4fb1f2",
+                "reviewed": "5fd84b28f98b7fac5ae652535b9d7ddb624735f257c9ec1b9a48163726253ec8"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/22",
+          "case_index": 2121,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "03819dec904537d10cd89d24737fc79965ccf34ec047ba698611abed7b04c15e",
+                "reviewed": "33cef1bc837c36c4d468726031058aaddb0d067d8d653083836d1fcb67223662"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/26",
+          "case_index": 2122,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "45ec91ec41133993b49712214df61a99849271d0ab6769fd3296b90ef6a552d4",
+                "reviewed": "21efb9ded333e83ab5620f7b3411cb4da742d0296ffd000ea4b3d41932a4cb38"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/30",
+          "case_index": 2123,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "943f617a4a4cc80ecb6a2e9fca882e3b0cc367e0a6f4822f1268f7b4a5024760",
+                "reviewed": "a62345cfddcd9870124742c4f31b9087fe28f6f0facbbe4c5cb17c66d0304fd1"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/34",
+          "case_index": 2124,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "cf6e6dbe071d02f1c5120b4ac1de196366e96ccef97f8d6e3222a8ec518acee2",
+                "reviewed": "da795295772683d1af0d3efc519f5958ae276b3cc15ea82d2282ff225c0ffac8"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/38",
+          "case_index": 2125,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "92c75606ed026ed4ccb4b739a65c72da561b9d5cdbb2c0d7a467dc76a565ebd8",
+                "reviewed": "fa343ba3678c0e759bac42de889aa50fa37c874664b053bd553e8d7590f0ed9d"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/42",
+          "case_index": 2126,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "f7cd2f2015f35eee353c6cf45b5cae3f625316e6f29bd42738f63f463e8dbd01",
+                "reviewed": "44af9ee3f9b00c6ee86280ece39b4d9d54292615c8d257613b8cf4670a979b13"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/46",
+          "case_index": 2127,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "655b1aff22b6a6e2eff81c9d0390684da9996e3a2cbbffe06f40f95c62aff641",
+                "reviewed": "349f4fce77be25ffd43d0d6da33a130d9577fb28749c41b8b8dbbf99a23bf8f0"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/50",
+          "case_index": 2128,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "a85215339fda7da0db2aab5ee181b76c2a32849de5876c089193e4fb73f2b134",
+                "reviewed": "1c270242ed5ca91347341233fb530b3bbed460da0b7f88e1165ad414041d48b1"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/54",
+          "case_index": 2129,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "16bf68ca948483a01861460d614f8430001cc990b38e1ec14431af1e1dd36eb1",
+                "reviewed": "be27f9f791a549597f3e66992bdfb480ab9af30a59c1eafce4db213806c51fcd"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TinyintTests#testSelect/58",
+          "case_index": 2130,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "295138fc078bd6bd5a1704e87c077e712038a20362abdf580d06c70c41023635",
+                "reviewed": "e8e59db5c9fbe610d1fa9a21488bac3e602abb1fdc77f7b7485f90fa5a549a36"
+              }
+            }
+          }
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#missingFrom/0",
+          "case_index": 2131,
+          "changed": {
+            "gen2_bytes": {
+              "circuit.json": {
+                "old": "a507c1555c942c377c6aa237ff4c6c36e9540f4bbb50f6cb068d8dfffe5e475c",
+                "reviewed": "5c7811332d4cbf30eb5e2095e2e85f5f20742c2b18a122cacddf85ff8fb20d01"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "mode": "gen2",
+      "shard": 2,
+      "original_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 882112,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 882112,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 2132,
+        "observations": 882112,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    },
+    {
+      "mode": "gen2",
+      "shard": 3,
+      "original_comparison": {
+        "equal": true,
+        "cases": 2131,
+        "observations": 880601,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "selected_comparison": {
+        "equal": true,
+        "cases": 2131,
+        "observations": 880601,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "replacement": null,
+      "old_production_comparison": {
+        "equal": true,
+        "cases": 2131,
+        "observations": 880601,
+        "capture_transparency": false,
+        "artifact_contract": "seam-v1",
+        "dataflow_contract": "all-engines-v1",
+        "observation_contract": "full-prefix-v1",
+        "artifact_byte_differences": [],
+        "differences": [],
+        "failed_cases": {
+          "expected": [],
+          "actual": []
+        },
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      "old_production_field_differences": []
+    }
+  ],
+  "replaced_shards": 2,
+  "selected_shards": 10,
+  "selected_replay_artifact_byte_differences": [],
+  "old_production_equal": false,
+  "old_production_canonical_changed_case_records": 2,
+  "old_production_raw_byte_changed_case_records": 81,
+  "changed_program_identities": [
+    "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3326/0"
+  ],
+  "changed_program_records": 2,
+  "original_failures_retained": true,
+  "comparator_tolerances_changed": false,
+  "gen2_raw_bytes_are_reported_metric_under_existing_seam_v1": true,
+  "runtime_executed": false,
+  "current_working_tree_covered": false,
+  "P0_complete": false,
+  "review_metadata": {
+    "review": "Independent agent artifact adjudication",
+    "validation": {
+      "unit_tests": 4,
+      "independent_shard_comparisons": 20,
+      "corrected_shard_comparisons": 2,
+      "corrected_case_comparisons": 2,
+      "controlled_source_rollback_checked": true
+    },
+    "frozen_rust_comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+    "dependency_jar_sha256": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9",
+    "comparison_script_sha256": "17ed7d3efa59a254278c0058e5a06d18d102f948354f7beacdb5c45e426f2752",
+    "comparison_script_unchanged_from_parent": true,
+    "original_program_inputs_unchanged_except_two_reviewed_records": true,
+    "current_working_tree_covered": false,
+    "excluded_later_changes": [
+      "calendar RANGE diagnostic repair",
+      "optimizer and correlation observer hooks",
+      "quoted-parameter decoder repair"
+    ],
+    "runtime_executed": false,
+    "human_maintainer_accepted": false,
+    "P0_complete": false
+  },
+  "archive_index": "s1-reviewed-prefix-archive.json",
+  "sources_sha256": "736b4932e5e89d8090b27cabd4e4b1a811d8ba1b2334c76df5f9f90b43184f13",
+  "classes_sha256": "3581e034e8a3bca8295d945879ce0c27c60c8c01a4ce23527faeb8afaea8244b"
+}

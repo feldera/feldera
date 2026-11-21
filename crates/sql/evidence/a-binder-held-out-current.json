@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "archive_indices": [
+    "a-binder-held-out-replay-archive.json",
+    "a-binder-held-out-structured-archive.json"
+  ],
+  "frozen_cases": 1563,
+  "java_accepted": 1502,
+  "rust_table_program_accepted": 29,
+  "refusals_by_category": {
+    "outside_scope": 1529,
+    "unsupported_niladic_function": 1,
+    "parse_error": 4
+  },
+  "matched_c0_error_cases": [
+    "453"
+  ],
+  "matched_c1a_cases_per_mode": 29,
+  "typed_s1_and_detached_matches": 58,
+  "full_prefix_observations": {
+    "classic": 11712,
+    "gen2": 11770
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-twenty-two-placements-20261118-v1.tar.gz",
+  "bytes": 17077008,
+  "sha256": "63eff4620ca62fd04783d1602644d52e43438f07b17d067d49faa5b1ed60a7b8",
+  "manifest_sha256": "7b2c8c8e1bf4e827b5c438f72fc9d29cc0c781872bef9be8415960c8b720af40",
+  "verified_files": 9277,
+  "all_members_verified": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-corpus-final-20261118-v1.tar.gz",
+  "bytes": 56523970,
+  "sha256": "124c24c9029f54789880d39d668cacb51382d56eb5cf28ce4a2e0f49aeeb40a0",
+  "manifest_sha256": "f4ab038752e011e2b7e285fc6e6251e34bb598a69d698bdd2fdf9e40126fb0c0",
+  "verified_files": 79,
+  "all_members_verified": true
+}

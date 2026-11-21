@@ -1,0 +1,28 @@
+{
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "71b33fce6242d37aac779c3df556ee1c65d299e52a374bcc9bb27230b6d40265",
+      "c6608d051eba66f4f7a1a7744dfeede455beaedf4b613b1fcf4273dbe972217d"
+    ],
+    "pass": "CSE",
+    "invocations": 50927,
+    "changed": 643,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "791b6f9fa0ea09f20d69f21cc629854096cf854f60a0db5a600aeaf2b44834b9",
+      "181859ed2c5b5393d6cbe188a7ebcc13b9d4912d9f470a152c5050f7f808d595"
+    ],
+    "pass": "CSE",
+    "invocations": 50641,
+    "changed": 462,
+    "cases_without_placement": 0
+  }
+}

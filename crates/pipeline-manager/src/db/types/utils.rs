@@ -181,6 +181,10 @@ pub fn validate_tags(tags: &[String]) -> Result<(), DBError> {
 pub enum ValidationError {
     #[error("could not deserialize due to: {0}")]
     DeserializationFailed(String),
+    #[error(
+        "Explicit SQL compiler selection requires the `compiler_selection` unstable feature. Enable it or omit `program_config.compiler`."
+    )]
+    CompilerSelectionDisabled,
     #[error("enterprise feature: {0}")]
     EnterpriseFeature(String),
     #[error("invalid pipeline environment: {0}")]
@@ -260,6 +264,24 @@ pub(crate) fn validate_program_config(
         );
     }
     deserialize_result
+}
+
+/// Check the compiler selection when a caller submits a program configuration.
+pub(crate) fn validate_program_config_input(
+    value: &serde_json::Value,
+) -> Result<ProgramConfig, DBError> {
+    let config =
+        validate_program_config(value, false).map_err(|error| DBError::InvalidProgramConfig {
+            value: value.clone(),
+            error,
+        })?;
+    if config.compiler.is_some() && !crate::has_unstable_feature("compiler_selection") {
+        return Err(DBError::InvalidProgramConfig {
+            value: value.clone(),
+            error: ValidationError::CompilerSelectionDisabled,
+        });
+    }
+    Ok(config)
 }
 
 /// Deserializes the generic JSON value into [`ProgramInfo`] and performs any additional validation.
@@ -660,12 +682,22 @@ mod tests {
             cache: false,
             runtime_version: None,
             use_platform_compiler: false,
+            compiler: None,
         };
         let value = serde_json::to_value(program_config.clone()).unwrap();
         assert_eq!(
             program_config,
             validate_program_config(&value, true).unwrap()
         );
+
+        assert!(matches!(
+            super::validate_program_config_input(&json!({"compiler": "java"})),
+            Err(DBError::InvalidProgramConfig {
+                error: ValidationError::CompilerSelectionDisabled,
+                ..
+            })
+        ));
+        assert!(super::validate_program_config_input(&json!({"compiler": null})).is_ok());
 
         // Invalid JSON for ProgramConfig
         assert!(matches!(

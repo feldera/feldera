@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -79,13 +80,7 @@ public class DeterministicFunctions extends CircuitVisitor {
             if (meta.defaultValue != null) {
                 boolean det = this.isDeterministic(meta.defaultValue);
                 if (!det) {
-                    this.compiler.reportError(
-                            Objects.requireNonNull(meta.defaultValuePosition),
-                            "Non-deterministic initializer",
-                            "Default value for column " +
-                                    meta.name.singleQuote() +
-                                    " must be a compile-time constant.\n" +
-                            "See https://github.com/feldera/feldera/issues/2051");
+                    reportDefault(this.compiler, meta);
                 }
             }
         }
@@ -105,14 +100,28 @@ public class DeterministicFunctions extends CircuitVisitor {
             boolean det = this.isDeterministic(function.function.body);
             if (!det) {
                 this.markNondeterministic(decl.getName());
-                this.compiler.reportError(
-                        Objects.requireNonNull(decl.getSourcePosition()),
-                        "Non-deterministic UDF",
-                        "Non-deterministic user-defined functions are not supported: " +
-                                Utilities.singleQuote(decl.getName()));
+                reportFunction(this.compiler, decl);
             }
         }
         return VisitDecision.STOP;
+    }
+
+    public static void reportDefault(DBSPCompiler compiler, InputColumnMetadata meta) {
+        compiler.reportError(
+                Objects.requireNonNull(meta.defaultValuePosition),
+                "Non-deterministic initializer",
+                "Default value for column " +
+                        meta.name.singleQuote() +
+                        " must be a compile-time constant.\n" +
+                "See https://github.com/feldera/feldera/issues/2051");
+    }
+
+    public static void reportFunction(DBSPCompiler compiler, DBSPDeclaration decl) {
+        compiler.reportError(
+                Objects.requireNonNull(decl.getSourcePosition()),
+                "Non-deterministic UDF",
+                "Non-deterministic user-defined functions are not supported: " +
+                        Utilities.singleQuote(decl.getName()));
     }
 
     boolean isDeterministic(DBSPExpression expression) {

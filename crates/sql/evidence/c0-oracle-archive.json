@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-c0-oracle-20261118-v1.tar.gz",
+  "bytes": 126258,
+  "sha256": "b3b17801eb984a9fd8d59d827a8bb3fd6ac634d46965dca63b74e7964e7aa58f",
+  "manifest_sha256": "9b083fc6a7fae3aca400be326e4c752641ac10eb5b05287e7908f459cd586b02",
+  "verified_files": 17,
+  "all_members_verified": true
+}

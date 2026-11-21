@@ -1,0 +1,34 @@
+{
+  "scope": "All scheduled clock-use analyses, including the post-rewrite verification and Java boolean state.",
+  "comparator_sha256": "1a57029e92c25b86e20ac2aa7d39e4502c1191cef7f542016218f4c6cee31340",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "8a0549b934d05f175d0114ebed94c650bc50b9860d2f6d5ab8229e11f6394a6a"
+    ],
+    "pass": "CircuitContainsNow",
+    "invocations": 8642,
+    "changed": 0,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "8de72b3fc80fb3bdb7c2766302286522d828e61fdfd2caace4fd22147b4f0b55"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "933b79acfa1ca6f49a53bf0c8448b4a32be4c97dc97dea6bdfe66f620dcbd690"
+    ],
+    "pass": "CircuitContainsNow",
+    "invocations": 8589,
+    "changed": 0,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "288b1b8a4c22d7a49cc7c5b76dfbc574bede51a3c11cf919e6daa490acdc0dc3"
+    ]
+  }
+}

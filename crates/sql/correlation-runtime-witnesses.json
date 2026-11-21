@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "review": "Original source methods and options reviewed independently; typed fragments and final recipes must also match exactly apart from id labels.",
+  "runs": {
+    "p0-correlation-corpus-runtime-v1": {
+      "junit_class": "org.dbsp.sqlCompiler.compiler.sql.tools.CorrelationCorpusRuntimeTests",
+      "junit_tests": 1,
+      "rust_tests": 44,
+      "transactions": 44
+    },
+    "p0-correlation-scalar-corpus-runtime-v1": {
+      "junit_class": "org.dbsp.sqlCompiler.compiler.sql.tools.CorrelationScalarCorpusRuntimeTests",
+      "junit_tests": 2,
+      "rust_tests": 10,
+      "transactions": 10
+    }
+  },
+  "cases": [
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/4", "run": "p0-correlation-corpus-runtime-v1", "path": "rewrites/unpivot/compiler-4"},
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/5", "run": "p0-correlation-corpus-runtime-v1", "path": "rewrites/unpivot/compiler-5"},
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.simple.ReduceExpressionsTests#correlatedFilterOverValues/0", "run": "p0-correlation-scalar-corpus-runtime-v1", "path": "rewrites/values/rust"},
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/0", "run": "p0-correlation-scalar-corpus-runtime-v1", "path": "rewrites/foodmart/compiler-0"},
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/1", "run": "p0-correlation-scalar-corpus-runtime-v1", "path": "rewrites/foodmart/compiler-1"},
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/2", "run": "p0-correlation-scalar-corpus-runtime-v1", "path": "rewrites/foodmart/compiler-2"},
+    {"id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/3", "run": "p0-correlation-scalar-corpus-runtime-v1", "path": "rewrites/foodmart/compiler-3"}
+  ]
+}

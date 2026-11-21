@@ -1,0 +1,2033 @@
+{
+  "id": "ordered-statements",
+  "schema_version": "statement-program-v5",
+  "table": {
+    "schema_version": "input-uses-v1",
+    "relations": 5,
+    "functions": 1,
+    "type_table": {
+      "schema_version": "types-v0",
+      "sources": [
+        {
+          "name": "(no input file)",
+          "text": "SET ENFORCE_POSITIVE_INPUTS = TRUE;\nCREATE TYPE record_t AS (\"Field\" INT);\nCREATE FUNCTION plus_one(x INT) RETURNS INT AS x + 1;\nCREATE TABLE \"T\"(\"A\" INT NOT NULL PRIMARY KEY, b INT DEFAULT 7);\nINSERT INTO \"T\"(b, \"A\") VALUES (20, 10);\nREMOVE FROM \"T\"(b, \"A\") VALUES (20, 10);\nCREATE VIEW v AS SELECT \"A\", plus_one(b) AS b FROM \"T\";\nCREATE INDEX ix ON v(b, \"A\");"
+        },
+        {
+          "name": "compiler-generated SQL",
+          "text": "CREATE TABLE NOW(now TIMESTAMP NOT NULL); -- LATENESS INTERVAL 0 SECONDS\n-- next table will be deleted after view is hooked to proper inputs\nCREATE TABLE FELDERA_ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL);\nCREATE VIEW ERROR_VIEW AS SELECT * FROM FELDERA_ERROR_TABLE;\n"
+        },
+        {
+          "name": "function plus_one (generated)",
+          "text": "CREATE TABLE FELDERA_SYNTHESIZED_TABLE(\"x\" INTEGER);\nCREATE VIEW FELDERA_SYNTHESIZED_VIEW AS SELECT\nx + 1\n\nFROM FELDERA_SYNTHESIZED_TABLE;"
+        }
+      ],
+      "types": [
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "integer",
+            "signed": true,
+            "width": "i32"
+          }
+        },
+        {
+          "nullable": true,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "integer",
+            "signed": true,
+            "width": "i32"
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": []
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "A",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "b",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 1
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": []
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "fully_qualified",
+            "fields": [
+              {
+                "name": {
+                  "name": "x",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 1
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "table_or_view_name",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 7
+              },
+              {
+                "name": {
+                  "name": "message",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 7
+              },
+              {
+                "name": {
+                  "name": "metadata",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 7
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "character",
+            "fixed": false,
+            "length": {
+              "kind": "unspecified"
+            },
+            "metadata": {
+              "kind": "present",
+              "charset": "UTF-8",
+              "collation": "ISO-8859-1$en_US$primary",
+              "identity": "builtin_implicit",
+              "coercibility": "implicit"
+            }
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "EXPR$0",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              },
+              {
+                "name": {
+                  "name": "EXPR$1",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 0
+              }
+            ]
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "boolean"
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "timestamp",
+            "precision": {
+              "kind": "specified",
+              "value": 6
+            },
+            "zone": "none"
+          }
+        },
+        {
+          "nullable": false,
+          "origin": {
+            "kind": "absent"
+          },
+          "kind": {
+            "kind": "row",
+            "struct_kind": "peek_fields_no_expand",
+            "fields": [
+              {
+                "name": {
+                  "name": "Field",
+                  "quoted": true,
+                  "origin": {
+                    "kind": "absent"
+                  }
+                },
+                "ty": 1
+              }
+            ]
+          }
+        }
+      ],
+      "roots": [
+        0,
+        1,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        8,
+        3,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        9,
+        1,
+        1,
+        0,
+        1,
+        1,
+        10,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        0,
+        1,
+        0,
+        1,
+        6,
+        3,
+        11,
+        10,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        6,
+        0,
+        1,
+        0,
+        1,
+        3
+      ]
+    },
+    "objects": [
+      {
+        "ty": 0,
+        "field": 0
+      },
+      {
+        "ty": 1,
+        "field": 1
+      },
+      {
+        "ty": 1,
+        "field": 0
+      }
+    ],
+    "environments": [
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": []
+        },
+        "row": 2
+      },
+      {
+        "owner": {
+          "kind": "relations",
+          "inputs": [
+            4
+          ]
+        },
+        "row": 3
+      },
+      {
+        "owner": {
+          "kind": "constant"
+        },
+        "row": 4
+      },
+      {
+        "owner": {
+          "kind": "function",
+          "function": 0
+        },
+        "row": 5
+      }
+    ],
+    "uses": [
+      {
+        "object": 0,
+        "environment": 1
+      },
+      {
+        "object": 1,
+        "environment": 1
+      },
+      {
+        "object": 2,
+        "environment": 3
+      }
+    ]
+  },
+  "expressions": {
+    "schema_version": "expression-objects-v2",
+    "operator_objects": [
+      {
+        "kind": "function",
+        "name": "plus_one",
+        "return_type": 1,
+        "generated": true,
+        "origin": {
+          "kind": "source",
+          "source": 0,
+          "start": {
+            "line": 3,
+            "column": 17
+          },
+          "end": {
+            "line": 3,
+            "column": 24
+          }
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "source",
+            "source": 0,
+            "start": {
+              "line": 3,
+              "column": 17
+            },
+            "end": {
+              "line": 3,
+              "column": 24
+            }
+          },
+          "text": "plus_one",
+          "internal_text": "plus_one",
+          "empty": false
+        },
+        "parameters": [
+          {
+            "name": "x",
+            "index": 0,
+            "ty": 1
+          }
+        ],
+        "body": {
+          "kind": "object_sql",
+          "environment": 11,
+          "root": 9,
+          "source": {
+            "kind": "captured",
+            "source": 2
+          }
+        }
+      },
+      {
+        "kind": "builtin",
+        "registry": "calcite-s1-fixture",
+        "registry_version": "1",
+        "key": "SqlStdOperatorTable.CHECKED_PLUS"
+      }
+    ],
+    "operators": [
+      {
+        "object": 0,
+        "result": 1,
+        "parameters": [
+          1
+        ]
+      },
+      {
+        "object": 1,
+        "result": 1,
+        "parameters": [
+          1,
+          0
+        ]
+      }
+    ],
+    "expressions": [
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "20"
+            },
+            "ty": 0
+          }
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "10"
+            },
+            "ty": 0
+          }
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "20"
+            },
+            "ty": 0
+          }
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "10"
+            },
+            "ty": 0
+          }
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "input_ref",
+          "object": 0
+        }
+      },
+      {
+        "ty": 1,
+        "position": {
+          "kind": "present",
+          "position": {
+            "line": 7,
+            "column": 30,
+            "end_line": 7,
+            "end_column": 40,
+            "quoted": false
+          },
+          "internal": null
+        },
+        "kind": {
+          "kind": "call",
+          "operator": 0,
+          "arguments": [
+            6
+          ]
+        }
+      },
+      {
+        "ty": 1,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "input_ref",
+          "object": 1
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "7"
+            },
+            "ty": 0
+          }
+        }
+      },
+      {
+        "ty": 9,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "boolean",
+              "value": true
+            },
+            "ty": 9
+          }
+        }
+      },
+      {
+        "ty": 1,
+        "position": {
+          "kind": "present",
+          "position": {
+            "line": 3,
+            "column": 1,
+            "end_line": 3,
+            "end_column": 5,
+            "quoted": false
+          },
+          "internal": null
+        },
+        "kind": {
+          "kind": "call",
+          "operator": 1,
+          "arguments": [
+            10,
+            11
+          ]
+        }
+      },
+      {
+        "ty": 1,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "input_ref",
+          "object": 2
+        }
+      },
+      {
+        "ty": 0,
+        "position": {
+          "kind": "absent"
+        },
+        "kind": {
+          "kind": "literal",
+          "literal": {
+            "origin": {
+              "kind": "absent"
+            },
+            "value": {
+              "kind": "integer",
+              "value": "1"
+            },
+            "ty": 0
+          }
+        }
+      }
+    ],
+    "environments": [
+      {
+        "input": 0,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 0,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 0,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 1,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 0,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 1
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 2,
+        "source": {
+          "kind": "present",
+          "source": 0
+        },
+        "correlations": []
+      },
+      {
+        "input": 3,
+        "source": {
+          "kind": "present",
+          "source": 2
+        },
+        "correlations": []
+      }
+    ],
+    "relation_uses": [
+      {
+        "relation": 0,
+        "environment": 0,
+        "roots": []
+      },
+      {
+        "relation": 1,
+        "environment": 1,
+        "roots": [
+          0,
+          1
+        ]
+      },
+      {
+        "relation": 2,
+        "environment": 2,
+        "roots": [
+          2,
+          3
+        ]
+      },
+      {
+        "relation": 3,
+        "environment": 3,
+        "roots": [
+          4,
+          5
+        ]
+      },
+      {
+        "relation": 4,
+        "environment": 4,
+        "roots": []
+      }
+    ],
+    "value_uses": [
+      {
+        "environment": 5,
+        "roots": []
+      },
+      {
+        "environment": 6,
+        "roots": []
+      },
+      {
+        "environment": 7,
+        "roots": []
+      },
+      {
+        "environment": 8,
+        "roots": [
+          7
+        ]
+      },
+      {
+        "environment": 9,
+        "roots": []
+      },
+      {
+        "environment": 10,
+        "roots": [
+          8
+        ]
+      }
+    ]
+  },
+  "producers": {
+    "schema_version": "input-producers-v0",
+    "relations": [
+      {
+        "form": "LogicalTableScan",
+        "row": 6,
+        "inputs": [],
+        "constants": []
+      },
+      {
+        "form": "LogicalValues",
+        "row": 8,
+        "inputs": [],
+        "constants": []
+      },
+      {
+        "form": "LogicalValues",
+        "row": 8,
+        "inputs": [],
+        "constants": []
+      },
+      {
+        "form": "LogicalProject",
+        "row": 3,
+        "inputs": [
+          4
+        ],
+        "constants": []
+      },
+      {
+        "form": "LogicalTableScan",
+        "row": 3,
+        "inputs": [],
+        "constants": []
+      }
+    ],
+    "roots": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "function_rows": [
+      5
+    ]
+  },
+  "properties": {
+    "schema_version": "relation-properties-v1",
+    "operators": {
+      "kind": "shared"
+    },
+    "relations": [
+      {
+        "fields": {
+          "kind": "scan",
+          "name": [
+            "schema",
+            "feldera_error_table"
+          ]
+        },
+        "metadata": {
+          "traits": [],
+          "hints": [
+            {
+              "name": "alias",
+              "position": {
+                "line": 4,
+                "column": 41,
+                "end_line": 4,
+                "end_column": 59,
+                "quoted": false
+              },
+              "inherit_path": [],
+              "list": [
+                "feldera_error_table"
+              ],
+              "options": []
+            }
+          ]
+        }
+      },
+      {
+        "fields": {
+          "kind": "values",
+          "tuples": 1
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "values",
+          "tuples": 1
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "project",
+          "expressions": 2,
+          "variables": []
+        },
+        "metadata": {
+          "traits": [],
+          "hints": []
+        }
+      },
+      {
+        "fields": {
+          "kind": "scan",
+          "name": [
+            "schema",
+            "T"
+          ]
+        },
+        "metadata": {
+          "traits": [],
+          "hints": [
+            {
+              "name": "alias",
+              "position": {
+                "line": 7,
+                "column": 52,
+                "end_line": 7,
+                "end_column": 54,
+                "quoted": true
+              },
+              "inherit_path": [],
+              "list": [
+                "T"
+              ],
+              "options": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "catalog": {
+    "schema_version": "catalog-v1",
+    "schemas": [
+      {
+        "source": 1,
+        "name": {
+          "name": "now",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "absent"
+          },
+          "text": "CREATE TABLE now (now TIMESTAMP NOT NULL)",
+          "internal_text": "CREATE TABLE now (now TIMESTAMP NOT NULL)",
+          "empty": false
+        },
+        "values": 0,
+        "columns": [
+          {
+            "name": {
+              "name": "now",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 10,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "now TIMESTAMP NOT NULL",
+              "internal_text": "now TIMESTAMP NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      },
+      {
+        "source": 1,
+        "name": {
+          "name": "feldera_error_table",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "absent"
+          },
+          "text": "CREATE TABLE feldera_error_table (table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL)",
+          "internal_text": "CREATE TABLE feldera_error_table (table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL)",
+          "empty": false
+        },
+        "values": 1,
+        "columns": [
+          {
+            "name": {
+              "name": "table_or_view_name",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 7,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "table_or_view_name VARCHAR NOT NULL",
+              "internal_text": "table_or_view_name VARCHAR NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "message",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 7,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "message VARCHAR NOT NULL",
+              "internal_text": "message VARCHAR NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "metadata",
+              "quoted": false
+            },
+            "index": 2,
+            "ty": 7,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "metadata VARCHAR NOT NULL",
+              "internal_text": "metadata VARCHAR NOT NULL",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      },
+      {
+        "source": 1,
+        "name": {
+          "name": "error_view",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "absent"
+          },
+          "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+          "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+          "empty": false
+        },
+        "values": 2,
+        "columns": [
+          {
+            "name": {
+              "name": "table_or_view_name",
+              "quoted": false
+            },
+            "index": 0,
+            "ty": 7,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "message",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 7,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "metadata",
+              "quoted": false
+            },
+            "index": 2,
+            "ty": 7,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "absent"
+              },
+              "text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "internal_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      },
+      {
+        "source": 0,
+        "name": {
+          "name": "T",
+          "quoted": true
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "source",
+            "source": 0,
+            "start": {
+              "line": 4,
+              "column": 1
+            },
+            "end": {
+              "line": 4,
+              "column": 63
+            }
+          },
+          "text": "CREATE TABLE \"T\" (\"A\" INTEGER NOT NULL PRIMARY KEY, b INTEGER DEFAULT 7)",
+          "internal_text": "CREATE TABLE \"T\" (\"A\" INTEGER NOT NULL PRIMARY KEY, b INTEGER DEFAULT 7)",
+          "empty": false
+        },
+        "values": 3,
+        "columns": [
+          {
+            "name": {
+              "name": "A",
+              "quoted": true
+            },
+            "index": 0,
+            "ty": 0,
+            "primary_key": true,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "source",
+                "source": 0,
+                "start": {
+                  "line": 4,
+                  "column": 18
+                },
+                "end": {
+                  "line": 4,
+                  "column": 33
+                }
+              },
+              "text": "\"A\" INTEGER NOT NULL PRIMARY KEY",
+              "internal_text": "\"A\" INTEGER NOT NULL PRIMARY KEY",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "b",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 1,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "source",
+                "source": 0,
+                "start": {
+                  "line": 4,
+                  "column": 48
+                },
+                "end": {
+                  "line": 4,
+                  "column": 52
+                }
+              },
+              "text": "b INTEGER DEFAULT 7",
+              "internal_text": "b INTEGER DEFAULT 7",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": 0,
+            "default_position": {
+              "kind": "source",
+              "source": 0,
+              "start": {
+                "line": 4,
+                "column": 62
+              },
+              "end": {
+                "line": 4,
+                "column": 62
+              }
+            }
+          }
+        ],
+        "properties": null
+      },
+      {
+        "source": 0,
+        "name": {
+          "name": "v",
+          "quoted": false
+        },
+        "diagnostic": {
+          "origin": {
+            "kind": "source",
+            "source": 0,
+            "start": {
+              "line": 7,
+              "column": 1
+            },
+            "end": {
+              "line": 7,
+              "column": 54
+            }
+          },
+          "text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+          "internal_text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+          "empty": false
+        },
+        "values": 4,
+        "columns": [
+          {
+            "name": {
+              "name": "A",
+              "quoted": true
+            },
+            "index": 0,
+            "ty": 0,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "source",
+                "source": 0,
+                "start": {
+                  "line": 7,
+                  "column": 1
+                },
+                "end": {
+                  "line": 7,
+                  "column": 54
+                }
+              },
+              "text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+              "internal_text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          },
+          {
+            "name": {
+              "name": "b",
+              "quoted": false
+            },
+            "index": 1,
+            "ty": 1,
+            "primary_key": false,
+            "unused": false,
+            "diagnostic": {
+              "origin": {
+                "kind": "source",
+                "source": 0,
+                "start": {
+                  "line": 7,
+                  "column": 1
+                },
+                "end": {
+                  "line": 7,
+                  "column": 54
+                }
+              },
+              "text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+              "internal_text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+              "empty": false
+            },
+            "lateness": null,
+            "default_value": null,
+            "default_position": null
+          }
+        ],
+        "properties": null
+      }
+    ],
+    "tables": [
+      {
+        "schema": 1,
+        "row": 6,
+        "name": [
+          "schema",
+          "feldera_error_table"
+        ]
+      },
+      {
+        "schema": 3,
+        "row": 3,
+        "name": [
+          "schema",
+          "T"
+        ]
+      }
+    ],
+    "scans": [
+      {
+        "relation": 0,
+        "table": 0
+      },
+      {
+        "relation": 4,
+        "table": 1
+      }
+    ]
+  },
+  "statements": [
+    {
+      "source": {
+        "source": 0,
+        "kind": "SET_OPTION",
+        "visible": true,
+        "statement_text": "SET `enforce_positive_inputs` = TRUE",
+        "diagnostic_text": "SET enforce_positive_inputs = TRUE",
+        "position": {
+          "line": 1,
+          "column": 1,
+          "end_line": 1,
+          "end_column": 34,
+          "quoted": false
+        },
+        "position_internal": null
+      },
+      "kind": "set_option",
+      "values": 5,
+      "name": {
+        "name": "enforce_positive_inputs",
+        "quoted": false
+      }
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "CREATE_TYPE",
+        "visible": true,
+        "statement_text": "CREATE TYPE `record_t` AS (`Field` INTEGER)",
+        "diagnostic_text": "CREATE TYPE record_t AS (\"Field\" INTEGER)",
+        "position": {
+          "line": 2,
+          "column": 1,
+          "end_line": 2,
+          "end_column": 37,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "create_type",
+      "ty": 11,
+      "name": {
+        "name": "record_t",
+        "quoted": false
+      },
+      "name_diagnostic": {
+        "origin": {
+          "kind": "source",
+          "source": 0,
+          "start": {
+            "line": 2,
+            "column": 13
+          },
+          "end": {
+            "line": 2,
+            "column": 20
+          }
+        },
+        "text": "record_t",
+        "internal_text": "record_t",
+        "empty": false
+      },
+      "attributes": [
+        {
+          "name": {
+            "name": "Field",
+            "quoted": true
+          },
+          "named_type": null,
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "CREATE_FUNCTION",
+        "visible": true,
+        "statement_text": "CREATE FUNCTION `plus_one` (`x` INTEGER) RETURNS INTEGER AS `x` + 1",
+        "diagnostic_text": "CREATE FUNCTION plus_one (x INTEGER) RETURNS INTEGER AS (x + 1)",
+        "position": {
+          "line": 3,
+          "column": 1,
+          "end_line": 3,
+          "end_column": 52,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "create_function",
+      "function": 0
+    },
+    {
+      "source": {
+        "source": 1,
+        "kind": "CREATE_TABLE",
+        "visible": false,
+        "statement_text": "CREATE TABLE `now` (`now` TIMESTAMP NOT NULL)",
+        "diagnostic_text": "CREATE TABLE now (now TIMESTAMP NOT NULL)",
+        "position": {
+          "line": 1,
+          "column": 1,
+          "end_line": 1,
+          "end_column": 40,
+          "quoted": false
+        },
+        "position_internal": true
+      },
+      "kind": "create_table",
+      "schema": 0,
+      "name": {
+        "name": "now",
+        "quoted": false
+      },
+      "name_diagnostic": {
+        "origin": {
+          "kind": "source",
+          "source": 1,
+          "start": {
+            "line": 1,
+            "column": 14
+          },
+          "end": {
+            "line": 1,
+            "column": 16
+          }
+        },
+        "text": "now",
+        "internal_text": "now",
+        "empty": false
+      },
+      "foreign_keys": []
+    },
+    {
+      "source": {
+        "source": 1,
+        "kind": "CREATE_TABLE",
+        "visible": false,
+        "statement_text": "CREATE TABLE `feldera_error_table` (`table_or_view_name` VARCHAR NOT NULL, `message` VARCHAR NOT NULL, `metadata` VARCHAR NOT NULL)",
+        "diagnostic_text": "CREATE TABLE feldera_error_table (table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL)",
+        "position": {
+          "line": 3,
+          "column": 1,
+          "end_line": 3,
+          "end_column": 122,
+          "quoted": false
+        },
+        "position_internal": true
+      },
+      "kind": "create_table",
+      "schema": 1,
+      "name": {
+        "name": "feldera_error_table",
+        "quoted": false
+      },
+      "name_diagnostic": {
+        "origin": {
+          "kind": "source",
+          "source": 1,
+          "start": {
+            "line": 3,
+            "column": 14
+          },
+          "end": {
+            "line": 3,
+            "column": 32
+          }
+        },
+        "text": "feldera_error_table",
+        "internal_text": "feldera_error_table",
+        "empty": false
+      },
+      "foreign_keys": []
+    },
+    {
+      "source": {
+        "source": 1,
+        "kind": "CREATE_VIEW",
+        "visible": false,
+        "statement_text": "CREATE VIEW `error_view` AS\nSELECT `feldera_error_table`.`table_or_view_name`, `feldera_error_table`.`message`, `feldera_error_table`.`metadata`\nFROM `schema`.`feldera_error_table` AS `feldera_error_table`",
+        "diagnostic_text": "CREATE VIEW error_view AS\nSELECT feldera_error_table.table_or_view_name, feldera_error_table.message, feldera_error_table.metadata\nFROM schema.feldera_error_table AS feldera_error_table",
+        "position": {
+          "line": 4,
+          "column": 1,
+          "end_line": 4,
+          "end_column": 59,
+          "quoted": false
+        },
+        "position_internal": true
+      },
+      "kind": "create_view",
+      "schema": 2,
+      "view_kind": "STANDARD",
+      "emit_final": -1,
+      "name": {
+        "name": "error_view",
+        "quoted": false
+      },
+      "root": {
+        "relation": 0,
+        "validated_type": 6,
+        "kind": "SELECT",
+        "fields": [
+          {
+            "index": 0,
+            "name": "table_or_view_name"
+          },
+          {
+            "index": 1,
+            "name": "message"
+          },
+          {
+            "index": 2,
+            "name": "metadata"
+          }
+        ],
+        "collation": [],
+        "hints": []
+      }
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "CREATE_TABLE",
+        "visible": true,
+        "statement_text": "CREATE TABLE `T` (`A` INTEGER NOT NULL PRIMARY KEY, `b` INTEGER DEFAULT 7)",
+        "diagnostic_text": "CREATE TABLE \"T\" (\"A\" INTEGER NOT NULL PRIMARY KEY, b INTEGER DEFAULT 7)",
+        "position": {
+          "line": 4,
+          "column": 1,
+          "end_line": 4,
+          "end_column": 63,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "create_table",
+      "schema": 3,
+      "name": {
+        "name": "T",
+        "quoted": true
+      },
+      "name_diagnostic": {
+        "origin": {
+          "kind": "source",
+          "source": 0,
+          "start": {
+            "line": 4,
+            "column": 14
+          },
+          "end": {
+            "line": 4,
+            "column": 16
+          }
+        },
+        "text": "\"T\"",
+        "internal_text": "\"T\"",
+        "empty": false
+      },
+      "foreign_keys": []
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "INSERT",
+        "visible": true,
+        "statement_text": "INSERT INTO `T` (`b`, `A`)\nVALUES ROW(20, 10)",
+        "diagnostic_text": "INSERT INTO \"T\" (b, \"A\")\nVALUES (20, 10)",
+        "position": {
+          "line": 5,
+          "column": 1,
+          "end_line": 5,
+          "end_column": 39,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "modify_table",
+      "insert": true,
+      "name": {
+        "name": "T",
+        "quoted": true
+      },
+      "relation": 1,
+      "columns": [
+        {
+          "display_name": "b",
+          "name": {
+            "name": "b",
+            "quoted": false
+          },
+          "position": {
+            "line": 5,
+            "column": 17,
+            "end_line": 5,
+            "end_column": 17,
+            "quoted": false
+          }
+        },
+        {
+          "display_name": "A",
+          "name": {
+            "name": "A",
+            "quoted": true
+          },
+          "position": {
+            "line": 5,
+            "column": 20,
+            "end_line": 5,
+            "end_column": 22,
+            "quoted": false
+          }
+        }
+      ]
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "DELETE",
+        "visible": true,
+        "statement_text": "REMOVE FROM `T` (`b`, `A`)\nVALUES ROW(20, 10)",
+        "diagnostic_text": "REMOVE FROM \"T\" (b, \"A\")\nVALUES (20, 10)",
+        "position": {
+          "line": 6,
+          "column": 1,
+          "end_line": 6,
+          "end_column": 39,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "modify_table",
+      "insert": false,
+      "name": {
+        "name": "T",
+        "quoted": true
+      },
+      "relation": 2,
+      "columns": [
+        {
+          "display_name": "b",
+          "name": {
+            "name": "b",
+            "quoted": false
+          },
+          "position": {
+            "line": 6,
+            "column": 17,
+            "end_line": 6,
+            "end_column": 17,
+            "quoted": false
+          }
+        },
+        {
+          "display_name": "A",
+          "name": {
+            "name": "A",
+            "quoted": true
+          },
+          "position": {
+            "line": 6,
+            "column": 20,
+            "end_line": 6,
+            "end_column": 22,
+            "quoted": false
+          }
+        }
+      ]
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "CREATE_VIEW",
+        "visible": true,
+        "statement_text": "CREATE VIEW `v` AS\nSELECT `T`.`A`, PLUS_ONE(`T`.`b`) AS `b`\nFROM `schema`.`T` AS `T`",
+        "diagnostic_text": "CREATE VIEW v AS\nSELECT T.\"A\", PLUS_ONE(T.b) AS b\nFROM \"schema\".\"T\" AS \"T\"",
+        "position": {
+          "line": 7,
+          "column": 1,
+          "end_line": 7,
+          "end_column": 54,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "create_view",
+      "schema": 4,
+      "view_kind": "STANDARD",
+      "emit_final": -1,
+      "name": {
+        "name": "v",
+        "quoted": false
+      },
+      "root": {
+        "relation": 3,
+        "validated_type": 3,
+        "kind": "SELECT",
+        "fields": [
+          {
+            "index": 0,
+            "name": "A"
+          },
+          {
+            "index": 1,
+            "name": "b"
+          }
+        ],
+        "collation": [],
+        "hints": []
+      }
+    },
+    {
+      "source": {
+        "source": 0,
+        "kind": "CREATE_INDEX",
+        "visible": true,
+        "statement_text": "CREATE INDEX `ix` ON `v` (`b`, `A`)",
+        "diagnostic_text": "CREATE INDEX ix ON v (b, \"A\")",
+        "position": {
+          "line": 8,
+          "column": 1,
+          "end_line": 8,
+          "end_column": 28,
+          "quoted": false
+        },
+        "position_internal": false
+      },
+      "kind": "create_index",
+      "name": {
+        "name": "ix",
+        "quoted": false
+      },
+      "target": {
+        "name": "v",
+        "quoted": false
+      },
+      "name_position": {
+        "line": 8,
+        "column": 14,
+        "end_line": 8,
+        "end_column": 15,
+        "quoted": false
+      },
+      "target_position": {
+        "line": 8,
+        "column": 20,
+        "end_line": 8,
+        "end_column": 20,
+        "quoted": false
+      },
+      "columns": [
+        {
+          "name": {
+            "name": "b",
+            "quoted": false
+          },
+          "position": {
+            "line": 8,
+            "column": 22,
+            "end_line": 8,
+            "end_column": 22,
+            "quoted": false
+          }
+        },
+        {
+          "name": {
+            "name": "A",
+            "quoted": true
+          },
+          "position": {
+            "line": 8,
+            "column": 25,
+            "end_line": 8,
+            "end_column": 27,
+            "quoted": true
+          }
+        }
+      ]
+    }
+  ],
+  "diagnostics": {
+    "before": [
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      },
+      {
+        "context": {
+          "kind": "absent"
+        },
+        "messages": []
+      }
+    ],
+    "after": {
+      "context": {
+        "kind": "absent"
+      },
+      "messages": []
+    }
+  },
+  "context": {
+    "options": {
+      "help": false,
+      "languageOptions": {
+        "incrementalize": false,
+        "optimizationLevel": 2,
+        "throwOnError": false,
+        "generateInputForEveryTable": false,
+        "ignoreOrderBy": false,
+        "outputsAreSets": false,
+        "streaming": false,
+        "lenient": false,
+        "unrestrictedIOTypes": false,
+        "unaryPlusNoop": false,
+        "cteViews": false
+      },
+      "ioOptions": {
+        "anonymize": false,
+        "format": false,
+        "loggingLevel": {},
+        "noRust": false,
+        "enterprise": false,
+        "outputFile": "",
+        "errorFile": "",
+        "emitJpeg": false,
+        "emitPng": false,
+        "emitSvg": false,
+        "interpreterJson": false,
+        "gen2": false,
+        "emitPlan": null,
+        "emitDataflow": null,
+        "emitJsonErrors": false,
+        "emitJsonSchema": null,
+        "quiet": false,
+        "inputFile": null,
+        "verbosity": 0,
+        "emitHandles": false,
+        "trimInputs": false,
+        "crates": "",
+        "runtimePath": "",
+        "correlatedColumns": false,
+        "sqlNames": false,
+        "raw": false,
+        "inputCircuit": true,
+        "skipCalciteOptimizations": "",
+        "testing": false,
+        "checkSerialization": false,
+        "dumpCircuits": "",
+        "dumpProducerCommit": "",
+        "dumpRuntimeAbi": "",
+        "writeS2": "",
+        "readS2": false,
+        "writeS3": "",
+        "readS3": false,
+        "nowStream": true,
+        "showVersion": false
+      }
+    },
+    "sources": {
+      "file": null,
+      "program": "SET ENFORCE_POSITIVE_INPUTS = TRUE;\nCREATE TYPE record_t AS (\"Field\" INT);\nCREATE FUNCTION plus_one(x INT) RETURNS INT AS x + 1;\nCREATE TABLE \"T\"(\"A\" INT NOT NULL PRIMARY KEY, b INT DEFAULT 7);\nINSERT INTO \"T\"(b, \"A\") VALUES (20, 10);\nREMOVE FROM \"T\"(b, \"A\") VALUES (20, 10);\nCREATE VIEW v AS SELECT \"A\", plus_one(b) AS b FROM \"T\";\nCREATE INDEX ix ON v(b, \"A\");",
+      "lines": [
+        "SET ENFORCE_POSITIVE_INPUTS = TRUE;",
+        "CREATE TYPE record_t AS (\"Field\" INT);",
+        "CREATE FUNCTION plus_one(x INT) RETURNS INT AS x + 1;",
+        "CREATE TABLE \"T\"(\"A\" INT NOT NULL PRIMARY KEY, b INT DEFAULT 7);",
+        "INSERT INTO \"T\"(b, \"A\") VALUES (20, 10);",
+        "REMOVE FROM \"T\"(b, \"A\") VALUES (20, 10);",
+        "CREATE VIEW v AS SELECT \"A\", plus_one(b) AS b FROM \"T\";",
+        "CREATE INDEX ix ON v(b, \"A\");"
+      ]
+    },
+    "input_source": "API",
+    "unresolved_view_lateness": []
+  },
+  "table_scan_order": [
+    0,
+    4
+  ]
+}

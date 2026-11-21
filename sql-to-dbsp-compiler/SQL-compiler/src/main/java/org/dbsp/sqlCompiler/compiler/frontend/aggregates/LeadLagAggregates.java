@@ -13,8 +13,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -56,6 +58,9 @@ public class LeadLagAggregates extends WindowAggregates {
             throw new UnimplementedException("Currently LAG/LEAD amount must be a compile-time constant", 457, node);
         }
         Utilities.enforce(amount.is(DBSPI32Literal.class));
+        if (amount.to(DBSPI32Literal.class).isNull())
+            throw new UnsupportedException("LAG/LEAD offset must not be NULL",
+                    CalciteObject.create(call.getParserPosition()));
         return Objects.requireNonNull(amount.to(DBSPI32Literal.class).value);
     }
 

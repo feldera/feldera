@@ -1,0 +1,18 @@
+{
+  "classic_workspace_bytes": true,
+  "gen2_canonical_ir": true,
+  "schema_and_dataflow": true,
+  "sql_error_terminal": true,
+  "deadline_terminal": true,
+  "cancellation_terminal": true,
+  "validated_artifact_digests": true,
+  "stateful_fallback_refused": true,
+  "stateless_retry_bounded": true,
+  "stateless_retry_matches_direct_java": true,
+  "stateless_retry_ir_only_engines": [
+    "classic",
+    "gen2"
+  ],
+  "classic_multi_crate_workspace": true,
+  "stateless_retry_multi_crate_workspace": true
+}

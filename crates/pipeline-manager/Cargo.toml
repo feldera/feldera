@@ -22,6 +22,7 @@ development = ["pg-client-config"]
 feldera-types = { workspace = true }
 feldera-cloud1-client = { workspace = true }
 feldera-ir = { workspace = true }
+feldera-sql-difftest = { path = "../sql/sql-difftest" }
 
 # Logging
 tracing = { workspace = true }

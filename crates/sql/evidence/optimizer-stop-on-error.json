@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-stop-on-error-archive.json",
+  "scope": "Rust evaluates the Java compiler status at the original StopOnError placement. Java retains exception rendering and circuit ownership.",
+  "engines": ["classic", "gen2"],
+  "programs_per_engine": 50,
+  "successful_placement_decisions_compared": 100,
+  "placement_input_graphs_compared": 100,
+  "placement_output_graphs_compared": 100,
+  "rust_final_results_compared": 100,
+  "java_final_controls_compared": 100,
+  "directed_results": [
+    {"case": "clean", "exit_code": 0, "stop": false},
+    {"case": "warning", "exit_code": 0, "stop": false},
+    {"case": "error", "exit_code": 1, "stop": true},
+    {"case": "status-only", "exit_code": 2, "stop": true}
+  ],
+  "differences": 0,
+  "limitations": "The fifty-program inputs are accepted. Separate directed tests execute the actual scheduled Java pass with compiler status injected at the guard. The two natural SQL rejection controls stop before reaching this guard."
+}

@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-rolling-owned-input-update-archive.json",
+  "scope": "Persistent rolling COUNT on Linux ARM64, after extracting the reusable rolling operator for descriptor-backed inputs. The paired classic and native circuits keep their existing case-specific adapters.",
+  "binary_sha256": "e11a0db9b527e06c2891886a54fd088db5c5b3ecbcd4bff6f4e3c060f0c0b91c",
+  "process_pairs": 84,
+  "limits": {
+    "throughput": 0.85,
+    "transaction_p95": 1.2,
+    "peak_rss": 1.25,
+    "checkpoint": 1.01
+  },
+  "configurations": [
+    {
+      "storage": "overlay",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9874955222451529,
+        "transaction_p95": 1.0120672706982146,
+        "peak_rss": 1.013265178123432,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    },
+    {
+      "storage": "overlay",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9231375566978245,
+        "transaction_p95": 1.0507267814083272,
+        "peak_rss": 1.006311331894621,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [
+        {
+          "pair": 18,
+          "classic_checkpoint_bytes": 242990,
+          "native_checkpoint_bytes": 262774,
+          "classic_spill_file_sizes": [
+            151,
+            13312,
+            13312,
+            13824,
+            13824,
+            14848,
+            14848,
+            14848,
+            14848,
+            23552,
+            36864,
+            60416
+          ],
+          "native_spill_file_sizes": [
+            151,
+            9728,
+            9728,
+            13312,
+            13312,
+            13824,
+            13824,
+            14848,
+            14848,
+            14848,
+            14848,
+            23552,
+            36864,
+            60416
+          ]
+        }
+      ],
+      "maximum_paired_checkpoint_ratio": 1.0814189884357381,
+      "all_checkpoint_sizes_within_limit": false
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9986607930990028,
+        "transaction_p95": 0.9921544475937079,
+        "peak_rss": 1.012231363593706,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9871477369088606,
+        "transaction_p95": 1.0105967053761435,
+        "peak_rss": 1.0034078461600877,
+        "checkpoint": 1.0
+      },
+      "checkpoint_differences": [],
+      "maximum_paired_checkpoint_ratio": 1.0,
+      "all_checkpoint_sizes_within_limit": true
+    }
+  ]
+}

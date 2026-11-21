@@ -135,7 +135,7 @@ public class DBSPSourceMapOperator
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         List<Integer> keyFields = Linq.list(Linq.map(
                 Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
-        return new DBSPSourceMapOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
+        return new DBSPSourceMapOperator(CalciteEmptyRel.INSTANCE, JsonDecoder.decodeSourceName(node), keyFields,
                 info.getIndexedZsetType(), originalRowType, metadata, name, decoder.sourceKind(), null)
                 .addAnnotations(info.annotations(), DBSPSourceMapOperator.class);
     }

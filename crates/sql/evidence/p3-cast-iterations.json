@@ -1,0 +1,64 @@
+{
+  "comparison": "One Rust iteration per Java observation, including fixed-point exits, checked graph, sharing, provenance and generated-name counter.",
+  "jar_sha256": "07cd1946849306e189a7c92639543e41db8b0cc39b1be62efaa29d29e2b7c677",
+  "oracle_class_sha256": "be859bef45aceb7c8d1141039e8cd639ec9ecd80ead93751458344f37dbf831c",
+  "comparator_sha256": "89aee6971d006454fef5b37c4928e2c3f0910ee250477f14d63e5c72bf25618e",
+  "passes": {
+    "ExpandSafeCasts": {
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "38370e61d924acd432e1fdf2908fd7d5526abc06769883cd91ec279df52fefa5",
+          "da13a050237e223d789529a1c6d024a443d0d84f87b3d90dfa4584ca8d558d9f"
+        ],
+        "pass": "ExpandSafeCasts",
+        "invocations": 8925,
+        "changed": 354,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "3ca04a1aed57d62e7abf4dca2efed83b97b29da8182cff7a4ab38b06e6490ce5",
+          "0df4f8b47cf5c99a8aaa1f4787ab0e3126b24f28a65c1d34ccc314606daf66e8"
+        ],
+        "pass": "ExpandSafeCasts",
+        "invocations": 8881,
+        "changed": 354,
+        "cases_without_placement": 0
+      }
+    },
+    "ExpandUnsafeCasts": {
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+        "result_shards_sha256": [
+          "51d558706820acb8ba60fb102532fb2fe2e283d4b377b03f29ebd854babcce67",
+          "c0641da5cd4ad4f808717a7613266f10c423b9301e0e74f769c1cf4abc73bf62"
+        ],
+        "pass": "ExpandUnsafeCasts",
+        "invocations": 11646,
+        "changed": 3075,
+        "cases_without_placement": 0
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+        "result_shards_sha256": [
+          "8891bef0679760e0940319609b2da977ec13998d693fe8b717f7ee9decae1221",
+          "a70b53b3b5772d34b4a3e4623760e8292de5b9abdcbafa50e505ae082f39b7a2"
+        ],
+        "pass": "ExpandUnsafeCasts",
+        "invocations": 11580,
+        "changed": 3053,
+        "cases_without_placement": 0
+      }
+    }
+  }
+}

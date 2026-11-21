@@ -8,6 +8,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTable;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
 
+import java.util.function.UnaryOperator;
+
 /** Implements the "now" operator.
  * This requires:
  * - using the input stream called now
@@ -15,15 +17,19 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Repeat;
  * - rewriting the invocations to the now() function in the map function to references to the input variable */
 public class ImplementNow extends Passes {
     public ImplementNow(DBSPCompiler compiler) {
+        this(compiler, UnaryOperator.identity());
+    }
+
+    public ImplementNow(DBSPCompiler compiler, UnaryOperator<CircuitTransform> select) {
         super("ImplementNow", compiler);
         boolean removeTable = !compiler.compiler().options.ioOptions.nowStream;
         RewriteNow rewriteNow = new RewriteNow(compiler);
         CircuitContainsNow cn = new CircuitContainsNow(compiler);
-        CircuitTransform breakFilters = new Repeat(compiler, new BreakFilters(compiler));
+        CircuitTransform breakFilters = new Repeat(compiler, select.apply(new BreakFilters(compiler)));
         CircuitTransform mergeFilters = new MergeFilters(compiler);
         // Check if there is any operator containing NOW
-        this.passes.add(cn);
-        this.passes.add(new Conditional(compiler, new DesugarNowEquality(compiler), cn::found));
+        this.passes.add(select.apply(cn));
+        this.passes.add(new Conditional(compiler, select.apply(new DesugarNowEquality(compiler)), cn::found));
         this.passes.add(new Conditional(compiler, new ReorderTemporalFilters(compiler), cn::found));
         // Break filters that contain NOW into simpler filters
         this.passes.add(new Conditional(compiler, breakFilters, cn::found));
@@ -32,11 +38,11 @@ public class ImplementNow extends Passes {
         this.passes.add(new Conditional(compiler, rewriteNow, cn::found));
         // Remove the NOW table
         this.passes.add(new Conditional(compiler,
-                new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME), () -> !cn.found() || removeTable));
+                select.apply(new RemoveTable(compiler, DBSPCompiler.NOW_TABLE_NAME)), () -> !cn.found() || removeTable));
         Passes check = new Passes("CheckNow", compiler);
         // Check that no instances of NOW are left in the circuit
         CircuitContainsNow cn0 = new CircuitContainsNow(compiler);
-        check.add(cn0);
+        check.add(select.apply(cn0));
         check.add(new Conditional(compiler,
                 new Fail(compiler, "Instances of 'now' have not been replaced"), cn0::found));
         // Only if we found now previously we check that it's been removed

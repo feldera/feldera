@@ -43,7 +43,7 @@ public final class DBSPViewDeclarationOperator
     }
 
     /** Copies keep the Calcite nodes accumulated by the original declaration. */
-    private DBSPViewDeclarationOperator(
+    public DBSPViewDeclarationOperator(
             CalciteRelNode relNode, CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, StreamKind kind) {

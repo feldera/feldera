@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-input-producers-20261117-v1.tar.gz",
+  "sha256": "c5ff2972eb11bd22991fab4523b6b50ebef2e0451646338722e2ee4a9ac5b8e4",
+  "bytes": 41359958,
+  "certificates": [
+    "s1-input-producers.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-input-producers.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-input-producers-v2/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-input-producers.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Shared input objects and uses checked against producer topology and ordered row layouts",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-input-producers-archive.json"
+}

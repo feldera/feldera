@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "scope": "0.64 MAP constructor and datatype hooks; 0.62 and generic dialects unchanged",
+  "sources": {
+    "crates/sql/parser-probe/Cargo.lock": "cce3727d255df64508c8d27224ba4958ef743044042106a5abfccf9f199faf08",
+    "crates/sql/parser-probe/Cargo.toml": "d4a5d5aca072d2558b381b168cdc168d6b5be057944e73a54e34ebdfed8cae6b",
+    "crates/sql/parser-probe/README.md": "f66299173dc87dcae18c3a6e6eb27e86bb9f97ad6ecf70f842d398e09204fc10",
+    "crates/sql/parser-probe/adversarial.jsonl": "76d8ca2928837bd4d6db8ef6d5778407eb1a83768e7770d7ab75a48c1c0857b1",
+    "crates/sql/parser-probe/src/lib.rs": "e6b3ceb78f1eb3dfd4c15dd2f8090b265ee47760da1b68f25c394d080f3f333e",
+    "crates/sql/parser-probe/src/main.rs": "e517ae48d7847312f18237648c39e222ad339911042840b0d3e0009b76a3929f",
+    "crates/sql/parser-probe/src/v062.rs": "e8ef7f4dd07dd44bd16d413b675fff04a58d9a11ea9203ddb4e5ed8e2d8fe9d1",
+    "crates/sql/parser-probe/src/v064/collections.rs": "1fb7073c2c847473300689f118dba842dc60c717c4bafe0d353d4d4d32b0cc01",
+    "crates/sql/parser-probe/src/v064/reject.rs": "6210ad58a5950698fd992caef682e04f3505730e42a4902304c1c95e62418721",
+    "crates/sql/parser-probe/src/v064/unicode.rs": "2c039d25dc343c2118953f186c900d1f77f0da635ebcede942911f76ea1d220b",
+    "crates/sql/parser-probe/src/v064.rs": "a2e59a90933afc4c820c72a65f915603a1230d4d3fc238584bdf64ef32dae1c2",
+    "crates/sql/parser-probe/syntax.jsonl": "72efe196b71e35e082e5154fef08ba0290f1a79191c737f54942f77cb1d8ef3b"
+  },
+  "validation": {
+    "rust_tests": 18,
+    "clippy": "pass"
+  },
+  "corpus": {
+    "cases": 8571,
+    "accepted": 7832,
+    "rejected": 739,
+    "additional_acceptances": 169
+  },
+  "adversarial": {
+    "cases": 54,
+    "both_accept": 34,
+    "both_reject": 10,
+    "java_only": 10,
+    "rust_only": 0
+  },
+  "raw_run": "$SCRATCH/p0-parser-maps-v1",
+  "semantic_equivalence_checked": false,
+  "exhaustive_ast_rejection": false,
+  "s1_equivalence_checked": false,
+  "independent_review": false,
+  "limits": [
+    "Odd MAP argument counts rejected at parse stage; Java rejects them during validation",
+    "MAP display syntax is not a Feldera unparser",
+    "ROW field NOT NULL remains unsupported",
+    "Source span and full S1 equality remain unproven"
+  ]
+}

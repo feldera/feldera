@@ -14,6 +14,9 @@ import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Logger;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import java.util.ArrayList;
+import java.util.List;
 import javax.annotation.Nullable;
 
 /** Removes a LEFT JOIN whose right input contributes nothing: the join function reads
@@ -26,6 +29,20 @@ public class RemoveUselessLeftJoinsVisitor extends CircuitCloneVisitor {
     public RemoveUselessLeftJoinsVisitor(DBSPCompiler compiler, KeyAnalysis keys) {
         super(compiler, false);
         this.keys = keys;
+    }
+
+    /** Input facts from the preceding KeyAnalysis, keyed by the original join identity. */
+    public List<Long> keyedLeftJoins(DBSPCircuit circuit) {
+        var keyed = new ArrayList<Long>();
+        new CircuitVisitor(this.compiler) {
+            @Override
+            public void postorder(DBSPJoinBaseOperator join) {
+                if ((join instanceof DBSPLeftJoinOperator || join instanceof DBSPLeftJoinIndexOperator)
+                        && keys.getKeys(join.right()).hasKeyWithinIndex())
+                    keyed.add(join.id);
+            }
+        }.apply(circuit);
+        return keyed;
     }
 
     /** The join function applied to the (key, value) pairs of the left input alone.
@@ -51,10 +68,14 @@ public class RemoveUselessLeftJoinsVisitor extends CircuitCloneVisitor {
                 .append(" from ")
                 .appendSupplier(() -> join.getRelNode().toString())
                 .newline();
-        this.compiler.reportWarning(join.getSourcePosition(), "LEFT JOIN has no effect",
+        reportRemoved(this.compiler, join);
+        this.map(join, replacement);
+    }
+
+    public static void reportRemoved(DBSPCompiler compiler, DBSPJoinBaseOperator join) {
+        compiler.reportWarning(join.getSourcePosition(), "LEFT JOIN has no effect",
                 "Removed a LEFT JOIN that adds no columns to its result and matches at most " +
                         "one row for each row of its left input");
-        this.map(join, replacement);
     }
 
     @Override

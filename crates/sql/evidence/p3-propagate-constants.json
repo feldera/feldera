@@ -1,0 +1,46 @@
+{
+  "scope": "The scheduled pass evaluates constant filters, maps and negation and removes redundant DISTINCT operators. Comparisons include graph, generated names and emitted diagnostics.",
+  "comparator_sha256": "25cbe8ed01f170319357570242a4723174d49a91993a543c7985981936a5ead4",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "b2188f4a78acfa3b7eaf76c3343b76164e97c08d2548270bcf4236690ed09516",
+      "8e8b0d33fb5e22abd7f106c6312e439a52e90a3e4a82398a79838ab0418aa994",
+      "3a40ddfed116f707352254aed32cb064c8c9f7eeabee6a29563d9a913f4133a1",
+      "2ca4c62fcc9590f464ca4ad2d0b90ec2bcca9185309b5b6cd2d541d3b2933ea6"
+    ],
+    "pass": "PropagateConstants",
+    "invocations": 8571,
+    "changed": 495,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "d5e645783651277e20ca15d146a2f87bf557935bbf7e975c3f6d9c770f739fc6",
+      "2f2b1b6313cc29bdd3b241f694ff2d9672d1efddebe4b20c9d520242a10f61c7",
+      "b1bb67345044463f8e19f67d96cf231fbba4a4c675f0278825a450ec17ccaec8",
+      "5b5038e9cbe3d8ac0af333b653eab619eee383b13bde56b063db374d44369461"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "c3cd004c5991077d07f272223e97bbab0fff00b36d307fff0d518fe9940da871",
+      "7433f34949449189c1855561f9105b73332198951d9d2fe06d4ab2c5670406da",
+      "655b15d45f1f5093beb1073cad1c598cba1b6c79b75d8c0dabb5049843a873a2",
+      "870b28e7b2327771a47e1cb047007b6f975ba70c4e717e95f5c78b871ad365b0"
+    ],
+    "pass": "PropagateConstants",
+    "invocations": 8527,
+    "changed": 495,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "090338fb76a26a54b13ab3cb2d477f972058d236e8efa7c5523e20a107edcec0",
+      "0df620596e0de65b9cf647819d013a42eec3e7505919077ea6c1baece834e2de",
+      "ca717d140e91992349992a12cc02c887d03c3087164ddfe71fcb3bc9632b19c8",
+      "87977f8e5c90bdc2a1db4007190a84676feecd3e3c2ffdfa0588d54370e88724"
+    ]
+  }
+}

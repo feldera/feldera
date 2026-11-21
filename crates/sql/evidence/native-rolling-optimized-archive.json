@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-optimized.tar.gz",
+  "bytes": 43251963,
+  "sha256": "3cbf2acd1e6d8e78132376a0ee236ccdc0539b207f34b58f440c6b1ca42d72d4",
+  "manifest_sha256": "2bbb2305b667c305844354c0b8bf23ff46ccb83861eb8986b98a0dfa8731a4ba",
+  "verified_files": 361,
+  "all_members_verified": true
+}

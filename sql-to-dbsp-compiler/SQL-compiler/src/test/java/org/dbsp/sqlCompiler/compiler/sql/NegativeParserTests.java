@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -30,7 +32,12 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (unknown)
                 )""";
-        this.statementsFailingInCompilation(ddl, "does not correspond to a column");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("No such column", 3, 18,
+                        "    3|    PRIMARY KEY (unknown)\n" +
+                        "                       ^^^^^^^\n" +
+                        "    4|)\n"),
+                Diagnostic.error("Compilation error", 0, 0, ""));
     }
 
     @Test
@@ -39,25 +46,46 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE T(T INT);
                 CREATE TABLE T(T INT);
                 """;
-        this.statementsFailingInCompilation(ddl, "Duplicate declaration");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Duplicate declaration", 2, 1,
+                        "    1|CREATE TABLE T(T INT);\n" +
+                        "    2|CREATE TABLE T(T INT);\n" +
+                        "      ^^^^^^^^^^^^^^^^^^^^^\n"),
+                Diagnostic.error("Duplicate declaration", 1, 1,
+                        "    1|CREATE TABLE T(T INT);\n" +
+                        "      ^^^^^^^^^^^^^^^^^^^^^\n" +
+                        "    2|CREATE TABLE T(T INT);\n"),
+                Diagnostic.error("Compilation error", 0, 0, ""));
     }
 
     @Test
     public void testTableProperties() {
         String ddl = "CREATE TABLE T(T INT) WITH ( 5 )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"5\".\n");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Error parsing SQL", 1, 30,
+                        "    1|CREATE TABLE T(T INT) WITH ( 5 )\n" +
+                        "                                   ^\n"));
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( a = b )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"a\".\n");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Error parsing SQL", 1, 30,
+                        "    1|CREATE TABLE T(T INT) WITH ( a = b )\n" +
+                        "                                   ^\n"));
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"NULL\".\n");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Error parsing SQL", 1, 30,
+                        "    1|CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )\n" +
+                        "                                   ^^^^\n"));
 
         // properties cannot be an empty list
         ddl = "CREATE TABLE T(T INT) WITH ( )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \")\".\n");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Error parsing SQL", 1, 30,
+                        "    1|CREATE TABLE T(T INT) WITH ( )\n" +
+                        "                                   ^\n"));
     }
 
     @Test
@@ -67,7 +95,16 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null PRIMARY KEY,
                     PRIMARY KEY (git_commit_id)
                 )""";
-        this.statementsFailingInCompilation(ddl,  "in table with another PRIMARY KEY constraint");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Duplicate key", 2, 5,
+                        "    2|    git_commit_id bigint not null PRIMARY KEY,\n" +
+                        "          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n" +
+                        "    3|    PRIMARY KEY (git_commit_id)\n"),
+                Diagnostic.error("Duplicate key", 3, 5,
+                        "    3|    PRIMARY KEY (git_commit_id)\n" +
+                        "          ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n" +
+                        "    4|)\n"),
+                Diagnostic.error("Compilation error", 0, 0, ""));
     }
 
     @Test
@@ -76,7 +113,11 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE productvariant_t (
                     id BIGINT DEFAULT NULL DEFAULT 1
                 );""";
-        this.statementsFailingInCompilation(ddl,  "Column 'id' already has a default value");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Compilation error", 2, 36,
+                        "    2|    id BIGINT DEFAULT NULL DEFAULT 1\n" +
+                        "                                         ^\n" +
+                        "    3|);\n"));
     }
 
     @Test
@@ -87,7 +128,10 @@ public class NegativeParserTests extends BaseSQLTests {
                     a DOUBLE DEFAULT 1e400
                 );""";
         this.statementsFailingInCompilation(ddl,
-                "(no input file):2:22: error: Compilation error: Numeric literal '1E400' out of range\n");
+                Diagnostic.error("Compilation error", 2, 22,
+                        "    2|    a DOUBLE DEFAULT 1e400\n" +
+                        "                           ^^^^^\n" +
+                        "    3|);\n"));
     }
 
     @Test
@@ -98,14 +142,21 @@ public class NegativeParserTests extends BaseSQLTests {
                     ts TIMESTAMP LATENESS INTERVAL 1e400 SECONDS
                 );""";
         this.statementsFailingInCompilation(ddl,
-                "(no input file):2:27: error: Compilation error: Numeric literal '1E400' out of range\n");
+                Diagnostic.error("Compilation error", 2, 27,
+                        "    2|    ts TIMESTAMP LATENESS INTERVAL 1e400 SECONDS\n" +
+                        "                                ^^^^^^^^^^^^^^^^^^^^^^\n" +
+                        "    3|);\n"));
     }
 
     @Test
     public void duplicatedKey2() {
         String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)";
-        this.statementsFailingInCompilation(ddl, "Column 'git_commit_id' already declared a primary key");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Compilation error", 2, 47,
+                        "    1|create table git_commit (\n" +
+                        "    2|    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)\n" +
+                        "                                                    ^^^^^^^^^^^\n"));
     }
 
     @Test
@@ -115,7 +166,16 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (git_commit_id, git_commit_id)
                 )""";
-        this.statementsFailingInCompilation(ddl,  "already declared as key");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Duplicate key column", 3, 33,
+                        "    3|    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
+                        "                                      ^^^^^^^^^^^^^\n" +
+                        "    4|)\n"),
+                Diagnostic.error("Duplicate key column", 3, 18,
+                        "    3|    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
+                        "                       ^^^^^^^^^^^^^\n" +
+                        "    4|)\n"),
+                Diagnostic.error("Compilation error", 0, 0, ""));
     }
 
     @Test
@@ -125,7 +185,11 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY ()
                 )""";
-        this.statementsFailingInCompilation(ddl,  "Error parsing SQL");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Error parsing SQL", 3, 18,
+                        "    3|    PRIMARY KEY ()\n" +
+                        "                       ^\n" +
+                        "    4|)\n"));
     }
 
     @Test
@@ -168,13 +232,25 @@ public class NegativeParserTests extends BaseSQLTests {
                 "COL1 INT" +
                 ", COL1 DOUBLE" +
                 ");";
-        this.statementsFailingInCompilation(ddl, "Column with name 'col1' already defined");
+        this.statementsFailingInCompilation(ddl,
+                Diagnostic.error("Duplicate name", 2, 11,
+                        "    1|CREATE TABLE T (\n" +
+                        "    2|COL1 INT, COL1 DOUBLE);\n" +
+                        "                ^^^^\n"),
+                Diagnostic.error("Duplicate name", 2, 1,
+                        "    1|CREATE TABLE T (\n" +
+                        "    2|COL1 INT, COL1 DOUBLE);\n" +
+                        "      ^^^^^^^^\n"),
+                Diagnostic.error("Compilation error", 0, 0, ""));
     }
 
     @Test
     public void testRejectFloatType() {
         String statement = "CREATE TABLE T(c1 FLOAT);";
-        this.statementsFailingInCompilation(statement, "Do not use");
+        this.statementsFailingInCompilation(statement,
+                Diagnostic.error("Illegal type", 1, 19,
+                        "    1|CREATE TABLE T(c1 FLOAT);\n" +
+                        "                        ^^^^^\n"));
     }
 
     /** The body of a function is compiled inside a generated program; an error on
@@ -199,7 +275,7 @@ public class NegativeParserTests extends BaseSQLTests {
         CompilerMessages.Message msg = messages.getMessage(0);
         Assert.assertFalse(msg.warning);
         // The message continues with the tokens that the parser expected
-        Assert.assertTrue(msg.message, msg.message.startsWith("Encountered \"not SQL\"."));
+        DiagnosticAssertions.assertStartsWith(Target.MESSAGE_BODY, "Encountered \"not SQL\".", msg.message);
 
         file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
         messages = CompilerMain.execute("--noRust", file.getPath());
@@ -250,7 +326,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(1, messages.exitCode);
         Assert.assertEquals(1, messages.errorCount());
         CompilerMessages.Message error = messages.messages.get(0);
-        Assert.assertTrue(error.message.startsWith("Encountered \"<EOF>\""));
+        DiagnosticAssertions.assertStartsWith(Target.MESSAGE_BODY, "Encountered \"<EOF>\"", error.message);
     }
 
     @Test
@@ -266,8 +342,8 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(0, messages.errorCount());
         CompilerMessages.Message error = messages.messages.get(0);
         Assert.assertTrue(error.warning);
-        Assert.assertTrue(error.message.contains("Table 't' is not used"));
-        Assert.assertTrue(messages.toString().contains("CREATE TABLE T"));
+        DiagnosticAssertions.assertContains(Target.MESSAGE_BODY, "Table 't' is not used", error.message);
+        DiagnosticAssertions.assertContains(Target.SOURCE, "CREATE TABLE T", messages.toString());
     }
 
     @Test

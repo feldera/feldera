@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "stage": "S3",
+  "population": "eight focused programs in both modes; not the corpus",
+  "compiler_options": [
+    "-i",
+    "--streaming",
+    "--correlatedColumns"
+  ],
+  "classpath": {
+    "$SCRATCH/p0-seam-tools-v6/classes": "feec35a1c07bc672ef3dec7bfe9adde748c9d9947c0d77f77acef5aff2e873d9",
+    "$SCRATCH/p0-seam-tools-v6/dependencies.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+  },
+  "comparator_sha256": "981a4346ee29655ea0e6f39ffb4d88438831080abc91d83f5f53682e20b1fa2a",
+  "producer": "c6ede756d-p0-seams-v6",
+  "runtime": "c6ede756d",
+  "dataflow_compared": true,
+  "limits": {
+    "heap_mib": 1024,
+    "output_mib": 512,
+    "min_free_mib": 512
+  },
+  "cases": [
+    {
+      "mode": "classic",
+      "name": "constant",
+      "sql": "CREATE VIEW v AS SELECT 1 AS result;",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "projection",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, value INT DEFAULT 7);\n        CREATE VIEW v AS SELECT id FROM t WHERE id > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "decimal",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL PRIMARY KEY, value DECIMAL(12,2) DEFAULT 7.25);\n        CREATE VIEW v AS SELECT id, value * 2 AS doubled FROM t WHERE value > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "settings",
+      "sql": "\n        SET FELDERA_AVOID_STAR_JOINS = true;\n        SET custom_setting = 'retained warning';\n        CREATE TABLE t(x VARCHAR);\n        CREATE VIEW v AS SELECT x || '!' AS x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "union",
+      "sql": "\n        CREATE TABLE t(x INT);\n        CREATE TABLE u(x INT);\n        CREATE VIEW v AS SELECT x FROM t UNION ALL SELECT x FROM u;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "nested",
+      "sql": "\n        CREATE TYPE nested AS (\"Field\" INT);\n        CREATE TABLE t(x nested);\n        CREATE VIEW v AS SELECT x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "provenance",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, value INT);\n        CREATE VIEW a AS SELECT id, value + 1 AS value FROM t WHERE value > 0;\n        CREATE VIEW b AS SELECT id FROM a WHERE value < 10;\n        CREATE VIEW c AS SELECT DISTINCT id FROM t;\n        CREATE VIEW d AS SELECT id FROM b UNION ALL SELECT id FROM c;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "classic",
+      "name": "lateness",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 1 SECOND);\n        CREATE VIEW v AS SELECT id, ts FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true,
+        "program.rs": true,
+        "stubs.rs": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "constant",
+      "sql": "CREATE VIEW v AS SELECT 1 AS result;",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "projection",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, value INT DEFAULT 7);\n        CREATE VIEW v AS SELECT id FROM t WHERE id > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "decimal",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL PRIMARY KEY, value DECIMAL(12,2) DEFAULT 7.25);\n        CREATE VIEW v AS SELECT id, value * 2 AS doubled FROM t WHERE value > 0;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "settings",
+      "sql": "\n        SET FELDERA_AVOID_STAR_JOINS = true;\n        SET custom_setting = 'retained warning';\n        CREATE TABLE t(x VARCHAR);\n        CREATE VIEW v AS SELECT x || '!' AS x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "union",
+      "sql": "\n        CREATE TABLE t(x INT);\n        CREATE TABLE u(x INT);\n        CREATE VIEW v AS SELECT x FROM t UNION ALL SELECT x FROM u;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "nested",
+      "sql": "\n        CREATE TYPE nested AS (\"Field\" INT);\n        CREATE TABLE t(x nested);\n        CREATE VIEW v AS SELECT x FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "provenance",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, value INT);\n        CREATE VIEW a AS SELECT id, value + 1 AS value FROM t WHERE value > 0;\n        CREATE VIEW b AS SELECT id FROM a WHERE value < 10;\n        CREATE VIEW c AS SELECT DISTINCT id FROM t;\n        CREATE VIEW d AS SELECT id FROM b UNION ALL SELECT id FROM c;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    },
+    {
+      "mode": "gen2",
+      "name": "lateness",
+      "sql": "\n        CREATE TABLE t(id INT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 1 SECOND);\n        CREATE VIEW v AS SELECT id, ts FROM t;\n    ",
+      "equal": true,
+      "graphs_equal": true,
+      "observations": 1,
+      "exact_artifacts": {
+        "schema.json": true
+      },
+      "diagnostics_equal": true,
+      "semantic_artifacts": {
+        "dataflow.json": true,
+        "plan.json": true
+      }
+    }
+  ],
+  "equal": true,
+  "jvm_runs": 48,
+  "observations": 16
+}

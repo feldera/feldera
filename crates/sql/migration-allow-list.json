@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "default_cap": {
+    "maximum_entries": 0,
+    "maximum_affected_case_fraction": 0
+  },
+  "entries": []
+}

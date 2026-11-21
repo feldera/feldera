@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-merge-scheduled-replay-archive.json",
+  "programs": 96,
+  "profiles": ["classic-bags", "classic-sets", "gen2-bags", "gen2-sets"],
+  "scheduled_same_input_graph_comparisons": 384,
+  "scheduled_graphs_changed": 92,
+  "scheduled_rust_tail_comparisons": 384,
+  "scheduled_java_codec_control_comparisons": 384,
+  "scheduled_tail_differences": 0,
+  "early_s2_rust_vs_java_rewrite_graph_comparisons": 384,
+  "early_s2_rust_vs_java_rewrite_tail_comparisons": 384,
+  "early_s2_rust_vs_direct_tail_differences": 32,
+  "early_s2_distinct_programs_with_differences": 8,
+  "unmodified_s2_vs_direct_tail_comparisons": 384,
+  "unmodified_s2_vs_direct_tail_differences": 0,
+  "complete_rust_prefix_replayed": false,
+  "runtime_executed": false,
+  "human_hours_measured": false,
+  "scope": "The test compiler replaces its scheduled MergeSums pass in-process, retaining live Java metadata and the remaining optimizer. Rust also runs against the identical captured Java pass inputs. Raw lineage allocation IDs differ across separately launched compiler processes after the first case. The preserved same-input graphs and final artifact comparisons verify different contracts. The early S2 experiment is an intentionally failed placement control."
+}

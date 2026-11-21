@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-fold-outside-executor-20261118-v1.tar.gz",
+  "sha256": "54d7f1daa55b61c6de07526910157ce4a2ade837e4447262aa6429c6b044fcbf",
+  "bytes": 35159437,
+  "certificates": [
+    "fold-outside-executor-s3.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "fold-outside-executor-s3.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-fold-outside-executor-v1/audit-sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "fold-outside-executor-s3.json": "path-null-binary-sha256"
+  },
+  "scope": "Pre/post-executor fold source audit,64 targeted cases with independently expected warnings/verdicts, and Java workflow integration",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/fold-outside-executor-archive.json"
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s4-lifetime-20261118-v1.tar.gz",
+  "bytes": 3828778,
+  "sha256": "aeaaaba7608cac67896d620105a1e6c17c8e098f6c561da01ce1444b576a8434",
+  "manifest_sha256": "0267f179418cf90bc495eb17655a1798e0010ba18616d894eede6dd30e05c2bf",
+  "verified_files": 56,
+  "all_members_verified": true
+}

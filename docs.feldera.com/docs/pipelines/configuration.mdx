@@ -191,6 +191,11 @@ The "optimized_symbols" profile adds minimal debug information (to display line 
 It can lead to significantly larger pipeline binary sizes (can be up to 2x in practice). However, it is useful to run with this
 profile if you want to debug unexpected panics during pipeline execution.
 
+The experimental `program_config.compiler` field selects the SQL compiler family.
+This release supports `"java"`. To set this field, enable `compiler_selection`
+in `FELDERA_UNSTABLE_FEATURES` on the platform. If you omit the field, the
+platform uses Java.
+
 <div className='theme-api-markdown' >
 <ApiSchema pointer="#/components/schemas/ProgramConfig"/>
 </div>

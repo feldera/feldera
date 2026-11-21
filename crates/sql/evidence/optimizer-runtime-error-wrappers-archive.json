@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-runtime-error-wrappers-20261118.tar.gz",
+  "bytes": 25552085,
+  "sha256": "a673d91af61e1b9a8cc1cd10e5ccff127c04df796150722440ea5a6ea31ab290",
+  "manifest_sha256": "1e0fbae88f64bb8be0bcee7e57eefc66fc0f7cb7f9a9ca9e360449a879eb69f6",
+  "verified_files": 23636,
+  "all_members_verified": true
+}

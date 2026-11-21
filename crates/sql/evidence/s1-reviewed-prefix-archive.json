@@ -1,0 +1,19 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-reviewed-s1-prefix-20261118-v1.tar.gz",
+  "archive_root": "p0-reviewed-s1-archive-v1",
+  "sha256": "ea2687858ea91bce1fd835039e132bfc9573a4edbdc37edcacadf0686cc8372f",
+  "bytes": 178381826,
+  "verified_files": 3520,
+  "source_files": 1294,
+  "class_files": 1969,
+  "manifest": "MANIFEST.sha256.json",
+  "adjudication": "adjudication.json",
+  "all_members_verified": true,
+  "human_maintainer_accepted": false,
+  "P0_complete": false,
+  "manifest_sha256": "7bd9140f587cb26c064082704b01276be63d8f7d84a8477861089fda654fe566",
+  "archive_files": 3521,
+  "manifest_verified": true
+}

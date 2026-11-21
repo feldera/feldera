@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-outer-join-execution-archive.json",
+  "programs": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/0",
+      "case_sha256": "22a9e41fa6b03ea3db445790076f3a8ac71924571d17275ec142062d99addd98",
+      "verified_steps": 1,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-unicode-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/1",
+      "case_sha256": "bade57712d40fef7fae7222dff513ddb374fdc7c97f335a09dfe7644b9a6faad",
+      "verified_steps": 1,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-unicode-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#leftOuterJoinTest/0",
+      "case_sha256": "198c0251f4b96a5be6b9877517b2dad81e457de3b4b46a8948d9568a02675fd1",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-outer-join-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#fullOuterJoinTest/0",
+      "case_sha256": "e16494ae8ceeccad109d8fa24180c0ad33361a80d185c5b79bc842a4aa5541ba",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-outer-join-execution.json"
+    }
+  ],
+  "native_frozen_programs_passed": 4,
+  "classic_generated_outer_join_tests_passed": 2,
+  "native_supplemental_outer_join_tests_passed": 2,
+  "production_performance_measured": false
+}

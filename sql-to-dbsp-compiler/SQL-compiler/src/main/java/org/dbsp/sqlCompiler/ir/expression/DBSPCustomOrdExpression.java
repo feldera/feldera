@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An expression that carries a comparator for custom ordering */
 public final class DBSPCustomOrdExpression extends DBSPExpression {
@@ -20,8 +21,13 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
     public DBSPCustomOrdExpression(
             CalciteObject node, DBSPExpression source,
             DBSPExpression comparator) {
-        super(node, new DBSPTypeWithCustomOrd(
+        this(node, source, comparator, new DBSPTypeWithCustomOrd(
                 node, source.getType(), comparator.getType().to(DBSPComparatorType.class)));
+    }
+
+    private DBSPCustomOrdExpression(CalciteObject node, DBSPExpression source,
+                                    DBSPExpression comparator, DBSPTypeWithCustomOrd type) {
+        super(node, type);
         this.source = source;
         this.comparator = comparator;
     }
@@ -77,6 +83,9 @@ public final class DBSPCustomOrdExpression extends DBSPExpression {
     public static DBSPCustomOrdExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
         DBSPExpression comparator = fromJsonInner(node, "comparator", decoder, DBSPExpression.class);
-        return new DBSPCustomOrdExpression(CalciteObject.EMPTY, source, comparator);
+        DBSPTypeWithCustomOrd type = getJsonType(node, decoder).to(DBSPTypeWithCustomOrd.class);
+        Utilities.enforce(type.getDataType().sameType(source.getType())
+                && type.getComparatorType().sameType(comparator.getType()));
+        return new DBSPCustomOrdExpression(CalciteObject.EMPTY, source, comparator, type);
     }
 }

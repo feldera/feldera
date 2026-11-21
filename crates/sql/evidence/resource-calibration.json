@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "archive_index": "resource-calibration-archive.json",
+  "scope": "finite mutation and resource calibration for P0a",
+  "virtual_memory_limit_bytes": 1073741824,
+  "max_output_file_bytes": 134217728,
+  "ordinary_inputs": {
+    "parser_cases": 27560,
+    "parser_cpu_seconds": 0.902003,
+    "parser_peak_child_rss_kib": 17676,
+    "a_binder_cases": 20480,
+    "a_binder_cpu_seconds": 0.172126,
+    "a_binder_peak_child_rss_kib": 15516,
+    "decoder_controls": 50,
+    "decoder_duplicate_identity_rejections": 50
+  },
+  "depth_inputs": {
+    "cases_per_parser": 15,
+    "comparative_worker_deadline_seconds": 120,
+    "comparative_worker_exits_with_timeout": true,
+    "isolated_worker_deadline_seconds": 2,
+    "stock_0_62_timeouts": 4,
+    "stock_0_64_timeouts": 0,
+    "feldera_0_64_timeouts": 0,
+    "timed_out_stock_0_62_array_depths": [128, 512, 1024, 4096]
+  },
+  "full_fuzz_budget_run": false,
+  "production_limits_approved": false
+}

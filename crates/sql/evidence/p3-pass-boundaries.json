@@ -1,0 +1,142 @@
+{
+  "DeadCode": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "67ea56d71418c36231420c89480b7605be2b02b2162836d3c44a1dbae3aee477",
+        "27213e1de7087706fedbb39dfa966da9aa0af2440d5637e0ba593edee6624a50"
+      ],
+      "pass": "DeadCode",
+      "invocations": 317006,
+      "changed": 18087,
+      "cases_without_placement": 0
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "414267725f6b885200bced245f8ff677bcfbe91ee58da3e2a2daad763b8de19a",
+        "c12c695db355197ccfd1875962e688c2f8a004f4650e75c30aafdd7d27c518cc"
+      ],
+      "pass": "DeadCode",
+      "invocations": 314506,
+      "changed": 24904,
+      "cases_without_placement": 0
+    }
+  },
+  "ComparatorDeclarations": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "b2c4e8e8f6965eaba350f0a58408d968b8ba3f2ca4f8af670b33ca424f163ffa",
+        "095ce1d6ce28242332736a03412c41d98b2a497e468d1aafc396b4290e6c3a6d"
+      ],
+      "pass": "ComparatorDeclarations",
+      "invocations": 8571,
+      "changed": 24,
+      "cases_without_placement": 0
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "3e21d946a0f7343dbfdf53948e5db54ba6afd0fcab8b3f1b42a8d5c7baa18ad9",
+        "2ce580efed7c4c6c06d0098af5f8f2394531a006f529476bdc1b62e418e63d32"
+      ],
+      "pass": "ComparatorDeclarations",
+      "invocations": 8527,
+      "changed": 22,
+      "cases_without_placement": 0
+    }
+  },
+  "Gen2Passes": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "eb46ea181ca1aa3f929de58510d6ebbb28bdac6d67bcd418da0c2dc2747b291d",
+        "271b9324c54c5093dce1f46d2dde2cff6d9d3dc64748ac790ff7d5df4baeda55"
+      ],
+      "pass": "Gen2Passes",
+      "invocations": 0,
+      "changed": 0,
+      "cases_without_placement": 8571
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "1e7a01461d03d4f7d6a820682ac85f2f493e127bc31286381727422bc176d589",
+        "d9188a157f8e737e0566418c36ae9eb59ba276fdf592a205a7ba65cf22f01e05"
+      ],
+      "pass": "Gen2Passes",
+      "invocations": 8526,
+      "changed": 1751,
+      "cases_without_placement": 1
+    }
+  },
+  "CompactNames": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "54c9cfb46baf3ad36b7e5e6a3989035295fa6cc516fc19021fa29da8cea44812",
+        "854df36b13a9c5ca23a3fd06a423c07391d5f3542bc9c32119d88dcf23091b9f"
+      ],
+      "pass": "CompactNames",
+      "invocations": 8571,
+      "changed": 8571,
+      "cases_without_placement": 0
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "b2fef76a95241bd7cbdc305110e4d3b7ec80f2fea9f260fdd19d82b678e60136",
+        "abcf32682e3e53034b4ab127ebeb29319e87c067429ae2672e612ac8d28d8cbe"
+      ],
+      "pass": "CompactNames",
+      "invocations": 8527,
+      "changed": 8527,
+      "cases_without_placement": 0
+    }
+  },
+  "TagRegions": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "a73a002aa32a2cb1424966885b95c8d1f8a4f33ff932715a518e7149f4341150",
+        "ec84749327fd77443cfbb8bfcb95585bbe454b1d0617418cf1776ffde66c566c"
+      ],
+      "pass": "TagRegions",
+      "invocations": 8571,
+      "changed": 165,
+      "cases_without_placement": 0
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "3069b45c0d1f641cb94ce8deb91872b30fca04899f3644ee426fe0b1c8be0d91",
+        "b25490aabb3415886a4d2cd0d5136b3e57a47361a8ecf45ac4808048d778658e"
+      ],
+      "pass": "TagRegions",
+      "invocations": 8527,
+      "changed": 0,
+      "cases_without_placement": 0
+    }
+  }
+}

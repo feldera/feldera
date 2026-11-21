@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-optimizer-prefix-archive.json",
+  "programs": 50,
+  "scheduled_pass_comparisons": {
+    "MergeSums": 200,
+    "EnsureDistinctOutputs": 100
+  },
+  "scheduled_distinct_insertions": 152,
+  "standalone_merge_sums_graphs": 220,
+  "standalone_distinct_output_graphs": 100,
+  "java_tail_regression_comparisons": 200,
+  "graph_differences": 0,
+  "human_hours_measured": false,
+  "complete_rust_prefix_replayed": false,
+  "scope": "Java observer captures the original before and after graphs in the actual optimizer schedule; Rust evaluates each pass independently. Separate Java-tail regressions continue to exercise the existing DeadCode seam. The pass snapshots carry the ordinary observation graph, with no resumed intermediate provenance or fabricated port/review hours.",
+  "standalone_report_sha256": "3234a1f41cb908bdae4e0a5d394a6e210bb25526a1d5c1cc06c32db9003f2fb7"
+}

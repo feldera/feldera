@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-final-with-outputs-archive.json",
+  "native_probe_default_passed": 50,
+  "native_frozen_programs_passed": 10,
+  "dbsp_generator_tests_passed": 3,
+  "dbsp_output_regressions": {
+    "test_accumulate_trace_with_balancer_shard_small_step": 1,
+    "test_concurrent_bootstrap_old_views_live": 1,
+    "test_concurrent_bootstrap_abort": 1
+  },
+  "typed_circuit_fingerprints": {
+    "constant_fingerprint": 14476815968262536437,
+    "incremental_constant_fingerprint": 11626570272789295335,
+    "typed_output_fingerprint": 9675354978782807581
+  },
+  "persistent_constant_and_sink_checkpoint_interchange": [
+    "classic_to_erased",
+    "erased_to_classic"
+  ],
+  "erased_sink_workers": 2,
+  "all_target_clippy": true,
+  "input_files": {
+    "p0-native-count-distinct-case-v1.json": "8a424b2abc80ac3332d056d53e157e88c4dca35b178519a34116786fdb969179",
+    "p0-native-decimal-add-case-v1.json": "c3abb8a846a4400834d0cf2900fdbdcccb0f18f522920d92011d5b29a71badf4",
+    "p0-native-decimal-multiply-case-v1.json": "4f2f7f427fa77d8a7cb16516abc05a88d43c7420e61911e9b97471d66267471e",
+    "p0-native-decimal-rolling-case-v1.json": "bb61be22207d82695111308950e54cee2fa92b83d71f02658186ff646a965068",
+    "p0-native-full-join-case-v1.json": "e16494ae8ceeccad109d8fa24180c0ad33361a80d185c5b79bc842a4aa5541ba",
+    "p0-native-json-address-case-v1.json": "2883484d5b9fcda2d7c34a487f250b1fdf05af595954b791fe1250fcd103da41",
+    "p0-native-left-join-case-v1.json": "198c0251f4b96a5be6b9877517b2dad81e457de3b4b46a8948d9568a02675fd1",
+    "p0-native-nullable-sum-case-v1.json": "ff74ca84a7e1a74ee7bed9478cc95a8c5ad4e2bec3c839f86aeee33d1cf639a5",
+    "p0-native-string-projection-case-v1.json": "22a9e41fa6b03ea3db445790076f3a8ac71924571d17275ec142062d99addd98",
+    "p0-native-string-range-case-v1.json": "bade57712d40fef7fae7222dff513ddb374fdc7c97f335a09dfe7644b9a6faad"
+  },
+  "scope": "Classic and erased constants and accumulated sinks run over erased batches constructed by existing factories. Circuit construction with runtime-owned factories remains outside this result."
+}

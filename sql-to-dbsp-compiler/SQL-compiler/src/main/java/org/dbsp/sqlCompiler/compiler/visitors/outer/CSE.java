@@ -217,7 +217,7 @@ public class CSE extends Repeat {
     /** Remove common subexpressions */
     public static class RemoveCSE extends CircuitCloneVisitor {
         /** Maps each operator to its canonical representative */
-        final Map<DBSPOperator, DBSPOperator> canonical;
+        protected final Map<DBSPOperator, DBSPOperator> canonical;
 
         public RemoveCSE(DBSPCompiler compiler, Map<DBSPOperator, DBSPOperator> canonical) {
             super(compiler, false);

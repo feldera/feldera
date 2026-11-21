@@ -22,7 +22,7 @@ public class CloneOperatorsWithFanout extends CircuitCloneWithGraphsVisitor {
         super(compiler, graphs);
     }
 
-    boolean shouldCloneInput(DBSPUnaryOperator operator) {
+    protected boolean shouldCloneInput(DBSPUnaryOperator operator) {
         DBSPOperator input = operator.input().node();
         int inputFanout = this.getGraph().getFanout(input);
         if (inputFanout == 1)

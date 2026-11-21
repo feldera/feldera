@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-nested-layer-archive.json",
+  "scope": "Stock DBSP two-column layer writer and archived reader with separate runtime-owned descriptors. The test closes the writer owners before reopening with fresh descriptors and seeks within stored row groups.",
+  "tests": {
+    "owned-context": 7,
+    "default": 51,
+    "frozen": 10,
+    "storage": 63
+  },
+  "all_target_clippy": true,
+  "byte_identical_to_classic": true,
+  "groups": 153,
+  "child_rows": 3796,
+  "archived_comparisons": 2059,
+  "storage_test_workspace_lock_sha256": "741a5ae34ea54fc64d3ee8cbb8e97e9e0c42f6460410b0393dabeef92c0dcfac"
+}

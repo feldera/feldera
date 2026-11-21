@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-h-binders-20261118-v1.tar.gz",
+  "bytes": 20451110,
+  "sha256": "48c1bb09e4f50fdc3288cdaac73965dc5da98744ed9ef9f32a7e762428cf145e",
+  "manifest_sha256": "dd14287b02556caac10ab480dc9e872d4c0e133224311aba5b37a19fd345641e",
+  "verified_files": 61,
+  "all_members_verified": true
+}

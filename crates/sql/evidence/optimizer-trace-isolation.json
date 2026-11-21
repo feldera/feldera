@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-trace-isolation-archive.json",
+  "scope": "Rust separates integrators in the flat incremental optimizer before Java monotonicity analysis.",
+  "before_codec_repair": {
+    "waterline_window_differences": [
+      {
+        "id": "classic/S3/waterline-window",
+        "equal": false,
+        "differences": [
+          "circuit"
+        ],
+        "graph_difference": "/inner: array lengths differ"
+      },
+      {
+        "id": "classic/S3/waterline-window",
+        "equal": false,
+        "differences": [
+          "circuit"
+        ],
+        "graph_difference": "/inner: array lengths differ"
+      },
+      {
+        "id": "gen2/S3/waterline-window",
+        "equal": false,
+        "differences": [
+          "circuit"
+        ],
+        "graph_difference": "/inner: array lengths differ"
+      },
+      {
+        "id": "gen2/S3/waterline-window",
+        "equal": false,
+        "differences": [
+          "circuit"
+        ],
+        "graph_difference": "/inner: array lengths differ"
+      }
+    ],
+    "cause": "Loss of sharing between decoded and newly constructed empty raw tuple types."
+  },
+  "separate_integrators": {
+    "incremental": {
+      "programs": 100,
+      "active_rewrites": 2,
+      "new_noops": 2,
+      "java_tail_differences": [],
+      "rust_tail_differences": []
+    },
+    "directed": {
+      "programs": 12,
+      "active_rewrites": 4,
+      "new_noops": 6,
+      "java_tail_differences": [],
+      "rust_tail_differences": []
+    },
+    "exact_graphs": {
+      "compared": 112,
+      "equal": 112
+    }
+  },
+  "combined_incremental_matrix": {
+    "scheduled_placements": 43,
+    "programs_per_engine": 50,
+    "java_codec_controls_equal": 100,
+    "rust_final_results_equal": 100
+  },
+  "verification": {
+    "rust_tests": 34,
+    "clippy": "passed",
+    "java_metadata_replay_tests": 7
+  }
+}

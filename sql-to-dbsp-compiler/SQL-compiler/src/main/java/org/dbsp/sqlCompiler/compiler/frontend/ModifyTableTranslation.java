@@ -23,12 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
-import org.apache.calcite.sql.SqlIdentifier;
-import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlNodeList;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
@@ -45,9 +41,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** Information used to translate INSERT or DELETE SQL statements */
+/** Information used to translate INSERT or REMOVE statements. */
 class ModifyTableTranslation {
     private final TableModifyStatement statement;
+    final boolean reorderAfterTranslation;
     /** Result of the VALUES expression. */
     @Nullable
     private DBSPZSetExpression valuesTranslation;
@@ -63,12 +60,13 @@ class ModifyTableTranslation {
 
     public ModifyTableTranslation(TableModifyStatement statement,
                                   CreateTableStatement tableDefinition,
-                                  @Nullable SqlNodeList columnList,
-                                  TypeCompiler compiler) {
+                                  TypeCompiler compiler, boolean reorderAfterTranslation) {
+        this.reorderAfterTranslation = reorderAfterTranslation;
         this.statement = statement;
         this.valuesTranslation = null;
         this.columnPermutation = null;
         DBSPTypeTuple sourceType = tableDefinition.getRowTypeAsTuple(compiler);
+        var columnList = statement.targetColumns;
         if (columnList != null) {
             // The column list specifies an order for the columns that are assigned,
             // which may not be the order of the columns in the table.  We need to
@@ -76,14 +74,11 @@ class ModifyTableTranslation {
             this.columnPermutation = new HashMap<>();
             int index = 0;
             DBSPType[] columnTypes = new DBSPType[columnList.size()];
-            for (SqlNode node : columnList) {
-                if (!(node instanceof SqlIdentifier id)) {
-                    throw new UnsupportedException(statement.getCalciteObject());
-                }
-                int actualIndex = tableDefinition.getColumnIndex(id);
+            for (var column : columnList) {
+                int actualIndex = tableDefinition.getColumnIndex(column.name());
                 if (actualIndex < 0) {
-                    throw new CompilationError("Column " + id + " not found in table " +
-                            tableDefinition, CalciteObject.create(id.getParserPosition()));
+                    throw new CompilationError("Column " + column.displayName() + " not found in table " +
+                            tableDefinition, column.position());
                 }
                 // This must be a permutation
                 for (int value : this.columnPermutation.values())
@@ -127,7 +122,15 @@ class ModifyTableTranslation {
         Utilities.enforce(this.resultType != null);
         if (this.columnPermutation == null)
             return source;
-        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(this.resultType);
+        DBSPTypeTuple elementType = this.resultType;
+        if (this.reorderAfterTranslation) {
+            DBSPTypeTuple sourceType = source.getElementType().to(DBSPTypeTuple.class);
+            DBSPType[] outputTypes = new DBSPType[this.columnPermutation.size()];
+            for (var entry: this.columnPermutation.entrySet())
+                outputTypes[entry.getValue()] = sourceType.getFieldType(entry.getKey());
+            elementType = new DBSPTypeTuple(outputTypes);
+        }
+        DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(elementType);
         for (Map.Entry<DBSPExpression, Long> e : source.data.entrySet()) {
             DBSPExpression perm = this.permuteColumns(e.getKey());
             result.append(perm, e.getValue());
@@ -138,6 +141,6 @@ class ModifyTableTranslation {
     public void setResult(DBSPZSetExpression literal) {
         if (this.valuesTranslation != null)
             throw new InternalCompilerError("Overwriting logical value translation", CalciteObject.EMPTY);
-        this.valuesTranslation = this.permuteColumns(literal);
+        this.valuesTranslation = this.reorderAfterTranslation ? literal : this.permuteColumns(literal);
     }
 }

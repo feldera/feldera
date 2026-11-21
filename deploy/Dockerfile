@@ -118,7 +118,7 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
   && tar -xzvf mold-2.40.4-$arch-linux.tar.gz \
   && mv mold-2.40.4-$arch-linux $HOME/mold \
   && rm mold-2.40.4-$arch-linux.tar.gz
-ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
+ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin:/home/ubuntu/feldera/build/sql-optimizer"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 
 # Install Samply for profiling

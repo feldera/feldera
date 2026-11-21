@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-decimal.tar.gz",
+  "bytes": 5675006,
+  "sha256": "8fd90593417888a14cf1e8a4f259dc9de7d935a2b3e2597628652fb61530b432",
+  "manifest_sha256": "271641669113b73bc2478d2a520bb5d01fece6cd7d5bb140bcf8810703b16f66",
+  "verified_files": 43,
+  "all_members_verified": true
+}

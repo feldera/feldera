@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "archive_index": "correlation-grouped-archive.json",
+  "scope": "Follow-up on the original Spike 6 first-inner-stage classic denominator.",
+  "original_certificate": "correlation-coverage.json",
+  "original_numerator": 9,
+  "weighted_c7": {
+    "numerator": 108,
+    "denominator": 155,
+    "threshold": 0.95,
+    "passed": false
+  },
+  "occurrence_dispositions": {
+    "reconstructed_without_c7": 14,
+    "refused": 31,
+    "c7_equal": 108,
+    "transport_failed": 2
+  },
+  "reconstructed_fragments": 45,
+  "runtime_cases": 26,
+  "runtime_transactions": 121,
+  "witnessed_invocations": 32,
+  "verified_runtime_case_ids": [
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/0",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/1",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/2",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/3",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/4",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/5",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/0",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/1",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/2",
+    "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/3",
+    "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#issue4926/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.CteToLocalViewsTests#testUnnestCteInCorrelatedSubquery/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue7212/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.ReduceExpressionsTests#correlatedFilterOverValues/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testExcept/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#testExcept/1",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3210/0",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.SetOpTests#calciteScottTests/10",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.SetOpTests#calciteScottTests/11",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.SetOpTests#calciteScottTests/8",
+    "org.dbsp.sqlCompiler.compiler.sql.simple.SetOpTests#calciteScottTests/9",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputAsPostgres/0",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/14",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/15",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/16",
+    "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/17"
+  ],
+  "binding_verification": "Runtime callbacks match the frozen typed fragments after replacing only the top-level ID. Compiled schema matches the frozen export. Each runtime case changes the circuit only.",
+  "raw_ledger": {
+    "path": "correlation-grouped-occurrences.jsonl",
+    "sha256": "3569411a2382693268e12860d5ed836c801511baa4eb7eef537787e6ef7a6cd3"
+  }
+}

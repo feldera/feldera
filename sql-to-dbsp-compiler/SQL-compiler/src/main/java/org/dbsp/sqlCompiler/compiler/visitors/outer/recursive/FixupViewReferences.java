@@ -32,7 +32,7 @@ import java.util.Map;
  * - references across SCCs go to the view
  * - references in the same SCC go to the declaration
  */
-class FixupViewReferences extends CircuitCloneVisitor {
+public final class FixupViewReferences extends CircuitCloneVisitor {
     final CircuitGraphs graphs;
     @Nullable
     SCC<DBSPOperator> scc = null;

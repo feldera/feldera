@@ -1,0 +1,30 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "created_at": "2026-11-17T12:41:03.129531+00:00",
+  "archive": ".p0-artifacts/p0-s1-expression-sources-20261117-v1.tar.gz",
+  "sha256": "78b9e8f55770f2fc9a202cc11c88dd20bc004b2cd9e227fb8ed5afcbd256c9d8",
+  "bytes": 36603043,
+  "certificates": [
+    "s1-expression-sources.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-expression-sources.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-s1-expression-sources-v2/source-snapshot/"
+      }
+    ]
+  },
+  "scope": "Source-bearing expression-fragment transport, not whole-program S1 or P0",
+  "P0_complete": false,
+  "classpath_hash_algorithms": {
+    "s1-expression-sources.json": "path-space-hex-sha256-newline"
+  },
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-expression-sources-archive.json",
+  "archive_sha256_verified": true,
+  "verified_artifact_hashes": 188,
+  "verified_source_hashes": 66,
+  "verified_classpath_hashes": 5
+}

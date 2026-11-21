@@ -1,0 +1,46 @@
+{
+  "scope": "Replace repeated Boolean tests inside guarded branches. The boundary comparison includes lexical scope, graph sharing, source locations and generated names.",
+  "comparator_sha256": "0edc80533507b7a94f72ccd3f611c910b94aa13ef99d6697c407a147436618f6",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "84bca3cd22061914e48839d9d6c1c7cadf20be1c93df3bd4dbace3516ff3fb6f",
+      "7b336d321ece31363e4325f062be5f7704aeb0d2f5e7840052a1ef8c968a004a",
+      "972d450bd58c6fe12272f13cf1801425b0536e376d185a5d907e5f74c24b5055",
+      "d4ac24a429a34e8a899d0be0e2345e15b50dfb7fb6f1ebac09a8d256cf32b326"
+    ],
+    "pass": "SimplifyConditionals",
+    "invocations": 8571,
+    "changed": 913,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "601934ec6798a9505731412ba5a302bddd99e9f4432bd39b2e35cffb65518a8c",
+      "cbd1c7824f433177627692e3893afc9bfaec7c5bc35ff63ec8c1acdc62466e4d",
+      "2e454eea5f8109af0f722224aecfed834e0afd7b07263b2b7cb176231c0fd1be",
+      "534515a8be169e47d4c50fa4659084173f42f2dbf66b6cf45315a15c1826da2c"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "a2cc08e5ebaaed87979381cfa1689fda615dda44a728df4bacd5ec62bad649ea",
+      "a528fc04ed3e2483f9c48657c450689a29ef64c66c3d215ed9b44fa1afe55843",
+      "b3b33f1f2c91dabfa6b1d79b87bbc17ce05e16ced2c2d438f473710dc3b605ff",
+      "e9667fa50624d27406cb77dc44ed41b35a202d97fc24d8cdddec6bc355b7f7f6"
+    ],
+    "pass": "SimplifyConditionals",
+    "invocations": 8527,
+    "changed": 896,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "531303e55b1a73a6ec75079b71bd46f0726a92153a15b8c18280ec308de0179e",
+      "427c23a594ebcc72e49ca227fdc5c4f159f510fb85daf54344878cb2f7762cda",
+      "37af80bb84560d898db0266db777a5ef4eab5a6a34af529f4462ca0ffbd90ffc",
+      "0f0591ff04296ac28e15b9f5e709d93d38746a0b37cc01e3ccdd190afde7eb0a"
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-weight-validation-archive.json",
+  "engine_modes": ["classic", "gen2"],
+  "programs_per_mode": 7,
+  "enabled_programs_per_mode": 5,
+  "same_input_graph_comparisons": 10,
+  "validator_nodes_inserted": 10,
+  "changed_graphs": 8,
+  "skip_checks_per_runner": 4,
+  "standalone_rust_final_comparisons": 14,
+  "standalone_java_control_comparisons": 14,
+  "integrated_scheduled_placements": 23,
+  "integrated_rust_final_comparisons": 14,
+  "integrated_java_control_comparisons": 14,
+  "detached_s2_s3_chains": 14,
+  "expanded_integrated_matrix": {
+    "archive_index": "multiset-twenty-three-placements-archive.json",
+    "programs_per_mode": 43,
+    "same_input_graph_comparisons": 1928,
+    "changed_graphs": 693,
+    "second_iterations": 26,
+    "constant_view_warnings": 14,
+    "rust_final_comparisons": 86,
+    "java_codec_final_comparisons": 86,
+    "ordinary_bag_and_set_tail_comparisons": 600,
+    "differences": 0
+  },
+  "rust_tests": 28,
+  "differences": 0,
+  "scope": "The original Java predicate reads the SQL setting. When active, Rust inserts validators after unkeyed inputs, preserving provenance, names and every existing consumer. The directed fixtures include an enabled case with no input, explicit false and the unset default. Results establish compiler parity on the listed flat graphs."
+}

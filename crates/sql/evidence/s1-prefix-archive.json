@@ -1,0 +1,37 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-prefix-20261118-v1.tar.gz",
+  "sha256": "4c8f8ea00ac970b573f383f431d807f96304ca2db44ed978003c3cb9b3f19d32",
+  "bytes": 564711629,
+  "certificates": [
+    "s1-prefix.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-prefix.json": [
+      {
+        "source_prefix": "p0-statement-program-v9/",
+        "archive_prefix": "$SCRATCH/p0-statement-program-v9/sources/"
+      },
+      {
+        "source_prefix": "p0-s1-prefix-corpus-v1/",
+        "archive_prefix": "$SCRATCH/p0-s1-prefix-corpus-v1/sources/"
+      },
+      {
+        "source_prefix": "p0-statement-program-v8/",
+        "archive_prefix": "$SCRATCH/p0-statement-program-v8/sources/"
+      },
+      {
+        "source_prefix": "p0-s1-lowering-v6/",
+        "archive_prefix": "$SCRATCH/p0-s1-lowering-v6/sources/"
+      },
+      {
+        "source_prefix": "p0-s1-validation-v1/",
+        "archive_prefix": "$SCRATCH/p0-s1-validation-v1/sources/"
+      }
+    ]
+  },
+  "scope": "Detached statement-program-v5 S1 through the complete Java optimizer prefix and backend",
+  "P0_complete": false
+}

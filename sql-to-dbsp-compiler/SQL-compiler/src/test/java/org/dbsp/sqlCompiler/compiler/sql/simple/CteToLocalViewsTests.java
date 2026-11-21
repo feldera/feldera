@@ -27,7 +27,7 @@ public class CteToLocalViewsTests extends SqlIoTest {
     @Test
     public void testRewriteShape() throws SqlParseException {
         DBSPCompiler compiler = this.testCompiler();
-        SqlToRelCompiler sqlToRel = compiler.sqlToRelCompiler;
+        SqlToRelCompiler sqlToRel = compiler.getSqlToRelCompiler();
         List<ParsedStatement> statements = sqlToRel.parseStatements("""
                 CREATE TABLE data(x INT);
                 CREATE VIEW v AS
@@ -165,7 +165,7 @@ public class CteToLocalViewsTests extends SqlIoTest {
     public void testRetryRequested() throws SqlParseException {
         // compileCreateView must request the CTE rewrite.
         DBSPCompiler compiler = this.testCompiler();
-        SqlToRelCompiler sqlToRel = compiler.sqlToRelCompiler;
+        SqlToRelCompiler sqlToRel = compiler.getSqlToRelCompiler();
         List<ParsedStatement> statements = sqlToRel.parseStatements(CORRELATED_CTE_PROGRAM);
         sqlToRel.compile(statements.get(0), compiler.sources);
         sqlToRel.compile(statements.get(1), compiler.sources);

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-linear-retention-archive.json",
+  "engines": ["classic", "gen2"],
+  "flat_programs_per_engine": 50,
+  "scheduled_placements": 34,
+  "same_input_pass_comparisons": 3342,
+  "rust_final_compiler_comparisons": 100,
+  "java_codec_final_compiler_controls": 100,
+  "directed_sql_programs_per_engine": 4,
+  "directed_final_compiler_comparisons": 8,
+  "directed_stage_graph_comparisons": 16,
+  "active_directed_fusions": 6,
+  "differences": 0,
+  "scope": "Rust adds waterline dependencies, preserves source and sink order, performs the stable topological sort and selects the first retainer in that order. Java reuses its typed constructor. The active fixtures cover grouped sums with lateness, timestamp bucketing and a join. The flat matrix passes without an active fusion. The first directed run preserves the original Java refusal of TUMBLE_START before the retest with FLOOR."
+}

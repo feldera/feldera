@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.IdShuffle;
@@ -296,9 +295,11 @@ public final class Gen2Runner {
 
     /** The table's column names as the engine matches them: a case-insensitive name in lower case. */
     private static List<String> columnNames(DBSPCompiler compiler, ProgramIdentifier table) {
-        List<RelColumnMetadata> columns = compiler.metadata.getTableDescription(table).getColumns();
-        return Linq.map(columns, column -> column.getName().isQuoted()
-                ? column.getName().name() : column.getName().name().toLowerCase(Locale.ROOT));
+        JsonNode columns = compiler.metadata.getTableDescription(table).asJson(false).required("fields");
+        return Linq.list(Linq.map(columns.elements(), column -> {
+            String name = Utilities.getStringProperty(column, "name");
+            return Utilities.getBooleanProperty(column, "case_sensitive") ? name : name.toLowerCase(Locale.ROOT);
+        }));
     }
 
     /** The name as the pipeline's HTTP API spells it: a quoted identifier keeps its quotes. */

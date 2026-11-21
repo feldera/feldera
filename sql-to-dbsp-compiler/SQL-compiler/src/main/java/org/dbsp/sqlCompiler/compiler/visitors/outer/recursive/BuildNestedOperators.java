@@ -36,7 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 /**
  * Encloses recursive components into separate {@link DBSPNestedOperator} operators.
  */
-class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
+public final class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
     @Nullable
     SCC<DBSPOperator> scc = null;
     final Map<Integer, DBSPNestedOperator> components;

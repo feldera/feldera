@@ -1,0 +1,757 @@
+{
+  "schema_version": 1,
+  "scope": "scalar VALUES rows and parenthesized ROW structure in the vendored parser candidate",
+  "complete": true,
+  "raw_directory": "$SCRATCH/p0-parser-values-v1",
+  "parser_binary": {
+    "path": "$SCRATCH/p0-parser-values-v1/feldera-parser-probe",
+    "sha256": "dc4f1bc68c317809f01846e43eb22c7827b77fe0bae5769b483c2c109df89685"
+  },
+  "build": {
+    "path": "$SCRATCH/p0-parser-values-build-v3/build.json",
+    "sha256": "aef6d532d2bc920644d374de25fd80a9f0570b42a6511a3273787845cfc27283"
+  },
+  "prior_certificate": "parser-remaining-positions.json",
+  "comparisons": {
+    "corpus": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-values-v1/corpus-comparison.json",
+        "sha256": "acf0a884ede98062051cfca99e49781b1395ab906fc6240f67568b9f32892b0f"
+      },
+      "cases": 8571,
+      "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 31127,
+          "accepted_submissions": 31127,
+          "accepted_cases": 5807,
+          "java_only": 2888,
+          "rejected_submissions": 2888,
+          "rejected_cases": 2764
+        },
+        "0.62.0/generic": {
+          "both_accept": 31317,
+          "accepted_submissions": 31317,
+          "accepted_cases": 5978,
+          "java_only": 2698,
+          "rejected_submissions": 2698,
+          "rejected_cases": 2593
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 33923,
+          "accepted_submissions": 33923,
+          "accepted_cases": 8479,
+          "java_only": 92,
+          "rejected_submissions": 92,
+          "rejected_cases": 92
+        },
+        "0.64.0/generic": {
+          "both_accept": 33308,
+          "accepted_submissions": 33308,
+          "accepted_cases": 7876,
+          "java_only": 707,
+          "rejected_submissions": 707,
+          "rejected_cases": 695
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {},
+        "0.62.0/generic": {},
+        "0.64.0/feldera_prototype": {},
+        "0.64.0/generic": {}
+      },
+      "evidence_sha256": {
+        "rust_cases": "4d836f320dcbb715aa8fcc49c53e079461ecc2b2bf2be454b709e2504ec15b5b",
+        "java_cases": "df08b1751c61cd7187edc1f8fc359387735a4bf73fd2d3b2611190e46f16f5fb",
+        "rust_completion": "9c5b8ffd0330478c8630f673a32077f776299853207114e3a195891e4c3f0da7",
+        "java_completion": "ef46fcd9f729be0aa0a1fe639bc0d9c38bdd42f8f771fd7c52f36714797b310b",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    },
+    "keywords": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-values-v1/keywords-comparison.json",
+        "sha256": "7cb1f46cbca36c0a6e00f69d970209bd1939b5527b142b09c5a0ad14d4b26c6d"
+      },
+      "cases": 13660,
+      "input_sha256": "5ef1e9a789b229c9233b18a2678cbd0f12080c4874a91af5aa134952da65eb76",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13651,
+          "accepted_cases": 13651,
+          "rust_only": 504,
+          "java_only": 3,
+          "rejected_submissions": 9,
+          "rejected_cases": 9,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13147,
+          "accepted_cases": 13147,
+          "both_reject": 510,
+          "rejected_submissions": 513,
+          "rejected_cases": 513,
+          "java_only": 3
+        },
+        "0.64.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 504,
+          "different": 6
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "different": 410,
+          "equal": 100
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "2056085a33701f05847077f22e4f85f6ed102427ab4cf5cb2f9240e639fa36bf",
+        "java_cases": "1381cb8b2273e2cb83c0d5f93b80b5eb4d7e7d05e0692799181aeb09e918f695",
+        "rust_completion": "b53dee57f8d771c7a04f78c63255a74ed08e17d7c4e33341e23cb6c02732dd0e",
+        "java_completion": "17b7c63d5b24cd492677bbdfc1fd3d412a6ad85b5fa971486a5c6a5e9f7a836b",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    },
+    "diagnostics": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-values-v1/diagnostics-comparison.json",
+        "sha256": "5c4901d0a4797a205650f040249896167574538762dc66022b7db84c2fc49140"
+      },
+      "cases": 1143,
+      "input_sha256": "8d81c2174eaba71a2b0ebc569c66afaec491f24a1a755f67f36dda450b306a82",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "java_only": 677,
+          "rejected_submissions": 683,
+          "rejected_cases": 682,
+          "both_accept": 1355,
+          "accepted_submissions": 1363,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "java_only": 676,
+          "rejected_submissions": 682,
+          "rejected_cases": 682,
+          "both_accept": 1356,
+          "accepted_submissions": 1364,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 2023,
+          "accepted_submissions": 2023,
+          "accepted_cases": 1120,
+          "java_only": 9,
+          "rejected_submissions": 23,
+          "rejected_cases": 23,
+          "both_reject": 14
+        },
+        "0.64.0/generic": {
+          "java_only": 639,
+          "rejected_submissions": 645,
+          "rejected_cases": 645,
+          "both_accept": 1393,
+          "accepted_submissions": 1401,
+          "accepted_cases": 498,
+          "rust_only": 8,
+          "both_reject": 6
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "java_position_missing": 2,
+          "equal": 10,
+          "different": 2
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "2245969492cb075f53e1cdec2b1372c8926db20e1285f024007cb75d871eaf40",
+        "java_cases": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7",
+        "rust_completion": "48592fb51b001f52a3fbd80238ea7f5f107dc2a3d2a2e0edb74e2f4ad56f6fd5",
+        "java_completion": "24f08112bc63b2269e647675bae70e1e5e9f5a3aa4857e51e63c53b975d33ab7",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    },
+    "adversarial": {
+      "record": {
+        "path": "$SCRATCH/p0-parser-values-v1/adversarial-comparison.json",
+        "sha256": "f21aabd6616ffdab894535ad34f58b625dada4c024f6f2e091601eb9c6101339"
+      },
+      "cases": 488,
+      "input_sha256": "9910048d8665e0d3c6965040d82a790be1169bddca3244cd75131f46854f5ed9",
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 100,
+          "accepted_submissions": 180,
+          "accepted_cases": 180,
+          "rust_only": 80,
+          "java_only": 162,
+          "rejected_submissions": 308,
+          "rejected_cases": 308,
+          "both_reject": 146
+        },
+        "0.62.0/generic": {
+          "both_accept": 138,
+          "accepted_submissions": 242,
+          "accepted_cases": 242,
+          "rust_only": 104,
+          "java_only": 124,
+          "rejected_submissions": 246,
+          "rejected_cases": 246,
+          "both_reject": 122
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 230,
+          "accepted_submissions": 230,
+          "accepted_cases": 230,
+          "java_only": 32,
+          "rejected_submissions": 258,
+          "rejected_cases": 258,
+          "both_reject": 226
+        },
+        "0.64.0/generic": {
+          "both_accept": 142,
+          "accepted_submissions": 251,
+          "accepted_cases": 251,
+          "rust_only": 109,
+          "java_only": 120,
+          "rejected_submissions": 237,
+          "rejected_cases": 237,
+          "both_reject": 117
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 226,
+          "rust_accepts": 80,
+          "equal": 31,
+          "different": 106,
+          "java_position_missing": 1,
+          "rust_position_missing": 8
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 226,
+          "rust_accepts": 104,
+          "equal": 26,
+          "different": 86,
+          "rust_position_missing": 9,
+          "java_position_missing": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 226,
+          "different": 92,
+          "equal": 131,
+          "java_position_missing": 3
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 226,
+          "rust_accepts": 109,
+          "equal": 25,
+          "different": 82,
+          "rust_position_missing": 9,
+          "java_position_missing": 1
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "3063baa2c8d61910631113e2978cc60f3919f3f25453e4f553af30ade7acf06e",
+        "java_cases": "8f0aa3bd3addd86dada34b4b738112b824c72629e692034e59143bae7e3e0f22",
+        "rust_completion": "c8b0c9d4e7e6cb5662211583f7c016c6a1be0e9e81eedcd4a62ba07075e2cbb6",
+        "java_completion": "66fcd5f37046ab973062b863836ffdc4a64209203a37e6f475fec589c93d0bff",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    }
+  },
+  "preservation": {
+    "corpus": {
+      "counts": {
+        "unchanged_stock_measurements": 102045,
+        "unchanged_custom_measurements": 33978,
+        "rejected -> accepted": 29,
+        "accepted -> accepted": 8
+      },
+      "changes": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#simpleTests/4",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#simpleTests/5",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/0",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/1",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/2",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/3",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/4",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/5",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/0",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/1",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/2",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/3",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/4",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/5",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/6",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow/7",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/0",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/1",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/2",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/3",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/4",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testCeilFloor/5",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ReduceExpressionsTests#correlatedFilterOverValues/0",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/32",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/33",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/6",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/7",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/8",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/9",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/10",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/11",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/12",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/13",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/14",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/15",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/16",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/17",
+          "submission": 1,
+          "kind": "rejected -> accepted"
+        }
+      ]
+    },
+    "keywords": {
+      "counts": {
+        "unchanged_stock_measurements": 40980,
+        "unchanged_custom_measurements": 13660
+      },
+      "changes": []
+    },
+    "diagnostics": {
+      "counts": {
+        "unchanged_stock_measurements": 6138,
+        "unchanged_custom_measurements": 2046
+      },
+      "changes": []
+    },
+    "adversarial": {
+      "counts": {
+        "unchanged_stock_measurements": 1464,
+        "unchanged_custom_measurements": 453,
+        "rejected -> accepted": 23,
+        "accepted -> accepted": 1,
+        "rejected -> rejected": 9,
+        "accepted -> rejected": 2
+      },
+      "changes": [
+        {
+          "id": "values/0",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/1",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/3",
+          "submission": 0,
+          "kind": "accepted -> accepted"
+        },
+        {
+          "id": "values/5",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/6",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/10",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/11",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/12",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/13",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/14",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/18",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/19",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/20",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/21",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/22",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/23",
+          "submission": 0,
+          "kind": "accepted -> rejected"
+        },
+        {
+          "id": "values/24",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/26",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/27",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/28",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/29",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/30",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/31",
+          "submission": 0,
+          "kind": "rejected -> rejected"
+        },
+        {
+          "id": "values/32",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/33",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/34",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/35",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/36",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/42",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/45",
+          "submission": 0,
+          "kind": "accepted -> rejected"
+        },
+        {
+          "id": "values/46",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/47",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/49",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/50",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        },
+        {
+          "id": "values/51",
+          "submission": 0,
+          "kind": "rejected -> accepted"
+        }
+      ]
+    }
+  },
+  "sources": {
+    "crates/sql/parser-probe/src/v064.rs": "f2227484b85ca9080570cc1b448a0236dc14869ca9899dfb0a1837b22c8192c4",
+    "crates/sql/parser-probe/src/v064/values.rs": "af5afa44e1488b49c25e035bee19049d8f2f3c1f02c39b18fde6e033d9db88fb",
+    "crates/sql/parser-probe/adversarial.jsonl": "9910048d8665e0d3c6965040d82a790be1169bddca3244cd75131f46854f5ed9",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA.patch": "d64a625b3580884319b435ab509b0d964adb6753e6d3efe08f6234ad41ad9570",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA-PROVENANCE.json": "b3565b9fce7ca71aed3d62039e527bd5dd210f62efbeb9f373dbedc8b451d2c2"
+  },
+  "tests": {
+    "rust": 46,
+    "clippy": true,
+    "build_directory": "$SCRATCH/p0-parser-values-build-v3"
+  },
+  "limitations": [
+    "Acceptance and the targeted ROW shape check do not establish S1 semantic equivalence.",
+    "The 92 remaining positive corpus refusals remain failures, not allowed deviations.",
+    "The 52 new adversarial cases retain five Java-only acceptances: qualified wildcard, two DEFAULT forms and two named-field forms.",
+    "Error-start comparisons are not complete AST span checks; UTF-16 and Unicode-scalar column units remain unnormalized.",
+    "The original three stock comparator builds remain independent of the vendor change."
+  ],
+  "preservation_raw": {
+    "path": "$SCRATCH/p0-parser-values-v1/preservation.json",
+    "sha256": "8916f868640d54cc009615a778fc4b1f919239abf221f72de227a81f683c5952"
+  },
+  "row_shape_repair": {
+    "corpus_cases": 8,
+    "test_family": "org.dbsp.sqlCompiler.compiler.sql.quidem.OperatorTests#testRow",
+    "before": "one column containing the whole ROW constructor",
+    "after": "two ROW-valued columns, as in the pinned Java parser output",
+    "proof": [
+      "AST-level regression test asserts two columns",
+      "all eight changed corpus submissions retain previous/new ASTs and Java parsed SQL",
+      "the original Java compiler test family checks indexed ROW results"
+    ],
+    "s1_parity": false
+  },
+  "negative_repairs": {
+    "values/23": "VALUES (ROW(1),2)",
+    "values/45": "VALUES (ROW(1,2)+3)"
+  }
+}

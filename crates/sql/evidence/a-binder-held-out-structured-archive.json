@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/a-binder-held-out-structured.tar.gz",
+  "bytes": 5894107,
+  "sha256": "7c8619a06a2a942c17458176bd376c5ebea54779c21a7b2bd745246da9a0104a",
+  "manifest_sha256": "da6467f4418b5b3142b5ed42d7b34b70ad3bda604cbd5d27de4299c20319560c",
+  "verified_files": 13,
+  "all_members_verified": true
+}

@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.util.Linq;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
@@ -124,12 +125,13 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
 
     /** Create an expression that will evaluate to the contents of this table.
      * If necessary and possible, write the data to a file and generate code to read it.
-     * * @param executionDirectory  Relative directory where executable will run */
+     * @param directory Directory for CSV files, or null to keep values inline.
+     * @param executionDirectory Relative directory where executable will run */
     public DBSPExpression createOutput(DBSPCompiler compiler, String name,
-                                       String directory, String executionDirectory) throws IOException {
+                                       @Nullable String directory, String executionDirectory) throws IOException {
         HasDecimalOrDate hd = new HasDecimalOrDate(compiler);
         hd.apply(this.data);
-        if (this.data().size() > 30 && !hd.found) {
+        if (directory != null && this.data().size() > 30 && !hd.found) {
             // System.out.println("Large output: " + this.data().totalWeight() + " rows");
             // If the data is large, write it to a CSV file and read it at runtime.
             String fileName = (Paths.get(directory, name)) + ".csv";
@@ -148,12 +150,12 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
      * Generate a Rust function which produces the inputs specified by 'tables'.
      * @param name    Name for the created function.
      * @param tables  Values that produce the input
-     * @param directory  Directory where temporary files can be written
+     * @param directory  Directory for CSV files, or null to keep values inline.
      * @param executionDirectory  Relative directory where executable will run
      */
     public static DBSPFunction createInputFunction(
             DBSPCompiler compiler, String name,
-            TableData[] tables, String directory, String executionDirectory) throws IOException {
+            TableData[] tables, @Nullable String directory, String executionDirectory) throws IOException {
         DBSPExpression[] fields = new DBSPExpression[tables.length];
         Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < tables.length; i++) {
@@ -163,7 +165,7 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
                 throw new RuntimeException("Table " + tables[i].name + " already in input");
             seen.add(tables[i].name);
 
-            if (tables[i].data.size() < 30)
+            if (directory == null || tables[i].data.size() < 30)
                 continue;
             HasDecimalOrDate hd = new HasDecimalOrDate(compiler);
             hd.apply(tables[i].data);

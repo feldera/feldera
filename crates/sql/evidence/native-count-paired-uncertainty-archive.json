@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-count-paired-uncertainty-20261118-v1.tar.gz",
+  "bytes": 14539,
+  "sha256": "03bb980a487ae8f4391863fbe29fa08c3f745ff9ba14a7ce74dca28fe5e4b1a3",
+  "manifest_sha256": "8ee7a85a79c4425cc7459dc554f7e8c264b1e4378ba5d5acbfe3686ec59a0f8e",
+  "verified_files": 4,
+  "all_members_verified": true
+}

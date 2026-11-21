@@ -1,0 +1,13 @@
+{
+  "accepted": 60840,
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "compiler_bugs": 0,
+  "expected_probes": 84224,
+  "oracle_ready": true,
+  "probes": 84224,
+  "producer_commit": "c6ede756d-p0-coercion-stable",
+  "rejected": 23384,
+  "runtime_commit": "c6ede756d",
+  "runtime_verified": false,
+  "schema_version": 1
+}

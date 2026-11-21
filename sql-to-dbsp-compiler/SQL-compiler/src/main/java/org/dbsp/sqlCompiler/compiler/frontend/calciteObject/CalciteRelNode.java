@@ -21,7 +21,6 @@ import java.util.Map;
 public abstract class CalciteRelNode extends CalciteObject implements IHasId {
     // Not clear these should be here
     public static final SqlDialect DIALECT = SqlDialect.DatabaseProduct.UNKNOWN.getDialect();
-    static final RelToSqlConverter CONVERTER = new RelToSqlConverter(DIALECT);
     final List<SourcePositionRange> positions = new ArrayList<>();
 
     public List<SourcePositionRange> getSourcePositions() {
@@ -59,9 +58,15 @@ public abstract class CalciteRelNode extends CalciteObject implements IHasId {
         return sql.toString();
     }
 
+    /** Alias allocation belongs to one conversion. Reusing a converter retains
+     * every previous alias, changing SQL text and making later renders slower. */
+    static SqlNode convertToSql(RelNode node) {
+        return new RelToSqlConverter(DIALECT).visitRoot(node).asStatement();
+    }
+
     public static String toSqlString(RelNode node) {
         try {
-            SqlNode sql = CONVERTER.visitRoot(node).asStatement();
+            SqlNode sql = convertToSql(node);
             final SqlWriter sqlWriter = new SqlPrettyWriter();
             sql.unparse(sqlWriter, 0, 0);
             return sqlWriter.toSqlString().toString();
@@ -72,9 +77,9 @@ public abstract class CalciteRelNode extends CalciteObject implements IHasId {
 
     public abstract IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap);
 
-    public abstract CalciteRelNode remove(RelNode node);
+    public abstract CalciteRelNode remove(RelReference node);
 
-    public abstract boolean contains(RelNode node);
+    public abstract boolean contains(RelReference node);
 
     /** Create a CalciteRelNode that represents a step running after 'after' */
     public abstract CalciteRelNode after(CalciteRelNode first);
@@ -83,5 +88,5 @@ public abstract class CalciteRelNode extends CalciteObject implements IHasId {
     public abstract CalciteRelNode intermediate();
 
     /** The Calcite relational operators that this node stands for, in execution order */
-    public abstract List<RelNode> getRelNodes();
+    public abstract List<RelReference> getReferences();
 }

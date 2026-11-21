@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-trace-isolation-20261118-v1.tar.gz",
+  "bytes": 27026609,
+  "sha256": "df7cc614762d6ac9674b0ebd507216d61f7aa7db312b9cceb7d1f23918694ef7",
+  "manifest_sha256": "6a60f01b1503bc6750fde28297993d80d442a780b9fa312deabd15ed85b9ec9c",
+  "verified_files": 20648,
+  "all_members_verified": true
+}

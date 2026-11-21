@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.quidem.ScottBaseTests;
 import org.dbsp.util.Linq;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -879,8 +881,8 @@ public class WindowTests extends ScottBaseTests {
                 CREATE INDEX IX ON X(p0);""");
         compiler.getFinalCircuit(true);
         Assert.assertEquals(compiler.messages.toString(), 1, compiler.messages.errorCount());
-        Assert.assertTrue(compiler.messages.toString(),
-                compiler.messages.toString().contains("Window aggregates do not support DISTINCT"));
+        DiagnosticAssertions.assertContains(Target.RENDERED, "Window aggregates do not support DISTINCT",
+                compiler.messages.toString());
         // Calcite expands SUM into SUM0 and COUNT; the error marks the SUM call
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (p INT NOT NULL, x INT);

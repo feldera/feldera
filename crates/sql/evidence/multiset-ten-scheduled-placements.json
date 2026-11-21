@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-ten-scheduled-placements-archive.json",
+  "earlier_nine_placement_chain": "multiset-nine-scheduled-placements.json",
+  "programs": 146,
+  "engine_modes": ["classic", "gen2"],
+  "outputs_are_sets": true,
+  "scheduled_placements": 10,
+  "same_input_graph_comparisons": 2920,
+  "changed_graphs": 1244,
+  "late_view_removal_changed_graphs": 292,
+  "rust_tail_comparisons": 292,
+  "java_codec_tail_comparisons": 292,
+  "differences": 0,
+  "java_constant_propagation_inventory": {
+    "classic_programs": 146,
+    "changed_graphs": 0
+  },
+  "complete_rust_prefix_replayed": false,
+  "scope": "The scheduled Rust rewrite also removes the remaining views after their metadata has been consumed. The earlier detached chain exercises nine placements. Directed constant-propagation witnesses are still needed because the Java constant pass changed none of the selected classic graphs."
+}

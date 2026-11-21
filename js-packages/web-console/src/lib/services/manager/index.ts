@@ -140,6 +140,7 @@ export type {
   CommitTransactionErrors,
   CommitTransactionResponses,
   CompilationProfile,
+  CompilerFamily,
   CompletedWatermark,
   CompletionStatus,
   CompletionStatusArgs,

@@ -567,6 +567,8 @@ mod test {
             compiler_working_directory: working_dir.to_string_lossy().to_string(),
             compilation_profile: CompilationProfile::Optimized,
             sql_compiler_path: String::new(),
+            shadow_sql_compiler: None,
+            shadow_sql_compiler_timeout_secs: 30,
             sql_compiler_cache_url: String::new(),
             compilation_cargo_lock_path: String::new(),
             dbsp_override_path: String::new(),

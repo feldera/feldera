@@ -1,0 +1,1024 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "workloads": [
+    {
+      "rows": 4096,
+      "columns": 1,
+      "distribution": "CommonPrefix",
+      "samples": 31,
+      "key_bytes": 36864,
+      "batch_payload_and_null_bytes": 65536,
+      "phase_mean_ns": {
+        "direct_sort_ns": 155344.90322580645,
+        "direct_merge_ns": 23300.935483870966,
+        "encode_ns": 7724.451612903225,
+        "normalized_sort_ns": 142113.7741935484,
+        "normalized_merge_ns": 25602.064516129034
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 155344.90322580645,
+          "normalized_mean_ns": 142113.7741935484,
+          "normalized_over_direct": 0.9148274017524377,
+          "paired_bootstrap_95_percent_interval": [
+            0.8951789946389545,
+            0.936268747792016
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 155344.90322580645,
+          "normalized_mean_ns": 149838.2258064516,
+          "normalized_over_direct": 0.9645519273242558,
+          "paired_bootstrap_95_percent_interval": [
+            0.9444392010167726,
+            0.9861699647862153
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 23300.935483870966,
+          "normalized_mean_ns": 25602.064516129034,
+          "normalized_over_direct": 1.0987569376281445,
+          "paired_bootstrap_95_percent_interval": [
+            1.074698953704795,
+            1.1310086785520506
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 178645.83870967742,
+          "normalized_mean_ns": 175440.29032258064,
+          "normalized_over_direct": 0.9820564060699661,
+          "paired_bootstrap_95_percent_interval": [
+            0.963267689035396,
+            1.0014688830843848
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 1,
+      "distribution": "Duplicates",
+      "samples": 31,
+      "key_bytes": 36864,
+      "batch_payload_and_null_bytes": 65536,
+      "phase_mean_ns": {
+        "direct_sort_ns": 117963.35483870968,
+        "direct_merge_ns": 11043,
+        "encode_ns": 5211,
+        "normalized_sort_ns": 84811.51612903226,
+        "normalized_merge_ns": 16251.451612903225
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 117963.35483870968,
+          "normalized_mean_ns": 84811.51612903226,
+          "normalized_over_direct": 0.7189649382640426,
+          "paired_bootstrap_95_percent_interval": [
+            0.6964962790058441,
+            0.7430371808765204
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 117963.35483870968,
+          "normalized_mean_ns": 90022.51612903226,
+          "normalized_over_direct": 0.7631396737751254,
+          "paired_bootstrap_95_percent_interval": [
+            0.7403777071134054,
+            0.7874187808874478
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 11043,
+          "normalized_mean_ns": 16251.451612903225,
+          "normalized_over_direct": 1.4716518711313253,
+          "paired_bootstrap_95_percent_interval": [
+            1.3697147697728065,
+            1.6141274656809754
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 129006.35483870968,
+          "normalized_mean_ns": 106273.96774193548,
+          "normalized_over_direct": 0.8237886255665825,
+          "paired_bootstrap_95_percent_interval": [
+            0.7997443472729212,
+            0.8490555700864549
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 1,
+      "distribution": "Uniform",
+      "samples": 31,
+      "key_bytes": 36864,
+      "batch_payload_and_null_bytes": 65536,
+      "phase_mean_ns": {
+        "direct_sort_ns": 154718.64516129033,
+        "direct_merge_ns": 23219.09677419355,
+        "encode_ns": 7700.258064516129,
+        "normalized_sort_ns": 143553.35483870967,
+        "normalized_merge_ns": 25382.935483870966
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 154718.64516129033,
+          "normalized_mean_ns": 143553.35483870967,
+          "normalized_over_direct": 0.9278348752928833,
+          "paired_bootstrap_95_percent_interval": [
+            0.9090561946488734,
+            0.9508602669979541
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 154718.64516129033,
+          "normalized_mean_ns": 151253.61290322582,
+          "normalized_over_direct": 0.9776043006681431,
+          "paired_bootstrap_95_percent_interval": [
+            0.9583951754433322,
+            1.0010381111570663
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 23219.09677419355,
+          "normalized_mean_ns": 25382.935483870966,
+          "normalized_over_direct": 1.0931921999688798,
+          "paired_bootstrap_95_percent_interval": [
+            1.0746691740950614,
+            1.1126313357926347
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 177937.74193548388,
+          "normalized_mean_ns": 176636.5483870968,
+          "normalized_over_direct": 0.9926873661864335,
+          "paired_bootstrap_95_percent_interval": [
+            0.9767742933020589,
+            1.012670405954893
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 4,
+      "distribution": "CommonPrefix",
+      "samples": 31,
+      "key_bytes": 147456,
+      "batch_payload_and_null_bytes": 163840,
+      "phase_mean_ns": {
+        "direct_sort_ns": 453403.32258064515,
+        "direct_merge_ns": 44802.290322580644,
+        "encode_ns": 18372.290322580644,
+        "normalized_sort_ns": 154994.1935483871,
+        "normalized_merge_ns": 27780.83870967742
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 453403.32258064515,
+          "normalized_mean_ns": 154994.1935483871,
+          "normalized_over_direct": 0.34184617939322415,
+          "paired_bootstrap_95_percent_interval": [
+            0.33728012404341234,
+            0.34704082838317635
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 453403.32258064515,
+          "normalized_mean_ns": 173366.48387096773,
+          "normalized_over_direct": 0.38236703446329884,
+          "paired_bootstrap_95_percent_interval": [
+            0.3778137691570796,
+            0.38757138648149914
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 44802.290322580644,
+          "normalized_mean_ns": 27780.83870967742,
+          "normalized_over_direct": 0.6200763065828288,
+          "paired_bootstrap_95_percent_interval": [
+            0.6118880870225664,
+            0.6283961957970629
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 498205.6129032258,
+          "normalized_mean_ns": 201147.32258064515,
+          "normalized_over_direct": 0.40374358973694885,
+          "paired_bootstrap_95_percent_interval": [
+            0.399407517900959,
+            0.40864656855941545
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 4,
+      "distribution": "Duplicates",
+      "samples": 31,
+      "key_bytes": 147456,
+      "batch_payload_and_null_bytes": 163840,
+      "phase_mean_ns": {
+        "direct_sort_ns": 174623.06451612903,
+        "direct_merge_ns": 23667.967741935485,
+        "encode_ns": 15784.90322580645,
+        "normalized_sort_ns": 110163.67741935483,
+        "normalized_merge_ns": 12314.41935483871
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 174623.06451612903,
+          "normalized_mean_ns": 110163.67741935483,
+          "normalized_over_direct": 0.6308655601974021,
+          "paired_bootstrap_95_percent_interval": [
+            0.6244606873449347,
+            0.6370631342070449
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 174623.06451612903,
+          "normalized_mean_ns": 125948.58064516129,
+          "normalized_over_direct": 0.7212597086997524,
+          "paired_bootstrap_95_percent_interval": [
+            0.7143550666055613,
+            0.7278598485406135
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 23667.967741935485,
+          "normalized_mean_ns": 12314.41935483871,
+          "normalized_over_direct": 0.52029897493141,
+          "paired_bootstrap_95_percent_interval": [
+            0.5142172315939686,
+            0.5264352657430453
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 198291.03225806452,
+          "normalized_mean_ns": 138263,
+          "normalized_over_direct": 0.6972730860569557,
+          "paired_bootstrap_95_percent_interval": [
+            0.6912490127872257,
+            0.7030892637326117
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 4,
+      "distribution": "Uniform",
+      "samples": 31,
+      "key_bytes": 147456,
+      "batch_payload_and_null_bytes": 163840,
+      "phase_mean_ns": {
+        "direct_sort_ns": 178871.67741935485,
+        "direct_merge_ns": 27575.290322580644,
+        "encode_ns": 27654.41935483871,
+        "normalized_sort_ns": 150817.93548387097,
+        "normalized_merge_ns": 28798.387096774193
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 178871.67741935485,
+          "normalized_mean_ns": 150817.93548387097,
+          "normalized_over_direct": 0.8431627503010809,
+          "paired_bootstrap_95_percent_interval": [
+            0.8342808738591615,
+            0.8530379008369439
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 178871.67741935485,
+          "normalized_mean_ns": 178472.35483870967,
+          "normalized_over_direct": 0.9977675471801555,
+          "paired_bootstrap_95_percent_interval": [
+            0.9854442662609665,
+            1.0140371483954589
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 27575.290322580644,
+          "normalized_mean_ns": 28798.387096774193,
+          "normalized_over_direct": 1.0443548104076348,
+          "paired_bootstrap_95_percent_interval": [
+            0.9989308254094872,
+            1.0728252223414858
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 206446.96774193548,
+          "normalized_mean_ns": 207270.74193548388,
+          "normalized_over_direct": 1.0039902460305357,
+          "paired_bootstrap_95_percent_interval": [
+            0.9926350251793288,
+            1.0189124758769441
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 12,
+      "distribution": "CommonPrefix",
+      "samples": 31,
+      "key_bytes": 442368,
+      "batch_payload_and_null_bytes": 425984,
+      "phase_mean_ns": {
+        "direct_sort_ns": 1202141.6451612904,
+        "direct_merge_ns": 100896.25806451614,
+        "encode_ns": 48116.83870967742,
+        "normalized_sort_ns": 212843.64516129033,
+        "normalized_merge_ns": 33130.096774193546
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 1202141.6451612904,
+          "normalized_mean_ns": 212843.64516129033,
+          "normalized_over_direct": 0.17705371577301382,
+          "paired_bootstrap_95_percent_interval": [
+            0.17481993500388837,
+            0.17952405499784604
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 1202141.6451612904,
+          "normalized_mean_ns": 260960.48387096773,
+          "normalized_over_direct": 0.21707964691295167,
+          "paired_bootstrap_95_percent_interval": [
+            0.2146384677175952,
+            0.21976537965549486
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 100896.25806451614,
+          "normalized_mean_ns": 33130.096774193546,
+          "normalized_over_direct": 0.32835803239609895,
+          "paired_bootstrap_95_percent_interval": [
+            0.3231546627806868,
+            0.3336401712748762
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 1303037.9032258065,
+          "normalized_mean_ns": 294090.5806451613,
+          "normalized_over_direct": 0.2256961059360663,
+          "paired_bootstrap_95_percent_interval": [
+            0.2234028199810223,
+            0.2282347652684457
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 12,
+      "distribution": "Duplicates",
+      "samples": 31,
+      "key_bytes": 442368,
+      "batch_payload_and_null_bytes": 425984,
+      "phase_mean_ns": {
+        "direct_sort_ns": 311617.4193548387,
+        "direct_merge_ns": 53556.354838709674,
+        "encode_ns": 47905.67741935484,
+        "normalized_sort_ns": 125268.41935483871,
+        "normalized_merge_ns": 15567.064516129032
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 311617.4193548387,
+          "normalized_mean_ns": 125268.41935483871,
+          "normalized_over_direct": 0.40199427751564676,
+          "paired_bootstrap_95_percent_interval": [
+            0.3977573302136365,
+            0.40617713063859706
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 311617.4193548387,
+          "normalized_mean_ns": 173174.09677419355,
+          "normalized_over_direct": 0.5557266250799678,
+          "paired_bootstrap_95_percent_interval": [
+            0.5504904480690845,
+            0.5608000707243921
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 53556.354838709674,
+          "normalized_mean_ns": 15567.064516129032,
+          "normalized_over_direct": 0.29066699111638206,
+          "paired_bootstrap_95_percent_interval": [
+            0.27750067826851377,
+            0.3067647590289976
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 365173.77419354836,
+          "normalized_mean_ns": 188741.16129032258,
+          "normalized_over_direct": 0.5168530015802463,
+          "paired_bootstrap_95_percent_interval": [
+            0.5118214258571815,
+            0.5217145238178863
+          ]
+        }
+      }
+    },
+    {
+      "rows": 4096,
+      "columns": 12,
+      "distribution": "Uniform",
+      "samples": 31,
+      "key_bytes": 442368,
+      "batch_payload_and_null_bytes": 425984,
+      "phase_mean_ns": {
+        "direct_sort_ns": 180066.70967741936,
+        "direct_merge_ns": 28948.677419354837,
+        "encode_ns": 82260.58064516129,
+        "normalized_sort_ns": 155111.09677419355,
+        "normalized_merge_ns": 30581.8064516129
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 180066.70967741936,
+          "normalized_mean_ns": 155111.09677419355,
+          "normalized_over_direct": 0.8614090691836789,
+          "paired_bootstrap_95_percent_interval": [
+            0.8488678723583138,
+            0.8760676344472719
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 180066.70967741936,
+          "normalized_mean_ns": 237371.67741935485,
+          "normalized_over_direct": 1.318242988082553,
+          "paired_bootstrap_95_percent_interval": [
+            1.3018658720489564,
+            1.3363857288704808
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 28948.677419354837,
+          "normalized_mean_ns": 30581.8064516129,
+          "normalized_over_direct": 1.0564146336843068,
+          "paired_bootstrap_95_percent_interval": [
+            0.9827203478894102,
+            1.105811743615848
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 209015.38709677418,
+          "normalized_mean_ns": 267953.48387096776,
+          "normalized_over_direct": 1.2819797029914606,
+          "paired_bootstrap_95_percent_interval": [
+            1.263524331819991,
+            1.3008403993766882
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 1,
+      "distribution": "CommonPrefix",
+      "samples": 31,
+      "key_bytes": 589824,
+      "batch_payload_and_null_bytes": 1048576,
+      "phase_mean_ns": {
+        "direct_sort_ns": 3160776.064516129,
+        "direct_merge_ns": 448365.67741935485,
+        "encode_ns": 125995.67741935483,
+        "normalized_sort_ns": 2841439.6129032257,
+        "normalized_merge_ns": 458778.32258064515
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 3160776.064516129,
+          "normalized_mean_ns": 2841439.6129032257,
+          "normalized_over_direct": 0.898968973095603,
+          "paired_bootstrap_95_percent_interval": [
+            0.8852209282600433,
+            0.9111226243399285
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 3160776.064516129,
+          "normalized_mean_ns": 2967435.290322581,
+          "normalized_over_direct": 0.9388312331379458,
+          "paired_bootstrap_95_percent_interval": [
+            0.9254004796001425,
+            0.9509195500765681
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 448365.67741935485,
+          "normalized_mean_ns": 458778.32258064515,
+          "normalized_over_direct": 1.0232235554273958,
+          "paired_bootstrap_95_percent_interval": [
+            1.0067796699677127,
+            1.0406272428058045
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 3609141.7419354836,
+          "normalized_mean_ns": 3426213.6129032257,
+          "normalized_over_direct": 0.9493153380742096,
+          "paired_bootstrap_95_percent_interval": [
+            0.9364005295876396,
+            0.9613691956926238
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 1,
+      "distribution": "Duplicates",
+      "samples": 31,
+      "key_bytes": 589824,
+      "batch_payload_and_null_bytes": 1048576,
+      "phase_mean_ns": {
+        "direct_sort_ns": 1839750.2580645161,
+        "direct_merge_ns": 188957.7741935484,
+        "encode_ns": 85124.80645161291,
+        "normalized_sort_ns": 1212152.7096774194,
+        "normalized_merge_ns": 198735.96774193548
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 1839750.2580645161,
+          "normalized_mean_ns": 1212152.7096774194,
+          "normalized_over_direct": 0.6588680742747376,
+          "paired_bootstrap_95_percent_interval": [
+            0.6476849324294961,
+            0.6729077209596549
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 1839750.2580645161,
+          "normalized_mean_ns": 1297277.5161290322,
+          "normalized_over_direct": 0.7051378362049071,
+          "paired_bootstrap_95_percent_interval": [
+            0.6938920400142495,
+            0.7192629500769481
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 188957.7741935484,
+          "normalized_mean_ns": 198735.96774193548,
+          "normalized_over_direct": 1.051748035189975,
+          "paired_bootstrap_95_percent_interval": [
+            1.037032642469355,
+            1.067560117628009
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 2028708.0322580645,
+          "normalized_mean_ns": 1496013.4838709678,
+          "normalized_over_direct": 0.7374217778424339,
+          "paired_bootstrap_95_percent_interval": [
+            0.7269406607029523,
+            0.7505553335533792
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 1,
+      "distribution": "Uniform",
+      "samples": 31,
+      "key_bytes": 589824,
+      "batch_payload_and_null_bytes": 1048576,
+      "phase_mean_ns": {
+        "direct_sort_ns": 3125219.709677419,
+        "direct_merge_ns": 443918.12903225806,
+        "encode_ns": 122734.83870967742,
+        "normalized_sort_ns": 2824323.9032258065,
+        "normalized_merge_ns": 455547.0967741936
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 3125219.709677419,
+          "normalized_mean_ns": 2824323.9032258065,
+          "normalized_over_direct": 0.9037201110949505,
+          "paired_bootstrap_95_percent_interval": [
+            0.8969050811051822,
+            0.9108960815226307
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 3125219.709677419,
+          "normalized_mean_ns": 2947058.7419354836,
+          "normalized_over_direct": 0.9429924983545157,
+          "paired_bootstrap_95_percent_interval": [
+            0.9362146440571752,
+            0.9501415965029535
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 443918.12903225806,
+          "normalized_mean_ns": 455547.0967741936,
+          "normalized_over_direct": 1.0261961992119732,
+          "paired_bootstrap_95_percent_interval": [
+            1.0137496538145694,
+            1.0382740143327418
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 3569137.8387096776,
+          "normalized_mean_ns": 3402605.8387096776,
+          "normalized_over_direct": 0.9533411127488971,
+          "paired_bootstrap_95_percent_interval": [
+            0.9470525213987685,
+            0.9599998471584713
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 4,
+      "distribution": "CommonPrefix",
+      "samples": 31,
+      "key_bytes": 2359296,
+      "batch_payload_and_null_bytes": 2621440,
+      "phase_mean_ns": {
+        "direct_sort_ns": 9140673,
+        "direct_merge_ns": 805582.3225806452,
+        "encode_ns": 298016.77419354836,
+        "normalized_sort_ns": 3222676.3870967743,
+        "normalized_merge_ns": 547182.6451612903
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 9140673,
+          "normalized_mean_ns": 3222676.3870967743,
+          "normalized_over_direct": 0.3525644541815219,
+          "paired_bootstrap_95_percent_interval": [
+            0.35020818356767436,
+            0.3549927474122031
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 9140673,
+          "normalized_mean_ns": 3520693.1612903224,
+          "normalized_over_direct": 0.3851678274991702,
+          "paired_bootstrap_95_percent_interval": [
+            0.3827213765333764,
+            0.38763266003021024
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 805582.3225806452,
+          "normalized_mean_ns": 547182.6451612903,
+          "normalized_over_direct": 0.6792386449201323,
+          "paired_bootstrap_95_percent_interval": [
+            0.6697564846915334,
+            0.6896942858638784
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 9946255.322580645,
+          "normalized_mean_ns": 4067875.806451613,
+          "normalized_over_direct": 0.40898566088651,
+          "paired_bootstrap_95_percent_interval": [
+            0.4065925759878159,
+            0.41133226457776373
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 4,
+      "distribution": "Duplicates",
+      "samples": 31,
+      "key_bytes": 2359296,
+      "batch_payload_and_null_bytes": 2621440,
+      "phase_mean_ns": {
+        "direct_sort_ns": 2761146.6774193547,
+        "direct_merge_ns": 367336.3548387097,
+        "encode_ns": 273381.06451612903,
+        "normalized_sort_ns": 1872403.3870967743,
+        "normalized_merge_ns": 209968.4516129032
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 2761146.6774193547,
+          "normalized_mean_ns": 1872403.3870967743,
+          "normalized_over_direct": 0.6781252884568867,
+          "paired_bootstrap_95_percent_interval": [
+            0.6725782284433918,
+            0.683606197930675
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 2761146.6774193547,
+          "normalized_mean_ns": 2145784.4516129033,
+          "normalized_over_direct": 0.7771352638239464,
+          "paired_bootstrap_95_percent_interval": [
+            0.7711479047896497,
+            0.7830329833466126
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 367336.3548387097,
+          "normalized_mean_ns": 209968.4516129032,
+          "normalized_over_direct": 0.5715972537079711,
+          "paired_bootstrap_95_percent_interval": [
+            0.5634181386397968,
+            0.5796513010123518
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 3128483.0322580645,
+          "normalized_mean_ns": 2355752.9032258065,
+          "normalized_over_direct": 0.753001655733923,
+          "paired_bootstrap_95_percent_interval": [
+            0.7475552591019979,
+            0.7582535587875638
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 4,
+      "distribution": "Uniform",
+      "samples": 31,
+      "key_bytes": 2359296,
+      "batch_payload_and_null_bytes": 2621440,
+      "phase_mean_ns": {
+        "direct_sort_ns": 3696162.935483871,
+        "direct_merge_ns": 533212.1935483871,
+        "encode_ns": 432770.29032258067,
+        "normalized_sort_ns": 3152781.3870967743,
+        "normalized_merge_ns": 551085.8709677419
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 3696162.935483871,
+          "normalized_mean_ns": 3152781.3870967743,
+          "normalized_over_direct": 0.8529876637280975,
+          "paired_bootstrap_95_percent_interval": [
+            0.848521947176242,
+            0.8576732290235265
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 3696162.935483871,
+          "normalized_mean_ns": 3585551.6774193547,
+          "normalized_over_direct": 0.9700740308273137,
+          "paired_bootstrap_95_percent_interval": [
+            0.9654304084237187,
+            0.9749589802204714
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 533212.1935483871,
+          "normalized_mean_ns": 551085.8709677419,
+          "normalized_over_direct": 1.0335207589691642,
+          "paired_bootstrap_95_percent_interval": [
+            1.0204026915036966,
+            1.047559004942747
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 4229375.129032258,
+          "normalized_mean_ns": 4136637.5483870967,
+          "normalized_over_direct": 0.9780729829310788,
+          "paired_bootstrap_95_percent_interval": [
+            0.9736204598057882,
+            0.9825676104968302
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 12,
+      "distribution": "CommonPrefix",
+      "samples": 31,
+      "key_bytes": 7077888,
+      "batch_payload_and_null_bytes": 6815744,
+      "phase_mean_ns": {
+        "direct_sort_ns": 24356719.80645161,
+        "direct_merge_ns": 1620752.2258064516,
+        "encode_ns": 781703.4193548387,
+        "normalized_sort_ns": 4743614.322580645,
+        "normalized_merge_ns": 628267.0322580645
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 24356719.80645161,
+          "normalized_mean_ns": 4743614.322580645,
+          "normalized_over_direct": 0.19475587682887233,
+          "paired_bootstrap_95_percent_interval": [
+            0.19372470054221927,
+            0.19576292538171552
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 24356719.80645161,
+          "normalized_mean_ns": 5525317.741935484,
+          "normalized_over_direct": 0.22684982977354515,
+          "paired_bootstrap_95_percent_interval": [
+            0.22576608919745114,
+            0.22791556301734306
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 1620752.2258064516,
+          "normalized_mean_ns": 628267.0322580645,
+          "normalized_over_direct": 0.387639160541922,
+          "paired_bootstrap_95_percent_interval": [
+            0.38198089906798505,
+            0.3937124963321431
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 25977472.032258064,
+          "normalized_mean_ns": 6153584.774193549,
+          "normalized_over_direct": 0.23688158595848768,
+          "paired_bootstrap_95_percent_interval": [
+            0.2357561087842376,
+            0.23794722167484716
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 12,
+      "distribution": "Duplicates",
+      "samples": 31,
+      "key_bytes": 7077888,
+      "batch_payload_and_null_bytes": 6815744,
+      "phase_mean_ns": {
+        "direct_sort_ns": 4902564.064516129,
+        "direct_merge_ns": 844567.6774193548,
+        "encode_ns": 782401,
+        "normalized_sort_ns": 2266934.3870967743,
+        "normalized_merge_ns": 288214.2580645161
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 4902564.064516129,
+          "normalized_mean_ns": 2266934.3870967743,
+          "normalized_over_direct": 0.4623977080696272,
+          "paired_bootstrap_95_percent_interval": [
+            0.45724776550171675,
+            0.4674726139071657
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 4902564.064516129,
+          "normalized_mean_ns": 3049335.3870967743,
+          "normalized_over_direct": 0.6219878714420708,
+          "paired_bootstrap_95_percent_interval": [
+            0.6156647395274947,
+            0.62823043400388
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 844567.6774193548,
+          "normalized_mean_ns": 288214.2580645161,
+          "normalized_over_direct": 0.34125655737285404,
+          "paired_bootstrap_95_percent_interval": [
+            0.3356696307931968,
+            0.34716862232687606
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 5747131.741935484,
+          "normalized_mean_ns": 3337549.64516129,
+          "normalized_over_direct": 0.5807331021852112,
+          "paired_bootstrap_95_percent_interval": [
+            0.5755139709037856,
+            0.5860169857005032
+          ]
+        }
+      }
+    },
+    {
+      "rows": 65536,
+      "columns": 12,
+      "distribution": "Uniform",
+      "samples": 31,
+      "key_bytes": 7077888,
+      "batch_payload_and_null_bytes": 6815744,
+      "phase_mean_ns": {
+        "direct_sort_ns": 3805604.7741935486,
+        "direct_merge_ns": 550896.2580645161,
+        "encode_ns": 1265793.6129032257,
+        "normalized_sort_ns": 3298739.1612903224,
+        "normalized_merge_ns": 584526.6774193548
+      },
+      "comparisons": {
+        "sort_reused_keys": {
+          "direct_mean_ns": 3805604.7741935486,
+          "normalized_mean_ns": 3298739.1612903224,
+          "normalized_over_direct": 0.8668107586104664,
+          "paired_bootstrap_95_percent_interval": [
+            0.8580253155706943,
+            0.8768392715363325
+          ]
+        },
+        "sort_including_encoding": {
+          "direct_mean_ns": 3805604.7741935486,
+          "normalized_mean_ns": 4564532.774193549,
+          "normalized_over_direct": 1.1994237565462444,
+          "paired_bootstrap_95_percent_interval": [
+            1.1883928125408705,
+            1.2114007440268855
+          ]
+        },
+        "merge_reused_keys": {
+          "direct_mean_ns": 550896.2580645161,
+          "normalized_mean_ns": 584526.6774193548,
+          "normalized_over_direct": 1.0610467376797832,
+          "paired_bootstrap_95_percent_interval": [
+            1.0444265928616012,
+            1.0769503141970418
+          ]
+        },
+        "encode_sort_merge": {
+          "direct_mean_ns": 4356501.0322580645,
+          "normalized_mean_ns": 5149059.451612903,
+          "normalized_over_direct": 1.1819254519822848,
+          "paired_bootstrap_95_percent_interval": [
+            1.171584468303322,
+            1.1928408195570603
+          ]
+        }
+      }
+    }
+  ],
+  "samples_sha256": "61a9f81f39e9bcfb52fbc5ec69fd76a4260607d9a1b8cd942c8e56ee880253d3",
+  "production_budget_approved": false,
+  "scope": "Nullable-BIGINT synthetic stable index-sort and two-run merge; not complete N2",
+  "archive": ".bench-results/native-keys/2026-16-11-14-56-c6ede",
+  "raw_directory": "$SCRATCH/p0-native-key-benchmark-v1",
+  "provenance_sha256": "18e938aff337e554a8c3a3b3cf604410a27782a771357d8f58a14129457fd4ea",
+  "build": {
+    "binary_sha256": "cd4d0dbc9f83f8fa920c1d0af908b57ae1d879ae0b0436e024f1b271357467f0",
+    "sources": {
+      "$REPO/crates/sql/native-probe/Cargo.toml": "8b1eb4090d8a71c6108ac74c43bb824f91a1eb65185cd3b80d6dd500340c17b1",
+      "$REPO/crates/sql/native-probe/Cargo.lock": "07fa42707323e9b0e6fc7a80afbb3f4f6fe6670c9fd1ed57cb410f5816e4ee38",
+      "$REPO/crates/sql/native-probe/examples/key_benchmark.rs": "e809a5d3c818391820d5e2d751823753e75def60169d91355f19f3298845d8c9",
+      "$REPO/crates/sql/native-probe/src/codegen.rs": "cc9b8b29367a00f076b74b8cd95984ebb07dab1775a1179ed0fc7cfed326af48",
+      "$REPO/crates/sql/native-probe/src/keys.rs": "c89bed9130b9b805fbcb56b1cd13ed25ccf5b6c13d5762baddef9224c4cffa44",
+      "$REPO/crates/sql/native-probe/src/lib.rs": "8e91b725735729b565e15a9317a6216ed5f8567a77859e09d2c2ac66c3eeeae8",
+      "$REPO/crates/sql/native-probe/src/model.rs": "7d8b8877e1e1b27b3081837819c7a906616564074219866f3c3a6651cdfacaaf",
+      "$REPO/crates/sql/native-probe/src/runtime.rs": "867e500892d68ca1695426fa501dd4f8cc64e4a681680152b71871a9c28d25ce"
+    },
+    "profile": "release",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+    "environment": {
+      "RUSTFLAGS": null,
+      "CARGO_ENCODED_RUSTFLAGS": null,
+      "CARGO_PROFILE_RELEASE_LTO": null,
+      "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": null
+    },
+    "validation_directory": "$SCRATCH/p0-native-key-benchmark-build-v1"
+  },
+  "measurement_sources": {
+    "$REPO/crates/sql/native-probe/Cargo.lock": "07fa42707323e9b0e6fc7a80afbb3f4f6fe6670c9fd1ed57cb410f5816e4ee38",
+    "$REPO/crates/sql/native-probe/Cargo.toml": "8b1eb4090d8a71c6108ac74c43bb824f91a1eb65185cd3b80d6dd500340c17b1",
+    "$REPO/crates/sql/native-probe/examples/key_benchmark.rs": "e809a5d3c818391820d5e2d751823753e75def60169d91355f19f3298845d8c9",
+    "$REPO/crates/sql/native-probe/src/codegen.rs": "cc9b8b29367a00f076b74b8cd95984ebb07dab1775a1179ed0fc7cfed326af48",
+    "$REPO/crates/sql/native-probe/src/keys.rs": "c89bed9130b9b805fbcb56b1cd13ed25ccf5b6c13d5762baddef9224c4cffa44",
+    "$REPO/crates/sql/native-probe/src/lib.rs": "8e91b725735729b565e15a9317a6216ed5f8567a77859e09d2c2ac66c3eeeae8",
+    "$REPO/crates/sql/native-probe/src/model.rs": "7d8b8877e1e1b27b3081837819c7a906616564074219866f3c3a6651cdfacaaf",
+    "$REPO/crates/sql/native-probe/src/runtime.rs": "867e500892d68ca1695426fa501dd4f8cc64e4a681680152b71871a9c28d25ce",
+    "$REPO/crates/sql/scripts/benchmark_keys.py": "8af0aaeedb7ee0ae81d26d87db590d3e493e31f1bcfa5f1043e0e5a931259327",
+    "$REPO/crates/sql/scripts/benchmark_seams.py": "21378131415ecd0a419caf7cb70e2933934855b54c100a90099078e3d302c8eb"
+  },
+  "command": [
+    "taskset",
+    "-c",
+    "0",
+    "$SCRATCH/p0-native-key-tools-v1/key_benchmark",
+    "31"
+  ],
+  "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+  "limitations": [
+    "Synthetic nullable-BIGINT keys only; no ten-program C7 coverage.",
+    "Baseline is a dynamic field comparator, not generated typed Rust tuples.",
+    "Warm input caches; VM host load/frequency are uncontrolled.",
+    "Sorting permutes row indices; it does not move payloads.",
+    "Merge allocation is timed; input/index preparation and validation are not.",
+    "Phase sums exclude key destruction and input preparation.",
+    "No archive, checkpoint, DBSP execution, throughput or total RSS measurement."
+  ],
+  "replay_workers_paused": {
+    "paused_utc": "2026-11-16T14:56:35Z",
+    "resumed_utc": "2026-11-16T14:56:43Z",
+    "resident_memory_retained": true
+  },
+  "full_n2_complete": false,
+  "runtime_c7_executed": false
+}

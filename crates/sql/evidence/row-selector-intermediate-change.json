@@ -1,0 +1,15 @@
+{
+  "complete": true,
+  "scope": "Only string ROW convertItem branch removed from reviewed ConvertletTable source; all other reviewed classes unchanged",
+  "rollback_equal_old": true,
+  "rollback_equal_reviewed": false,
+  "sources": {
+    "$SCRATCH/p0-reviewed-prefix-corpus-v1/sources/main/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/ConvertletTable.java": "0e59f59701d1611968f150e2b0f7e2d406353ae9ba95049f8e5e1e897d3c7cb9",
+    "$SCRATCH/p0-issue3326-convertlet-rollback-v1/ConvertletTable.java": "d426ce87f39ff5fc48396504ce6f4bd0b811a8325a2730319dd9bd242152c625",
+    "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/ExpressionCompiler.java": "dfb6f51513f341b509c9f50a633471500fbbdf94366003a6b35a478dbaf5022b"
+  },
+  "removed": "        if (isRowTypeField && SqlTypeUtil.isCharacter(exprs.get(1).getType())) {\n            final SqlOperatorBinding opBinding =\n                    new RexCallBinding(cx.getTypeFactory(), op, exprs, ImmutableList.of());\n            final String name = opBinding.getOperandLiteralValue(1, String.class);\n            // Validation has resolved the name against this ROW type. Preserve\n            // its field index before later simplification can erase cast names.\n            return rexBuilder.makeFieldAccess(exprs.get(0),\n                    java.util.Objects.requireNonNull(name), false);\n        }\n",
+  "classification": "Expected intermediate representation change from repaired ROW field access; do not normalize it away",
+  "explanation": "ITEM compilation strips a clone from its collection operand, whereas visitFieldAccess retains the source and clones the resulting field when needed. The repaired convertlet changes the representation reaching these existing paths.",
+  "final_output_scope": "Parent separately observed unchanged S3/backend artifacts; this controlled rollback independently compares S2 only."
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "scope": "Bounded nullable BIGINT normalized-key correctness; no archive or performance claim",
+  "rust_tests": 11,
+  "key_tests": 3,
+  "pairwise_order_comparisons": 20736,
+  "column_policy_combinations": 16,
+  "clippy_passed": true,
+  "limits": {
+    "columns": 64,
+    "key_fields": 64,
+    "encoded_bytes": 16777216
+  },
+  "key_bytes_per_field": 9,
+  "null_placement_independent_of_direction": true,
+  "empty_keys_supported": true,
+  "variable_length_types_tested": false,
+  "rkyv_archive_compatibility_tested": false,
+  "checkpoint_restore_tested": false,
+  "performance_measured": false,
+  "ten_program_key_coverage": false,
+  "raw_directory": "$SCRATCH/p0-native-keys-v1",
+  "sources": {
+    "crates/sql/native-probe/Cargo.lock": "07fa42707323e9b0e6fc7a80afbb3f4f6fe6670c9fd1ed57cb410f5816e4ee38",
+    "crates/sql/native-probe/Cargo.toml": "8b1eb4090d8a71c6108ac74c43bb824f91a1eb65185cd3b80d6dd500340c17b1",
+    "crates/sql/native-probe/src/codegen.rs": "cc9b8b29367a00f076b74b8cd95984ebb07dab1775a1179ed0fc7cfed326af48",
+    "crates/sql/native-probe/src/keys.rs": "c89bed9130b9b805fbcb56b1cd13ed25ccf5b6c13d5762baddef9224c4cffa44",
+    "crates/sql/native-probe/src/lib.rs": "8e91b725735729b565e15a9317a6216ed5f8567a77859e09d2c2ac66c3eeeae8",
+    "crates/sql/native-probe/src/model.rs": "89c302c0681aeb0208b65da6366127c97f1ef19812e1323e92e89afb1044f47e",
+    "crates/sql/native-probe/src/runtime.rs": "867e500892d68ca1695426fa501dd4f8cc64e4a681680152b71871a9c28d25ce",
+    "crates/sql/native-probe/tests/keys.rs": "0800f54d01bf19946d7f0718557983b8d0034bb0899d0b116db1b0f1c29dbbfa",
+    "crates/sql/native-probe/tests/native.rs": "c32899667ed4d5c8711e2fc19c5cf25a618d141c2143817ae9f146cc4cc2fbc4"
+  },
+  "raw_digests": {
+    "$SCRATCH/p0-native-keys-v1/tests.log": "797eeaacb1d69738835f3a23ab5c73488ffc2e47f87ba758b2427b1c4b2674db",
+    "$SCRATCH/p0-native-keys-v1/clippy.log": "6d2a591557dcb5f2e74b3d0eb0fff18d849ebf0bc31fed546cfdfbd614e47291",
+    "$SCRATCH/p0-native-keys-v1/build.log": "ee1d3fffa2022e962e63e0dbe4d35c9c198450a20c29fc09030f635dbb38bfcd",
+    "$SCRATCH/p0-native-keys-v1/runtime.log": "a2284154de24755f4cfaa237d653a3ca1a58161d8f6725747742ce0d1355a196"
+  }
+}

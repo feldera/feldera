@@ -1,0 +1,1472 @@
+{
+  "schema_version": 1,
+  "purpose": "Independent signed-bag oracles for bounded correlated scalar COUNT/MIN/MAX repair",
+  "runtime_verified": false,
+  "sql_syntax_validated": false,
+  "oracle_provenance": "Independent scalar SQL semantics: scalar aggregate emits one row per outer occurrence even on an empty filtered input; COUNT(*) sums input multiplicities, COUNT(v) excludes NULL, MIN/MAX ignore NULL; HAVING filters the aggregate row before LEFT padding. These expected bags are not execution evidence.",
+  "fixtures": [
+    {
+      "id": "scalar_left_counts_min_max_duplicates",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            2,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_inner_counts_preserve_empty_groups",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l CROSS JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            2,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_null_safe_key",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k IS NOT DISTINCT FROM l.k) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            2,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            3,
+            3,
+            9,
+            9
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_completely_empty_right",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": []
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_empty_left",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": []
+    },
+    {
+      "id": "scalar_having_zero_left_padding",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k HAVING COUNT(*) = 0) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            null,
+            null,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            null,
+            null,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            null,
+            null,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_having_zero_inner_removes_matched_groups",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l CROSS JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k HAVING COUNT(*) = 0) q",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            null,
+            40,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_having_positive_left_padding",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k HAVING COUNT(*) > 0) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            4,
+            3,
+            3,
+            7
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            2,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            null,
+            null,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            null,
+            null,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_min_max_nonnullable_input",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER NOT NULL);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              10
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              20
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              30
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              40
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              3,
+              50
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            10,
+            3,
+            3,
+            3,
+            7
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            20,
+            3,
+            3,
+            3,
+            7
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            2,
+            30,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            40,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            3,
+            50,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_two_required_fields",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k = l.k AND r.v < l.p) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              4
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              8
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              8
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              3
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              2,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            4,
+            1,
+            1,
+            3,
+            3
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            1,
+            8,
+            3,
+            3,
+            3,
+            7
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            1,
+            null,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            8,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "id": "scalar_two_null_safe_required_fields",
+      "schema_sql": "CREATE TABLE L(k INTEGER, p INTEGER); CREATE TABLE R(k INTEGER, p INTEGER, v INTEGER);",
+      "query_sql": "SELECT l.k, l.p, q.n, q.nv, q.mn, q.mx FROM L l LEFT JOIN LATERAL (SELECT COUNT(*) AS n, COUNT(r.v) AS nv, MIN(r.v) AS mn, MAX(r.v) AS mx FROM R r WHERE r.k IS NOT DISTINCT FROM l.k AND r.p IS NOT DISTINCT FROM l.p) q ON TRUE",
+      "inputs": {
+        "L": [
+          {
+            "row": [
+              1,
+              null
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              1
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              1,
+              1
+            ],
+            "weight": 1
+          }
+        ],
+        "R": [
+          {
+            "row": [
+              1,
+              null,
+              7
+            ],
+            "weight": 2
+          },
+          {
+            "row": [
+              null,
+              1,
+              null
+            ],
+            "weight": 1
+          },
+          {
+            "row": [
+              null,
+              null,
+              9
+            ],
+            "weight": 3
+          }
+        ]
+      },
+      "expected": [
+        {
+          "row": [
+            1,
+            null,
+            2,
+            2,
+            7,
+            7
+          ],
+          "weight": 2
+        },
+        {
+          "row": [
+            null,
+            1,
+            1,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            null,
+            null,
+            3,
+            3,
+            9,
+            9
+          ],
+          "weight": 1
+        },
+        {
+          "row": [
+            1,
+            1,
+            0,
+            0,
+            null,
+            null
+          ],
+          "weight": 1
+        }
+      ]
+    }
+  ],
+  "incremental_extension": {
+    "fixture": "scalar_left_counts_min_max_duplicates",
+    "replace_initial_inputs": {
+      "L": [
+        {
+          "row": [
+            1,
+            10
+          ],
+          "weight": 2
+        }
+      ],
+      "R": [
+        {
+          "row": [
+            1,
+            7
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    "initial_expected": [
+      {
+        "row": [
+          1,
+          10,
+          1,
+          1,
+          7,
+          7
+        ],
+        "weight": 2
+      }
+    ],
+    "steps": [
+      {
+        "input_deltas": {
+          "R": [
+            {
+              "row": [
+                1,
+                7
+              ],
+              "weight": -1
+            }
+          ]
+        },
+        "expected_delta": [
+          {
+            "row": [
+              1,
+              10,
+              1,
+              1,
+              7,
+              7
+            ],
+            "weight": -2
+          },
+          {
+            "row": [
+              1,
+              10,
+              0,
+              0,
+              null,
+              null
+            ],
+            "weight": 2
+          }
+        ]
+      },
+      {
+        "input_deltas": {
+          "L": [
+            {
+              "row": [
+                1,
+                10
+              ],
+              "weight": -1
+            }
+          ]
+        },
+        "expected_delta": [
+          {
+            "row": [
+              1,
+              10,
+              0,
+              0,
+              null,
+              null
+            ],
+            "weight": -1
+          }
+        ]
+      },
+      {
+        "input_deltas": {
+          "L": [
+            {
+              "row": [
+                1,
+                10
+              ],
+              "weight": -1
+            }
+          ]
+        },
+        "expected_delta": [
+          {
+            "row": [
+              1,
+              10,
+              0,
+              0,
+              null,
+              null
+            ],
+            "weight": -1
+          }
+        ]
+      },
+      {
+        "input_deltas": {
+          "R": [
+            {
+              "row": [
+                1,
+                7
+              ],
+              "weight": 1
+            }
+          ]
+        },
+        "expected_delta": []
+      },
+      {
+        "input_deltas": {
+          "L": [
+            {
+              "row": [
+                1,
+                10
+              ],
+              "weight": 1
+            }
+          ]
+        },
+        "expected_delta": [
+          {
+            "row": [
+              1,
+              10,
+              1,
+              1,
+              7,
+              7
+            ],
+            "weight": 1
+          }
+        ]
+      }
+    ]
+  }
+}

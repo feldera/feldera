@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "archive_index": "structured-warning-assertions-archive.json",
+  "scope": "Every Java shouldWarn call now asserts an accepted verdict and the ordered structured C0 diagnostic fields.",
+  "junit_methods": 5,
+  "warning_assertions": 6,
+  "warnings_compared": 9,
+  "old_reference": "p0-diagnostic-shared-helper-20261118-v1.tar.gz",
+  "structured_fields_equal": true,
+  "assertions_classified_without_a_message_body_dependency": 6,
+  "runtime_execution": "The JUnit run uses corpus export mode for the existing runtime fixture.",
+  "remaining": "Source tests using compiler rejection body wording are outside this migration slice."
+}

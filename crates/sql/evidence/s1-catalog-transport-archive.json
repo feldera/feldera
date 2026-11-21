@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-catalog-transport-20261117-v1.tar.gz",
+  "sha256": "de29421fe603c5d1e489f63f5b0cd6273713295d363cefe366e764a046d12200",
+  "bytes": 70704860,
+  "certificates": [
+    "s1-catalog-transport.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-catalog-transport.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-catalog-v2/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-catalog-transport.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Catalog-backed optimized-view relations",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-catalog-transport-archive.json"
+}

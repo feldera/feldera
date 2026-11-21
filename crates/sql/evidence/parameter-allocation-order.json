@@ -1,0 +1,3797 @@
+{
+  "schema_version": 1,
+  "cases": 8527,
+  "affected_cases": 411,
+  "shards": [
+    {
+      "shard": "shard-000",
+      "cases": 1422,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testArrayConstructor/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/16",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/22",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890c/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#rowsFrameTests/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/20",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#forkedChainStartsANewChain/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates5/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#overAvgTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#issue2980/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testQualify/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#firstValueTests/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#correlatedAggregate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2018/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q20test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testGrouping3/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#leftOuterJoinTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue5398/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_bool/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#fraudDetectionTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/23",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#demographicsTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#logarithmTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testIssue1957/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/12",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nullableLatenessTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#logarithm10Test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#test0/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890b/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#lookupReusesTheStartIndex/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/15",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#issue3769/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ArrayFunctionsTests#testArrayAgg/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2027/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/12",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/18",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#twoLeftJoinsAreOneChain/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890d/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#overSumUnsignedTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507TwoProducers/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#joinNullableTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#conditionColumnIsRead/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890a/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        }
+      ]
+    },
+    {
+      "shard": "shard-001",
+      "cases": 1421,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testArrayConstructor/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/23",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests#sameOutputWithoutLateness/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#q16alt/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggLastValue/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#rowsFrameTests/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#aggregateDistinctTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/15",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overSumUnsignedTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates5/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/16",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsIncrementalTests#testLateSoftDelete/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testQualify/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#rightOuterJoinTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testRankFirst/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ModeTests#testModeInterleaved/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q20test/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testGrouping3/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q3Test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.RecursiveTests#issue7039/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue5935/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#correlatedAggregate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AntiJoinDistinctTests#testSegment/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#test2/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/18",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testControl/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#joinNullableTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#overSum0Test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nowFilterNextToArrayAgg/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/15",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/13",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue2846/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q7test/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890b/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#overTwiceTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q18test/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testRankKept/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#sessionGcLateMerge/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue2017/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3042/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2Double/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#issue7330/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SessionTests#testSessionNulls/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#rightOuterJoinTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q6test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3235/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#bitTests/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overAvgTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overSumTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/20",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#testHashes2/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        }
+      ]
+    },
+    {
+      "shard": "shard-002",
+      "cases": 1421,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testArrayConstructor/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/12",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/18",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/24",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#testCompile/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#partitionFieldsInsideRow/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#partitionFieldsInsideRow/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue3542/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ModeTests#testModeWithOtherAggregates/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overSum0Test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/22",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#joinFPTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q16test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates5/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/17",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testJoin/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#firstValueTests/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#rightOuterJoinTest2/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue6655d/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests#testBitAndAgg/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ModeTests#testModeInterleaved/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q20test/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#joinNullableTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testFirstValue/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testGrouping3/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testDistinctCount/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SessionTests#testSessionAggregate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_binary/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_bool/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#calcite7784/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#test2/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/19",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue1956/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#groupBySumTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testConditionalAggregate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testRankInFilter/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testNow/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890b/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507DivideWindow/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#errorStreamTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.ShareIndexesTests#topKResultsWithSharedIndex/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggIgnoreNullsOrderBy/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3769/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#issue4926/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#overSumTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q4Test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#sameIndexTwiceDifferentNullability/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_long/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggFirstValue/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggFirstValue/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SessionTests#testSessionNulls/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q6test/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#bitTests/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_binary_nullable/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/21",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testComplexGrouping/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        }
+      ]
+    },
+    {
+      "shard": "shard-003",
+      "cases": 1421,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/13",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/19",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/25",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggLastValue/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.IncrementalRecursiveTests#spreadsheetReduced/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/12",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.ModeTests#testModeWithOtherAggregates/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/23",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates5/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue1957/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3589/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#rightOuterJoinTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.mysql.VarbinaryTests#testBitAndAgg/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#groupBySumTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testGrouping3/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testDistinctCount/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#issue4278/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_binary/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#test2/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/20",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/17",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#tumblingTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/15",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testCubeDistinct/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testConditionalAggregate/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresWindowTests#testTopK/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#chainInsideARecursiveView/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#overTwiceDifferentTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/12",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#issue3769/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#testDateDiff/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2Double/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsTests#keptWhenRightNotKeyed/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#rightOuterJoinTest2/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggFirstValue/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggFirstValue/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.MergeGCIncrementalTests#issue7584Original/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#squareRootTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q6test/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q19test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#inTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_binary_nullable/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#arrayAggNoValues/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#distinctContinuesAChain/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testComplexGrouping/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        }
+      ]
+    },
+    {
+      "shard": "shard-004",
+      "cases": 1421,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue1956/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/20",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/32",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggLastValue/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890c/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testSimple/13",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#partitionFieldsInsideRow/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#partitionFieldsInsideRow/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsTests#innerJoinKept/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#forkedChainDefersEachBranch/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#rowsFrameTests/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#rowsFrameTests/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/18",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#fanOutGetsTheSamePayload/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#unusedFieldTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#calcite6020issueTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#payloadIsDeferred/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#duplicateFoldAggregates/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#nullPartitionKey/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#fanOutKeepsColumnsCarried/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#aggregateDistinctTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#sameInputSameKeyDifferentProjections/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507OneOfTwo/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q9test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#rightOuterJoinTest2/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_binary/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#threeWayJoinStoresLargeIntermediate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/16",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#testHopWindows/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#test2/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.SharedIndexPortTests#crossJoinOutputs/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#droppedRowStaysDropped/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/12",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short_nullable/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testCubeDistinct/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issue3461/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#overTwiceDifferentTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#correlatedAggregate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresWindowTests#testTopK/15",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue2234/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#overSum0Test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/13",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CovarTests#testCovarDouble/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#testEmptyAggregate/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggFirstValue/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.OuterTests#testOuter/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#leftJoinChainKeyFromTopK/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#tpchq14/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q6test/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q19test/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#joinFPTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates4/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/6",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_binary_nullable/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresCaseTests#testCases2/17",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890a/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        }
+      ]
+    },
+    {
+      "shard": "shard-005",
+      "cases": 1421,
+      "differences": [
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggTests#testWindowRows/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests#inTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.AggregateTests#testArrayConstructor/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/3",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/9",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/15",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates3/21",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinFusionGCIncrementalTests#sameOutputWithoutLateness/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggLastValue/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#partitionFieldsInsideRow/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#partitionFieldsInsideRow/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507DivideGroup/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.ComplexQueriesTest#testMultiJoin/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#rowsFrameTests/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#rowsFrameTests/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/13",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ0/19",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TopKTests#testTopK/8",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q15test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#firstValueTests/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#aggregateEndsAChain/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TopKUnusedFieldsTests#testSoftDeletes/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.PivotTests#unpivotTests/17",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegression2Tests#issue6350a/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/10",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.WindowTests#testQ1/22",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#temporal/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#topKOutputReindexedOnPartitionKey/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#keyReadByTheChainIsPreferred/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.FoodmartTests#testScalar/19",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#castRow/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SubQueryTests#wellKnownCountBug/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggTests#testGrouping/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression1Tests#decorrelateTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.WinAggPostTests#testWindowCovariance/4",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#overAvgTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#inTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsTests#filterAboveAChainIsNotPartOfIt/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#testComplex/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.suites.nexmark.NexmarkTest#q18test/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#rollupTests/11",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testGrouping2/14",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#groupBySumTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.CovarTests#testCovarDouble/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.TrigonometryTests#testAtan2Double/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507ReadsKey/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.CalciteJdbcTests#testWinAggFirstValue/5",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.RegressionTests#issueLateral/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#rowsTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresGroupingSetsTests#testRollup/2",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.RollingAggregateGCIncrementalTests#issue7507MapIndex/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.recursive.NonLinearRecursionTests#pointsToAnalysis/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression3Tests#issue457_interval_short/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.NaiveIncrementalTests#leftOuterJoinTest/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.AggScottTests#testAggregates4/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890d/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.quidem.SelectTests#testExclude/7",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.FloatingPointValueTests#zerosAreOneValue/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.Regression2Tests#issue5890a/1",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        },
+        {
+          "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2502/0",
+          "fields": [
+            "gen2"
+          ],
+          "artifacts": [
+            "circuit.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "input_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "comparator_sha256": "d2198cd6334064e44d07e4e5816a85fa277f7695fd6f22d644663bb66e3e2656",
+    "classpath": {
+      "$SCRATCH/p0-gen2-full-tools-v2/test-classes": "f03d661b7e3ed1ee07696c034bf545ad79ea461b3f641bf5810a40a865a24bb1",
+      "$SCRATCH/p0-gen2-full-tools-v2/classes": "e565fcf03e16e41668588c8e1047ba61686ae7380a5e92540035baf5f8946351",
+      "$SCRATCH/p0-coercion-compiler.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "workers": 6,
+    "heap": "2g",
+    "compressed_records": true,
+    "producer": "c6ede756d-p0-gen2-point-json",
+    "runtime": "c6ede756d",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  },
+  "interruption": {
+    "reason": "Capture/baseline circuit JSON differs in 411 cases; ParameterFieldUse allocates compressed types in identity-hash order. Stop superseded run for repair; preserve completed and partial evidence.",
+    "complete": false,
+    "pids": [
+      13471
+    ]
+  },
+  "cause": "ParameterFieldUse allocated compressed parameter types in identity-hash order. Its source field-use sets also discover parameters in identity-dependent order.",
+  "raw_reproduction": "$SCRATCH/p0-gen2-artifact-debug",
+  "regression": {
+    "test": "ParameterFieldUseTests.compressedTypesFollowParameterOrder",
+    "before": "HashMap fails on attempt 0; LinkedHashMap fails on attempt 1 after reversing discovery order",
+    "after": "TreeMap passes 16 identity-hash/discovery-order perturbations; 26 targeted Java tests pass"
+  },
+  "repaired_replay": {
+    "status": "passed",
+    "path": "$SCRATCH/p0-gen2-full-determinism-v4",
+    "report": "gen2-determinism.json",
+    "cases": 8527,
+    "jvm_runs": 16,
+    "observations": 3527714
+  },
+  "repair": "Order parameters by their IR node IDs with TreeMap, independently of discovery order, before allocating replacement types.",
+  "intermediate_repair": {
+    "insertion_order_only": true,
+    "remaining_capture_vs_baseline_differences": 42,
+    "result": "parameter-insertion-order-replay.json",
+    "passed": false
+  },
+  "second_raw_reproduction": {
+    "path": "$SCRATCH/p0-gen2-artifact-debug-v2",
+    "case": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#nullableLatenessTest/0",
+    "before": "type IDs differ with capture enabled",
+    "after": "exact circuit JSON bytes equal"
+  },
+  "repaired_capture_transparency": {
+    "equal": true,
+    "cases": 8527,
+    "report": "gen2-capture-transparency.json"
+  }
+}

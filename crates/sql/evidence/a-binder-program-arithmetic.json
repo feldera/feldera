@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-program-arithmetic-archive.json",
+  "scope": "Rust user constant-view binder and FRel writer with Java system prelude and Java detached lowering.",
+  "features": [
+    "constant aliases",
+    "checked integer arithmetic",
+    "constant casts",
+    "checked calls preserved on folding errors"
+  ],
+  "programs_per_backend": 16,
+  "directed_programs": 8,
+  "original_development_programs": 6,
+  "previously_examined_held_out_programs": 2,
+  "untouched_holdout": false,
+  "generated_binder_byte_equal_cases": 59264,
+  "runtime_execution": false,
+  "backends": {
+    "classic": {
+      "equal": true,
+      "cases": 16,
+      "observations": 6224,
+      "capture_transparency": false,
+      "artifact_contract": "seam-v1",
+      "dataflow_contract": "all-engines-v1",
+      "observation_contract": "full-prefix-v1",
+      "artifact_byte_differences": [],
+      "differences": [],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    },
+    "gen2": {
+      "equal": true,
+      "cases": 16,
+      "observations": 6256,
+      "capture_transparency": false,
+      "artifact_contract": "seam-v1",
+      "dataflow_contract": "all-engines-v1",
+      "observation_contract": "full-prefix-v1",
+      "artifact_byte_differences": [],
+      "differences": [],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    }
+  }
+}

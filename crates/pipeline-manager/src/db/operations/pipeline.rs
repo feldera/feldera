@@ -27,7 +27,8 @@ use crate::db::types::storage::{StorageStatus, validate_storage_status_transitio
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_pipeline_name, validate_program_config,
-    validate_program_info, validate_runtime_config, validate_storage_status_details,
+    validate_program_config_input, validate_program_info, validate_runtime_config,
+    validate_storage_status_details,
 };
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
@@ -317,13 +318,7 @@ pub(crate) async fn new_pipeline(
 
     // Validate program configuration JSON when deserializing it
     // and reserialize it to have it contain current default values
-    let program_config =
-        validate_program_config(&pipeline.program_config, false).map_err(|error| {
-            DBError::InvalidProgramConfig {
-                value: pipeline.program_config.clone(),
-                error,
-            }
-        })?;
+    let program_config = validate_program_config_input(&pipeline.program_config)?;
     let program_config = serde_json::to_value(&program_config).map_err(|e| {
         DBError::FailedToSerializeProgramConfig {
             error: e.to_string(),
@@ -471,13 +466,7 @@ pub(crate) async fn update_pipeline(
     let program_config = match program_config {
         None => None,
         Some(program_config) => {
-            let program_config =
-                validate_program_config(program_config, false).map_err(|error| {
-                    DBError::InvalidProgramConfig {
-                        value: program_config.clone(),
-                        error,
-                    }
-                })?;
+            let program_config = validate_program_config_input(program_config)?;
             Some(serde_json::to_value(&program_config).map_err(|e| {
                 DBError::FailedToSerializeProgramConfig {
                     error: e.to_string(),

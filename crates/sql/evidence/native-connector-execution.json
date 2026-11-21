@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-connector-execution-archive.json",
+  "case_id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/0",
+  "step": 0,
+  "input": 0,
+  "payload_sha256": "57c1cc36d25071aaacbf8a677a977bb207f6fb96b2e15fea94b14021d8b3fa25",
+  "format": {
+    "name": "json",
+    "config": {
+      "update_format": "insert_delete",
+      "array": false
+    }
+  },
+  "records": 1,
+  "production_parser_and_encoder": true,
+  "decoded_inputs_equal": true,
+  "weighted_outputs_equal": true,
+  "errors_empty": true,
+  "decoded_input_hash": "8c30d8d31c522467",
+  "classic_output_sha256": "2ecb93624a29b35a583b622b32d8ddf5d1ed256e729829ef2ddf83b814ef5cd9",
+  "native_output_sha256": "2ecb93624a29b35a583b622b32d8ddf5d1ed256e729829ef2ddf83b814ef5cd9",
+  "output_schema_sha256": "b563cd6315d49a86a5b3973d65e38be70ecf8179c852ab41040d2de70073d1b6",
+  "scope": "The production JSON connector parser and encoder execute with a local in-memory transport consumer and one worker per circuit."
+}

@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "archive_index": "native-rolling-storage-recheck-archive.json",
+  "scope": "Persistent rolling COUNT on four Linux ARM64 workers with the descriptor-aware DBSP layer reader and one-column writer in the build. The benchmark uses the original paired circuit adapters.",
+  "process_pairs": 84,
+  "limits": {
+    "throughput": 0.85,
+    "transaction_p95": 1.2,
+    "peak_rss": 1.25,
+    "checkpoint": 1.01
+  },
+  "configurations": [
+    {
+      "storage": "overlay",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9854549816371964,
+        "transaction_p95": 1.0241670829790142,
+        "peak_rss": 1.0121098626716605,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    },
+    {
+      "storage": "overlay",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9233139163382793,
+        "transaction_p95": 1.0465134711078445,
+        "peak_rss": 1.0060491646874936,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 256,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 1.0010837831842327,
+        "transaction_p95": 0.9961399932599024,
+        "peak_rss": 1.0131911310693236,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    },
+    {
+      "storage": "host-bind",
+      "rows_per_step": 2048,
+      "process_pairs": 21,
+      "ratios": {
+        "throughput": 0.9923654628221966,
+        "transaction_p95": 1.0110211381261451,
+        "peak_rss": 1.0035603026257232,
+        "checkpoint": 1.0
+      },
+      "all_checkpoint_sizes_equal": true
+    }
+  ],
+  "binary_sha256": "cc6cf02b7efba67f8adf4357f77aa5368c9c4e7a6d4510279e078bf02b5bb6c1"
+}

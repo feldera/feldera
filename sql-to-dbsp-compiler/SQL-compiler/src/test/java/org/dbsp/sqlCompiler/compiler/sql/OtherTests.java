@@ -781,7 +781,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String str = visitor.getJsonString();
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(str);
-        JsonDecoder decoder = new JsonDecoder(cc.compiler.sqlToRelCompiler.typeFactory);
+        JsonDecoder decoder = new JsonDecoder();
         DBSPCircuit decoded = decoder.decodeOuter(parsed, DBSPCircuit.class);
         Assert.assertNotNull(decoded);
     }

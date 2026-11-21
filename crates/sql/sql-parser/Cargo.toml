@@ -1,0 +1,11 @@
+[package]
+name = "feldera-sql-parser"
+description = "Feldera SQL grammar and typed statement syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sqlparser_064 = { package = "sqlparser", path = "../parser-probe/vendor/sqlparser", default-features = false, features = ["std", "visitor"] }

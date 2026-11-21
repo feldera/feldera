@@ -1,0 +1,60 @@
+{
+  "scope": "FixupViewReferences output, generated-name counter, expression sharing and provenance at its scheduled boundary.",
+  "comparator_sha256": "8136aedc5fd89d4a3f3682406ff7f22f559abcd1b9881dceff8a9982c4727569",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "4191821d32345bc922f75d1402a80a63b96f137d87207ed5280c503210746570"
+    ],
+    "pass": "FixupViewReferences",
+    "invocations": 8571,
+    "changed": 30,
+    "cases_without_placement": 0,
+    "java_observations_gzip_sha256": "ea7cc79a4fcecc52e96558f18d3df186c44a542dc4c094ddbdb8fb723f35fb8b"
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "b2e26b5889b08d33076484bff89c3a5bd4251a10993f9dbb94b617b0087b9c8e"
+    ],
+    "pass": "FixupViewReferences",
+    "invocations": 8527,
+    "changed": 29,
+    "cases_without_placement": 0,
+    "java_observations_gzip_sha256": "1d8a3df1c2fe8c50be71a0c9683f4f546938b4e7bd4e5553982f2c1f319516b7"
+  },
+  "illegal_recursion_diagnostics": {
+    "jar_sha256": "db544e6da140634341a37d6437a79968378dc6d1f922739e6d9c63cd6486fe24",
+    "optimizer_library_sha256": "1e263b836b2ce8fcd63d70dc8a57f03ea5c7622384a552c2922ed5089f71135b",
+    "messages": {
+      "classic": [
+        {
+          "start_line_number": 3,
+          "start_column": 1,
+          "end_line_number": 5,
+          "end_column": 33,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "View 'step' must be declared either as LOCAL or as RECURSIVE\nsince is is used in the computation of recursive view 'closure'",
+          "snippet": "    3|CREATE VIEW STEP AS\n    4|SELECT E.x, CLOSURE.y FROM\n    5|E JOIN CLOSURE ON e.y = CLOSURE.x;\n"
+        }
+      ],
+      "gen2": [
+        {
+          "start_line_number": 3,
+          "start_column": 1,
+          "end_line_number": 5,
+          "end_column": 33,
+          "warning": false,
+          "error_type": "Compilation error",
+          "message": "View 'step' must be declared either as LOCAL or as RECURSIVE\nsince is is used in the computation of recursive view 'closure'",
+          "snippet": "    3|CREATE VIEW STEP AS\n    4|SELECT E.x, CLOSURE.y FROM\n    5|E JOIN CLOSURE ON e.y = CLOSURE.x;\n"
+        }
+      ]
+    }
+  }
+}

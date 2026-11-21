@@ -6,6 +6,7 @@ repos:
   - repo: local
     hooks:
       - id: cargo-clippy
+        exclude: &parser_vendor '^crates/sql/parser-probe/vendor/'
         name: Clippy Automatic Fixes
         description: Run the Clippy linter on the package.
         entry: cargo clippy --fix --allow-dirty
@@ -20,6 +21,7 @@ repos:
         files: \.rs$
         pass_filenames: false
       - id: cargo-fmt
+        exclude: *parser_vendor
         name: Cargo Format
         description: Run the Formatter
         entry: cargo fmt --all
@@ -27,8 +29,9 @@ repos:
         files: \.rs$
         pass_filenames: false
       - id: cargo-machete
+        exclude: *parser_vendor
         name: Cargo Machete
-        entry: bash -c 'cd crates && cargo machete --fix'
+        entry: bash -O extglob -c 'cargo machete --fix crates/!(sql) crates/sql/sql-difftest'
         language: rust
         files: \.rs$
         pass_filenames: false
@@ -43,7 +46,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
+        exclude: '^crates/sql/parser-probe/vendor/|crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
   - repo: local
     hooks:
       - id: validate-crypto-deps
@@ -54,12 +57,14 @@ repos:
         files: Cargo\.(toml|lock)$
         pass_filenames: false
       - id: fix-rust-mod-naming
+        exclude: *parser_vendor
         name: Rust module naming
         entry: scripts/fix-rust-module-naming
         language: rust
         files: mod\.rs$
         pass_filenames: false
       - id: update-openapi
+        exclude: *parser_vendor
         name: Update OpenAPI
         entry: cargo run --bin=pipeline-manager -- --dump-openapi
         language: system
@@ -70,6 +75,7 @@ repos:
       # biome reports findings it cannot fix in the generator's own code, so
       # its status is ignored and the files are the verdict.
       - id: update-api-client
+        exclude: *parser_vendor
         name: Update API client
         description: Regenerate the TypeScript API client from openapi.json
         entry: bash -c 'cd js-packages/web-console && bun install --frozen-lockfile && bunx openapi-ts && bunx prettier --log-level warn --write src/lib/services/manager && { bunx biome check --write src/lib/services/manager || true; }'
@@ -89,6 +95,8 @@ repos:
     rev: v0.9.10
     hooks:
       - id: ruff
+        exclude: *parser_vendor
         args: [--fix]
         files: python/
       - id: ruff-format
+        exclude: *parser_vendor

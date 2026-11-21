@@ -13,7 +13,9 @@ rust-version = { workspace = true }
 edition = "2024"
 
 [features]
-dbsp = ["serde", "rkyv", "size_of", "dep:dbsp", "dep:feldera-types"]
+default = ["random"]
+random = ["dep:rand"]
+dbsp = ["serde", "rkyv", "size_of", "random", "dep:dbsp", "dep:feldera-types"]
 serde = ["dep:serde"]
 rkyv = ["dep:rkyv"]
 validation = ["rkyv", "rkyv/validation"]
@@ -28,7 +30,7 @@ size-of = { workspace = true, optional = true }
 rkyv = { workspace = true, features = ["size_64"], optional = true }
 dbsp = { workspace = true, optional = true }
 feldera-types = { workspace = true, optional = true }
-rand = { workspace = true, features = ["small_rng"] }
+rand = { workspace = true, features = ["small_rng"], optional = true }
 ryu = { workspace = true }
 
 [dev-dependencies]

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-aggregate-zero-20261118-v1.tar.gz",
+  "bytes": 7750083,
+  "sha256": "e0bb70acdf9bd10d7d32fd53163f2cd8a643cb1938b70af50e62d2cce35e0cf8",
+  "manifest_sha256": "88f05b11e6384e55c70fc7d16e743cb766571f302f5cb3b85172757fbc5135a3",
+  "verified_files": 83,
+  "all_members_verified": true
+}

@@ -1,0 +1,26 @@
+{
+  "profile": "optimized, four workers, forced spill, Linux overlay",
+  "sample_count": 15,
+  "excluded_warmup_trial": 0,
+  "cpu_affinity": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "classic": {
+    "p50": 36490647976,
+    "p95": 38714026424
+  },
+  "native": {
+    "p50": 10131129,
+    "p95": 11247337
+  },
+  "classic_library_sha256": "8120e76514adfec7e2b718be4a19868924875878f0056ef49fc0ba325e5c1a04",
+  "native_executable_sha256": "7ea55081ee177219bddc88eab6fa7d275cc40b42470c02f256dfb8a7f6d79fa6",
+  "schema_version": 1,
+  "archive_index": "native-rolling-artifact-archive.json",
+  "meets_approved_p95": true,
+  "scope": "Classic rebuild, dlopen and generated circuit initialization compared with native decimal archive emission, link, load and initialization in the same frozen rolling program. The transactions outside the clocks validate both circuits.",
+  "exclusions": "The cold warm-up is excluded. Earlier trials used an untrimmed classic source or contended for the Cargo package cache and are retained separately. The toolchain continued to emit jemalloc profiling-configuration warnings during classic compilation."
+}

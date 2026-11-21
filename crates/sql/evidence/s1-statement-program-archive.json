@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-statement-program-20261117-v1.tar.gz",
+  "sha256": "7cbe1035bc5d16bb6dfb5e5012afa43e1f509238796977dad35a1992bd087362",
+  "bytes": 164985785,
+  "certificates": [
+    "s1-statement-program.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-statement-program.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-statement-program-v2/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-statement-program.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Ordered typed statements, shared values, source contexts and catalog-backed relations",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-statement-program-archive.json"
+}

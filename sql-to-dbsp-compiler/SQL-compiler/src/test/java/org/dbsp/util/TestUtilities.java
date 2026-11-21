@@ -9,6 +9,34 @@ import java.util.Set;
 /** Test various utilities functions */
 public class TestUtilities {
     @Test
+    public void publicJsonPreservesSupplementaryCharacters() throws Exception {
+        String sql = "SELECT '🐍x', 'é', '𐀀'";
+        var stream = new JsonStream(new IndentStream(new StringBuilder()));
+        stream.append(sql);
+        Assert.assertEquals(sql, Utilities.deterministicObjectMapper().readTree(stream.toString()).textValue());
+    }
+
+    @Test
+    public void compactCircuitPreservesQuotedKeysAndValues() throws Exception {
+        var mapper = Utilities.deterministicObjectMapper();
+        var expected = mapper.createObjectNode();
+        String key = "quoted\"key\\\n🐍";
+        expected.putArray(key).add("control\u0000é").addNull().add(5);
+        var stream = JsonStream.compactCircuit();
+        IJson.toJsonStream(expected, stream);
+        Assert.assertEquals(expected, mapper.readTree(stream.toString()));
+    }
+
+    @Test
+    public void replayJsonPreservesNull() throws Exception {
+        var mapper = Utilities.deterministicObjectMapper();
+        var value = mapper.readTree("{\"value\":null,\"nested\":[null,\"null\",true,7]}");
+        var stream = new JsonStream(new IndentStream(new StringBuilder()), true);
+        IJson.toJsonStream(value, stream);
+        Assert.assertEquals(value, mapper.readTree(stream.toString()));
+    }
+
+    @Test
     public void testExpandBraces() {
         String path = "a{b,cd,e}hi{j,k,l}z";
         List<String> expansion = Utilities.expandBraces(path);

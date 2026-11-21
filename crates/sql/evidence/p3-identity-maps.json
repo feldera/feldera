@@ -1,0 +1,29 @@
+{
+  "scope": "RemoveIdentityOperators at its composite exit, including the generated-name counter, graph edges, sharing, and provenance.",
+  "jar_sha256": "680d5a55d66e34c1df7895adc4639a094ba9c91089cd7972a676a9dc2e9e5073",
+  "comparator_sha256": "727eb9afbe8c0469191b5cbc4f351d437658078b1a6691a4c09c29108f359f42",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "0c4c1278afd794331337e86663e378885fc18cd27a8fd2c885ed3122861b9219"
+    ],
+    "pass": "RemoveIdentityOperators",
+    "invocations": 8571,
+    "changed": 418,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "62df793cc5464d23f2d232b063cc0b66b9081fb293bd7b04a1fceb1ab9a42222"
+    ],
+    "pass": "RemoveIdentityOperators",
+    "invocations": 8527,
+    "changed": 328,
+    "cases_without_placement": 0
+  }
+}

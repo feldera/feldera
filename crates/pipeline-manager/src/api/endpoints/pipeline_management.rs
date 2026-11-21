@@ -22,7 +22,7 @@ use crate::db::types::program::{
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::utils::ValidationError;
+use crate::db::types::utils::{ValidationError, validate_program_config_input};
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::has_unstable_feature;
@@ -1543,11 +1543,33 @@ pub struct PipelineDiffRequest {
     #[serde(default)]
     pub program_code: Option<String>,
 
+    #[serde(default)]
+    #[schema(schema_with = optional_program_config_schema)]
+    pub program_config: Option<serde_json::Value>,
+
     /// Runtime version to compile the new program with: a version tag
-    /// (`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's default
-    /// runtime is used.
+    /// (`vX.Y.Z`) or a 40-character git SHA. When provided, this overrides
+    /// `runtime_version` in the selected program configuration.
     #[serde(default)]
     pub runtime_version: Option<String>,
+}
+
+fn optional_program_config_schema() -> utoipa::openapi::schema::AllOfBuilder {
+    utoipa::openapi::schema::AllOfBuilder::new()
+        .item(utoipa::openapi::Ref::from_schema_name("ProgramConfig"))
+        .nullable(true)
+        .description(Some("Optional compilation settings. Omit this field or send an empty object to use the platform defaults. A top-level `runtime_version` overrides the value in this object."))
+}
+
+impl PipelineDiffRequest {
+    fn into_validation_request(self, pipeline: ExtendedPipelineDescr) -> ValidateProgramRequest {
+        ValidateProgramRequest {
+            program_code: self.program_code.unwrap_or(pipeline.program_code),
+            program_config: self.program_config,
+            runtime_version: self.runtime_version,
+            ir: true,
+        }
+    }
 }
 
 /// Validate a program on the compiler service and return its raw response.
@@ -1558,9 +1580,7 @@ pub struct PipelineDiffRequest {
 /// (needed for computing a diff, unnecessary for plain validation).
 async fn call_compiler_validate(
     common_config: &CommonConfig,
-    program_config: serde_json::Value,
-    program_code: String,
-    ir: bool,
+    request: ProgramValidationRequest,
 ) -> Result<ValidateProgramResponse, ApiError> {
     let url = common_config.compiler_url("validate_program");
     let client = common_config.reqwest_client().await;
@@ -1569,11 +1589,7 @@ async fn call_compiler_validate(
         .timeout(Duration::from_secs(
             common_config.sql_compilation_timeout_secs,
         ))
-        .json(&ProgramValidationRequest {
-            program_config,
-            program_code,
-            ir,
-        })
+        .json(&request)
         .send()
         .await
         .map_err(|e| {
@@ -1620,7 +1636,7 @@ async fn call_compiler_validate(
     ),
     request_body(
         content = PipelineDiffRequest,
-        description = "The proposed new SQL program and/or runtime version (both optional)"
+        description = "The proposed SQL program, compilation configuration, and runtime override (all optional)"
     ),
     responses(
         (status = OK
@@ -1676,46 +1692,22 @@ pub(crate) async fn post_pipeline_diff(
     }
     let old_subset = old_program_info.to_pipeline_config_program_info();
 
-    // Determine the new SQL program and runtime version.
-    let new_program_code = request
-        .program_code
-        .unwrap_or_else(|| pipeline.program_code.clone());
-    let runtime_version = match request.runtime_version {
-        None => None,
-        Some(selector) => Some(
-            RuntimeSelector::try_from(selector)
-                .map_err(|error| ApiError::InvalidRuntimeVersion { error })?,
-        ),
-    };
-    let program_config = ProgramConfig {
-        profile: None,
-        cache: false,
-        runtime_version,
-        use_platform_compiler: false,
-    };
-    let program_config = serde_json::to_value(&program_config).map_err(|e| {
-        ApiError::NewProgramCompilationFailed {
-            error: format!("failed to serialize program configuration: {e}"),
+    let request = request
+        .into_validation_request(pipeline)
+        .into_compiler_request()?;
+    let new_program_info_value = match call_compiler_validate(&state.common_config, request).await?
+    {
+        ValidateProgramResponse::Success { program_info } => program_info,
+        ValidateProgramResponse::SqlError { info } => {
+            return Err(ApiError::InvalidNewProgramSql {
+                error: serde_json::to_string_pretty(&info.messages).unwrap_or_default(),
+            }
+            .into());
         }
-    })?;
-
-    // Validate the new program on the compiler service, requesting the IR
-    // (`ir = true`) because the diff is computed from it.
-    let new_program_info_value =
-        match call_compiler_validate(&state.common_config, program_config, new_program_code, true)
-            .await?
-        {
-            ValidateProgramResponse::Success { program_info } => program_info,
-            ValidateProgramResponse::SqlError { info } => {
-                return Err(ApiError::InvalidNewProgramSql {
-                    error: serde_json::to_string_pretty(&info.messages).unwrap_or_default(),
-                }
-                .into());
-            }
-            ValidateProgramResponse::SystemError { error } => {
-                return Err(ApiError::NewProgramCompilationFailed { error }.into());
-            }
-        };
+        ValidateProgramResponse::SystemError { error } => {
+            return Err(ApiError::NewProgramCompilationFailed { error }.into());
+        }
+    };
     let new_program_info: ProgramInfo =
         serde_json::from_value(new_program_info_value).map_err(|e| {
             ApiError::InvalidProgramInfo {
@@ -1747,8 +1739,13 @@ pub struct ValidateProgramRequest {
     /// SQL program code to validate.
     pub program_code: String,
 
+    #[serde(default)]
+    #[schema(schema_with = optional_program_config_schema)]
+    pub program_config: Option<serde_json::Value>,
+
     /// Runtime version to compile with: a version tag (`vX.Y.Z`) or a
-    /// 40-character git SHA. If omitted, the platform's default runtime is used.
+    /// 40-character git SHA. When provided, this overrides `runtime_version`
+    /// in `program_config`.
     #[serde(default)]
     pub runtime_version: Option<String>,
 
@@ -1756,6 +1753,35 @@ pub struct ValidateProgramRequest {
     /// most callers only need to know whether the program is valid.
     #[serde(default)]
     pub ir: bool,
+}
+
+impl ValidateProgramRequest {
+    fn into_compiler_request(self) -> Result<ProgramValidationRequest, ManagerError> {
+        let mut config = self
+            .program_config
+            .as_ref()
+            .map(validate_program_config_input)
+            .transpose()?
+            .unwrap_or_default();
+        if let Some(selector) = self.runtime_version {
+            config.runtime_version = Some(
+                RuntimeSelector::try_from(selector)
+                    .map_err(|error| ApiError::InvalidRuntimeVersion { error })?,
+            );
+        }
+        // Validation does not publish a binary.
+        config.cache = false;
+        let program_config = serde_json::to_value(config).map_err(|error| {
+            ApiError::NewProgramCompilationFailed {
+                error: format!("failed to serialize program configuration: {error}"),
+            }
+        })?;
+        Ok(ProgramValidationRequest {
+            program_config,
+            program_code: self.program_code,
+            ir: self.ir,
+        })
+    }
 }
 
 /// Validate Program
@@ -1772,7 +1798,7 @@ pub struct ValidateProgramRequest {
     security(("JSON web token (JWT) or API key" = [])),
     request_body(
         content = ValidateProgramRequest,
-        description = "The SQL program to validate, an optional runtime version, and whether to return the IR"
+        description = "The SQL program and compilation configuration to validate, an optional runtime override, and whether to return the IR"
     ),
     responses(
         (status = OK
@@ -1797,34 +1823,8 @@ pub(crate) async fn post_validate_program(
     tenant_id: ReqData<TenantId>,
     body: web::Json<ValidateProgramRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let request = body.into_inner();
-
-    let runtime_version = match request.runtime_version {
-        None => None,
-        Some(selector) => Some(
-            RuntimeSelector::try_from(selector)
-                .map_err(|error| ApiError::InvalidRuntimeVersion { error })?,
-        ),
-    };
-    let program_config = ProgramConfig {
-        profile: None,
-        cache: false,
-        runtime_version,
-        use_platform_compiler: false,
-    };
-    let program_config = serde_json::to_value(&program_config).map_err(|e| {
-        ApiError::NewProgramCompilationFailed {
-            error: format!("failed to serialize program configuration: {e}"),
-        }
-    })?;
-
-    let response = call_compiler_validate(
-        &state.common_config,
-        program_config,
-        request.program_code,
-        request.ir,
-    )
-    .await?;
+    let request = body.into_inner().into_compiler_request()?;
+    let response = call_compiler_validate(&state.common_config, request).await?;
 
     info!(tenant = %tenant_id.0, "Validated program");
     Ok(HttpResponse::Ok()
@@ -2418,6 +2418,104 @@ mod tests {
     use crate::config::CommonConfig;
     use feldera_types::runtime_status::{ConnectorStats, RuntimeStatusDetails};
     use serde_json::json;
+
+    #[test]
+    fn diff_and_validation_use_only_the_requested_compilation_settings() {
+        use super::{PipelineDiffRequest, ValidateProgramRequest};
+
+        let mut pipeline = crate::api::examples::extended_pipeline_1();
+        pipeline.program_config =
+            json!({"profile": "dev", "runtime_version": "v0.380.0", "use_platform_compiler": true});
+        for body in [
+            json!({}),
+            json!({"program_config": {}}),
+            json!({"runtime_version": "v0.382.0"}),
+            json!({"program_config": pipeline.program_config}),
+        ] {
+            let diff: PipelineDiffRequest = serde_json::from_value(body.clone()).unwrap();
+            let diff = diff
+                .into_validation_request(pipeline.clone())
+                .into_compiler_request()
+                .unwrap();
+            assert!(diff.ir);
+            assert_eq!(diff.program_code, pipeline.program_code);
+            let mut validation_body = body.clone();
+            validation_body["program_code"] = json!("SELECT 1");
+            let validation: ValidateProgramRequest =
+                serde_json::from_value(validation_body).unwrap();
+            let expected = match body.get("program_config") {
+                Some(config) if config == &pipeline.program_config => {
+                    json!({"profile": "dev", "cache": false, "runtime_version": "v0.380.0", "use_platform_compiler": true})
+                }
+                _ => {
+                    json!({"profile": null, "cache": false, "runtime_version": body["runtime_version"], "use_platform_compiler": false})
+                }
+            };
+            assert_eq!(diff.program_config, expected);
+            assert_eq!(
+                validation.into_compiler_request().unwrap().program_config,
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn validation_preserves_program_config_on_the_compiler_request() {
+        use super::{ValidateProgramRequest, call_compiler_validate};
+        use crate::api::error::ApiError;
+        use crate::compiler::ValidateProgramResponse;
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{body_json, method, path},
+        };
+
+        crate::ensure_default_crypto_provider();
+        let request: ValidateProgramRequest = serde_json::from_value(json!({
+            "program_code": "CREATE VIEW v AS SELECT 1",
+            "program_config": {
+                "profile": "optimized", "cache": true,
+                "runtime_version": "v0.380.0", "use_platform_compiler": true
+            },
+            "runtime_version": "v0.382.0", "ir": true
+        }))
+        .unwrap();
+        let request = request.into_compiler_request().unwrap();
+        assert_eq!(
+            request.program_config,
+            json!({
+                "profile": "optimized", "cache": false,
+                "runtime_version": "v0.382.0", "use_platform_compiler": true
+            })
+        );
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/validate_program"))
+            .and(body_json(
+                json!({"program_config": request.program_config, "program_code": request.program_code, "ir": true}),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"Success": {"program_info": {}}})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut common = CommonConfig::test_config();
+        common.compiler_port = server.address().port();
+        assert!(matches!(
+            call_compiler_validate(&common, request).await.unwrap(),
+            ValidateProgramResponse::Success { .. }
+        ));
+        assert!(matches!(
+            serde_json::from_value::<ValidateProgramRequest>(
+                json!({"program_code": "", "runtime_version": "invalid"})
+            )
+            .unwrap()
+            .into_compiler_request(),
+            Err(crate::error::ManagerError::ApiError {
+                api_error: ApiError::InvalidRuntimeVersion { .. }
+            })
+        ));
+    }
 
     /// `deployment_config` can only be changed by `PATCH`, alone, when resizing is enabled. `POST`
     /// and `PUT` accept it only unchanged, so a pipeline read with `GET` can be written back.

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-context-dbsp-suite.tar.gz",
+  "bytes": 120141,
+  "sha256": "0de020de135178e42a4175a82f4e2a6ac9f009a6c5bb4167c95dbbf2ef417262",
+  "manifest_sha256": "49bdd28932c2c0ed74580269197c46f37e47996917610ee00e398d6f0a7aede3",
+  "verified_files": 18,
+  "all_members_verified": true
+}

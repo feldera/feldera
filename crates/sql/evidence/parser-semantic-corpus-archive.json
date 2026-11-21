@@ -1,0 +1,26 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-parser-semantic-corpus-20261118-v1.tar.gz",
+  "sha256": "f3f7ab83b0b4bc6d0448aafa54c88fc79512841d3fbea2199638d20f3900a02a",
+  "bytes": 528761710,
+  "certificates": [
+    "parser-semantic-corpus.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "parser-semantic-corpus.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-parser-semantic-corpus-archive-v1/audit-sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "parser-semantic-corpus.json": "path-null-binary-sha256"
+  },
+  "scope": "Full accepted-corpus AST-derived SQL oracle through Java parsing/binding and typed S1; schema-specific source coordinates separate; no Rust binder or runtime parity claim",
+  "prior_archive_index": "crates/sql/evidence/parser-semantic-archive.json",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/parser-semantic-corpus-archive.json"
+}

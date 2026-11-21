@@ -1,0 +1,17 @@
+[package]
+name = "feldera-sql-expr"
+description = "Shared expression transformations for the Feldera SQL compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+bigdecimal = "0.4"
+chrono.workspace = true
+chrono-tz.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+uuid.workspace = true
+feldera-sql-ir = { path = "../sql-ir" }

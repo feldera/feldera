@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "archive_index": "corpus-runtime-replay-archive.json",
+  "scope": "Detached Java corpus reconstruction, portable expected outputs, and selected classic DBSP and Gen-2 execution in the local Linux ARM64 devcontainer",
+  "corpora": {
+    "p0-corpus-seams-v5": {
+      "exported_cases_decoded": 8571,
+      "registered_skips": 0,
+      "portable_output_bags": 10400,
+      "portable_output_rows": 18760
+    },
+    "p0-corpus-gen2-runtime-v3": {
+      "exported_cases_decoded": 8529,
+      "registered_skips": 17,
+      "portable_output_bags": 10323,
+      "portable_output_rows": 18657
+    }
+  },
+  "runtime_witnesses": {
+    "classic": {
+      "selected": 151,
+      "passed": 151,
+      "signed_coercion_cases": 3,
+      "set_operation_cases_by_optimization_level": {"1": 74, "2": 74},
+      "changed_expected_weight": "DBSP produced a different bag and the generated Rust test failed"
+    },
+    "gen2": {
+      "selected": 153,
+      "passed": 129,
+      "known_engine_loader_failures": 24,
+      "unsupported_operator": "DBSPPositiveOperator",
+      "failures_confirmed_in_original_junit_reports": 24,
+      "changed_expected_weight": "The existing Gen-2 comparison reported the extra expected row multiplicity"
+    }
+  },
+  "detachment": "The executed artifacts omit program and submissions. All remaining JSON fields were compared with exact numeric decoding against the corresponding original export, except for the one deliberate expected-weight change in each negative control.",
+  "full_runtime_population_executed": false,
+  "portable_bag_scope": "Every expected output in both exports. Expression-bearing inputs retain their original typed IR.",
+  "rust_tests_passed": 44,
+  "rust_clippy": "passed",
+  "java_regression_tests_passed": 8,
+  "portable_validator_sha256": "d8ac1144c2fb8e1007b55d5055b28ab8ce41b7454c47aed88b3cfac5a3979883",
+  "gen2_pipeline_sha256": "d47eaa4d11013bfe2a86bebfcc4b3740f67356593e31514fd4b844cde4f9926b",
+  "gen2_expander_sha256": "2bed89de775e20b340ed2023f684b5a3b1891f527195a42c6329a434b36690ae"
+}

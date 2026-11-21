@@ -2354,8 +2354,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     // The upper bound must be exclusive; -infinity lower bound.
                     // The 'emit_final' annotation is the only source code behind this window,
                     // so diagnostics about the window point at the annotation.
-                    // A circuit decoded from JSON has properties without positions, so use
-                    // the view's own node unless the annotation's position survived.
+                    // Public Gen-2 JSON may omit positions; internal replay files retain
+                    // them. Use the view's node only when no annotation range is available.
                     SourcePositionRange emitFinal = operator.metadata.properties == null ?
                             SourcePositionRange.INVALID :
                             operator.metadata.properties.getPropertyKeyPosition(

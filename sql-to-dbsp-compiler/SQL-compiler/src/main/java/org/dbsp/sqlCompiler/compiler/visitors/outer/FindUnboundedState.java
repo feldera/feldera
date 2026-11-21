@@ -1,14 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.core.Aggregate;
-import org.apache.calcite.rel.core.Correlate;
-import org.apache.calcite.rel.core.Intersect;
-import org.apache.calcite.rel.core.Join;
-import org.apache.calcite.rel.core.Minus;
-import org.apache.calcite.rel.core.Sort;
-import org.apache.calcite.rel.core.Union;
-import org.apache.calcite.rel.core.Window;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -246,7 +237,15 @@ public class FindUnboundedState extends Passes {
 
     /** Detects whether the program declares that it processes unbounded streams.
      * NOW() counts only when it feeds a window operator, i.e., in a temporal filter. */
-    class DetectStreamingOperations extends CircuitVisitor {
+    public class DetectStreamingOperations extends CircuitVisitor {
+        public boolean isStreaming() {
+            return FindUnboundedState.this.streaming;
+        }
+
+        public void record(boolean streaming) {
+            FindUnboundedState.this.streaming = streaming;
+        }
+
         DetectStreamingOperations(DBSPCompiler compiler) {
             super(compiler);
         }
@@ -273,7 +272,15 @@ public class FindUnboundedState extends Passes {
     /**
      * Record the streams whose trace is pruned by a GC operator.
      */
-    class FindGCedStreams extends CircuitVisitor {
+    public class FindGCedStreams extends CircuitVisitor {
+        public Set<OutputPort> prunedStreams() {
+            return Set.copyOf(FindUnboundedState.this.gcedStreams);
+        }
+
+        public void record(Set<OutputPort> ports) {
+            FindUnboundedState.this.gcedStreams.addAll(ports);
+        }
+
         FindGCedStreams(DBSPCompiler compiler) {
             super(compiler);
         }
@@ -286,7 +293,29 @@ public class FindUnboundedState extends Passes {
     }
 
     /** Compute the "bounded" stream property. */
-    class FindBounded extends CircuitVisitor {
+    public class FindBounded extends CircuitVisitor {
+        public Set<OutputPort> boundedPorts() {
+            return Set.copyOf(FindUnboundedState.this.bounded);
+        }
+
+        public void record(Set<OutputPort> ports) {
+            FindUnboundedState.this.bounded.addAll(ports);
+        }
+
+        /** Keys consumed by the boundedness transfer rules for joins. */
+        public Set<OutputPort> indexedKeys(ICircuit circuit) {
+            var result = new HashSet<OutputPort>();
+            for (var op : circuit.getAllOperators()) {
+                if (op instanceof DBSPNestedOperator nested)
+                    result.addAll(this.indexedKeys(nested));
+                else if (op instanceof IJoin)
+                    for (var input : op.inputs)
+                        if (this.indexIsKey(input))
+                            result.add(input);
+            }
+            return result;
+        }
+
         FindBounded(DBSPCompiler compiler) {
             super(compiler);
         }
@@ -508,7 +537,19 @@ public class FindUnboundedState extends Passes {
      * Collect the stateful operators without bounded state; runs after the
      * stream properties have been computed.
      */
-    class CollectUnbounded extends CircuitVisitor {
+    public class CollectUnbounded extends CircuitVisitor {
+        public Set<OutputPort> boundedPorts() {
+            return Set.copyOf(FindUnboundedState.this.bounded);
+        }
+
+        public List<UnboundedOperator> findings() {
+            return List.copyOf(FindUnboundedState.this.unbounded);
+        }
+
+        public void record(UnboundedOperator finding) {
+            FindUnboundedState.this.unbounded.add(finding);
+        }
+
         CollectUnbounded(DBSPCompiler compiler) {
             super(compiler);
         }
@@ -622,33 +663,12 @@ public class FindUnboundedState extends Passes {
             this.graphs = graphs;
         }
 
-        /** SQL-level name, with its article, of the relational operator {@code rel} when it
-         * holds state; null for stateless relational operators such as projections and filters. */
-        @Nullable
-        static String sqlName(RelNode rel) {
-            if (rel instanceof Join || rel instanceof Correlate)
-                return "a JOIN";
-            if (rel instanceof Aggregate aggregate)
-                return aggregate.getAggCallList().isEmpty() ? "a DISTINCT" : "an aggregate";
-            if (rel instanceof Window)
-                return "a window function";
-            if (rel instanceof Sort sort)
-                return (sort.fetch != null || sort.offset != null) ? "an ORDER BY with LIMIT" : null;
-            if (rel instanceof Intersect intersect)
-                return intersect.all ? "an INTERSECT ALL" : "an INTERSECT";
-            if (rel instanceof Minus minus)
-                return minus.all ? "an EXCEPT ALL" : "an EXCEPT";
-            if (rel instanceof Union union)
-                return union.all ? null : "a UNION";
-            return null;
-        }
-
         /** SQL-level name, with its article, of the construct whose state the operator holds:
          * the first stateful relational operator that the operator implements; the kind of
          * operator decides for operators that the compiler synthesizes without one. */
         static String sqlName(DBSPOperator operator) {
-            for (RelNode rel : operator.getRelNode().getRelNodes()) {
-                String name = sqlName(rel);
+            for (var rel : operator.getRelNode().getReferences()) {
+                String name = rel.statefulSqlName();
                 if (name != null)
                     return name;
             }
@@ -682,8 +702,8 @@ public class FindUnboundedState extends Passes {
          * the attached Calcite Rel tree. */
         @Nullable
         ViewOrigins.ViewSourcePosition viewOf(UnboundedOperator ub) {
-            for (RelNode rel : ub.operator().getRelNode().getRelNodes()) {
-                ViewOrigins.ViewSourcePosition origin = FindUnboundedState.this.compiler.viewOrigins.get(rel);
+            for (var rel : ub.operator().getRelNode().getReferences()) {
+                ViewOrigins.ViewSourcePosition origin = rel.origin(FindUnboundedState.this.compiler);
                 if (origin != null)
                     return origin;
             }
@@ -707,24 +727,24 @@ public class FindUnboundedState extends Passes {
             return SourcePositionRange.INVALID;
         }
 
-        /** The operator's internal identity: the name the compiler gives it and the
-         * operation it performs.  Reported when no SQL source describes the operator. */
-        static String internalName(DBSPOperator operator) {
+        /** Omit process-local IDs from replay diagnostics. */
+        String internalName(DBSPOperator operator) {
             String operation = operator.is(DBSPSimpleOperator.class) ?
                     operator.to(DBSPSimpleOperator.class).operation :
                     operator.getClass().getSimpleName();
-            return operation + " " + operator.getIdString();
+            return FindUnboundedState.this.compiler.usesCircuitSeam()
+                    ? operation : operation + " " + operator.getIdString();
         }
 
         /** Fallback description of an operator which cannot be tied to source code. */
-        static String internalDescription(UnboundedOperator ub) {
+        String internalDescription(UnboundedOperator ub) {
             StringBuilder result = new StringBuilder();
-            result.append(internalName(ub.operator()));
+            result.append(this.internalName(ub.operator()));
             for (int input : ub.unboundedInputs()) {
                 result.append(", unbounded input ")
                         .append(input)
                         .append(" produced by ")
-                        .append(internalName(ub.operator().inputs.get(input).node()));
+                        .append(this.internalName(ub.operator().inputs.get(input).node()));
             }
             return result.toString();
         }
@@ -743,7 +763,7 @@ public class FindUnboundedState extends Passes {
                         " in the code implementing view " + view.view().singleQuote();
                 message = "The state of " + sqlName(operator) + where + " may grow without bound";
             }
-            return position.isValid() ? message : message + "; " + internalDescription(ub);
+            return position.isValid() ? message : message + "; " + this.internalDescription(ub);
         }
 
         @Override

@@ -3588,7 +3588,7 @@ dependencies = [
  "object_store 0.13.2",
  "parking_lot 0.12.4",
  "parquet",
- "sqlparser",
+ "sqlparser 0.62.0",
  "tempfile",
  "tokio",
  "url",
@@ -3666,7 +3666,7 @@ dependencies = [
  "object_store 0.13.2",
  "parquet",
  "recursive",
- "sqlparser",
+ "sqlparser 0.62.0",
  "tokio",
  "uuid",
  "web-time",
@@ -3881,7 +3881,7 @@ dependencies = [
  "recursive",
  "serde",
  "serde_json",
- "sqlparser",
+ "sqlparser 0.62.0",
 ]
 
 [[package]]
@@ -4284,7 +4284,7 @@ dependencies = [
  "log",
  "recursive",
  "regex",
- "sqlparser",
+ "sqlparser 0.62.0",
  "stacker",
 ]
 
@@ -4770,7 +4770,7 @@ dependencies = [
  "roaring",
  "serde",
  "serde_json",
- "sqlparser",
+ "sqlparser 0.62.0",
  "sysinfo 0.38.4",
  "thiserror 2.0.18",
  "tokio",
@@ -5675,6 +5675,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "feldera-fold-probe"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "feldera-fxp",
+ "libm",
+ "md-5 0.10.6",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "feldera-fxp"
 version = "0.382.0"
 dependencies = [
@@ -5845,6 +5857,111 @@ dependencies = [
 ]
 
 [[package]]
+name = "feldera-sql-binder"
+version = "0.382.0"
+dependencies = [
+ "feldera-fold-probe",
+ "feldera-sql-parser",
+ "feldera-sql-rel-model",
+ "feldera-sql-source",
+ "feldera-type-derivation-probe",
+ "serde",
+ "serde_json",
+ "sqlparser 0.64.0",
+]
+
+[[package]]
+name = "feldera-sql-difftest"
+version = "0.382.0"
+dependencies = [
+ "feldera-sql-expr",
+ "feldera-sql-ir",
+ "feldera-sql-opt",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "feldera-sql-expr"
+version = "0.382.0"
+dependencies = [
+ "bigdecimal",
+ "chrono",
+ "chrono-tz",
+ "feldera-sql-ir",
+ "num-bigint 0.4.8",
+ "num-traits",
+ "uuid",
+]
+
+[[package]]
+name = "feldera-sql-ir"
+version = "0.382.0"
+dependencies = [
+ "feldera-sql-source",
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "feldera-sql-lower"
+version = "0.382.0"
+dependencies = [
+ "feldera-sql-ir",
+ "feldera-sql-rel-model",
+ "hex",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "feldera-sql-opt"
+version = "0.382.0"
+dependencies = [
+ "feldera-sql-expr",
+ "feldera-sql-ir",
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "feldera-sql-opt-jni"
+version = "0.382.0"
+dependencies = [
+ "feldera-sql-ir",
+ "feldera-sql-opt",
+ "jni",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "feldera-sql-parser"
+version = "0.382.0"
+dependencies = [
+ "sqlparser 0.64.0",
+]
+
+[[package]]
+name = "feldera-sql-rel-model"
+version = "0.1.0"
+dependencies = [
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "feldera-sql-source"
+version = "0.382.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "feldera-sqllib"
 version = "0.382.0"
 dependencies = [
@@ -5906,6 +6023,14 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "feldera-type-derivation-probe"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -9359,6 +9484,7 @@ dependencies = [
  "feldera-ir",
  "feldera-mtls",
  "feldera-observability",
+ "feldera-sql-difftest",
  "feldera-types",
  "flate2",
  "fs_extra",
@@ -12366,6 +12492,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sql2dbsp"
+version = "0.382.0"
+dependencies = [
+ "feldera-sql-binder",
+ "feldera-sql-ir",
+ "feldera-sql-lower",
+ "feldera-sql-opt",
+ "feldera-sql-parser",
+ "feldera-sql-source",
+ "hex",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "signal-hook",
+ "tempfile",
+]
+
+[[package]]
 name = "sqlparser"
 version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12373,7 +12518,15 @@ checksum = "13c6d1b651dc4edf07eead2a0c6c78016ce971bc2c10da5266861b13f25e7cec"
 dependencies = [
  "log",
  "recursive",
- "sqlparser_derive",
+ "sqlparser_derive 0.5.0",
+]
+
+[[package]]
+name = "sqlparser"
+version = "0.64.0"
+dependencies = [
+ "log",
+ "sqlparser_derive 0.7.0",
 ]
 
 [[package]]
@@ -12385,6 +12538,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "sqlparser_derive"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fa4939c717eaef717f244768d35a5f93c62e1d440865097d2edef7d86ddb7e0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
@@ -28,6 +29,11 @@ public class CompilerCircuitStream extends CompilerCircuit {
     /** When true, string cells in expected tables are trimmed before validation,
      * so cells can be padded for alignment; see {@link TableParser#parseValue}. */
     boolean trimStrings = false;
+
+    CompilerCircuitStream(DBSPCompiler compiler, DBSPCircuit circuit, InputOutputChangeStream stream) {
+        super(compiler, circuit);
+        this.stream = stream;
+    }
 
     public CompilerCircuitStream(DBSPCompiler compiler, BaseSQLTests test) {
         this(compiler, new InputOutputChangeStream(), test);

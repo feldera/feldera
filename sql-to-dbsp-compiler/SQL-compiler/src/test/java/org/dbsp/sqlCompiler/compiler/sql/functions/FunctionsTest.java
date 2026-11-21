@@ -517,13 +517,18 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void issue1187divisorZero() {
         this.runtimeConstantFail("SELECT 8 % 0", "attempt to calculate the remainder with a divisor of zero");
-        this.shouldWarn("CREATE VIEW V AS SELECT 8 % 0", "Modulus by constant zero value as divisor.");
+        this.shouldWarn("CREATE VIEW V AS SELECT 8 % 0", new Warning("Division by zero", 0, 0, ""));
     }
 
     @Test
     public void timePrecision() {
         this.shouldWarn("CREATE VIEW V AS SELECT CAST('10:00:00' AS TIME(1))",
-                "TIME precision ignored: TIME precision is always TIME\\(9\\); specified precision 1 is ignored");
+                new Warning("TIME precision ignored", 0, 0, ""),
+                new Warning("View is constant", 4, 1, """
+                        3|INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);
+                        4|CREATE VIEW V AS SELECT CAST('10:00:00' AS TIME(1))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    """));
     }
 
     @Test

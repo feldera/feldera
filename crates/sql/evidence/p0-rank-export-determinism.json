@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "archive_index": "p0-rank-export-determinism-archive.json",
+  "scope": "Corpus-only rank fixture uses the seed from the first passing P0 baseline. Ordinary rank tests continue to use random seeds.",
+  "export_seed": 8247,
+  "full_junit": {
+    "discovered": 3082,
+    "passed": 3003,
+    "skipped": 79,
+    "failed": 0,
+    "errors": 0
+  },
+  "full_portable_corpus": {
+    "build_identity": [
+      "c6ede756d-local-p0-latest",
+      "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+      "not-executed"
+    ],
+    "compile_only": 315,
+    "expected_errors": 232,
+    "exported": 8573,
+    "portable_bags": 10402,
+    "portable_rows": 18789,
+    "runtime_verified": false,
+    "schema_version": 1,
+    "skipped": 0,
+    "steps": 10410,
+    "tests": 2628
+  },
+  "targeted_repeats": {
+    "isolated_repeats_byte_equal": true,
+    "isolated_case_sha256": "4c597fd622878deff8c65ca771e98712cdbf315fb3449392ed8986dcefc1c60a",
+    "identical_commands_after_ir_id_renumbering": 21,
+    "unfixed_seed_3839_differs": true
+  }
+}

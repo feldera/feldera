@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-table-expression-archive.json",
+  "scope": "Distinct signed INTEGER column addition, subtraction and multiplication, and ABS on one DOUBLE column.",
+  "held_out_case_ids": [
+    "6256",
+    "6263",
+    "7282",
+    "7289",
+    "7390",
+    "7397"
+  ],
+  "distinct_held_out_sql_programs": 2,
+  "typed_comparisons": {
+    "classic": {
+      "cases": 10,
+      "observations": 3928
+    },
+    "gen2": {
+      "cases": 10,
+      "observations": 3948
+    }
+  },
+  "classic_incremental_runtime": {
+    "case_ids": [
+      "7390",
+      "7397"
+    ],
+    "tests_passed": 2,
+    "transactions": 6,
+    "inputs_and_signed_expected_outputs": "Frozen original corpus"
+  },
+  "regression_controls": {
+    "rust_tests_passed": 79,
+    "clippy": "passed",
+    "table_programs": 42,
+    "constant_programs": 32,
+    "generated_probes": 59264,
+    "scoped_probes": 9886
+  }
+}

@@ -75,8 +75,12 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
      * @param nullsLast     If true nulls compare last */
     public DBSPUnsignedWrapExpression(
             CalciteObject node, DBSPExpression source, boolean ascending, boolean nullsLast) {
-        // This allocates two sequences, but I don't know how to avoid that.
-        super(node, TypeSequence.getResultType(source.getType()));
+        this(node, source, ascending, nullsLast, TypeSequence.getResultType(source.getType()));
+    }
+
+    private DBSPUnsignedWrapExpression(CalciteObject node, DBSPExpression source,
+                                       boolean ascending, boolean nullsLast, DBSPTypeInteger type) {
+        super(node, type);
         this.source = source;
         this.sequence = new TypeSequence(source.getType());
         this.nullsLast = nullsLast;
@@ -151,9 +155,11 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static DBSPUnsignedWrapExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression source = fromJsonInner(node, "source", decoder, DBSPExpression.class);
+        DBSPTypeInteger type = getJsonType(node, decoder).to(DBSPTypeInteger.class);
+        Utilities.enforce(type.sameType(TypeSequence.getResultType(source.getType())));
         boolean ascending = Utilities.getBooleanProperty(node, "ascending");
         boolean nullsLast = Utilities.getBooleanProperty(node, "nullsLast");
-        return new DBSPUnsignedWrapExpression(CalciteObject.EMPTY, source, ascending, nullsLast);
+        return new DBSPUnsignedWrapExpression(CalciteObject.EMPTY, source, ascending, nullsLast, type);
     }
 }
 

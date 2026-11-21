@@ -366,17 +366,18 @@ pipeline. It reports the same added, modified, and removed tables, views, and co
 that the `AwaitingApproval` state reports, formatted as JSON, so you can preview the effect
 of a change while editing.
 
-The request body has two optional fields:
+All three request fields are optional.
 
-* `program_code`: the new SQL program to compare against. When omitted, the pipeline's
-  current program is used.
-* `runtime_version`: the runtime to compile the new program with (a `vX.Y.Z` tag or a git
-  SHA). When omitted, the runtime of the installed Feldera platform is used.
+* `program_code` supplies the new SQL program. If you omit it, the endpoint uses the pipeline's current SQL.
+* `program_config` supplies the [compilation settings](/pipelines/configuration#program-configuration)
+  for the proposed program. Omit it or send `{}` to use the platform defaults. To use the pipeline's
+  settings, pass its `program_config` from the pipeline API.
+* `runtime_version` selects a runtime by version tag (`vX.Y.Z`) or git SHA. This field overrides
+  `program_config.runtime_version`.
 
-The baseline for the diff is the pipeline's currently configured program compiled with the
-specified runtime, not the program stored in the latest checkpoint. The two usually match,
-but can differ when the last checkpoint was produced by a different program or runtime
-version (for example, an S3 checkpoint written by another pipeline).
+The endpoint compares the proposed program with the pipeline's current compiled program.
+The latest checkpoint can contain a different program or runtime version, for example
+if another pipeline wrote the checkpoint.
 
 The endpoint requires the pipeline's current program to have compiled successfully. It
 returns `400 Bad Request` if the new program does not compile or the change cannot be
@@ -408,14 +409,16 @@ returns (HTTP `200`):
 ```
 
 This functionality is also available via the Python SDK (`pipeline.diff(...)`) and the
-`fda` CLI (`fda diff <pipeline_name> [program.sql] [--runtime-version <version>]`).
+`fda` CLI (`fda diff <pipeline_name> [program.sql] [--runtime-version <version>] [--program-config <file>]`).
 
 ### Validating a program
 
 Use the [`/validate_program` endpoint](/api/validate-program) to validate a SQL program without creating
-or modifying a pipeline. The request body takes the SQL in
-`program_code`, an optional `runtime_version`, and an optional `ir` flag (default `false`)
-that, when `true`, also returns the program's IR (dataflow):
+or modifying a pipeline. Send the SQL in `program_code`. The optional `program_config` object
+supplies the [compilation settings](/pipelines/configuration#program-configuration).
+Omit it or send `{}` to use the platform defaults. A top-level `runtime_version` overrides
+`program_config.runtime_version`. Set `ir` to `true` to include the program's dataflow in the
+response. The default is `false`.
 
 ```bash
 curl -X POST http://localhost:8080/v0/validate_program \

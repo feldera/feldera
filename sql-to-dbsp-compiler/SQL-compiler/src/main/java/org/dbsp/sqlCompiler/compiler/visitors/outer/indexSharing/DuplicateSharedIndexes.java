@@ -26,7 +26,7 @@ import java.util.List;
 /**
  * For each join or star join make sure that the MapIndex preceding it (if it exists) is not shared
  */
-class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
+public final class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
     public DuplicateSharedIndexes(DBSPCompiler compiler, CircuitGraphs graph) {
         super(compiler, graph);
     }

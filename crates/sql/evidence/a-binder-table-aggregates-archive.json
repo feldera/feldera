@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/a-binder-table-aggregates.tar.gz",
+  "bytes": 110902681,
+  "sha256": "711c9cb10d5a6c7ecd78da1991aaa5d9beac815292c4ad7d25ae35757d8de7fc",
+  "manifest_sha256": "1e0feaadf0233d03a593ab7e7db5e538b4130ea6d87d882781b4a7949d9a5472",
+  "verified_files": 159,
+  "all_members_verified": true
+}

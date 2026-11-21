@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-json-execution-archive.json",
+  "programs": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/0",
+      "case_sha256": "22a9e41fa6b03ea3db445790076f3a8ac71924571d17275ec142062d99addd98",
+      "verified_steps": 1,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-unicode-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.StringTests#testNonBmpCastsAndRanges/1",
+      "case_sha256": "bade57712d40fef7fae7222dff513ddb374fdc7c97f335a09dfe7644b9a6faad",
+      "verified_steps": 1,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-unicode-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#leftOuterJoinTest/0",
+      "case_sha256": "198c0251f4b96a5be6b9877517b2dad81e457de3b4b46a8948d9568a02675fd1",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-outer-join-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#fullOuterJoinTest/0",
+      "case_sha256": "e16494ae8ceeccad109d8fa24180c0ad33361a80d185c5b79bc842a4aa5541ba",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-outer-join-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#optionAggregateTest/0",
+      "case_sha256": "ff74ca84a7e1a74ee7bed9478cc95a8c5ad4e2bec3c839f86aeee33d1cf639a5",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-aggregate-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#emptyAggregate/0",
+      "case_sha256": "8a424b2abc80ac3332d056d53e157e88c4dca35b178519a34116786fdb969179",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-aggregate-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.OptimizedIncrementalTests#overDecimalTest/0",
+      "case_sha256": "bb61be22207d82695111308950e54cee2fa92b83d71f02658186ff646a965068",
+      "verified_steps": 3,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-rolling-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testAdd/0",
+      "case_sha256": "c3abb8a846a4400834d0cf2900fdbdcccb0f18f522920d92011d5b29a71badf4",
+      "verified_steps": 1,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-decimal-join-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.postgres.PostgresNumericTests#testMultiply/0",
+      "case_sha256": "4f2f7f427fa77d8a7cb16516abc05a88d43c7420e61911e9b97471d66267471e",
+      "verified_steps": 1,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-decimal-join-execution.json"
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.SerdeTest#jsonStructTest2/0",
+      "case_sha256": "2883484d5b9fcda2d7c34a487f250b1fdf05af595954b791fe1250fcd103da41",
+      "verified_steps": 2,
+      "compiled_and_loaded": true,
+      "all_outputs_equal": true,
+      "runtime": "dbsp",
+      "evidence": "crates/sql/evidence/native-json-execution.json"
+    }
+  ],
+  "native_frozen_programs_passed": 10,
+  "native_frozen_steps_passed": 21,
+  "classic_generated_json_tests_passed": 1,
+  "native_supplemental_json_steps_passed": 1,
+  "native_callback_unit_tests_passed": 2,
+  "scope": "Single-worker DBSP maps the frozen inputs to both JSON views. Cranelift runs the nullable string batch loop with typed sqllib callbacks for variant indexing/casts and contextual JSON deserialization. A callback panic is transferred back to Rust after returning from the native call."
+}

@@ -1,0 +1,39 @@
+{
+  "column_defaults_and_lateness": {
+    "cases": 8571,
+    "expressions": 550,
+    "distinct": 44,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "compared": 44,
+    "differences": 0,
+    "inputs_sha256": "591f271a794cdac7e313b0fda07871e7bb0a3f7fba21eb4a80f2219b071db820",
+    "java_results_sha256": "a99f98c04cf40647f822212a4e7c2825ed59263c0abb740a0ca9b6d0ab007b82"
+  },
+  "named_row_types": {
+    "cases": 8571,
+    "occurrences": 32765,
+    "distinct": 4395,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "compared": 4395,
+    "differences": 0,
+    "inputs_sha256": "9ebca307be24bfd47ab4b23f103b393d78a3a3952e16ca31562e95eea189593e",
+    "java_results_sha256": "75a18fc841d2a83cb9d16f1232fe51502fff8e392ed1c79cb8f1a1016c3fe425"
+  },
+  "directed_collection_converters": {
+    "accepted": 24,
+    "java_refusals": 2,
+    "fixture_sha256": "003b291b9ee7ee84b9bf99ea86c4a59c092539d014529c21de657507546b1f28"
+  },
+  "directed_scalar_literal_casts": {
+    "cases": 48,
+    "fixture_sha256": "1fd7db8fe51b0252708b7a73de1a23eb2bcd8676952c396d65b74d8b4e3c1b0d"
+  },
+  "shared_safe_and_unsafe_siblings": {
+    "cases": 4,
+    "fixture_sha256": "736c0cbfdddd3e72d6a7d2af730e144c40285993ce241b939468a9c05785d5c9"
+  },
+  "nested_named_row_types": {
+    "cases": 4,
+    "fixture_sha256": "c102ebb6962ea7633ada088802030d6a329a9b61957fb0ec04374cb5ee26f760"
+  }
+}

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -18,7 +19,11 @@ public final class DBSPSomeExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     DBSPSomeExpression(CalciteObject node, DBSPExpression expression) {
-        super(node, expression.getType().withMayBeNull(true));
+        this(node, expression, expression.getType().withMayBeNull(true));
+    }
+
+    private DBSPSomeExpression(CalciteObject node, DBSPExpression expression, DBSPType type) {
+        super(node, type);
         Utilities.enforce(!expression.getType().mayBeNull, () -> "some() applied to a nullable expression");
         // Nullable tuple constructors and nullable literals are the only representations
         // of Some(Tup(...)) and Some(literal)
@@ -72,6 +77,8 @@ public final class DBSPSomeExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static DBSPSomeExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
-        return new DBSPSomeExpression(CalciteObject.EMPTY, expression);
+        DBSPType type = getJsonType(node, decoder);
+        Utilities.enforce(type.sameType(expression.getType().withMayBeNull(true)));
+        return new DBSPSomeExpression(CalciteObject.EMPTY, expression, type);
     }
 }

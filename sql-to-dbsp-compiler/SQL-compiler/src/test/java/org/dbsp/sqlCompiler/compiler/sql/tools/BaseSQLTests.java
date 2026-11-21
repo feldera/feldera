@@ -56,6 +56,7 @@ import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -69,7 +70,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.function.Predicate;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Base class for SQL-based tests: collects all tests that generate Rust from a single derived class
@@ -161,42 +161,69 @@ public class BaseSQLTests {
         this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
     }
 
+    static boolean matches(String messages, String expected, boolean isRegex) {
+        return isRegex
+                ? Pattern.compile(".*" + expected + ".*", Pattern.DOTALL).matcher(messages).matches()
+                : messages.contains(expected);
+    }
+
     void shouldMatch(String messages, String regex, boolean isRegex) {
-        if (isRegex) {
-            Pattern pattern = Pattern.compile(".*" + regex + ".*", Pattern.DOTALL);
-            Matcher matcher = pattern.matcher(messages);
-            if (!matcher.matches())
-                Assert.fail("Error message\n" + Utilities.singleQuote(messages) +
-                        "\ndoes not contain the expected fragment\n" +
-                        Utilities.singleQuote(regex));
-        } else {
-            if (!messages.contains(regex))
-                Assert.fail("Error message\n" + Utilities.singleQuote(messages) +
-                        "\ndoes not contain the expected fragment\n" +
-                        Utilities.singleQuote(regex));
-        }
+        if (!matches(messages, regex, isRegex))
+            Assert.fail("Error message\n" + Utilities.singleQuote(messages) +
+                    "\ndoes not contain the expected fragment\n" +
+                    Utilities.singleQuote(regex));
     }
 
     /** Run one or more statements that are expected to fail in compilation.
      * @param statements Statements to compile.
      * @param regex      Regular expression that should match the error message. */
     public void statementsFailingInCompilation(String statements, String regex, boolean isRegex) {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        this.prepareInputs(compiler);
-        compiler.submitStatementsForCompilation(statements);
-        compiler.getFinalCircuit(true);
+        DBSPCompiler compiler = this.compileForErrorAssertions(statements);
         if (compiler.messages.exitCode == 0) {
             throw new RuntimeException("Program was expected to fail: " + statements);
         } else {
             String message = compiler.messages.toString();
             this.shouldMatch(message, regex, isRegex);
+            DiagnosticExporter.record(this, compiler, regex, isRegex,
+                    DiagnosticExporter.AssertionKind.COMPILATION_ERROR, message);
         }
+    }
+
+    private DBSPCompiler compileForErrorAssertions(String statements) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        this.prepareInputs(compiler);
+        compiler.submitStatementsForCompilation(statements);
+        compiler.getFinalCircuit(true);
+        return compiler;
     }
 
     public void statementsFailingInCompilation(String statements, String substring) {
         Utilities.enforce(!substring.isEmpty(), () -> "Missing expected error string in test");
         this.statementsFailingInCompilation(statements, substring, false);
+    }
+
+    public record Diagnostic(boolean warning, String errorType, int line, int column, String snippet) {
+        public static Diagnostic error(String errorType, int line, int column, String snippet) {
+            return new Diagnostic(false, errorType, line, column, snippet);
+        }
+    }
+
+    /** Assert a failed compilation and all of its ordered C0 diagnostics. */
+    public void statementsFailingInCompilation(String statements, Diagnostic first, Diagnostic... rest) {
+        DBSPCompiler compiler = this.compileForErrorAssertions(statements);
+        String rendered = compiler.messages.toString();
+        Assert.assertNotEquals(rendered, 0, compiler.messages.exitCode);
+        var expected = new ArrayList<Diagnostic>(1 + rest.length);
+        expected.add(first);
+        expected.addAll(List.of(rest));
+        var actual = compiler.messages.messages.stream().map(message ->
+                new Diagnostic(message.warning, message.errorType, message.range.start.line,
+                        message.range.start.column, compiler.sources.getFragment(message.range, true))).toList();
+        Assert.assertEquals(expected, actual);
+        DiagnosticExporter.recordDirect(DiagnosticAssertions.Target.STRUCTURED_ERRORS, "equals", expected, actual);
+        DiagnosticExporter.record(this, compiler, first.errorType(), false,
+                DiagnosticExporter.AssertionKind.COMPILATION_ERROR, rendered);
     }
 
     /** Cargo features that make the optional dependencies of the 'temp' crate available. */
@@ -219,19 +246,24 @@ public class BaseSQLTests {
         }
     }
 
-    /** Compile a set of statements that are expected to give a warning at compile time.
-     * @param statements  Statement to run.
-     * @param regex       This regular expression should match the warning message. */
-    public void shouldWarn(String statements, String regex) {
+    public record Warning(String errorType, int line, int column, String snippet) {}
+
+    /** Assert the ordered C0 diagnostic fields for a successful compilation. */
+    public void shouldWarn(String statements, Warning... expected) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
         compiler.submitStatementsForCompilation(statements);
         getCircuit(compiler);
-        Assert.assertTrue("Expected some warnings; got none", compiler.hasWarnings);
-        String warnings = compiler.messages.messages.stream()
-                .filter(error -> error.warning).toList().toString();
-        this.shouldMatch(warnings, regex, true);
+        Assert.assertEquals(compiler.messages.toString(), 0, compiler.messages.exitCode);
+        var actual = compiler.messages.messages.stream().map(message -> {
+            Assert.assertTrue(message.toString(), message.warning);
+            return new Warning(message.errorType, message.range.start.line, message.range.start.column,
+                    compiler.sources.getFragment(message.range, true));
+        }).toList();
+        Assert.assertEquals(List.of(expected), actual);
+        DiagnosticExporter.recordDirect(DiagnosticAssertions.Target.STRUCTURED_WARNINGS, "equals",
+                List.of(expected), actual);
     }
 
     @Rule
@@ -252,6 +284,12 @@ public class BaseSQLTests {
 
     /** The cases the running test registered for the Gen-2 engine. */
     final List<TestCase> gen2Cases = new ArrayList<>();
+    @Nullable final CorpusExporter corpusExporter = CorpusExporter.fromSystemProperties();
+
+    /** Whether this test contributes cases to the differential corpus. */
+    protected final boolean exportsCorpus() {
+        return this.corpusExporter != null;
+    }
 
     /** Runs the test's Gen-2 cases once its body has passed: the body adds a case's steps
      * after it registers the case. */
@@ -259,14 +297,31 @@ public class BaseSQLTests {
     public final TestRule gen2Run = (base, description) -> new Statement() {
         @Override
         public void evaluate() throws Throwable {
-            base.evaluate();
-            for (TestCase testCase : BaseSQLTests.this.gen2Cases)
-                Gen2Runner.run(testCase);
+            try {
+                base.evaluate();
+            } catch (Throwable failure) {
+                if (BaseSQLTests.this.corpusExporter != null) {
+                    try {
+                        BaseSQLTests.this.corpusExporter.finish(
+                                description.getClassName() + "#" + description.getMethodName(), failure);
+                    } catch (Throwable exportFailure) {
+                        failure.addSuppressed(exportFailure);
+                    }
+                }
+                throw failure;
+            }
+            if (BaseSQLTests.this.corpusExporter != null)
+                BaseSQLTests.this.corpusExporter.finish(
+                        description.getClassName() + "#" + description.getMethodName(), null);
+            if (!CorpusExporter.exportOnly())
+                for (TestCase testCase : BaseSQLTests.this.gen2Cases)
+                    Gen2Runner.run(testCase);
         }
     };
 
     /** Skips the calling test under the Gen-2 runner, which runs no Rust code. */
     public static void assumeRustBackend() {
+        Assume.assumeFalse("Corpus-only export does not execute Rust code", CorpusExporter.exportOnly());
         Assume.assumeFalse("The Gen-2 runner runs no Rust code", Gen2Runner.isEnabled());
     }
 
@@ -426,6 +481,10 @@ public class BaseSQLTests {
     /** Runs the case on the Gen-2 engine when {@code GEN2_PATH} is set, after the test's body;
      * otherwise it joins the class's Rust test crate. */
     void runOneTestCase(TestCase test) {
+        if (this.corpusExporter != null)
+            this.corpusExporter.register(test);
+        if (CorpusExporter.exportOnly())
+            return;
         if (Gen2Runner.isEnabled())
             this.gen2Cases.add(test);
         else
@@ -438,8 +497,9 @@ public class BaseSQLTests {
     }
 
     protected void addFailingRustTestCase(String message, CompilerCircuitStream ccs) {
-        ccs.showErrors();
         this.runOneTestCase(new TestCase(this.currentTestInformation, this.currentTestInformation, ccs, message));
+        // The corpus snapshots diagnostics before showErrors clears them.
+        ccs.showErrors();
     }
 
     void ciOptions(CompilerOptions options) {

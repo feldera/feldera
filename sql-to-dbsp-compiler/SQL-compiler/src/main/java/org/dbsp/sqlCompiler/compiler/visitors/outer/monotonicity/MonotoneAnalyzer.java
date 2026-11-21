@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
@@ -21,17 +22,17 @@ import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.graph.Port;
 
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** Implements a dataflow analysis for detecting values that change monotonically,
  * and inserts nodes that prune the internal circuit state where possible.
  * It also hooks up all operators that produce lateness errors to the error view. */
 public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     final DBSPCompiler compiler;
+    private final UnaryOperator<CircuitTransform> select;
 
     @Override
     public String getName() {
@@ -61,12 +62,21 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     }
 
     public MonotoneAnalyzer(DBSPCompiler compiler) {
+        this(compiler, UnaryOperator.identity());
+    }
+
+    public MonotoneAnalyzer(DBSPCompiler compiler, UnaryOperator<CircuitTransform> select) {
+        this.select = select;
         this.compiler = compiler;
+    }
+
+    protected CircuitTransform separateIntegrators(CircuitGraphs graphs) {
+        return this.select.apply(new SeparateIntegrators(this.compiler, graphs));
     }
 
     /** Compute and return the set of operators that receive an input directly or
      * indirectly from the ERROR_TABLE_NAME (which only feeds the error view at this point). */
-    private Set<DBSPOperator> reachableFromError(DBSPCircuit circuit, CircuitGraph graph) {
+    protected Set<DBSPOperator> reachableFromError(DBSPCircuit circuit, CircuitGraph graph) {
         LinkedList<DBSPOperator> queue = new LinkedList<>();
         IInputOperator errorTable = circuit.getInput(DBSPCompiler.ERROR_TABLE_NAME);
         if (errorTable != null)
@@ -86,11 +96,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         return result;
     }
 
-    @Override
-    public DBSPCircuit apply(DBSPCircuit circuit) {
-        final boolean debug = this.getDebugLevel() >= 1;
-        final int details = this.getDebugLevel();
-
+    protected CircuitTransform ensureExpressionTrees() {
         IRTransform transform = new IRTransform() {
             @Override
             public void setOperatorContext(DBSPOperator operator) {}
@@ -107,40 +113,72 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
             }
 
             @Override
+            public String getName() {
+                return "EnsureExpressionTrees";
+            }
+
+            @Override
             public String toString() {
                 return "EnsuresTree";
             }
         };
-        CircuitRewriter toTree = new CircuitRewriter(this.compiler, transform, false);
-        circuit = toTree.apply(circuit);
+        return this.select.apply(new CircuitRewriter(this.compiler, transform, false));
+    }
+
+    protected CircuitTransform checkRetain(CircuitGraphs graphs) {
+        return this.select.apply(new CheckRetain(this.compiler, graphs));
+    }
+
+    protected CircuitTransform mergeGC() {
+        return this.select.apply(new MergeGC(this.compiler));
+    }
+
+    protected DeltaExpandOperators deltaExpander() {
+        return new DeltaExpandOperators(this.compiler);
+    }
+
+    protected CircuitTransform insertLimiters(CircuitTransform original) {
+        return original;
+    }
+
+    protected CircuitTransform analyzeMonotonicity(CircuitTransform original, DBSPCircuit originalCircuit) {
+        return original;
+    }
+
+    @Override
+    public DBSPCircuit apply(DBSPCircuit circuit) {
+        final boolean debug = this.getDebugLevel() >= 1;
+        final int details = this.getDebugLevel();
+
+        CircuitTransform toTree = this.ensureExpressionTrees();
+        circuit = this.compiler.applyObservedPass(this.getName(), 0, 0, toTree, circuit);
 
         // Insert noops between consecutive integrators
         Graph graph = new Graph(this.compiler);
-        graph.apply(circuit);
+        CircuitTransform buildGraph = this.select.apply(graph);
+        this.compiler.applyObservedPass(this.getName(), 1, 0, buildGraph, circuit);
         if (this.compiler.options.languageOptions.incrementalize) {
-            SeparateIntegrators separate = new SeparateIntegrators(this.compiler, graph.getGraphs());
-            circuit = separate.apply(circuit);
+            CircuitTransform separate = this.separateIntegrators(graph.getGraphs());
+            circuit = this.compiler.applyObservedPass(this.getName(), 2, 0, separate, circuit);
             // Recompute graph
-            graph.apply(circuit);
+            this.compiler.applyObservedPass(this.getName(), 3, 0, buildGraph, circuit);
         }
 
         CircuitGraph outerGraph = graph.getGraphs().getGraph(circuit);
-        Set<DBSPOperator> reachableFromError = this.reachableFromError(circuit, outerGraph);
-        // Operators downstream of the error table go last, so InsertLimiters has every error
-        // stream when it reaches the error view.  The set is closed under successors and
-        // List.sort is stable, so each group stays in topological order.
-        Function<Boolean, Integer> bi = b -> b ? 1 : -1;
-        circuit.sortOperators(Comparator.comparing(o -> bi.apply(reachableFromError.contains(o))));
+        var order = new OrderErrorConsumers(c -> this.reachableFromError(c, outerGraph));
+        circuit = this.compiler.applyObservedPass(this.getName(), 4, 0, this.select.apply(order), circuit);
+        Set<DBSPOperator> reachableFromError = order.reachable();
 
         if (debug)
             ToDot.dump(this.compiler, "original.png", details, "png", circuit);
 
-        DeltaExpandOperators expander = new DeltaExpandOperators(this.compiler);
-        DBSPCircuit expanded = expander.apply(circuit);
+        DeltaExpandOperators expander = this.deltaExpander();
+        DBSPCircuit expanded = this.compiler.applyObservedPass(this.getName(), 5, 0, expander, circuit);
         // ToDot.dump(this.compiler, "expanded-before.png", details, "png", expanded);
 
         Monotonicity monotonicity = new Monotonicity(this.compiler);
-        expanded = monotonicity.apply(expanded);
+        CircuitTransform analysis = debug ? monotonicity : this.analyzeMonotonicity(monotonicity, circuit);
+        expanded = this.compiler.applyObservedPass(this.getName(), 6, 0, analysis, expanded);
         if (debug)
             ToDot.customDump("expanded.png", "png", expanded,
                     stream -> new ToDotNodesVisitor(compiler, stream, details),
@@ -150,15 +188,16 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                 this.compiler, expanded, monotonicity.info, expander.expansion, reachableFromError);
 
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
-        DBSPCircuit result = limiters.apply(circuit);
+        DBSPCircuit result = this.compiler.applyObservedPass(this.getName(), 7, 0,
+                this.insertLimiters(limiters), circuit);
         if (debug)
             ToDot.dump(compiler, "limited.png", details, "png", result);
 
-        CircuitTransform merger = new MergeGC(this.compiler);
-        result = merger.apply(result);
-        graph.apply(result);
-        CheckRetain check = new CheckRetain(this.compiler, graph.getGraphs());
-        check.apply(result);
+        CircuitTransform merger = this.mergeGC();
+        result = this.compiler.applyObservedPass(this.getName(), 8, 0, merger, result);
+        this.compiler.applyObservedPass(this.getName(), 9, 0, buildGraph, result);
+        CircuitTransform check = this.checkRetain(graph.getGraphs());
+        this.compiler.applyObservedPass(this.getName(), 10, 0, check, result);
         return result;
     }
 

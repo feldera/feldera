@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-implement-now-20261119.tar.gz",
+  "bytes": 30457164,
+  "sha256": "677ecf577d819e0279195ed98fb6a51a8537a29ae75aef18c1fe8a6f2b48fc98",
+  "manifest_sha256": "382ea7f29ef957547e49eceda20782f70ab68afc9de90f3e40c6271dfc05d2d8",
+  "verified_files": 26260,
+  "all_members_verified": true
+}

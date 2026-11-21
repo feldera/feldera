@@ -979,14 +979,14 @@ class illarg_not_in_legal(TstView):
                       WHERE id = 0"""
 
 
-# Negative Test: NOT IN expands into an equality test, rejected for ROW values
+# Negative Test: NOT IN expands into an inequality test, rejected for ROW values
 class illarg_not_in_roww_illegal(TstView):
     def __init__(self):
         self.sql = """CREATE MATERIALIZED VIEW not_in_roww_illegal AS SELECT
                       roww NOT IN (ROW(4,'cat')) AS roww
                       FROM illegal_tbl
                       WHERE id = 0"""
-        self.expected_error = "ROW values cannot be compared using '='"
+        self.expected_error = "ROW values cannot be compared using '<>'"
 
 
 # Negative Test: a user-defined type is a ROW type
@@ -996,7 +996,7 @@ class illarg_not_in_udt_illegal(TstView):
                       udt NOT IN ((4,'cat')) AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
-        self.expected_error = "ROW values cannot be compared using '='"
+        self.expected_error = "ROW values cannot be compared using '<>'"
 
 
 # A conjunction of 'IS DISTINCT FROM' replaces NOT IN for ROW values

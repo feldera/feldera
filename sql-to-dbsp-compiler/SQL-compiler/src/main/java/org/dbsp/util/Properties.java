@@ -77,6 +77,13 @@ public class Properties implements IJson {
      * from the one above. */
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
+        if (visitor.replayMetadata) {
+            // These ranges can create optimizer provenance, for example the
+            // window introduced by emit_final. Public Gen-2 JSON and persistent
+            // hash inputs retain their existing string-only representation.
+            IJson.toJsonStream(this.asJson(), visitor.stream);
+            return;
+        }
         visitor.stream.beginObject();
         for (var e: this.propertyValue.entrySet()) {
             visitor.stream.label(e.getKey());
@@ -86,9 +93,27 @@ public class Properties implements IJson {
     }
 
     public static Properties fromJson(JsonNode node) {
+        if (!node.isObject())
+            throw new IllegalArgumentException("Properties must be an object");
         Properties result = new Properties();
-        for (var entry: node.properties())
-            result.propertyValue.put(entry.getKey(), new PropertyValue(entry.getValue().asText()));
+        for (var entry: node.properties()) {
+            JsonNode value = entry.getValue();
+            PropertyValue property;
+            if (value.isTextual()) {
+                property = new PropertyValue(value.textValue());
+            } else if (value.isObject()) {
+                JsonNode text = Utilities.getProperty(value, "value");
+                if (!text.isTextual())
+                    throw new IllegalArgumentException("Property " + entry.getKey() + " value must be a string");
+                property = new PropertyValue(
+                        SourcePositionRange.fromJson(Utilities.getProperty(value, "key_position")),
+                        SourcePositionRange.fromJson(Utilities.getProperty(value, "value_position")),
+                        text.textValue());
+            } else {
+                throw new IllegalArgumentException("Property " + entry.getKey() + " requires a string or positioned value");
+            }
+            result.propertyValue.put(entry.getKey(), property);
+        }
         return result;
     }
 }

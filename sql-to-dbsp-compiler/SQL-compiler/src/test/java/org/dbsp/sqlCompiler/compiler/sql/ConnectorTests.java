@@ -10,6 +10,38 @@ import java.util.stream.Collectors;
 
 /** Tests for validation of connector format and transport configs. */
 public class ConnectorTests extends BaseSQLTests {
+    @Test
+    public void nullPostgresRequiredFieldsWarn() {
+        tableConnectorTest("\"transport\": {\"name\": \"postgres_input\", \"config\": {\"uri\": null, \"query\": \"SELECT 1\"}}",
+                "required field \"uri\" is missing or empty");
+        tableConnectorTest("\"transport\": {\"name\": \"postgres_input\", \"config\": {\"uri\": \"postgres://example/db\", \"query\": null}}",
+                "required field \"query\" is missing or empty");
+    }
+
+    @Test
+    public void nullKafkaTopicUsesLegacyOrWarns() {
+        tableConnectorTest("\"transport\": {\"name\": \"kafka_input\", \"config\": {\"topic\": null}}",
+                "required field \"topic\" is missing or empty");
+        cleanTableConnectorTest("\"transport\": {\"name\": \"kafka_input\", \"config\": {\"topic\": null, \"topics\": [\"events\"]}}");
+    }
+
+    @Test
+    public void nullAvroRegistryUrlsFail() {
+        for (String schema : new String[] {"null", "\"schema\""}) {
+            DBSPCompiler compiler = this.chattyCompiler();
+            compiler.options.languageOptions.throwOnError = false;
+            compiler.submitStatementsForCompilation("""
+                    CREATE TABLE t (x INT) WITH ('connectors' =
+                      '[{"name":"c","format":{"name":"avro","config":{"schema":%s,"registry_urls":null}}}]');
+                    """.formatted(schema));
+            compiler.getFinalCircuit(true);
+            Assert.assertTrue(compiler.hasErrors());
+            Assert.assertTrue(compiler.messages.messages.stream().anyMatch(message ->
+                    !message.warning && message.errorType.equals("Invalid configuration")
+                            && message.message.equals("\"registry_urls\" cannot be null. Remove it to use the default")));
+        }
+    }
+
     /** Compiles SQL, asserts exit code 0, and verifies each message appears in compiler output. */
     private void runConnectorTest(String sql, String... expectedMessages) {
         DBSPCompiler compiler = this.chattyCompiler();

@@ -29,12 +29,12 @@ public class CalciteEmptyRel extends CalciteRelNode {
     }
 
     @Override
-    public CalciteRelNode remove(RelNode node) {
+    public CalciteRelNode remove(RelReference node) {
         return this;
     }
 
     @Override
-    public boolean contains(RelNode node) {
+    public boolean contains(RelReference node) {
         return false;
     }
 
@@ -54,7 +54,7 @@ public class CalciteEmptyRel extends CalciteRelNode {
     }
 
     @Override
-    public List<RelNode> getRelNodes() {
+    public List<RelReference> getReferences() {
         return List.of();
     }
 }

@@ -96,7 +96,10 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo implements IsBoundedType {
     @SuppressWarnings("unused")
     public static DBSPTypeGeoPoint fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeGeoPoint.create(CalciteObject.EMPTY, mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeGeoPoint.create(CalciteObject.EMPTY, mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeGeoPoint(CalciteObject.EMPTY, mayBeNull);
     }
 
     @Override

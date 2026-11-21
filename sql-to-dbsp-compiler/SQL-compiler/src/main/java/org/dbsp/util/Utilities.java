@@ -188,12 +188,12 @@ public class Utilities {
             else if (c == '\n' ) builder.append("\\n");
             else if (c == '\t' ) builder.append("\\t");
             else if (c < 32 || c >= 127) {
-                builder.append("\\u");
-                if (unicodeBraces)
-                    builder.append("{");
-                builder.append(String.format("%04x", c));
-                if (unicodeBraces)
-                    builder.append("}");
+                if (unicodeBraces) {
+                    builder.append(String.format("\\u{%04x}", c));
+                } else {
+                    for (char unit : Character.toChars(c))
+                        builder.append(String.format("\\u%04x", (int) unit));
+                }
             } else
                 builder.append((char)c);
             offset += Character.charCount(c);

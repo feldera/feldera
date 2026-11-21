@@ -64,10 +64,17 @@ jobs:
           name: feldera-sql-compiler
           path: build
 
+      - name: Download the matching Rust SQL optimizer
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: sql-optimizer-${{ matrix.rust_target }}
+          path: build/sql-optimizer
+
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
         run: |
           chmod +x ${{ steps.binaries.outputs.download-path }}/*
+          chmod +x build/sql-optimizer/sql2dbsp
           ls -la ${{ steps.binaries.outputs.download-path }}
 
       - name: Prepare Platform Environment Variable

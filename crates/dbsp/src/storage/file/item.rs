@@ -104,6 +104,7 @@ where
 /// `Item` and [`ArchivedItem`]), so the serialized form might be in the reverse
 /// order.
 #[derive(Archive, Serialize)]
+#[cfg_attr(all(test, feature = "native-abi"), archive(check_bytes))]
 pub struct RefTup2<'a, K, A>(#[with(Inline)] pub &'a K, #[with(Inline)] pub &'a A)
 where
     K: DBData,

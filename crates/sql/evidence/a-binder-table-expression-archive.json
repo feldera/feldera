@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-table-expression-20261118.tar.gz",
+  "bytes": 16192686,
+  "sha256": "69a5178a6110f5ec04b22198560b934b638fc674461d7cdfd43b3259ce99cc9a",
+  "manifest_sha256": "f62abe121cc62df8e225fefe2800ccb9f9c055909ac9ddea7ef8a71b036b1b0c",
+  "verified_files": 77,
+  "all_members_verified": true
+}

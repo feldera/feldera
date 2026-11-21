@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-window-deindex-archive.json",
+  "scope": "Rebuild deindex closures and fresh output collection types when Java would reconstruct the operator during wire-based integral movement.",
+  "strict_stream_group_controls": 282,
+  "strict_window_stream_group_graphs": 10,
+  "generated_name_counters": {
+    "gen2-1": {
+      "before": 40,
+      "java": 42,
+      "rust": 42
+    },
+    "classic-1": {
+      "before": 40,
+      "java": 42,
+      "rust": 42
+    },
+    "gen2-3": {
+      "before": 201,
+      "java": 203,
+      "rust": 203
+    },
+    "gen2-4": {
+      "before": 265,
+      "java": 267,
+      "rust": 267
+    },
+    "gen2-5": {
+      "before": 325,
+      "java": 327,
+      "rust": 327
+    },
+    "gen2-2": {
+      "before": 122,
+      "java": 124,
+      "rust": 124
+    },
+    "classic-2": {
+      "before": 122,
+      "java": 124,
+      "rust": 124
+    },
+    "classic-5": {
+      "before": 325,
+      "java": 327,
+      "rust": 327
+    },
+    "classic-4": {
+      "before": 265,
+      "java": 267,
+      "rust": 267
+    },
+    "classic-3": {
+      "before": 201,
+      "java": 203,
+      "rust": 203
+    }
+  },
+  "combined_final_programs_equal": 100,
+  "combined_window_boundary_graphs_equal": 8,
+  "combined_window_boundary_first_differences": {
+    "relId": 192
+  }
+}

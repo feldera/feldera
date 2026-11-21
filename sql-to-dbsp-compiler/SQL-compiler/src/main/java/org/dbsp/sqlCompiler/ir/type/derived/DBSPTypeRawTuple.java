@@ -162,6 +162,11 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     public static DBSPTypeRawTuple fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         List<DBSPType> fields = fromJsonInnerList(node, "tupFields", decoder, DBSPType.class);
+        if (JsonDecoder.useSingleton(node)) {
+            if (mayBeNull || !fields.isEmpty())
+                throw new IllegalArgumentException("The raw tuple singleton must be empty and non-nullable");
+            return EMPTY;
+        }
         return new DBSPTypeRawTuple(CalciteObject.EMPTY, DBSPTypeCode.RAW_TUPLE,
                 mayBeNull, fields.toArray(new DBSPType[0]));
     }

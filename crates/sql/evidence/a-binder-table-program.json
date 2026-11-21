@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-table-program-archive.json",
+  "scope": "Rust S1 binder for one plain single-column table and one direct projection; fixed Java system prelude and Java detached lowering.",
+  "programs_per_backend": 11,
+  "original_development_programs": 1,
+  "directed_programs": 10,
+  "original_corpus_identity": "org.dbsp.sqlCompiler.compiler.sql.simple.TimeTests#timestampTableTest/0",
+  "typed_visible_statements_equal": 22,
+  "generated_control_byte_equal": 59264,
+  "scope_control_byte_equal": 9886,
+  "constant_program_byte_equal": 32,
+  "runtime_execution": false,
+  "backends": {
+    "classic": {
+      "equal": true,
+      "cases": 11,
+      "observations": 4070,
+      "capture_transparency": false,
+      "artifact_contract": "seam-v1",
+      "dataflow_contract": "all-engines-v1",
+      "observation_contract": "full-prefix-v1",
+      "artifact_byte_differences": [],
+      "differences": [],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    },
+    "gen2": {
+      "equal": true,
+      "cases": 11,
+      "observations": 4092,
+      "capture_transparency": false,
+      "artifact_contract": "seam-v1",
+      "dataflow_contract": "all-engines-v1",
+      "observation_contract": "full-prefix-v1",
+      "artifact_byte_differences": [],
+      "differences": [],
+      "failed_cases": {
+        "expected": [],
+        "actual": []
+      },
+      "exported_schema_differences": [],
+      "exported_diagnostic_differences": []
+    }
+  }
+}

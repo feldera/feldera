@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-program-arithmetic-20261118-v1.tar.gz",
+  "bytes": 5711625,
+  "sha256": "eabc748c21f323fd9502eaa9836d506f7f7f5fd1162b9cc8a0c07132dd3ae50c",
+  "manifest_sha256": "5fcb19b0df47b84eaa735f7f32ab4786ef9bf71cc305a71856765091e64af0b5",
+  "verified_files": 26,
+  "all_members_verified": true
+}

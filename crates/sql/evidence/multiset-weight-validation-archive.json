@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-weight-validation-20261118-v1.tar.gz",
+  "bytes": 5016360,
+  "sha256": "5fd71c99101b41692d9b9ef000e62ca6603a6f5cc8fd6423baebd4dc66129f02",
+  "manifest_sha256": "530e4908298b728b075861f016dce7aaacf48d488766ed17288223789880edaf",
+  "verified_files": 2942,
+  "all_members_verified": true
+}

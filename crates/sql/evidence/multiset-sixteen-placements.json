@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "archive_index": "multiset-sixteen-placements-archive.json",
+  "larger_fifteen_placement_run": "multiset-fifteen-placements.json",
+  "programs": 30,
+  "engine_modes": ["classic", "gen2"],
+  "outputs_are_sets": true,
+  "scheduled_placements": 16,
+  "same_input_graph_comparisons": 960,
+  "deindex_changed_graphs": {
+    "classic": 2,
+    "gen2": 0
+  },
+  "rust_tail_comparisons": 60,
+  "java_codec_tail_comparisons": 60,
+  "directed_cleanup_graph_comparisons": 8,
+  "differences": 0,
+  "complete_rust_prefix_replayed": false,
+  "scope": "Adds the scheduled deindex-to-map transform. The selection combines all 24 constant SQL cases with six keyed, union, filter and lateness programs. Directed witnesses cover the deindex rewrite on both stream kinds."
+}

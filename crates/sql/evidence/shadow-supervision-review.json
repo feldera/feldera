@@ -1,0 +1,43 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "date": "2026-11-18",
+  "scope": "independent source review and extracted shadow process-supervision regression",
+  "source_sha256": {
+    "crates/pipeline-manager/src/compiler/shadow.rs": "1a99ce30d03d5de31c90475ad4528f3048d3c47c9e990226a7d5a31fc0c05e62",
+    "crates/pipeline-manager/src/compiler/sql_compiler.rs": "def5d3b5592d069b6e6656f0f15c4027827a1e97b9023e936004dd53b3c242c7",
+    "crates/pipeline-manager/src/compiler/util.rs": "4e8e546f892d86479743d2ec948310c26e12f160170b9bd13c65b838e03eceb0"
+  },
+  "control": {
+    "behavior": "reap leader with try_wait, then cancel process-group guard",
+    "test": "exited_shadow_leader_does_not_leave_group_members_running",
+    "outcome": "failed as expected; group member remained live until test cleanup"
+  },
+  "fixed": {
+    "linux_arm64_devcontainer": {
+      "passed": 2,
+      "failed": 0
+    },
+    "macos_arm64": {
+      "passed": 2,
+      "failed": 0,
+      "clippy_warnings_denied": true
+    },
+    "tokio": "1.53.1",
+    "nix": "0.29.0",
+    "full_pipeline_manager_build": false
+  },
+  "limitations": [
+    "Tests compile exact extracted guard/polling/test code, not the complete pipeline-manager crate.",
+    "The first fixed Linux invocation reused a target directory shared with the control and ran the cached control executable; its result is excluded. The recorded fixed run uses a new target directory.",
+    "Test group members are directly owned children, so the test can reap them without relying on PID 1.",
+    "No native N1/N2 runtime measurements were rerun for this review."
+  ],
+  "archive": {
+    "path": ".p0-artifacts/p0-shadow-supervision-review-20261118-v1.tar.gz",
+    "sha256": "f51e9782dda769af4648a2d120ba7c03d883ef220b6dd7b9feea1141ec16aa30",
+    "bytes": 37907
+  },
+  "maintainer_approval": false,
+  "P0_complete": false
+}

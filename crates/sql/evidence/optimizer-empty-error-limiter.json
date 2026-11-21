@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-empty-error-limiter-archive.json",
+  "pass": "MonotoneAnalyzer/InsertLimiters",
+  "scope": "Unbounded-input graphs within the frozen optimizer population. Rust constructs the empty typed error collection and redirects the system error view. The adapter preserves the Java limiter for LATENESS and system-clock graphs.",
+  "rust_graph_and_generated_name_equal": {"classic": 48, "gen2": 48},
+  "java_fallback": {"classic": 2, "gen2": 2},
+  "composed_placements_on_rust_limiter_cases": 78,
+  "composed_placements_on_java_limiter_cases": 77,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50},
+  "repaired_mismatch": "The first exact comparison found that the fresh ZSet type had lost the source position inherited from its element type. The final attempt preserves it."
+}

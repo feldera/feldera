@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-simplify-archive.json",
+  "scope": "Four original simplifier placements in the frozen 50-program suite. Widen I32 literal nullability in a SQL function and simplify retention predicates.",
+  "strict_graphs_and_name_counters_equal": {"classic": 200, "gen2": 200},
+  "active_stage_inputs": {"classic": 2, "gen2": 2},
+  "composed_placements": 62,
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50}
+}

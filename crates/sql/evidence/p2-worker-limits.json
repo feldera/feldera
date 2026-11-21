@@ -1,0 +1,30 @@
+{
+  "profile": "Linux devcontainer, four concurrent Java front ends waiting on SQL input",
+  "rounds": 5,
+  "slots_per_round": 4,
+  "signal_to_reap_ms": [
+    8.729183,
+    24.396755,
+    12.090689,
+    24.64863,
+    10.113561,
+    11.52773,
+    9.372309,
+    9.729393,
+    13.630734,
+    8.642891,
+    11.471604,
+    15.225987,
+    11.531105,
+    11.621355,
+    13.279692,
+    11.286896,
+    12.663607,
+    13.199692,
+    13.196233,
+    13.388483
+  ],
+  "p95_ms": 24.396755,
+  "largest_driver_plus_front_end_rss_bytes": 178323456,
+  "compiler_sha256": "f94fb6d6c7803ff6e170ffd8f3f3107ab8f45216ce04824c0b848beeaceadacd"
+}

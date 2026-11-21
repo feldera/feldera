@@ -1,0 +1,18 @@
+{
+  "cases": 728,
+  "differences": [],
+  "equal": true,
+  "scope": "Integer to binary casts across all eight SQL integer widths, nullable values, fixed and variable lengths; actual sqllib comparison",
+  "artifacts": {
+    "requests.jsonl": "59490323eb41d5e3228c3939504f70638e0c931e6d914a30b57a8da9daeddec6",
+    "expressions.jsonl": "c6e0e1ead301e1867e0595259cf462d6f6a8c626abd9f62399cb2a663704bac7",
+    "probe.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "wrapped.jsonl": "7adcbb4e9c20a5a79560511ba63e6ca130a2cc99216a1173102ee67c37c9722b",
+    "runtime.jsonl": "b9c0e7cefe7b7a7e6f6c78a0b862a4ebc522c170ca0902578f5f76b0e99b1d9a",
+    "probe-v2.jsonl": "a17a67eba81f9f6736d81f996d571aa3b3109d27ba1457f5184cec0bac40166d"
+  },
+  "binaries": {
+    "$SCRATCH/p0-integer-binary-tools-v1/feldera-fold-probe": "dc5b7174a6298efdf444b2fe9bc08856358c2fda0914e787128705d914a262f0",
+    "$SCRATCH/p0-integer-binary-tools-v1/fold_reference": "6b6ea57db29129391756011affa4b82144c85a3f5b08ee9ef34d5974306d738d"
+  }
+}

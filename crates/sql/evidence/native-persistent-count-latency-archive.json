@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-native-persistent-count-latency-20261119.tar.gz",
+  "bytes": 85543,
+  "sha256": "b4833f211531536a0b016d315717ad5013e76e5074124dd62c5251460f8fae01",
+  "manifest_sha256": "62d8b6178eb69aacc832fd965945d354cab4786a43cedeea5915b78442a3698a",
+  "verified_files": 17,
+  "all_members_verified": true
+}

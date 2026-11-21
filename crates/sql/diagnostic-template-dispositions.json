@@ -1,0 +1,440 @@
+{
+  "schema_version": 1,
+  "review_date": "2026-11-18",
+  "reviewer": "Independent Codex diagnostic source review agent",
+  "review_status": "source-backed proposed identities; not maintainer acceptance or final catalog approval",
+  "scope": "The 22 unmapped distinct bodies from capture v5, all also present in v7; two exact regex assertions spanning fields",
+  "sources": {
+    "row_comparison": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RejectUnsupportedPlans.java",
+      "sha256": "b9d262832ad2b815dbeaccf9a5019f7125d9db075f94f36dd872719556fc68e1"
+    },
+    "floating_equality": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/WarnFloatingPointEquality.java",
+      "sha256": "c049dd87b4c869a158767da30e1f453813c46762d89932332a1945f480444b91"
+    },
+    "indexing_rewrite": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/DBSPCompiler.java",
+      "sha256": "ac334a1cfcdca7f61b1a8e6a00ec9b415d87cc5f6926eb0f13f08250c9a58bc0"
+    },
+    "message_rendering": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/errors/CompilerMessages.java",
+      "sha256": "86dfb8c17c9a44f2a80b8666ec3456adb67ca2094d6681d27e253a0d7f8b86e5"
+    },
+    "documentation": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/Documentation.java",
+      "sha256": "b7e0518b8c1b9fc76ab1941877d252b43fdd6017b792788ad9136487579db997"
+    },
+    "catalog_assertion": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/CatalogTests.java",
+      "sha256": "ffed6c518d3b8232820e48410e11b8658f616a6d98d0c04e2ff38ef417317861"
+    },
+    "time_assertion": {
+      "path": "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/functions/FunctionsTest.java",
+      "sha256": "fefa9f9728d226e84a5d3cb7ce63a04bf228dd8f165d059e6b9ae5a11362f5c5"
+    },
+    "DbspParserImpl.java": {
+      "path": "generated-sources/org/dbsp/generated/parser/DbspParserImpl.java",
+      "sha256": "39d33f26f42c3f808144e98146770e3597198030f3a547c5a6533a05a9da3f97",
+      "snapshot_path": "$SCRATCH/p0-diagnostic-generated-sources/DbspParserImpl.java",
+      "origin": "$SCRATCH/sql-to-dbsp-compiler/SQL-compiler/target/generated-sources/org/dbsp/generated/parser/DbspParserImpl.java"
+    },
+    "ParseException.java": {
+      "path": "generated-sources/org/dbsp/generated/parser/ParseException.java",
+      "sha256": "ad9e9c845019fafe6473f5620b16ad3b6a3586bdd002f6bc18c7f12b7cbc3cd9",
+      "snapshot_path": "$SCRATCH/p0-diagnostic-generated-sources/ParseException.java",
+      "origin": "$SCRATCH/sql-to-dbsp-compiler/SQL-compiler/target/generated-sources/org/dbsp/generated/parser/ParseException.java"
+    }
+  },
+  "proposed_templates": [
+    {
+      "id": "feldera.row_comparison.equal",
+      "error_type": "Unsupported comparison",
+      "source": "row_comparison",
+      "lines": [
+        226,
+        227,
+        240,
+        241
+      ],
+      "format": "ROW values cannot be compared using {operator}; consider using 'IS NOT DISTINCT FROM' (or its shorthand '<=>') instead.\n{citation}",
+      "parameter_contract": "EQUALS branch; operator is uppercased and single-quoted; citation is ROW_DOCUMENTATION."
+    },
+    {
+      "id": "feldera.row_comparison.not_equal",
+      "error_type": "Unsupported comparison",
+      "source": "row_comparison",
+      "lines": [
+        228,
+        229,
+        240,
+        241
+      ],
+      "format": "ROW values cannot be compared using {operator}; consider using 'IS DISTINCT FROM' instead.\n{citation}",
+      "parameter_contract": "NOT_EQUALS branch; operator is uppercased and single-quoted; citation is ROW_DOCUMENTATION."
+    },
+    {
+      "id": "feldera.row_comparison.nullif",
+      "error_type": "Unsupported comparison",
+      "source": "row_comparison",
+      "lines": [
+        230,
+        231,
+        240,
+        241
+      ],
+      "format": "'NULLIF' compares ROW values for equality; consider using 'CASE WHEN x IS NOT DISTINCT FROM y THEN NULL ELSE x END' instead.\n{citation}",
+      "parameter_contract": "NULLIF branch; citation is ROW_DOCUMENTATION."
+    },
+    {
+      "id": "feldera.row_comparison.row_order",
+      "error_type": "Unsupported comparison",
+      "source": "row_comparison",
+      "lines": [
+        232,
+        234,
+        240,
+        241
+      ],
+      "format": "ROW values cannot be compared using {operator}; compare their fields instead.\n{citation}",
+      "parameter_contract": "Ordering/min/max cases with isRow=true; operator is uppercased and single-quoted; citation is ROW_DOCUMENTATION."
+    },
+    {
+      "id": "feldera.row_comparison.container_order",
+      "error_type": "Unsupported comparison",
+      "source": "row_comparison",
+      "lines": [
+        232,
+        235,
+        240,
+        241
+      ],
+      "format": "ARRAY and MAP values that contain ROW values cannot be compared using {operator}.\n{citation}",
+      "parameter_contract": "Ordering/min/max cases with isRow=false and hasRow=true; citation is ROW_DOCUMENTATION."
+    },
+    {
+      "id": "feldera.floating_equality",
+      "error_type": "Floating point equality",
+      "source": "floating_equality",
+      "lines": [
+        337,
+        341,
+        344,
+        346,
+        394,
+        401
+      ],
+      "format": "{quoted_construct} compares {values} for equality{suffix}.\n{citation}",
+      "parameter_contract": "message() is shared by checkType/checkColumns/warn. describeValues/describeColumns and call-site suffixes generate additional text and require their own format review; this observation uses DOUBLE values and an empty suffix."
+    },
+    {
+      "id": "feldera.indexing_rewrite",
+      "error_type": "Compilation error",
+      "source": "indexing_rewrite",
+      "lines": [
+        1030,
+        1031,
+        1042,
+        1056
+      ],
+      "format": "Cannot apply indexing to arguments of type {source}[{index}]{tail}",
+      "parameter_contract": "ITEM_ERROR groups from Calcite CanNotApplyOp2Type; tail retains Supported form(s) and the generated supported signatures. This is an outer rewrite of the Calcite template, not an independently invented wildcard.",
+      "resource_dependency": {
+        "key": "CanNotApplyOp2Type",
+        "template": "Cannot apply ''{0}'' to arguments of type {1}. Supported form(s): {2}"
+      }
+    },
+    {
+      "id": "parser.keyword_syntax",
+      "error_type": "Error parsing SQL",
+      "source": "DbspParserImpl.java",
+      "lines": [
+        443,
+        461
+      ],
+      "format": "Incorrect syntax near the keyword '{keyword}'.\n{expected_tokens}",
+      "parameter_contract": "normalizeException builds the keyword diagnostic when allowsIdentifier is true; CompilerMessages.messageWithoutPosition strips only the line/column phrase. ParseException builds the expected-token suffix. Expected-token formatting remains a separate dependency, not arbitrary discarded text.",
+      "other_sources": [
+        "ParseException.java",
+        "message_rendering"
+      ]
+    }
+  ],
+  "reviewed_bodies": [
+    {
+      "error_type": "Compilation error",
+      "message": "Cannot apply indexing to arguments of type <BINARY(0)>[<CHAR(1)>]. Supported form(s): <ARRAY>[<INTEGER>]\n<MAP>[<ANY>]\n<ROW>[<CHARACTER>|<INTEGER>]\n<VARIANT>[<CHARACTER>|<INTEGER>]",
+      "body_sha256": "0fffbfa4ca0b388c91e511114054b8780f65fa64ae1d2d4924ac592753a5f40b",
+      "proposed_template_id": "feldera.indexing_rewrite",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "source": "<BINARY(0)>",
+        "index": "<CHAR(1)>",
+        "tail": ". Supported form(s): <ARRAY>[<INTEGER>]\n<MAP>[<ANY>]\n<ROW>[<CHARACTER>|<INTEGER>]\n<VARIANT>[<CHARACTER>|<INTEGER>]"
+      }
+    },
+    {
+      "error_type": "Compilation error",
+      "message": "Cannot apply indexing to arguments of type <BINARY(1)>[<CHAR(1)>]. Supported form(s): <ARRAY>[<INTEGER>]\n<MAP>[<ANY>]\n<ROW>[<CHARACTER>|<INTEGER>]\n<VARIANT>[<CHARACTER>|<INTEGER>]",
+      "body_sha256": "327838cdd0de258eced12579273bd51737feadbb52767a174bdfc8d7d67d7807",
+      "proposed_template_id": "feldera.indexing_rewrite",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "source": "<BINARY(1)>",
+        "index": "<CHAR(1)>",
+        "tail": ". Supported form(s): <ARRAY>[<INTEGER>]\n<MAP>[<ANY>]\n<ROW>[<CHARACTER>|<INTEGER>]\n<VARIANT>[<CHARACTER>|<INTEGER>]"
+      }
+    },
+    {
+      "error_type": "Compilation error",
+      "message": "Cannot apply indexing to arguments of type <BINARY(1)>[<INTEGER>]. Supported form(s): <ARRAY>[<INTEGER>]\n<MAP>[<ANY>]\n<ROW>[<CHARACTER>|<INTEGER>]\n<VARIANT>[<CHARACTER>|<INTEGER>]",
+      "body_sha256": "cf48fa13b624b1164fe6029a2a89da343bd310d04ab9ce35eeda2e0458c4067d",
+      "proposed_template_id": "feldera.indexing_rewrite",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "source": "<BINARY(1)>",
+        "index": "<INTEGER>",
+        "tail": ". Supported form(s): <ARRAY>[<INTEGER>]\n<MAP>[<ANY>]\n<ROW>[<CHARACTER>|<INTEGER>]\n<VARIANT>[<CHARACTER>|<INTEGER>]"
+      }
+    },
+    {
+      "error_type": "Error parsing SQL",
+      "message": "Incorrect syntax near the keyword 'AS'.\nWas expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \",\" ...\n    \"FROM\" ...\n    \"AS\" \"MEASURE\" ...\n    \"AS\" <IDENTIFIER> ...\n    \"AS\" <HYPHENATED_IDENTIFIER> ...\n    \"AS\" <QUOTED_IDENTIFIER> ...\n    \"AS\" <BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"AS\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"AS\" <QUOTED_STRING> ...\n    \".\" ...\n    \":\" ...\n    \"NOT\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"BETWEEN\" ...\n    \"LIKE\" ...\n    \"ILIKE\" ...\n    \"RLIKE\" ...\n    \"SIMILAR\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"AND\" ...\n    \"OR\" ...\n    \"IS\" ...\n    \"MEMBER\" ...\n    \"SUBMULTISET\" ...\n    \"CONTAINS\" ...\n    \"OVERLAPS\" ...\n    \"^\" ...\n    \"EQUALS\" ...\n    \"&\" ...\n    \"PRECEDES\" ...\n    \"SUCCEEDS\" ...\n    \"IMMEDIATELY\" ...\n    \"MULTISET\" ...\n    \"[\" ...\n    \"FORMAT\" ...\n    \"EXCLUDE\" ...\n    \"EXCEPT\" ...\n    \"REPLACE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"MINUS\" ...\n    \"(\" ...\n    ",
+      "body_sha256": "ce3e0abcf14fbcb0774ae159b0772a1d54241704c1aff726cc99862117a6c0f0",
+      "proposed_template_id": "parser.keyword_syntax",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "keyword": "AS",
+        "expected_tokens": "Was expecting one of:\n    <EOF> \n    \"ORDER\" ...\n    \"LIMIT\" ...\n    \"OFFSET\" ...\n    \"FETCH\" ...\n    \"|>\" ...\n    \";\" ...\n    \",\" ...\n    \"FROM\" ...\n    \"AS\" \"MEASURE\" ...\n    \"AS\" <IDENTIFIER> ...\n    \"AS\" <HYPHENATED_IDENTIFIER> ...\n    \"AS\" <QUOTED_IDENTIFIER> ...\n    \"AS\" <BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    \"AS\" <BRACKET_QUOTED_IDENTIFIER> ...\n    \"AS\" <UNICODE_QUOTED_IDENTIFIER> ...\n    \"AS\" <QUOTED_STRING> ...\n    \".\" ...\n    \":\" ...\n    \"NOT\" ...\n    \"IN\" ...\n    \"<\" ...\n    \"<=\" ...\n    \">\" ...\n    \">=\" ...\n    \"=\" ...\n    \"<>\" ...\n    \"!=\" ...\n    \"BETWEEN\" ...\n    \"LIKE\" ...\n    \"ILIKE\" ...\n    \"RLIKE\" ...\n    \"SIMILAR\" ...\n    \"!\" ...\n    \"~\" ...\n    \"::\" ...\n    \"<=>\" ...\n    \"<<\" ...\n    \"+\" ...\n    \"-\" ...\n    \"*\" ...\n    \"/\" ...\n    \"%\" ...\n    \"||\" ...\n    \"AND\" ...\n    \"OR\" ...\n    \"IS\" ...\n    \"MEMBER\" ...\n    \"SUBMULTISET\" ...\n    \"CONTAINS\" ...\n    \"OVERLAPS\" ...\n    \"^\" ...\n    \"EQUALS\" ...\n    \"&\" ...\n    \"PRECEDES\" ...\n    \"SUCCEEDS\" ...\n    \"IMMEDIATELY\" ...\n    \"MULTISET\" ...\n    \"[\" ...\n    \"FORMAT\" ...\n    \"EXCLUDE\" ...\n    \"EXCEPT\" ...\n    \"REPLACE\" ...\n    \"UNION\" ...\n    \"INTERSECT\" ...\n    \"MINUS\" ...\n    \"(\" ...\n    "
+      }
+    },
+    {
+      "error_type": "Error parsing SQL",
+      "message": "Incorrect syntax near the keyword 'ROLLUP'.\nWas expecting one of:\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+      "body_sha256": "e2178e5f03a04a33f2dade49d0fa262df3dc7340981dc1820c27faf4e7f7d2e3",
+      "proposed_template_id": "parser.keyword_syntax",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "keyword": "ROLLUP",
+        "expected_tokens": "Was expecting one of:\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    "
+      }
+    },
+    {
+      "error_type": "Error parsing SQL",
+      "message": "Incorrect syntax near the keyword 'UUID'.\nWas expecting one of:\n    \"/*+\" ...\n    \"STREAM\" ...\n    \"DISTINCT\" ...\n    \"*\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" <QUOTED_STRING> ...\n    \"UUID\" <BIG_QUERY_QUOTED_STRING> ...\n    \"UUID\" <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    ",
+      "body_sha256": "241a6440247bd4107de9cd2d04c615976b6d0184977cba2a647b3a0948c84606",
+      "proposed_template_id": "parser.keyword_syntax",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "keyword": "UUID",
+        "expected_tokens": "Was expecting one of:\n    \"/*+\" ...\n    \"STREAM\" ...\n    \"DISTINCT\" ...\n    \"*\" ...\n    \"+\" ...\n    \"-\" ...\n    \"INTERVAL\" ...\n    <UNSIGNED_INTEGER_LITERAL> ...\n    <DECIMAL_NUMERIC_LITERAL> ...\n    <APPROX_NUMERIC_LITERAL> ...\n    <BINARY_STRING_LITERAL> ...\n    <PREFIXED_STRING_LITERAL> ...\n    <QUOTED_STRING> ...\n    <UNICODE_STRING_LITERAL> ...\n    <C_STYLE_ESCAPED_STRING_LITERAL> ...\n    <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    <BIG_QUERY_QUOTED_STRING> ...\n    \"NULL\" ...\n    <LBRACE_D> ...\n    <LBRACE_T> ...\n    <LBRACE_TS> ...\n    \"DATE\" ...\n    \"DATETIME\" ...\n    \"TIME\" ...\n    \"UUID\" <QUOTED_STRING> ...\n    \"UUID\" <BIG_QUERY_QUOTED_STRING> ...\n    \"UUID\" <BIG_QUERY_DOUBLE_QUOTED_STRING> ...\n    \"TIMESTAMP\" ...\n    \"?\" ...\n    \"SAFE_CAST\" ...\n    \"TRY_CAST\" ...\n    \"DATE_PART\" ...\n    \"DATEADD\" ...\n    \"DATEDIFF\" ...\n    \"DATEPART\" ...\n    \"NEXT\" ...\n    <LBRACE_FN> ...\n    <IDENTIFIER> ...\n    <HYPHENATED_IDENTIFIER> ...\n    <QUOTED_IDENTIFIER> ...\n    <BACK_QUOTED_IDENTIFIER> ...\n    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> ...\n    <BRACKET_QUOTED_IDENTIFIER> ...\n    <UNICODE_QUOTED_IDENTIFIER> ...\n    \"GROUPING\" ...\n    \"LEFT\" ...\n    \"RIGHT\" ...\n    \"SOME\" ...\n    \"NEW\" ...\n    \"CASE\" ...\n    \"CURRENT\" ...\n    \"CURSOR\" ...\n    \"ROW\" ...\n    \"(\" ...\n    "
+      }
+    },
+    {
+      "error_type": "Floating point equality",
+      "message": "'=' compares floating point values of type DOUBLE for equality.\nSee https://docs.feldera.com/sql/comparisons#comparing-floating-point-values",
+      "body_sha256": "82b9607ee8dbca36dad2d9f8b746d3adad5adae544e39300f333a7e73af33468",
+      "proposed_template_id": "feldera.floating_equality",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "quoted_construct": "'='",
+        "values": "floating point values of type DOUBLE",
+        "suffix": "",
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-floating-point-values"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "'NULLIF' compares ROW values for equality; consider using 'CASE WHEN x IS NOT DISTINCT FROM y THEN NULL ELSE x END' instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "04007b5ccfba0e22e1283cc893b044809c4340da9fda64039e6442cde90bb64e",
+      "proposed_template_id": "feldera.row_comparison.nullif",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ARRAY and MAP values that contain ROW values cannot be compared using '<'.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "b5efb4654675575fb71ae966d15a9e91b58946cf806a5e77c8a4d904b0cd8758",
+      "proposed_template_id": "feldera.row_comparison.container_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'<'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ARRAY and MAP values that contain ROW values cannot be compared using '<='.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "31c7acf13a6b7d749a5be67ee29efce0054aa0e785cf72fceb99e8e0e4c50ce4",
+      "proposed_template_id": "feldera.row_comparison.container_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'<='"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ARRAY and MAP values that contain ROW values cannot be compared using '>='.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "c4865d86e5a5b66116e7f9c3f629e23308116ea0c66d7a278bdd268781c8d9e5",
+      "proposed_template_id": "feldera.row_comparison.container_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'>='"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ARRAY and MAP values that contain ROW values cannot be compared using 'GREATEST'.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "1ec2d48cac8c316b34b3a95eb434b1c604cd5223ca788c9e23b87d478771161e",
+      "proposed_template_id": "feldera.row_comparison.container_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'GREATEST'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using '<'; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "586dc7ecfe7314b4f75b6440113a4feb1fe2fe5ae32bf007bf1de5445dc24f76",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'<'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using '<='; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "bed90b0cdebb424ac8b448c4da94717073ab7c261c2936f5c8ca32260ceeb4da",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'<='"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using '<>'; consider using 'IS DISTINCT FROM' instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "8afc15f8116e1bbdad69d3610b794affd245ac64f011abf04561bf4008d29384",
+      "proposed_template_id": "feldera.row_comparison.not_equal",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'<>'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using '='; consider using 'IS NOT DISTINCT FROM' (or its shorthand '<=>') instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "177cb299358226e6f58865f3d53b7bc4a520916110d8e80a3c36da733aca2ae9",
+      "proposed_template_id": "feldera.row_comparison.equal",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'='"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using '>'; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "14c154e09ec7fe8878353adb06ea714b11eba0d2b6644812cb26610ebf84a343",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'>'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using '>='; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "74f1753e4e642aa6ea4268888f2d1c6fa1c19f666c89713a14a0cd778e4ab068",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'>='"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using 'GREATEST'; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "095a148e90b5b7a5d342076b41af24ab22a7b7b265e2e9cd1068628b2bbd0415",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'GREATEST'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using 'GREATEST_IGNORE_NULLS'; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "2395311d2fec997278ad372897c0957017584ea8b222e878738e48f1489fc94b",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'GREATEST_IGNORE_NULLS'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using 'LEAST'; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "f5ea42afe378c12a5871140a57d5b682a1531d50e2f29cd6771f3d9ee7c2e702",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'LEAST'"
+      }
+    },
+    {
+      "error_type": "Unsupported comparison",
+      "message": "ROW values cannot be compared using 'LEAST_IGNORE_NULLS'; compare their fields instead.\nSee https://docs.feldera.com/sql/comparisons#comparing-row-values",
+      "body_sha256": "706e30aed1f25c6c738a5cb8315f23404f0eb0ca8201f9c64a37459fca52becf",
+      "proposed_template_id": "feldera.row_comparison.row_order",
+      "disposition": "emitting_source_and_outer_template_identified",
+      "observed_arguments": {
+        "citation": "See https://docs.feldera.com/sql/comparisons#comparing-row-values",
+        "operator": "'LEAST_IGNORE_NULLS'"
+      }
+    }
+  ],
+  "reviewed_regex_assertions": [
+    {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.CatalogTests#issue3056",
+      "expected": "Default value for column 'r1' must be a compile-time constant.*Default value for column 'insert_time' must be a compile-time constant",
+      "asserted_literal_fragments": [
+        "Default value for column 'r1' must be a compile-time constant",
+        "Default value for column 'insert_time' must be a compile-time constant"
+      ],
+      "source": "catalog_assertion",
+      "review_basis": "Two literal clauses separated by .*; only the two initializer bodies are required. The separately emitted non-deterministic-UDF body is incidental to this assertion."
+    },
+    {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#timePrecision",
+      "expected": "TIME precision ignored: TIME precision is always TIME\\(9\\); specified precision 1 is ignored",
+      "asserted_literal_fragments": [
+        "TIME precision ignored: TIME precision is always TIME(9); specified precision 1 is ignored"
+      ],
+      "source": "time_assertion",
+      "review_basis": "Only escaped parentheses differ from literal text; the assertion spans error class and body. The additional constant-view warning is incidental."
+    }
+  ],
+  "required_template_count": null,
+  "catalog_reviewed": false,
+  "P0_complete": false,
+  "limitations": [
+    "Eight proposed outer-template identities do not count the full catalog.",
+    "Nested type descriptions, supported-signature lists, documentation citations and expected-token suffixes are retained dependencies.",
+    "Other candidates, 29 connector formatter chains, one geometry-conversion chain, and direct/runtime assertions still require source/catalog review after wrapper extraction."
+  ]
+}

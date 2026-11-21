@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/a-binder-held-out-replay.tar.gz",
+  "bytes": 6563263,
+  "sha256": "4548968e2365d916fccb79d4b211113b5e7a81827a93e06f38bb313dfd2c84bd",
+  "manifest_sha256": "b17bb7e3b28b79e92eb18c4832b93ff89b4d50450865721046a095b227e49f8d",
+  "verified_files": 49,
+  "all_members_verified": true
+}

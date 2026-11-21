@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-cli-scope-20261118-v1.tar.gz",
+  "bytes": 4267,
+  "sha256": "82dad0e9ff6bd4ba4d144d1283bd377343ec14882aa28b7244290bf111933f0b",
+  "manifest_sha256": "ef6803550d7365ed33ced5a8ca66360f55717bb03a9c61c112250832044d2664",
+  "verified_files": 8,
+  "all_members_verified": true
+}

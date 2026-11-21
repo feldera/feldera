@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-identity-maps-20261118-v1.tar.gz",
+  "bytes": 31892024,
+  "sha256": "8f31f4d09c510257577538c7ba4d39b8a53278bbea774d4009ed4dd45c02a74b",
+  "manifest_sha256": "20a5008da631d1c5fbbae900b1352e2b8fec54c7d010cbe6e513b9ed9b2d60a4",
+  "verified_files": 12863,
+  "all_members_verified": true
+}

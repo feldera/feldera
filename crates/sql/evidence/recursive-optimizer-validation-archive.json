@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-recursion-validation-20261118-v1.tar.gz",
+  "bytes": 32453248,
+  "sha256": "f2e98a23d7843851d8eb1ce8f944b8072ae794f05e54ebb361afba818efe919e",
+  "manifest_sha256": "71391f93b4f88ab4775d801cfe0df66ced0bec0787ca3b141502408a3eee35b3",
+  "verified_files": 11463,
+  "all_members_verified": true
+}

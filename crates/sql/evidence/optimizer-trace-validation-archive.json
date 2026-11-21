@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-stray-gc-20261118-v1.tar.gz",
+  "bytes": 27492118,
+  "sha256": "3359cd4f80656bf589a8ebedb38b8699e1f8a9baeead40bf3003ddb3d5443d42",
+  "manifest_sha256": "b55b1bcc69977da075525c036ff84d9465304b22d24524dd696171c7946ed4f1",
+  "verified_files": 14178,
+  "all_members_verified": true
+}

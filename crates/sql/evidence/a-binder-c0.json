@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-c0-archive.json",
+  "source_reference": "type-bindings-archive.json",
+  "scope": "The generated binder A single named projection over a direct table, with the supported scalar function and arithmetic matrices",
+  "probes": 59264,
+  "function_probes": 42880,
+  "arithmetic_probes": 16384,
+  "accepted": 39776,
+  "type_errors": 19488,
+  "warnings": 824,
+  "c0_matches": 59264,
+  "end_position_differences": 0,
+  "wording_differences": 20256,
+  "preserved_prior_binder_results": 59264,
+  "rust_tests_passed": 76,
+  "clippy": "passed",
+  "binary_profile": "debug with debug info disabled",
+  "binary_sha256": "f2847a20d5e4aedad008d5b42d050458a04e7d141ba05da76c8489b777ebbb3c",
+  "limitations": "This assertion does not cover arbitrary SQL, nested type rejections, other warning families, SET policies, or held-out FRel transport."
+}

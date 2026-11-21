@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -28,7 +29,11 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPUnwrapExpression(CalciteObject node, String message, DBSPExpression expression) {
-        super(node, expression.getType().withMayBeNull(false));
+        this(node, message, expression, expression.getType().withMayBeNull(false));
+    }
+
+    private DBSPUnwrapExpression(CalciteObject node, String message, DBSPExpression expression, DBSPType type) {
+        super(node, type);
         this.message = message;
         this.expression = expression;
         Utilities.enforce(expression.getType().mayBeNull);
@@ -119,9 +124,12 @@ public final class DBSPUnwrapExpression extends DBSPExpression {
 
     @SuppressWarnings("unused")
     public static DBSPUnwrapExpression fromJson(JsonNode node, JsonDecoder decoder) {
-        getJsonType(node, decoder);
+        DBSPType type = getJsonType(node, decoder);
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
         String message = Utilities.getStringProperty(node, "message");
-        return new DBSPUnwrapExpression(CalciteObject.EMPTY, message, expression);
+        Utilities.enforce(type.sameType(expression.getType().withMayBeNull(false)));
+        // Other expressions may refer to this exact type definition. Recomputing
+        // an equal type would split that sharing at a replay boundary.
+        return new DBSPUnwrapExpression(CalciteObject.EMPTY, message, expression, type);
     }
 }

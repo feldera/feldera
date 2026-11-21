@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-trace-validation-archive.json",
+  "engines": ["classic", "gen2"],
+  "flat_programs_per_engine": 50,
+  "scheduled_placements": 31,
+  "same_input_pass_comparisons": 3042,
+  "rust_final_compiler_comparisons": 100,
+  "java_codec_final_compiler_controls": 100,
+  "retention_stage_acceptances": 100,
+  "retention_stage_inputs_with_live_retainers": 2,
+  "directed_circuits": 6,
+  "directed_exact_internal_errors": 5,
+  "differences": 0,
+  "scope": "Rust checks retention modes, duplicate keys or values on a trace port, and the presence of a trace-owning consumer. Java supplies two operator type capabilities, preserves the live graph and formats errors with the referenced live operators. The original Java graph-building and dead-code passes remain in the repeat group. The full selection uses flat graphs in set-output mode."
+}

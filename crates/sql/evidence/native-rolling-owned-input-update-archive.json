@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-owned-input-update.tar.gz",
+  "bytes": 42846330,
+  "sha256": "2b7913e0c47bd5a2378f6014f678238f1c281388d72e0af7ef8bfea400dc58fc",
+  "manifest_sha256": "edad95983e5f83fdf32cb79dc5c60b3f0194c2cdff12468172dbc08ef19c4a96",
+  "verified_files": 439,
+  "all_members_verified": true
+}

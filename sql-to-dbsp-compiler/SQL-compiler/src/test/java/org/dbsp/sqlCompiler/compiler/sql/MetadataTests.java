@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.DiagnosticAssertions.Target;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -159,7 +161,7 @@ public class MetadataTests extends BaseSQLTests {
         errorFile.deleteOnExit();
         CompilerMain.runAndReportErrors("--noRust", file.getPath(), "--errors", errorFile.getPath());
         String str = Utilities.readFile(errorFile.getPath());
-        Assert.assertTrue(str.contains("Error parsing SQL"));
+        DiagnosticAssertions.assertContains(Target.RENDERED, "Error parsing SQL", str);
     }
 
     @Test
@@ -477,7 +479,7 @@ public class MetadataTests extends BaseSQLTests {
         // File contains source position information
         Assert.assertTrue(contents.contains("position"));
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        JsonDecoder decoder = new JsonDecoder(compiler.sqlToRelCompiler.typeFactory);
+        JsonDecoder decoder = new JsonDecoder();
         DBSPCircuit result = decoder.decodeOuter(parsed, DBSPCircuit.class);
         Assert.assertNotNull(result);
     }
@@ -680,7 +682,7 @@ public class MetadataTests extends BaseSQLTests {
             Assert.assertEquals(value, on ? lazy : eager, lazyInputMaps(circuit));
             // Test compilers are quiet, which keeps warnings out of messages.toString().
             for (var message : compiler.messages.messages)
-                Assert.assertFalse(message.toString(), message.toString().contains("Unknown setting"));
+                DiagnosticAssertions.assertNotContains(Target.RENDERED, "Unknown setting", message.toString());
         }
     }
 
@@ -744,9 +746,9 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertEquals(2, compiler.messages.warningCount());
         // The list names the visitors that wrapper passes run, not the wrappers
         String messages = compiler.messages.toString();
-        Assert.assertTrue(messages.contains(" RemoveNoops,"));
+        DiagnosticAssertions.assertContains(Target.RENDERED, " RemoveNoops,", messages);
         for (String wrapper : List.of("OptimizeWithGraph", "Conditional", "CircuitRewriter", "CircuitDispatcher"))
-            Assert.assertFalse(wrapper, Pattern.compile("\\b" + wrapper + "\\b").matcher(messages).find());
+            DiagnosticAssertions.assertNoMatch(Target.RENDERED, "\\b" + wrapper + "\\b", messages);
     }
 
     @Test
@@ -786,8 +788,37 @@ public class MetadataTests extends BaseSQLTests {
         skip = t1.getMetadata().skipUnusedColumns;
         Assert.assertNotNull(skip);
         Assert.assertTrue(skip);
-        Assert.assertTrue(compiler.messages.toString().contains(
-                "The per-connector property 'skip_unused_columns' is deprecated;"));
+        DiagnosticAssertions.assertContains(Target.RENDERED,
+                "The per-connector property 'skip_unused_columns' is deprecated;", compiler.messages.toString());
+    }
+
+    @Test
+    public void trimInputWithNestedRow() {
+        DBSPTypeTuple input = this.trimmedInputType("""
+                CREATE TABLE t(a INT, b ROW(w INT, x VARCHAR), c BIGINT);
+                CREATE VIEW v AS SELECT t.b.x FROM t;""");
+        Assert.assertEquals(1, input.size());
+        DBSPTypeTuple nested = input.getFieldType(0).to(DBSPTypeTuple.class);
+        Assert.assertTrue(nested.mayBeNull);
+        Assert.assertEquals(2, nested.size());
+    }
+
+    @Test
+    public void trimAllInputsForCount() {
+        DBSPTypeTuple input = this.trimmedInputType("""
+                CREATE TABLE t(a INT, b BIGINT);
+                CREATE VIEW v AS SELECT COUNT(*) AS n FROM t;""");
+        Assert.assertEquals(0, input.size());
+    }
+
+    private DBSPTypeTuple trimmedInputType(String sql) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.incrementalize = true;
+        compiler.submitStatementsForCompilation(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        IInputOperator input = circuit.getInput(new ProgramIdentifier("t", false));
+        Assert.assertNotNull(input);
+        return input.getDataOutputType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
     }
 
     @Test
@@ -918,9 +949,9 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5');""");
         CompilerMessages messages = CompilerMain.execute("--noRust", file.getPath());
         Assert.assertEquals(1, messages.errorCount());
-        Assert.assertTrue(messages.toString().contains(
+        DiagnosticAssertions.assertContains(Target.RENDERED,
                 "Cannot apply 'myfunction' to arguments of type 'myfunction(<DATE>, <CHAR(1)>)'. " +
-                        "Supported form(s): myfunction(<DATE>, <INTEGER>)"));
+                        "Supported form(s): myfunction(<DATE>, <INTEGER>)", messages.toString());
     }
 
     @Test
@@ -2127,8 +2158,11 @@ public class MetadataTests extends BaseSQLTests {
                         CREATE TABLE T (
                            FOREIGN KEY (a) REFERENCES UNKNOWN(a)
                         );""",
-                "Table 'unknown', referred in " +
-                        "FOREIGN KEY constraint of table 't', does not exist");
+                new Warning("Table not found", 2, 31, """
+                        2|   FOREIGN KEY (a) REFERENCES UNKNOWN(a)
+                                                        ^^^^^^^
+                        3|);
+                    """));
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    FOREIGN KEY (a) REFERENCES S(a)

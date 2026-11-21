@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "bounded nullable BIGINT native batch projection integrated with a manually assembled incremental DBSP join and linear aggregate",
+  "raw_directory": "$SCRATCH/p0-native-dbsp-v4",
+  "rust_tests": 3,
+  "clippy": true,
+  "production_dependencies_changed": false,
+  "runtime_executed": true,
+  "SQL_corpus_programs": 0,
+  "cases": [
+    "exact signed-weight and NULL preservation; invalid schema and native overflow",
+    "three DBSP transactions with duplicate inserts, NULL keys/values, left and right retractions",
+    "65537 rows spanning two native ABI chunks; overflow position 65536"
+  ],
+  "sources": {
+    "crates/sql/native-dbsp-probe/Cargo.lock": "ae849346e359db8e1fcd6022347d6531a236eab6fe5badcef87138108abd089f",
+    "crates/sql/native-dbsp-probe/Cargo.toml": "caab91248b42a961c7ccca31a52aead6d2acc9b6abfc172adda093cc0eb8d85c",
+    "crates/sql/native-dbsp-probe/README.md": "e45519fb6f0b00c75aea20874c567c43df6a22ea7c354d880c37e5951f6bce06",
+    "crates/sql/native-dbsp-probe/src/lib.rs": "356732d0248069fadf9bd0341ef499913849fc2e6e5583311a2bfed069fe829a",
+    "crates/sql/native-dbsp-probe/tests/circuits.rs": "4bb4aaa07c67d7edd7fd27f1b521cdf49beec15df1340433e314cfc41e6d6739"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-native-dbsp-v4/cargo-metadata.json": "bbd8a4ec0ecd3ce534becc97849f6f14b461ab536d5ee354e5bbef7a3835833a",
+    "$SCRATCH/p0-native-dbsp-v4/circuits": "9c42b2bf910aa957fd03f2c5b87d430d1951caf4b273d273d79ceccead1efbd7",
+    "$SCRATCH/p0-native-dbsp-v4/command-0.log": "0281bf922c778105181b44cdfd9ec2a747e592cd7bb3b6b77dfe9da199064be3",
+    "$SCRATCH/p0-native-dbsp-v4/command-1.log": "299f16a2c523be18fef769975d2df00e0505521db047540feea3a74b94666887",
+    "$SCRATCH/p0-native-dbsp-v4/commands.json": "21f48137037ca2e0647133d962b9d94331113e317ce337b52a62d4e61f8942ce",
+    "$SCRATCH/p0-native-dbsp-v4/complete.json": "7a11857a66e7fc33e14cc17a4f67106459f52aba7f4ad9d38d317ec79f643c04",
+    "$SCRATCH/p0-native-dbsp-v4/dependency-sources.json": "e8b3223d536b57e25937b39b7c9164ada581a94d22002493c091e27047930a3f",
+    "$SCRATCH/p0-native-dbsp-v4/metadata-command.json": "e3b1690b21a20fe1b3bfd465b50aee95f5235f5b3155cf8d5f48fc38e0580101",
+    "$SCRATCH/p0-native-dbsp-v4/snapshot-retry.json": "dde47be438279a6cb604f7be63b8016192b6b234ac7395d924dac989ee974c69"
+  },
+  "dependency_source_files": 458,
+  "environment": {
+    "CARGO_HOME": "$CARGO_HOME",
+    "CARGO_TARGET_DIR": "$SCRATCH/sql-difftest-target",
+    "CARGO_BUILD_JOBS": "3"
+  },
+  "retained_failed_attempts": [
+    "$SCRATCH/p0-native-dbsp-v1 (stateful spine merger requires a DBSP runtime)",
+    "$SCRATCH/p0-native-dbsp-v2 (initial expected values incorrectly retained zero linear-sum totals)"
+  ],
+  "limitations": [
+    "Not N1 ten-program SQL/C7 acceptance, SQL SUM semantics, or SQL-to-circuit lowering.",
+    "Vec<Option<i64>> uses existing DBSP Data and archive support, not a native custom row layout or proof of generated-tuple archive/checkpoint compatibility.",
+    "Strings, decimals, connector input and complete dynamic-operator availability remain open.",
+    "Native errors become test assertions in the circuit; transactional production error propagation remains open.",
+    "No throughput, RSS or compile-time comparison is claimed from this concurrent correctness run."
+  ]
+}

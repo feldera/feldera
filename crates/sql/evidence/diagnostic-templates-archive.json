@@ -1,0 +1,21 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-diagnostic-templates-20261118-v1.tar.gz",
+  "sha256": "486564a596a60a66fb54975824123669d437ef79bdb52e867551b49f04898068",
+  "bytes": 30808077,
+  "certificates": [
+    "diagnostic-templates.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "diagnostic-templates.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-diagnostic-templates-v2/sources/"
+      }
+    ]
+  },
+  "scope": "source-expression candidates for the recorded Java diagnostics and Python expectations",
+  "P0_complete": false
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-count-artifact.tar.gz",
+  "bytes": 86486455,
+  "sha256": "2b8979602e46cde6b66c35d381a6f6a7689b7396fa8baa54a62cc2b20ec360ee",
+  "manifest_sha256": "357897e456024ffb008b99bd1369346bdcebdca8b4f2d91878f0dbb14da6c559",
+  "verified_files": 63,
+  "all_members_verified": true
+}

@@ -1,0 +1,34 @@
+{
+  "scope": "Keyed LEFT JOIN reduction against the right-input key facts observed during uninterrupted Java optimization.",
+  "comparator_sha256": "ac1ace55240b273db693800081a96ff0481e8a313c73d8207ea4dcccfbeff604",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "630646483bed003ca8470bf130bdebb10f991f88c5b9c8da9c0ff25003c8f312"
+    ],
+    "pass": "RemoveUselessLeftJoinsVisitor",
+    "invocations": 8571,
+    "changed": 7,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "2a7f07f179d731d5ed5b8dea397e77d66fdd7124635b2d8d2dfd05889b46bf00"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "26ca853fa01658080fb23e89764e0573a8c78e82deec54d219d9c65b8dc7e5d7"
+    ],
+    "pass": "RemoveUselessLeftJoinsVisitor",
+    "invocations": 8527,
+    "changed": 6,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "bc769df58722e46aa1cd6ede6bc5ee0b6d8bf40ac3b5ae1812fdc1978df81c74"
+    ]
+  }
+}

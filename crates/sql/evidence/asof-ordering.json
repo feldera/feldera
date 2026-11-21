@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "producer": "c6ede756d-p0-stream-v3",
+  "full_three_capture_run_complete": false,
+  "interruption": "VM disk I/O errors and kernel panic during third capture",
+  "completed_capture_vs_baseline": {
+    "schema_version": 1,
+    "cases": 8571,
+    "observations": 3503220,
+    "equal": false,
+    "schema_differences": 0,
+    "diagnostic_differences": 0,
+    "shards": [
+      {
+        "equal": true,
+        "cases": 1429,
+        "observations": 580581,
+        "capture_transparency": true,
+        "differences": [],
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      {
+        "equal": false,
+        "cases": 1429,
+        "observations": 586572,
+        "capture_transparency": true,
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2502/0",
+            "fields": [
+              "hash_inputs",
+              "rust"
+            ]
+          }
+        ],
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      {
+        "equal": false,
+        "cases": 1429,
+        "observations": 583452,
+        "capture_transparency": true,
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue7227/0",
+            "fields": [
+              "hash_inputs",
+              "rust"
+            ]
+          }
+        ],
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      {
+        "equal": true,
+        "cases": 1428,
+        "observations": 585824,
+        "capture_transparency": true,
+        "differences": [],
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      {
+        "equal": true,
+        "cases": 1428,
+        "observations": 582499,
+        "capture_transparency": true,
+        "differences": [],
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      },
+      {
+        "equal": false,
+        "cases": 1428,
+        "observations": 584292,
+        "capture_transparency": true,
+        "differences": [
+          {
+            "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/13",
+            "fields": [
+              "hash_inputs",
+              "rust"
+            ]
+          }
+        ],
+        "exported_schema_differences": [],
+        "exported_diagnostic_differences": []
+      }
+    ]
+  },
+  "generated_file_differences": [
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.simple.IncrementalRegressionTests#issue2502/0",
+      "same_generated_file_paths": true,
+      "changed_files": [
+        "crates/feldera_pipe_x_main/src/lib.rs"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.StreamingTests#issue7227/0",
+      "same_generated_file_paths": true,
+      "changed_files": [
+        "crates/feldera_pipe_x_main/src/lib.rs"
+      ]
+    },
+    {
+      "id": "org.dbsp.sqlCompiler.compiler.sql.streaming.JoinGCIncrementalTests#sameOutputWithoutLateness/13",
+      "same_generated_file_paths": true,
+      "changed_files": [
+        "crates/feldera_pipe_x_main/src/lib.rs"
+      ]
+    }
+  ],
+  "first_observed_divergences": [
+    {
+      "case": 0,
+      "first_difference": [
+        {
+          "file": "000437.json",
+          "observation": {
+            "stage": "S4",
+            "sequence": 437,
+            "path": [
+              {
+                "container": "Optimizer",
+                "pass": "LowerAsof",
+                "index": 67,
+                "iteration": 0
+              },
+              {
+                "container": "LowerAsof",
+                "pass": "OrderGcDependencies",
+                "index": 3,
+                "iteration": 0
+              }
+            ]
+          },
+          "comparison": "",
+          "stderr": "/circuit/inner/177/name: values or JSON types differ\n"
+        }
+      ],
+      "differences": 4
+    },
+    {
+      "case": 1,
+      "first_difference": [
+        {
+          "file": "000404.json",
+          "observation": {
+            "stage": "S4",
+            "sequence": 404,
+            "path": [
+              {
+                "container": "Optimizer",
+                "pass": "LowerAsof",
+                "index": 67,
+                "iteration": 0
+              },
+              {
+                "container": "LowerAsof",
+                "pass": "OrderGcDependencies",
+                "index": 3,
+                "iteration": 0
+              }
+            ]
+          },
+          "comparison": "",
+          "stderr": "/circuit/inner/1898/name: values or JSON types differ\n"
+        }
+      ],
+      "differences": 4
+    },
+    {
+      "case": 2,
+      "first_difference": [],
+      "differences": 0
+    }
+  ],
+  "cause": "LowerAsof iterated an identity-keyed HashMap when adding GC dependency edges; edge order breaks topological-sort ties.",
+  "repair": "Preserve traversal order with LinkedHashMap for the original GC mapping.",
+  "regression": {
+    "test": "CircuitDumpTests.asofGcOrderDoesNotDependOnObjectIdentity",
+    "before": "fails on attempt 2",
+    "after": "passes all 12 compilations"
+  },
+  "post_fix_full_corpus": {
+    "status": "passed",
+    "cases": 8571,
+    "jvm_runs": 24,
+    "observations_per_capture": 3503220,
+    "report": "classic-determinism.json"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-resource-calibration-cpu-hour-20261118-v1.tar.gz",
+  "bytes": 6649801,
+  "sha256": "93485625faa65adc212eaff2739ed8cf46b8da106aef2ea2e46a0649bae94873",
+  "manifest_sha256": "63798474cef9e7e1631a536cd2aefaa1708cac4cf7d3fdde709e68e4e9739769",
+  "verified_files": 25,
+  "all_members_verified": true
+}

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-nine-pass-detached-tail-20261118-v1.tar.gz",
+  "bytes": 2360072,
+  "sha256": "f69ef8ec4aa3bd12f800d2f52f7dcc02626256d3a7d7efc3a65563d25e9039dc",
+  "manifest_sha256": "3e16764ce6dc5ebd59f0ccdbc89bbd724251fdb64ed9b39a54a5830e2da95047",
+  "verified_files": 303,
+  "all_members_verified": true
+}

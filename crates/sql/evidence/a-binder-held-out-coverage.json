@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "scope": "All frozen D1 identities audited against available scoped binder observations. Unavailable and out-of-scope records are counted separately.",
+  "archive_index": "a-binder-held-out-coverage-archive.json",
+  "population": {
+    "development": {
+      "population": 8341,
+      "replayed": 8323,
+      "scope_refusals": 8303,
+      "structured_rejections": 1,
+      "c0_equal": 12,
+      "c0_differences": 8,
+      "transport_unavailable": 18,
+      "emitted_schema": 19,
+      "c1a_equal": 19
+    },
+    "held_out": {
+      "population": 1563,
+      "replayed": 1563,
+      "scope_refusals": 1556,
+      "structured_rejections": 3,
+      "c0_equal": 3,
+      "c0_differences": 4,
+      "emitted_schema": 4,
+      "c1a_equal": 4,
+      "full_program_replay": 2
+    }
+  },
+  "input_sha256": "4d26807cf2067627d00df32939d85767a22bcc11320ce0ec7ec4a9d743875403",
+  "scoped_binder_output_sha256": "f1bda8826e04a85d126543fbad7d5e1750f52729fabc42da8da77bda43f37c40",
+  "untouched_holdout": false
+}

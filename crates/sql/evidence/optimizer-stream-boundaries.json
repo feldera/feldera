@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-stream-boundaries-archive.json",
+  "scope": "Rust replaces the guarded system-clock table removal and the initial IncrementalizeVisitor pass in flat compiler graphs.",
+  "clock_table": {
+    "programs_compared": 204,
+    "rust_final_results_equal": 204,
+    "java_codec_controls_equal": 204,
+    "invoked_passes": 198,
+    "exact_graphs_equal": 198,
+    "removed_clock_sources": 198,
+    "skipped_under_the_original_predicate": 6
+  },
+  "incrementalization": {
+    "programs_compared": 100,
+    "rust_final_results_equal": 100,
+    "java_codec_controls_equal": 100,
+    "exact_graphs_equal": 100,
+    "active_rewrites": 100
+  },
+  "combined_incremental_matrix": {
+    "scheduled_placements": 39,
+    "programs_per_engine": 50,
+    "rust_final_results_equal": 100,
+    "java_codec_controls_equal": 100
+  },
+  "rust_tests_passed": 33,
+  "clippy": "passed",
+  "remaining_scope": "Java evaluates the original temporal predicate, rewrites active temporal expressions and still owns the unported optimizer prefix and tail."
+}

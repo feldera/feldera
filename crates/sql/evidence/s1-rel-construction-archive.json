@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-s1-rel-construction-20261117-v1.tar.gz",
+  "sha256": "b8f1d2cb2cdc094de36b4bde50062c2aa2566a5f9eddbb48e33b0ef6a862c8ad",
+  "bytes": 54330208,
+  "certificates": [
+    "s1-rel-construction.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "s1-rel-construction.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-rel-construction-v4/sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "s1-rel-construction.json": "path-space-hex-sha256-newline"
+  },
+  "scope": "Reconstructed relational nodes with shared expressions and placeholder scan tables",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/s1-rel-construction-archive.json"
+}

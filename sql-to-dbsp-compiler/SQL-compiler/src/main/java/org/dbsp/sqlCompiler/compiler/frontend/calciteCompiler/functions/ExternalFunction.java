@@ -43,6 +43,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 /** Represents a function that is implemented by the user in Rust */
@@ -58,6 +59,8 @@ public class ExternalFunction extends SqlFunction {
     public DBSPType structReturnType = null;
     @Nullable
     public final RexNode body;
+    /** Generated SQL whose coordinates the body retains; diagnostic data only. */
+    @Nullable public final String bodySource;
 
     public static final String JSONSTRING_AS = "jsonstring_as_";
 
@@ -98,12 +101,28 @@ public class ExternalFunction extends SqlFunction {
 
     public ExternalFunction(SqlIdentifier name, RelDataType returnType,
                             List<RelDataTypeField> parameters, @Nullable RexNode body, boolean generated) {
-        super(name.getSimple(), SqlKind.OTHER_FUNCTION, ReturnTypes.explicit(returnType),
-                createTypeInference(parameters), createTypeChecker(name.getSimple(), parameters),
+        this(name.getSimple(), CalciteObject.create(name), new SourcePositionRange(name.getParserPosition()),
+                returnType, parameters, body, generated);
+    }
+
+    /** Construct an already resolved function without retaining a parser AST.
+     * The DBSP return-type cache starts empty and is derived by TypeCompiler. */
+    public ExternalFunction(String name, CalciteObject node, SourcePositionRange position,
+                            RelDataType returnType, List<RelDataTypeField> parameters,
+                            @Nullable RexNode body, boolean generated) {
+        this(name, node, position, returnType, parameters, body, generated, null);
+    }
+
+    public ExternalFunction(String name, CalciteObject node, SourcePositionRange position,
+                            RelDataType returnType, List<RelDataTypeField> parameters,
+                            @Nullable RexNode body, boolean generated, @Nullable String bodySource) {
+        super(name, SqlKind.OTHER_FUNCTION, ReturnTypes.explicit(returnType),
+                createTypeInference(parameters), createTypeChecker(name, parameters),
                 SqlFunctionCategory.USER_DEFINED_FUNCTION);
-        this.node = CalciteObject.create(name);
-        this.position = new SourcePositionRange(name.getParserPosition());
+        this.node = node;
+        this.position = position;
         this.body = body;
+        this.bodySource = bodySource;
         this.returnType = returnType;
         this.parameterList = parameters;
         this.generated = generated;
@@ -148,14 +167,27 @@ public class ExternalFunction extends SqlFunction {
         }
     }
 
+    /** SQL parameter references are positional after binding. Keep legal names,
+     * and give quoted SQL names that Rust cannot use collision-free local names. */
+    private List<DBSPParameter> rustParameters(TypeCompiler typeCompiler) {
+        List<DBSPParameter> parameters = new ArrayList<>();
+        var names = new HashSet<>(Linq.map(this.parameterList, RelDataTypeField::getName));
+        for (RelDataTypeField param: this.parameterList) {
+            String name = param.getName();
+            if (!Utilities.isLegalRustIdentifier(name)) {
+                name = "__feldera_arg_" + parameters.size();
+                while (!names.add(name))
+                    name += "_";
+            }
+            DBSPType type = typeCompiler.convertType(this.position, param.getType(), false);
+            parameters.add(new DBSPParameter(name, type));
+        }
+        return parameters;
+    }
+
     /** Get the declaration of an external function */
     public DBSPFunction getDeclaration(TypeCompiler typeCompiler) {
-        List<DBSPParameter> parameters = new ArrayList<>();
-        for (RelDataTypeField param: this.parameterList) {
-            DBSPType type = typeCompiler.convertType(this.position, param.getType(), false);
-            DBSPParameter p = new DBSPParameter(param.getName(), type);
-            parameters.add(p);
-        }
+        List<DBSPParameter> parameters = this.rustParameters(typeCompiler);
         DBSPType returnType = typeCompiler.convertType(SourcePositionRange.INVALID, this.returnType, false);
         // Must wrap the return type in a Result
         returnType = new DBSPTypeResult(returnType);
@@ -165,12 +197,7 @@ public class ExternalFunction extends SqlFunction {
     @Nullable
     public DBSPFunction getImplementation(TypeCompiler typeCompiler, DBSPCompiler compiler) {
         if (this.body != null) {
-            List<DBSPParameter> parameters = new ArrayList<>();
-            for (RelDataTypeField param: this.parameterList) {
-                DBSPType type = typeCompiler.convertType(this.position, param.getType(), false);
-                DBSPParameter p = new DBSPParameter(param.getName(), type);
-                parameters.add(p);
-            }
+            List<DBSPParameter> parameters = this.rustParameters(typeCompiler);
             FunctionBodyGenerator generator = new FunctionBodyGenerator(compiler, parameters);
             DBSPType returnType = typeCompiler.convertType(this.position, this.returnType, false);
             DBSPExpression functionBody = generator.compile(this.body);

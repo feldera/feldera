@@ -1,0 +1,14 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-type-binding-evidence-20261118-v1.tar.gz",
+  "archive_root": "p0-type-binding-evidence-20261118-v1",
+  "sha256": "9a7e2cd2aff46c049b334101f55f1556bd5c683a81add94e47d7961f394c59f0",
+  "bytes": 112317448,
+  "verified_files": 3364,
+  "manifest": "MANIFEST.sha256.json",
+  "manifest_sha256": "30fed30f9bc9c248fd673eab26b2184041010bdb1be6143ad1c065effb7a4107",
+  "all_members_verified": true,
+  "adjudication": "adjudication.json",
+  "P0_complete": false
+}

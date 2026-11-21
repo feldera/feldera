@@ -1,0 +1,347 @@
+{
+  "schema_version": 1,
+  "scope": "remaining raw-parser error positions; column-level attribution for invalid LATENESS and actual cursor for malformed joins",
+  "raw_directory": "$SCRATCH/p0-parser-remaining-positions-v1",
+  "prior_certificate": "parser-error-positions.json",
+  "sources": {
+    "crates/sql/parser-probe/src/v064/lateness.rs": "eb24b6816e7e362b94a31e17f2a9138a35f529f50779d948ba12a801bca70a01",
+    "crates/sql/parser-probe/src/v064/reject.rs": "4e747fd34a64b821bbf19c3307a0c3d1c0679d5860feaf58eda1a8b35104b89f",
+    "crates/sql/parser-probe/vendor/sqlparser/src/parser/mod.rs": "c97657e5f8f4170eaf6a062389af69f5a3d30c84b9d2515ba269249fe610dc84",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA.patch": "dae7531e946863d7762a686d6b078379e42372096ebcfca2ee0118a0c94023af",
+    "crates/sql/parser-probe/vendor/sqlparser/FELDERA-PROVENANCE.json": "14b5068a9853ca94e67737dec1a1be15f9152144df82af6651d6beaa18e3dc68"
+  },
+  "parser_binary_sha256": "057f19c964f23b1a48011a6279cb032357de5b9ec41115f55a10a95d4a3188e4",
+  "comparisons": {
+    "corpus": {
+      "raw": "$SCRATCH/p0-parser-remaining-positions-v1/corpus-comparison.json",
+      "sha256": "1a10ee066990ce0e82a6b00c1458578929cbd7b5c41f0cdb38f4d6ae1a0b6052",
+      "cases": 8571,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 31127,
+          "accepted_submissions": 31127,
+          "accepted_cases": 5807,
+          "java_only": 2888,
+          "rejected_submissions": 2888,
+          "rejected_cases": 2764
+        },
+        "0.62.0/generic": {
+          "both_accept": 31317,
+          "accepted_submissions": 31317,
+          "accepted_cases": 5978,
+          "java_only": 2698,
+          "rejected_submissions": 2698,
+          "rejected_cases": 2593
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 33894,
+          "accepted_submissions": 33894,
+          "accepted_cases": 8450,
+          "java_only": 121,
+          "rejected_submissions": 121,
+          "rejected_cases": 121
+        },
+        "0.64.0/generic": {
+          "both_accept": 33308,
+          "accepted_submissions": 33308,
+          "accepted_cases": 7876,
+          "java_only": 707,
+          "rejected_submissions": 707,
+          "rejected_cases": 695
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {},
+        "0.62.0/generic": {},
+        "0.64.0/feldera_prototype": {},
+        "0.64.0/generic": {}
+      },
+      "evidence_sha256": {
+        "rust_cases": "f9ab96a51f71b5ee7775eef45e44140d9c637a53ba600234badaec60ad99916b",
+        "java_cases": "df08b1751c61cd7187edc1f8fc359387735a4bf73fd2d3b2611190e46f16f5fb",
+        "rust_completion": "17e3d1dcc6df72388ea58918a4075bc1b4533564f60311852ae2fa23f93f7fad",
+        "java_completion": "ef46fcd9f729be0aa0a1fe639bc0d9c38bdd42f8f771fd7c52f36714797b310b",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    },
+    "keywords": {
+      "raw": "$SCRATCH/p0-parser-remaining-positions-v1/keywords-comparison.json",
+      "sha256": "4e3776e08212175c3c705a73dda648c2ed6adfdf43782dec43c217a0693bcc75",
+      "cases": 13660,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13651,
+          "accepted_cases": 13651,
+          "rust_only": 504,
+          "java_only": 3,
+          "rejected_submissions": 9,
+          "rejected_cases": 9,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 13147,
+          "accepted_submissions": 13147,
+          "accepted_cases": 13147,
+          "both_reject": 510,
+          "rejected_submissions": 513,
+          "rejected_cases": 513,
+          "java_only": 3
+        },
+        "0.64.0/generic": {
+          "both_accept": 13144,
+          "accepted_submissions": 13647,
+          "accepted_cases": 13647,
+          "rust_only": 503,
+          "java_only": 6,
+          "rejected_submissions": 13,
+          "rejected_cases": 13,
+          "both_reject": 7
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 504,
+          "different": 6
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 510,
+          "different": 410,
+          "equal": 100
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 510,
+          "rust_accepts": 503,
+          "different": 7
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "07d7bee12ea7c1f8bca52be435464b9d331b570f0660d288ca16d5c76c006d20",
+        "java_cases": "4b0f4ec67e43ae0efad3de86ee43ee52fc463e6f8bd2f1976cfe5e989e62bb34",
+        "rust_completion": "ec15653d876e1f68e5d1e49a024775995d374911413c45ab662294398c47321d",
+        "java_completion": "e6b85ff16c9dfcb4ea6138b2965433208207f0a53cc4a3b6d5a35796f5ed1660",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    },
+    "adversarial": {
+      "raw": "$SCRATCH/p0-parser-remaining-positions-v1/adversarial-comparison.json",
+      "sha256": "d25d388c51f23a7e36a038679217457eb8193aba99196ef062702668f5851247",
+      "cases": 436,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "both_accept": 89,
+          "accepted_submissions": 167,
+          "accepted_cases": 167,
+          "rust_only": 78,
+          "java_only": 136,
+          "rejected_submissions": 269,
+          "rejected_cases": 269,
+          "both_reject": 133
+        },
+        "0.62.0/generic": {
+          "both_accept": 127,
+          "accepted_submissions": 229,
+          "accepted_cases": 229,
+          "rust_only": 102,
+          "java_only": 98,
+          "rejected_submissions": 207,
+          "rejected_cases": 207,
+          "both_reject": 109
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 198,
+          "accepted_submissions": 198,
+          "accepted_cases": 198,
+          "java_only": 27,
+          "rejected_submissions": 238,
+          "rejected_cases": 238,
+          "both_reject": 211
+        },
+        "0.64.0/generic": {
+          "both_accept": 131,
+          "accepted_submissions": 238,
+          "accepted_cases": 238,
+          "rust_only": 107,
+          "java_only": 94,
+          "rejected_submissions": 198,
+          "rejected_cases": 198,
+          "both_reject": 104
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 211,
+          "rust_accepts": 78,
+          "equal": 28,
+          "different": 98,
+          "java_position_missing": 1,
+          "rust_position_missing": 6
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 211,
+          "rust_accepts": 102,
+          "equal": 23,
+          "different": 78,
+          "rust_position_missing": 7,
+          "java_position_missing": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 211,
+          "different": 83,
+          "equal": 125,
+          "java_position_missing": 3
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 211,
+          "rust_accepts": 107,
+          "equal": 22,
+          "different": 74,
+          "rust_position_missing": 7,
+          "java_position_missing": 1
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "ec55c9b0b704a05deea4a89ea6736f4a3829bac5da09fec646c6e963202e541e",
+        "java_cases": "85645cfcac96d4053e8b4c2e8369b1c3b799b294fc843aacdea6322f6776e4a7",
+        "rust_completion": "387d0e10c4c5d4d2ad76a1622dcfcba90d05a4d19fd9a93534c37081c998bbd6",
+        "java_completion": "bebc75cbb1d482a5647a1fba3767157429fb63761bc670805a68c7e7e19f2b61",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    },
+    "diagnostics": {
+      "raw": "$SCRATCH/p0-parser-remaining-positions-v1/diagnostics-comparison.json",
+      "sha256": "539e968dd7037acd3bf63e6c7339d9c0d9c7046d2c0d1dfa9aeb0ac7d9bea20a",
+      "cases": 1143,
+      "counts": {
+        "0.62.0/feldera_prototype": {
+          "java_only": 677,
+          "rejected_submissions": 683,
+          "rejected_cases": 682,
+          "both_accept": 1355,
+          "accepted_submissions": 1363,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.62.0/generic": {
+          "java_only": 676,
+          "rejected_submissions": 682,
+          "rejected_cases": 682,
+          "both_accept": 1356,
+          "accepted_submissions": 1364,
+          "accepted_cases": 461,
+          "rust_only": 8,
+          "both_reject": 6
+        },
+        "0.64.0/feldera_prototype": {
+          "both_accept": 2023,
+          "accepted_submissions": 2023,
+          "accepted_cases": 1120,
+          "java_only": 9,
+          "rejected_submissions": 23,
+          "rejected_cases": 23,
+          "both_reject": 14
+        },
+        "0.64.0/generic": {
+          "java_only": 639,
+          "rejected_submissions": 645,
+          "rejected_cases": 645,
+          "both_accept": 1393,
+          "accepted_submissions": 1401,
+          "accepted_cases": 498,
+          "rust_only": 8,
+          "both_reject": 6
+        }
+      },
+      "positions": {
+        "0.62.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.62.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        },
+        "0.64.0/feldera_prototype": {
+          "java_rejected_submissions": 14,
+          "java_position_missing": 2,
+          "equal": 10,
+          "different": 2
+        },
+        "0.64.0/generic": {
+          "java_rejected_submissions": 14,
+          "rust_accepts": 8,
+          "equal": 5,
+          "different": 1
+        }
+      },
+      "evidence_sha256": {
+        "rust_cases": "2245969492cb075f53e1cdec2b1372c8926db20e1285f024007cb75d871eaf40",
+        "java_cases": "adf763b4c5816319970f55a0c17346af332c71336ac084fd4f012008fe4e2cd7",
+        "rust_completion": "6847c63ec79bdcb9866e937ad3d3048db16133476b6296c8e87fed7eeec429b5",
+        "java_completion": "8bfc9d3ff5f7c9dca862d690d868dfc19676706c622ded8ca634f183a6b4dfe7",
+        "comparison": "0ee01e3fcea6ed9b853bd870d6b661f6b9090ae35681caae6026cd2b4e768b31"
+      }
+    }
+  },
+  "preservation": {
+    "corpus": {
+      "submissions": 34015,
+      "unchanged_stock_measurements": 102045,
+      "unchanged_accepted_custom_measurements": 33894,
+      "unchanged_custom_verdicts": 34015,
+      "changed_custom_errors": 0
+    },
+    "keywords": {
+      "submissions": 13660,
+      "unchanged_stock_measurements": 40980,
+      "unchanged_accepted_custom_measurements": 13147,
+      "unchanged_custom_verdicts": 13660,
+      "changed_custom_errors": 0
+    },
+    "adversarial": {
+      "submissions": 436,
+      "unchanged_stock_measurements": 1308,
+      "unchanged_accepted_custom_measurements": 198,
+      "unchanged_custom_verdicts": 436,
+      "changed_custom_errors": 6
+    },
+    "diagnostics": {
+      "submissions": 2046,
+      "unchanged_stock_measurements": 6138,
+      "unchanged_accepted_custom_measurements": 2023,
+      "unchanged_custom_verdicts": 2046,
+      "changed_custom_errors": 0
+    }
+  },
+  "tests": {
+    "rust": 43,
+    "clippy": true
+  },
+  "limitations": [
+    "LATENESS option spans are absent upstream; diagnostics identify their column declarations.",
+    "No full AST-span or S1 semantic comparison.",
+    "UTF-16/Unicode-scalar column units remain unnormalized."
+  ],
+  "complete": true
+}

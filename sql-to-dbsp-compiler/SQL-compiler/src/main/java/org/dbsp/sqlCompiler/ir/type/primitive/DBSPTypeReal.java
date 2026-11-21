@@ -112,6 +112,9 @@ public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
     @SuppressWarnings("unused")
     public static DBSPTypeReal fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return DBSPTypeReal.create(mayBeNull);
+        if (JsonDecoder.useSingleton(node))
+            return DBSPTypeReal.create(mayBeNull);
+        // Each ordinary definition has its own identity; only references share it.
+        return new DBSPTypeReal(CalciteObject.EMPTY, mayBeNull);
     }
 }

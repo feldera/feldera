@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-correlation-aggregate-calls-20261119.tar.gz",
+  "bytes": 80932594,
+  "sha256": "ce44ff5d23cec1deeeaf4487edd1da4df9857cc4355f37ce6f84829da9c6ec83",
+  "manifest_sha256": "84c974b594db66731514756e4a315b886d8ac769f4e615a8bcb553ca7799459c",
+  "verified_files": 374,
+  "all_members_verified": true
+}

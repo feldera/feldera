@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "status": "complete for this runtime vector suite",
+  "archive_index": "type-values-archive.json",
+  "oracle": "independent Rust bag predictions compared with Java-generated Rust on DBSP",
+  "programs": 9,
+  "transactions": 36,
+  "java_test_failures": 0,
+  "generated_rust_tests_passed": 9,
+  "operations": [
+    "equality",
+    "ordering",
+    "IN",
+    "BETWEEN",
+    "CASE",
+    "casted join key",
+    "UNION ALL",
+    "INTERSECT ALL",
+    "EXCEPT ALL"
+  ],
+  "full_c7_verified": false
+}

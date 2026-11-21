@@ -1,0 +1,88 @@
+{
+  "scope": "BuildNestedOperators at its exit in uninterrupted Java compilation. Compares the generated-name counter, graph, expression sharing and provenance.",
+  "jar_sha256": "db544e6da140634341a37d6437a79968378dc6d1f922739e6d9c63cd6486fe24",
+  "comparator_sha256": "cf5310fe97cd2f351fb42f2e212ebe368d003a393d092ce06f796e463bd2c669",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "2d49a4c61672560fa9cd612b7571a9fc8e7e8b58f97ade68f744c2f234f7455a"
+    ],
+    "pass": "BuildNestedOperators",
+    "invocations": 8571,
+    "changed": 30,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "1a5a20acf28606d1da379550ce8f7de0bd836b0229296e8a18972cbc9cab1980"
+    ],
+    "pass": "BuildNestedOperators",
+    "invocations": 8527,
+    "changed": 29,
+    "cases_without_placement": 0
+  },
+  "diagnostics": {
+    "program": "MetadataTests.latenessOnRecursiveViewRejected",
+    "compiler_jar_sha256": "255eba6020388c6554fc16fb8e25651b461ac525dc5a02371fe5b64b0f20e376",
+    "optimizer_library_sha256": "95d1e139446782bec114d02ee83d37594f6899a0d7ccdff1e5a98f3e6a4c20a1",
+    "messages": {
+      "classic": {
+        "a": [
+          {
+            "start_line_number": 4,
+            "start_column": 1,
+            "end_line_number": 4,
+            "end_column": 54,
+            "warning": false,
+            "error_type": "Compilation error",
+            "message": "LATENESS on views inside recursive components is not supported: view 'a'",
+            "snippet": "    4|CREATE VIEW a AS SELECT x FROM t UNION SELECT x FROM b;\n      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    5|LATENESS a.x 2;\n"
+          }
+        ],
+        "b": [
+          {
+            "start_line_number": 3,
+            "start_column": 1,
+            "end_line_number": 3,
+            "end_column": 60,
+            "warning": false,
+            "error_type": "Compilation error",
+            "message": "LATENESS on views inside recursive components is not supported: view 'b'",
+            "snippet": "    3|CREATE LOCAL VIEW b AS SELECT x + 1 AS x FROM a WHERE x < 10;\n      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    4|CREATE VIEW a AS SELECT x FROM t UNION SELECT x FROM b;\n"
+          }
+        ]
+      },
+      "gen2": {
+        "a": [
+          {
+            "start_line_number": 4,
+            "start_column": 1,
+            "end_line_number": 4,
+            "end_column": 54,
+            "warning": false,
+            "error_type": "Compilation error",
+            "message": "LATENESS on views inside recursive components is not supported: view 'a'",
+            "snippet": "    4|CREATE VIEW a AS SELECT x FROM t UNION SELECT x FROM b;\n      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    5|LATENESS a.x 2;\n"
+          }
+        ],
+        "b": [
+          {
+            "start_line_number": 3,
+            "start_column": 1,
+            "end_line_number": 3,
+            "end_column": 60,
+            "warning": false,
+            "error_type": "Compilation error",
+            "message": "LATENESS on views inside recursive components is not supported: view 'b'",
+            "snippet": "    3|CREATE LOCAL VIEW b AS SELECT x + 1 AS x FROM a WHERE x < 10;\n      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    4|CREATE VIEW a AS SELECT x FROM t UNION SELECT x FROM b;\n"
+          }
+        ]
+      }
+    }
+  }
+}

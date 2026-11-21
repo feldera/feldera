@@ -89,10 +89,11 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                 .append(this.passes.size())
                 .append(" passes")
                 .increase();
-        for (CircuitTransform pass: this.passes) {
+        for (int passIndex = 0; passIndex < this.passes.size(); passIndex++) {
+            CircuitTransform pass = this.passes.get(passIndex);
             long start = System.currentTimeMillis();
             long startId = DBSPNode.outerNodesAllocated();
-            circuit = pass.apply(circuit);
+            circuit = this.compiler.applyObservedPass(this.name, passIndex, 0, pass, circuit);
             if (this.compiler.messages.exitCode != 0)
                 break;
             this.afterPass(circuit);

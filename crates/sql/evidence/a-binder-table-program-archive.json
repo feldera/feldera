@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-a-binder-table-program-20261118-v1.tar.gz",
+  "bytes": 5722080,
+  "sha256": "a5a73a73e7cd7060c74e6965fbd5ae37061219ba42c1afd37191b3d603a659a2",
+  "manifest_sha256": "f474ef382447165b8bacfb8d8accbadf02c235cb5ec53d8b15a3eb61e9bdd21f",
+  "verified_files": 32,
+  "all_members_verified": true
+}

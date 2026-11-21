@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "archive_index": "a-binder-constant-fold-archive.json",
+  "scope": "Scalar constant projections using the shared folding evaluator and the S1 expression model.",
+  "directed_projections": {
+    "exact_typed_trees_and_sources": 8,
+    "exact_folds": 6,
+    "checked_calls_preserved_for_runtime": 2
+  },
+  "previously_examined_held_out": {
+    "input_records": 1563,
+    "exact_emitted_typed_expression_trees": 4,
+    "distinct_sql_expressions": 2,
+    "exact_c1a_schemas": 4,
+    "exact_c0_records": 2,
+    "warning_count_differences": 2,
+    "untouched_holdout": false
+  },
+  "all_frozen_records": {
+    "inputs_replayed": 9886,
+    "exact_c1a_schemas_on_emissions": 23,
+    "structured_c0_matches_on_emissions": 13,
+    "missing_warning_records_on_emissions": 10
+  },
+  "java_imports": 12,
+  "generated_controls": {"byte_equal": true, "records": 59264},
+  "rust_tests_passed": 79,
+  "clippy": "passed"
+}

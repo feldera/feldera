@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-linear-retention-20261118-v1.tar.gz",
+  "bytes": 31348617,
+  "sha256": "d271d2fc07a3d47aac628f17e70c843dc080d0b695bd3ca12cbc599ed37e5884",
+  "manifest_sha256": "4d85bf24fab4f8429ea30d99a0693111375eae887958bf0b107da9c3585fadeb",
+  "verified_files": 15953,
+  "all_members_verified": true
+}

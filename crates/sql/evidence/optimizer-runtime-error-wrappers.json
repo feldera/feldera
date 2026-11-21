@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-runtime-error-wrappers-archive.json",
+  "scope": "Original CreateRuntimeErrorWrappers scheduled placement for measured fallible casts.",
+  "strict_graph_and_name_counter_equal": {
+    "classic": 7,
+    "gen2": 7
+  },
+  "directed_bag_rust_tail_equal": {
+    "classic": 7,
+    "gen2": 7
+  },
+  "directed_set_java_codec_tail_equal": {
+    "classic": 7,
+    "gen2": 7
+  },
+  "directed_set_rust_tail_equal": {
+    "classic": 7,
+    "gen2": 7
+  },
+  "composed_placements": 52,
+  "composed_java_control_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "composed_rust_equal": {
+    "classic": 50,
+    "gen2": 50
+  },
+  "first_directed_java_control": "A set-mode control was compared to bag-mode direct output. The corrected comparison uses set mode on both sides.",
+  "generated_program_runtime_executed": false
+}

@@ -37,7 +37,7 @@ public class TestSerialize implements CircuitTransform {
         String str = this.toJson(circuit);
         try {
             JsonNode node = Utilities.deterministicObjectMapper().readTree(str);
-            JsonDecoder decoder = new JsonDecoder(this.compiler.sqlToRelCompiler.typeFactory);
+            JsonDecoder decoder = new JsonDecoder();
             DBSPCircuit result = decoder.decodeOuter(node, DBSPCircuit.class);
             this.checkSameJson(circuit, result);
             new ValidateStreamKinds(this.compiler).apply(result);

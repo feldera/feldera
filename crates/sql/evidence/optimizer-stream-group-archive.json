@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-stream-group-20261118-v1.tar.gz",
+  "bytes": 7808384,
+  "sha256": "0fba946467e81e9eb751bc3f2fd6e7950875b0aff2fd7f89d1f4ebbb985f5ac2",
+  "manifest_sha256": "ba54b70171b20b67f7b30048d2ebfe78a351e4c832263941a22d2de2377b41ff",
+  "verified_files": 87,
+  "all_members_verified": true
+}

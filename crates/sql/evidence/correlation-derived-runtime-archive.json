@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-correlation-derived-runtime-20261119.tar.gz",
+  "bytes": 500419265,
+  "sha256": "77ac333449cd530017a260aa13cff9edc2bd8306fac0919998466572e53679df",
+  "manifest_sha256": "06ce2d0c89d61f62e3e7e620da5ef7816b923ec962906c8cf1643cc04660f642",
+  "verified_files": 300,
+  "all_members_verified": true
+}

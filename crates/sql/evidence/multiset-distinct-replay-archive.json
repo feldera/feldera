@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-distinct-replay-20261118-v1.tar.gz",
+  "bytes": 11496783,
+  "sha256": "339c164a1402677a3329458633224d051843390f314c93e6c2824c8d5506f55f",
+  "manifest_sha256": "7404cde883a090cfef6553fee895c3eff3467e15676f8d1103b97e43ebbbc108",
+  "verified_files": 1216,
+  "all_members_verified": true
+}

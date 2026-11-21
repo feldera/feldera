@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-multiset-ten-scheduled-placements-20261118-v1.tar.gz",
+  "bytes": 45961804,
+  "sha256": "b29c48023dd009e6fb8d02a0b89435ad0c97fdcc01fb68d4167fcbf4ccee886c",
+  "manifest_sha256": "7387db1745bdf52b7203dcaf146edf0db6cd3cef92264bce2d74fbed0bb65aad",
+  "verified_files": 15969,
+  "all_members_verified": true
+}

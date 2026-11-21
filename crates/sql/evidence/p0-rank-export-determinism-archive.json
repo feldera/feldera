@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-rank-export-determinism-20261118.tar.gz",
+  "bytes": 73970,
+  "sha256": "01d727083f2b4727e94e5990344db8e961226ae827bb2e697e2f3255af5def8f",
+  "manifest_sha256": "c277dcdf1431d4f89eb61c6f2c64dae8cb7b9d9a08cde79332caa5665a5516e7",
+  "verified_files": 23,
+  "all_members_verified": true
+}

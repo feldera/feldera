@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/rule-port-approaches.tar.gz",
+  "bytes": 21846,
+  "sha256": "478cfdd373fc0481fba79c6845192232c2ad37262563331d928625ef1003f113",
+  "manifest_sha256": "b16a339114234f9938474b61456016a282854e21699254b014c0249c0c1e9f33",
+  "verified_files": 5,
+  "all_members_verified": true
+}

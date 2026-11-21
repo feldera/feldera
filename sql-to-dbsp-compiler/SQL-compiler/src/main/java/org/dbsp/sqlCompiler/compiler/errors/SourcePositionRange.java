@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
@@ -66,8 +66,7 @@ public class SourcePositionRange implements IHasSourcePositionRange {
     }
 
     public JsonNode asJson() {
-        ObjectMapper mapper = Utilities.deterministicObjectMapper();
-        ObjectNode result = mapper.createObjectNode();
+        ObjectNode result = JsonNodeFactory.instance.objectNode();
         this.appendAsJson(result);
         return result;
     }

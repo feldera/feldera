@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler;
 
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
+import org.dbsp.sqlCompiler.compiler.backend.CircuitReplay;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -44,7 +45,6 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.util.Logger;
-import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -53,6 +53,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.io.InputStream;
+import java.io.BufferedOutputStream;
+import java.io.FilterOutputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -136,14 +139,24 @@ public class CompilerMain {
 
     PrintStream getOutputStream() throws IOException {
         if (this.options.ioOptions.noRust)
-            return NullPrintStream.INSTANCE;
+            return new PrintStream(OutputStream.nullOutputStream());
 
         PrintStream outputStream;
         @Nullable String outputFile = this.options.ioOptions.outputFile;
         if (outputFile.isEmpty()) {
-            outputStream = System.out;
+            // The caller owns its PrintStream, while stdout belongs to the JVM.
+            outputStream = new PrintStream(new FilterOutputStream(System.out) {
+                @Override
+                public void write(byte[] bytes, int offset, int length) throws IOException {
+                    this.out.write(bytes, offset, length);
+                }
+                @Override
+                public void close() throws IOException {
+                    this.flush();
+                }
+            });
         } else {
-            outputStream = new PrintStream(Files.newOutputStream(Paths.get(outputFile)));
+            outputStream = new PrintStream(new BufferedOutputStream(Files.newOutputStream(Paths.get(outputFile))));
         }
         return outputStream;
     }
@@ -161,31 +174,66 @@ public class CompilerMain {
         long jvmStart = ManagementFactory.getRuntimeMXBean().getStartTime();
         DBSPCompiler.phases.clear();
         DBSPCompiler.phases.add("JVM startup", System.currentTimeMillis() - jvmStart);
-        DBSPCompiler compiler = DBSPCompiler.timed("Compiler setup", () -> new DBSPCompiler(this.options));
+        DBSPCompiler compiler = DBSPCompiler.timed("Compiler setup", () ->
+                this.options.ioOptions.readS2 || this.options.ioOptions.readS3
+                        ? DBSPCompiler.forCircuitReplay(this.options) : DBSPCompiler.forSqlInput(this.options));
         this.options.validate(compiler);
-        try {
-            InputStream input = this.getInputFile(this.options.ioOptions.inputFile);
-            compiler.setEntireInput(this.options.ioOptions.inputFile, input);
-        } catch (IOException e) {
-            compiler.reportError(SourcePositionRange.INVALID,
-                    "Error reading file",
-                    Utilities.singleQuote(this.options.ioOptions.inputFile) + " " + e.getMessage());
+        if (compiler.hasErrors())
             return compiler.messages;
+        if (!this.options.ioOptions.readS2 && !this.options.ioOptions.readS3) {
+            try (InputStream input = this.getInputFile(this.options.ioOptions.inputFile)) {
+                compiler.setEntireInput(this.options.ioOptions.inputFile, input);
+            } catch (IOException e) {
+                compiler.reportError(SourcePositionRange.INVALID,
+                        "Error reading file",
+                        Utilities.singleQuote(this.options.ioOptions.inputFile) + " " + e.getMessage());
+                return compiler.messages;
+            }
         }
         if (this.options.ioOptions.verbosity >= 1)
             System.out.println(this.options);
 
-        compiler.compileInput();
-        if (compiler.hasErrors())
-            return compiler.messages;
-        // The following runs all compilation stages
-        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        DBSPCircuit circuit;
+        if (this.options.ioOptions.readS2 || this.options.ioOptions.readS3) {
+            CircuitReplay.Stage stage = this.options.ioOptions.readS2 ? CircuitReplay.Stage.S2 : CircuitReplay.Stage.S3;
+            try {
+                if (this.options.ioOptions.inputFile == null)
+                    throw new IllegalArgumentException("--read-" + stage.name().toLowerCase(java.util.Locale.ROOT) + " requires an input file");
+                Path input = Path.of(this.options.ioOptions.inputFile);
+                if (!this.options.ioOptions.writeS3.isEmpty()) {
+                    Path output = Path.of(this.options.ioOptions.writeS3);
+                    if (java.nio.file.Files.exists(output) && java.nio.file.Files.isSameFile(input, output))
+                        throw new IllegalArgumentException("The S3 output must differ from the S2 input");
+                }
+                circuit = CircuitReplay.read(compiler, input, stage);
+            } catch (IOException | RuntimeException e) {
+                String reason = e.getMessage() == null ? e.getClass().getName() : e.getMessage();
+                compiler.reportError(SourcePositionRange.INVALID, stage + " replay failed",
+                        reason + ". Verify the input file and regenerate the " + stage + " dump with this compiler.");
+                return compiler.messages;
+            }
+        } else {
+            compiler.compileInput();
+            if (compiler.hasErrors())
+                return compiler.messages;
+            circuit = compiler.getFinalCircuit(false);
+        }
         if (options.ioOptions.anonymize || options.ioOptions.format)
             // The front-end has already emitted the output, we are done.
             return compiler.messages;
         if (compiler.hasErrors())
             return compiler.messages;
         Utilities.enforce(circuit != null);
+        if (!this.options.ioOptions.writeS2.isEmpty() || !this.options.ioOptions.writeS3.isEmpty()) {
+            CircuitReplay.Stage stage = this.options.ioOptions.writeS2.isEmpty() ? CircuitReplay.Stage.S3 : CircuitReplay.Stage.S2;
+            String file = stage == CircuitReplay.Stage.S2 ? this.options.ioOptions.writeS2 : this.options.ioOptions.writeS3;
+            try {
+                CircuitReplay.write(compiler, circuit, Path.of(file), stage);
+            } catch (IOException | RuntimeException e) {
+                compiler.reportError(SourcePositionRange.INVALID, stage + " export failed", e.getMessage());
+                return compiler.messages;
+            }
+        }
         if (this.options.ioOptions.emitJsonSchema != null) {
             try {
                 PrintStream outputStream = new PrintStream(
@@ -225,6 +273,9 @@ public class CompilerMain {
             }
         }
 
+        if ((!this.options.ioOptions.writeS2.isEmpty() || !this.options.ioOptions.writeS3.isEmpty())
+                && this.options.ioOptions.noRust)
+            return compiler.messages;
         String dotFormat = null;
         if (this.options.ioOptions.emitJpeg)
             dotFormat = "jpg";
@@ -265,15 +316,16 @@ public class CompilerMain {
         DBSPCompiler.phases.start("Rust");
         try {
             if (!compiler.options.ioOptions.multiCrates()) {
-                PrintStream stream = this.getOutputStream();
-                CircuitPostfix materializations = new CircuitPostfix(compiler);
-                materializations.apply(circuit);
-                RustFileWriter writer = new RustFileWriter(materializations);
-                IIndentStream indent = new IndentStream(stream);
-                writer.setOutputBuilder(indent);
-                writer.add(circuit);
-                writer.write(compiler);
-                stream.close();
+                try (PrintStream stream = this.getOutputStream()) {
+                    CircuitPostfix materializations = new CircuitPostfix(compiler);
+                    materializations.apply(circuit);
+                    RustFileWriter writer = new RustFileWriter(materializations);
+                    writer.setOutputBuilder(new IndentStream(stream));
+                    writer.add(circuit);
+                    writer.write(compiler);
+                    if (stream.checkError())
+                        throw new IOException("Could not finish writing generated Rust to " + options.ioOptions.outputFile);
+                }
             } else {
                 if (options.ioOptions.emitHandles)
                     throw new CompilationError("The option '--crates' cannot be used with '--handles'");

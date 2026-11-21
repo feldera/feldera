@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "archive_index": "c0-oracle-archive.json",
+  "reference_archive_index": "type-bindings-archive.json",
+  "reference_batch": "historical-java",
+  "scope": "CLI contract replay using the frozen Java type-probe batch and a controlled diagnostic mutation",
+  "probes": 84224,
+  "c0_matches": 84224,
+  "exact_mode_changed_probes": 26080,
+  "matched_diagnostics": 26080,
+  "messages_changed": 26080,
+  "end_positions_changed": 120,
+  "c0_exit_code": 0,
+  "exact_exit_code": 1,
+  "rust_tests_passed": 42,
+  "clippy": "passed",
+  "comparison_binary_sha256": "babb01333367e20a58e8a264b7664e8d4b870399ecf5336aaa2bca1a988ad568",
+  "remaining": "The alternate batch deliberately varies two measurement fields. It does not contain Rust compiler diagnostics."
+}

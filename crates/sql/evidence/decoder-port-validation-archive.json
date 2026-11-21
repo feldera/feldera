@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-strict-port-validation-20261118-v1.tar.gz",
+  "bytes": 14463532,
+  "sha256": "f43e42d7600481fca224fb4d62acbc7de122cdf07ea941e6b02c26fab05d0b71",
+  "manifest_sha256": "298f1249a4affe5287fb9c06e2290b007004bdc21f84617b1a0ea8c6a3c0eba7",
+  "verified_files": 1544,
+  "all_members_verified": true
+}

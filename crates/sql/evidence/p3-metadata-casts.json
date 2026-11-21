@@ -1,0 +1,31 @@
+{
+  "scope": "ExpandMetadataCasts at each invocation in uninterrupted Java compilation. Checks defaults and lateness expressions along with graph sharing, provenance and generated names.",
+  "jar_sha256": "64d5cfce823e884649f3bd83b6c95bd7e65077dd048c1d27000e3cf6516ea1bd",
+  "comparator_sha256": "e7cf81d3725be428bd39dabb5f2556fdc9a1c84d2e323f770c8b10efe98d22d1",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "e98b45834d55748917bb8640bfbef5ee358e3f06e8c55cd064361b5f9fbe0d85",
+      "42d8f1ec92ba810804cd2972b1150d0c4df0580eb2b738dcb0ea93892968170b"
+    ],
+    "pass": "ExpandMetadataCasts",
+    "invocations": 8571,
+    "changed": 8,
+    "cases_without_placement": 0
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "1ecab3c23ec603c4510c6c45889ffae7d00995e45596060a7d71ae51fa0622f7",
+      "4453bc932d967c0086861212c5437202bd1bc5941af365fce844744c110089f0"
+    ],
+    "pass": "ExpandMetadataCasts",
+    "invocations": 8527,
+    "changed": 8,
+    "cases_without_placement": 0
+  }
+}

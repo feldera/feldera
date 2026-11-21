@@ -147,8 +147,9 @@ public final class DBSPFunction extends DBSPNode
     @SuppressWarnings("unused")
     public static DBSPFunction fromJson(JsonNode node, JsonDecoder decoder) {
         String name = Utilities.getStringProperty(node, "name");
-        List<DBSPParameter> parameters = fromJsonInnerList(node, "parameters", decoder, DBSPParameter.class);
+        // Parameters can reference a type first defined in the return type.
         DBSPType returnType = fromJsonInner(node, "returnType", decoder, DBSPType.class);
+        List<DBSPParameter> parameters = fromJsonInnerList(node, "parameters", decoder, DBSPParameter.class);
         DBSPExpression body = node.has("body") ?
                 fromJsonInner(node, "body", decoder, DBSPExpression.class) : null;
         List<String> annotations = Linq.list(

@@ -20,10 +20,15 @@ public class Conditional implements IWritesLogs, CircuitTransform {
         this.id = CircuitVisitor.crtId++;
     }
 
+    /** Replace the guarded transform while retaining its original predicate. */
+    public Conditional withTransform(CircuitTransform visitor) {
+        return new Conditional(this.compiler, visitor, this.test);
+    }
+
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         if (this.test.get())
-            return this.transform.apply(circuit);
+            return this.compiler.applyObservedPass("Conditional", 0, 0, this.transform, circuit);
         return circuit;
     }
 

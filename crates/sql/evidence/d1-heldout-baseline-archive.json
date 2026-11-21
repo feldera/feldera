@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-d1-heldout-baseline-20261118-v1.tar.gz",
+  "bytes": 20548294,
+  "sha256": "18888f7eb3f04c3d1f54a00d7c591793dcb49af14fff461b8c8a2fcca324019a",
+  "manifest_sha256": "9dd9e2322ccd86db15f00907ee3eff1d8fa7fc075113437b9555d0592ace56e4",
+  "verified_files": 13,
+  "all_members_verified": true
+}

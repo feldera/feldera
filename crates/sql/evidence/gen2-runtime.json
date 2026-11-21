@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "compiler_base": "c6ede756d",
+  "compiler_changes": "P0 working tree: capture, corpus, VARIANT serialization repair, rule trace",
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "forge_commit": "d4879df7cded0fefb176aebd2a9890caa8877665",
+  "forge_platform_commit": "43f386f2022e9c112cf9bc2aea326b0bd3178bcd",
+  "engine_build": "native ARM64, dev profile, debug=0, incremental=0",
+  "aws_lc_commit": "fa9bc8d6f7cfb2cf849b247fb06bbbfc41ecc9d6",
+  "counts": {
+    "tests": 2779,
+    "failures": 69,
+    "errors": 510,
+    "skipped": 70
+  },
+  "passes": 2130,
+  "pass_share_all_tests": 0.7664627563871896,
+  "pass_share_excluding_skips": 0.7862679955703211,
+  "threshold": 0.8,
+  "threshold_met": false,
+  "top_failure_groups": [
+    {
+      "count": 178,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPWaterlineOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPWaterlineOperator' on node '<id>' is not yet supported by the loader\"}}}"
+    },
+    {
+      "count": 61,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPPartitionedRollingAggregateOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPPartitionedRollingAggregateOperator' on node '<id>' is not yet supported by the loader\"}}}"
+    },
+    {
+      "count": 29,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPNestedOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPNestedOperator' on node '<id>' is not yet supported by the loader\"}}}"
+    },
+    {
+      "count": 23,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPLagOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPLagOperator' on node '<id>' is not yet supported by the loader\"}}}"
+    },
+    {
+      "count": 23,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: operator `<id>` has unknown class `DBSPPositiveOperator`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: operator `<id>` has unknown class `DBSPPositiveOperator`\"}}}"
+    },
+    {
+      "count": 20,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported column type `DBSPTypeLongInterval`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported column type `DBSPTypeLongInterval`\"}}}"
+    },
+    {
+      "count": 19,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported column type `DBSPTypeWithCustomOrd`.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported column type `DBSPTypeWithCustomOrd`\"}}}"
+    },
+    {
+      "count": 15,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: DBSP error: operation 'DBSPAggregateOperator' on node '<id>' is not yet supported by the loader.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"operation 'DBSPAggregateOperator' on node '<id>' is not yet supported by the loader\"}}}"
+    },
+    {
+      "count": 13,
+      "message": "Gen-2 output differs (+ only expected, - only produced):"
+    },
+    {
+      "count": 13,
+      "message": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+    },
+    {
+      "count": 8,
+      "message": "No circuit produced"
+    },
+    {
+      "count": 7,
+      "message": "java.lang.AssertionError"
+    },
+    {
+      "count": 7,
+      "message": "expected:<1> but was:<0>"
+    },
+    {
+      "count": 4,
+      "message": "Variable has type LazyCell<TypedBox<Timestamp, DynData>, _> and initializer has type LazyCell<Timestamp, _>"
+    },
+    {
+      "count": 4,
+      "message": "View 'v' over an empty input did not collapse to a constant"
+    },
+    {
+      "count": 3,
+      "message": "LATENESS on the primary-key table 'late_t' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+    },
+    {
+      "count": 3,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'af8c1a96cd9a173c894ca64d58879a6afd1c160c75353bf1bda40feae90b6639': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'af8c1a96cd9a173c894ca64d58879a6afd1c160c75353bf1bda40feae90b6639': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}"
+    },
+    {
+      "count": 3,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node '2b634432e1773fca2543479aae9f08e084c4be889d3b1b7f3d0bf8bb88bf0bca': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node '2b634432e1773fca2543479aae9f08e084c4be889d3b1b7f3d0bf8bb88bf0bca': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}"
+    },
+    {
+      "count": 3,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"DBSP error: map node 'e84988b7fbe747287458375a354f67d8bbf12f0caa5e5b1e4cb8ccfc9efcfafc': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\",\"error_code\":\"RuntimeError.WorkerPanic\",\"details\":{\"error\":\"map node 'e84988b7fbe747287458375a354f67d8bbf12f0caa5e5b1e4cb8ccfc9efcfafc': assembling output batch: Invalid argument error: Column 'c0' is declared as non-nullable but contains null values\"}}"
+    },
+    {
+      "count": 3,
+      "message": "Gen-2 pipeline did not load the program: GET /status returned 500: {\"message\":\"Operation failed because the pipeline failed to initialize. Error details: Error parsing program IR: circuit ir error: unsupported expression node 'DBSPClosureExpression'.\",\"error_code\":\"InitializationError\",\"details\":{\"error\":{\"error\":\"circuit ir error: unsupported expression node 'DBSPClosureExpression'\"}}}"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-stream-kinds-archive.json",
+  "scope": "Rust stream-kind inference on flat wire circuits compared with live Java annotations after each observed optimizer pass.",
+  "profiles": {
+    "incremental": {"classic": 4230, "gen2": 4230},
+    "snapshot": {"classic": 4186, "gen2": 4186},
+    "directed": {"classic": 564, "gen2": 564}
+  },
+  "graphs_equal": 17960,
+  "ports_equal": {"COLLECTION": 121104, "DELTA": 66990, "WATERLINE": 1064},
+  "early_set_segment_exact_results_with_rust_validation": 90
+}

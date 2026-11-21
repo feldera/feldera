@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "scope": "Frozen Spike 6 first-inner-stage classic corpus occurrences, including the original failed transport.",
+  "weighted_c7": {
+    "numerator": 149,
+    "denominator": 155,
+    "threshold": 0.95,
+    "passed": true
+  },
+  "dispositions": {
+    "c7_paired_seeded": 19,
+    "c7_saved_oracle": 130,
+    "reconstructed_without_c7": 2,
+    "refused": 2,
+    "transport_failed": 2
+  },
+  "original_saved_oracles": {
+    "runtime_cases": 48,
+    "runtime_transactions": 147,
+    "evidence": "correlation-array-agg.json"
+  },
+  "paired_seeded_compile_only": {
+    "cases": 10,
+    "runtime_transactions": 17,
+    "compared_output_bags": 108,
+    "evidence": [
+      "correlation-derived-runtime.json",
+      "correlation-extra-fixtures-archive.json"
+    ]
+  },
+  "source_and_recipe": {
+    "archive_index": "correlation-unordered-fetch-archive.json",
+    "current_recipes_match_earlier_executed_recipes_for_all_previously_credited_occurrences": true,
+    "latest_successful_recipes_reconstructed_through_java_s1": 73
+  },
+  "raw_ledger": {
+    "path": "correlation-spike6-weighted-occurrences.jsonl",
+    "sha256": "cc3d6f42b14e9f246f1658468d27a61be57ae0ebd3b688c6a1de10461661211d"
+  },
+  "all_four_stage_c7_fraction": null
+}

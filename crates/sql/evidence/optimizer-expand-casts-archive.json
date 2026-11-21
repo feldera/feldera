@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-optimizer-expand-casts-20261118.tar.gz",
+  "bytes": 26364585,
+  "sha256": "a155232d544b91ea63ac79f3909f4a60b11bad08cd9df369595594bf1eb70f07",
+  "manifest_sha256": "2827e7efc70ea49df02eb21b621d9d7259a646dca9756b8833cb7cdf64f3a129",
+  "verified_files": 23537,
+  "all_members_verified": true
+}

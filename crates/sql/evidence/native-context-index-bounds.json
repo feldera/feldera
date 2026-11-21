@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "archive_index": "native-context-index-bounds-archive.json",
+  "reopened_dbsp_layer_file_bytes": 9216,
+  "owned_archived_items": 513,
+  "owned_archived_index_keys": 10,
+  "selected_cursor_positions": [
+    0,
+    1,
+    255,
+    256,
+    512
+  ],
+  "tests_passed": 6,
+  "focused_clippy_passed": true,
+  "scope": "The standard DBSP writer creates a typed file. An isolated Cursor test hook retains the blocks and offsets for the first and last key of the index child. Descriptor-owned archived bounds match their actual row keys after dropping the file reader, cache, and factories. The stock seek and writer factory interfaces still use their existing static types."
+}

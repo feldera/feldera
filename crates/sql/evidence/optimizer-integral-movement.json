@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-integral-movement-archive.json",
+  "scope": "Two scheduled integral motion placements on flat graphs.",
+  "placements": {
+    "first": {
+      "classic": {
+        "programs": 50,
+        "pass_invocations": 50,
+        "changed": 12,
+        "not_invoked": [],
+        "final_results_equal": 50
+      },
+      "gen2": {
+        "programs": 50,
+        "pass_invocations": 50,
+        "changed": 12,
+        "not_invoked": [],
+        "final_results_equal": 50
+      },
+      "exact_graphs": {
+        "compared": 100,
+        "equal": 100
+      }
+    },
+    "second": {
+      "classic": {
+        "programs": 50,
+        "pass_invocations": 50,
+        "changed": 50,
+        "not_invoked": [],
+        "final_results_equal": 50
+      },
+      "gen2": {
+        "programs": 50,
+        "pass_invocations": 50,
+        "changed": 50,
+        "not_invoked": [],
+        "final_results_equal": 50
+      },
+      "exact_graphs": {
+        "compared": 100,
+        "equal": 100
+      }
+    }
+  },
+  "final_results": {
+    "two_placements": {
+      "java_equals_uninterrupted": 100,
+      "rust_equals_uninterrupted": 100
+    },
+    "composed_41_placements": {
+      "java_equals_uninterrupted": 100,
+      "rust_equals_uninterrupted": 100
+    }
+  },
+  "directed_graphs_equal": 2
+}

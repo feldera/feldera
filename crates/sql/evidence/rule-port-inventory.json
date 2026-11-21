@@ -1,0 +1,2535 @@
+{
+  "schema_version": 1,
+  "reviewed": false,
+  "rule_descriptions": 80,
+  "implementation_classes": 71,
+  "descriptions_without_productions": 24,
+  "description_counts_by_source_owner": {
+    "calcite": 58,
+    "feldera": 22
+  },
+  "scope": "Retain every configured rule and direct step. Zero productions do not justify removal. Translation versus rewrite remains a separate decision.",
+  "identity_limit": "Descriptions can cover multiple configurations of one rule. The raw inventory preserves ordered instances per step, level, and shape; this summary does not equate those configurations.",
+  "calcite_commit": "4bf922bbbc1cbd570a2f201339a46a2d8f7a763b",
+  "inputs": {
+    "crates/sql/evidence/rule-implementations.json": "c7e043b32b2bd936c42ffa6aeb0bfea32bf2f5df86b3549f7b2b093dbee2abf5",
+    "crates/sql/evidence/optimizer-census.json": "bf3228566145f708ca1fb009c145f041372a41196d54e9286cf8194620c0356b"
+  },
+  "rules": [
+    {
+      "description": "AggregateCaseToFilterRule",
+      "implementation": "org.apache.calcite.rel.rules.AggregateCaseToFilterRule",
+      "attempts": 60,
+      "productions": 15,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateCaseToFilterRule.java",
+        "sha256": "1deb69ffc7dffb59686065c9779a3328814aa9b7b5353cd5d08acdec311e017c",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "AggregateExpandDistinctAggregatesRule",
+      "implementation": "org.apache.calcite.rel.rules.AggregateExpandDistinctAggregatesRule",
+      "attempts": 12632,
+      "productions": 268,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 24,
+          "step": "Isolate DISTINCT aggregates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 24,
+          "step": "Isolate DISTINCT aggregates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 24,
+          "step": "Isolate DISTINCT aggregates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateExpandDistinctAggregatesRule.java",
+        "sha256": "d2c9308861254dd0f36cd70b09a5ebb4005237d5e928b9794fa4ee4421a6fef5",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "AggregateMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.AggregateMergeRule",
+      "attempts": 32,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateMergeRule.java",
+        "sha256": "49b13af7cf0c47066f57957aa6a09e1c381108f7ba90c8cf54240cba9a1c2363",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "AggregateNowFilterRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.AggregateNowFilterRule",
+      "attempts": 3500,
+      "productions": 7,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AggregateNowFilterRule.java",
+        "sha256": "8e60631b048e1f9fb2332974a93a9b2480d450a16cc5e61c84115262e75511d0",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "AggregateRemoveLiteralAggRule",
+      "implementation": "org.apache.calcite.rel.rules.AggregateRemoveLiteralAggRule",
+      "attempts": 4181,
+      "productions": 32,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveLiteralAggRule.java",
+        "sha256": "b93f7d08eaa58c1f46f2f77112d44168a2f537f11092160a0d5f78411d7202e2",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "AggregateRemoveRule",
+      "implementation": "org.apache.calcite.rel.rules.AggregateRemoveRule",
+      "attempts": 3135,
+      "productions": 14,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 31,
+          "step": "Remove dead code"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateRemoveRule.java",
+        "sha256": "187e16a31ae8f081f7cb5e83687915e6cf10b91ee760d7254f1f1d4fab03ffb8",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "AggregateValuesRule",
+      "implementation": "org.apache.calcite.rel.rules.AggregateValuesRule",
+      "attempts": 27,
+      "productions": 9,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/AggregateValuesRule.java",
+        "sha256": "3e4bd4e82d32c86cb88a26645f234d38648a9f6a2f208ecb7ae90719dd6efbb2",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "AntiJoinDistinctRemoveRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.AntiJoinDistinctRemoveRule",
+      "attempts": 9,
+      "productions": 4,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 31,
+          "step": "Remove dead code"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/AntiJoinDistinctRemoveRule.java",
+        "sha256": "d75942d8656aaf39099810e7c873a50f53144808d7a948e56aee4fea016e6073",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "CoerceInputsRule:org.apache.calcite.rel.RelNode",
+      "implementation": "org.apache.calcite.rel.rules.CoerceInputsRule",
+      "attempts": 112122,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CoerceInputsRule.java",
+        "sha256": "daabd837502a5c88726e8d23673cd85c865d169a5c98b2ffcfd7429b0af3cbb3",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "CorrelateUncollectMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.CorrelateUncollectMergeRule",
+      "attempts": 65,
+      "productions": 65,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/CorrelateUncollectMergeRule.java",
+        "sha256": "559882b0bd57e022a4ee4eb72fdf7ced6e8f0969e96e210dd550b74b854a91f1",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "CorrelateUnionSwap",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CorrelateUnionSwap",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 17,
+          "step": "Correlate/Union"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CorrelateUnionSwap.java",
+        "sha256": "35a5f28a50eebac79ea7d76be53e939da3b5651bf6c57bf76a3c9bbd63e13c8b",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "DphypJoinReorderRule",
+      "implementation": "org.apache.calcite.rel.rules.DphypJoinReorderRule",
+      "attempts": 2058,
+      "productions": 2058,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 25,
+          "step": "Hypergraph"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 25,
+          "step": "Hypergraph"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 25,
+          "step": "Hypergraph"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/DphypJoinReorderRule.java",
+        "sha256": "e7bd413de243c53b854f223bd37576f48f8fd36dbb01a2b158e0596a1ed13ab2",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ExceptAllFoldRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ExceptAllFoldRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptAllFoldRule.java",
+        "sha256": "726a40fa60db973d0aee3316cef75a02ef0468e6a7ea3a82c4bcc78926609bdc",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "ExceptOptimizerRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ExceptOptimizerRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 19,
+          "step": "Desugar EXCEPT"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ExceptOptimizerRule.java",
+        "sha256": "fd96d8f81a8c00ac1ed8bcddc3746fcc22dfc6b86ee273155befb586cc43ecc4",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "ExpandDisjunctionForTableRule",
+      "implementation": "org.apache.calcite.rel.rules.ExpandDisjunctionForTableRule",
+      "attempts": 13300,
+      "productions": 68,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 29,
+          "step": "Pushdown"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ExpandDisjunctionForTableRule.java",
+        "sha256": "37f34e21dfac88a194884a88ec3432542d98e2edfb34ecaec8818f443fb5ed95",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "FilterAggregateTransposeRule",
+      "implementation": "org.apache.calcite.rel.rules.FilterAggregateTransposeRule",
+      "attempts": 96,
+      "productions": 35,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 27,
+          "step": "Move projections"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterAggregateTransposeRule.java",
+        "sha256": "4763ec338fa1c6bccf5d6a772cdf1f69a10ff8c1647bf73a2ec170b803d1a898",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "FilterCorrelateRule",
+      "implementation": "org.apache.calcite.rel.rules.FilterCorrelateRule",
+      "attempts": 227,
+      "productions": 66,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 11,
+          "step": "Simplify correlates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 11,
+          "step": "Simplify correlates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 11,
+          "step": "Simplify correlates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterCorrelateRule.java",
+        "sha256": "11628afb525b09fd9af06b7ffba269d8c1079d1c730ae4dc207cef6cd0bcbb44",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "FilterIntoJoinRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.FilterJoinRule$FilterIntoJoinRule",
+      "attempts": 1821,
+      "productions": 1306,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 29,
+          "step": "Pushdown"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "sha256": "fb775154cb23352db64c6fb18ddbaef1ebc00b3378a57c4118e37db0dac480a4",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "FilterMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.FilterMergeRule",
+      "attempts": 41,
+      "productions": 41,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterMergeRule.java",
+        "sha256": "4fb79e1c8e54c3c0f39a69bf367baab411620be69af582486d5e90e0a03d73a4",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "FilterProjectTransposeRule",
+      "implementation": "org.apache.calcite.rel.rules.FilterProjectTransposeRule",
+      "attempts": 215,
+      "productions": 215,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 27,
+          "step": "Move projections"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/FilterProjectTransposeRule.java",
+        "sha256": "6f118fbda858bfe7446795838aed9ca84bda2db5960a49af8bde1992ba47a130",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "InnerDecorrelator",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.InnerDecorrelator",
+      "attempts": 341,
+      "productions": 122,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 16,
+          "step": "Decorrelate inner queries 1"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 18,
+          "step": "Decorrelate inner queries 2"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/InnerDecorrelator.java",
+        "sha256": "a3793039a63346a4c425e79d321fbf513c13fb8d7cfb0c73ecfb56b6fae5f566",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "Intersect",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$IntersectEmptyPruneRuleConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "IntersectMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.UnionMergeRule",
+      "attempts": 5,
+      "productions": 5,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "sha256": "d801a8fb13d671d0736bcdc6b1c3670a00c2eda81bb3b5cae75c7cbf5ff290f6",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "JoinCommuteRule",
+      "implementation": "org.apache.calcite.rel.rules.JoinCommuteRule",
+      "attempts": 96,
+      "productions": 96,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 13,
+          "step": "Right joins to left joins"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 13,
+          "step": "Right joins to left joins"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 13,
+          "step": "Right joins to left joins"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinCommuteRule.java",
+        "sha256": "a994fb52bb9e388c60a547987f80704528aac7148a3737a66d1ba60057d58119",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "JoinConditionPushRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.FilterJoinRule$JoinConditionPushRule",
+      "attempts": 13246,
+      "productions": 77,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 29,
+          "step": "Pushdown"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/FilterJoinRule.java",
+        "sha256": "fb775154cb23352db64c6fb18ddbaef1ebc00b3378a57c4118e37db0dac480a4",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "JoinExpandOrToUnionRule",
+      "implementation": "org.apache.calcite.rel.rules.JoinExpandOrToUnionRule",
+      "attempts": 31,
+      "productions": 14,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 29,
+          "step": "Pushdown"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinExpandOrToUnionRule.java",
+        "sha256": "fb195ccdb81a10e0dd7fd8a7777ec7f5bfeea3985477b4f5abcc4690d07c2f64",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "JoinPushExpressionsRule",
+      "implementation": "org.apache.calcite.rel.rules.JoinPushExpressionsRule",
+      "attempts": 16614,
+      "productions": 77,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 28,
+          "step": "Simple Join conditions"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 29,
+          "step": "Pushdown"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinPushExpressionsRule.java",
+        "sha256": "6d174df5865bb7bca5c7f94e1fafc82904d32901df96b711c5123b6f042a8612",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "JoinToHyperGraphRule",
+      "implementation": "org.apache.calcite.rel.rules.JoinToHyperGraphRule",
+      "attempts": 2223,
+      "productions": 2185,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 25,
+          "step": "Hypergraph"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 25,
+          "step": "Hypergraph"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 25,
+          "step": "Hypergraph"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToHyperGraphRule.java",
+        "sha256": "d55888f5cad225f393256627e68c881898292377be099028131e8a987fd93b5e",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "JoinToMultiJoinRule",
+      "implementation": "org.apache.calcite.rel.rules.JoinToMultiJoinRule",
+      "attempts": 2221,
+      "productions": 2221,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/JoinToMultiJoinRule.java",
+        "sha256": "a2e3b163422637a475851f9bdf93ea05c2aa858c7046ce9bd4e3691dda37bea2",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "LoptOptimizeJoinRule",
+      "implementation": "org.apache.calcite.rel.rules.LoptOptimizeJoinRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/LoptOptimizeJoinRule.java",
+        "sha256": "63a98d8a3fbd66490a156fd67b4905052643a247a2fcaee30fa0bcaff01f10a0",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "MaxCaseToCountRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.MaxCaseToCountRule",
+      "attempts": 3486,
+      "productions": 5,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/MaxCaseToCountRule.java",
+        "sha256": "04220fdec01884b8eacf72f920a16d1baaa1558a303d8df73eace7f398159209",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "Minus",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$MinusEmptyPruneRuleConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "MinusMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.UnionMergeRule",
+      "attempts": 1,
+      "productions": 1,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "sha256": "d801a8fb13d671d0736bcdc6b1c3670a00c2eda81bb3b5cae75c7cbf5ff290f6",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ModeToArgMaxRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ModeToArgMaxRule",
+      "attempts": 4134,
+      "productions": 27,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 8,
+          "step": "Convert complex aggregates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ModeToArgMaxRule.java",
+        "sha256": "f45c20d965c379d60e6f53aab5b95502394b30a6698ac33b203ebb6aa115d13a",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "MultiJoinOptimizeBushyRule",
+      "implementation": "org.apache.calcite.rel.rules.MultiJoinOptimizeBushyRule",
+      "attempts": 1623,
+      "productions": 1623,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/MultiJoinOptimizeBushyRule.java",
+        "sha256": "90ab99fa38910ca2aa48ea3f815cb58d10428221b7685d8e417a3657696f27ce",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectCorrelateTransposeRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectCorrelateTransposeRule",
+      "attempts": 331,
+      "productions": 135,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 11,
+          "step": "Simplify correlates"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 11,
+          "step": "Simplify correlates"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 11,
+          "step": "Simplify correlates"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectCorrelateTransposeRule.java",
+        "sha256": "b038db8e3472757faf0d5e83c221d6fd3d10a1bc7ff336b1a03df16ed0b3950a",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectFilterTransposeRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectFilterTransposeRule",
+      "attempts": 37,
+      "productions": 9,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectFilterTransposeRule.java",
+        "sha256": "4fba7ff4c161cd67605947356b731cc2fd50cb1a6025ee64aaf2448a73a443bf",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectJoinJoinRemoveRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectJoinJoinRemoveRule",
+      "attempts": 27,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 31,
+          "step": "Remove dead code"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinJoinRemoveRule.java",
+        "sha256": "161eef56b96d44623b20ad555cd36856bc956a8eedd4cb94b65727be027289d1",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectJoinRemoveRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectJoinRemoveRule",
+      "attempts": 434,
+      "productions": 3,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 31,
+          "step": "Remove dead code"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectJoinRemoveRule.java",
+        "sha256": "621ebdd02b903ba3412f99d45a39d965bc3abb7078b1f30f64c67c6640d0d731",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectMergeRule",
+      "attempts": 705,
+      "productions": 349,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMergeRule.java",
+        "sha256": "f8e2f39e52b4bfcff97757e61c8f660faa05f12d7c5cf226772c2eb2f609a840",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectMultiJoinMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectMultiJoinMergeRule",
+      "attempts": 7763,
+      "productions": 1612,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 14,
+          "step": "Join order"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 26,
+          "step": "Join order"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectMultiJoinMergeRule.java",
+        "sha256": "6a5509c4a90809928a8c81a844eabdf958bb1cf37d274a42eeac9e442e041a22",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectOverSumToSum0Rule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectOverSumToSum0Rule",
+      "attempts": 524,
+      "productions": 524,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 22,
+          "step": "Expand windows"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 22,
+          "step": "Expand windows"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 22,
+          "step": "Expand windows"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectOverSumToSum0Rule.java",
+        "sha256": "995f42ab896393813278ce77a81ededb33a85415cac6f3eb40ced9a6563c3960",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectRemoveRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectRemoveRule",
+      "attempts": 12818,
+      "productions": 12818,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 7,
+          "step": "Convert UNCOLLECT"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 31,
+          "step": "Remove dead code"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectRemoveRule.java",
+        "sha256": "46255e0f533e38afd62d204cc0c33bace55fab3cf2c200833b766614713aed0a",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectSetOpTransposeRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectSetOpTransposeRule",
+      "attempts": 569,
+      "productions": 565,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 27,
+          "step": "Move projections"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectSetOpTransposeRule.java",
+        "sha256": "96c82af34318e555a39b06d033bf1213d8557c3e2447419199e0c17ccaf1607e",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectToWindowRule:project",
+      "implementation": "org.apache.calcite.rel.rules.ProjectToWindowRule$ProjectToLogicalProjectAndWindowRule",
+      "attempts": 880,
+      "productions": 880,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 22,
+          "step": "Expand windows"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 22,
+          "step": "Expand windows"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 22,
+          "step": "Expand windows"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectToWindowRule.java",
+        "sha256": "6c6715bce2f74d0cbf3a6e125da932001502c2c2cdc74fd168bdd2e986c81533",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ProjectWindowTransposeRule",
+      "implementation": "org.apache.calcite.rel.rules.ProjectWindowTransposeRule",
+      "attempts": 986,
+      "productions": 122,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 27,
+          "step": "Move projections"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 27,
+          "step": "Move projections"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/ProjectWindowTransposeRule.java",
+        "sha256": "f5b340ed6ae8d7e49a68f8ec3c2c2746d8a761cfad506bef1ec8344edc7593c3",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneEmptyAggregate",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$RemoveEmptySingleRule",
+      "attempts": 3,
+      "productions": 3,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneEmptyFilter",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$RemoveEmptySingleRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneEmptyJoin(left)",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$JoinLeftEmptyRuleConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneEmptyJoin(right)",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$JoinRightEmptyRuleConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneEmptyProject",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$RemoveEmptySingleRule",
+      "attempts": 36,
+      "productions": 36,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneEmptySort",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$RemoveEmptySingleRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneJoinSingleValue(right)",
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinRightSingleRuleConfig$1",
+      "attempts": 3,
+      "productions": 2,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "sha256": "8d32eabf27821ee6ea3dbca29b646d79e5454040205306f637391ae96b8507f0",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneJoinSingleValueRule(left)",
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinLeftSingleRuleConfig$1",
+      "attempts": 27,
+      "productions": 10,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "sha256": "8d32eabf27821ee6ea3dbca29b646d79e5454040205306f637391ae96b8507f0",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneJoinSingleValueRuleWithExpr(left)",
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinLeftSingleValueRuleWithExprConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "sha256": "8d32eabf27821ee6ea3dbca29b646d79e5454040205306f637391ae96b8507f0",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneJoinSingleValueRuleWithExpr(right)",
+      "implementation": "org.apache.calcite.rel.rules.SingleValuesOptimizationRules$JoinRightSingleValueRuleWithExprConfig$1",
+      "attempts": 8,
+      "productions": 8,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SingleValuesOptimizationRules.java",
+        "sha256": "8d32eabf27821ee6ea3dbca29b646d79e5454040205306f637391ae96b8507f0",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "PruneSortLimit0",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$SortFetchZeroRuleConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ReduceExpressionsRule(Calc)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$CalcReduceExpressionsRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ReduceExpressionsRule(Filter)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$FilterReduceExpressionsRule",
+      "attempts": 3404,
+      "productions": 606,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ReduceExpressionsRule(Join)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$JoinReduceExpressionsRule",
+      "attempts": 2610,
+      "productions": 21,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ReduceExpressionsRule(Project)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$ProjectReduceExpressionsRule",
+      "attempts": 34943,
+      "productions": 3657,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ReduceExpressionsRule(Window)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ReduceExpressionsRule$WindowReduceExpressionsRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ReduceExpressionsRule.java",
+        "sha256": "8bce7309e778f14db8534ddb6a910779d455be95210282361d1b881e9cf04d98",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "RowsToRangeRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.RowsToRangeRule",
+      "attempts": 1048,
+      "productions": 35,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 23,
+          "step": "Window ROWS to RANGE"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 23,
+          "step": "Window ROWS to RANGE"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 23,
+          "step": "Window ROWS to RANGE"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/RowsToRangeRule.java",
+        "sha256": "e6e5f38fac64cec4db1a31d22f10d96ded09d9393c26a847256e1b997ac2f6da",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "SessionRewriteRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.SessionRewriteRule",
+      "attempts": 72,
+      "productions": 19,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 3,
+          "step": "Rewrite SESSION"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 3,
+          "step": "Rewrite SESSION"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 3,
+          "step": "Rewrite SESSION"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SessionRewriteRule.java",
+        "sha256": "2fbd83199d3b5dbe8c874df1ba027902b584600fc28746ea8cd5a2e02facdd4f",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "SetOpToFilterRule",
+      "implementation": "org.apache.calcite.rel.rules.SetOpToFilterRule",
+      "attempts": 1037,
+      "productions": 46,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SetOpToFilterRule.java",
+        "sha256": "0cbf5be3c35ada1ba163bcb3cccbcbd10d02a505a41c8bdfcc91c1ffe663f8a1",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "SetopOptimizerRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.SetopOptimizerRule",
+      "attempts": 1,
+      "productions": 1,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/SetopOptimizerRule.java",
+        "sha256": "db717d6bc8d592d64f045e6b6fe450f647a2a1f5515b3d16679988e09d998f10",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "SortRemoveConstantKeysRule",
+      "implementation": "org.apache.calcite.rel.rules.SortRemoveConstantKeysRule",
+      "attempts": 425,
+      "productions": 5,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveConstantKeysRule.java",
+        "sha256": "3de33da3345afb71fda560320ee952f40ae34f99bfd0013c787c5086dbe03731",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "SortRemoveRedundantRule",
+      "implementation": "org.apache.calcite.rel.rules.SortRemoveRedundantRule",
+      "attempts": 428,
+      "productions": 12,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRedundantRule.java",
+        "sha256": "d92bd3f55e8380a35d3ca56c5337d1783be5968bb36ad9efcdf8207be10c290f",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "SortRemoveRule",
+      "implementation": "org.apache.calcite.rel.rules.SortRemoveRule",
+      "attempts": 427,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 10,
+          "step": "Useless sort removal"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SortRemoveRule.java",
+        "sha256": "3bc00671ac4bde262c0a1e0bb384ea26b176b1e3acb20deddd497c3396f92a22",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "SubQueryRemoveRule:Filter",
+      "implementation": "org.apache.calcite.rel.rules.SubQueryRemoveRule",
+      "attempts": 290,
+      "productions": 290,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "sha256": "ea5ee9552e4806efde1e7bb0d91cbb5e160c55e6cce44dfdb0d15121ed164c55",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "SubQueryRemoveRule:Join",
+      "implementation": "org.apache.calcite.rel.rules.SubQueryRemoveRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "sha256": "ea5ee9552e4806efde1e7bb0d91cbb5e160c55e6cce44dfdb0d15121ed164c55",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "SubQueryRemoveRule:Project",
+      "implementation": "org.apache.calcite.rel.rules.SubQueryRemoveRule",
+      "attempts": 91,
+      "productions": 91,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 0,
+          "step": "Remove sub-queries"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/SubQueryRemoveRule.java",
+        "sha256": "ea5ee9552e4806efde1e7bb0d91cbb5e160c55e6cce44dfdb0d15121ed164c55",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "TableFunctionReduceExpressionsRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.TableFunctionReduceExpressionsRule",
+      "attempts": 145,
+      "productions": 29,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 2,
+          "step": "Reduce table function arguments"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 2,
+          "step": "Reduce table function arguments"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 2,
+          "step": "Reduce table function arguments"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/TableFunctionReduceExpressionsRule.java",
+        "sha256": "801209257d9b85696a4ba576ad400eb23e187df31e28d7f4d4c877f18cf37180",
+        "has_asf_header": false
+      }
+    },
+    {
+      "description": "Union",
+      "implementation": "org.apache.calcite.rel.rules.PruneEmptyRules$UnionEmptyPruneRuleConfig$1",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 5,
+          "step": "Remove empty relations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/PruneEmptyRules.java",
+        "sha256": "2672e5ba6e27b3bc9d31492572e8529564da6cf9e2751c79be134d906aa62412",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "UnionEliminatorRule",
+      "implementation": "org.apache.calcite.rel.rules.UnionEliminatorRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 31,
+          "step": "Remove dead code"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 31,
+          "step": "Remove dead code"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionEliminatorRule.java",
+        "sha256": "8ed66f1b09585a5f4c86f299ed739ea5d15793b3b26f177abcaf8453debd4eba",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "UnionMergeRule",
+      "implementation": "org.apache.calcite.rel.rules.UnionMergeRule",
+      "attempts": 1062,
+      "productions": 1062,
+      "placements": [
+        {
+          "optimization_level": 0,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 0,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 1,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 9,
+          "step": "Simplify set operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 12,
+          "step": "Merge identical operations"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 20,
+          "step": "Rewrite INTERSECT/EXCEPT ALL"
+        },
+        {
+          "optimization_level": 2,
+          "step_index": 30,
+          "step": "Merge identical operations"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnionMergeRule.java",
+        "sha256": "d801a8fb13d671d0736bcdc6b1c3670a00c2eda81bb3b5cae75c7cbf5ff290f6",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "UnnestDecorrelateRule",
+      "implementation": "org.apache.calcite.rel.rules.UnnestDecorrelateRule",
+      "attempts": 0,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 15,
+          "step": "Decorrelate UNNEST"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "calcite",
+        "path": "core/src/main/java/org/apache/calcite/rel/rules/UnnestDecorrelateRule.java",
+        "sha256": "31aaf1768651c1491db229198cf820847fab1b97b7df9d78b4b0dd8fb86e8291",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ValuesReduceRule",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ValuesReduceRule",
+      "attempts": 5,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "sha256": "00c3f9a519d9eabdb42a07376929a02c14f9f98a7a6cdce3b0aecfe8f917020f",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ValuesReduceRule(Project)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ValuesReduceRule",
+      "attempts": 4879,
+      "productions": 1074,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": false,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "sha256": "00c3f9a519d9eabdb42a07376929a02c14f9f98a7a6cdce3b0aecfe8f917020f",
+        "has_asf_header": true
+      }
+    },
+    {
+      "description": "ValuesReduceRule(Project-Filter)",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.ValuesReduceRule",
+      "attempts": 4,
+      "productions": 0,
+      "placements": [
+        {
+          "optimization_level": 2,
+          "step_index": 4,
+          "step": "Constant fold"
+        }
+      ],
+      "proposed_disposition": "retain_behavior_in_initial_parity_scope",
+      "needs_targeted_production_test": true,
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/ValuesReduceRule.java",
+        "sha256": "00c3f9a519d9eabdb42a07376929a02c14f9f98a7a6cdce3b0aecfe8f917020f",
+        "has_asf_header": true
+      }
+    }
+  ],
+  "direct_steps": [
+    {
+      "index": 1,
+      "step": "Reject unsupported plans",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer$1",
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+        "sha256": "27ba114337665fb8fdf40bf7a3f2ab3ac1ef1fcaa499d2dab566e08ea95db8f8",
+        "has_asf_header": false
+      }
+    },
+    {
+      "index": 6,
+      "step": "Move Correlate projections",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer$2",
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+        "sha256": "27ba114337665fb8fdf40bf7a3f2ab3ac1ef1fcaa499d2dab566e08ea95db8f8",
+        "has_asf_header": false
+      }
+    },
+    {
+      "index": 21,
+      "step": "Decorrelate",
+      "implementation": "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer$5",
+      "source": {
+        "owner": "feldera",
+        "path": "sql-to-dbsp-compiler/SQL-compiler/src/main/java/org/dbsp/sqlCompiler/compiler/frontend/calciteCompiler/optimizer/CalciteOptimizer.java",
+        "sha256": "27ba114337665fb8fdf40bf7a3f2ab3ac1ef1fcaa499d2dab566e08ea95db8f8",
+        "has_asf_header": false
+      }
+    }
+  ]
+}

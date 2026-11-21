@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "archive_index": "state-outside-view-cones-archive.json",
+  "scope": "Reverse data inputs from all exported sinks, with explicit recursive view feedback.",
+  "measurements": {
+    "classic": {
+      "totals": {
+        "total_cases": 8573,
+        "status_exported": 8573,
+        "circuits": 8573,
+        "operators": 81124,
+        "all_sinks": 17324,
+        "user_sinks": 8751
+      },
+      "outside_all_sinks": {
+        "DBSPSourceMultisetOperator/top_level/hashed": 7695,
+        "DBSPSourceMapOperator/top_level/hashed": 714,
+        "DBSPApplyOperator/top_level/hashed": 1039,
+        "DBSPDelayOperator/top_level/hashed": 474,
+        "DBSPIntegrateTraceRetainKeysOperator/top_level/hashed": 672,
+        "DBSPIntegrateTraceRetainNValuesOperator/top_level/hashed": 91,
+        "DBSPApplyNOperator/top_level/hashed": 49,
+        "DBSPApply2Operator/top_level/hashed": 59,
+        "DBSPIntegrateTraceRetainValuesOperator/top_level/hashed": 57
+      },
+      "outside_user_sinks": {
+        "DBSPSourceMultisetOperator/top_level/hashed": 7762,
+        "DBSPConstantOperator/top_level/hashed": 7959,
+        "DBSPSinkOperator/top_level/hashed": 8573,
+        "DBSPSourceMapOperator/top_level/hashed": 714,
+        "DBSPApplyOperator/top_level/hashed": 1039,
+        "DBSPDelayOperator/top_level/hashed": 541,
+        "DBSPIntegrateTraceRetainKeysOperator/top_level/hashed": 672,
+        "DBSPIntegrateTraceRetainNValuesOperator/top_level/hashed": 91,
+        "DBSPIncrementalConstantOperator/top_level/hashed": 381,
+        "DBSPApplyNOperator/top_level/hashed": 49,
+        "DBSPApply2Operator/top_level/hashed": 59,
+        "DBSPIntegrateTraceRetainValuesOperator/top_level/hashed": 57,
+        "DBSPSumOperator/top_level/hashed": 68,
+        "DBSPWaterlineOperator/top_level/hashed": 67,
+        "DBSPControlledKeyFilterOperator/top_level/hashed": 67,
+        "DBSPInputMapWithWaterlineOperator/top_level/hashed": 3,
+        "DBSPIntegrateOperator/top_level/hashed": 13
+      },
+      "ordered_input_digest": "67d39642e8ae005d3775874c6c69d4b16ca0d64d889d8cf5301eb833223677c9"
+    },
+    "gen2": {
+      "totals": {
+        "total_cases": 8546,
+        "status_exported": 8529,
+        "circuits": 8529,
+        "operators": 76150,
+        "all_sinks": 17235,
+        "user_sinks": 8706,
+        "status_skipped": 17
+      },
+      "outside_all_sinks": {
+        "DBSPSourceMultisetOperator/top_level/hashed": 7693,
+        "DBSPSourceMapOperator/top_level/hashed": 711,
+        "DBSPApplyOperator/top_level/hashed": 1025,
+        "DBSPDelayOperator/top_level/hashed": 468,
+        "DBSPIntegrateTraceRetainKeysOperator/top_level/hashed": 657,
+        "DBSPIntegrateTraceRetainNValuesOperator/top_level/hashed": 91,
+        "DBSPApplyNOperator/top_level/hashed": 50,
+        "DBSPApply2Operator/top_level/hashed": 59,
+        "DBSPIntegrateTraceRetainValuesOperator/top_level/hashed": 55
+      },
+      "outside_user_sinks": {
+        "DBSPSourceMultisetOperator/top_level/hashed": 7760,
+        "DBSPIncrementalConstantOperator/top_level/hashed": 8320,
+        "DBSPSinkOperator/top_level/hashed": 8529,
+        "DBSPSourceMapOperator/top_level/hashed": 711,
+        "DBSPApplyOperator/top_level/hashed": 1025,
+        "DBSPDelayOperator/top_level/hashed": 535,
+        "DBSPIntegrateTraceRetainKeysOperator/top_level/hashed": 657,
+        "DBSPIntegrateTraceRetainNValuesOperator/top_level/hashed": 91,
+        "DBSPApplyNOperator/top_level/hashed": 50,
+        "DBSPApply2Operator/top_level/hashed": 59,
+        "DBSPIntegrateTraceRetainValuesOperator/top_level/hashed": 55,
+        "DBSPSumOperator/top_level/hashed": 64,
+        "DBSPWaterlineOperator/top_level/hashed": 67,
+        "DBSPControlledKeyFilterOperator/top_level/hashed": 67,
+        "DBSPConstantOperator/top_level/hashed": 1
+      },
+      "ordered_input_digest": "8acced6bf87161c77b2f609788816725f8fb3f085bc469f5306eb8c2ac468c6d"
+    }
+  },
+  "outside_all_sink_delay_occurrences": 942,
+  "planned_g9_fixture": {
+    "classic": {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093Chain",
+      "case_index": 0,
+      "engine_mode": "classic",
+      "changed_json_pointer": "/circuit/allOperators/10/annotations/1/hash",
+      "prior_delay_id": "caa7ee5d37a77202ec1f7dcc98fd3d399deb5489ff2fbbcb185c18ac7e1f0350",
+      "changed_delay_id": "dd311207b8c5ecfbba61353673ce1afd5afb9401a3a893166799b1285020afff",
+      "operator": "DBSPDelayOperator",
+      "view_reachable": false,
+      "expected_default": "Refuse automatic migration for the LATENESS pipeline with unequal operator IDs",
+      "controller_fallback_if_bootstrapping": "UnexpectedBootstrap"
+    },
+    "gen2": {
+      "source_test": "org.dbsp.sqlCompiler.compiler.sql.streaming.MinWaterlineIncrementalTests#issue7093Chain",
+      "case_index": 0,
+      "engine_mode": "gen2",
+      "changed_json_pointer": "/circuit/allOperators/10/annotations/1/hash",
+      "prior_delay_id": "9857d60a172ee733d5bf4f55c4908f8a62b82eb544d9356149c13246b5f5cf15",
+      "changed_delay_id": "21c18bc329f8dd2e0a3ee8a0b836c290d2f98283757efaa1315c4cbb822c3924",
+      "operator": "DBSPDelayOperator",
+      "view_reachable": false,
+      "expected_default": "Refuse automatic migration for the LATENESS pipeline with unequal operator IDs",
+      "controller_fallback_if_bootstrapping": "UnexpectedBootstrap"
+    }
+  },
+  "deployment_executed": false,
+  "classic_persistent_restore": {
+    "archive_index": "state-outside-view-restore-archive.json",
+    "checkpoint_file": "transaction-z1-0-caa7ee5d37a77202ec1f7dcc98fd3d399deb5489ff2fbbcb185c18ac7e1f0350.dat",
+    "checkpoint_file_bytes": 48,
+    "unchanged_direct_restore_passed": true,
+    "changed_delay_in_need_backfill": true,
+    "operations_in_backfill_plan": 8,
+    "replay_sources": 0,
+    "runtime_checks_passed": 3
+  }
+}

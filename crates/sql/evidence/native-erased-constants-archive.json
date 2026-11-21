@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-erased-constants.tar.gz",
+  "bytes": 97462916,
+  "sha256": "b4d3d75c96084f5178936c888215b12581eb1393d33b3f7f4a074a9a2860294d",
+  "manifest_sha256": "d28912289f21321ef599f428e8b1b8e9dc275ece607799af7d9e7e358fc757fc",
+  "verified_files": 11,
+  "all_members_verified": true
+}

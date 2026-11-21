@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-fanout-clones-20261118-v1.tar.gz",
+  "bytes": 30244790,
+  "sha256": "a1416a14c6c4fdea77db3d4acc90a264160fd84a958ef01385d0b6973b2c42bf",
+  "manifest_sha256": "c22fbc74c9d6e26fb0092fc2efda8dd4788bbf35723231ed958acaadef883e88",
+  "verified_files": 16410,
+  "all_members_verified": true
+}

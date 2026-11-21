@@ -1,0 +1,47 @@
+{
+  "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
+  "binary_sha256": {
+    "java": "0a91100ebcde108eb9ba6c29ef00e4149544ae330ea5d4ae05c27af3bb9937a1",
+    "hybrid": "7ba528be7866cb7c198f27c06046477a1141c939a1d06bc46b88b140aaca5f9c"
+  },
+  "generated_rust_sha256": {
+    "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
+    "hybrid": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7"
+  },
+  "restores": [
+    {
+      "writer": "java",
+      "reader": "hybrid",
+      "bootstrap": false,
+      "checkpoint_id": "01a1f844-ecd8-7e62-b4c0-80c19e17fd84",
+      "restored_count_deltas": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ]
+      ],
+      "late_input_dropped_after_restore": true
+    },
+    {
+      "writer": "hybrid",
+      "reader": "java",
+      "bootstrap": false,
+      "checkpoint_id": "01a1f844-ecf2-7ab3-aad1-92ce6e3e0956",
+      "restored_count_deltas": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ]
+      ],
+      "late_input_dropped_after_restore": true
+    }
+  ]
+}

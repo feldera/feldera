@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/native-rolling-final.tar.gz",
+  "bytes": 43248209,
+  "sha256": "f7a1f239ab5e3d98a50c91ef64679c59530f32dcb925491f87b234d7006cf2e5",
+  "manifest_sha256": "35a35d30bb958eecc057d9acf922ab6bf7308e85348f0941a6cfdc653132a821",
+  "verified_files": 361,
+  "all_members_verified": true
+}

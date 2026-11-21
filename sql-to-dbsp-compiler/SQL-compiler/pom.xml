@@ -13,6 +13,7 @@
     </parent>
 
     <properties>
+        <feldera.test.reports>${project.build.directory}/surefire-reports</feldera.test.reports>
         <maven.compiler.source>19</maven.compiler.source>
         <maven.compiler.target>19</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -75,6 +76,7 @@
                 <version>3.1.2</version>
                 <configuration>
                     <runOrder>alphabetical</runOrder>
+                    <reportsDirectory>${feldera.test.reports}</reportsDirectory>
                     <argLine>-ea</argLine>
                     <properties>
                         <property>

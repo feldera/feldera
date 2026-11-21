@@ -1,0 +1,1898 @@
+--- a/src/test_utils.rs
++++ b/src/test_utils.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -381,6 +382,7 @@
+ 
+ pub fn table(name: impl Into<String>) -> TableFactor {
+     TableFactor::Table {
++        optimizer_hints: vec![],
+         name: ObjectName::from(vec![Ident::new(name.into())]),
+         alias: None,
+         args: None,
+@@ -397,6 +399,7 @@
+ 
+ pub fn table_from_name(name: ObjectName) -> TableFactor {
+     TableFactor::Table {
++        optimizer_hints: vec![],
+         name,
+         alias: None,
+         args: None,
+@@ -417,6 +420,7 @@
+     alias: impl Into<String>,
+ ) -> TableFactor {
+     TableFactor::Table {
++        optimizer_hints: vec![],
+         name: ObjectName::from(vec![Ident::new(name)]),
+         alias: table_alias(with_as_keyword, alias),
+         args: None,
+--- a/src/tokenizer.rs
++++ b/src/tokenizer.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -807,6 +808,7 @@
+ impl core::error::Error for TokenizerError {}
+ 
+ struct State<'a> {
++    byte_offset: usize,
+     peekable: Peekable<Chars<'a>>,
+     line: u64,
+     col: u64,
+@@ -818,6 +820,7 @@
+         match self.peekable.next() {
+             None => None,
+             Some(s) => {
++                self.byte_offset += s.len_utf8();
+                 if s == '\n' {
+                     self.line += 1;
+                     self.col = 1;
+@@ -945,6 +948,8 @@
+ 
+ /// SQL Tokenizer
+ pub struct Tokenizer<'a> {
++    raw_unicode_literals: bool,
++    in_sql_hint: bool,
+     dialect: &'a dyn Dialect,
+     query: &'a str,
+     /// If true (the default), the tokenizer will un-escape literal
+@@ -953,6 +958,12 @@
+ }
+ 
+ impl<'a> Tokenizer<'a> {
++    /// Preserve Unicode escapes until the caller reads the optional UESCAPE clause.
++    pub fn with_raw_unicode_literals(mut self) -> Self {
++        self.raw_unicode_literals = true;
++        self
++    }
++
+     /// Create a new SQL tokenizer for the specified SQL statement
+     ///
+     /// ```
+@@ -974,6 +985,8 @@
+             dialect,
+             query,
+             unescape: true,
++            in_sql_hint: false,
++            raw_unicode_literals: false,
+         }
+     }
+ 
+@@ -1041,6 +1054,7 @@
+         mut mapper: impl FnMut(TokenWithSpan) -> TokenWithSpan,
+     ) -> Result<(), TokenizerError> {
+         let mut state = State {
++            byte_offset: 0,
+             peekable: self.query.chars().peekable(),
+             line: 1,
+             col: 1,
+@@ -1143,6 +1157,7 @@
+ 
+         // Create a state for tracking position within the hint
+         let mut state = State {
++            byte_offset: 0,
+             peekable: hint_content.chars().peekable(),
+             line: span.start.line,
+             col: span.start.column,
+@@ -1263,6 +1278,7 @@
+         // TODO: implement parsing of exponent here
+         if word.chars().all(|x| x.is_ascii_digit() || x == '.') {
+             let mut inner_state = State {
++                byte_offset: 0,
+                 peekable: word.chars().peekable(),
+                 line: 0,
+                 col: 0,
+@@ -1411,7 +1427,7 @@
+                     }
+                 }
+                 // PostgreSQL accepts "escape" string constants, which are an extension to the SQL standard.
+-                x @ 'e' | x @ 'E' if self.dialect.supports_string_escape_constant() => {
++                x @ 'e' | x @ 'E' if self.in_sql_hint || self.dialect.supports_string_escape_constant() => {
+                     let starting_loc = chars.location();
+                     chars.next(); // consume, to check the next char
+                     match chars.peek() {
+@@ -1436,7 +1452,11 @@
+                         chars_clone.next(); // consume the '&' in the clone
+                         if chars_clone.peek() == Some(&'\'') {
+                             chars.next(); // consume the '&' in the original iterator
+-                            let s = unescape_unicode_single_quoted_string(chars)?;
++                            let s = if self.raw_unicode_literals {
++                                self.tokenize_single_quoted_string(chars, '\'', false)?
++                            } else {
++                                unescape_unicode_single_quoted_string(chars)?
++                            };
+                             return Ok(Some(Token::UnicodeStringLiteral(s)));
+                         }
+                     }
+@@ -1763,9 +1783,13 @@
+                     match chars.peek() {
+                         Some('*') => {
+                             chars.next(); // consume the '*', starting a multi-line comment
+-                            self.tokenize_multiline_comment(chars)
+-                        }
+-                        Some('/') if dialect_of!(self is SnowflakeDialect) => {
++                            if self.dialect.supports_sql_hint_comments() && chars.peek() == Some(&'+') {
++                                self.tokenize_sql_hint(chars)
++                            } else {
++                                self.tokenize_multiline_comment(chars)
++                            }
++                        }
++                        Some('/') if dialect_of!(self is SnowflakeDialect) || self.dialect.supports_slash_line_comments() => {
+                             chars.next(); // consume the second '/', starting a snowflake single-line comment
+                             let comment = self.tokenize_single_line_comment(chars);
+                             Ok(Some(Token::Whitespace(Whitespace::SingleLineComment {
+@@ -2387,7 +2411,9 @@
+         starting_loc: Location,
+         chars: &mut State,
+     ) -> Result<String, TokenizerError> {
+-        if let Some(s) = unescape_single_quoted_string(chars) {
++        let mut decoder = Unescape::new(chars);
++        decoder.preserve_unknown = self.dialect.preserves_unknown_string_escapes();
++        if let Some(s) = decoder.unescape() {
+             return Ok(s);
+         }
+ 
+@@ -2631,6 +2657,35 @@
+         self.tokenizer_error(error_loc, "Unterminated string literal")
+     }
+ 
++    fn tokenize_sql_hint(&self, chars: &mut State) -> Result<Option<Token>, TokenizerError> {
++        let start = chars.byte_offset;
++        chars.next(); // '+' after the opening /*
++        let lexer = Self {
++            raw_unicode_literals: self.raw_unicode_literals,
++            dialect: self.dialect,
++            query: self.query,
++            unescape: false,
++            in_sql_hint: true,
++        };
++        loop {
++            let mut lookahead = chars.peekable.clone();
++            if lookahead.next() == Some('*') && lookahead.next() == Some('/') {
++                let end = chars.byte_offset;
++                chars.next();
++                chars.next();
++                return Ok(Some(Token::Whitespace(Whitespace::MultiLineComment(
++                    self.query[start..end].to_owned(),
++                ))));
++            }
++            if chars.peek().is_none() {
++                return self.tokenizer_error(chars.location(), "Unterminated SQL hint");
++            }
++            // Reuse SQL lexing for strings, quoted identifiers and ordinary
++            // comments. Keep their original bytes for the typed hint parser.
++            lexer.next_token(chars, None, None)?;
++        }
++    }
++
+     fn tokenize_multiline_comment(
+         &self,
+         chars: &mut State,
+@@ -2724,17 +2779,19 @@
+     s
+ }
+ 
++#[cfg(test)]
+ fn unescape_single_quoted_string(chars: &mut State<'_>) -> Option<String> {
+     Unescape::new(chars).unescape()
+ }
+ 
+ struct Unescape<'a: 'b, 'b> {
+     chars: &'b mut State<'a>,
++    preserve_unknown: bool,
+ }
+ 
+ impl<'a: 'b, 'b> Unescape<'a, 'b> {
+     fn new(chars: &'b mut State<'a>) -> Self {
+-        Self { chars }
++        Self { chars, preserve_unknown: false }
+     }
+     fn unescape(mut self) -> Option<String> {
+         let mut unescaped = String::new();
+@@ -2767,7 +2824,12 @@
+                 'U' => self.unescape_unicode_32()?,
+                 'x' => self.unescape_hex()?,
+                 c if c.is_digit(8) => self.unescape_octal(c)?,
+-                c => c,
++                c => {
++                    if self.preserve_unknown && c != '\\' && c != '\'' {
++                        unescaped.push('\\');
++                    }
++                    c
++                },
+             };
+ 
+             unescaped.push(Self::check_null(c)?);
+@@ -4103,6 +4165,7 @@
+     fn check_unescape(s: &str, expected: Option<&str>) {
+         let s = format!("'{s}'");
+         let mut state = State {
++            byte_offset: 0,
+             peekable: s.chars().peekable(),
+             line: 0,
+             col: 0,
+--- a/src/parser/mod.rs
++++ b/src/parser/mod.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed under the Apache License, Version 2.0 (the "License");
+ // you may not use this file except in compliance with the License.
+ // You may obtain a copy of the License at
+@@ -1738,7 +1739,7 @@
+             Token::SingleQuotedString(_)
+             | Token::DoubleQuotedString(_)
+             | Token::HexStringLiteral(_)
+-                if w.value.starts_with('_') =>
++                if w.value.starts_with('_') && w_span.end == self.peek_token_ref().span.start =>
+             {
+                 Ok(Expr::Prefixed {
+                     prefix: w.to_ident(w_span),
+@@ -1863,7 +1864,7 @@
+             _ => None,
+         };
+         let opt_expr = self.maybe_parse(|parser| {
+-            match parser.parse_data_type()? {
++            match parser.parse_type_name()? {
+                 DataType::Interval { .. } => parser.parse_interval(),
+                 // Custom names need dialect consent, else `NOT 'a'` would read as a typed string.
+                 DataType::Custom(name, modifiers)
+@@ -2035,7 +2036,8 @@
+                     ),
+                 })
+             }
+-            Token::EscapedStringLiteral(_) if dialect_is!(dialect is PostgreSqlDialect | GenericDialect) =>
++            Token::EscapedStringLiteral(_) if dialect.supports_string_escape_constant()
++                || dialect_is!(dialect is PostgreSqlDialect | GenericDialect) =>
+             {
+                 self.prev_token();
+                 Ok(Expr::Value(self.parse_value()?))
+@@ -2095,7 +2097,7 @@
+                         }
+                     };
+                 self.expect_token(&Token::RParen)?;
+-                Ok(expr)
++                dialect.parenthesized_suffix(self, expr, next_token_index)
+             }
+             Token::Placeholder(_) | Token::Colon | Token::AtSign => {
+                 self.prev_token();
+@@ -2635,7 +2637,7 @@
+         {
+             self.parse_xmlparse_argument_list()?
+         } else {
+-            self.parse_function_argument_list()?
++            self.parse_function_argument_list(&name)?
+         };
+         let mut parameters = FunctionArguments::None;
+         // ClickHouse aggregations support parametric functions like `HISTOGRAM(0.5, 0.6)(x, y)`
+@@ -2644,7 +2646,7 @@
+             && self.consume_token(&Token::LParen)
+         {
+             parameters = FunctionArguments::List(args);
+-            args = self.parse_function_argument_list()?;
++            args = self.parse_function_argument_list(&name)?;
+         }
+ 
+         let within_group = if self.parse_keywords(&[Keyword::WITHIN, Keyword::GROUP]) {
+@@ -2658,6 +2660,7 @@
+         };
+ 
+         let filter = if self.dialect.supports_filter_during_aggregation()
++            && self.peek_nth_token_ref(1).token == Token::LParen
+             && self.parse_keyword(Keyword::FILTER)
+             && self.consume_token(&Token::LParen)
+             && self.parse_keyword(Keyword::WHERE)
+@@ -2738,7 +2741,7 @@
+     /// Parse time-related function `name` possibly followed by `(...)` arguments.
+     pub fn parse_time_functions(&mut self, name: ObjectName) -> Result<Expr, ParserError> {
+         let args = if self.consume_token(&Token::LParen) {
+-            FunctionArguments::List(self.parse_function_argument_list()?)
++            FunctionArguments::List(self.parse_function_argument_list(&name)?)
+         } else {
+             FunctionArguments::None
+         };
+@@ -2814,7 +2817,16 @@
+         if self.dialect.supports_group_by_expr() {
+             if self.parse_keywords(&[Keyword::GROUPING, Keyword::SETS]) {
+                 self.expect_token(&Token::LParen)?;
+-                let result = self.parse_comma_separated(|p| p.parse_tuple(true, true))?;
++                let result = self.parse_comma_separated(|p| {
++                    if p.dialect.supports_nested_grouping_sets()
++                        && ((p.peek_keyword(Keyword::GROUPING) && matches!(&p.peek_nth_token(1).token, Token::Word(w) if w.keyword == Keyword::SETS))
++                            || p.peek_keyword(Keyword::CUBE) || p.peek_keyword(Keyword::ROLLUP))
++                    {
++                        let _guard = p.recursion_counter.try_decrease()?;
++                        return p.parse_group_by_expr().map(|expr| vec![expr]);
++                    }
++                    p.parse_tuple(true, true)
++                })?;
+                 self.expect_token(&Token::RParen)?;
+                 Ok(Expr::GroupingSets(result))
+             } else if self.parse_keyword(Keyword::CUBE) {
+@@ -3036,9 +3048,7 @@
+         {
+             ExtractSyntax::Comma
+         } else {
+-            return Err(ParserError::ParserError(
+-                "Expected 'FROM' or ','".to_string(),
+-            ));
++            return self.expected_ref("'FROM' or ','", self.peek_token_ref());
+         };
+ 
+         let expr = self.parse_expr()?;
+@@ -3685,6 +3695,7 @@
+             let field_type = parser.parse_data_type()?;
+ 
+             Ok(StructField {
++                nullable: None,
+                 field_name: Some(field_name),
+                 field_type,
+                 options: None,
+@@ -3728,6 +3739,7 @@
+         let options = self.maybe_parse_options(Keyword::OPTIONS)?;
+         Ok((
+             StructField {
++                nullable: None,
+                 field_name,
+                 field_type,
+                 options,
+@@ -3818,7 +3830,7 @@
+         self.expect_token(&Token::LBrace)?;
+         let fields = self.parse_comma_separated0(Self::parse_duckdb_map_field, Token::RBrace)?;
+         self.expect_token(&Token::RBrace)?;
+-        Ok(Expr::Map(Map { entries: fields }))
++        Ok(Expr::Map(Map { entries: fields, trailing_key: None }))
+     }
+ 
+     /// Parse a field for a duckdb [map]
+@@ -4223,7 +4235,7 @@
+                     let negated = self.parse_keyword(Keyword::NOT);
+                     let regexp = self.parse_keyword(Keyword::REGEXP);
+                     let rlike = self.parse_keyword(Keyword::RLIKE);
+-                    let null = if !self.in_column_definition_state() {
++                    let null = if negated && !regexp && !rlike && !self.in_column_definition_state() {
+                         self.parse_keyword(Keyword::NULL)
+                     } else {
+                         false
+@@ -4605,6 +4617,15 @@
+ 
+     /// Parses `BETWEEN <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
+     pub fn parse_between(&mut self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
++        let symmetry = if self.dialect.supports_between_symmetry() {
++            match self.parse_one_of_keywords(&[Keyword::SYMMETRIC, Keyword::ASYMMETRIC]) {
++                Some(Keyword::SYMMETRIC) => Some(BetweenSymmetry::Symmetric),
++                Some(Keyword::ASYMMETRIC) => Some(BetweenSymmetry::Asymmetric),
++                _ => None,
++            }
++        } else {
++            None
++        };
+         let mut low = self.parse_subexpr(self.dialect.between_low_bound_precedence())?;
+         if self.dialect.supports_comparison_in_between_low_bound()
+             && matches!(
+@@ -4624,6 +4645,7 @@
+         self.expect_keyword_is(Keyword::AND)?;
+         let high = self.parse_subexpr(self.dialect.prec_value(Precedence::Between))?;
+         Ok(Expr::Between {
++            symmetry,
+             expr: Box::new(expr),
+             negated,
+             low: Box::new(low),
+@@ -7065,6 +7087,7 @@
+             ]);
+ 
+         Ok(CreateView {
++            local: None,
+             or_alter,
+             name,
+             columns,
+@@ -13453,7 +13476,8 @@
+             }) => Ok(value),
+             Token::SingleQuotedString(s) => Ok(s),
+             Token::DoubleQuotedString(s) => Ok(s),
+-            Token::EscapedStringLiteral(s) if dialect_of!(self is PostgreSqlDialect | GenericDialect) => {
++            Token::EscapedStringLiteral(s) if self.dialect.supports_string_escape_constant()
++                || dialect_of!(self is PostgreSqlDialect | GenericDialect) => {
+                 Ok(s)
+             }
+             Token::UnicodeStringLiteral(s) => Ok(s),
+@@ -13552,8 +13576,29 @@
+         Ok(values)
+     }
+ 
++    fn parse_timezone_qualifier(&mut self) -> Result<TimezoneInfo, ParserError> {
++        if self.parse_keyword(Keyword::WITH) {
++            let local = self.dialect.supports_local_time_zone() && self.parse_keyword(Keyword::LOCAL);
++            self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
++            Ok(if local { TimezoneInfo::WithLocalTimeZone } else { TimezoneInfo::WithTimeZone })
++        } else if self.parse_keyword(Keyword::WITHOUT) {
++            self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
++            Ok(TimezoneInfo::WithoutTimeZone)
++        } else {
++            Ok(TimezoneInfo::None)
++        }
++    }
++
+     /// Parse a SQL datatype (in the context of a CREATE TABLE statement for example)
+     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
++        let start = self.index;
++        let ty = self.parse_type_name()?;
++        self.dialect.validate_data_type(&ty, &self.tokens[start..self.index.min(self.tokens.len())])?;
++        Ok(ty)
++    }
++
++    // Typed string literals have a dialect-specific set of allowed type names.
++    fn parse_type_name(&mut self) -> Result<DataType, ParserError> {
+         let (ty, trailing_bracket) = self.parse_data_type_helper()?;
+         if trailing_bracket.0 {
+             return parser_err!(
+@@ -13785,15 +13830,7 @@
+                 }
+                 Keyword::TIMESTAMP => {
+                     let precision = self.parse_optional_precision()?;
+-                    let tz = if self.parse_keyword(Keyword::WITH) {
+-                        self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+-                        TimezoneInfo::WithTimeZone
+-                    } else if self.parse_keyword(Keyword::WITHOUT) {
+-                        self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+-                        TimezoneInfo::WithoutTimeZone
+-                    } else {
+-                        TimezoneInfo::None
+-                    };
++                    let tz = self.parse_timezone_qualifier()?;
+                     Ok(DataType::Timestamp(precision, tz))
+                 }
+                 Keyword::TIMESTAMPTZ => Ok(DataType::Timestamp(
+@@ -13805,15 +13842,7 @@
+                 }
+                 Keyword::TIME => {
+                     let precision = self.parse_optional_precision()?;
+-                    let tz = if self.parse_keyword(Keyword::WITH) {
+-                        self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+-                        TimezoneInfo::WithTimeZone
+-                    } else if self.parse_keyword(Keyword::WITHOUT) {
+-                        self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+-                        TimezoneInfo::WithoutTimeZone
+-                    } else {
+-                        TimezoneInfo::None
+-                    };
++                    let tz = self.parse_timezone_qualifier()?;
+                     Ok(DataType::Time(precision, tz))
+                 }
+                 Keyword::TIMETZ => Ok(DataType::Time(
+@@ -14072,10 +14101,10 @@
+             }
+         }
+ 
+-        // Type-qualified array, e.g. `INT ARRAY` or `INT ARRAY[3]`. One-dimensional
+-        // with a single optional size. The `ARRAY` keyword is unambiguous everywhere.
+-        if self.parse_keyword(Keyword::ARRAY) {
+-            let size = if self.consume_token(&Token::LBracket) {
++        // The dialect chooses whether ARRAY suffixes repeat and admit a size.
++        while self.parse_keyword(Keyword::ARRAY) {
++            let size = if self.dialect.supports_array_suffix_cardinality()
++                && self.consume_token(&Token::LBracket) {
+                 let size = self.maybe_parse(|p| p.parse_literal_uint())?;
+                 self.expect_token(&Token::RBracket)?;
+                 size
+@@ -14083,6 +14112,9 @@
+                 None
+             };
+             data = DataType::Array(ArrayElemTypeDef::Qualified(Box::new(data), size));
++            if !self.dialect.supports_repeated_array_suffix() {
++                break;
++            }
+         }
+ 
+         Ok((data, trailing_bracket))
+@@ -14375,6 +14407,9 @@
+     /// Parse an optional `GROUP BY` clause, returning `Some(GroupByExpr)` when present.
+     pub fn parse_optional_group_by(&mut self) -> Result<Option<GroupByExpr>, ParserError> {
+         if self.parse_keywords(&[Keyword::GROUP, Keyword::BY]) {
++            if self.dialect.supports_group_by_distinct() && self.parse_keyword(Keyword::DISTINCT) {
++                return Ok(Some(GroupByExpr::Distinct(self.parse_comma_separated(Parser::parse_group_by_expr)?)));
++            }
+             let expressions = if self.parse_keyword(Keyword::ALL) {
+                 None
+             } else {
+@@ -14477,6 +14512,12 @@
+                         "Missing offset for LIMIT <offset>, <limit>".to_string(),
+                     )
+                 })?;
++                if self.dialect.supports_limit_comma_all() && self.peek_keyword(Keyword::ALL) {
++                    return Ok(Some(LimitClause::OffsetCommaAll {
++                        offset,
++                        all: AttachedToken(self.next_token()),
++                    }));
++                }
+                 return Ok(Some(LimitClause::OffsetCommaLimit {
+                     offset,
+                     limit: self.parse_expr()?,
+@@ -16398,7 +16439,7 @@
+             match ws {
+                 Whitespace::SingleLineComment { comment, prefix } => {
+                     if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
+-                        hints.push(OptimizerHint {
++                        hints.push(OptimizerHint::Raw {
+                             prefix: hint_prefix,
+                             text,
+                             style: OptimizerHintStyle::SingleLine {
+@@ -16410,7 +16451,7 @@
+                 }
+                 Whitespace::MultiLineComment(comment) => {
+                     if let Some((hint_prefix, text)) = Self::extract_hint_prefix_and_text(comment) {
+-                        hints.push(OptimizerHint {
++                        hints.push(OptimizerHint::Raw {
+                             prefix: hint_prefix,
+                             text,
+                             style: OptimizerHintStyle::MultiLine,
+@@ -17181,6 +17222,10 @@
+     fn parse_joins(&mut self) -> Result<Vec<Join>, ParserError> {
+         let mut joins = vec![];
+         loop {
++            if let Some(join) = self.dialect.parse_join(self) {
++                joins.push(join?);
++                continue;
++            }
+             let global = self.parse_keyword(Keyword::GLOBAL);
+             let join = if self.parse_keyword(Keyword::CROSS) {
+                 let join_operator = if self.parse_keyword(Keyword::JOIN) {
+@@ -17314,7 +17359,8 @@
+                             }
+                             _ => {
+                                 return Err(ParserError::ParserError(format!(
+-                                    "expected OUTER, SEMI, ANTI or JOIN after {kw:?}"
++                                    "expected OUTER, SEMI, ANTI or JOIN after {kw:?}{}",
++                                    self.peek_token().span.start
+                                 )))
+                             }
+                         }
+@@ -17524,6 +17570,7 @@
+                         | TableFactor::OpenJsonTable { alias, .. }
+                         | TableFactor::TableFunction { alias, .. }
+                         | TableFactor::Pivot { alias, .. }
++                        | TableFactor::GroupedUnpivot { alias, .. }
+                         | TableFactor::Unpivot { alias, .. }
+                         | TableFactor::MatchRecognize { alias, .. }
+                         | TableFactor::SemanticView { alias, .. }
+@@ -17758,6 +17805,7 @@
+             }
+ 
+             let mut table = TableFactor::Table {
++                optimizer_hints: vec![],
+                 name,
+                 alias,
+                 args,
+@@ -17809,6 +17857,7 @@
+         let alias = self.maybe_parse_table_alias()?;
+ 
+         Ok(TableFactor::Table {
++            optimizer_hints: vec![],
+             name,
+             alias,
+             args,
+@@ -18649,6 +18698,23 @@
+             None
+         };
+         self.expect_token(&Token::LParen)?;
++        if self.dialect.supports_grouped_unpivot() {
++            let measures = self.parse_unpivot_identifiers()?;
++            self.expect_keyword_is(Keyword::FOR)?;
++            let axes = self.parse_unpivot_identifiers()?;
++            self.expect_keyword_is(Keyword::IN)?;
++            self.expect_token(&Token::LParen)?;
++            let columns = self.parse_comma_separated(|p| {
++                let columns = p.parse_unpivot_identifiers()?;
++                let label = if p.parse_keyword(Keyword::AS) { Some(p.parse_expr()?) } else { None };
++                Ok(UnpivotGroup { columns, label })
++            })?;
++            self.expect_token(&Token::RParen)?;
++            let closing_token = AttachedToken(self.expect_token(&Token::RParen)?);
++            let alias = self.maybe_parse_table_alias()?;
++            return Ok(TableFactor::GroupedUnpivot { table: Box::new(table), measures, axes,
++                columns, null_inclusion, closing_token, alias });
++        }
+         let value = self.parse_expr()?;
+         self.expect_keyword_is(Keyword::FOR)?;
+         let name = self.parse_identifier()?;
+@@ -18666,6 +18732,16 @@
+             columns,
+             alias,
+         })
++    }
++
++    fn parse_unpivot_identifiers(&mut self) -> Result<Vec<Ident>, ParserError> {
++        if self.consume_token(&Token::LParen) {
++            let names = self.parse_comma_separated(Parser::parse_identifier)?;
++            self.expect_token(&Token::RParen)?;
++            Ok(names)
++        } else {
++            Ok(vec![self.parse_identifier()?])
++        }
+     }
+ 
+     /// Parse an object UNPIVOT table factor in FROM clause.
+@@ -20066,6 +20142,9 @@
+ 
+     /// Parse a single function argument, handling named and unnamed variants.
+     pub fn parse_function_args(&mut self) -> Result<FunctionArg, ParserError> {
++        if let Some(argument) = self.dialect.parse_function_arg(self) {
++            return argument;
++        }
+         // Parse the argument expression once, then check for a named-arg
+         // operator. Parsing it speculatively and re-parsing on the unnamed
+         // path is O(2^depth) on nested calls like `CAST(CASE (CAST(CASE (…`.
+@@ -20224,7 +20303,7 @@
+     /// FIRST_VALUE(x ORDER BY 1,2,3);
+     /// FIRST_VALUE(x IGNORE NULL);
+     /// ```
+-    fn parse_function_argument_list(&mut self) -> Result<FunctionArgumentList, ParserError> {
++    fn parse_function_argument_list(&mut self, name: &ObjectName) -> Result<FunctionArgumentList, ParserError> {
+         let mut clauses = vec![];
+ 
+         // Handle clauses that may exist with an empty argument list
+@@ -20261,7 +20340,7 @@
+             clauses.push(FunctionArgumentClause::Where(self.parse_expr()?));
+         }
+ 
+-        if self.dialect.supports_window_function_null_treatment_arg() {
++        if self.dialect.supports_inline_null_treatment_for(&name.0) {
+             if let Some(null_treatment) = self.parse_null_treatment()? {
+                 clauses.push(FunctionArgumentClause::IgnoreOrRespectNulls(null_treatment));
+             }
+@@ -20513,7 +20592,13 @@
+     pub fn parse_optional_select_item_exclude(
+         &mut self,
+     ) -> Result<Option<ExcludeSelectItem>, ParserError> {
+-        let opt_exclude = if self.parse_keyword(Keyword::EXCLUDE) {
++        let except_list = self.dialect.supports_wildcard_except_as_exclude()
++            && self.peek_keyword(Keyword::EXCEPT)
++            && self.peek_nth_token(1).token == Token::LParen
++            && matches!(&self.peek_nth_token(2).token, Token::Word(word)
++                if !matches!(word.keyword, Keyword::SELECT | Keyword::WITH | Keyword::TABLE | Keyword::VALUES));
++        let opt_exclude = if self.parse_keyword(Keyword::EXCLUDE)
++            || (except_list && self.parse_keyword(Keyword::EXCEPT)) {
+             if self.consume_token(&Token::LParen) {
+                 let columns =
+                     self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+@@ -20966,6 +21051,9 @@
+         allow_empty: bool,
+         value_keyword: bool,
+     ) -> Result<Values, ParserError> {
++        if let Some(result) = self.dialect.parse_values(self, allow_empty, value_keyword) {
++            return result;
++        }
+         let mut explicit_row = false;
+ 
+         let rows = self.parse_comma_separated(|parser| {
+--- a/src/ast/spans.rs
++++ b/src/ast/spans.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -23,6 +24,7 @@
+     },
+     tokenizer::TokenWithSpan,
+ };
++use crate::ast::OptimizerHint;
+ use core::iter;
+ 
+ use crate::tokenizer::Span;
+@@ -155,6 +157,7 @@
+                     .chain(offset.as_ref().map(|i| i.span()))
+                     .chain(limit_by.iter().map(|i| i.span())),
+             ),
++            LimitClause::OffsetCommaAll { offset, all } => offset.span().union(&all.0.span),
+             LimitClause::OffsetCommaLimit { offset, limit } => offset.span().union(&limit.span()),
+         }
+     }
+@@ -912,6 +915,7 @@
+             ColumnOption::Policy(..) => Span::empty(),
+             ColumnOption::Tags(..) => Span::empty(),
+             ColumnOption::Srid(..) => Span::empty(),
++            ColumnOption::InlineForeignKey { span, .. } => *span,
+             ColumnOption::Invisible => Span::empty(),
+         }
+     }
+@@ -1452,7 +1456,7 @@
+     fn span(&self) -> Span {
+         match self {
+             GroupByExpr::All(_) => Span::empty(),
+-            GroupByExpr::Expressions(exprs, _modifiers) => {
++            GroupByExpr::Distinct(exprs) | GroupByExpr::Expressions(exprs, _) => {
+                 union_spans(exprs.iter().map(|i| i.span()))
+             }
+         }
+@@ -1681,6 +1685,7 @@
+                 ),
+             },
+             Expr::Between {
++                symmetry: _,
+                 expr,
+                 negated: _,
+                 low,
+@@ -1732,6 +1737,7 @@
+                 .union(&union_spans(collation.0.iter().map(|i| i.span()))),
+             Expr::Nested(expr) => expr.span(),
+             Expr::Value(value) => value.span(),
++            Expr::StringLiteralChain(values) => union_spans(values.iter().map(Spanned::span)),
+             Expr::TypedString(TypedString { value, .. }) => value.span(),
+             Expr::Function(function) => function.span(),
+             Expr::GroupingSets(vec) => {
+@@ -1829,12 +1835,14 @@
+                     .chain(iter::once(end_token.0.span)),
+             ),
+             Expr::Exists { subquery, .. } => subquery.span(),
++            Expr::RowConstructor { span, .. } | Expr::WildcardExclusion { span, .. } | Expr::MapQuery { span, .. } => *span,
+             Expr::Subquery(query) => query.span(),
+             Expr::Struct { .. } => Span::empty(),
+             Expr::Named { .. } => Span::empty(),
+             Expr::Dictionary(_) => Span::empty(),
+             Expr::Map(_) => Span::empty(),
+             Expr::Interval(interval) => interval.value.span(),
++            Expr::QualifiedDateTimeDifference { span, .. } => *span,
+             Expr::Wildcard(token) => token.0.span,
+             Expr::QualifiedWildcard(object_name, token) => union_spans(
+                 object_name
+@@ -2131,6 +2139,7 @@
+                 alias,
+                 args: _,
+                 with_hints: _,
++                optimizer_hints,
+                 version: _,
+                 with_ordinality: _,
+                 partitions: _,
+@@ -2142,6 +2151,7 @@
+                 name.0
+                     .iter()
+                     .map(|i| i.span())
++                    .chain(optimizer_hints.iter().map(|hint| hint.span()))
+                     .chain(alias.as_ref().map(|alias| {
+                         union_spans(
+                             iter::once(alias.name.span)
+@@ -2209,6 +2219,10 @@
+                     .chain(default_on_null.as_ref().map(|i| i.span()))
+                     .chain(alias.as_ref().map(|i| i.span())),
+             ),
++            TableFactor::GroupedUnpivot { table, closing_token, alias, .. } => {
++                let span = table.span().union(&closing_token.0.span);
++                alias.as_ref().map_or(span, |name| span.union(&name.span()))
++            }
+             TableFactor::Unpivot {
+                 table,
+                 value,
+@@ -2365,6 +2379,7 @@
+ impl Spanned for FunctionArgExpr {
+     fn span(&self) -> Span {
+         match self {
++            FunctionArgExpr::Table { span, .. } => *span,
+             FunctionArgExpr::Expr(expr) => expr.span(),
+             FunctionArgExpr::QualifiedWildcard(object_name) => {
+                 union_spans(object_name.0.iter().map(|i| i.span()))
+@@ -2443,7 +2458,8 @@
+             JoinOperator::AsOf {
+                 match_condition,
+                 constraint,
+-            } => match_condition.span().union(&constraint.span()),
++            } | JoinOperator::LeftAsOf { match_condition, constraint }
++                => match_condition.span().union(&constraint.span()),
+             JoinOperator::Anti(join_constraint) => join_constraint.span(),
+             JoinOperator::Semi(join_constraint) => join_constraint.span(),
+             JoinOperator::StraightJoin(join_constraint) => join_constraint.span(),
+@@ -2603,12 +2619,23 @@
+     }
+ }
+ 
++impl Spanned for OptimizerHint {
++    fn span(&self) -> Span {
++        match self {
++            OptimizerHint::Raw { .. } => Span::empty(),
++            OptimizerHint::Structured { span, .. } => *span,
++        }
++    }
++}
++
+ impl Spanned for TableObject {
+     fn span(&self) -> Span {
+         match self {
+             TableObject::TableName(ObjectName(segments)) => {
+                 union_spans(segments.iter().map(|i| i.span()))
+             }
++            TableObject::HintedTableName { name, hints } => union_spans(
++                core::iter::once(name.span()).chain(hints.iter().map(|hint| hint.span()))),
+             TableObject::TableFunction(func) => func.span(),
+             TableObject::TableQuery(query) => query.span(),
+         }
+@@ -2673,6 +2700,7 @@
+     fn span(&self) -> Span {
+         union_spans(
+             core::iter::once(self.name.span())
++                .chain(self.local.iter().copied())
+                 .chain(self.columns.iter().map(|i| i.span()))
+                 .chain(core::iter::once(self.query.span()))
+                 .chain(core::iter::once(self.options.span()))
+--- a/src/ast/data_type.rs
++++ b/src/ast/data_type.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -69,6 +70,7 @@
+ #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+ #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+ #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++#[cfg_attr(feature = "visitor", visit(with = "visit_data_type"))]
+ pub enum DataType {
+     /// Table type in [PostgreSQL], e.g. CREATE FUNCTION RETURNS TABLE(...).
+     ///
+@@ -805,7 +807,7 @@
+                 if !fields.is_empty() {
+                     match bracket {
+                         StructBracketKind::Parentheses => {
+-                            write!(f, "STRUCT({})", display_comma_separated(fields))
++                            write!(f, "ROW({})", display_comma_separated(fields))
+                         }
+                         StructBracketKind::AngleBrackets => {
+                             write!(f, "STRUCT<{}>", display_comma_separated(fields))
+@@ -986,6 +988,8 @@
+     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
+     /// [Oracle]: https://docs.oracle.com/en/database/oracle/oracle-database/12.2/nlspg/datetime-data-types-and-time-zone-support.html#GUID-3F1C388E-C651-43D5-ADBC-1A49E5C2CA05
+     WithTimeZone,
++    /// A temporal type interpreted in the local time zone.
++    WithLocalTimeZone,
+     /// Temporal type 'WITHOUT TIME ZONE', e.g. TIME WITHOUT TIME ZONE, [SQL Standard], [Postgresql]
+     ///
+     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
+@@ -1006,6 +1010,7 @@
+             TimezoneInfo::WithTimeZone => {
+                 write!(f, " WITH TIME ZONE")
+             }
++            TimezoneInfo::WithLocalTimeZone => write!(f, " WITH LOCAL TIME ZONE"),
+             TimezoneInfo::WithoutTimeZone => {
+                 write!(f, " WITHOUT TIME ZONE")
+             }
+--- a/src/ast/query.rs
++++ b/src/ast/query.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -589,7 +590,7 @@
+             clause.fmt(f)?;
+         }
+         match &self.group_by {
+-            GroupByExpr::All(_) => {
++            GroupByExpr::Distinct(_) | GroupByExpr::All(_) => {
+                 SpaceOrNewline.fmt(f)?;
+                 self.group_by.fmt(f)?;
+             }
+@@ -1315,6 +1316,27 @@
+     pub alias: Option<Ident>,
+ }
+ 
++/// One set of source columns supplying the measures in an UNPIVOT mapping.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub struct UnpivotGroup {
++    /// Source columns in measure order.
++    pub columns: Vec<Ident>,
++    /// Optional axis tuple or scalar.
++    pub label: Option<Expr>,
++}
++
++impl fmt::Display for UnpivotGroup {
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        write!(f, "({})", display_comma_separated(&self.columns))?;
++        if let Some(label) = &self.label {
++            write!(f, " AS {label}")?;
++        }
++        Ok(())
++    }
++}
++
+ impl fmt::Display for ExprWithAlias {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         let ExprWithAlias { expr, alias } = self;
+@@ -1516,6 +1538,8 @@
+         args: Option<TableFunctionArgs>,
+         /// MSSQL-specific `WITH (...)` hints such as NOLOCK.
+         with_hints: Vec<Expr>,
++        /// SQL optimizer hints immediately following the relation name.
++        optimizer_hints: Vec<OptimizerHint>,
+         /// Optional version qualifier to facilitate table time-travel, as
+         /// supported by BigQuery and MSSQL.
+         version: Option<TableVersion>,
+@@ -1691,6 +1715,23 @@
+         /// Whether to include or exclude NULLs during unpivot.
+         null_inclusion: Option<NullInclusion>,
+         /// Optional alias for the resulting table.
++        alias: Option<TableAlias>,
++    },
++    /// UNPIVOT with grouped measure and axis columns.
++    GroupedUnpivot {
++        /// Input relation.
++        table: Box<TableFactor>,
++        /// Ordered result measure columns.
++        measures: Vec<Ident>,
++        /// Ordered result axis columns.
++        axes: Vec<Ident>,
++        /// Groups of input columns and optional axis values.
++        columns: Vec<UnpivotGroup>,
++        /// Selection of null measure rows.
++        null_inclusion: Option<NullInclusion>,
++        /// End of the UNPIVOT clause before the optional alias.
++        closing_token: AttachedToken,
++        /// Result relation alias.
+         alias: Option<TableAlias>,
+     },
+     /// Object unpivoting on a SUPER expression in the FROM clause.
+@@ -2262,6 +2303,7 @@
+                 alias,
+                 args,
+                 with_hints,
++                optimizer_hints,
+                 version,
+                 partitions,
+                 with_ordinality,
+@@ -2280,6 +2322,7 @@
+                     Some(TableInheritance::IncludeDescendants) => write!(f, "{name} *")?,
+                     None => name.fmt(f)?,
+                 }
++                for hint in optimizer_hints { write!(f, " {hint}")?; }
+                 if let Some(json_path) = json_path {
+                     json_path.fmt(f)?;
+                 }
+@@ -2485,6 +2528,19 @@
+                     name,
+                     display_comma_separated(columns)
+                 )?;
++                if let Some(alias) = alias {
++                    write!(f, " {alias}")?;
++                }
++                Ok(())
++            }
++            TableFactor::GroupedUnpivot { table, measures, axes, columns, null_inclusion, alias, .. } => {
++                write!(f, "{table} UNPIVOT")?;
++                if let Some(nulls) = null_inclusion {
++                    write!(f, " {nulls}")?;
++                }
++                write!(f, " (({}) FOR ({}) IN ({}))",
++                    display_comma_separated(measures), display_comma_separated(axes),
++                    display_comma_separated(columns))?;
+                 if let Some(alias) = alias {
+                     write!(f, " {alias}")?;
+                 }
+@@ -2861,6 +2917,11 @@
+                 self.relation,
+                 suffix(constraint)
+             )),
++            JoinOperator::LeftAsOf { match_condition, constraint } => f.write_fmt(format_args!(
++                "LEFT ASOF JOIN {} MATCH_CONDITION ({match_condition}){}",
++                self.relation,
++                suffix(constraint)
++            )),
+             JoinOperator::StraightJoin(constraint) => f.write_fmt(format_args!(
+                 "STRAIGHT_JOIN {}{}",
+                 self.relation,
+@@ -2923,6 +2984,13 @@
+         /// Additional constraint applied to the `ASOF` join.
+         constraint: JoinConstraint,
+     },
++    /// A left-preserving ASOF join, distinct from the inner ASOF form.
++    LeftAsOf {
++        /// Condition choosing the nearest matching row.
++        match_condition: Expr,
++        /// Equality or other additional ON constraint.
++        constraint: JoinConstraint,
++    },
+     /// `STRAIGHT_JOIN` (MySQL non-standard behavior)
+     ///
+     /// See <https://dev.mysql.com/doc/refman/8.4/en/join.html>.
+@@ -3189,6 +3257,13 @@
+         /// The limit expression.
+         limit: Expr,
+     },
++    /// LIMIT offset, ALL.
++    OffsetCommaAll {
++        /// Number of rows skipped.
++        offset: Expr,
++        /// Location of the ALL keyword.
++        all: AttachedToken,
++    },
+ }
+ 
+ impl fmt::Display for LimitClause {
+@@ -3213,6 +3288,9 @@
+             }
+             LimitClause::OffsetCommaLimit { offset, limit } => {
+                 write!(f, " LIMIT {offset}, {limit}")
++            }
++            LimitClause::OffsetCommaAll { offset, .. } => {
++                write!(f, " LIMIT {offset}, ALL")
+             }
+         }
+     }
+@@ -3873,6 +3951,8 @@
+ /// Represents the two syntactic forms that `GROUP BY` can take, including
+ /// `GROUP BY ALL` with optional modifiers and ordinary `GROUP BY <exprs>`.
+ pub enum GroupByExpr {
++    /// GROUP BY DISTINCT eliminates duplicate grouping sets.
++    Distinct(Vec<Expr>),
+     /// ALL syntax of [Snowflake], [DuckDB] and [ClickHouse].
+     ///
+     /// [Snowflake]: <https://docs.snowflake.com/en/sql-reference/constructs/group-by#label-group-by-all-columns>
+@@ -3890,6 +3970,9 @@
+ impl fmt::Display for GroupByExpr {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         match self {
++            GroupByExpr::Distinct(expressions) => {
++                write!(f, "GROUP BY DISTINCT {}", display_comma_separated(expressions))
++            }
+             GroupByExpr::All(modifiers) => {
+                 write!(f, "GROUP BY ALL")?;
+                 if !modifiers.is_empty() {
+--- a/src/ast/ddl.rs
++++ b/src/ast/ddl.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -2109,6 +2110,15 @@
+     /// [<constraint_characteristics>]
+     /// `).
+     ForeignKey(ForeignKeyConstraint),
++    /// Feldera inline FOREIGN KEY REFERENCES table(column).
++    InlineForeignKey {
++        /// Full clause source range.
++        span: crate::tokenizer::Span,
++        /// Referenced table name.
++        table: Ident,
++        /// Referenced column name.
++        column: Ident,
++    },
+     /// `CHECK (<expr>) [NO INHERIT] [[NOT] ENFORCED]`
+     Check(CheckConstraint),
+     /// Dialect-specific options, such as:
+@@ -2249,6 +2259,7 @@
+                 }
+                 Ok(())
+             }
++            InlineForeignKey { table, column, .. } => write!(f, "FOREIGN KEY REFERENCES {table} ({column})"),
+             ForeignKey(constraint) => {
+                 write!(f, "REFERENCES {}", constraint.foreign_table)?;
+                 if !constraint.referred_columns.is_empty() {
+@@ -4615,6 +4626,8 @@
+ #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+ #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+ pub struct CreateView {
++    /// Feldera's LOCAL view kind and the original modifier's source span.
++    pub local: Option<Span>,
+     /// True if this is a `CREATE OR ALTER VIEW` statement
+     ///
+     /// [MsSql](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-view-transact-sql)
+@@ -4680,7 +4693,8 @@
+         }
+         write!(
+             f,
+-            "{secure}{materialized}{temporary}VIEW {if_not_and_name}{to}",
++            "{local}{secure}{materialized}{temporary}VIEW {if_not_and_name}{to}",
++            local = if self.local.is_some() { "LOCAL " } else { "" },
+             if_not_and_name = if self.if_not_exists {
+                 if self.name_before_not_exists {
+                     format!("{} IF NOT EXISTS", self.name)
+--- a/src/ast/mod.rs
++++ b/src/ast/mod.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -119,7 +120,7 @@
+     TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod, TableSampleModifier,
+     TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier, TableSampleUnit, TableVersion,
+     TableWithJoins, Top, TopQuantity, UpdateTableFromKind, ValueTableMode, Values,
+-    WildcardAdditionalOptions, With, WithFill, XmlNamespaceDefinition, XmlPassingArgument,
++    UnpivotGroup, WildcardAdditionalOptions, With, WithFill, XmlNamespaceDefinition, XmlPassingArgument,
+     XmlPassingClause, XmlTableColumn, XmlTableColumnOption,
+ };
+ 
+@@ -559,6 +560,13 @@
+ 
+ impl fmt::Display for Interval {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        f.write_str("INTERVAL ")?;
++        self.fmt_qualified_value(f)
++    }
++}
++
++impl Interval {
++    fn fmt_qualified_value(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         let value = self.value.as_ref();
+         match (
+             &self.leading_field,
+@@ -575,11 +583,11 @@
+                 assert!(self.last_field.is_none());
+                 write!(
+                     f,
+-                    "INTERVAL {value} SECOND ({leading_precision}, {fractional_seconds_precision})"
++                    "{value} SECOND ({leading_precision}, {fractional_seconds_precision})"
+                 )
+             }
+             _ => {
+-                write!(f, "INTERVAL {value}")?;
++                write!(f, "{value}")?;
+                 if let Some(leading_field) = &self.leading_field {
+                     write!(f, " {leading_field}")?;
+                 }
+@@ -596,6 +604,17 @@
+             }
+         }
+     }
++}
++
++#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++/// Determines whether the bounds in BETWEEN may be supplied in either order.
++pub enum BetweenSymmetry {
++    /// Accept either ordering of the bounds.
++    Symmetric,
++    /// Preserve the given ordering of the bounds.
++    Asymmetric,
+ }
+ 
+ /// A field definition within a struct
+@@ -609,6 +628,9 @@
+     pub field_name: Option<Ident>,
+     /// The field data type.
+     pub field_type: DataType,
++    /// An explicit NULL or NOT NULL modifier on a Feldera ROW field.
++    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
++    pub nullable: Option<bool>,
+     /// Struct field options (e.g., `OPTIONS(...)` on BigQuery).
+     /// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#column_name_and_column_schema)
+     pub options: Option<Vec<SqlOption>>,
+@@ -617,9 +639,11 @@
+ impl fmt::Display for StructField {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         if let Some(name) = &self.field_name {
+-            write!(f, "{name} {}", self.field_type)?;
+-        } else {
+-            write!(f, "{}", self.field_type)?;
++            write!(f, "{name} ")?;
++        }
++        write!(f, "{}", self.field_type)?;
++        if let Some(nullable) = self.nullable {
++            f.write_str(if nullable { " NULL" } else { " NOT NULL" })?;
+         }
+         if let Some(options) = &self.options {
+             write!(f, " OPTIONS({})", display_separated(options, ", "))
+@@ -674,11 +698,27 @@
+ pub struct Map {
+     /// Entries of the map as key/value pairs.
+     pub entries: Vec<MapEntry>,
++    /// A final key without a value. Feldera validates the arity after parsing.
++    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
++    pub trailing_key: Option<Box<Expr>>,
+ }
+ 
+ impl Display for Map {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+-        write!(f, "MAP {{{}}}", display_comma_separated(&self.entries))
++        f.write_str("MAP[")?;
++        for (index, entry) in self.entries.iter().enumerate() {
++            if index > 0 {
++                f.write_str(", ")?;
++            }
++            write!(f, "{}, {}", entry.key, entry.value)?;
++        }
++        if let Some(key) = &self.trailing_key {
++            if !self.entries.is_empty() {
++                f.write_str(", ")?;
++            }
++            write!(f, "{key}")?;
++        }
++        f.write_str("]")
+     }
+ }
+ 
+@@ -1045,6 +1085,8 @@
+     },
+     /// `<expr> [ NOT ] BETWEEN <low> AND <high>`
+     Between {
++        /// Optional SQL symmetry qualifier.
++        symmetry: Option<BetweenSymmetry>,
+         /// Expression being compared.
+         expr: Box<Expr>,
+         /// `true` when the `NOT` modifier is present.
+@@ -1292,6 +1334,8 @@
+     Nested(Box<Expr>),
+     /// A literal value, such as string, number, date or NULL
+     Value(ValueWithSpan),
++    /// Feldera string continuation, retaining each decoded fragment and span.
++    StringLiteralChain(Vec<ValueWithSpan>),
+     /// Prefixed expression, e.g. introducer strings, projection prefix
+     /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
+     /// <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>
+@@ -1336,6 +1380,29 @@
+     /// A parenthesized subquery `(SELECT ...)`, used in expression like
+     /// `SELECT (subquery) AS x` or `WHERE (subquery) = x`
+     Subquery(Box<Query>),
++    /// An explicit ROW constructor with optional field names.
++    RowConstructor {
++        /// Ordered values and explicit field aliases.
++        fields: Vec<ExprWithAlias>,
++        /// Range from ROW through the closing parenthesis.
++        span: Span,
++    },
++    /// Wildcard expansion with excluded columns inside a row.
++    WildcardExclusion {
++        /// The qualified or unqualified wildcard.
++        wildcard: Box<Expr>,
++        /// Columns to exclude, in source order.
++        columns: Vec<ObjectName>,
++        /// Range including the exclusion list.
++        span: Span,
++    },
++    /// Construct a MAP from the two columns of a query.
++    MapQuery {
++        /// Two-column input query.
++        query: Box<Query>,
++        /// Complete range of the MAP constructor.
++        span: Span,
++    },
+     /// The `GROUPING SETS` expr.
+     GroupingSets(Vec<Vec<Expr>>),
+     /// The `CUBE` expr.
+@@ -1390,6 +1457,13 @@
+     Array(Array),
+     /// An interval expression e.g. `INTERVAL '1' YEAR`
+     Interval(Interval),
++    /// A parenthesized datetime subtraction with a result interval qualifier.
++    QualifiedDateTimeDifference {
++        /// The subtraction and the qualifier that determines its result type.
++        interval: Box<Interval>,
++        /// The range from the opening parenthesis to the end of the qualifier.
++        span: Span,
++    },
+     /// `MySQL` specific text search function [(1)].
+     ///
+     /// Syntax:
+@@ -1852,15 +1926,21 @@
+                 target
+             ),
+             Expr::Between {
++                symmetry,
+                 expr,
+                 negated,
+                 low,
+                 high,
+             } => write!(
+                 f,
+-                "{} {}BETWEEN {} AND {}",
++                "{} {}BETWEEN {}{} AND {}",
+                 expr,
+                 if *negated { "NOT " } else { "" },
++                match symmetry {
++                    Some(BetweenSymmetry::Symmetric) => "SYMMETRIC ",
++                    Some(BetweenSymmetry::Asymmetric) => "ASYMMETRIC ",
++                    None => "",
++                },
+                 low,
+                 high
+             ),
+@@ -2113,7 +2193,33 @@
+             Expr::Collate { expr, collation } => write!(f, "{expr} COLLATE {collation}"),
+             Expr::Nested(ast) => write!(f, "({ast})"),
+             Expr::Value(v) => write!(f, "{v}"),
+-            Expr::Prefixed { prefix, value } => write!(f, "{prefix} {value}"),
++            Expr::StringLiteralChain(values) => {
++                let unicode = values.first().is_some_and(|first| matches!(first.value, Value::UnicodeStringLiteral(_)));
++                for (index, fragment) in values.iter().enumerate() {
++                    if index > 0 {
++                        // Calcite validates that adjacent fragments start on separate lines.
++                        // Keep that distinction when reformatting even an invalid chain.
++                        if values[index - 1].span.end.line == fragment.span.start.line {
++                            write!(f, " ")?;
++                        } else {
++                            writeln!(f)?;
++                        }
++                        if let (true, Value::SingleQuotedString(text)) = (unicode, &fragment.value) {
++                            write!(f, "'{}'", value::escape_unicode_string(text))?;
++                            continue;
++                        }
++                    }
++                    fragment.fmt(f)?;
++                }
++                Ok(())
++            }
++            Expr::Prefixed { prefix, value } => {
++                if prefix.quote_style.is_none() && prefix.value.starts_with('_') {
++                    write!(f, "{prefix}{value}")
++                } else {
++                    write!(f, "{prefix} {value}")
++                }
++            },
+             Expr::TypedString(ts) => ts.fmt(f),
+             Expr::Function(fun) => fun.fmt(f),
+             Expr::Case {
+@@ -2148,13 +2254,22 @@
+                 subquery
+             ),
+             Expr::Subquery(s) => write!(f, "({s})"),
++            Expr::RowConstructor { fields, .. } => write!(f, "ROW({})", display_comma_separated(fields)),
++            Expr::WildcardExclusion { wildcard, columns, .. } => {
++                write!(f, "{wildcard} EXCLUDE ({})", display_comma_separated(columns))
++            }
++            Expr::MapQuery { query: s, .. } => write!(f, "MAP({s})"),
+             Expr::GroupingSets(sets) => {
+                 write!(f, "GROUPING SETS (")?;
+                 let mut sep = "";
+                 for set in sets {
+                     write!(f, "{sep}")?;
+                     sep = ", ";
+-                    write!(f, "({})", display_comma_separated(set))?;
++                    if let [nested @ (Expr::GroupingSets(_) | Expr::Rollup(_) | Expr::Cube(_))] = set.as_slice() {
++                        nested.fmt(f)?;
++                    } else {
++                        write!(f, "({})", display_comma_separated(set))?;
++                    }
+                 }
+                 write!(f, ")")
+             }
+@@ -2290,6 +2405,7 @@
+             } => {
+                 write!(f, "{timestamp} AT TIME ZONE {time_zone}")
+             }
++            Expr::QualifiedDateTimeDifference { interval, .. } => interval.fmt_qualified_value(f),
+             Expr::Interval(interval) => {
+                 write!(f, "{interval}")
+             }
+@@ -8121,6 +8237,14 @@
+ #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+ /// Expression forms allowed as a function argument.
+ pub enum FunctionArgExpr {
++    /// A relational argument introduced by TABLE; not a scalar subquery.
++    Table {
++        /// Qualified relation name, including identifier source locations.
++        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
++        name: ObjectName,
++        /// Span of the TABLE keyword through the name.
++        span: Span,
++    },
+     /// A normal expression argument.
+     Expr(Expr),
+     /// Qualified wildcard, e.g. `alias.*` or `schema.table.*`.
+@@ -8146,6 +8270,7 @@
+ impl fmt::Display for FunctionArgExpr {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         match self {
++            FunctionArgExpr::Table { name, .. } => write!(f, "TABLE {name}"),
+             FunctionArgExpr::Expr(expr) => write!(f, "{expr}"),
+             FunctionArgExpr::QualifiedWildcard(prefix) => write!(f, "{prefix}.*"),
+             FunctionArgExpr::Wildcard => f.write_str("*"),
+@@ -11403,6 +11528,15 @@
+     /// ```
+     TableName(#[cfg_attr(feature = "visitor", visit(with = "visit_relation"))] ObjectName),
+ 
++    /// A named INSERT target with structured SQL optimizer hints.
++    HintedTableName {
++        /// Target relation.
++        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
++        name: ObjectName,
++        /// Hints following the target name.
++        hints: Vec<OptimizerHint>,
++    },
++
+     /// Table specified as a function.
+     /// Example:
+     /// ```sql
+@@ -11426,6 +11560,11 @@
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         match self {
+             Self::TableName(table_name) => write!(f, "{table_name}"),
++            Self::HintedTableName { name, hints } => {
++                name.fmt(f)?;
++                for hint in hints { write!(f, " {hint}")?; }
++                Ok(())
++            },
+             Self::TableFunction(func) => write!(f, "FUNCTION {func}"),
+             Self::TableQuery(table_query) => write!(f, "({table_query})"),
+         }
+@@ -12451,21 +12590,121 @@
+ #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+ #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+ #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+-pub struct OptimizerHint {
+-    /// An optional prefix between the comment marker and `+`.
+-    ///
+-    /// Standard optimizer hints like `/*+ ... */` have an empty prefix,
+-    /// while system-specific hints like `/*abc+ ... */` have `prefix = "abc"`.
+-    /// The prefix is any sequence of ASCII alphanumeric characters
+-    /// immediately before the `+` marker.
+-    pub prefix: String,
+-    /// the raw text of the optimizer hint without its markers
+-    pub text: String,
+-    /// the style of the comment which `text` was extracted from,
+-    /// e.g. `/*+...*/` or `--+...`
+-    ///
+-    /// Not all dialects support all styles, though.
+-    pub style: OptimizerHintStyle,
++pub enum OptimizerHint {
++    /// An uninterpreted hint, retaining the upstream dialect's spelling.
++    Raw {
++        /// Prefix between the comment marker and `+`.
++        prefix: String,
++        /// Comment text following `+`.
++        text: String,
++        /// Single-line or multiline comment syntax.
++        style: OptimizerHintStyle,
++    },
++    /// A parsed SQL hint list, attached to its SELECT or table node.
++    Structured {
++        /// Ordered hints, including repeated names and options.
++        hints: Vec<SqlHint>,
++        /// Original comment span, including delimiters.
++        span: Span,
++    },
++}
++
++/// One named optimizer hint with homogeneous options.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub struct SqlHint {
++    /// Hint name, preserving quoting and source position.
++    pub name: Ident,
++    /// Ordered option values; duplicate keys are not collapsed.
++    pub options: SqlHintOptions,
++    /// Original span from the name through the final option.
++    pub span: Span,
++}
++
++/// The distinct option-list forms in the SQL hint grammar.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub enum SqlHintOptions {
++    /// No options, with or without empty parentheses.
++    Empty,
++    /// Identifier list, such as `broadcast(t, s)`.
++    Identifiers(Vec<Ident>),
++    /// String and numeric literals, such as `hint(5, 'x')`.
++    Literals(Vec<SqlHintLiteral>),
++    /// Ordered key/value pairs. Keys are identifiers or strings.
++    KeyValue(Vec<SqlHintKeyValue>),
++}
++
++/// One ordered hint assignment. Duplicate keys remain separate entries.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub struct SqlHintKeyValue {
++    /// Identifier or string key.
++    pub key: SqlHintValue,
++    /// Identifier, string or numeric value.
++    pub value: SqlHintValue,
++}
++
++/// A literal hint option, retaining adjacent string fragments as a chain.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub enum SqlHintLiteral {
++    /// One string or numeric token, optionally signed.
++    Value(ValueWithSpan),
++    /// Adjacent quoted string fragments, with individual kinds and spans.
++    StringChain(Vec<ValueWithSpan>),
++}
++
++impl fmt::Display for SqlHintLiteral {
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        match self {
++            Self::Value(value) => value.fmt(f),
++            Self::StringChain(values) => write!(f, "{}", display_separated(values, " ")),
++        }
++    }
++}
++
++/// An identifier or literal used in a hint key/value pair.
++#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
++pub enum SqlHintValue {
++    /// A quoted or unquoted identifier.
++    Identifier(Ident),
++    /// A string or numeric literal with its original span.
++    Literal(SqlHintLiteral),
++}
++
++impl fmt::Display for SqlHintValue {
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        match self {
++            Self::Identifier(value) => value.fmt(f),
++            Self::Literal(value) => value.fmt(f),
++        }
++    }
++}
++
++impl fmt::Display for SqlHint {
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        self.name.fmt(f)?;
++        match &self.options {
++            SqlHintOptions::Empty => Ok(()),
++            SqlHintOptions::Identifiers(values) => write!(f, "({})", display_comma_separated(values)),
++            SqlHintOptions::Literals(values) => write!(f, "({})", display_comma_separated(values)),
++            SqlHintOptions::KeyValue(values) => {
++                f.write_str("(")?;
++                for (index, pair) in values.iter().enumerate() {
++                    if index != 0 { f.write_str(", ")?; }
++                    write!(f, "{}={}", pair.key, pair.value)?;
++                }
++                f.write_str(")")
++            }
++        }
++    }
+ }
+ 
+ /// The commentary style of an [optimizer hint](OptimizerHint)
+@@ -12485,22 +12724,13 @@
+ }
+ 
+ impl fmt::Display for OptimizerHint {
+-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+-        match &self.style {
+-            OptimizerHintStyle::SingleLine { prefix } => {
+-                f.write_str(prefix)?;
+-                f.write_str(&self.prefix)?;
+-                f.write_str("+")?;
+-                f.write_str(&self.text)?;
+-                f.write_str("\n")
+-            }
+-            OptimizerHintStyle::MultiLine => {
+-                f.write_str("/*")?;
+-                f.write_str(&self.prefix)?;
+-                f.write_str("+")?;
+-                f.write_str(&self.text)?;
+-                f.write_str("*/")
+-            }
++    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
++        match self {
++            Self::Structured { hints, .. } => write!(f, "/*+ {} */", display_comma_separated(hints)),
++            Self::Raw { prefix, text, style } => match style {
++                OptimizerHintStyle::SingleLine { prefix: marker } => write!(f, "{marker}{prefix}+{text}\n"),
++                OptimizerHintStyle::MultiLine => write!(f, "/*{prefix}+{text}*/"),
++            },
+         }
+     }
+ }
+--- a/src/ast/value.rs
++++ b/src/ast/value.rs
+@@ -545,59 +545,15 @@
+ 
+ impl fmt::Display for EscapeQuotedString<'_> {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+-        // EscapeQuotedString doesn't know which mode of escape was
+-        // chosen by the user. So this code must to correctly display
+-        // strings without knowing if the strings are already escaped
+-        // or not.
+-        //
+-        // If the quote symbol in the string is repeated twice, OR, if
+-        // the quote symbol is after backslash, display all the chars
+-        // without any escape. However, if the quote symbol is used
+-        // just between usual chars, `fmt()` should display it twice."
+-        //
+-        // The following table has examples
+-        //
+-        // | original query | mode      | AST Node                                           | serialized   |
+-        // | -------------  | --------- | -------------------------------------------------- | ------------ |
+-        // | `"A""B""A"`    | no-escape | `DoubleQuotedString(String::from("A\"\"B\"\"A"))`  | `"A""B""A"`  |
+-        // | `"A""B""A"`    | default   | `DoubleQuotedString(String::from("A\"B\"A"))`      | `"A""B""A"`  |
+-        // | `"A\"B\"A"`    | no-escape | `DoubleQuotedString(String::from("A\\\"B\\\"A"))`  | `"A\"B\"A"`  |
+-        // | `"A\"B\"A"`    | default   | `DoubleQuotedString(String::from("A\"B\"A"))`      | `"A""B""A"`  |
+-        let quote = self.quote;
+-        let mut previous_char = char::default();
+-        let mut start_idx = 0;
+-        let mut peekable_chars = self.string.char_indices().peekable();
+-        while let Some(&(idx, ch)) = peekable_chars.peek() {
+-            match ch {
+-                char if char == quote => {
+-                    if previous_char == '\\' {
+-                        // the quote is already escaped with a backslash, skip
+-                        peekable_chars.next();
+-                        continue;
+-                    }
+-                    peekable_chars.next();
+-                    match peekable_chars.peek() {
+-                        Some((_, c)) if *c == quote => {
+-                            // the quote is already escaped with another quote, skip
+-                            peekable_chars.next();
+-                        }
+-                        _ => {
+-                            // The quote is not escaped.
+-                            // Including idx in the range, so the quote at idx will be printed twice:
+-                            // in this call to write_str() and in the next one.
+-                            let end_idx = idx + ch.len_utf8();
+-                            f.write_str(&self.string[start_idx..end_idx])?;
+-                            start_idx = idx;
+-                        }
+-                    }
+-                }
+-                _ => {
+-                    peekable_chars.next();
+-                }
+-            }
+-            previous_char = ch;
++        // The Feldera candidate always parses decoded values (unescape=true).
++        // Every quote is data, including adjacent quotes and quotes after a
++        // backslash. Guessing that these are already escaped loses SQL values.
++        for part in self.string.split_inclusive(self.quote) {
++            f.write_str(part)?;
++            if part.ends_with(self.quote) {
++                write!(f, "{}", self.quote)?;
++            }
+         }
+-        f.write_str(&self.string[start_idx..])?;
+         Ok(())
+     }
+ }
+@@ -670,13 +626,8 @@
+                     write!(f, "{c}")?;
+                 }
+                 _ => {
+-                    let codepoint = c as u32;
+-                    // if the character fits in 32 bits, we can use the \XXXX format
+-                    // otherwise, we need to use the \+XXXXXX format
+-                    if codepoint <= 0xFFFF {
+-                        write!(f, "\\{codepoint:04X}")?;
+-                    } else {
+-                        write!(f, "\\+{codepoint:06X}")?;
++                    for unit in c.encode_utf16(&mut [0; 2]) {
++                        write!(f, "\\{unit:04X}")?;
+                     }
+                 }
+             }
+@@ -685,8 +636,7 @@
+     }
+ }
+ 
+-/// Return a helper which escapes non-ASCII characters using `\XXXX` or
+-/// `\+XXXXXX` Unicode escape formats (used for `U&'...'` style literals).
++/// Escape non-ASCII characters as four-digit UTF-16 units for Feldera Unicode literals.
+ pub fn escape_unicode_string(s: &str) -> EscapeUnicodeStringLiteral<'_> {
+     EscapeUnicodeStringLiteral(s)
+ }
+--- a/src/ast/visitor.rs
++++ b/src/ast/visitor.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -22,7 +23,7 @@
+ use core::ops::ControlFlow;
+ 
+ use crate::ast::{
+-    Expr, GroupByExpr, Ident, ObjectName, OrderBy, OrderByExpr, Query, Select, Statement,
++    DataType, Expr, GroupByExpr, Ident, ObjectName, OrderBy, OrderByExpr, Query, Select, Statement,
+     TableFactor, ValueWithSpan,
+ };
+ 
+@@ -203,6 +204,16 @@
+     /// boxing it with `Box` to minimize stack usage.
+     type Break;
+ 
++    /// Invoked for each data type before visiting its nested types.
++    fn pre_visit_data_type(&mut self, _data_type: &DataType) -> ControlFlow<Self::Break> {
++        ControlFlow::Continue(())
++    }
++
++    /// Invoked for each data type after visiting its nested types.
++    fn post_visit_data_type(&mut self, _data_type: &DataType) -> ControlFlow<Self::Break> {
++        ControlFlow::Continue(())
++    }
++
+     /// Invoked for any queries that appear in the AST before visiting children
+     fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<Self::Break> {
+         ControlFlow::Continue(())
+@@ -370,6 +381,16 @@
+     /// stack overflow during recursion. If you need to return an error, consider
+     /// boxing it with `Box` to minimize stack usage.
+     type Break;
++
++    /// Invoked for each data type before visiting its nested types.
++    fn pre_visit_data_type(&mut self, _data_type: &mut DataType) -> ControlFlow<Self::Break> {
++        ControlFlow::Continue(())
++    }
++
++    /// Invoked for each data type after visiting its nested types.
++    fn post_visit_data_type(&mut self, _data_type: &mut DataType) -> ControlFlow<Self::Break> {
++        ControlFlow::Continue(())
++    }
+ 
+     /// Invoked for any queries that appear in the AST before visiting children
+     fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<Self::Break> {
+--- a/src/dialect/mod.rs
++++ b/src/dialect/mod.rs
+@@ -1,3 +1,4 @@
++// Modified for the Feldera P0 parser experiment; see FELDERA-PATCHES.md.
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -157,7 +158,7 @@
+ pub use crate::keywords;
+ use crate::keywords::Keyword;
+ use crate::parser::{Parser, ParserError};
+-use crate::tokenizer::Token;
++use crate::tokenizer::{Token, TokenWithSpan};
+ 
+ #[cfg(not(feature = "std"))]
+ use alloc::boxed::Box;
+@@ -638,6 +639,12 @@
+         false
+     }
+ 
++    /// Whether this named function accepts IGNORE or RESPECT NULLS inside its argument list.
++    fn supports_inline_null_treatment_for(&self, _name: &[ObjectNamePart]) -> bool {
++        self.supports_window_function_null_treatment_arg()
++    }
++
++
+     /// Returns true if the dialect supports defining structs or objects using a
+     /// syntax like `{'x': 1, 'y': 2, 'z': 3}`.
+     fn supports_dictionary_syntax(&self) -> bool {
+@@ -753,7 +760,37 @@
+         false
+     }
+ 
+-    /// Does the dialect support parsing `LIMIT 1, 2` as `LIMIT 2 OFFSET 1`?
++    /// Accept ALL as the row count in LIMIT offset, ALL.
++    fn supports_limit_comma_all(&self) -> bool {
++        false
++    }
++
++    /// Accept the ISO symmetry keyword on a BETWEEN predicate.
++    fn supports_between_symmetry(&self) -> bool {
++        false
++    }
++
++    /// Recognize EXCEPT followed by a column list as a synonym for EXCLUDE.
++    fn supports_wildcard_except_as_exclude(&self) -> bool {
++        false
++    }
++
++    /// Accept grouped measures, axes and mappings in UNPIVOT.
++    fn supports_grouped_unpivot(&self) -> bool {
++        false
++    }
++
++    /// Accept grouping sets, cube or rollup as a grouping set element.
++    fn supports_nested_grouping_sets(&self) -> bool {
++        false
++    }
++
++    /// Accept DISTINCT before the grouping element list.
++    fn supports_group_by_distinct(&self) -> bool {
++        false
++    }
++
++    /// Accept LIMIT offset, count.
+     fn supports_limit_comma(&self) -> bool {
+         false
+     }
+@@ -925,6 +962,27 @@
+     fn supports_select_modifiers(&self) -> bool {
+         false
+     }
++
++    /// Override one join clause without replacing table-factor parsing.
++    fn parse_join(&self, _parser: &mut Parser) -> Option<Result<crate::ast::Join, ParserError>> {
++        None
++    }
++
++    /// Override one function argument, including its optional argument name.
++    fn parse_function_arg(&self, _parser: &mut Parser) -> Option<Result<crate::ast::FunctionArg, ParserError>> {
++        None
++    }
++
++    /// Override a VALUES body after the VALUES (or VALUE) keyword.
++    fn parse_values(&self, _parser: &mut Parser, _allow_empty: bool, _value_keyword: bool) -> Option<Result<crate::ast::Values, ParserError>> {
++        None
++    }
++
++    /// Whether type-qualified arrays may have further ARRAY suffixes.
++    fn supports_repeated_array_suffix(&self) -> bool { false }
++
++    /// Whether ARRAY suffixes may include an explicit bracketed cardinality.
++    fn supports_array_suffix_cardinality(&self) -> bool { true }
+ 
+     /// Dialect-specific infix parser override
+     ///
+@@ -1126,9 +1184,17 @@
+         None
+     }
+ 
++    /// Whether TIME and TIMESTAMP admit the WITH LOCAL TIME ZONE qualifier.
++    fn supports_local_time_zone(&self) -> bool { false }
++
+     /// Parses a dialect-specific type, leaving the cursor unchanged on `None` to use standard parsing.
+     fn parse_data_type(&self, _parser: &mut Parser) -> Option<Result<DataType, ParserError>> {
+         None
++    }
++
++    /// Validate a parsed type before its source tokens are discarded.
++    fn validate_data_type(&self, _ty: &DataType, _tokens: &[TokenWithSpan]) -> Result<(), ParserError> {
++        Ok(())
+     }
+ 
+     /// Dialect-specific column option parser override
+@@ -1446,6 +1512,27 @@
+         false
+     }
+ 
++    /// Treat `/*+ ... */` as SQL hint syntax. Strings and ordinary comments
++    /// inside the hint do not terminate its outer delimiter.
++    fn supports_sql_hint_comments(&self) -> bool {
++        false
++    }
++
++    /// Consume a dialect-specific suffix after a parenthesized expression.
++    fn parenthesized_suffix(
++        &self,
++        _parser: &mut Parser,
++        expr: Expr,
++        _opening_index: usize,
++    ) -> Result<Expr, ParserError> {
++        Ok(expr)
++    }
++
++    /// Whether two consecutive slashes start a line comment.
++    fn supports_slash_line_comments(&self) -> bool {
++        false
++    }
++
+     /// Returns true if the dialect supports nested comments
+     /// e.g. `/* /* nested */ */`
+     fn supports_nested_comments(&self) -> bool {
+@@ -1777,6 +1864,11 @@
+     ///
+     /// Postgres: <https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS-ESCAPE>
+     fn supports_string_escape_constant(&self) -> bool {
++        false
++    }
++
++    /// Preserve the backslash in unknown E-string escapes, as Calcite does.
++    fn preserves_unknown_string_escapes(&self) -> bool {
+         false
+     }
+ 

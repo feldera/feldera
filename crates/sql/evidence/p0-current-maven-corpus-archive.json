@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-current-maven-corpus-20261118-v1.tar.gz",
+  "bytes": 1280702,
+  "sha256": "a484df0d8ae0a87efdd1d1a072688169a8ff92f3a236b2b9e7914895044052be",
+  "manifest_sha256": "8f83492c1d2fb9450628a936790388c0d503080e8c50df35d89529c1d2861e75",
+  "verified_files": 506,
+  "all_members_verified": true
+}

@@ -33,7 +33,7 @@ use uuid::uuid;
 // EXAMPLE REQUEST AND RESPONSE BODIES
 
 /// First example [`ExtendedPipelineDescr`] the database could return.
-fn extended_pipeline_1() -> ExtendedPipelineDescr {
+pub(super) fn extended_pipeline_1() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
@@ -56,6 +56,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
             cache: true,
             runtime_version: None,
             use_platform_compiler: false,
+            compiler: None,
         })
         .unwrap(),
         program_version: Version(2),
@@ -150,6 +151,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             cache: true,
             runtime_version: None,
             use_platform_compiler: false,
+            compiler: None,
         })
         .unwrap(),
         program_version: Version(1),
@@ -373,6 +375,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
             cache: true,
             runtime_version: None,
             use_platform_compiler: false,
+            compiler: None,
         }),
     }
 }

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-correlation-grouped-20261119.tar.gz",
+  "bytes": 61056934,
+  "sha256": "047b07bea03fc261f351d8860d6f66e951d38d8686d1fbabfb714c48479ae230",
+  "manifest_sha256": "c48b614c351a5fe0ff44d17d4e756bb3030b401042eb631bebca7d2ae7999cb7",
+  "verified_files": 574,
+  "all_members_verified": true
+}

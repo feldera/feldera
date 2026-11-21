@@ -1,12 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteObject;
 
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,16 +13,20 @@ import java.util.Map;
 /** Indicates the fact that the output of a {@link DBSPOperator} corresponds to the
  * result computed by a specified Calcite {@link RelNode} */
 public class LastRel extends CalciteRelNode {
-    public final RelNode relNode;
+    public final RelReference relNode;
 
     public LastRel(RelNode relNode, SourcePositionRange pos) {
+        this(new RelReference.Live(relNode), pos);
+    }
+
+    LastRel(RelReference relNode, SourcePositionRange pos) {
         super(pos);
         this.relNode = relNode;
     }
 
     @Override
     public String toString() {
-        return this.getId() + " Last(" + this.relNode.getDigest() + ")";
+        return this.getId() + " Last(" + this.relNode.digest() + ")";
     }
 
     @Override
@@ -36,13 +38,13 @@ public class LastRel extends CalciteRelNode {
     public IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap) {
         return stream.append("{").increase()
                 .appendJsonLabelAndColon("final")
-                .append(Utilities.getExists(idRemap, this.relNode))
+                .append(this.relNode.planId(idRemap))
                 .decrease().newline()
                 .append("}");
     }
 
     @Override
-    public CalciteRelNode remove(RelNode node) {
+    public CalciteRelNode remove(RelReference node) {
         if (this.contains(node))
             return CalciteEmptyRel.INSTANCE;
         return this;
@@ -50,18 +52,12 @@ public class LastRel extends CalciteRelNode {
 
     @Override
     public String toInternalString() {
-        try {
-            SqlNode node = CONVERTER.visitRoot(this.relNode).asStatement();
-            return node.toString();
-        } catch (Throwable ex) {
-            // Sometimes Calcite crashes when converting rel to SQL
-            return this.relNode.toString();
-        }
+        return this.relNode.sql();
     }
 
     @Override
-    public boolean contains(RelNode node) {
-        return this.relNode == node;
+    public boolean contains(RelReference node) {
+        return this.relNode.equals(node);
     }
 
     @Override
@@ -106,11 +102,11 @@ public class LastRel extends CalciteRelNode {
 
     @Override
     public long getId() {
-        return this.relNode.getId();
+        return this.relNode.id();
     }
 
     @Override
-    public List<RelNode> getRelNodes() {
+    public List<RelReference> getReferences() {
         return List.of(this.relNode);
     }
 }

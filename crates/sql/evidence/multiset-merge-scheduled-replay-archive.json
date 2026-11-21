@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-merge-scheduled-replay-20261118-v1.tar.gz",
+  "bytes": 46514487,
+  "sha256": "ebb291d3cf32f4f4cf0f456d6534c9a557e9efc9e41d194e3c04f3d2a88169ba",
+  "manifest_sha256": "83913a857a9dc570c813fb5b4573d20b69a2c79356da760203e420f4b58549c5",
+  "verified_files": 5718,
+  "all_members_verified": true
+}

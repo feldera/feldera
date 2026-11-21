@@ -44,6 +44,18 @@ public interface Shuffle {
             throw new UnimplementedException();
     }
 
+    /** Retain live shuffle identity when the graph carries the same representation. */
+    static Shuffle fromJson(JsonNode node, @javax.annotation.Nullable Shuffle original) {
+        Shuffle decoded = fromJson(node);
+        if (original == null || original.getClass() != decoded.getClass()
+                || original.inputLength() != decoded.inputLength())
+            return decoded;
+        if (original instanceof IdShuffle || original instanceof ExplicitShuffle left
+                && decoded instanceof ExplicitShuffle right && left.indexes.equals(right.indexes))
+            return original;
+        return decoded;
+    }
+
     /** Remove from the input collection shuffled the elements with the specified indexes.
      * @return A shuffle which produces the same result as 'this' on the modified collection.
      * @param removeFromShuffle List of collection indexes to remove.  None of these indexes

@@ -1,0 +1,25 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-direct-diagnostics-20261118-v1.tar.gz",
+  "sha256": "2e1f45c3e71f615a359330b98db0f8424de4dbd968fd8f1b0b960c951fcf6fc7",
+  "bytes": 40352778,
+  "certificates": [
+    "diagnostic-direct-capture.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "diagnostic-direct-capture.json": [
+      {
+        "source_prefix": "p0-diagnostics-v9/",
+        "archive_prefix": "$SCRATCH/p0-diagnostics-v9/sources/"
+      },
+      {
+        "source_prefix": "p0-diagnostics-v8/",
+        "archive_prefix": "$SCRATCH/p0-diagnostics-v8/sources/"
+      }
+    ]
+  },
+  "scope": "Direct diagnostic predicate capture alongside three shared helpers",
+  "P0_complete": false
+}

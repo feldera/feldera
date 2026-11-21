@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "cases": 6732,
+  "differences": [],
+  "equal": true,
+  "runtime_nulls": 1350,
+  "runtime_overflows": 1399,
+  "provenance": {
+    "sources": {
+      "crates/sql/native-probe/examples/integer_vectors.rs": "a5c2bf72e2285f1fb4a6a2eba2c46cb150ef7ee88f9400b355de4eecc831f348",
+      "crates/sql/native-probe/src/codegen.rs": "1bd9dd711e049cef091f8ce00f3a7da77193efedef073dccf157ae438d08b547",
+      "crates/sql/native-probe/src/lib.rs": "98776a519050a7ec4a3f6206701358d71f06eff982365c916631773df5583b63",
+      "crates/sql/native-probe/src/model.rs": "9a4cf61108fbe51adddcc9c8ff7d867ffd6adadc1ffbf32610d2267e070a7a3f",
+      "crates/sql/native-probe/src/runtime.rs": "2a3b7fbdbd6540d2c9118f081099a11f7dd6e81e1ad11bc5620030e83f93d8c4",
+      "crates/sql/native-probe/tests/native.rs": "75f96340b4bebf3f90e5157f16a5898712641f140d079ef464eba624664e03c2",
+      "crates/sql/native-probe/Cargo.toml": "8b1eb4090d8a71c6108ac74c43bb824f91a1eb65185cd3b80d6dd500340c17b1",
+      "crates/sql/native-probe/Cargo.lock": "07fa42707323e9b0e6fc7a80afbb3f4f6fe6670c9fd1ed57cb410f5816e4ee38",
+      "crates/sqllib/examples/native_integer_reference.rs": "dc99fb95d16ce28c3344f06ac465a65472e23748725ce9c1d6a9a0d5600565e3",
+      "crates/sqllib/src/operators.rs": "6cb4be6d6a705179cce36e8b5ec6a29ae4e524d320f8335a1450af4aa41b056a",
+      "Cargo.lock": "04c4d4d22dacf1823df9e0d9a703d122cce4ed75c454a006b6cff580dfb2f2e0",
+      "crates/sql/scripts/run_native_probe.py": "812c582e8a77f4b8ebab43d2e0c0a6f8c093a93baeea13323a8af3b537043cd5"
+    },
+    "binaries": {
+      "native": {
+        "path": "$SCRATCH/p0-native-target/debug/examples/integer_vectors",
+        "sha256": "3d5a6226af67457fb8209522c57ed168d5113ba3670ac8cffa4ec689b8db2956"
+      },
+      "runtime": {
+        "path": "$SCRATCH/sql-difftest-target/debug/examples/native_integer_reference",
+        "sha256": "bd2437a048a7380e4e59fa88a64e8a72976c39e41fa725fe6260b8cbd7c3e574"
+      }
+    }
+  },
+  "artifacts": {
+    "input.tsv": "c6d18e8a28c713a10cc7a18469d838cd14c072f1a086dc02947aaa0b0367db93",
+    "native.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native.tsv": "7d5a6e26b8dc522f0fb360590af5d7814fa3d78b5ce29c8369b97e649720ad0e",
+    "provenance.json": "3a5c5ad7cf47759a059e8ca5e774003ead7997f49c8270afc52f5ed4ee7a2da3",
+    "runtime.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "runtime.tsv": "7d5a6e26b8dc522f0fb360590af5d7814fa3d78b5ce29c8369b97e649720ad0e"
+  },
+  "raw_directory": "$SCRATCH/p0-native-runtime-v2",
+  "error_messages_compared": false,
+  "full_c12": false,
+  "n1_ten_program_c7": false
+}

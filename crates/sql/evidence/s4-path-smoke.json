@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "scope": "opt-in S4 pass-path accounting smoke and observation transparency",
+  "raw_directory": "$SCRATCH/p0-s4-path-smoke-v1",
+  "cases": 8,
+  "unique_structural_paths": 368,
+  "S4_observations_per_side": 3304,
+  "normal_records_identical_disabled_enabled_replay": true,
+  "coverage_identical_direct_replay": true,
+  "junit_tests": 16,
+  "runtime_executed": false,
+  "commands": {
+    "path": "$SCRATCH/p0-s4-path-smoke-v1/commands.json",
+    "sha256": "75284073691c5f10d45ceb90749b3bd933795f636bafde0dbe593f390557c5ae"
+  },
+  "input": {
+    "path": "$SCRATCH/p0-s4-path-smoke-v1/input.jsonl",
+    "sha256": "9030d9d3a256e39a068321ecc6ed174e2ed6bdcf0463289f0810c7ed0a206415"
+  },
+  "artifacts": {
+    "$SCRATCH/p0-s4-path-smoke-v1/disabled/cases.jsonl.gz": "85506cf9f51b20100e6cac2ccd4c036a52669af4d38e40f28c263069dfd8f442",
+    "$SCRATCH/p0-s4-path-smoke-v1/disabled/complete.json": "683f1f99a730397e56b2be8f4c042b34e8120a9a8f45f89ad2bf4f2abb98eded",
+    "$SCRATCH/p0-s4-path-smoke-v1/enabled/s4-paths.jsonl": "51662687bda11c6643bc5e2d8892231e19bdbb9c650f45f5b86fa818178deedf",
+    "$SCRATCH/p0-s4-path-smoke-v1/enabled/cases.jsonl.gz": "85506cf9f51b20100e6cac2ccd4c036a52669af4d38e40f28c263069dfd8f442",
+    "$SCRATCH/p0-s4-path-smoke-v1/enabled/complete.json": "683f1f99a730397e56b2be8f4c042b34e8120a9a8f45f89ad2bf4f2abb98eded",
+    "$SCRATCH/p0-s4-path-smoke-v1/replay/s4-paths.jsonl": "51662687bda11c6643bc5e2d8892231e19bdbb9c650f45f5b86fa818178deedf",
+    "$SCRATCH/p0-s4-path-smoke-v1/replay/cases.jsonl.gz": "85506cf9f51b20100e6cac2ccd4c036a52669af4d38e40f28c263069dfd8f442",
+    "$SCRATCH/p0-s4-path-smoke-v1/replay/complete.json": "0c85a689a9131ec90559c5b1a1d4ae618321eedfa0c3ad0c8751e158eee21c0a"
+  },
+  "test_log": {
+    "path": "$SCRATCH/p0-s4-path-tests-v1/maven.log",
+    "sha256": "f7861475b47521dccc859683a3565f67f57139cdbaf824d7d2f1192748044425"
+  },
+  "sources": {
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S4CoverageTests.java": "584929b4d47604857c7ddbdb68e3a071178b6cbd007d61b93f79cb82efc0d04d",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/S4Coverage.java": "3e04db4c64175987f1a9b36127d9b87858bf23cb168d87d26a1e609234613807",
+    "sql-to-dbsp-compiler/SQL-compiler/src/test/java/org/dbsp/sqlCompiler/compiler/sql/tools/CorpusDeterminism.java": "c3e40f54f163d7a5ba43ccceea971c43f031903996b44950b6344ce9905835d9"
+  },
+  "limitations": [
+    "Eight-case smoke only; full exported-population pass-path coverage remains to be collected.",
+    "Observed paths do not prove complete field-level state coverage or activate every conditional branch.",
+    "Independent review remains required."
+  ]
+}

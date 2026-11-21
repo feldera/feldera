@@ -13,6 +13,9 @@
 //!
 //! The following `cargo` features are provided:
 //!
+//! * `random` (enabled by default): Provides uniform decimal sampling. Disable
+//!   default features for deterministic arithmetic without an entropy source.
+//!
 //! * `serde`: Implements [serde] traits for serializing and deserializing
 //!   [Fixed] and [DynamicDecimal].
 //!
@@ -47,6 +50,7 @@ mod rkyv_impl;
 
 mod dynamic;
 pub use dynamic::DynamicDecimal;
+#[cfg(feature = "random")]
 pub use dynamic::UniformDecimal;
 
 mod fixed;

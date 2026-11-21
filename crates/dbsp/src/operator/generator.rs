@@ -178,20 +178,61 @@ where
     }
 }
 
+// The constructor stays out of the operator's type so classic circuit
+// fingerprints keep the same concrete node types.
+#[cfg(feature = "native-abi")]
+type EmptyValue<T> = Box<dyn Fn() -> T + Send + Sync>;
+
+#[cfg(not(feature = "native-abi"))]
+type EmptyValue<T> = PhantomData<fn() -> T>;
+
+trait MakeEmpty<T> {
+    fn get(&self) -> T;
+}
+
+#[cfg(feature = "native-abi")]
+impl<T> MakeEmpty<T> for EmptyValue<T> {
+    fn get(&self) -> T {
+        self()
+    }
+}
+
+#[cfg(not(feature = "native-abi"))]
+impl<T: Default> MakeEmpty<T> for EmptyValue<T> {
+    fn get(&self) -> T {
+        T::default()
+    }
+}
+
 /// A source operator that yields an infinite output stream
 /// from a constant value.  Note: only worker 0 generates the data;
 /// the other workers generate empty streams.
 pub struct ConstantGenerator<T> {
     generator: T,
+    empty: EmptyValue<T>,
 }
 
-impl<T> ConstantGenerator<T>
-where
-    T: Clone,
-{
+impl<T: Default> ConstantGenerator<T> {
     /// Creates a constant generator
     pub fn new(g: T) -> Self {
-        Self { generator: g }
+        Self {
+            generator: g,
+            #[cfg(feature = "native-abi")]
+            empty: Box::new(|| T::default()),
+            #[cfg(not(feature = "native-abi"))]
+            empty: PhantomData,
+        }
+    }
+}
+
+impl<T> ConstantGenerator<T> {
+    /// Creates a constant generator with an explicit empty value constructor.
+    #[cfg(feature = "native-abi")]
+    pub fn with_empty(value: T, empty: impl Fn() -> T + Send + Sync + 'static) -> Self {
+        Self {
+            generator: value,
+            empty: Box::new(empty),
+        }
     }
 }
 
@@ -218,25 +259,27 @@ where
 
 impl<T> SourceOperator<T> for ConstantGenerator<T>
 where
-    T: Data + 'static + Clone + Default,
+    T: Data + 'static + Clone,
+    EmptyValue<T>: MakeEmpty<T>,
 {
     async fn eval(&mut self) -> T {
         if Runtime::worker_index() == 0 {
             self.generator.clone()
         } else {
-            T::default()
+            self.empty.get()
         }
     }
 }
 
 /// A [`ConstantGenerator`] followed by a differentiator, as one operator: it
-/// yields the value at the first step of the clock and `T::default()` at the
+/// yields the value at the first step of the clock and an empty value at the
 /// other steps.  Only worker 0 generates the value; the other workers generate
 /// empty streams.  The state is one flag instead of the differentiator's copy
 /// of the value; like the delay in the differentiator, the operator clears its
 /// state at the end of the clock.
 pub struct IncrementalConstantGenerator<T> {
     value: T,
+    empty: EmptyValue<T>,
     /// True after the first step of the clock.
     emitted: bool,
     global_id: GlobalNodeId,
@@ -248,11 +291,28 @@ struct CommittedIncrementalConstant {
     emitted: bool,
 }
 
-impl<T> IncrementalConstantGenerator<T> {
+impl<T: Default> IncrementalConstantGenerator<T> {
     /// Creates an incremental constant generator
     pub fn new(value: T) -> Self {
         Self {
             value,
+            #[cfg(feature = "native-abi")]
+            empty: Box::new(|| T::default()),
+            #[cfg(not(feature = "native-abi"))]
+            empty: PhantomData,
+            emitted: false,
+            global_id: GlobalNodeId::root(),
+        }
+    }
+}
+
+impl<T> IncrementalConstantGenerator<T> {
+    /// Creates an incremental constant generator with an explicit empty value constructor.
+    #[cfg(feature = "native-abi")]
+    pub fn with_empty(value: T, empty: impl Fn() -> T + Send + Sync + 'static) -> Self {
+        Self {
+            value,
+            empty: Box::new(empty),
             emitted: false,
             global_id: GlobalNodeId::root(),
         }
@@ -327,7 +387,8 @@ where
 
 impl<T> SourceOperator<T> for IncrementalConstantGenerator<T>
 where
-    T: Data + 'static + Clone + Default,
+    T: Data + 'static + Clone,
+    EmptyValue<T>: MakeEmpty<T>,
 {
     async fn eval(&mut self) -> T {
         let first = !self.emitted;
@@ -335,7 +396,7 @@ where
         if first && Runtime::worker_index() == 0 {
             self.value.clone()
         } else {
-            T::default()
+            self.empty.get()
         }
     }
 }

@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/optimizer-projections.tar.gz",
+  "bytes": 27792332,
+  "sha256": "dccfb9272d15ab0e239957b379984598703c1184955f187270e0e069e05d6144",
+  "manifest_sha256": "f37632ed80c7343dd389132f25b74093e6fc8b28ae599ebdafdc8dafabcba700",
+  "verified_files": 27145,
+  "all_members_verified": true
+}

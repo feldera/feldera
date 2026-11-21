@@ -1,0 +1,72 @@
+{
+  "scope": "Scheduled waterline simplifications across both frozen populations, including graph structure, sharing and generated names.",
+  "comparator_sha256": "dbfa7bc612eb35609f5073c57fa4b2c64eb9dd29c4c7f6242c85add19ab7ca69",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "f40fe626809729b3514496bfa16e4fe4ea2a4c432828903bd0bf54ec941b1de2"
+    ],
+    "pass": "SimplifyWaterline",
+    "invocations": 8571,
+    "changed": 0,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "909b9cce5c0efdef4f231260a0f870ec08aeb0c22dc113a958f8834cd1cbdf97"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "0c90daaaf7c343d69668f785252aa410d29570b17aa3e9adb5d209323ff63a80"
+    ],
+    "pass": "SimplifyWaterline",
+    "invocations": 8527,
+    "changed": 0,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "93a17d48a5e059633c12b423b6747cd88761c2b7a194ed5da69d8038db17b3e0"
+    ]
+  },
+  "directed": {
+    "oracle": "WaterlineClosureOracle",
+    "observation_sha256": "979fd5b20b0ed26943913fafb3507836b2fa77a90d9d6f83aa69eccc91e5d1ad",
+    "results": [
+      {
+        "id": "waterline/raw=false/annotated=true",
+        "details": {
+          "pass": "SimplifyWaterline",
+          "invocations": 1,
+          "changed": 1
+        }
+      },
+      {
+        "id": "waterline/raw=false/annotated=false",
+        "details": {
+          "pass": "SimplifyWaterline",
+          "invocations": 1,
+          "changed": 0
+        }
+      },
+      {
+        "id": "waterline/raw=true/annotated=true",
+        "details": {
+          "pass": "SimplifyWaterline",
+          "invocations": 1,
+          "changed": 1
+        }
+      },
+      {
+        "id": "waterline/raw=true/annotated=false",
+        "details": {
+          "pass": "SimplifyWaterline",
+          "invocations": 1,
+          "changed": 0
+        }
+      }
+    ]
+  }
+}

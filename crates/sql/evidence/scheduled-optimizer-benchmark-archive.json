@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-scheduled-optimizer-benchmark-20261118-v1.tar.gz",
+  "bytes": 52878001,
+  "sha256": "ed2955d7d8a1528e133ac5464c5c294580fd8288f30ac514215a1cc7d2f3b844",
+  "manifest_sha256": "5667e59ed8e5345d79c7c51083908462f558c8ff56910bab1afd3966f084b467",
+  "verified_files": 27925,
+  "all_members_verified": true
+}

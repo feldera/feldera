@@ -1,0 +1,10 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-resource-calibration-20261118-v1.tar.gz",
+  "bytes": 24314498,
+  "sha256": "95fa616e1abec049b122eea84132e832165fea40750cd4d8d1c09155a389d1f9",
+  "manifest_sha256": "6fd030c2337528321e9f2d185c0f08d561f389fd7a2ed2028e670e94f6d2211a",
+  "verified_files": 597,
+  "all_members_verified": true
+}

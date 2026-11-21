@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -32,6 +34,29 @@ public class SourceFileContents {
 
     public String getWholeProgram() {
         return this.builder.toString();
+    }
+
+    /** Preserve both representations: API submissions may have separate line boundaries. */
+    public ObjectNode replaySnapshot() {
+        var mapper = Utilities.deterministicObjectMapper();
+        ObjectNode result = mapper.createObjectNode();
+        result.put("file", this.sourceFileName);
+        result.put("program", this.builder.toString());
+        result.set("lines", mapper.valueToTree(this.lines));
+        return result;
+    }
+
+    public void restoreSnapshot(JsonNode snapshot) {
+        if (!this.lines.isEmpty() || !this.builder.isEmpty() || !snapshot.path("lines").isArray())
+            throw new IllegalArgumentException("Source replay requires fresh sources and a lines array");
+        JsonNode file = Utilities.getProperty(snapshot, "file");
+        this.sourceFileName = file.isNull() ? null : Utilities.getStringProperty(snapshot, "file");
+        this.builder.append(Utilities.getStringProperty(snapshot, "program"));
+        for (JsonNode line: snapshot.get("lines")) {
+            if (!line.isTextual())
+                throw new IllegalArgumentException("Source lines must be strings");
+            this.lines.add(line.textValue());
+        }
     }
 
     public static String newline() {

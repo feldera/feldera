@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "archive_index": "optimizer-dead-code-archive.json",
+  "scope": "Five original DeadCode groups in the frozen suite, including unreachable-source detection and warnings. Replaces the five nested graph-only removals.",
+  "strict_graphs_equal": {"classic": 250, "gen2": 250},
+  "composed_diagnostic_snapshots_equal": {"classic": 250, "gen2": 250},
+  "unused_table_warnings": {"classic": 6, "gen2": 6},
+  "composed_placements": 64,
+  "additional_placements": ["CreateStarJoins", "Gen2Passes"],
+  "composed_java_codec_control_equal": {"classic": 50, "gen2": 50},
+  "composed_rust_equal": {"classic": 50, "gen2": 50}
+}

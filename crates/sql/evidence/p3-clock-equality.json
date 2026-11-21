@@ -1,0 +1,41 @@
+{
+  "scope": "Scheduled temporal equality desugaring, expression sharing, source positions and generated names after the clock-use guard.",
+  "comparator_sha256": "10b728598dfe5e92f97f91b9f4a529e7d89dcb6cfe9a6d5243f7ecf6fd4f0f7a",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "22613bc1e0983ba61d1b627c0e2be18942e95f4bae2b08008dd43c7afe4fc39e"
+    ],
+    "pass": "DesugarNowEquality",
+    "invocations": 71,
+    "changed": 35,
+    "cases_without_placement": 8500,
+    "oracle_stream_sha256": [
+      "f3f60646d0a8875c39fa07ffce08356dd1efc59e12b89e093a1038ac482da436"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "c3bf0f3e9b340f390bc06ae39c34b99beb8a9e026354a6427cfe67b6f406c9c8"
+    ],
+    "pass": "DesugarNowEquality",
+    "invocations": 62,
+    "changed": 32,
+    "cases_without_placement": 8465,
+    "oracle_stream_sha256": [
+      "99229a8a275179ea6bd48cac0d50c85f38dcc308b8f7e69a77a36ee3f177abce"
+    ]
+  },
+  "shared_nested_closures": {
+    "cases": 4,
+    "changed": 3,
+    "mismatches": 0,
+    "oracle_stream_sha256": "0b05ed00ada00a8e7abd36c1b26c2d389765b8a5860b5947a93a1f780bc2e9d0",
+    "results_sha256": "77c2f5d4a9b14048caba6a816b8f88146062d9df991e4891a2a65dee1ad5bfd6"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "archive": ".p0-artifacts/p0-parser-ddl-20261118-v1.tar.gz",
+  "sha256": "c9412760a441166da2cbe1660ba8c8be2b4c5963c8af696a971b1b7a881ecd43",
+  "bytes": 314770934,
+  "certificates": [
+    "parser-ddl-fields.json"
+  ],
+  "certificate_archive_prefix": "$REPO/crates/sql/evidence/",
+  "source_roots": {
+    "parser-ddl-fields.json": [
+      {
+        "source_prefix": "",
+        "archive_prefix": "$SCRATCH/p0-parser-ddl-final-v1/audit-sources/"
+      }
+    ]
+  },
+  "classpath_hash_algorithms": {
+    "parser-ddl-fields.json": "path-null-binary-sha256"
+  },
+  "prior_archive_index": "crates/sql/evidence/parser-review-archive.json",
+  "scope": "DDL field policies, LOCAL semantic repair, typed view-kind Java/Rust comparison, source-field inventory and full Rust parser replay. Historical comparison baselines are in the prior parser review archive.",
+  "P0_complete": false,
+  "verification_command": "python3 crates/sql/scripts/verify_fragment_archive.py crates/sql/evidence/parser-ddl-archive.json"
+}

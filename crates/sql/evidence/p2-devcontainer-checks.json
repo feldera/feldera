@@ -1,0 +1,76 @@
+{
+  "profile": "Linux ARM64 project devcontainer, local checkout",
+  "workspace_sql_tests": {
+    "passed": 163,
+    "failed": 0,
+    "ignored": 0,
+    "log_sha256": "e3f75ffb510c17044b567000f4fa168e4acd0abeee6e5a48876ceabb195a3dab"
+  },
+  "isolated_sql_rel_model_tests": {
+    "passed": 103,
+    "failed": 0,
+    "ignored": 0,
+    "log_sha256": "7701686555df49b070857ba3b1683eb5e8bd47ee8823f2053d8112c5711da8c0"
+  },
+  "clippy": {
+    "warnings_as_errors": true,
+    "log_sha256": "1f9690db0432afd394b6b8baebe627d27f5b58306c0b5ab8d0c8220865f7a667"
+  },
+  "java_dump_and_replay_tests": {
+    "passed": 45,
+    "log_sha256": "a8c3fe4d101dfea077ba5653baa827a7ccfd93c800718b1ae57d875697aac76b"
+  },
+  "pipeline_manager_shadow_tests": {
+    "passed": 10,
+    "ignored": 0,
+    "log_sha256": "5a0aadd195a3d29fd92ceaea6fa999c5024ebe2a18e5f6eac65f59caabd3cedb",
+    "real_jar": true,
+    "primary_and_shadow_engines": [
+      "classic",
+      "gen2"
+    ]
+  },
+  "p1_directed_rerun": {
+    "comparisons": {
+      "CSE": 204,
+      "FuseIntoArrayAgg": 68,
+      "InsertLimiters": 24
+    },
+    "gen2_refusals": 4,
+    "report_sha256": "797fdb288e752dbd9b47ac45dd7fa0bb7c2207805e4bda5cfbbad85fa910b417"
+  },
+  "python_harness_tests": {
+    "passed": 264,
+    "log_sha256": "d1c41d9835c4c8b5367ff499ce41205ff62f04b4c0d75414514407b46c79bf42"
+  },
+  "gen2_pinned_forge_rerun": {
+    "revision": "d4879df7cded0fefb176aebd2a9890caa8877665",
+    "reader_sha256": "ce5edb1bb49999a3d2ee475610950a41bdf2271bcf9ab367a8cc6bd811c84110",
+    "equal_results": 10,
+    "accepted_by_both": 9,
+    "refused_by_both": [
+      "except_all"
+    ],
+    "report_sha256": "d465ee1e9bb7b56f59437f9332f27177ba8b943ed589e5e052a32e08357fc0e4"
+  },
+  "p3_tail_regression": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "21c7a26f9647668aefbc809a06df1541ed64a3c215dda97b435402edad7c2276",
+        "7bb3d4f49b58a38d1fb9acbe3c4ea0e6d17d042b92b972ab22e67ae64cf01d05"
+      ]
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "427e187a3b0783fc9cf21e46a50faf576045defc4996ca98d6ce1a298e586dda",
+        "ed6abd2f18a29fe9c9c11bb84591c2320fd6acf61a2dbaa21e20cfb5453648b0"
+      ]
+    }
+  }
+}

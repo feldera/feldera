@@ -14,6 +14,10 @@ public class RemoveTable extends CircuitCloneVisitor {
         this.tableName = tableName;
     }
 
+    public ProgramIdentifier tableName() {
+        return this.tableName;
+    }
+
     @Override
     public void postorder(DBSPSourceMultisetOperator input) {
         if (this.tableName.equals(input.tableName)) {

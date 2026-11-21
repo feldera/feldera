@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "equal": true,
+  "cases": 8571,
+  "jvm_runs": 24,
+  "observations": 3503220,
+  "isolation": "three independent JVMs per ordered shard plus one capture-disabled baseline",
+  "shards": [
+    {
+      "shard": 0,
+      "seconds": 2564.8395035099998,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 580581,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 580581,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 580581,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 1,
+      "seconds": 2689.519274969,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 586572,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 586572,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 586572,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 2,
+      "seconds": 2774.888385834,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 583452,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 583452,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 1429,
+          "observations": 583452,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 3,
+      "seconds": 2691.672874672,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 585824,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 585824,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 585824,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 4,
+      "seconds": 2475.182101756,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 582499,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 582499,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 582499,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    },
+    {
+      "shard": 5,
+      "seconds": 2704.153363393,
+      "comparisons": {
+        "b": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 584292,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "c": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 584292,
+          "capture_transparency": false,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        },
+        "baseline": {
+          "equal": true,
+          "cases": 1428,
+          "observations": 584292,
+          "capture_transparency": true,
+          "differences": [],
+          "exported_schema_differences": [],
+          "exported_diagnostic_differences": []
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "input_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "comparator_sha256": "82c54bbb9f23abe3543c76340a0ff35065d03485cab1762474da6e1cab5acb0f",
+    "classpath": {
+      "$SCRATCH/p0-determinism-v4-tools/test-classes": "6578f25c8a2b1781f815ec1fd882f178f6bdd659f0852b1dbadfb3133aba5350",
+      "$SCRATCH/p0-determinism-v4-tools/classes": "0d0f758286140ee801c4ca37396f5104a4188aac4f80dc9234f5eb83eb837278",
+      "$SCRATCH/p0-coercion-compiler.jar": "cd839e531576cf67babe48c92a64f45e45419f222865237ae73540ff7a0c4cb9"
+    },
+    "workers": 6,
+    "heap": "2g",
+    "producer": "c6ede756d-p0-ordered-asof-v4",
+    "runtime": "c6ede756d",
+    "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n"
+  }
+}

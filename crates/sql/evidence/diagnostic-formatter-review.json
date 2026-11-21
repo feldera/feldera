@@ -1,0 +1,42 @@
+{
+  "archive_availability": "available from the plan owner on request",
+  "schema_version": 1,
+  "scope": "Independent agent review of the remaining 30 formatter bodies and 12 ambiguous observed bodies against immutable v7",
+  "validation": {
+    "exact_reconstructions": 30,
+    "regression_tests": 6,
+    "source_hashes_and_anchors": 31,
+    "enum_declarations": 6,
+    "capture_observations_verified": true
+  },
+  "counts": {
+    "configuration_bodies": 29,
+    "geometry_bodies": 1,
+    "proposed_formatter_identities": 9,
+    "ambiguous_bodies": 12,
+    "selected_emitting_sites": 13,
+    "previously_unmapped_bodies_with_proposed_identities_in_both_reviews": 52
+  },
+  "dependency_evidence": "Frozen source for Feldera wrappers; pinned classfiles/disassembly for Jackson/Calcite internals. Full original classpaths remain in parent v7 archive.",
+  "required_template_count": null,
+  "catalog_reviewed": false,
+  "P0_complete": false,
+  "remaining_work": [
+    "Combine these reviewed identities with all other asserted bodies; do not sum source-candidate counts.",
+    "Review direct and specialized Java assertions, Python runtime/compiler expectations, platform contracts, and nested dependencies in prior outer-template dispositions.",
+    "Maintainer acceptance and final deduplicated required-template count remain pending."
+  ],
+  "archive": ".p0-artifacts/p0-diagnostic-formatter-review-20261118-v1.tar.gz",
+  "sha256": "1125a4aad2730fede664411ce28babe683bbeaf7b5a620af664a13b91acf8b12",
+  "bytes": 510587,
+  "verified_files": 49,
+  "archive_root": "p0-diagnostic-formatter-review-20261118-v1",
+  "review_status": "Source-backed agent findings, not human maintainer acceptance",
+  "sources": {
+    "crates/sql/DIAGNOSTIC-REVIEW.md": "5ffb470c924d882a76ff5b42a41fb4e5539764f4e4680aaf503d9cff4e5d0633",
+    "crates/sql/diagnostic-formatter-dispositions.json": "1ea6ab548bd6c62dbc6fab9175d4e8750e42168f5dea29439221b753b154848f",
+    "crates/sql/scripts/diagnostic_formatter_review.py": "bcf476e6da1bf5339b6c2aaeebdf7783dc1a5f3e4cb0b48c7f0dd5ce21717b31",
+    "crates/sql/scripts/test_diagnostic_formatter_review.py": "80e7c1d9efdb0ad31aa569022fb61b6541f567c3665b1e54e3cd1150dabae2de"
+  },
+  "prior_certificate": "diagnostic-template-resolution.json"
+}
