@@ -311,6 +311,12 @@ fn transform(
             .collect();
         return Ok(json!({"map_chains": chains}));
     }
+    if pass == "OrderGcDependencies" {
+        let edges: Vec<(u64, u64)> = serde_json::from_slice(state)?;
+        let edges = edges.into_iter().map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
+        let order = feldera_sql_opt::dependency_order(&Circuit::from_json(wire)?, edges)?;
+        return Ok(json!(operator_numbers(order)));
+    }
     if pass == "OrderErrorConsumers" {
         let table: &str = serde_json::from_slice(state)?;
         let order = feldera_sql_opt::error_consumers(&Circuit::from_json(wire)?, table)?;

@@ -76,19 +76,18 @@ public class LowerAsof implements CircuitTransform {
         this.compiler.applyObservedPass(this.getName(), 2, 0, this.select.apply(graph), circuit);
         // Add dependency edges to the circuit to enforce the processing of integrate trace operators
         // after the corresponding joins
-        var cg = graph.graphs.getGraph(circuit);
+        var ordering = new OrderGcDependencies(graph.graphs.getGraph(circuit));
         for (var entry: original.entrySet()) {
             var newIntegrate = entry.getKey();
             var originalIntegrate = entry.getValue();
             var newJoin = leftGces.get(originalIntegrate);
             if (newJoin != null)
-                cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
+                ordering.add(newJoin, newIntegrate.asOperator());
             newJoin = rightGces.get(originalIntegrate);
             if (newJoin != null)
-                cg.addEdge(newJoin, newIntegrate.asOperator(), 0);
+                ordering.add(newJoin, newIntegrate.asOperator());
         }
-        circuit.resort(cg);
-        this.compiler.observeCircuit(this.getName(), 3, "OrderGcDependencies", circuit);
+        circuit = this.compiler.applyObservedPass(this.getName(), 3, 0, this.select.apply(ordering), circuit);
 
         // Scan the circuit a second time and fix the integrate nodes.
         var moveGc = new MoveGC(compiler, leftGces, rightGces, original);
@@ -104,6 +103,38 @@ public class LowerAsof implements CircuitTransform {
     @Override
     public String toString() {
         return this.getName();
+    }
+
+    /** The insertion order of additional edges breaks ties between ready operators. */
+    public static final class OrderGcDependencies implements CircuitTransform {
+        private record Edge(DBSPOperator join, DBSPOperator retainer) {}
+        private final CircuitGraph graph;
+        private final List<Edge> edges = new ArrayList<>();
+
+        OrderGcDependencies(CircuitGraph graph) {
+            this.graph = graph;
+        }
+
+        private void add(DBSPOperator join, DBSPOperator retainer) {
+            this.edges.add(new Edge(join, retainer));
+        }
+
+        public List<long[]> edgeIds() {
+            return this.edges.stream().map(e -> new long[]{e.join.id, e.retainer.id}).toList();
+        }
+
+        @Override
+        public String getName() {
+            return "OrderGcDependencies";
+        }
+
+        @Override
+        public DBSPCircuit apply(DBSPCircuit circuit) {
+            for (var edge : this.edges)
+                this.graph.addEdge(edge.join, edge.retainer, 0);
+            circuit.resort(this.graph);
+            return circuit;
+        }
     }
 
     /** Move the integrate trace operator to the new join */

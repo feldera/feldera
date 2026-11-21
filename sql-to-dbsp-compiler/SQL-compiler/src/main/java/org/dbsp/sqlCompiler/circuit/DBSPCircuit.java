@@ -100,6 +100,23 @@ public final class DBSPCircuit extends DBSPNode
         this.allOperators.sort(comparator);
     }
 
+    /** Apply a schedule from the Rust optimizer while retaining the live operator instances. */
+    public void applyOperatorOrder(long[] ids) {
+        if (ids.length != this.allOperators.size())
+            throw new IllegalArgumentException("Operator order does not cover the circuit");
+        var byId = new HashMap<Long, DBSPOperator>();
+        this.allOperators.forEach(operator -> byId.put(operator.id, operator));
+        var ordered = new ArrayList<DBSPOperator>(ids.length);
+        for (long id : ids) {
+            var operator = byId.remove(id);
+            if (operator == null)
+                throw new IllegalArgumentException("Unknown or repeated operator " + id);
+            ordered.add(operator);
+        }
+        this.allOperators.clear();
+        this.allOperators.addAll(ordered);
+    }
+
     /** Sort the nodes to be compatible with a topological order on the specified graph.
      * Preserves the order of inputs and outputs with respect to each other.
      * @param graph Topological order to enforce.  Mutated by the method. */

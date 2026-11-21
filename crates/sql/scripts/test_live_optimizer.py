@@ -25,7 +25,7 @@ class FrozenPlacements(unittest.TestCase):
             verify_placements("missing conditional pass", BASE_COUNTS, True)
 
     def test_asof_retention_rebuilds_the_graph_before_moving_predicates(self):
-        counts = {**BASE_COUNTS, "Graph": BASE_COUNTS["Graph"] + 1, "MoveGC": 1}
+        counts = {**BASE_COUNTS, "Graph": BASE_COUNTS["Graph"] + 1, "OrderGcDependencies": 1, "MoveGC": 1}
         verify_placements("asof retention", counts, False, asof_retention_moves=1)
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("missing second graph", {**counts, "Graph": BASE_COUNTS["Graph"]},

@@ -4,11 +4,8 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -42,13 +39,7 @@ public final class OrderErrorConsumers implements CircuitTransform {
     public void applyOrder(DBSPCircuit circuit, long[] order, int firstError) {
         if (order.length != circuit.allOperators.size() || firstError < 0 || firstError > order.length)
             throw new IllegalStateException("Invalid error-consumer partition");
-        var byId = new HashMap<Long, DBSPOperator>();
-        circuit.allOperators.forEach(op -> byId.put(op.id, op));
-        var ordered = new ArrayList<DBSPOperator>(order.length);
-        for (long id : order)
-            ordered.add(Objects.requireNonNull(byId.remove(id), "Unknown or repeated error consumer"));
-        this.reachable = new HashSet<>(ordered.subList(firstError, order.length));
-        circuit.allOperators.clear();
-        circuit.allOperators.addAll(ordered);
+        circuit.applyOperatorOrder(order);
+        this.reachable = new HashSet<>(circuit.allOperators.subList(firstError, order.length));
     }
 }

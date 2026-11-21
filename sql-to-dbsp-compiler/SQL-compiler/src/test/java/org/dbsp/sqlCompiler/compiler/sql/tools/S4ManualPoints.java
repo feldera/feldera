@@ -83,7 +83,7 @@ final class S4ManualPoints {
         point(points, owner, 1, "LowerAsofInner", "LowerAsof$LowerAsofInner",
                 "Populates leftGces, rightGces and insertion-ordered original maps shared with ordering and MoveGC.", "always");
         point(points, owner, 2, "Graph", "Graph", "New graph instance over lowered circuit; GC maps remain live.", "leftGces nonempty");
-        point(points, owner, 3, "OrderGcDependencies", null,
+        point(points, owner, 3, "OrderGcDependencies", "LowerAsof$OrderGcDependencies",
                 "Adds graph edges by original insertion order and leftGces/rightGces lookups, then resorts circuit.", "leftGces nonempty");
         point(points, owner, 4, "MoveGC", "LowerAsof$MoveGC",
                 "Consumes the same leftGces, rightGces and original maps after resorting.", "leftGces nonempty");

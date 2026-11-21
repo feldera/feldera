@@ -1,0 +1,79 @@
+{
+  "scope": "Compare stable root ordering against every frozen Java ASOF dependency sort, including the exact permutation of the original operator identities.",
+  "comparator_sha256": "09618ca426fb2c17170e528106721d4c63378e3dfacc18743b7dc1e2429be9a6",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "96fcf9dc4bf659a44119d751adb1e969c474c56100860c7c2ae3add1ea431d8d",
+      "be473f4ed782e516dde5d3ef22bde1f8989ab5322fc97342a52e24e6b0d951c8",
+      "9d4c7831d08b59799681c3c5ee5e723d66cc98deda780832b5b44a5a0f92d482",
+      "34913c23b9556befa68b32b13a9b77a08fe6c6a695891b86ee047b2d1ec50860"
+    ],
+    "pass": "OrderGcDependencies",
+    "invocations": 9,
+    "changed": 9,
+    "cases_without_placement": 8562,
+    "oracle_stream_sha256": [
+      "ff31548e95730dd35d32c97a22c91b8c4c4939b9ea75a5950c6637c31bbc26ee",
+      "d7669bc8442205b9cbe5e4b951c3f97635532dc7005913808fc9047c077f37df",
+      "820531e6765e7b9965fc0883759e18257a5b3723535459b19eaffdbe128171fc",
+      "79299eadea5fd94f0d9e040beb835075d6fe0dba70820140ae99246a6369ef91"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "c15b279687c2d6a766bb06c5443a98fa597abc3da7e988c13ca638717c41fb10",
+      "c764fe93df9c84706cb209ffa8a48f6c4fa2bf8214a41cced93c1be108af8b8d",
+      "9779d933e937d7cd23e105530a629eda9334a85d623f41fafd002a3b4051cce4",
+      "e75709b379dad644e0df2575f8036578dad5d345601eb2abfa5df4099802dabf"
+    ],
+    "pass": "OrderGcDependencies",
+    "invocations": 9,
+    "changed": 9,
+    "cases_without_placement": 8518,
+    "oracle_stream_sha256": [
+      "bca4be3fd28a15711f4d651ba06f464876e7d717b7a24cf19f04db1ef613e050",
+      "ef38d0e1e957809ffd195dcdfdfaa31c461644c5e3e00900d5d5d6dff666c585",
+      "aedf902c10afd5738dd10409c73d066357e14ecbf3e364e19f804522e32fc9f5",
+      "231a33804b4f61dc6f4a90f2607e06e76501ca73852b944931cf63011790fc46"
+    ]
+  },
+  "linear_retention_shared_sort": {
+    "comparator_sha256": "09618ca426fb2c17170e528106721d4c63378e3dfacc18743b7dc1e2429be9a6",
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "result_shards_sha256": [
+        "dbaca9afec197ff35904f378d0298bd2398420742cb485bd2b633c4d5fa0f40a",
+        "b3e440eb52737f42dc61c927e0b72de0d213c77cb0cd81bd406facb748c31ef5",
+        "b42d4213f2ad966ae7d6902d855e0172b10c744766ccfa24961dec6d0c81ccdd",
+        "442fe8bfa1e3740b4827ef5093519cf8b33217d69b721cb940ab4f74694d92c9"
+      ],
+      "pass": "LinearPostprocessRetainKeys",
+      "invocations": 8571,
+      "changed": 52,
+      "cases_without_placement": 0
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "result_shards_sha256": [
+        "644f6841377ac9a0cff7092e2405016784d634c0602d70c439db7b4db01da93a",
+        "d122bf7188ded6f90c3244928cd1a3fbd519d7333b03c9f2f198045599d8e6d2",
+        "65576cd5e596a8fc15b6318352fa3bca5d4e76782d67fd68ffb5ea263916768c",
+        "e9ecc01de7c97545a5b960e406dd1a5658166bfe67dc3018169d878978b36a4a"
+      ],
+      "pass": "LinearPostprocessRetainKeys",
+      "invocations": 8527,
+      "changed": 51,
+      "cases_without_placement": 0
+    }
+  }
+}

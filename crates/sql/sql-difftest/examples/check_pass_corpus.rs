@@ -394,6 +394,18 @@ fn compare_invocation(
             }
             input
         }
+        "OrderGcDependencies" => {
+            let edges: Vec<(u64, u64)> = serde_json::from_value(invocation["extra_edges"].clone())?;
+            let edges = edges.into_iter().map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
+            let order = feldera_sql_opt::dependency_order(&input, edges)?;
+            let expected = Circuit::from_json(invocation["after"].clone())?;
+            if !expected.operators().map(|(id, _)| id).eq(order.iter().copied()) {
+                return Err("ASOF dependency order differs from Java".into());
+            }
+            let mut edit = feldera_sql_ir::CircuitEditor::new(input);
+            edit.order_root_operators(&order)?;
+            edit.finish()?
+        }
         "OrderErrorConsumers" => {
             let table = invocation["error_table"]
                 .as_str()

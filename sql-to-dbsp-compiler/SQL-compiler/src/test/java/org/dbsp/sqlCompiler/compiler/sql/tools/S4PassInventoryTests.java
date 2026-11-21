@@ -26,7 +26,9 @@ public class S4PassInventoryTests {
         for (var field: move.path("fields")) names.add(field.path("name").asText());
         Assert.assertTrue(names.containsAll(java.util.List.of("leftGces", "rightGces", "original")));
         Assert.assertEquals(6, points.get(8).path("nested_transforms").size());
-        for (int index: new int[]{4, 14, 17}) {
+        Assert.assertEquals("OrderGcDependencies", points.get(14).path("pass").asText());
+        Assert.assertEquals("transform", points.get(14).path("kind").asText());
+        for (int index: new int[]{4, 17}) {
             Assert.assertEquals("in_place", points.get(index).path("kind").asText());
             Assert.assertTrue(points.get(index).path("implementation").isNull());
             Assert.assertFalse(points.get(index).path("local_and_shared_state").asText().isEmpty());

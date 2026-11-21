@@ -55,7 +55,7 @@ def read_run(directory, entry):
 FROZEN_SCHEDULE = {
     "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
-    "Graph": 12, "MoveGC": 0, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
+    "Graph": 12, "MoveGC": 0, "OrderGcDependencies": 0, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
     "DetectStreamingOperations": 1, "FindGCedStreams": 1, "CollectUnbounded": 1, "FindBounded": 2, "EnsureExpressionTrees": 1, "MultisetAnalysis": 3, "OptimizeDistinctVisitor": 1,
     "AppendOnly": 1, "DecomposeExpensiveFilters": 1, "SimplifyWaterline": 1, "ContainsNow": 1,
     "OrderErrorConsumers": 1, "UDFInliner": 1, "ShareOutputIntegrators": 1,
@@ -96,11 +96,13 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
     if "MoveGC" in schedule:
         if type(asof_retention_moves) is not int or asof_retention_moves not in (0, 1):
             raise ValueError(f"{case}: invalid ASOF retention placement {asof_retention_moves}")
-        if asof_retention_moves:
-            expected["MoveGC"] = 1
-            expected["Graph"] += 1
-        else:
-            del expected["MoveGC"]
+        for name in ("MoveGC", "OrderGcDependencies"):
+            if name in expected:
+                if asof_retention_moves:
+                    expected[name] = 1
+                else:
+                    del expected[name]
+        expected["Graph"] += asof_retention_moves
     if trim_inputs:
         expected["TrimInputs"] = 1
     if outputs_are_sets:

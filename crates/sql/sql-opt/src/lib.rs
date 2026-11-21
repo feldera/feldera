@@ -19,6 +19,8 @@ mod constant_filters;
 mod consumer_graph;
 mod cse;
 mod dead_code;
+mod dependency_order;
+pub use dependency_order::dependency_order;
 mod distinct_outputs;
 mod empty_sources;
 mod error_consumers;

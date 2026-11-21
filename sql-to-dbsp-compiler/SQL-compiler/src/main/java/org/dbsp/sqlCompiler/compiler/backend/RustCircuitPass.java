@@ -120,6 +120,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindCommonProjections commonProjections;
     @Nullable private final ReplaceCommonProjections replaceCommon;
     @Nullable private final LowerAsof.MoveGC asofRetention;
+    @Nullable private final LowerAsof.OrderGcDependencies asofOrder;
     @Nullable private final MultisetAnalysis multiplicities;
     @Nullable private final EnsureDistinctOutputs distinctOutputs;
     @Nullable private final CircuitContainsNow clockUses;
@@ -155,6 +156,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.garbageCollected = original instanceof FindUnboundedState.FindGCedStreams streams ? streams : null;
         this.replaceCommon = original instanceof ReplaceCommonProjections replace ? replace : null;
         this.asofRetention = original instanceof LowerAsof.MoveGC move ? move : null;
+        this.asofOrder = original instanceof LowerAsof.OrderGcDependencies order ? order : null;
         this.commonProjections = original instanceof FindCommonProjections common ? common : null;
         this.trimInputs = original instanceof TrimInputs trim ? trim : null;
         this.inputFields = original instanceof FindUnusedInputFields fields ? fields : null;
@@ -876,6 +878,12 @@ public final class RustCircuitPass implements CircuitTransform {
                     visitOperators(circuit.getAllOperators(), op -> operators.put(op.id, op));
                     this.mapChains.appendChains(chains, operators::get);
                 }
+                return circuit;
+            }
+            if (this.asofOrder != null) {
+                var order = this.invoke(this.nativeName, OptimizerTopology.encode(circuit, OptimizerTopology.Details.CONSUMERS),
+                        initial, MAPPER.writeValueAsBytes(this.asofOrder.edgeIds()));
+                circuit.applyOperatorOrder(MAPPER.treeToValue(order, long[].class));
                 return circuit;
             }
             if (this.errorOrder != null) {

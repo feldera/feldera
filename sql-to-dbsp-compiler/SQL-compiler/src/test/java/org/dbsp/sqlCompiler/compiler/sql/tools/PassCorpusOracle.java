@@ -107,6 +107,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
         var writer = this.snapshotWriter(circuit);
         this.active.set("before", this.snapshot(writer));
+        if (pass instanceof LowerAsof.OrderGcDependencies order)
+            this.active.set("extra_edges", org.dbsp.util.Utilities.deterministicObjectMapper()
+                    .valueToTree(order.edgeIds()));
         if (pass instanceof LowerAsof.MoveGC move)
             this.active.set("asof_joins", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(move.retentionJoins()));
