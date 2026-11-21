@@ -1,0 +1,74 @@
+{
+  "scope": "LowerCircuitVisitor including UNNEST, join-filter-map and classic aggregate folds. Each Java/Rust pair resumed the same S2 checkpoint. The comparator checked entry and exit graph sharing, generated names and diagnostics.",
+  "compiler_commit": "bdfd42c48",
+  "shards": {
+    "classic-0": {
+      "cases": 2143,
+      "programs_lowering_flatmaps": 42,
+      "flatmap_operators_lowered": 45,
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "java_gzip_sha256": "1889e1f805c9348b56df50cf48c36eaef0c5532246da2d62ca902ae4ab3308a9",
+      "rust_gzip_sha256": "18adb28f017cf87472cf77b078e6557207b1a1a4fe74e913c1cb4210c02b7eed"
+    },
+    "classic-1": {
+      "cases": 2143,
+      "programs_lowering_flatmaps": 53,
+      "flatmap_operators_lowered": 57,
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "java_gzip_sha256": "41ca88f8503a3ccf8786ee57fdc983e5058827520ac48b8b5c8f86e98accb0e3",
+      "rust_gzip_sha256": "13eafe95929e076028f309cf853ec328a3d00c637c67391cce9b24f9770c9806"
+    },
+    "classic-2": {
+      "cases": 2143,
+      "programs_lowering_flatmaps": 49,
+      "flatmap_operators_lowered": 53,
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "java_gzip_sha256": "3b25fa4b13361cea2ae375fa36a81b05ab1450b1fc25fc512e1a4951a4f56760",
+      "rust_gzip_sha256": "ec663594ab829bbacf4073bf4a4cdd3e1a188c5b812c270bf4c058dbd3d0de45"
+    },
+    "classic-3": {
+      "cases": 2142,
+      "programs_lowering_flatmaps": 43,
+      "flatmap_operators_lowered": 45,
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "java_gzip_sha256": "2e106a6275417479f41b1fadc591e144766260b037eaf7d07504fe219067fe33",
+      "rust_gzip_sha256": "6b549158adcd125a9d9811b466f025032ba1b59c26c68e92b7624825c0074d8d"
+    },
+    "gen2-0": {
+      "cases": 2132,
+      "programs_lowering_flatmaps": 41,
+      "flatmap_operators_lowered": 42,
+      "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+      "java_gzip_sha256": "edfe088892ba9733f52847160fc945b001e7adab6ec32f5c00ffc9a4ea8d69b4",
+      "rust_gzip_sha256": "57d28ba4e0b4351d2b93e80c4ba457236180573643cd73b19c4cd1b9f82f49d5"
+    },
+    "gen2-1": {
+      "cases": 2132,
+      "programs_lowering_flatmaps": 53,
+      "flatmap_operators_lowered": 59,
+      "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+      "java_gzip_sha256": "28e4cdb6174e8c3216fd588f939032113e49fcf976cf9a9e26f3e3ada7951b0e",
+      "rust_gzip_sha256": "403469176ed6165a6facaf5ea5a009138872ebfc0c649cce1f4dff849c815a9b"
+    },
+    "gen2-2": {
+      "cases": 2132,
+      "programs_lowering_flatmaps": 46,
+      "flatmap_operators_lowered": 48,
+      "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+      "java_gzip_sha256": "958ee5da3ecf87b74b7e6697bd2c25e2f0806fa1b78d1c0617290e63f79745df",
+      "rust_gzip_sha256": "9afe53ed86669deb3f39ead2999423045e98f92ffa78e8f877aac03bf85843fa"
+    },
+    "gen2-3": {
+      "cases": 2131,
+      "programs_lowering_flatmaps": 46,
+      "flatmap_operators_lowered": 50,
+      "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+      "java_gzip_sha256": "b88c270f0e0d3a8f5bcf30e3a41c78e0ab321a0771adf53b631bdeb49703ff64",
+      "rust_gzip_sha256": "dd7ba6a7bc1a81562326df8b54e6782c92b924f5529249c0a72269e633c6e336"
+    }
+  },
+  "directed_jni_tests": 19,
+  "jar_sha256": "2012b0a83fe5552cc83c194a006e8b6dc55bb9b0d9b41393eb6d53fbcdd2d6b4",
+  "jni_sha256": "c08671ce9b3fb4b28476d6fec3034eef6adb97885d034965f55090d22f88fc43",
+  "comparator_sha256": "dd9ab8023571e5fb760a89034d8ea74b64adc5192ad2231bddd82400960b9c3c"
+}

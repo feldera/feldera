@@ -825,6 +825,12 @@ Rust lowers classic aggregate lists to folds. Java and Rust agreed at all
 412 programs. The 8,526 programs that enabled Gen-2 kept their aggregate lists.
 [Aggregate fold comparisons](evidence/p3-aggregate-fold.json)
 
+Rust constructs the iterator closure for UNNEST, including nullable arrays and
+maps, projections, and ordinality. The two engines exercised 399 flat-map
+operators across 373 programs. All 17,098 lowering boundaries and final
+artifact comparisons matched Java. The COUNT and LATENESS checkpoints restored
+in both directions. [UNNEST lowering comparisons](evidence/p3-flatmap-lowering.json)
+
 Rust counts distinct uses of an expensive expression within each closure. A
 borrow, clone, dereference or tuple passes its own uses on to its operands.
 Java supplies canonical expression IDs and constructs the lazy bindings.
