@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
@@ -244,6 +245,21 @@ public final class FindSharedIndexes extends CircuitWithGraphsVisitor {
 
         /** Split the members into the lists that can each be implemented as one shared index. */
         List<List<MapIndexAndConsumer>> split(DBSPCompiler compiler) {
+            if (compiler.options.ioOptions.rustOptimizerPasses) {
+                var selected = RustCircuitPass.splitSharedIndexes(compiler,
+                        this.members.stream().map(m -> m.index.getClosureFunction()).toList(),
+                        this.members.stream().map(MapIndexAndConsumer::requiresFixedIndex).toList());
+                if (selected != null) {
+                    var groups = new ArrayList<List<MapIndexAndConsumer>>(selected.length);
+                    for (var group : selected) {
+                        var members = new ArrayList<MapIndexAndConsumer>(group.length);
+                        for (int position : group)
+                            members.add(this.members.get(position));
+                        groups.add(members);
+                    }
+                    return groups;
+                }
+            }
             // An index whose consumer cannot take a wider value seeds a list, the widest of
             // those first: the value of the first member becomes the start of the shared
             // value, and the widest one covers the fields of the most other members.

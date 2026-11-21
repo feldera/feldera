@@ -870,6 +870,13 @@ paths matched the Java reference at every frozen `ReplaceSharedIndexes`
 boundary, including the graph consumed by the following dead-code pass.
 [Wide index field projections](evidence/p3-wide-index-fields.json)
 
+The Rust splitter tries fixed-width consumers first, widest first, and keeps
+the first equivalent expression for each wide column. Across the two frozen
+populations the standalone checker matched Java's 723 wide indexes from 813
+candidate groups, including all 2,205 narrow column positions. The live
+compiler matched Java at all 17,098 pass boundaries, including diagnostics
+and generated names. [Split and layout comparisons](evidence/p3-split-wide-indexes.json)
+
 On build `80f10608a`, all 8,571 classic and 8,527 Gen-2 programs matched
 direct Java through final S3 and their emitted artifacts. COUNT and LATENESS
 checkpoints restored in both directions. With four workers and corpus replay

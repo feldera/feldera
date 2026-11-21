@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.SharedIndexOracle;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
@@ -174,8 +175,11 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         if (pass instanceof FindSharedIndexes find)
             this.active.set("previously_visited_indexes", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(find.visitedIds()));
-        if (pass.getName().equals("ReplaceSharedIndexes") && Boolean.getBoolean("feldera.optimizer.compareRustWideIndexes"))
-            this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass.getName().equals("ReplaceSharedIndexes")) {
+            SharedIndexOracle.before(pass, this.active);
+            if (Boolean.getBoolean("feldera.optimizer.compareRustWideIndexes"))
+                this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        }
         if (pass instanceof LowerCircuitVisitor) {
             byte[] types = org.dbsp.sqlCompiler.compiler.backend.CircuitLoweringTypes.encode(
                     writer, circuit, this.compiler.options.ioOptions.gen2);
@@ -433,6 +437,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         }
         if (pass instanceof FindWindowGroups find)
             WindowGroupOracle.capture(this.compiler, circuit, find, current);
+        if (pass.getName().equals("ReplaceSharedIndexes"))
+            SharedIndexOracle.after(pass, current);
         if (pass instanceof FindSharedIndexes find) {
             var mapper = org.dbsp.util.Utilities.deterministicObjectMapper();
             current.set("candidate_indexes", mapper.valueToTree(find.candidateIds()));

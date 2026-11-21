@@ -1449,7 +1449,30 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    @Nullable
+    public static int[][] splitSharedIndexes(DBSPCompiler compiler, List<DBSPClosureExpression> functions, List<Boolean> fixed) {
+        try {
+            var reply = invokeLowering(compiler, "SharedIndexes/Split",
+                    MAPPER.writeValueAsBytes(fixed), functions.toArray(DBSPClosureExpression[]::new)).value;
+            if (reply.isNull())
+                return null;
+            var groups = MAPPER.treeToValue(reply.required("groups"), int[][].class);
+            reportIndexDiagnostics(compiler, reply);
+            return groups;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid shared index groups", error);
+        }
+    }
+
+    private static void reportIndexDiagnostics(DBSPCompiler compiler, JsonNode state) {
+        for (var warning : state.required("warnings"))
+            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
+                    warning.required("error_type").textValue(), warning.required("message").textValue());
+        DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
+    }
+
     public record WideIndexFields(DBSPVariablePath variable, DBSPExpression key, boolean nullable,
+                                  List<DBSPExpression> fields, @Nullable List<List<Integer>> layout,
                                   List<List<DBSPExpression>> rows) {}
 
     public static WideIndexFields wideIndexFields(DBSPCompiler compiler, List<DBSPClosureExpression> functions) {
@@ -1458,21 +1481,23 @@ public final class RustCircuitPass implements CircuitTransform {
         var expressions = reply.value.required("expressions");
         var variable = decoder.decodeInner(expressions.required(0), DBSPVariablePath.class);
         var key = decoder.decodeInner(expressions.required(1), DBSPExpression.class);
-        var rows = new ArrayList<List<DBSPExpression>>(functions.size());
-        int i = 2;
-        for (var width : reply.value.required("widths")) {
-            var fields = new ArrayList<DBSPExpression>(width.intValue());
-            for (int field = 0; field < width.intValue(); field++)
-                fields.add(decoder.decodeInner(expressions.required(i++), DBSPExpression.class));
-            rows.add(fields);
+        var fields = new ArrayList<DBSPExpression>(expressions.size() - 2);
+        for (int i = 2; i < expressions.size(); i++)
+            fields.add(decoder.decodeInner(expressions.required(i), DBSPExpression.class));
+        List<List<Integer>> layout = MAPPER.convertValue(reply.value.required("layout"), new TypeReference<>() {});
+        var rows = new ArrayList<List<DBSPExpression>>();
+        if (layout == null) {
+            int offset = 0;
+            for (var width : reply.value.required("widths")) {
+                int end = Math.addExact(offset, width.intValue());
+                rows.add(fields.subList(offset, end));
+                offset = end;
+            }
+            if (rows.size() != functions.size() || offset != fields.size())
+                throw new IllegalStateException("Invalid column counts in Rust shared index");
         }
-        if (rows.size() != functions.size() || i != expressions.size())
-            throw new IllegalStateException("Invalid column counts in Rust shared index");
-        for (var warning : reply.value.required("warnings"))
-            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
-                    warning.required("error_type").textValue(), warning.required("message").textValue());
-        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-        return new WideIndexFields(variable, key, reply.value.required("nullable").booleanValue(), rows);
+        reportIndexDiagnostics(compiler, reply.value);
+        return new WideIndexFields(variable, key, reply.value.required("nullable").booleanValue(), fields, layout, rows);
     }
 
     @FunctionalInterface
@@ -1497,10 +1522,7 @@ public final class RustCircuitPass implements CircuitTransform {
         var state = MAPPER.readTree(result);
         find.record(MAPPER.treeToValue(state.required("groups"), FindSharedIndexes.IndexReader[][].class),
                 MAPPER.treeToValue(state.required("visited"), long[].class), operatorsById(circuit));
-        for (var warning : state.required("warnings"))
-            this.compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
-                    warning.required("error_type").textValue(), warning.required("message").textValue());
-        DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
+        reportIndexDiagnostics(this.compiler, state);
     }
 
     private void findCommonProjections(DBSPCircuit circuit, long next, FindCommonProjections analysis) throws IOException {

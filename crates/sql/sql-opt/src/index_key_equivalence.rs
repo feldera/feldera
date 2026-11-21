@@ -78,7 +78,23 @@ pub(super) fn equivalent(
     )? {
         return Ok(Some(false));
     }
-    let mut pending = vec![(left.edge("body")?, right.edge("body")?)];
+    equivalent_bodies(
+        edit,
+        left.edge("body")?,
+        right.edge("body")?,
+        Some((lp, rp)),
+    )
+}
+
+/// With no enclosing parameter mapping, free variable paths match by identity.
+/// Fields of a wide index are reduced against a single shared variable.
+pub(super) fn equivalent_bodies(
+    edit: &CircuitEditor,
+    left: NodeId,
+    right: NodeId,
+    parameters: Option<(&Node, &Node)>,
+) -> Result<Option<bool>, Error> {
+    let mut pending = vec![(left, right)];
     let mut seen = HashSet::new();
     while let Some((a, b)) = pending.pop() {
         if !seen.insert((a, b)) {
@@ -92,11 +108,15 @@ pub(super) fn equivalent(
         }
         let children: &[&str] = match kind {
             Expr::VariablePath => {
-                if a != b
-                    && (left.data("variable") != lp.data("name")
-                        || right.data("variable") != rp.data("name"))
-                {
-                    return Ok(None);
+                if a != b {
+                    let Some((lp, rp)) = parameters else {
+                        return Ok(None);
+                    };
+                    if left.data("variable") != lp.data("name")
+                        || right.data("variable") != rp.data("name")
+                    {
+                        return Ok(None);
+                    }
                 }
                 &[]
             }

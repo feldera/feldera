@@ -83,8 +83,13 @@ class WideMapIndexBuilder {
         if (compiler.options.ioOptions.rustOptimizerPasses) {
             var fields = RustCircuitPass.wideIndexFields(compiler, closures);
             var builder = new WideMapIndexBuilder(node, fields.variable(), fields.key(), fields.nullable());
-            for (var row : fields.rows())
-                builder.outputIndexes.add(Linq.map(row, builder::outputIndex));
+            if (fields.layout() != null) {
+                builder.outputFields.addAll(fields.fields());
+                builder.outputIndexes.addAll(fields.layout());
+            } else {
+                for (var row : fields.rows())
+                    builder.outputIndexes.add(Linq.map(row, builder::outputIndex));
+            }
             return builder;
         }
         DBSPClosureExpression first = closures.get(0);

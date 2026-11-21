@@ -207,7 +207,7 @@ pub use regions::tag_regions;
 pub use remove_noops::{optimize_noops, remove_noops};
 pub use remove_table::{remove_table, unreferenced_table_sources, TableRemoval};
 pub use shared_index_candidates::{find_shared_indexes, shared_index_payloads, IndexReader, SharedIndexes};
-pub use wide_index::{wide_index_fields, WideIndexFields};
+pub use wide_index::{split_shared_indexes, wide_index_fields, WideIndexFields, WideIndexLayout};
 pub use shared_indexes::{duplicate_shared_indexes, find_map_chains};
 pub use state_bounds::{
     detects_streaming, propagate_bounds, pruned_streams, unbounded_operators, UnboundedOperator,

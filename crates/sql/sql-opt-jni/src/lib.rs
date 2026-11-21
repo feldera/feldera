@@ -183,12 +183,25 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("SharedIndexes/Split", roots) => {
+            let fixed: Vec<bool> = serde_json::from_slice(state)?;
+            let groups = feldera_sql_opt::split_shared_indexes(&arena, roots, &fixed, &mut next, &mut warnings)?;
+            return Ok(match groups {
+                None => Value::Null,
+                Some(groups) => json!({"groups": groups, "next_generated_name":next, "warnings": warnings.into_iter()
+                    .map(|w| json!({"range":w.position, "error_type":w.kind, "message":w.message})).collect::<Vec<_>>()})
+            });
+        }
         ("SharedIndexes/WideFields", roots) => {
             let fields = feldera_sql_opt::wide_index_fields(&mut edit, roots, &mut next, &mut warnings)?;
             let widths: Vec<_> = fields.rows.iter().map(Vec::len).collect();
-            let roots: Vec<_> = [fields.variable, fields.key].into_iter().chain(fields.rows.into_iter().flatten()).collect();
+            let (columns, layout) = match fields.layout(&edit)? {
+                Some(layout) => (layout.columns, Some(layout.positions)),
+                None => (fields.rows.into_iter().flatten().collect(), None),
+            };
+            let roots: Vec<_> = [fields.variable, fields.key].into_iter().chain(columns).collect();
             let expressions = edit.circuit().additional_expressions(&arena, &roots)?;
-            return Ok(json!({"expressions": expressions, "widths": widths, "nullable": fields.nullable,
+            return Ok(json!({"expressions": expressions, "widths": widths, "layout": layout, "nullable": fields.nullable,
                 "next_generated_name": next, "warnings": warnings.into_iter().map(|w| json!({
                     "range":w.position, "error_type":w.kind, "message":w.message,
                 })).collect::<Vec<_>>()}));
@@ -543,7 +556,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
+        "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "WindowGroups/ReorderPredicate"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
