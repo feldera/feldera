@@ -823,6 +823,11 @@ until the first clock value arrives and preserve the SQL source locations of
 rewritten calls. All 133 temporal comparisons matched the same Java reference.
 [Window bound comparisons](evidence/p3-temporal-window-bounds.json)
 
+For maps and residual filters that need a stream join, Rust builds the index,
+appends the clock to the joined row and drops it from the filtered output.
+The pass matched Java on all 71 classic and 62 Gen-2 temporal cases.
+[Clock join comparisons](evidence/p3-clock-join.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

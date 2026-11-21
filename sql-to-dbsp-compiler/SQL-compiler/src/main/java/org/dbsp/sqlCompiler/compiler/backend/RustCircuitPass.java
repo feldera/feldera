@@ -581,6 +581,15 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockJoinFunctions(
+            DBSPCompiler compiler, DBSPType row, DBSPType timestamp) {
+        return loweredClosurePair(invokeLowering(compiler, "RewriteNow/Join", row, DBSPTypeTuple.EMPTY, timestamp));
+    }
+
+    public static DBSPClosureExpression dropClock(DBSPCompiler compiler, DBSPType joinedRow) {
+        return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/DropClock", joinedRow));
+    }
+
     public static DBSPClosureExpression temporalWindowBounds(DBSPCompiler compiler, DBSPType key,
             DBSPExpression clockMinimum, DBSPExpression lowerInitial, DBSPExpression upperInitial,
             @Nullable DBSPExpression lower, @Nullable DBSPExpression upper) {

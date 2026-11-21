@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
+import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -190,25 +191,15 @@ public class RewriteNow extends CircuitCloneVisitor {
     DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator,
                                   DBSPExpression nowCall) {
         DBSPType inputType = input.getOutputZSetElementType();
-        DBSPVariablePath var = inputType.ref().var();
-        DBSPExpression indexFunction = new DBSPRawTupleExpression(
-                new DBSPTupleExpression(),
-                DBSPTupleExpression.flatten(var.deref()));
-        DBSPMapIndexOperator index = new DBSPMapIndexOperator(
-                operator.getRelNode(), indexFunction.closure(var),
+        var functions = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.clockJoinFunctions(this.compiler, inputType, ContainsNow.timestampType())
+                : clockJoinFunctions(inputType);
+        DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(), functions.left,
                 TypeCompiler.makeIndexedZSet(DBSPTypeTuple.EMPTY, inputType), input.outputPort());
         this.addOperator(index);
-
-        // Join with 'indexedNow'
-        DBSPVariablePath key = DBSPTypeTuple.EMPTY.ref().var();
-        DBSPVariablePath left = inputType.ref().var();
-        DBSPVariablePath right = new DBSPTypeTuple(ContainsNow.timestampType()).ref().var();
-        List<DBSPExpression> fields = left.deref().allFields();
-        fields.add(right.deref().field(0));
-        DBSPTypeZSet joinType = TypeCompiler.makeZSet(new DBSPTypeTuple(
-                Linq.map(fields, DBSPExpression::getType)));
-        DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
-                .closure(key, left, right);
+        DBSPClosureExpression joinFunction = functions.right;
+        DBSPTypeZSet joinType = TypeCompiler.makeZSet(
+                new DBSPTypeTuple(joinFunction.getResultType().to(DBSPTypeTuple.class).tupFields));
         Utilities.enforce(nowIndexed != null);
         // The join has no SQL counterpart; use the NOW() source code position
         CalciteRelNode joinNode = operator.getRelNode().copy();
@@ -217,6 +208,25 @@ public class RewriteNow extends CircuitCloneVisitor {
                 joinFunction, index.outputPort(), nowIndexed.outputPort(), false);
         this.addOperator(result);
         return result;
+    }
+
+    private static Pair<DBSPClosureExpression, DBSPClosureExpression> clockJoinFunctions(DBSPType inputType) {
+        DBSPVariablePath var = inputType.ref().var();
+        DBSPClosureExpression index = new DBSPRawTupleExpression(
+                new DBSPTupleExpression(), DBSPTupleExpression.flatten(var.deref())).closure(var);
+        DBSPVariablePath key = DBSPTypeTuple.EMPTY.ref().var();
+        DBSPVariablePath left = inputType.ref().var();
+        DBSPVariablePath right = new DBSPTypeTuple(ContainsNow.timestampType()).ref().var();
+        List<DBSPExpression> fields = left.deref().allFields();
+        fields.add(right.deref().field(0));
+        return Pair.of(index, new DBSPTupleExpression(fields, false).closure(key, left, right));
+    }
+
+    private static DBSPClosureExpression dropClock(DBSPType joinedRow) {
+        DBSPVariablePath var = joinedRow.ref().var();
+        List<DBSPExpression> fields = var.deref().allFields();
+        Utilities.removeLast(fields);
+        return new DBSPTupleExpression(fields, false).closure(var);
     }
 
     void warnExpensive(@Nullable DBSPExpression expression) {
@@ -514,10 +524,9 @@ public class RewriteNow extends CircuitCloneVisitor {
             DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());
             this.addOperator(filter);
             // Drop the extra field
-            DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
-            List<DBSPExpression> fields = var.deref().allFields();
-            Utilities.removeLast(fields);
-            DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var);
+            DBSPType joinedRow = filter.getOutputZSetElementType();
+            DBSPExpression drop = this.compiler.options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.dropClock(this.compiler, joinedRow) : dropClock(joinedRow);
             result = new DBSPMapOperator(operator.getRelNode(), drop, operator.getOutputZSetType(), filter.outputPort());
             this.addOperator(result);
         }

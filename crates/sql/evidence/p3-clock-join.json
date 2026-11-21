@@ -1,0 +1,22 @@
+{
+  "scope": "RewriteNow index, join and final projection for maps and residual filters that read the clock stream. Replay the same detached S2 through the Java reference and candidate.",
+  "java_reference_commit": "54c227440",
+  "compiler_jar_sha256": "27a82af6e5cf017bf6fb90a363c641ee8bd77a8bcc9725dd6809717c6a72a843",
+  "optimizer_library_sha256": "e46356e56925829908cfb09aa0c1dfa142cda512df34fe67d6b3a6e5854fff82",
+  "populations": {
+    "classic": {
+      "cases": 71,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_sha256": "ddd0078d5b87eb0f7d71bde39b908f9fe307e5c7544c7f9498807c8adbb87c04",
+      "hybrid_sha256": "b18f7174965bdf7306f7d9c978d35179e39055a8856c93fa8e1144a579376241"
+    },
+    "gen2": {
+      "cases": 62,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_sha256": "a7a01e1e395f5ab65667052aa069dbe064eace19e1ec0d5abdb7dd49948a7cab",
+      "hybrid_sha256": "1ba8eba318947301457f224a6a9679107f0abf1f9aa64362000138226922b987"
+    }
+  }
+}

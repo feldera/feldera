@@ -111,6 +111,8 @@ mod stream_rewrites;
 mod sums;
 mod temporal_comparisons;
 mod temporal_equality;
+mod clock_join;
+pub use clock_join::{clock_join_functions, drop_clock};
 mod window_bounds;
 pub use window_bounds::{temporal_window_bounds, WindowEndpoint};
 mod window_projection;
