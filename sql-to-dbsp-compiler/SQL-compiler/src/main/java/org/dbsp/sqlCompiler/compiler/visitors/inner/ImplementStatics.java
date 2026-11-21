@@ -75,6 +75,15 @@ public class ImplementStatics extends ExpressionTranslator {
             this.index = 0;
         }
 
+        DBSPExpression renumber(DBSPExpression initializer) {
+            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+                var result = RustCircuitPass.renumberStaticErrors(this.compiler(), initializer, this.index);
+                this.index = result.next();
+                return result.expression();
+            }
+            return this.apply(initializer).to(DBSPExpression.class);
+        }
+
         @Override
         public void postorder(DBSPHandleErrorExpression expression) {
             DBSPExpression source = this.getE(expression.source);
@@ -176,7 +185,7 @@ public class ImplementStatics extends ExpressionTranslator {
 
     /** Create a static that holds the value of 'expression'; return a reference to the static */
     DBSPExpression makeStatic(DBSPExpression expression) {
-        DBSPExpression renumbered = this.renumber.apply(expression).to(DBSPExpression.class);
+        DBSPExpression renumbered = this.renumber.renumber(expression);
         return this.defineStatic(expression, renumbered);
     }
 

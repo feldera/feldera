@@ -113,22 +113,7 @@ impl ErrorSites {
         };
         // Every located site reserves a slot. Only sources which can report
         // their position at runtime carry that slot into the emitted handler.
-        let operand = editor.node(source.into())?;
-        let index = if self.in_operator
-            && operand
-                .field("position")
-                .map(Field::source_range)
-                .transpose()?
-                .is_some_and(|range| range.is_valid())
-            && !matches!(
-                operand.inner_kind(),
-                Some(InnerKind::Expression(Expr::Binary))
-            )
-            && !(matches!(
-                operand.inner_kind(),
-                Some(InnerKind::Expression(Expr::Cast))
-            ) && operand.data("safe").and_then(|v| v.as_str()) == Some("SqlSafe"))
-        {
+        let index = if self.in_operator && error_source_reports_position(editor, source)? {
             allocated
         } else {
             0
@@ -154,4 +139,25 @@ impl ErrorSites {
             )
             .map(Into::into)
     }
+}
+
+/// Whether a runtime error from this operand can use its source-position index.
+pub fn error_source_reports_position(
+    editor: &CircuitEditor,
+    source: ExpressionId,
+) -> Result<bool, Error> {
+    let operand = editor.node(source.into())?;
+    Ok(operand
+        .field("position")
+        .map(Field::source_range)
+        .transpose()?
+        .is_some_and(|range| range.is_valid())
+        && !matches!(
+            operand.inner_kind(),
+            Some(InnerKind::Expression(Expr::Binary))
+        )
+        && !(matches!(
+            operand.inner_kind(),
+            Some(InnerKind::Expression(Expr::Cast))
+        ) && operand.data("safe").and_then(|v| v.as_str()) == Some("SqlSafe")))
 }

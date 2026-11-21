@@ -135,6 +135,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let types = inputs.iter().map(|&id| edit.type_id(id)).collect::<Result<Vec<_>, _>>()?;
             feldera_sql_opt::limiters::apply_waterlines(&mut edit, *function, &types, &mut next, &mut warnings)?
         }
+        ("Statics/RenumberErrors", [initializer]) => {
+            let first = serde_json::from_slice(state)?;
+            let initializer = edit.expression(*initializer)?;
+            let (result, next) = feldera_sql_opt::renumber_static_errors(&mut edit, initializer, first)?;
+            let mut roots = edit.circuit().additional_expressions(&arena, &[result])?;
+            let value = roots.pop().expect("one static initializer");
+            return Ok(json!({"initializer": value, "next": next}));
+        }
         ("Statics/Inline" | "Statics/Define" | "Statics/Declare", _) => {
             let value = match (pass, roots.as_slice()) {
                 ("Statics/Declare", [existing]) => edit.expression(*existing)?,
@@ -343,7 +351,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Project" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

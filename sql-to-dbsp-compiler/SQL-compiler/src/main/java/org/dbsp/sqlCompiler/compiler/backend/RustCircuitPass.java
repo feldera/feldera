@@ -574,6 +574,18 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public record StaticPlan(Set<Long> candidates, Set<Long> cells, Map<Long, Long> reads) {}
 
+    public record RenumberedInitializer(DBSPExpression expression, int next) {}
+
+    public static RenumberedInitializer renumberStaticErrors(DBSPCompiler compiler, DBSPExpression initializer, int first) {
+        try {
+            var reply = invokeLowering(compiler, "Statics/RenumberErrors", MAPPER.writeValueAsBytes(first), initializer);
+            var expression = expressionDecoder(reply.writer).decodeInner(reply.value.required("initializer"), DBSPExpression.class);
+            return new RenumberedInitializer(expression, reply.value.required("next").intValue());
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode the next static error index", error);
+        }
+    }
+
     public record StaticItem(DBSPStaticItem declaration, DBSPPathExpression reference) {}
 
     private static StaticItem decodeStaticItem(LoweringReply reply) {

@@ -899,13 +899,16 @@ passed with Rust choosing the insertion point.
 Rust classifies row-independent expressions, selects lazy cells for static storage,
 and resolves reads of those cells across lexical scopes. It hashes the classic
 printer's rendering of the initializer and its type, then constructs the inline
-value or a named declaration and its typed reference. Java renumbers the error
-handlers and decides when identical literals share a declaration.
+value or a named declaration and its typed reference. Rust renumbers error
+handlers in visit order across static initializers. Repeated visits reserve
+new slots while retaining the first translation. Java decides when identical
+literals share a declaration.
 All 8,572 enabled invocations matched on the saved S2 inputs. Forty added a total
 of 279 declarations. The other 8,526 programs ran in Gen-2 mode, which skips
 this pass. The expression-equivalence suite also exercised both inline and declared
 statics. [Static-cell comparisons](evidence/p3-static-cells.json) ·
-[Declaration comparisons](evidence/p3-static-items.json)
+[Declaration comparisons](evidence/p3-static-items.json) ·
+[Error index comparisons](evidence/p3-static-errors.json)
 
 To repeat a paired pass comparison, capture the population once, then give
 both JVMs that checkpoint directory. Each observation records the S2 digest.

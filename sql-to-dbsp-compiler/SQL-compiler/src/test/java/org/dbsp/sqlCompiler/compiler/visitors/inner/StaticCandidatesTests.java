@@ -8,6 +8,9 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.junit.Assert;
@@ -39,6 +42,29 @@ public class StaticCandidatesTests {
         Assert.assertFalse(pass.shouldBeStatic(computed));
         Assert.assertFalse(pass.shouldBeStatic(captures));
         Assert.assertTrue(pass.shouldBeStatic(closed));
+    }
+
+    @Test
+    public void staticErrorsCountRepeatedUsesAcrossInitializers() {
+        var origin = CalciteObject.create(new SourcePositionRange(new SourcePosition(2, 1), new SourcePosition(2, 2)));
+        var value = new DBSPI32Literal(origin, b.i32(), 1);
+        var behavior = DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource;
+        var shared = new DBSPHandleErrorExpression(origin, 19, behavior, value, true);
+        var silent = new DBSPHandleErrorExpression(origin, 19, behavior, value, false);
+        var last = new DBSPHandleErrorExpression(origin, 19, behavior, value, true);
+        var binding = b.let(shared, variable -> variable);
+        var pass = pass().renumber;
+        pass.index = 7;
+
+        var tuple = b.tuple(binding, binding, shared, shared, silent, last);
+        var rewritten = pass.renumber(tuple).to(DBSPTupleExpression.class);
+        Assert.assertSame(rewritten.fields[0], rewritten.fields[1]);
+        Assert.assertSame(rewritten.fields[2], rewritten.fields[3]);
+        Assert.assertEquals(7, rewritten.fields[2].to(DBSPHandleErrorExpression.class).index);
+        Assert.assertEquals(0, rewritten.fields[4].to(DBSPHandleErrorExpression.class).index);
+        Assert.assertEquals(11, rewritten.fields[5].to(DBSPHandleErrorExpression.class).index);
+        Assert.assertEquals(12, pass.renumber(shared).to(DBSPHandleErrorExpression.class).index);
+        Assert.assertEquals(13, pass.index);
     }
 
     @Test

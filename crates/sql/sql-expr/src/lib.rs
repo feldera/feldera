@@ -15,7 +15,7 @@ mod error_sites;
 mod field_use;
 mod flatmap;
 pub use field_use::{input_field_paths, parameter_field_paths};
-pub use error_sites::ErrorSites;
+pub use error_sites::{error_source_reports_position, ErrorSites};
 pub use flatmap::{project_flatmap, FlatmapColumns};
 mod sql_index;
 pub use casts::{
