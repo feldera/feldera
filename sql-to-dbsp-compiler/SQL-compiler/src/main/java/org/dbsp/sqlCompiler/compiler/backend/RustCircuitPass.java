@@ -341,9 +341,26 @@ public final class RustCircuitPass implements CircuitTransform {
         return function;
     }
 
+    public static DBSPClosureExpression narrowMapInput(DBSPCompiler compiler, DBSPClosureExpression closure,
+            List<List<Integer>> paths, boolean projection) {
+        try {
+            var reply = invokeLowering(compiler, projection ? "ProjectMapInput" : "RebindMapInput",
+                    MAPPER.writeValueAsBytes(paths), closure);
+            var function = loweredFunction(compiler, reply.writer, reply.value, DBSPClosureExpression.class);
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return function;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode map input fields", error);
+        }
+    }
+
     private record LoweringReply(ToJsonInnerVisitor writer, JsonNode value) {}
 
     private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, IDBSPInnerNode... inputs) {
+        return invokeLowering(compiler, pass, EMPTY_CONTEXT, inputs);
+    }
+
+    private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, byte[] state, IDBSPInnerNode... inputs) {
         var json = JsonStream.compactCircuit();
         var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
         inner.liveNodes = new HashMap<>();
@@ -354,7 +371,7 @@ public final class RustCircuitPass implements CircuitTransform {
         json.endArray();
         try {
             byte[] reply = transformWithContext(pass, json.toString().getBytes(StandardCharsets.UTF_8),
-                    DBSPVariablePath.nextGeneratedName(), "", EMPTY_CONTEXT);
+                    DBSPVariablePath.nextGeneratedName(), "", state);
             return new LoweringReply(inner, MAPPER.readTree(reply));
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid function from Rust pass " + pass, error);

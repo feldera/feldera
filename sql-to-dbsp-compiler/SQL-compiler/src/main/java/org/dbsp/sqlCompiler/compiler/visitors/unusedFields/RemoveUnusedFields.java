@@ -540,10 +540,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 super.postorder(operator);
                 return;
             }
-            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
-            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
-            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 1);
+            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 1);
 
             if (EquivalenceContext.equiv(closure, projection) ||
                     EquivalenceContext.equiv(closure, compressed)) {
@@ -567,9 +565,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 return;
             }
             // closure = compressed \circ projection
-            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 2);
-            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 2);
             if (EquivalenceContext.equiv(closure, compressed)) {
                 // This optimization achieves nothing
                 this.noUnusedFields(closure);
@@ -578,7 +574,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             }
 
             OutputPort source = this.mapped(operator.input());
-            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
+            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 2);
             DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
                     .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
@@ -609,11 +605,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 super.postorder(operator);
                 return;
             }
-            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
-            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 1);
             OutputPort source = this.mapped(operator.input());
-            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
+            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 1);
             if (EquivalenceContext.equiv(compressed, closure)) {
                 this.noUnusedFields(closure);
                 super.postorder(operator);
@@ -634,9 +628,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 return;
             }
             // closure = compressed \circ projection
-            RewriteFields rw = useMap.getFieldRewriter(this.compiler, 2);
-            FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
-            DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(2));
+            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 2);
             if (EquivalenceContext.equiv(closure, projection) ||
                     EquivalenceContext.equiv(closure, projection)) {
                 // This optimization achieves nothing
@@ -645,7 +637,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 return;
             }
 
-            DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 2);
             OutputPort source = this.mapped(operator.input());
             DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
                     .copyAnnotations(operator)
@@ -655,6 +647,18 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                     operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
             this.map(operator, result);
         }
+    }
+
+    private DBSPClosureExpression projectMapInput(DBSPClosureExpression closure, ParameterFieldUse use, int depth) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.narrowMapInput(this.compiler, closure, this.nativeMapFields.get(closure.id), true);
+        return Objects.requireNonNull(use.get(closure.parameters[0]).getProjection(depth));
+    }
+
+    private DBSPClosureExpression rebindMapInput(DBSPClosureExpression closure, ParameterFieldUse use, int depth) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.narrowMapInput(this.compiler, closure, this.nativeMapFields.get(closure.id), false);
+        return use.getFieldRewriter(this.compiler, depth).rewriteClosure(closure);
     }
 
     private ParameterFieldUse mapFieldUse(DBSPClosureExpression closure) {

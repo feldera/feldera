@@ -27,6 +27,7 @@ mod replace_projections;
 pub use replace_projections::{replace_common_projections, ProjectionClosures};
 mod row_fields;
 mod row_projection;
+pub use row_projection::{narrow_map_input, MapInputClosure};
 mod common_projections;
 pub use common_projections::{common_projection_payloads, common_projections, shared_projection_closures, CommonProjection, SharedProjectionClosure};
 mod conditionals;

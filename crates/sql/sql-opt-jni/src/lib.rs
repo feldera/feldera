@@ -79,7 +79,7 @@ fn expression_arena(roots: impl IntoIterator<Item = Value>) -> Result<(Circuit, 
     }))?.with_inner_roots(roots)
 }
 
-fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
     let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
         return Err("expected an array of lowering inputs".into());
     };
@@ -101,6 +101,15 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("ProjectMapInput" | "RebindMapInput", [reader]) => {
+            let paths = serde_json::from_slice(state)?;
+            let part = if pass == "ProjectMapInput" {
+                feldera_sql_opt::MapInputClosure::Projection
+            } else {
+                feldera_sql_opt::MapInputClosure::Reader
+            };
+            feldera_sql_opt::narrow_map_input(&mut edit, *reader, &paths, &mut next, part)?
+        }
         ("ProjectUnnest", [flatmap, reader]) => {
             let Some(function) = feldera_sql_opt::project_unnest(&mut edit, *flatmap, *reader)? else {
                 return Ok(Value::Null);
@@ -246,11 +255,11 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        "ProjectMapInput" | "RebindMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
-            return lower_function(pass, input, next);
+            return lower_function(pass, input, state, next);
         }
         "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
             let (arena, roots) = expression_arena([feldera_sql_ir::parse_json(input)?])?;
