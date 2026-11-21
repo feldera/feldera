@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ConstantViews;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.InputFieldOracle;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import java.util.Comparator;
@@ -106,6 +107,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
         var writer = this.snapshotWriter(circuit);
         this.active.set("before", this.snapshot(writer));
+        if (pass instanceof LowerAsof.MoveGC move)
+            this.active.set("asof_joins", org.dbsp.util.Utilities.deterministicObjectMapper()
+                    .valueToTree(move.retentionJoins()));
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections replace) {
             var state = org.dbsp.sqlCompiler.compiler.backend.SharedProjectionState.encode(writer, replace.analysis());
             try {

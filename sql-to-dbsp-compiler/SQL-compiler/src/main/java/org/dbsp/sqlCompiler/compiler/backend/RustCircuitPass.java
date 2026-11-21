@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTable;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
@@ -118,6 +119,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final TrimInputs trimInputs;
     @Nullable private final FindCommonProjections commonProjections;
     @Nullable private final ReplaceCommonProjections replaceCommon;
+    @Nullable private final LowerAsof.MoveGC asofRetention;
     @Nullable private final MultisetAnalysis multiplicities;
     @Nullable private final EnsureDistinctOutputs distinctOutputs;
     @Nullable private final CircuitContainsNow clockUses;
@@ -152,6 +154,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.unbounded = original instanceof FindUnboundedState.CollectUnbounded collect ? collect : null;
         this.garbageCollected = original instanceof FindUnboundedState.FindGCedStreams streams ? streams : null;
         this.replaceCommon = original instanceof ReplaceCommonProjections replace ? replace : null;
+        this.asofRetention = original instanceof LowerAsof.MoveGC move ? move : null;
         this.commonProjections = original instanceof FindCommonProjections common ? common : null;
         this.trimInputs = original instanceof TrimInputs trim ? trim : null;
         this.inputFields = original instanceof FindUnusedInputFields fields ? fields : null;
@@ -215,6 +218,8 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private byte[] passState(DBSPCircuit circuit, ToJsonOuterVisitor writer) throws IOException {
+        if (this.asofRetention != null)
+            return MAPPER.writeValueAsBytes(this.asofRetention.retentionJoins());
         if (this.streamAggregates != null)
             return MAPPER.writeValueAsBytes(Map.of("weight_id", this.compiler.weightVar.getId(),
                     "weight_name", this.compiler.weightVar.variable,

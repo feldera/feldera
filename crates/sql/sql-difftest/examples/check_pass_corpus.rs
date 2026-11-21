@@ -120,6 +120,11 @@ fn compare_invocation(
             }
             input
         }
+        "MoveGC" => feldera_sql_opt::move_asof_retention(
+            input,
+            serde_json::from_value(invocation["asof_joins"].clone())?,
+            &mut next,
+        )?,
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
             input, serde_json::from_value(invocation["projection_closures"].clone())?, &mut next)?,
         "TrimInputs" => feldera_sql_opt::trim_inputs(

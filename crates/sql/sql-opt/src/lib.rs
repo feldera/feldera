@@ -3,6 +3,8 @@
 mod aggregate_groups;
 mod aggregate_zero;
 mod append_only;
+mod asof_retention;
+pub use asof_retention::move_asof_retention;
 mod array_agg;
 mod balanced_joins;
 mod chains;

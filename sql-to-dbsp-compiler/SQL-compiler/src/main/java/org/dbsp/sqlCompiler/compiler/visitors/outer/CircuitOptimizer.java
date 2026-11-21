@@ -131,7 +131,8 @@ public class CircuitOptimizer extends Passes {
             if (!supported && graph.transform instanceof Passes iteration)
                 iteration.passes.replaceAll(this::selectImplementation);
         } else {
-            supported = pass instanceof Graph || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
+            supported = pass instanceof Graph || pass instanceof LowerAsof.MoveGC
+                    || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
                     || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds
                     || pass instanceof MergeGC.FindEquivalentNoops
                     || pass instanceof MergeGC.FindMultipleRetains || pass instanceof CollapseSharedChains || pass instanceof RemoveUselessLeftJoinsVisitor
@@ -307,7 +308,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new Simplify(compiler).circuitRewriter(true));
         this.add(new CSE(compiler));
         this.add(new ValidateRecursiveOperators(compiler));
-        this.add(new LowerAsof(compiler));
+        this.add(new LowerAsof(compiler, this::selectImplementation));
         this.add(new LowerCircuitVisitor(compiler));
         this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));

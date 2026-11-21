@@ -1,0 +1,46 @@
+{
+  "scope": "Compare Rust relocation of value and N-value retention predicates at every frozen Java MoveGC boundary after ASOF lowering.",
+  "comparator_sha256": "60e42428eb18aa403efd7b75a3493f1457a44c00ff0c08d210871775793ef21d",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "7fd710d84d11178cb41af21e13f3323643d9528882f2a1a3bf93c97d82b919fc",
+      "beb6b2893789bca1be297d8db3add6901f361c09b6d24ac8135072ea910439db",
+      "f98bd48a22c8a6d450a7ace9cd4d728ddef08551318171f94ff66e47e8da1cbe",
+      "1daabffe1de096a527f8b5f9e460e61538795febd68c956c7b9a5a9bcad44623"
+    ],
+    "pass": "MoveGC",
+    "invocations": 9,
+    "changed": 9,
+    "cases_without_placement": 8562,
+    "oracle_stream_sha256": [
+      "17d3181bb3b9a5809513c33a97abad4261506fc0783b0161feb527d35cf5749c",
+      "4d514fae379ab244e311397e4c62ad9d9356bc31a4c66ac74deb3ebafc5b12c4",
+      "bd0ec9a86960c318f26907484df62e6682ad0690a60106d7341a146702a919bb",
+      "5658ecdec24ee616784342362ada53768d8c6dda8efb269a652a1f1694905cf3"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "2514e11004ac062e143c70fcb306d9c6d46a39079bd5d52113956ca394e0c47b",
+      "212bcb108f09f91940356d97fb3cf7bd2a9bc2d2fefee5f95182551526163835",
+      "6eaf84eaf7d8fd9387a2c5de30ac27f181e510ca9d0055e7523cf29c9d4cf29d",
+      "f79ecbaf817e31e6c30d01307f2e4b6473a202fb7cc1253e76c1bac4a920e158"
+    ],
+    "pass": "MoveGC",
+    "invocations": 9,
+    "changed": 9,
+    "cases_without_placement": 8518,
+    "oracle_stream_sha256": [
+      "c14e47ab61bfe386841a2f35ee9a985c1ff98198c4160c021a851b0179b3f27f",
+      "d1713353e7cdd0158f8fd4ce4b26e6407d30337fda86e87f4074ddfe42fe9a5f",
+      "49e6d305ffb41018cbcc41c6092a79a3204cb94f27cf1ba02600ac37e0ebf189",
+      "a6c577e9297a35908c15306f29cf4154b1be1442ae4e7eb6a93adb8720b4ceb9"
+    ]
+  }
+}

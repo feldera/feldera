@@ -55,7 +55,7 @@ def read_run(directory, entry):
 FROZEN_SCHEDULE = {
     "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
-    "Graph": 11, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
+    "Graph": 12, "MoveGC": 0, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
     "DetectStreamingOperations": 1, "FindGCedStreams": 1, "CollectUnbounded": 1, "FindBounded": 2, "EnsureExpressionTrees": 1, "MultisetAnalysis": 3, "OptimizeDistinctVisitor": 1,
     "AppendOnly": 1, "DecomposeExpensiveFilters": 1, "SimplifyWaterline": 1, "ContainsNow": 1,
     "OrderErrorConsumers": 1, "UDFInliner": 1, "ShareOutputIntegrators": 1,
@@ -91,8 +91,16 @@ def graph_cleanup_counts(case, record):
 def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCHEDULE, *,
                       validate_weights=False, cast_iterations=None, unused_field_iterations=None,
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
-                      outputs_are_sets=False, trim_inputs=False):
+                      outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0):
     expected = dict(schedule)
+    if "MoveGC" in schedule:
+        if type(asof_retention_moves) is not int or asof_retention_moves not in (0, 1):
+            raise ValueError(f"{case}: invalid ASOF retention placement {asof_retention_moves}")
+        if asof_retention_moves:
+            expected["MoveGC"] = 1
+            expected["Graph"] += 1
+        else:
+            del expected["MoveGC"]
     if trim_inputs:
         expected["TrimInputs"] = 1
     if outputs_are_sets:
@@ -195,11 +203,15 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
             splits = control.get("temporal_filter_iterations")
             if "ContainsNow" in schedule and (splits is None or splits != row.get("temporal_filter_iterations")):
                 raise ValueError(f"{key}: candidate and Java temporal filter iterations differ")
+            asof_moves = control.get("asof_retention_moves")
+            if "MoveGC" in schedule and (asof_moves is None or asof_moves != row.get("asof_retention_moves")):
+                raise ValueError(f"{key}: candidate and Java ASOF retention placements differ")
             verify_placements(key, counts, expected[key][1], expected[key][2], schedule,
                               validate_weights=weights, cast_iterations=control["cast_iterations"],
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
                               clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
-                              outputs_are_sets=expected[key][4], trim_inputs=expected[key][5])
+                              outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
+                              asof_retention_moves=asof_moves)
             invocations.update(counts)
     if controls:
         raise ValueError(f"{len(controls)} cases missing from S2 replay")

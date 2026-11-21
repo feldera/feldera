@@ -38,6 +38,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /** Lower {@link org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator} into
  * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator}.
@@ -45,9 +46,11 @@ import java.util.Map;
  * and {@link DBSPIntegrateTraceRetainNValuesOperator}, if they exist. */
 public class LowerAsof implements CircuitTransform {
     final DBSPCompiler compiler;
+    private final Function<CircuitTransform, CircuitTransform> select;
 
-    LowerAsof(DBSPCompiler compiler) {
+    LowerAsof(DBSPCompiler compiler, Function<CircuitTransform, CircuitTransform> select) {
         this.compiler = compiler;
+        this.select = select;
     }
 
     @Override
@@ -60,7 +63,7 @@ public class LowerAsof implements CircuitTransform {
                 ? new LinkedHashMap<>() : new HashMap<>();
 
         Graph graph = new Graph(this.compiler);
-        this.compiler.applyObservedPass(this.getName(), 0, 0, graph, circuit);
+        this.compiler.applyObservedPass(this.getName(), 0, 0, this.select.apply(graph), circuit);
 
         // First scan the circuit, populate the maps, and replace asof operators
         var lower = new LowerAsofInner(compiler, graph.graphs, leftGces, rightGces, original);
@@ -70,7 +73,7 @@ public class LowerAsof implements CircuitTransform {
         }
 
         graph = new Graph(this.compiler);
-        this.compiler.applyObservedPass(this.getName(), 2, 0, graph, circuit);
+        this.compiler.applyObservedPass(this.getName(), 2, 0, this.select.apply(graph), circuit);
         // Add dependency edges to the circuit to enforce the processing of integrate trace operators
         // after the corresponding joins
         var cg = graph.graphs.getGraph(circuit);
@@ -89,7 +92,7 @@ public class LowerAsof implements CircuitTransform {
 
         // Scan the circuit a second time and fix the integrate nodes.
         var moveGc = new MoveGC(compiler, leftGces, rightGces, original);
-        circuit = this.compiler.applyObservedPass(this.getName(), 4, 0, moveGc, circuit);
+        circuit = this.compiler.applyObservedPass(this.getName(), 4, 0, this.select.apply(moveGc), circuit);
         return circuit;
     }
 
@@ -104,7 +107,7 @@ public class LowerAsof implements CircuitTransform {
     }
 
     /** Move the integrate trace operator to the new join */
-    static class MoveGC extends CircuitCloneVisitor {
+    public static class MoveGC extends CircuitCloneVisitor {
         final Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces;
         final Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces;
         final Map<IGCOperator, IGCOperator> original;
@@ -119,6 +122,20 @@ public class LowerAsof implements CircuitTransform {
             this.rightGces = rightGces;
             this.original = original;
             this.preservesTypes = false;
+        }
+
+        /** Bind retention operators in the lowered circuit to their concrete joins. */
+        public Map<Long, Long> retentionJoins() {
+            Map<Long, Long> joins = new HashMap<>();
+            for (var operator : this.original.values()) {
+                var original = this.original.get(operator);
+                var side = operator instanceof DBSPIntegrateTraceRetainNValuesOperator
+                        ? this.rightGces : this.leftGces;
+                var join = side.get(original);
+                if (join != null)
+                    joins.put(operator.asOperator().id, join.id);
+            }
+            return joins;
         }
 
         @Override

@@ -330,6 +330,7 @@ public final class CorpusDeterminism {
         Map<String, Integer> graphCleanups = new TreeMap<>();
         var unusedFieldIterations = new java.util.concurrent.atomic.AtomicInteger();
         var clockScans = new java.util.concurrent.atomic.AtomicInteger();
+        var asofMoves = new java.util.concurrent.atomic.AtomicInteger();
         var temporalSplits = new java.util.concurrent.atomic.AtomicInteger();
         if (liveFinal) {
             compiler.stateObserver = new DBSPCompiler.StateObserver() {
@@ -349,6 +350,8 @@ public final class CorpusDeterminism {
                         clockScans.incrementAndGet();
                     if (completed && container.equals("Repeat") && pass.getName().equals("BreakFilters"))
                         temporalSplits.incrementAndGet();
+                    if (completed && container.equals("LowerAsof") && pass.getName().equals("MoveGC"))
+                        asofMoves.incrementAndGet();
                     if (completed && pass instanceof RustCircuitPass)
                         rustPasses.merge(pass.getName(), 1, Integer::sum);
                 }
@@ -411,6 +414,7 @@ public final class CorpusDeterminism {
             result.set("cast_iterations", MAPPER.valueToTree(castIterations));
             result.put("unused_field_iterations", unusedFieldIterations.get());
             result.put("clock_scans", clockScans.get());
+            result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());
             result.set("dead_code_by_container", MAPPER.valueToTree(graphCleanups));
             result.put("validate_input_weights", compiler.metadata.enforcePositiveInputs());
