@@ -111,6 +111,8 @@ mod stream_rewrites;
 mod sums;
 mod temporal_comparisons;
 mod temporal_equality;
+mod clock_source;
+pub use clock_source::{clock_aggregate, clock_index, scalar_clock};
 mod clock_join;
 pub use clock_join::{ClockClosure, clock_join_functions, drop_clock, rewrite_clock_closure};
 mod window_bounds;

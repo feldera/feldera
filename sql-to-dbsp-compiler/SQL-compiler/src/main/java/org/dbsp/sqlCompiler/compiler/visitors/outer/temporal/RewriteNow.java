@@ -51,7 +51,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
@@ -310,20 +309,26 @@ public class RewriteNow extends CircuitCloneVisitor {
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(source.getRelNode(), source.outputPort());
         this.addOperator(diff);
 
-        // We know that the output type of the source is Zset<Tup1<Timestamp>>
-        DBSPVariablePath t = source.getOutputZSetElementType().ref().var();
-        DBSPTypeTimestamp type = ContainsNow.timestampType();
-        DBSPExpression timestamp = t.deref().field(0);
-
-        DBSPTupleExpression min = new DBSPTupleExpression(Linq.list(type.getMinValue()), false);
-        DBSPTupleExpression timestampTuple = new DBSPTupleExpression(Linq.list(timestamp), false);
-        DBSPClosureExpression max = InsertLimiters.timestampMax(source.getNode(), min.getTypeAsTupleBase());
-        DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
-                source.getRelNode(), min.closure(),
-                timestampTuple.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
-                max, diff.outputPort());
+        DBSPType row = source.getOutputZSetElementType();
+        ClockWaterline functions = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.scalarClock(this.compiler, row, ContainsNow.timestampType().getMinValue())
+                : scalarClock(source);
+        DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(source.getRelNode(),
+                functions.initial(), functions.extract(), functions.maximum(), diff.outputPort());
         this.addOperator(waterline);
         return waterline;
+    }
+
+    public record ClockWaterline(DBSPClosureExpression initial, DBSPClosureExpression extract,
+                                 DBSPClosureExpression maximum) {}
+
+    private static ClockWaterline scalarClock(DBSPSimpleOperator source) {
+        DBSPVariablePath t = source.getOutputZSetElementType().ref().var();
+        DBSPExpression timestamp = t.deref().field(0);
+        DBSPTupleExpression min = new DBSPTupleExpression(ContainsNow.timestampType().getMinValue());
+        DBSPTupleExpression timestampTuple = new DBSPTupleExpression(timestamp);
+        DBSPClosureExpression maximum = InsertLimiters.timestampMax(source.getNode(), min.getTypeAsTupleBase());
+        return new ClockWaterline(min.closure(), timestampTuple.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()), maximum);
     }
 
     /** Combine consecutive compatible expressions in the decomposition */
@@ -536,6 +541,24 @@ public class RewriteNow extends CircuitCloneVisitor {
         this.map(operator.outputPort(), result.outputPort(), false);
     }
 
+    private DBSPClosureExpression clockIndex(DBSPType timestamp) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.clockIndex(this.compiler, timestamp);
+        DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
+        return new DBSPRawTupleExpression(new DBSPTupleExpression(),
+                new DBSPTupleExpression(var.deref().field(0))).closure(var);
+    }
+
+    private static Pair<DBSPClosureExpression, DBSPClosureExpression> clockAggregate(
+            CalciteRelNode node, DBSPType timestamp, DBSPVariablePath weight) {
+        DBSPVariablePath row = new DBSPTypeTuple(timestamp).ref().var();
+        DBSPClosureExpression init = new DBSPTupleExpression(row.deref().field(0)).closure(row, weight);
+        DBSPVariablePath acc = new DBSPTypeTuple(timestamp).var();
+        DBSPClosureExpression update = new DBSPTupleExpression(new DBSPConditionalIncrementExpression(
+                node, DBSPOpcode.AGG_MAX, timestamp, acc.field(0), row.deref().field(0), null)).closure(acc, row, weight);
+        return Pair.of(init, update);
+    }
+
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
         // We are doing this in preorder because we want now to be first in topological order,
@@ -561,28 +584,14 @@ public class RewriteNow extends CircuitCloneVisitor {
             this.visited.add(this.now);
             this.addOperator(this.now);
 
-            DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
-            DBSPClosureExpression indexTuple = new DBSPRawTupleExpression(
-                    new DBSPTupleExpression(), new DBSPTupleExpression(var.deref().field(0))).closure(var);
-            DBSPMapIndexOperator index = new DBSPMapIndexOperator(node, indexTuple, this.now.outputPort());
+            DBSPMapIndexOperator index = new DBSPMapIndexOperator(node, this.clockIndex(timestamp), this.now.outputPort());
             this.addOperator(index);
 
-            DBSPVariablePath weightVar = compiler.weightVar;
-            DBSPVariablePath timestampVar = new DBSPTypeTuple(timestamp).ref().var();
-            DBSPClosureExpression init = new DBSPTupleExpression(timestampVar.deref().field(0))
-                    .closure(timestampVar, weightVar);
-
-            DBSPType chainType = index.outputType;
-
-            DBSPVariablePath acc = new DBSPTypeTuple(timestamp).var();
-            DBSPClosureExpression function = new DBSPTupleExpression(
-                    new DBSPConditionalIncrementExpression(
-                            node, DBSPOpcode.AGG_MAX, timestamp,
-                            acc.field(0), timestampVar.deref().field(0), null))
-                    .closure(acc, timestampVar, weightVar);
-
+            var aggregateFunctions = this.compiler.options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.clockAggregate(this.compiler, timestamp, this.compiler.weightVar)
+                    : clockAggregate(node, timestamp, this.compiler.weightVar);
             DBSPChainAggregateOperator aggregate = new DBSPChainAggregateOperator(
-                    node, init, function, chainType, index.outputPort());
+                    node, aggregateFunctions.left, aggregateFunctions.right, index.outputType, index.outputPort());
             this.addOperator(aggregate);
             this.nowIndexed = aggregate;
 
@@ -592,12 +601,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         this.map(this.now.outputPort(), this.now.outputPort(), false);
 
         if (this.nowIndexed == null) {
-            DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
-            DBSPExpression indexFunction = new DBSPRawTupleExpression(
-                    new DBSPTupleExpression(),
-                    new DBSPTupleExpression(var.deref().field(0)));
             this.nowIndexed = new DBSPMapIndexOperator(
-                    node, indexFunction.closure(var),
+                    node, this.clockIndex(timestamp),
                     TypeCompiler.makeIndexedZSet(DBSPTypeTuple.EMPTY, new DBSPTypeTuple(timestamp)), now.outputPort());
             this.addOperator(this.nowIndexed);
         }

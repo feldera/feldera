@@ -181,6 +181,25 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("RewriteNow/ClockIndex", [timestamp]) => {
+            let timestamp = edit.type_id(*timestamp)?;
+            feldera_sql_opt::clock_index(&mut edit, timestamp, &mut next)?
+        }
+        ("RewriteNow/ClockAggregate", [timestamp, weight]) => {
+            let timestamp = edit.type_id(*timestamp)?;
+            let weight = edit.expression(*weight)?;
+            let roots = feldera_sql_opt::clock_aggregate(&mut edit, timestamp, weight, &mut next)?;
+            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
+        }
+        ("RewriteNow/ScalarClock", [row, empty_key, minimum]) => {
+            let row = edit.type_id(*row)?;
+            let key = edit.type_id(*empty_key)?;
+            let minimum = edit.expression(*minimum)?;
+            let roots = feldera_sql_opt::scalar_clock(&mut edit, row, key, minimum, &mut next)?;
+            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
+        }
         ("RewriteNow/Closure", [closure, timestamp]) => {
             let closure = edit.expression(*closure)?;
             let timestamp = edit.type_id(*timestamp)?;
@@ -508,7 +527,8 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/WindowBounds" | "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
+        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/WindowBounds" | "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

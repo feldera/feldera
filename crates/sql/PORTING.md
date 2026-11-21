@@ -834,6 +834,11 @@ and 52 classic programs passed all 181 input commands. Two directed compiler
 runs matched Java’s ordered diagnostics when a nested lambda used `NOW()`,
 one in a projection and one in a filter. [Clock closure comparisons](evidence/p3-clock-closures.json)
 
+The built-in and table-backed clocks use Rust to index the timestamp. Rust
+also builds the table’s maximum aggregate and the scalar waterline that feeds
+each temporal window. Both Java and hybrid paths matched the saved Java
+reference at all 133 temporal pass boundaries. [Clock source comparisons](evidence/p3-clock-source.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

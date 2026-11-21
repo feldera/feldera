@@ -10,6 +10,7 @@ pub use keyed::KeyProjection;
 pub use pass::{insert_limiters, LimiterInputs};
 mod projection;
 mod source;
+pub(crate) use source::timestamp_max;
 mod streams;
 pub use projection::Projection;
 pub use source::{declared_waterline, DeclaredWaterline};

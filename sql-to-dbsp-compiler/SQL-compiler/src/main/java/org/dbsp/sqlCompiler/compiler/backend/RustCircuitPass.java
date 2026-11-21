@@ -88,6 +88,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -584,6 +585,27 @@ public final class RustCircuitPass implements CircuitTransform {
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockJoinFunctions(
             DBSPCompiler compiler, DBSPType row, DBSPType timestamp) {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/Join", row, DBSPTypeTuple.EMPTY, timestamp));
+    }
+
+    public static DBSPClosureExpression clockIndex(DBSPCompiler compiler, DBSPType timestamp) {
+        return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/ClockIndex", timestamp));
+    }
+
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockAggregate(DBSPCompiler compiler,
+            DBSPType timestamp, DBSPVariablePath weight) {
+        return loweredClosurePair(invokeLowering(compiler, "RewriteNow/ClockAggregate", timestamp, weight));
+    }
+
+    public static RewriteNow.ClockWaterline scalarClock(DBSPCompiler compiler, DBSPType row, DBSPExpression minimum) {
+        var reply = invokeLowering(compiler, "RewriteNow/ScalarClock", row, DBSPTypeRawTuple.EMPTY, minimum);
+        var functions = reply.value.required("functions");
+        var decoder = expressionDecoder(reply.writer);
+        var result = new RewriteNow.ClockWaterline(
+                decoder.decodeInner(functions.required(0), DBSPClosureExpression.class),
+                decoder.decodeInner(functions.required(1), DBSPClosureExpression.class),
+                decoder.decodeInner(functions.required(2), DBSPClosureExpression.class));
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return result;
     }
 
     public static DBSPClosureExpression rewriteClockClosure(DBSPCompiler compiler, DBSPClosureExpression closure,

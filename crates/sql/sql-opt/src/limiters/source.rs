@@ -146,7 +146,7 @@ fn contribution(
     )
 }
 
-fn timestamp_max(
+pub(crate) fn timestamp_max(
     edit: &mut CircuitEditor,
     site: NodeId,
     tuple: TypeId,

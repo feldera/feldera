@@ -1,0 +1,35 @@
+{
+  "scope": "Build the built-in clock index, the table-backed clock index and maximum aggregate, and the initial value, timestamp extractor and pointwise maximum for each scalar clock waterline. Compare Java and hybrid RewriteNow on identical detached S2.",
+  "java_reference_commit": "54c227440",
+  "compiler_jar_sha256": "8d156d2e80f0d0cf17150b4a25f4aaae21d0a23bf5c39b5a6da264291faeb50b",
+  "optimizer_library_sha256": "18b19b284fbac98ccdb1263a211e632c3729bd15eeb7b725a8255195d4f01c36",
+  "populations": {
+    "classic": {
+      "cases": 71,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_reference_sha256": "ddd0078d5b87eb0f7d71bde39b908f9fe307e5c7544c7f9498807c8adbb87c04",
+      "java_current_sha256": "8710ac250d049c05178a15b6236cb697e8d6dce903be290c68fa6861fad480fb",
+      "hybrid_sha256": "91e11e0ca1e3d80ed60504d5820f1a0933614781e2f27884fbfdc11828b441a5",
+      "table_clock": 69,
+      "builtin_clock": 2
+    },
+    "gen2": {
+      "cases": 62,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_reference_sha256": "a7a01e1e395f5ab65667052aa069dbe064eace19e1ec0d5abdb7dd49948a7cab",
+      "java_current_sha256": "43cf5bed6112f9c630a79d2798db468c03364bce6a801c607744b2286cf68209",
+      "hybrid_sha256": "0d84d0a9b06b28cd3f701ffcba0a0aa0513f8af769a6d1209162ab7e88c19ace",
+      "table_clock": 60,
+      "builtin_clock": 2
+    }
+  },
+  "classic_runtime": {
+    "executed": 52,
+    "compile_only": 19,
+    "input_commands": 181,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "78f77788862e2dba6df4d49abb784204ed6cfbbfa4ca469341f2258602b18d3d"
+  }
+}
