@@ -59,6 +59,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -942,6 +943,25 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         return new MonotoneFunction.Argument(argument, this.constantExpressions.contains(argument), waterline);
     }
 
+    @Nullable
+    private DBSPExpression nativeFunctionWaterline(DBSPApplyExpression expression, String name) {
+        var facts = new ArrayList<RustCircuitPass.FunctionArgument>(expression.arguments.length);
+        for (var arg : expression.arguments) {
+            var transfer = this.maybeGet(arg);
+            facts.add(new RustCircuitPass.FunctionArgument(transfer != null && transfer.mayBeMonotone(),
+                    this.constantExpressions.contains(arg), ConstantBaseMonotoneFunction.aboveOne(arg)));
+        }
+        String target = RustCircuitPass.functionWaterline(name, facts);
+        if (target == null)
+            return null;
+        DBSPExpression[] bounds = new DBSPExpression[expression.arguments.length];
+        for (int i = 0; i < bounds.length; i++) {
+            var argument = this.argument(expression, i);
+            bounds[i] = argument.monotone() ? argument.waterline() : argument.copy();
+        }
+        return new DBSPApplyExpression(expression.getNode(), target, expression.getType().withMayBeNull(false), bounds);
+    }
+
     @Override
     public void postorder(DBSPApplyExpression expression) {
         boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
@@ -954,6 +974,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 // Only when called from ImplementNow
                 resultType = new MonotoneType(expression.getType());
                 reduced = expression.replaceArguments();
+            } else if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                reduced = this.nativeFunctionWaterline(expression, name);
+                if (reduced != null)
+                    resultType = new MonotoneType(expression.getType());
             } else {
                 MonotoneFunction function = MonotoneFunction.find(name);
                 if (function != null) {

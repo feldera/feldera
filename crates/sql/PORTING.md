@@ -815,6 +815,13 @@ The expanded-graph comparison matched Java on all 550 selected programs,
 including tuple-valued expressions with no lower bound.
 [Binary waterline comparisons](evidence/p3-binary-waterlines.json)
 
+Rust selects the runtime function that bounds a scalar call. It checks which
+argument is monotone, which companions must be constant and when a saturating
+implementation is needed. Java builds the call from the selected runtime name.
+The selector matched Java on 29,888 combinations covering 475 registered names
+and unregistered variants. All 550 selected monotonicity boundaries matched.
+[Function waterline comparisons](evidence/p3-function-waterlines.json)
+
 Rust binds limiter closures to the actual waterline port types and reduces
 their calls before Java inserts the apply operators. The resulting graph,
 generated names and diagnostics matched Java at all 550 selected

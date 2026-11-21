@@ -294,6 +294,19 @@ public final class RustCircuitPass implements CircuitTransform {
     public enum BinaryDomain { Scalar, Temporal, TimeOfDay }
     public enum BinaryWaterline { None, Left, Right, Both, InheritLeft, InheritRight, Coalesce }
     public record WaterlineOperand(boolean monotone, boolean constant, boolean positiveLiteral, boolean neverNull) {}
+    public record FunctionArgument(boolean monotone, boolean constant, boolean doubleLiteralAboveOne) {}
+
+    @Nullable
+    public static String functionWaterline(String function, List<FunctionArgument> arguments) {
+        try {
+            var facts = MAPPER.writeValueAsBytes(List.of(function, arguments));
+            var reply = transformWithContext("Monotonicity/Function", facts, 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, String.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid function waterline from Rust", error);
+        }
+    }
+
     public record BinaryBounds(BinaryDomain domain, DBSPOpcode opcode, WaterlineOperand left, WaterlineOperand right) {}
 
     public static BinaryWaterline binaryWaterline(BinaryBounds bounds) {

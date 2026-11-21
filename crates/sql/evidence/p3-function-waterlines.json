@@ -1,0 +1,34 @@
+{
+  "scope": "Rust selects scalar function waterlines, including nullable and saturating runtime names, constant companion arguments, and DOUBLE literal bases above one. Java builds the typed call.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from MonotoneAnalyzer, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "added_operators": 11729,
+      "cases_gaining_operators": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "32c419fed45691543682f5ff1710fe58d692a7e39fddb992bbc80f950b387b58",
+      "rust_gzip_sha256": "85ee42b78783ab6f0d908efa7049194f81871b40b31d615cb6b49c617e6c078a"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "added_operators": 11575,
+      "cases_gaining_operators": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "027cb8db5e9daa98efa88401cb735bd4683f57724790703c23ff560ed75f227d",
+      "rust_gzip_sha256": "f9dd6dd087e8642861bdebc470e888235a61d7c48b04c095b7eecf2213807e7f"
+    }
+  },
+  "directed_catalogue": {
+    "registered_runtime_names": 475,
+    "comparisons": 29888,
+    "accepted": 2896,
+    "name_and_arity_inputs_sha256": "9d8732ef60232f91ac06241f05d711711aa2e79b229e8b742a0db4ffce3141d5"
+  },
+  "compiler_jar_sha256": "8ab4006c7726be99c9ebd788428c7f82824d29d5cb44df0814e3ccfe24191142",
+  "optimizer_library_sha256": "d2bf3943bc623dcb6aa73df110b3fbc943cf8a5767572eabb699c3db5f293297",
+  "comparator_sha256": "06e9800f32a4bf7829cb7470a68729ced9a4897e4c5682ef20e02fd1da31f391"
+}

@@ -329,6 +329,10 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "Monotonicity/Function" => {
+            let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);
+        }
         "Monotonicity/Binary" => {
             #[derive(serde::Deserialize)]
             struct Binary<'a> {
