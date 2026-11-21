@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -14,8 +15,8 @@ import org.dbsp.util.Utilities;
 public final class LimiterInputs {
     private LimiterInputs() {}
 
-    private static JsonNode projection(IMaybeMonotoneType type) {
-        ObjectNode node = Utilities.deterministicObjectMapper().createObjectNode();
+    public static JsonNode projection(IMaybeMonotoneType type) {
+        ObjectNode node = JsonNodeFactory.instance.objectNode();
         if (type instanceof PartiallyMonotoneTuple tuple) {
             node.put("kind", "tuple");
             node.put("raw", tuple.raw);
@@ -27,7 +28,8 @@ public final class LimiterInputs {
             node.put("kind", "scalar");
             node.put("monotone", type.mayBeMonotone());
         } else {
-            node.put("kind", type.getClass().getSimpleName());
+            node.put("kind", "other");
+            node.put("monotone", type.mayBeMonotone());
         }
         return node;
     }

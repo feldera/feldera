@@ -42,24 +42,18 @@ fn projected_bound(
     dst: &Projection,
     next: &mut u64,
 ) -> Result<Bound, Error> {
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| Error::new("generated names exhausted"))?;
-    let param = edit.ref_parameter(input.ty, next)?;
-    let read = edit.deref_parameter(&param)?;
-    let projected = src.project(edit, read, dst)?;
-    apply_bound(edit, body, input, &param, projected)
+    let function = src.project_waterline(edit, input.ty, dst, None, next)?;
+    apply_bound(edit, body, input, function)
 }
 
 fn apply_bound(
     edit: &mut CircuitEditor,
     body: NodeId,
     input: Bound,
-    param: &feldera_sql_ir::RefParameter,
-    value: feldera_sql_ir::ExpressionId,
+    function: feldera_sql_ir::ExpressionId,
 ) -> Result<Bound, Error> {
-    let ty = edit.expression_type(value)?;
-    let function = edit.closure(value, std::slice::from_ref(param))?;
+    let result = edit.node(function.into())?.edge("body")?;
+    let ty = edit.expression_type(edit.expression(result)?)?;
     let id = edit.append_operator(
         body,
         input.port.operator,
@@ -184,7 +178,8 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
                     if let Some(&(input, _)) = inputs.first().and_then(|p| bounds.get(p)) {
                         let param = edit.ref_parameter(input.ty, &mut next)?;
                         let read = edit.deref_parameter(&param)?;
-                        let bound = apply_bound(&mut edit, body, input, &param, read)?;
+                        let function = edit.closure(read, &[param])?;
+                        let bound = apply_bound(&mut edit, body, input, function)?;
                         bounds.insert(output, (bound, dst));
                         edit.place_before(body, bound.port.operator, id)?;
                     }

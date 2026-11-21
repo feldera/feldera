@@ -1,0 +1,45 @@
+{
+  "scope": "Rust projects compacted waterline rows and computes balanced pointwise minima. The reference compiler gives intermediate minima the first input type before rebinding the closure to the actual ports.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from InsertLimiters, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "added_operators": 11304,
+      "cases_gaining_operators": 291,
+      "net_added_apply_n_by_arity": {
+        "2": 39,
+        "3": 126,
+        "4": 20,
+        "5": 9
+      },
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "rust_gzip_sha256": "4d1c9a688cf245888626cf77483d2502aed780570b91d102976247934d0912a7"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "added_operators": 11137,
+      "cases_gaining_operators": 259,
+      "net_added_apply_n_by_arity": {
+        "2": 36,
+        "3": 125,
+        "4": 22,
+        "5": 9
+      },
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "rust_gzip_sha256": "16672eb49b3ef3b9ddfd010007c16743a07d5ce651b165f46d8ab04eb65f5451"
+    }
+  },
+  "declared_empty_tuple_identity": {
+    "direct_java": true,
+    "rust": true,
+    "fields_sharing_declared_type": 2
+  },
+  "compiler_jar_sha256": "9160e9e9da9de89c45ec06ebf7ff905a3893f3410e06ecfc4973c8fd8768bdde",
+  "optimizer_library_sha256": "e1579895013630e2feaa1c0859df12075325a6e7d6ebc431e6f4715437e80094",
+  "comparator_sha256": "a3a9f1319f21867fd59596545a06077ad21a6353e8354566a3b2d79087bd90ca"
+}

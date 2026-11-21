@@ -186,7 +186,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Inserts in the circuit an apply operator that computes {@code function} of the
      * waterline produced by {@code source}; the class documentation has the invariants. */
     OutputPort createApply(OutputPort source, DBSPClosureExpression function) {
-        var closure = applyWaterlines(this.compiler, List.of(source), function);
+        return this.insertApply(source, applyWaterlines(this.compiler, List.of(source), function));
+    }
+
+    private OutputPort insertApply(OutputPort source, DBSPClosureExpression closure) {
         DBSPApplyOperator result = new DBSPApplyOperator(source.node().getRelNode(), closure,
                 source.simpleNode().outputPort(), null);
         this.addOperator(result);
@@ -209,10 +212,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * {@code inputs}.  The caller inserts the operator in the circuit. */
     public static OutputPort createApplyN(DBSPCompiler compiler, List<OutputPort> inputs, DBSPClosureExpression function) {
         Utilities.enforce(!inputs.isEmpty());
-        OutputPort first = inputs.get(0);
-        CalciteRelNode relNode = first.node().getRelNode();
+        return applyN(inputs, applyWaterlines(compiler, inputs, function));
+    }
 
-        DBSPApplyNOperator result = new DBSPApplyNOperator(relNode, applyWaterlines(compiler, inputs, function), inputs);
+    private static OutputPort applyN(List<OutputPort> inputs, DBSPClosureExpression closure) {
+        var result = new DBSPApplyNOperator(inputs.get(0).node().getRelNode(), closure, inputs);
         result.addAnnotation(Waterline.INSTANCE, DBSPApplyNOperator.class);
         return result.outputPort();
     }
@@ -2146,6 +2150,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * The operator is inserted in the graph.
      */
     OutputPort project(OutputPort limit, IMaybeMonotoneType source, IMaybeMonotoneType destination) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return this.insertApply(limit, RustCircuitPass.projectWaterline(
+                    this.compiler, this.getLimiterDataOutputType(limit), source, destination));
         DBSPVariablePath var = this.getLimiterDataOutputType(limit).ref().var();
         DBSPExpression proj = this.project(var.deref(), source, destination);
         return this.createApply(limit, proj.closure(var));
@@ -2160,6 +2167,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * The operator is not inserted in the circuit.
      * @param bounds  Bounds to combine. */
     public static OutputPort createMinBound(DBSPCompiler compiler, List<OutputPort> bounds) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return applyN(bounds, RustCircuitPass.minimumWaterline(compiler, bounds));
         DBSPType type = bounds.get(0).outputType();
         List<DBSPVariablePath> variables = Linq.map(bounds, b -> type.ref().var());
         List<DBSPExpression> values = Linq.map(variables, DBSPExpression::deref);

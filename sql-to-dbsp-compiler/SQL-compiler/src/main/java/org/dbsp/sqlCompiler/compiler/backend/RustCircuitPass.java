@@ -68,6 +68,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
+import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
@@ -262,10 +264,29 @@ public final class RustCircuitPass implements CircuitTransform {
         roots[0] = function;
         for (int i = 0; i < inputs.size(); i++)
             roots[i + 1] = inputs.get(i).outputType();
-        var reply = invokeLowering(compiler, "Limiters/Apply", roots);
-        var closure = loweredFunction(compiler, reply.writer, reply.value, DBSPClosureExpression.class);
+        return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Apply", roots));
+    }
+
+    public static DBSPClosureExpression minimumWaterline(DBSPCompiler compiler, List<OutputPort> inputs) {
+        var types = inputs.stream().map(OutputPort::outputType).toArray(DBSPType[]::new);
+        return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Minimum", types));
+    }
+
+    public static DBSPClosureExpression projectWaterline(DBSPCompiler compiler, DBSPType input,
+            IMaybeMonotoneType source, IMaybeMonotoneType destination) {
+        try {
+            var shapes = List.of(LimiterInputs.projection(source), LimiterInputs.projection(destination));
+            return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Project",
+                    MAPPER.writeValueAsBytes(shapes), input, destination.getType()));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode waterline projection", error);
+        }
+    }
+
+    private static DBSPClosureExpression loweredClosure(DBSPCompiler compiler, LoweringReply reply) {
+        var result = loweredFunction(compiler, reply.writer, reply.value, DBSPClosureExpression.class);
         DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-        return closure;
+        return result;
     }
 
     public record FilterBound(int column, DBSPOpcode comparison, DBSPExpression value) {}

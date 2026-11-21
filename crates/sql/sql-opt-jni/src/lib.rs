@@ -121,6 +121,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("Limiters/Project", [input, declared]) => {
+            let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] = serde_json::from_slice(state)?;
+            let ty = edit.type_id(*input)?;
+            let declared = edit.type_id(*declared)?;
+            source.project_waterline(&mut edit, ty, &destination, Some(declared), &mut next)?
+        }
+        ("Limiters/Minimum", inputs) => {
+            let types = inputs.iter().map(|&id| edit.type_id(id)).collect::<Result<Vec<_>, _>>()?;
+            feldera_sql_opt::limiters::minimum_waterline(&mut edit, &types, &mut next, &mut warnings)?
+        }
         ("Limiters/Apply", [function, inputs @ ..]) if !inputs.is_empty() => {
             let types = inputs.iter().map(|&id| edit.type_id(id)).collect::<Result<Vec<_>, _>>()?;
             feldera_sql_opt::limiters::apply_waterlines(&mut edit, *function, &types, &mut next, &mut warnings)?
@@ -333,7 +343,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Limiters/Apply" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Project" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

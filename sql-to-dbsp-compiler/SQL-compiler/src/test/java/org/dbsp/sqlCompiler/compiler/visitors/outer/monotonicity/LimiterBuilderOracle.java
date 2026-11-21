@@ -37,7 +37,7 @@ public final class LimiterBuilderOracle {
         return Utilities.deterministicObjectMapper().readTree(visitor.getJsonString());
     }
 
-    private ObjectNode minimum(int count) throws Exception {
+    private ObjectNode minimum(int count, boolean independentTypes) throws Exception {
         var empty = CalciteEmptyRel.INSTANCE;
         var integer = new DBSPTypeInteger(empty, 32, true, false);
         var type = new DBSPTypeRawTuple(new DBSPTypeTuple(integer, integer), integer);
@@ -46,6 +46,10 @@ public final class LimiterBuilderOracle {
         var input = new DBSPConstantOperator(empty, DBSPZSetExpression.emptyWithElementType(integer));
         circuit.addOperator(input);
         for (int i = 0; i < count; i++) {
+            if (independentTypes) {
+                var field = new DBSPTypeInteger(empty, 32, true, false);
+                type = new DBSPTypeRawTuple(new DBSPTypeTuple(field, field), field);
+            }
             var initial = type.defaultValue();
             var left = type.ref().var();
             var right = type.ref().var();
@@ -102,7 +106,8 @@ public final class LimiterBuilderOracle {
             return;
         }
         for (int count : List.of(1, 2, 3, 5))
-            cases.set(Integer.toString(count), oracle.minimum(count));
+            cases.set(Integer.toString(count), oracle.minimum(count, false));
+        cases.set("4-distinct-types", oracle.minimum(4, true));
         System.out.println(cases);
     }
 }

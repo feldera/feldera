@@ -820,6 +820,14 @@ their calls before Java inserts the apply operators. The resulting graph,
 generated names and diagnostics matched Java at all 550 selected
 `InsertLimiters` boundaries. [Limiter closure comparisons](evidence/p3-limiter-applications.json)
 
+Rust projects compacted waterline rows and combines bounds with a balanced
+pointwise minimum. All 550 selected limiter boundaries matched, including 386
+new multi-input apply operators with two to five inputs. A directed test checks
+that two absent fields share their declared empty-tuple type. The packaged
+compiler matched all 17,098 frozen outputs and restored both checkpoints in
+both directions. Four-worker cancellation p95 was 16.84 ms.
+[Projection and minimum comparisons](evidence/p3-waterline-projections.json)
+
 Rust chooses the key for each candidate left-join chain and decides whether
 deferring columns saves enough work. Across 17 classic and 17 Gen-2 cases,
 Java and Rust selected the same 20 chains and agreed on every column layout.

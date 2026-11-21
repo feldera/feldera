@@ -1,11 +1,17 @@
 //! A projected tuple holds only monotone fields, in source-column order.
 
-use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field};
+use feldera_sql_ir::{
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, TypeId,
+};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Projection {
     Scalar {
+        monotone: bool,
+    },
+    /// A function or reference can occupy a source slot that the destination skips.
+    Other {
         monotone: bool,
     },
     Tuple {
@@ -44,11 +50,32 @@ fn read_field(
 impl Projection {
     pub fn monotone(&self) -> bool {
         match self {
-            Self::Scalar { monotone } => *monotone,
+            Self::Scalar { monotone } | Self::Other { monotone } => *monotone,
             Self::Tuple {
                 fields, nullable, ..
             } => fields.iter().any(Self::monotone) || fields.is_empty() && !nullable,
         }
+    }
+
+    /// Build the reduced apply closure over an already compacted waterline.
+    pub fn project_waterline(
+        &self,
+        edit: &mut CircuitEditor,
+        input: TypeId,
+        destination: &Self,
+        declared: Option<TypeId>,
+        next: &mut u64,
+    ) -> Result<ExpressionId, Error> {
+        // The unreduced projection reserves one name before createApply rebinds it.
+        let mut names = next
+            .checked_add(1)
+            .ok_or_else(|| Error::new("generated names exhausted"))?;
+        let param = edit.ref_parameter(input, &mut names)?;
+        let read = edit.deref_parameter(&param)?;
+        let value = self.project_with_type(edit, read, destination, declared)?;
+        let function = edit.closure(value, &[param])?;
+        *next = names;
+        Ok(function)
     }
 
     /// Project an already compacted bound into a subset of its source fields.
@@ -58,6 +85,16 @@ impl Projection {
         value: ExpressionId,
         destination: &Self,
     ) -> Result<ExpressionId, Error> {
+        self.project_with_type(edit, value, destination, None)
+    }
+
+    fn project_with_type(
+        &self,
+        edit: &mut CircuitEditor,
+        value: ExpressionId,
+        destination: &Self,
+        declared: Option<TypeId>,
+    ) -> Result<ExpressionId, Error> {
         match (self, destination) {
             (Self::Scalar { monotone: a }, Self::Scalar { monotone: b }) if *a || !b => Ok(value),
             (
@@ -66,18 +103,38 @@ impl Projection {
                     fields: to, raw, ..
                 },
             ) if from.len() == to.len() => {
+                let declared_fields = declared
+                    .map(|ty| edit.node(ty.into())?.edges("tupFields"))
+                    .transpose()?;
+                if declared_fields
+                    .as_ref()
+                    .is_some_and(|fields| fields.len() != to.len())
+                {
+                    return Err(Error::new(
+                        "declared tuple and waterline projection differ in width",
+                    ));
+                }
                 let mut projected = Vec::new();
                 let mut index = 0;
-                for (src, dst) in from.iter().zip(to) {
+                for (column, (src, dst)) in from.iter().zip(to).enumerate() {
                     if dst.monotone() {
+                        let ty = declared_fields
+                            .as_ref()
+                            .map(|f| edit.type_id(f[column]))
+                            .transpose()?;
                         if src.monotone() {
                             let field = read_field(edit, value, index)?;
-                            projected.push(src.project(edit, field, dst)?);
+                            projected.push(src.project_with_type(edit, field, dst, ty)?);
                         } else if let Self::Tuple { fields, raw, .. } = dst {
                             if !fields.is_empty() {
                                 return Err(Error::new("missing monotone tuple field"));
                             }
-                            projected.push(edit.tuple_expr(value.into(), *raw, &[])?);
+                            // An absent input contributes the declared empty tuple. Several
+                            // destinations can share its type even across limiter operators.
+                            projected.push(match ty {
+                                Some(ty) => edit.tuple_with_type(ty, &[])?,
+                                None => edit.tuple_expr(value.into(), *raw, &[])?,
+                            });
                         } else {
                             return Err(Error::new("missing scalar bound"));
                         }

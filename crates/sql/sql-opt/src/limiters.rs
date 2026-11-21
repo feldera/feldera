@@ -12,7 +12,7 @@ pub use streams::{connect_error_view, window, Stream, StreamKind, WindowBounds};
 
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind, OutputPort,
-    RefParameter, TypeId, TypeKind,
+    TypeId, TypeKind,
 };
 
 /// An operator in the circuit being transformed and its scalar bound type.
@@ -44,74 +44,78 @@ pub fn apply_waterlines(
     Ok(closure)
 }
 
-fn min_component(
+fn minimum_pair(
     edit: &mut CircuitEditor,
-    params: &[RefParameter],
-    ty: TypeId,
-    path: &mut Vec<usize>,
+    left: ExpressionId,
+    right: ExpressionId,
 ) -> Result<ExpressionId, Error> {
-    let kind = edit.type_kind(ty)?;
-    if matches!(kind, TypeKind::Tuple | TypeKind::RawTuple) {
-        let fields = edit.node(ty.into())?.edges("tupFields")?;
-        let mut components = Vec::with_capacity(fields.len());
-        for (index, field) in fields.into_iter().enumerate() {
-            path.push(index);
-            components.push(min_component(edit, params, edit.type_id(field)?, path)?);
-            path.pop();
-        }
-        // Beta-reduction rebuilds raw tuples with a new inferred type. SQL
-        // tuple constructors keep the declared result type of their input.
-        return if kind == TypeKind::RawTuple {
-            edit.tuple_expr(ty.into(), true, &components)
-        } else {
-            edit.tuple_with_type(ty, &components)
-        };
+    let ty = edit.expression_type(left)?;
+    if !matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
+        return edit.binary_expression(left.into(), ty, BinaryOp::AggMin, left, right);
     }
-
-    let mut values = Vec::with_capacity(params.len());
-    for param in params {
-        let mut read = edit.deref_parameter(param)?;
-        for &field in path.iter() {
-            read = edit.tuple_field(read, field)?;
-        }
-        values.push(read);
+    let width = edit.node(ty.into())?.edges("tupFields")?.len();
+    let mut fields = Vec::with_capacity(width);
+    for index in 0..width {
+        let left_field = edit.tuple_field(left, index)?;
+        let right_field = edit.tuple_field(right, index)?;
+        fields.push(minimum_pair(edit, left_field, right_field)?);
     }
-    edit.binary_expressions(values[0].into(), ty, BinaryOp::AggMin, &values)
+    edit.tuple_with_type(ty, &fields)
 }
 
-/// Combine projected bounds in adjacent pairs at each level. The Java
-/// createApplyN helper substitutes a second set of parameters and simplifies
-/// the closure. Generate the reduced tree directly with those same names.
+/// Compute a pointwise minimum in a balanced tree. Its intermediate expressions
+/// share the first bound's type. Rebinding the closure gives each parameter its
+/// own input type, including when equal types have distinct circuit identities.
+pub fn minimum_waterline(
+    edit: &mut CircuitEditor,
+    inputs: &[TypeId],
+    next: &mut u64,
+    warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let first = *inputs
+        .first()
+        .ok_or_else(|| Error::new("a minimum requires at least one bound"))?;
+    let mut names = *next;
+    let mut parameters = Vec::with_capacity(inputs.len());
+    let mut level = Vec::with_capacity(inputs.len());
+    for &ty in inputs {
+        if !edit.same_type(first, ty)? {
+            return Err(Error::new("cannot combine bounds of different types"));
+        }
+        let param = edit.ref_parameter(first, &mut names)?;
+        level.push(edit.deref_parameter(&param)?);
+        parameters.push(param);
+    }
+    while level.len() > 1 {
+        let (pairs, last) = level.as_chunks::<2>();
+        let mut reduced = Vec::with_capacity(level.len().div_ceil(2));
+        for &[left, right] in pairs {
+            reduced.push(minimum_pair(edit, left, right)?);
+        }
+        reduced.extend_from_slice(last);
+        level = reduced;
+    }
+    let closure = edit.closure(level[0], &parameters)?;
+    let result = apply_waterlines(edit, closure.into(), inputs, &mut names, warnings)?;
+    *next = names;
+    Ok(result)
+}
+
 pub fn minimum_bound(
     edit: &mut CircuitEditor,
     body: NodeId,
     bounds: &[Bound],
     next: &mut u64,
 ) -> Result<Bound, Error> {
-    let first = *bounds
-        .first()
-        .ok_or_else(|| Error::new("a minimum requires at least one bound"))?;
-    let mut names = next
-        .checked_add(bounds.len() as u64)
-        .ok_or_else(|| Error::new("generated names exhausted"))?;
-    let mut params = Vec::with_capacity(bounds.len());
-    for &bound in bounds {
-        if !edit.same_type(first.ty, bound.ty)? {
-            return Err(Error::new("cannot combine bounds of different types"));
-        }
-        params.push(edit.ref_parameter(bound.ty, &mut names)?);
-    }
-    let value = if let [one] = params.as_slice() {
-        edit.deref_parameter(one)?
-    } else {
-        min_component(edit, &params, first.ty, &mut Vec::new())?
-    };
-    let ty = edit.expression_type(value)?;
-    let function = edit.closure(value, &params)?;
+    let mut names = *next;
+    let types: Vec<_> = bounds.iter().map(|b| b.ty).collect();
+    let function = minimum_waterline(edit, &types, &mut names, &mut Vec::new())?;
+    let value = edit.node(function.into())?.edge("body")?;
+    let ty = edit.expression_type(edit.expression(value)?)?;
     let inputs = bounds.iter().map(|b| b.port).collect::<Vec<_>>();
     let id = edit.append_operator(
         body,
-        first.port.operator,
+        bounds[0].port.operator,
         OperatorKind::ApplyN,
         &inputs,
         [
