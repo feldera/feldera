@@ -43,10 +43,15 @@ public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
             return null;
         if (operator.hasAnnotation(NoChain.class))
             return null;
+        return extendChain(operator, this.mapped(operator.input()));
+    }
+
+    /** Construct a chain at a selected reader using its already-rewired input. */
+    @Nullable
+    public static DBSPChainOperator extendChain(DBSPUnaryOperator operator, OutputPort in) {
         DBSPChainOperator.Computation computation = getComputation(operator);
         if (computation == null)
             return null;
-        OutputPort in = this.mapped(operator.input());
         if (in.node().is(DBSPChainOperator.class)) {
             DBSPChainOperator chainOp = in.node().to(DBSPChainOperator.class);
             DBSPChainOperator.ComputationChain chain = chainOp.chain;

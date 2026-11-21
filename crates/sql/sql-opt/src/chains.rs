@@ -42,16 +42,21 @@ fn barrier(n: &Node) -> bool {
         .is_some_and(|items| items.iter().any(|a| a["class"] == "NoChain"))
 }
 
-/// The topology projection omits closure bodies. A candidate map still needs
-/// the full snapshot to establish whether its function is a closure.
-pub(super) fn has_chain_pattern(circuit: &Circuit) -> Result<bool, Error> {
+/// Select one round of fusions using the original fanout. A selected reader
+/// can immediately extend a chain created earlier in the same traversal.
+pub fn chain_readers(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
     let members = body_members(circuit)?;
     let readers = reader_counts(circuit, &members);
+    let mut selected = Vec::new();
     let stage = |op: &Node| {
-        matches!(
-            op.operator_kind(),
-            Some(Op::Map | Op::MapIndex | Op::Filter)
-        ) && !barrier(op)
+        let fusible = match op.operator_kind() {
+            // A bare topology probe omits this flag and conservatively requests
+            // the payload. The live chain pass supplies it for every Map.
+            Some(Op::Map) => op.data("closure").and_then(|v| v.as_bool()) != Some(false),
+            Some(Op::MapIndex | Op::Filter) => true,
+            _ => false,
+        };
+        fusible && !barrier(op)
     };
     for (_, id) in members {
         let op = circuit.node(id).expect("validated member");
@@ -61,11 +66,11 @@ pub(super) fn has_chain_pattern(circuit: &Circuit) -> Result<bool, Error> {
             if readers.get(&port.operator) == Some(&1)
                 && (input.operator_kind() == Some(Op::Chain) || stage(input))
             {
-                return Ok(true);
+                selected.push(id);
             }
         }
     }
-    Ok(false)
+    Ok(selected)
 }
 
 fn computation(edit: &CircuitEditor, op: &Node) -> Result<Option<(Computation, NodeId)>, Error> {
@@ -242,5 +247,38 @@ pub fn optimize_chains(mut circuit: Circuit, next: &mut u64) -> Result<Circuit, 
                 "chain fusion failed to reduce the number of operators",
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn live_readers_respect_shared_inputs_barriers_and_nonclosure_maps() {
+        let op = |id, kind: &str, input| {
+            json!({
+                "id":id, "class":format!("DBSP{kind}Operator"),
+                "inputs":[{"outputNumber":0,"operator":{"node":input}}]
+            })
+        };
+        let mut nonclosure = op(7, "Map", 6);
+        nonclosure["closure"] = false.into();
+        let mut barrier = op(10, "Map", 9);
+        barrier["annotations"] = json!([{"class":"NoChain"}]);
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPConstantOperator","id":1,"inputs":[]},
+                op(2,"Filter",1), op(3,"MapIndex",2), op(4,"Filter",3), op(5,"Map",3),
+                op(6,"Filter",4), nonclosure, op(8,"Map",7), op(9,"Filter",8),
+                barrier, op(11,"Filter",10), op(12,"Chain",11), op(13,"Map",12)
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            chain_readers(&circuit).unwrap(),
+            [3, 6, 9, 13].map(NodeId::Outer)
+        );
     }
 }

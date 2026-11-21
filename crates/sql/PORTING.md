@@ -462,6 +462,14 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust selects chain fusions from reader counts, operator kinds, map closure
+availability and `NoChain` annotations. The JVM constructs the selected
+operators with their existing closure objects. Rust prunes dead operators
+between rounds. Both scheduled placements matched Java on each of 550 selected
+programs. Full replay matched in both engines, 2,076 runtime commands passed,
+and COUNT and LATENESS checkpoints restored in both directions.
+[Chain optimizer evidence](evidence/p3-chain-topology.json)
+
 Rust constructs the HOP lower-bound closure. It forwards the input row and uses
 the earliest window start as the lower bound for both window columns. Direct
 closure comparisons matched Java for six nonnullable timestamps and one nullable

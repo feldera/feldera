@@ -84,8 +84,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     }
 
     private boolean selected(CircuitTransform pass) {
-        if (pass instanceof RustCircuitPass)
-            return pass.getName().equals(this.passClass);
+        if (pass instanceof RustCircuitPass rust)
+            return pass.getName().equals(this.passClass) || (rust.wrapsGraphOptimization
+                    && this.passClass.equals("OptimizeWithGraph(" + pass.getName() + ")"));
         if (this.passClass.equals("Fuse"))
             return pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse;
         if (this.passClass.equals("InnerCSE") || this.passClass.equals("ExpandSafeCasts") || this.passClass.equals("ExpandUnsafeCasts")

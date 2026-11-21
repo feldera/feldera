@@ -41,6 +41,8 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ChainVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CloneOperatorsWithFanout;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
@@ -151,6 +153,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private final DBSPCompiler compiler;
     private final String name;
     private final String nativeName;
+    public final boolean wrapsGraphOptimization;
     private final OptimizerSnapshots snapshots;
     @Nullable private final FindMapChains mapChains;
     @Nullable private final FindSharedIndexes sharedIndexes;
@@ -198,6 +201,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public RustCircuitPass(DBSPCompiler compiler, CircuitTransform original, OptimizerSnapshots snapshots) {
         this.compiler = compiler;
         this.name = original.getName();
+        this.wrapsGraphOptimization = original instanceof OptimizeWithGraph;
         this.temporalScan = original instanceof ReorderTemporalFilters.Scan scan ? scan : null;
         this.temporalOrder = original instanceof ReorderTemporalFilters.Reorder reorder ? reorder : null;
         if (original instanceof DeadCode dead && dead.keepAllSources)
@@ -1604,6 +1608,39 @@ public final class RustCircuitPass implements CircuitTransform {
         return new RemoveOperators(this.compiler, keep).apply(circuit);
     }
 
+    private DBSPCircuit fuseChains(DBSPCircuit circuit) throws IOException {
+        int limit = Math.max(circuit.largestComponentSize(), 10);
+        for (int round = 0; round < limit; round++) {
+            var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.CHAIN_FUNCTIONS);
+            var plan = this.invoke("Topology/ChainRound", topology, DBSPVariablePath.nextGeneratedName(), EMPTY_CONTEXT);
+            if (plan.has("chain_readers")) {
+                Set<Long> readers = MAPPER.convertValue(plan.required("chain_readers"), new TypeReference<>() {});
+                circuit = new CircuitCloneVisitor(this.compiler, false) {
+                    @Override
+                    public void replace(DBSPSimpleOperator operator) {
+                        if (!readers.contains(operator.id)) {
+                            super.replace(operator);
+                            return;
+                        }
+                        if (!this.visited.add(operator))
+                            return;
+                        var reader = operator.to(DBSPUnaryOperator.class);
+                        var chain = ChainVisitor.extendChain(reader, this.mapped(reader.input()));
+                        this.map(reader, Objects.requireNonNull(chain, "Invalid chain reader " + reader.id));
+                    }
+                }.apply(circuit);
+                plan = this.invoke("Topology/DeadCodeKeepSources", OptimizerTopology.encode(circuit),
+                        DBSPVariablePath.nextGeneratedName(), EMPTY_CONTEXT);
+            } else if (plan.required("pruned_operators").isEmpty()) {
+                return circuit;
+            }
+            circuit = this.pruneCircuit(circuit, plan);
+        }
+        this.compiler.reportError(SourcePositionRange.INVALID, "InfiniteLoop",
+                "Repeated optimization ChainVisitor " + limit + " times without convergence");
+        return circuit;
+    }
+
     /** Apply the Rust deletion list without decoding the surviving expressions.
      * Later expression visitors use object identity when sharing constants. */
     private DBSPCircuit removeSources(DBSPCircuit circuit, JsonNode sourceIds) {
@@ -1968,6 +2005,8 @@ public final class RustCircuitPass implements CircuitTransform {
             ToJsonOuterVisitor writer = null;
             if (this.seenConstants != null)
                 return this.applyCse(circuit);
+            if (this.nativeName.equals("ChainVisitor"))
+                return this.fuseChains(circuit);
             if (this.fanout != null) {
                 var producers = this.invoke("Topology/FanoutProducers", OptimizerTopology.encode(circuit), initial, state);
                 if (producers.isEmpty())
@@ -2261,7 +2300,7 @@ public final class RustCircuitPass implements CircuitTransform {
                      "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "ExpandAggregateZero", "ExpandMetadataCasts",
                      "LinearPostprocessRetainKeys", "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
-                     "SubstituteLeftJoins", "ChainVisitor", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
+                     "SubstituteLeftJoins", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
                     var details = switch (this.nativeName) {
                         case "SeparateIntegrators" -> OptimizerTopology.Details.TRACE_INTEGRATORS;
                         case "StrayGC" -> OptimizerTopology.Details.TRACE_RETENTION;

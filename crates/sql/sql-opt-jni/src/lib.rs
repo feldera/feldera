@@ -938,6 +938,15 @@ fn transform(
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
+        if name == "ChainRound" {
+            let readers = feldera_sql_opt::chain_readers(&circuit)?;
+            if !readers.is_empty() {
+                return Ok(json!({"chain_readers": operator_numbers(readers)}));
+            }
+            // The composite runs DeadCodeKeepSources even when no chain forms.
+            let pruning = feldera_sql_opt::pruning(&circuit, true)?;
+            return Ok(json!({"pruned_operators": operator_numbers(pruning.removed), "unused_sources": []}));
+        }
         if name == "TrimFilters" {
             let readers = feldera_sql_opt::trim_filter_readers(&circuit, serde_json::from_slice(state)?)?;
             return Ok(json!(operator_numbers(readers)));

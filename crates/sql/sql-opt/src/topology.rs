@@ -91,7 +91,7 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
         "SeparateIntegrators" => {
             has(&[Op::StreamAggregate]) || crate::trace_integrators::needs_separation(circuit)?
         }
-        "ChainVisitor" => crate::chains::has_chain_pattern(circuit)? || has_dead_code(true)?,
+        "ChainVisitor" => !crate::chains::chain_readers(circuit)?.is_empty() || has_dead_code(true)?,
         "ImplementChains" => has(&[Op::Chain]),
         "CloneOperatorsWithFanout" => {
             crate::fanout::has_candidates(circuit)? || has_dead_code(true)?

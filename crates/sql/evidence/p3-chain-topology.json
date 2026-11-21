@@ -1,0 +1,67 @@
+{
+  "build": {
+    "jar_sha256": "ef53a97be3b8e04be18748375e31569210aeb811b004cded0cc867656f969905",
+    "optimizer_library_sha256": "656fcf8051d3716e6c9af4eee3ce66a0f7fdb7300b2e1415cc3d23b1d31c7e57",
+    "driver_sha256": "061c38c1c5f5c50d257e4cf5788d2fe619a17da450db35fc0a5e0714775661b1",
+    "pass_kinds": 105
+  },
+  "s4": {
+    "classic": {
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "c00796f285e87c288e063daf917b66b0eccc9243bc618d6182916d5f91305f6b",
+      "rust_stream_sha256": "3f7f5ed56ff1345f79715cb25e81fbe9204b8c51c25a20afaffd03d4c14c0112",
+      "matched_invocations": 582
+    },
+    "gen2": {
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "17b9844b0cbc2610361b0275f442533eecd5a3929c62d1f69f093ee619861885",
+      "rust_stream_sha256": "f05e0573af43808689857ad210e0125826db39d097af4d1c74691e8367269d98",
+      "matched_invocations": 518
+    }
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "0c3b19d7eaa8de8bfbe000b3df53e38113d011a50019f15fbf701e2987153604"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "56c3ce81d0704e54991abdffa48b94b22c7dc561c140d7674a4988b01d1586d1",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "4e2ef99ed8e36b81db40fb753816cbb4db3529c0a4766dfd83d0bf536e5d0ddd",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 12.696924,
+    "largest_driver_plus_front_end_rss_bytes": 80232448
+  },
+  "pass": "OptimizeWithGraph(ChainVisitor)",
+  "s4_method": "Observed both scheduled composite invocations on the Java and live hybrid pipelines and compared canonical entry and exit graphs, pass placement, allocator state and diagnostics."
+}

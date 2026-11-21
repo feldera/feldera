@@ -162,7 +162,7 @@ pub use aggregate_zero::expand_aggregate_zero;
 pub use append_only::append_only_streams;
 pub use array_agg::fuse_into_array_agg;
 pub use balanced_joins::{balance_joins, optimize_balanced_joins};
-pub use chains::{fuse_chains, implement_chains, optimize_chains};
+pub use chains::{chain_readers, fuse_chains, implement_chains, optimize_chains};
 pub use collapse_shared_chains::collapse_shared_chains;
 pub use comparators::declare_comparators;
 pub use conditionals::simplify_conditionals;
