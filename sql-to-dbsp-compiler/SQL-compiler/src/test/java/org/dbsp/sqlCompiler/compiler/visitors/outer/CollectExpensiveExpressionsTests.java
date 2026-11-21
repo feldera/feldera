@@ -2,10 +2,10 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.CollectExpensiveExpressions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.MapInfo;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.junit.Assert;
@@ -23,10 +23,9 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
     /** Collect the minimal expensive expressions of |param| expression */
     List<DBSPExpression> collect(DBSPExpression expression, DBSPVariablePath param) {
         DBSPClosureExpression closure = expression.closure(param);
-        CollectExpensiveExpressions collector =
-                new CollectExpensiveExpressions(this.testCompiler(), closure);
-        collector.apply(closure.body);
-        return collector.minimal;
+        var compiler = this.testCompiler();
+        compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustMapFusionGroups");
+        return FuseExpensiveMaps.minimalFragments(compiler, closure);
     }
 
     /** Only the call is minimal, not the addition containing it */
@@ -103,6 +102,16 @@ public class CollectExpensiveExpressionsTests extends BaseSQLTests {
         DBSPExpression initializer = b.call("f", b.field(t, 0));
         DBSPExpression let = b.let(initializer, x -> b.call("g", x));
         Assert.assertEquals(List.of(initializer), this.collect(let, t));
+    }
+
+    @Test
+    public void testShadowedParameter() {
+        var param = new DBSPVariablePath("x", b.i32());
+        var shadow = new DBSPVariablePath("x", b.i32());
+        var init = b.call("before", param);
+        var body = new DBSPLetExpression(shadow, init, b.call("inside", shadow));
+        var later = b.call("after", param);
+        Assert.assertEquals(List.of(init, later), this.collect(b.tuple(body, later), param));
     }
 
     /** A closed fragment next to an open one is still collected */

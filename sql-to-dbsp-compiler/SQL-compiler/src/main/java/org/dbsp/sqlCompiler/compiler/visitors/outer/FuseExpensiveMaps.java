@@ -80,12 +80,10 @@ public class FuseExpensiveMaps extends Passes {
         /** The declaration of each variable in the closure */
         final ReferenceMap references;
 
-        public CollectExpensiveExpressions(DBSPCompiler compiler, DBSPClosureExpression function) {
+        public CollectExpensiveExpressions(DBSPCompiler compiler, DBSPParameter parameter, ReferenceMap references) {
             super(compiler);
-            this.parameter = function.parameters[0];
-            ResolveReferences resolver = new ResolveReferences(compiler, false);
-            resolver.apply(function);
-            this.references = resolver.reference;
+            this.parameter = parameter;
+            this.references = references;
         }
 
         /** True if every variable inside the expression resolves to a
@@ -161,6 +159,16 @@ public class FuseExpensiveMaps extends Passes {
         }
     }
 
+    static List<DBSPExpression> minimalFragments(DBSPCompiler compiler, DBSPClosureExpression function) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.mapFusionFragments(compiler, function);
+        var resolver = new ResolveReferences(compiler, false);
+        resolver.apply(function);
+        var collector = new CollectExpensiveExpressions(compiler, function.parameters[0], resolver.reference);
+        collector.apply(function.body);
+        return collector.minimal;
+    }
+
     /** Groups maps by their input port and finds clusters worth fusing:
      * siblings that share an expensive subexpression. */
     static class FindFusableMaps extends CircuitVisitor {
@@ -189,12 +197,10 @@ public class FuseExpensiveMaps extends Passes {
             function = simplify.apply(function).to(DBSPClosureExpression.class);
             if (!function.body.is(DBSPTupleExpression.class))
                 return;
-            CollectExpensiveExpressions collector =
-                    new CollectExpensiveExpressions(this.compiler(), function);
-            collector.apply(function.body);
-            if (collector.minimal.isEmpty())
+            var minimal = minimalFragments(this.compiler(), function);
+            if (minimal.isEmpty())
                 return;
-            MapInfo info = new MapInfo(operator, function, collector.minimal);
+            MapInfo info = new MapInfo(operator, function, minimal);
             this.groups.computeIfAbsent(operator.input(), p -> new ArrayList<>()).add(info);
         }
 
