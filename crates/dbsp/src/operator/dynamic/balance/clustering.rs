@@ -9,15 +9,27 @@ use petgraph::{
 };
 use std::collections::BTreeMap;
 
+/// A join that the balancer manages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct BalancedJoin {
+    /// The left input, named by the node that writes it.
+    pub left: NodeId,
+
+    /// The right input, named by the node that writes it.
+    pub right: NodeId,
+
+    /// Whether the join is a left join.
+    pub is_left_join: bool,
+}
+
 /// The streams and joins of one cluster, and the layer of each stream.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct ClusterLayout {
     /// Map from each stream to its layer.
     pub streams: BTreeMap<NodeId, usize>,
 
-    /// Map from the node id of each join to its left input, its right input,
-    /// and whether it is a left join.
-    pub joins: BTreeMap<NodeId, (NodeId, NodeId, bool)>,
+    /// Map from the node id of each join to the join.
+    pub joins: BTreeMap<NodeId, BalancedJoin>,
 
     /// Map from each layer to its streams, in ascending order.
     pub layers: BTreeMap<usize, Vec<NodeId>>,
@@ -62,8 +74,8 @@ enum EdgeKind {
 ///   destination) pairs.  They must form an acyclic graph.
 /// * `streams` - The streams that the balancer manages, each named by the
 ///   node that writes it.
-/// * `joins` - Map from the node id of each join to its left input, its right
-///   input, and whether it is a left join.  Both inputs must be in `streams`.
+/// * `joins` - Map from the node id of each join to the join.  Both inputs of
+///   every join must be in `streams`.
 ///
 /// # Returns
 ///
@@ -72,7 +84,7 @@ pub(super) fn compute_clusters(
     num_nodes: usize,
     edges: impl IntoIterator<Item = (NodeId, NodeId)>,
     streams: impl IntoIterator<Item = NodeId>,
-    joins: &BTreeMap<NodeId, (NodeId, NodeId, bool)>,
+    joins: &BTreeMap<NodeId, BalancedJoin>,
 ) -> Vec<ClusterLayout> {
     let mut streams = streams.into_iter().peekable();
     if streams.peek().is_none() {
@@ -104,15 +116,14 @@ pub(super) fn compute_clusters(
             .push(stream);
     }
 
-    for (&join, &(left, right, is_left_join)) in joins {
+    for (&join, &balanced_join) in joins {
+        let BalancedJoin { left, right, .. } = balanced_join;
         assert!(
             writes_stream[left.id()] && writes_stream[right.id()],
             "join {join} reads a stream that the balancer does not manage"
         );
         let cluster = cluster_of_component[component[left.id()]].unwrap();
-        clusters[cluster]
-            .joins
-            .insert(join, (left, right, is_left_join));
+        clusters[cluster].joins.insert(join, balanced_join);
     }
 
     clusters
@@ -133,7 +144,7 @@ pub(super) fn compute_clusters(
 fn cluster_graph(
     num_nodes: usize,
     edges: impl IntoIterator<Item = (NodeId, NodeId)>,
-    joins: &BTreeMap<NodeId, (NodeId, NodeId, bool)>,
+    joins: &BTreeMap<NodeId, BalancedJoin>,
 ) -> DiGraph<(), EdgeKind> {
     let index = |node: NodeId| NodeIndex::new(node.id());
 
@@ -144,7 +155,7 @@ fn cluster_graph(
     for (from, to) in edges {
         graph.add_edge(index(from), index(to), EdgeKind::Dataflow);
     }
-    for &(left, right, _is_left_join) in joins.values() {
+    for &BalancedJoin { left, right, .. } in joins.values() {
         graph.add_edge(index(left), index(right), EdgeKind::Join);
         graph.add_edge(index(right), index(left), EdgeKind::Join);
     }
@@ -317,16 +328,16 @@ fn depths(
 #[cfg(test)]
 mod tests {
     use super::{
-        ClusterLayout, cluster_graph, compute_clusters, depths, strongly_connected_components,
+        BalancedJoin, ClusterLayout, cluster_graph, compute_clusters, depths,
+        strongly_connected_components,
     };
     use crate::circuit::NodeId;
     use petgraph::{algo::kosaraju_scc, graph::DiGraph, unionfind::UnionFind};
     use proptest::{collection::vec, prelude::*, sample::Index};
     use std::collections::{BTreeMap, BTreeSet};
 
-    /// Map from the node id of each join to its left input, its right input,
-    /// and whether it is a left join.
-    type Joins = BTreeMap<NodeId, (NodeId, NodeId, bool)>;
+    /// Map from the node id of each join to the join.
+    type Joins = BTreeMap<NodeId, BalancedJoin>;
 
     /// An acyclic circuit and the streams and joins that the balancer manages
     /// in it.
@@ -402,7 +413,7 @@ mod tests {
             let ancestors = self.ancestors();
 
             let mut join_graph = UnionFind::<usize>::new(self.num_nodes);
-            for &(left, right, _) in self.joins.values() {
+            for &BalancedJoin { left, right, .. } in self.joins.values() {
                 join_graph.union(left.id(), right.id());
             }
             let mut components = BTreeMap::<usize, BTreeSet<NodeId>>::new();
@@ -459,8 +470,8 @@ mod tests {
                     cluster.joins = self
                         .joins
                         .iter()
-                        .filter(|(_, (left, _, _))| members.contains(left))
-                        .map(|(&join, &inputs)| (join, inputs))
+                        .filter(|(_, balanced_join)| members.contains(&balanced_join.left))
+                        .map(|(&join, &balanced_join)| (join, balanced_join))
                         .collect();
                     cluster
                 })
@@ -509,7 +520,7 @@ mod tests {
                     }
                 }
             }
-            for &(left, right, _) in self.joins.values() {
+            for &BalancedJoin { left, right, .. } in self.joins.values() {
                 reaches[position[&left]][position[&right]] = true;
                 reaches[position[&right]][position[&left]] = true;
             }
@@ -557,10 +568,10 @@ mod tests {
                     .sum::<usize>(),
                 self.joins.len()
             );
-            for (join, inputs) in &self.joins {
+            for (join, balanced_join) in &self.joins {
                 prop_assert_eq!(
-                    clusters[cluster_of[&inputs.0]].joins.get(join),
-                    Some(inputs)
+                    clusters[cluster_of[&balanced_join.left]].joins.get(join),
+                    Some(balanced_join)
                 );
             }
 
@@ -640,10 +651,12 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, (left, right, is_left_join))| {
-                    (
-                        NodeId::new(num_nodes + index),
-                        (*left.get(&streams), *right.get(&streams), *is_left_join),
-                    )
+                    let balanced_join = BalancedJoin {
+                        left: *left.get(&streams),
+                        right: *right.get(&streams),
+                        is_left_join: *is_left_join,
+                    };
+                    (NodeId::new(num_nodes + index), balanced_join)
                 })
                 .collect()
         };
@@ -717,9 +730,12 @@ mod tests {
                     let copy = circuit.add_node();
                     circuit.edges.push((join, copy));
                     circuit.streams.extend(inputs);
-                    circuit
-                        .joins
-                        .insert(join, (inputs[0], inputs[1], is_left_join));
+                    let balanced_join = BalancedJoin {
+                        left: inputs[0],
+                        right: inputs[1],
+                        is_left_join,
+                    };
+                    circuit.joins.insert(join, balanced_join);
                     outputs.extend([join, copy]);
                 }
                 circuit
@@ -736,6 +752,15 @@ mod tests {
         std::array::from_fn(NodeId::new)
     }
 
+    /// An inner join of `left` and `right`.
+    fn inner_join(left: NodeId, right: NodeId) -> BalancedJoin {
+        BalancedJoin {
+            left,
+            right,
+            is_left_join: false,
+        }
+    }
+
     /// A cluster with streams `layers[i]` in layer `i`, and inner joins given
     /// as (join, left, right) triples.
     fn cluster(layers: &[&[NodeId]], joins: &[(NodeId, NodeId, NodeId)]) -> ClusterLayout {
@@ -747,7 +772,7 @@ mod tests {
                 .collect(),
             joins: joins
                 .iter()
-                .map(|&(join, left, right)| (join, (left, right, false)))
+                .map(|&(join, left, right)| (join, inner_join(left, right)))
                 .collect(),
             layers: layers
                 .iter()
@@ -784,10 +809,10 @@ mod tests {
             ],
             streams: BTreeSet::from([s1, s2, s3, s4, s5, s6]),
             joins: Joins::from([
-                (s1, (s5, s6, false)),
-                (s4, (s2, s3, false)),
-                (s7, (s4, s5, false)),
-                (s8, (s2, s1, false)),
+                (s1, inner_join(s5, s6)),
+                (s4, inner_join(s2, s3)),
+                (s7, inner_join(s4, s5)),
+                (s8, inner_join(s2, s1)),
             ]),
         };
 
@@ -824,9 +849,9 @@ mod tests {
             ],
             streams: BTreeSet::from([a1, b1, a2, b2, c1, c2]),
             joins: Joins::from([
-                (join_a, (a1, a2, false)),
-                (join_b, (b1, b2, false)),
-                (join_c, (c1, c2, false)),
+                (join_a, inner_join(a1, a2)),
+                (join_b, inner_join(b1, b2)),
+                (join_c, inner_join(c1, c2)),
             ]),
         };
 
@@ -862,9 +887,9 @@ mod tests {
             ],
             streams: BTreeSet::from([a, b, c, d]),
             joins: Joins::from([
-                (j1, (a, b, false)),
-                (j2, (c, a, false)),
-                (j3, (d, b, false)),
+                (j1, inner_join(a, b)),
+                (j2, inner_join(c, a)),
+                (j3, inner_join(d, b)),
             ]),
         };
 
@@ -888,7 +913,7 @@ mod tests {
             num_nodes: 6,
             edges: vec![(a, j1), (b, j1), (j1, c), (c, j2), (d, j2)],
             streams: BTreeSet::from([a, b, c, d]),
-            joins: Joins::from([(j1, (a, b, false)), (j2, (c, d, false))]),
+            joins: Joins::from([(j1, inner_join(a, b)), (j2, inner_join(c, d))]),
         };
 
         assert_eq!(circuit.node_depths(), vec![0; 6]);
@@ -909,7 +934,7 @@ mod tests {
             num_nodes: 2,
             edges: vec![(a, join)],
             streams: BTreeSet::from([a]),
-            joins: Joins::from([(join, (a, a, false))]),
+            joins: Joins::from([(join, inner_join(a, a))]),
         };
 
         assert_eq!(circuit.clusters(), vec![cluster(&[&[a]], &[(join, a, a)])]);
@@ -924,7 +949,7 @@ mod tests {
             num_nodes: 4,
             edges: vec![(a, join), (b, join), (join, c)],
             streams: BTreeSet::from([a, b, c]),
-            joins: Joins::from([(join, (a, b, false))]),
+            joins: Joins::from([(join, inner_join(a, b))]),
         };
 
         assert_eq!(
@@ -961,7 +986,7 @@ mod tests {
             num_nodes: 3,
             edges: vec![(a, join), (b, join)],
             streams: BTreeSet::from([a]),
-            joins: Joins::from([(join, (a, b, false))]),
+            joins: Joins::from([(join, inner_join(a, b))]),
         };
         let _ = circuit.clusters();
     }
@@ -982,7 +1007,7 @@ mod tests {
         let joins: Joins = streams
             .windows(2)
             .enumerate()
-            .map(|(index, pair)| (NodeId::new(NUM_NODES + index), (pair[0], pair[1], false)))
+            .map(|(index, pair)| (NodeId::new(NUM_NODES + index), inner_join(pair[0], pair[1])))
             .collect();
 
         let clusters = compute_clusters(NUM_NODES, edges, streams.iter().copied(), &joins);
@@ -1015,7 +1040,7 @@ mod tests {
         });
         let streams = (0..NUM_JOINS).flat_map(|i| [left(i), right(i)]);
         let joins: Joins = (0..NUM_JOINS)
-            .map(|i| (join(i), (left(i), right(i), false)))
+            .map(|i| (join(i), inner_join(left(i), right(i))))
             .collect();
 
         let clusters = compute_clusters(3 * NUM_JOINS + 1, edges, streams, &joins);

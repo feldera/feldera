@@ -9,7 +9,7 @@ use crate::{
     operator::dynamic::balance::{
         FlushState, MaxSat,
         accumulate_trace_balanced::{KeyDistribution, RebalancingExchangeSenderExchangeMetadata},
-        clustering,
+        clustering::{self, BalancedJoin},
         maxsat::{Cost, HardConstraint, VariableIndex},
     },
     utils::indent,
@@ -233,10 +233,9 @@ struct Cluster {
     /// Map from input stream to the layer index it belongs to.
     streams: BTreeMap<NodeId, usize>,
 
-    /// Maps the output node id of a join operator, to its input streams.
-    /// The bool indicates whether the join is a left join.
+    /// Maps the output node id of a join operator to the join.
     // TODO: I don't thin the key in this map serves any purpose. This could just be a vector of values.
-    joins: BTreeMap<NodeId, (NodeId, NodeId, bool)>,
+    joins: BTreeMap<NodeId, BalancedJoin>,
 
     /// Partitions the cluster into layers such that nodes within a layer can be flushed together.
     ///
@@ -313,9 +312,8 @@ struct BalancerInner {
     /// The most recent key distribution for each stream extracted from `self.metadata`.
     key_distribution: BTreeMap<NodeId, KeyDistribution>,
 
-    /// All joins managed by the balancer:
-    /// join node id -> (left input node id, right input node id, is left join)
-    joins: BTreeMap<NodeId, (NodeId, NodeId, bool)>,
+    /// All joins managed by the balancer, by join node id.
+    joins: BTreeMap<NodeId, BalancedJoin>,
 
     /// Set the first time `prepare` is called and clusters are computed.
     prepared: bool,
@@ -387,10 +385,12 @@ impl BalancerInner {
         let joins = self
             .joins
             .values()
-            .map(|(left, right, is_left_join)| {
+            .map(|join| {
                 format!(
-                    "{}join({left},{right})",
-                    if *is_left_join { "left_" } else { "" }
+                    "{}join({},{})",
+                    if join.is_left_join { "left_" } else { "" },
+                    join.left,
+                    join.right
                 )
             })
             .join(", ");
@@ -432,10 +432,12 @@ impl BalancerInner {
         let joins = cluster
             .joins
             .values()
-            .map(|(left, right, is_left_join)| {
+            .map(|join| {
                 format!(
-                    "{}join({left},{right})",
-                    if *is_left_join { "left_" } else { "" }
+                    "{}join({},{})",
+                    if join.is_left_join { "left_" } else { "" },
+                    join.left,
+                    join.right
                 )
             })
             .join(", ");
@@ -637,11 +639,11 @@ impl BalancerInner {
             variable_indexes.insert(*stream, variable_index);
         }
 
-        for (left, right, is_left_join) in self.clusters[cluster_index].joins.values() {
+        for join in self.clusters[cluster_index].joins.values() {
             maxsat.add_constraint(JoinConstraint::new(
-                variable_indexes[left],
-                variable_indexes[right],
-                *is_left_join,
+                variable_indexes[&join.left],
+                variable_indexes[&join.right],
+                join.is_left_join,
             ));
         }
 
@@ -1220,10 +1222,14 @@ impl Balancer {
     /// └────────---───┴────---------───────┘
     ///
     pub fn register_join(&self, join: NodeId, left: NodeId, right: NodeId) {
-        self.inner
-            .borrow_mut()
-            .joins
-            .insert(join, (left, right, false));
+        self.inner.borrow_mut().joins.insert(
+            join,
+            BalancedJoin {
+                left,
+                right,
+                is_left_join: false,
+            },
+        );
     }
 
     /// Invoked during circuit construction to register a left join between `left` and `right` streams.
@@ -1239,10 +1245,14 @@ impl Balancer {
     /// └────────---───┴────---------───────┘
     ///
     pub fn register_left_join(&self, join: NodeId, left: NodeId, right: NodeId) {
-        self.inner
-            .borrow_mut()
-            .joins
-            .insert(join, (left, right, true));
+        self.inner.borrow_mut().joins.insert(
+            join,
+            BalancedJoin {
+                left,
+                right,
+                is_left_join: true,
+            },
+        );
     }
 
     pub fn num_clusters(&self) -> usize {
