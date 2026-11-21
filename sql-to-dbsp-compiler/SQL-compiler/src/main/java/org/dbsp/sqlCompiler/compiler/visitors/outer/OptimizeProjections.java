@@ -136,6 +136,20 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         return projection.isProjection;
     }
 
+    private boolean isIdentity(DBSPClosureExpression function) {
+        return this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.isIdentityProjection(this.compiler, function)
+                : RemoveIdentityOperators.isIdentityFunction(function);
+    }
+
+    @Nullable
+    private DBSPFlatmap projectUnnest(DBSPFlatmap flatmap, DBSPClosureExpression reader) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.projectUnnest(this.compiler, flatmap, reader);
+        var shuffle = DetectShuffle.analyze(this.compiler, reader);
+        return shuffle == null ? null : flatmap.withShuffle(shuffle.after(flatmap.shuffle));
+    }
+
     boolean done(DBSPOperator operator) {
         return this.operatorsAnalyzed.done(operator);
     }
@@ -284,7 +298,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 Pair<DBSPClosureExpression, DBSPClosureExpression> split = this.splitClosure(proj);
 
                 OutputPort leftPort = left;
-                if (!RemoveIdentityOperators.isIdentityFunction(split.left)) {
+                if (!this.isIdentity(split.left)) {
                     // Identical index operators on both sides
                     DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             split.left, left).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
@@ -296,7 +310,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 // the right input of the antijoin does not have other outputs.
                 OutputPort rightPort = right;
                 DBSPClosureExpression closure = keysOnly(right.getOutputIndexedZSetType());
-                if (!RemoveIdentityOperators.isIdentityFunction(closure)) {
+                if (!this.isIdentity(closure)) {
                     DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             closure, right).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
                     this.addOperator(rightIndex);
@@ -312,7 +326,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 }
 
                 // Now project the keys after the join
-                if (RemoveIdentityOperators.isIdentityFunction(split.right)) {
+                if (this.isIdentity(split.right)) {
                     this.map(operator, newJoin);
                 } else {
                     if (newJoin != join)
@@ -652,13 +666,11 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         } else if (source.node().is(DBSPFlatMapOperator.class)
                 && operator.getFunction().is(DBSPClosureExpression.class) && inputFanout == 1) {
             DBSPFlatmap sourceFlatmap = source.simpleNode().getFunction().as(DBSPFlatmap.class);
-            var shuffle = DetectShuffle.analyze(this.compiler, operator.getClosureFunction());
-            if (sourceFlatmap != null && shuffle != null) {
+            var newFunction = sourceFlatmap == null ? null : this.projectUnnest(sourceFlatmap, operator.getClosureFunction());
+            if (newFunction != null) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                         .newline();
-                shuffle = shuffle.after(sourceFlatmap.shuffle);
-                DBSPExpression newFunction = sourceFlatmap.withShuffle(shuffle);
                 DBSPSimpleOperator result = source.simpleNode()
                         .withFunction(newFunction, operator.outputType)
                         .to(DBSPSimpleOperator.class);
@@ -740,9 +752,9 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             DBSPSimpleOperator newProjection = operator
                     .withInputs(Linq.list(zero.input()), true).to(DBSPSimpleOperator.class);
             this.addOperator(newProjection);
-            DBSPExpression newZero = operator.getClosureFunction()
-                    .call(zero.getFunction().borrow())
-                    .reduce(this.compiler);
+            DBSPExpression newZero = this.compiler.options.ioOptions.rustOptimizerPasses
+                    ? RustCircuitPass.projectAggregateZero(this.compiler, zero.getFunction(), operator.getClosureFunction())
+                    : operator.getClosureFunction().call(zero.getFunction().borrow()).reduce(this.compiler);
             DBSPAggregateZeroOperator result = new DBSPAggregateZeroOperator(
                     zero.getRelNode(), newZero, newProjection.outputPort());
             this.map(operator, result);
@@ -763,7 +775,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 var computeValue = this.projectAntijoinValue(left.getOutputIndexedZSetType(), proj);
 
                 OutputPort leftPort = left;
-                if (!RemoveIdentityOperators.isIdentityFunction(computeValue)) {
+                if (!this.isIdentity(computeValue)) {
                     // Identical index operators on both sides
                     DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             computeValue, left).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
@@ -775,7 +787,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 // the right input of the antijoin does not have other outputs.
                 OutputPort rightPort = right;
                 DBSPClosureExpression closure = keysOnly(join.right().getOutputIndexedZSetType());
-                if (!RemoveIdentityOperators.isIdentityFunction(closure)) {
+                if (!this.isIdentity(closure)) {
                     DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getRelNode(),
                             closure, right).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
                     this.addOperator(rightIndex);

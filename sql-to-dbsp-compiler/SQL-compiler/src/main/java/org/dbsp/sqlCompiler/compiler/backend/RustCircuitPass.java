@@ -265,6 +265,21 @@ public final class RustCircuitPass implements CircuitTransform {
         return result.booleanValue();
     }
 
+    public static boolean isIdentityProjection(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        var reply = invokeLowering(compiler, "IsIdentityProjection", closure).value;
+        DBSPVariablePath.restoreGeneratedNames(reply.required("next_generated_name").longValue());
+        return reply.required("identity").booleanValue();
+    }
+
+    @Nullable
+    public static DBSPFlatmap projectUnnest(DBSPCompiler compiler, DBSPFlatmap flatmap, DBSPClosureExpression reader) {
+        return tryLowerFunction(compiler, "ProjectUnnest", flatmap, reader, DBSPFlatmap.class);
+    }
+
+    public static DBSPExpression projectAggregateZero(DBSPCompiler compiler, DBSPExpression zero, DBSPClosureExpression reader) {
+        return lowerFunction(compiler, "ProjectAggregateZero", zero, reader, DBSPExpression.class);
+    }
+
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> splitAntijoinProjection(
             DBSPCompiler compiler, DBSPClosureExpression projection) {
         var reply = invokeLowering(compiler, "SplitAntijoinProjection", projection, null);

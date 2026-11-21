@@ -95,7 +95,7 @@ fn projects_row(
     Ok(true)
 }
 
-pub(super) fn identity_closure(
+pub fn identity_closure(
     edit: &CircuitEditor,
     closure: NodeId,
     next: &mut u64,

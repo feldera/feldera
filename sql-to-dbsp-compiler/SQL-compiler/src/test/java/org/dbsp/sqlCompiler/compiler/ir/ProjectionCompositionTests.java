@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.DetectShuffle;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
@@ -14,12 +15,15 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Maybe;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -80,6 +84,38 @@ public class ProjectionCompositionTests {
         var reader = b.lambda(new DBSPTypeRawTuple(b.tup(b.i32()).ref(), row.ref()), pair ->
                 new DBSPRawTupleExpression(b.tuple(), pair.field(1).deref()));
         Assert.assertNull(RustCircuitPass.trimTopKProjection(this.compiler, producer, reader));
+    }
+
+    @Test public void composeUnnestShufflesAndRejectComputedOutputs() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var input = b.tup(b.i32(), new DBSPTypeArray(b.i32(), false));
+        var row = input.ref().var();
+        var flatmap = new DBSPFlatmap(CalciteObject.EMPTY, input, row.deref().field(1).closure(row),
+                List.of(0), null, null, new ExplicitShuffle(2, List.of(1, 0)));
+        var output = b.tup(b.i32(), b.i32());
+        var repeat = b.closure(output, r -> b.tuple(b.field(r, 0), b.field(r, 0)));
+        var expected = flatmap.withShuffle(DetectShuffle.analyze(this.compiler, repeat).after(flatmap.shuffle));
+        var actual = RustCircuitPass.projectUnnest(this.compiler, flatmap, repeat);
+        Assert.assertNotNull(actual);
+        Assert.assertEquals(expected.passthroughIndexes, actual.passthroughIndexes);
+        Assert.assertEquals(List.of(0, 0), actual.shuffle.shuffle(List.of(0)));
+        Assert.assertTrue(expected.type.sameType(actual.type));
+        var compute = b.closure(output, r -> b.tuple(b.add(b.field(r, 0), b.lit(1))));
+        Assert.assertNull(RustCircuitPass.projectUnnest(this.compiler, flatmap, compute));
+    }
+
+    @Test public void reduceTheProjectedEmptyAggregateAndPreserveIdentityNameAllocation() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var zero = b.tuple(b.lit(17), b.lit(19));
+        var swap = b.closure(zero.type, r -> b.tuple(b.field(r, 1), b.field(r, 0)));
+        var expected = swap.call(zero.borrow()).reduce(this.compiler);
+        var actual = RustCircuitPass.projectAggregateZero(this.compiler, zero, swap);
+        Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+        var identity = b.closure(zero.type, r -> b.tuple(b.field(r, 0), b.field(r, 1)));
+        long next = DBSPVariablePath.nextGeneratedName();
+        Assert.assertTrue(RustCircuitPass.isIdentityProjection(this.compiler, identity));
+        Assert.assertFalse(RustCircuitPass.isIdentityProjection(this.compiler, swap));
+        Assert.assertEquals(next + 2, DBSPVariablePath.nextGeneratedName());
     }
 
     @Test public void fillDroppedAggregateColumnsWithTheirOriginalEmptySetResults() {

@@ -75,6 +75,25 @@ fn shuffle(
     Ok(Some(result))
 }
 
+/// Apply a pure field shuffle to UNNEST's current output layout. Repeated
+/// indexes duplicate output columns and a computed column prevents fusion.
+pub fn project_unnest(
+    edit: &mut CircuitEditor,
+    flatmap: NodeId,
+    reader: NodeId,
+) -> Result<Option<ExpressionId>, Error> {
+    let closure = edit.node(reader)?;
+    let parameters = closure.edges("parameters")?;
+    let [parameter] = parameters.as_slice() else {
+        return Ok(None);
+    };
+    let Some(fields) = shuffle(edit, closure.edge("body")?, *parameter)? else {
+        return Ok(None);
+    };
+    let function = project_flatmap(edit, flatmap, &fields)?;
+    Ok(Some(edit.expression(function)?))
+}
+
 fn project_constant(
     edit: &mut CircuitEditor,
     constant: ExpressionId,
@@ -228,11 +247,10 @@ pub fn project_outputs(
                 (Op::Constant, c)
             }
             (Op::FlatMap, _) if !indexed && edit.expr_kind(before)? == Expr::Flatmap => {
-                let Some(fields) = shuffle(&edit, body, *parameter)? else {
+                let Some(projected) = project_unnest(&mut edit, before.into(), function)? else {
                     continue;
                 };
-                let projected = project_flatmap(&mut edit, before.into(), &fields)?;
-                (Op::FlatMap, edit.expression(projected)?)
+                (Op::FlatMap, projected)
             }
             (_, Some((kind, was_indexed))) => (
                 kind,

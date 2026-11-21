@@ -84,6 +84,11 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
         return Err("expected an array of lowering inputs".into());
     };
     let (arena, roots) = expression_arena(roots)?;
+    if let ("IsIdentityProjection", [closure]) = (pass, roots.as_slice()) {
+        let edit = feldera_sql_ir::CircuitEditor::new(arena);
+        let identity = feldera_sql_opt::identity_closure(&edit, *closure, &mut next)?;
+        return Ok(json!({"identity": identity, "next_generated_name": next}));
+    }
     if matches!(pass, "IsStrictProjection" | "IsNestedProjection") {
         let [closure] = roots.as_slice() else {
             return Err("expected one map closure".into());
@@ -96,6 +101,17 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("ProjectUnnest", [flatmap, reader]) => {
+            let Some(function) = feldera_sql_opt::project_unnest(&mut edit, *flatmap, *reader)? else {
+                return Ok(Value::Null);
+            };
+            function
+        }
+        ("ProjectAggregateZero", [zero, reader]) => {
+            let zero = edit.expression(*zero)?;
+            let borrowed = edit.borrow_value(zero)?;
+            feldera_sql_expr::apply_closure(&mut edit, *reader, &[borrowed], &mut warnings)?
+        }
         ("ComposeProjection" | "TryComposeProjection", [before, after]) => {
             let Some(closure) = feldera_sql_opt::compose_projection(
                 &mut edit, *before, *after, pass == "TryComposeProjection", &mut warnings,
@@ -231,7 +247,9 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
-        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection" | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection" | "TrimAggregateProjection" => {
+        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
+        | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
+        | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
             return lower_function(pass, input, next);
         }
         "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
