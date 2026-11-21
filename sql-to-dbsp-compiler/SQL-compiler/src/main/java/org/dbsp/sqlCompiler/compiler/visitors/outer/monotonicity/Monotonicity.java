@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -189,10 +190,20 @@ public class Monotonicity extends CircuitVisitor {
     MonotoneExpression identity(DBSPSimpleOperator operator, IMaybeMonotoneType projection, boolean pairOfReferences) {
         if (!projection.mayBeMonotone())
             return null;
-        DBSPType varType = projection.getType();
+        DBSPClosureExpression closure = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.monotoneIdentity(this.compiler(), projection.getType(), pairOfReferences)
+                : identityClosure(projection.getType(), pairOfReferences);
+        var argumentType = pairOfReferences ? MonotoneTransferFunctions.ArgumentKind.IndexedZSet
+                : MonotoneTransferFunctions.ArgumentKind.ZSet;
+        // Invoke inner visitor.
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.compiler(), operator, argumentType, projection);
+        return Objects.requireNonNull(analyzer.applyAnalysis(closure));
+    }
+
+    private static DBSPClosureExpression identityClosure(DBSPType varType, boolean pairOfReferences) {
         DBSPExpression body;
         DBSPVariablePath var;
-        MonotoneTransferFunctions.ArgumentKind argumentType;
         if (pairOfReferences) {
             DBSPTypeTupleBase tpl = varType.to(DBSPTypeTupleBase.class);
             DBSPType finalVarType = varType;
@@ -200,18 +211,12 @@ public class Monotonicity extends CircuitVisitor {
             varType = tpl.makeRelatedTupleType(Linq.list(tpl.tupFields[0].ref(), tpl.tupFields[1].ref()));
             var = varType.var();
             body = tpl.makeTuple(var.field(0).deref(), var.deepCopy().field(1).deref());
-            argumentType = MonotoneTransferFunctions.ArgumentKind.IndexedZSet;
         } else {
             varType = varType.ref();
             var = varType.var();
             body = var.deref();
-            argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         }
-        DBSPClosureExpression closure = body.closure(var);
-        // Invoke inner visitor.
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.compiler(), operator, argumentType, projection);
-        return Objects.requireNonNull(analyzer.applyAnalysis(closure));
+        return body.closure(var);
     }
 
     @Override
@@ -804,7 +809,7 @@ public class Monotonicity extends CircuitVisitor {
 
         // Find out if the filter condition is a conjunction of comparisons.
         // Extract all the comparisons of the form column >= expression.
-        ComparisonsAnalyzer comparisons = new ComparisonsAnalyzer(node.getFunction());
+        ComparisonsAnalyzer comparisons = new ComparisonsAnalyzer(this.compiler(), node.getClosureFunction());
         if (!comparisons.isEmpty()) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(node::toString)
@@ -1193,10 +1198,14 @@ public class Monotonicity extends CircuitVisitor {
         public final List<Comparison> comparisons = new ArrayList<>();
 
         /** Collect the comparisons among the conjuncts of a filter condition */
-        public ComparisonsAnalyzer(DBSPExpression closure) {
-            DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
+        public ComparisonsAnalyzer(DBSPCompiler compiler, DBSPClosureExpression clo) {
             Utilities.enforce(clo.parameters.length == 1);
             DBSPParameter param = clo.parameters[0];
+            if (compiler.options.ioOptions.rustOptimizerPasses) {
+                for (var bound : RustCircuitPass.filterLowerBounds(compiler, clo))
+                    this.comparisons.add(new Comparison(bound.column(), bound.value(), bound.comparison(), param));
+                return;
+            }
             for (DBSPExpression conjunct : clo.body.conjuncts()) {
                 DBSPBinaryExpression binary = conjunct.as(DBSPBinaryExpression.class);
                 if (binary != null)

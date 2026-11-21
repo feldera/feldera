@@ -11,6 +11,8 @@ pub use antijoin_projection::{antijoin_projection, split_antijoin_projection};
 mod append_only;
 mod lexical_scope;
 mod map_fusion;
+mod monotonicity;
+pub use monotonicity::{filter_lower_bounds, monotone_identity, FilterBound};
 mod static_candidates;
 pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{fuse_expensive_maps, map_fusion_fragments, map_fusion_groups, FusionMember};

@@ -75,10 +75,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -244,6 +246,24 @@ public final class RustCircuitPass implements CircuitTransform {
     public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {
         return lowerFunction(compiler, "LowerAggregateFold", aggregates,
                 aggregates.isEmpty() ? DBSPTypeTuple.EMPTY : null, DBSPFold.class);
+    }
+
+    public static DBSPClosureExpression monotoneIdentity(DBSPCompiler compiler, DBSPType row, boolean indexed) {
+        return lowerFunction(compiler, indexed ? "Monotonicity/IndexedIdentity" : "Monotonicity/RowIdentity",
+                row, null, DBSPClosureExpression.class);
+    }
+
+    public record FilterBound(int column, DBSPOpcode comparison, DBSPExpression value) {}
+
+    public static List<FilterBound> filterLowerBounds(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        var reply = invokeLowering(compiler, "Monotonicity/FilterBounds", closure);
+        var decoder = expressionDecoder(reply.writer);
+        var bounds = new ArrayList<FilterBound>();
+        for (var bound : reply.value)
+            bounds.add(new FilterBound(bound.required("column").intValue(),
+                    DBSPOpcode.valueOf(bound.required("comparison").textValue()),
+                    decoder.decodeInner(bound.required("value"), DBSPExpression.class)));
+        return bounds;
     }
 
     public static DBSPClosureExpression lowerFlatmap(DBSPCompiler compiler, DBSPFlatmap flatmap) {

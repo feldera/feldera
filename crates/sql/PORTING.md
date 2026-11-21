@@ -800,6 +800,14 @@ can be grouped. Scan, Reorder, MergeFilters and RewriteNow matched at all 532
 observed invocations, including 35 merges and 133 clock rewrites.
 [Temporal comparison replay](evidence/p3-temporal-comparisons.json)
 
+Rust builds the row and indexed identity closures used by monotonicity analysis.
+For an unindexed filter it extracts lower bounds from comparisons, including
+columns offset by numeric or temporal literals. The Java transfer functions
+consume the resulting expressions. All 291 classic and 259 Gen-2 programs
+containing `LATENESS` or `NOW()` matched through limiter insertion and cleanup,
+including the generated-name counter and diagnostics.
+[Monotonicity and filter bounds](evidence/p3-monotone-filter-bounds.json)
+
 Rust chooses the key for each candidate left-join chain and decides whether
 deferring columns saves enough work. Across 17 classic and 17 Gen-2 cases,
 Java and Rust selected the same 20 chains and agreed on every column layout.
@@ -1015,7 +1023,9 @@ build was 78,012,416 bytes per worker. The shared-projection build measured
 map-input build measured 7.49 ms with replay idle, with 77,963,264 bytes
 peak waiting RSS. On the isolated-join build (`65fbccc7f`), four workers
 cancelled in 11.87 ms at p95 during frozen corpus replay. Peak waiting RSS
-was 78,434,304 bytes per worker.
+was 78,434,304 bytes per worker. The lazy-binding build measured 21.23 ms
+and 78,258,176 bytes under the same four-worker profile. The filter waterline
+build measured 7.92 ms and 78,315,520 bytes.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds

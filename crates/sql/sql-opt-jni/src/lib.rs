@@ -121,6 +121,18 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity", [row]) => {
+            let ty = edit.type_id(*row)?;
+            feldera_sql_opt::monotone_identity(&mut edit, ty, pass == "Monotonicity/IndexedIdentity", &mut next)?
+        }
+        ("Monotonicity/FilterBounds", [closure]) => {
+            let bounds = feldera_sql_opt::filter_lower_bounds(&mut edit, *closure)?;
+            let values = edit.circuit().additional_inner_nodes(&arena, bounds.iter().map(|bound| bound.value.into()))?;
+            let ranges: Vec<_> = bounds.into_iter().zip(values).map(|(bound, value)| {
+                json!({"column": bound.column, "comparison": bound.comparison.wire_name(), "value": value})
+            }).collect();
+            return Ok(Value::Array(ranges));
+        }
         ("InnerCSE/Let", [body, pairs @ ..]) => {
             let body = edit.expression(*body)?;
             let pairs = binding_pairs(pairs)?;
@@ -287,7 +299,8 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

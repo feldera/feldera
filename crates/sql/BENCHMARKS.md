@@ -14,13 +14,14 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.83 | 2.23 | 2.04 | 2.60 | 1.277× |
-| Nexmark suite | 4.19 | 10.96 | 6.16 | 13.76 | 2.235× |
-| Outer join | 1.69 | 1.99 | 2.29 | 2.84 | 1.236× |
+| Correlated array subquery | 1.49 | 1.88 | 2.12 | 2.63 | 1.239× |
+| Nexmark suite | 3.72 | 10.12 | 4.79 | 13.61 | 2.843× |
+| Outer join | 1.48 | 1.92 | 2.00 | 2.37 | 1.189× |
 
-The table measures commit `632a0670f`, which reuses unchanged expression fields across
-optimizer snapshots. All 69 pairs on CPU 15 matched on diagnostics and artifacts.
-All three workloads exceeded the 1.2× p95 ceiling.
+The table measures commit `65fbccc7f`, which recognizes isolated snapshot joins
+from the circuit edges. All 69 pairs on CPU 15 matched on diagnostics and artifacts.
+The outer join met the 1.2× ceiling. The correlated array subquery and Nexmark exceeded it.
+The expression-cache build at `632a0670f` measured 1.277×, 2.235× and 1.236× in workload order.
 The shared-expression build at `eb580978e` measured 1.058×, 2.187× and 1.120× in workload order.
 The map grouping build at `6db65a1a9` measured 1.350×, 2.334× and 1.074× in workload order.
 The preceding decoder build at `b3a0afd8c` measured 1.208×, 2.428× and

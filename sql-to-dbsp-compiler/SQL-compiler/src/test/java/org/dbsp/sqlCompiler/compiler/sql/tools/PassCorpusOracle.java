@@ -113,8 +113,17 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         }
     }
 
+    /** Compare the limiter graph produced from each analysis under an otherwise identical schedule. */
+    private boolean compareMonotonicity(CircuitTransform pass) {
+        return this.passClass.equals("MonotoneAnalyzer")
+                && pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.Monotonicity
+                && Boolean.getBoolean("feldera.optimizer.compareRustMonotonicity");
+    }
+
     @Override
     public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {
+        if (this.compareMonotonicity(pass))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (this.compareSharedProjections(pass))
             this.sharedProjectionStart = DBSPVariablePath.nextGeneratedName();
         if (!this.selected(pass))
@@ -295,6 +304,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     @Override
     public void after(String container, int index, int iteration, CircuitTransform pass,
                       DBSPCircuit circuit, boolean completed) {
+        if (this.compareMonotonicity(pass))
+            this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;
         if (completed && this.compareSharedProjections(pass)) {
             // Recompute the state consumed by ReplaceCommonProjections at the same
             // allocator position as its Java prefix. The next observation runs the
