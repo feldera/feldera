@@ -63,5 +63,28 @@
     "invocations": 3,
     "changed": 3,
     "cases_without_placement": 0
+  },
+  "chain_checkpoint_decode": {
+    "compiler_commit": "581838892",
+    "pass_boundary": "LowerCircuitVisitor exit",
+    "case": "org.dbsp.sqlCompiler.compiler.sql.suites.TpchTest#compileTpch/0",
+    "check": "After decoding the whole circuit, each chain output type is the object resolved by its serialized type ID.",
+    "prior_jar_sha256": "ee0df36893205c0fd4d3f19ad1d2746dec67be5143c83d271836f2213b1ad912",
+    "corrected_jar_sha256": "c9d7add98a70f28abdb403f08dedc2e5211256a2e9bd74851c718876c1481fef",
+    "regression_test": "ReplayTypeIdentityTests.successiveChainsRetainTheirSharedCollectionType",
+    "populations": {
+      "classic": {
+        "checkpoint_json_sha256": "6c2915f01017c872a06ade5a5153aaf21c2e7b25322bb6fdef57c7153ff13397",
+        "map_chains_checked": 57,
+        "prior_identity_mismatches": 57,
+        "corrected_identity_mismatches": 0
+      },
+      "gen2": {
+        "checkpoint_json_sha256": "2fbec9700831d4740130a4c20b76550ad3a68729d33ac474436e3795dbad167e",
+        "map_chains_checked": 57,
+        "prior_identity_mismatches": 57,
+        "corrected_identity_mismatches": 0
+      }
+    }
   }
 }

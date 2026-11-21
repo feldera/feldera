@@ -962,7 +962,9 @@ chain after lowering a fused join exposed a type-sharing difference. A rebuilt
 map chain now allocates a fresh collection type. Filter-only chains retain
 their declared input type. All 17,098 lowering boundaries matched, including
 656 changed classic graphs and 356 changed Gen-2 graphs. Three directed cases
-also matched Java with apply tracing enabled.
+also matched Java with apply tracing enabled. Decoding the TPC-H exit graph
+exposed a separate checkpoint defect. Each engine's 57 chain operators lost
+their shared collection type on decode. All 57 in each engine now retain it.
 [Circuit lowering comparisons](evidence/p3-circuit-lowering.json)
 
 Rust counts distinct uses of an expensive expression within each closure. A
