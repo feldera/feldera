@@ -6,7 +6,9 @@ use feldera_sql_ir::{
     BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, NodeId, OperatorKind,
 };
 pub use implement::{implement_window_groups, WindowProjection};
-pub use temporal::{shared_temporal_inputs, TemporalCandidate};
+pub use temporal::{
+    shared_temporal_inputs, temporal_filter_order, TemporalBound, TemporalCandidate, TimestampPartition,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 

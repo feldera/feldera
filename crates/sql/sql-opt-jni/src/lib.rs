@@ -159,6 +159,14 @@ fn transform(
                 &filters, threshold
             )));
         }
+        "WindowGroups/TemporalOrder" => {
+            let bounds: Vec<Option<feldera_sql_opt::TemporalBound>> =
+                serde_json::from_slice(input)?;
+            let shared: Option<String> = serde_json::from_slice(state)?;
+            return Ok(json!(feldera_sql_opt::temporal_filter_order(
+                &bounds, shared.as_deref()
+            )));
+        }
         _ => {}
     }
     let circuit = if live.is_some() {

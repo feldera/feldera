@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
@@ -49,6 +50,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     private static final boolean STREAM = Boolean.getBoolean("feldera.optimizer.streamInvocations");
     private int streamed;
     private int messagesAtEntry;
+    private boolean previousRustPasses;
     @Nullable private ArrayNode diagnostics;
     private final String passClass;
     private final ArrayNode invocations;
@@ -121,6 +123,13 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
         var writer = this.snapshotWriter(circuit);
         this.active.set("before", this.snapshot(writer));
+        // Compare the temporal policy on identical Java prefixes. The rest
+        // of the optimizer, including the producer of this pass's state,
+        // keeps its original implementation.
+        this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
+        if ((pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder)
+                && Boolean.getBoolean("feldera.optimizer.compareRustTemporalPolicy"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star)
             captureJoinTrees(this.active, writer, star.replacements());
         if (pass instanceof LowerAsof.OrderGcDependencies order)
@@ -259,6 +268,11 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         if (!completed || circuit == null)
             throw new IllegalStateException("Incomplete " + this.passClass);
         var current = Objects.requireNonNull(this.active);
+        this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;
+        if (pass instanceof ReorderTemporalFilters.Scan scan) {
+            var chosen = current.putArray("chosen_conjuncts");
+            scan.chosenConjunct.forEach((filter, conjunct) -> chosen.addArray().add(filter.id).add(conjunct));
+        }
         this.diagnostics = null;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.FindJoinTrees find)
             captureJoinTrees(current, this.snapshotWriter(circuit), find.replacements());

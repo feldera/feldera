@@ -31,6 +31,7 @@ import org.dbsp.util.Maybe;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -256,6 +257,11 @@ public class ReorderTemporalFilters extends Passes {
         DBSPExpression timestamp = timestampExpression(compiler, filter, parameter, conjunct);
         if (timestamp == null)
             return null;
+        return timestampClosure(compiler, parameter, timestamp);
+    }
+
+    private static DBSPClosureExpression timestampClosure(
+            DBSPCompiler compiler, DBSPParameter parameter, DBSPExpression timestamp) {
         return timestamp.deepCopy()
                 .closure(parameter)
                 .ensureTree(compiler).to(DBSPClosureExpression.class);
@@ -496,11 +502,55 @@ public class ReorderTemporalFilters extends Passes {
             }
 
             DBSPParameter parameter = condition.parameters[0];
+            Integer chosen = this.chosenConjunct.get(filter);
+            DBSPExpression result = this.compiler().options.ioOptions.rustOptimizerPasses
+                    ? this.reorderWithRust(filter, condition, chosen)
+                    : this.reorderWithJava(filter, condition, chosen);
+            if (result == condition.body) {
+                super.postorder(filter);
+                return;
+            }
+            DBSPFilterOperator replacement = new DBSPFilterOperator(
+                    filter.getRelNode(), result.closure(parameter), this.mapped(filter.input()));
+            this.map(filter, replacement);
+        }
+
+        private DBSPExpression reorderWithRust(DBSPFilterOperator filter, DBSPClosureExpression condition,
+                                               @Nullable Integer chosen) {
+            var conjuncts = condition.body.conjuncts();
+            if (conjuncts.size() < 2)
+                return condition.body;
+            DBSPParameter parameter = condition.parameters[0];
+            var fingerprints = new IdentityHashMap<DBSPExpression, String>();
+            var bounds = new ArrayList<RustCircuitPass.TemporalBound>(conjuncts.size());
+            for (var conjunct : conjuncts) {
+                var bound = temporalFilter(this.compiler(), filter, parameter, conjunct);
+                String key = bound == null ? null : CanonicalForm.asString(this.compiler(),
+                        timestampClosure(this.compiler(), parameter, bound.noNow()));
+                fingerprints.put(conjunct, key);
+                bounds.add(bound == null ? null : new RustCircuitPass.TemporalBound(key, RewriteNow.isGreater(bound.opcode())));
+            }
+            String shared = chosen == null ? null : fingerprints.get(conjuncts.get(chosen));
+            var result = condition.body;
+            for (var partition : RustCircuitPass.temporalFilterOrder(bounds, shared)) {
+                result = reorder(result, partition.first() ? FilterOrderPolicy.FIRST : FilterOrderPolicy.LAST, term -> {
+                    // A rebuilt conjunction can add a cast around a nullable operand.
+                    if (!fingerprints.containsKey(term))
+                        fingerprints.put(term, timestampFingerprint(this.compiler(), filter, parameter, term));
+                    String key = fingerprints.get(term);
+                    return key != null && partition.timestamps().contains(key);
+                });
+            }
+            return result;
+        }
+
+        private DBSPExpression reorderWithJava(DBSPFilterOperator filter, DBSPClosureExpression condition,
+                                               @Nullable Integer chosen) {
+            DBSPParameter parameter = condition.parameters[0];
             Predicate<DBSPExpression> temporal = conjunct ->
                     timestampExpression(this.compiler(), filter, parameter, conjunct) != null;
             Function<DBSPExpression, String> fingerprint = conjunct ->
                     timestampFingerprint(this.compiler(), filter, parameter, conjunct);
-            Integer chosen = this.chosenConjunct.get(filter);
             List<DBSPExpression> conjuncts = condition.body.conjuncts();
 
             // If the input will NOT be shared, move all temporal filters last.
@@ -524,14 +574,7 @@ public class ReorderTemporalFilters extends Passes {
             if (!unboundedLower.isEmpty())
                 result = reorder(result, FilterOrderPolicy.LAST,
                         conjunct -> unboundedLower.contains(fingerprint.apply(conjunct)));
-            if (result == condition.body) {
-                super.postorder(filter);
-                return;
-            }
-            DBSPFilterOperator replacement = new DBSPFilterOperator(
-                    filter.getRelNode(), result.closure(condition.parameters[0]),
-                    this.mapped(filter.input()));
-            this.map(filter, replacement);
+            return result;
         }
     }
 }

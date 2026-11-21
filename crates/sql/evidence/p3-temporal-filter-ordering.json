@@ -1,0 +1,107 @@
+{
+  "scope": "Each Java prefix is replayed twice. Only the selected Scan or Reorder uses the Rust policy in the candidate. Both input and output graphs, allocator positions and ordered filter/conjunct choices are compared. Separate detached S2 runs compare the combined policies through emitted artifacts.",
+  "native_library_sha256": "1ad6b02731084822f6b6abf52f470e53dc1286337bc8173ab303a9549d313057",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f",
+  "control_jar_sha256": "93ad1ab49570bc4a00b0a5d8d6ad170ec5377e115eafbffb34caf2935459ceb9",
+  "candidate_overlay": {
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$1.class": "26d5cab7389f083438c3b78b5681264ee5fe47a00b88388271a6762b799c5a89",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$2.class": "884502a2b0846b05b86e23d2c66b98b16b7a2a6a94a0dc45a63fd32ac6640b54",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$3.class": "cf6af382b9dac73fbed8304f9e8e297c899a97d167e47dfcef5943f8191c9d3c",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$4.class": "196c027d7101321de9aff285926034a9776d47ece2c8b9fecbd7218a6aeba21e",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$5.class": "843a5a19d80269e0135adea0b620f9a15d7db41cb78f106141ff5cf82e7fd447",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$6.class": "23bfb94d9af4eb659278d8c65c1af9c5a6deddc9a1495a35f835376077920c26",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$7.class": "7dbc191d76487c7e401d247e3d620eee3ed06f27c621b1566c4564d69afa7d10",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$InputFieldUse.class": "8a459ae070ba9514b6d495d9ceea25e62b7225f075cdb12b834f3a83c344b3e5",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$OwnedOperator.class": "b6409aa3dff96ed46b3fffced99283b12a1a01c75df5675b2fdcfb83336b8aee",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$SharedProjection.class": "149069126cef49c3d6612a62ee8f2e25913ce9e274eb739304afad7daff91def",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$StateFinding.class": "29b3e04c61af2fd32c53ccd6009e69dce821735be91b6d957a421e93ac422fde",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$TemporalBound.class": "007ac659e38ce8de04c6cd5a70ed2a14f0222e881af711550a6841ec6110af50",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$TemporalCandidate.class": "89898d8bf26da5ffc5042f874302409c669aac4b7e4a48508b3fe6b1487d800c",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$TimestampPartition.class": "1fd65255e7e810f091c74200691d8e91a725727080d258acae4362edd2259783",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.class": "867dda4fb0305e4a7a53029d5c3903602f9dbb8b6a5867e02bcd346ce7c7092e",
+    "org/dbsp/sqlCompiler/compiler/sql/tools/PassCorpusOracle$1.class": "2cb87f8efd7cda43331e53ec7e5778d28930187822f012e5b956bf874203b956",
+    "org/dbsp/sqlCompiler/compiler/sql/tools/PassCorpusOracle$2.class": "817a2d218e9ad9564ec02bbd0a6839383016af82583cce6cb2ee6c4a746f2bac",
+    "org/dbsp/sqlCompiler/compiler/sql/tools/PassCorpusOracle.class": "4bbed1a3bd67ffbfe14c37079da52601a445095fdac5c2d0eb824bbef03c0887",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$FilterOrderPolicy.class": "feb17d28e87e0bba02e944197f90c9912158a003fabf341fe64e784823e57b1f",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$PortAndClosure.class": "50ac87a76b1376eb06aa853a3c2a407298e7a3f75b131c5baf31f31a71a7a570",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$PortAndClosureFingerprint.class": "b15a9655303a52dd7ee4ac62edd9b58722a516bf8d7afd5a33afed06ffec9822",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$Reorder.class": "2e930cf1732874e889faae8fcb158272d71997507bc4f656e46dfaeaf105e925",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$Scan.class": "cdffef050e731b7137cd9bf5dc425be0356b13b9924ce590af6c7dd749ceb7af",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$SourceAndMaps.class": "5f3dd43594b1aab73a73351e163e5f42af689efe210282bc90dab059cc9dbb45",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters.class": "897e6ff1dc16621706b4eca374b6bd5f3e6fb43a1ed96637909f5b4b898fbde2"
+  },
+  "classic": {
+    "boundaries": {
+      "Scan": {
+        "cases": 71,
+        "invocations": 71,
+        "changed_circuits": 0,
+        "chosen_filter_count": 8,
+        "control_sha256": "3c6ae72353f645f9163dbebf5069ba677308412d3b38c3af6afd2fd12add709d",
+        "candidate_sha256": "3c6ae72353f645f9163dbebf5069ba677308412d3b38c3af6afd2fd12add709d",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f"
+      },
+      "Reorder": {
+        "cases": 71,
+        "invocations": 71,
+        "changed_circuits": 10,
+        "chosen_filter_count": 0,
+        "control_sha256": "fb09f750cf85f5785fd977f1b25bd1fe06a180596e708fc3f9690285958490b9",
+        "candidate_sha256": "5d0446ab52d331994f85c9141cd170351eda639d334aaf64016a17e894b3ee2d",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f"
+      }
+    },
+    "final_replay": {
+      "cases": 71,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "mismatches": 0,
+      "shards": [
+        {
+          "manifest_sha256": "3c20ffe0810491b66fbf3b7879e82996091406d34a9f5dde39f335e67f521278",
+          "records_sha256": "612b14c129c16da841024a8e4f67aadbe89c9cee31a0118fcec47361b9c6dec9"
+        },
+        {
+          "manifest_sha256": "4e5e0458a6a107b0e0143e6daaf1e7f6f337335540f66293a9777602d052ce18",
+          "records_sha256": "c15a5eec77269e8b8f39e06f621e7c4b7087ab6b325e49507f97cdc4a19f5b6c"
+        }
+      ]
+    }
+  },
+  "gen2": {
+    "boundaries": {
+      "Scan": {
+        "cases": 62,
+        "invocations": 62,
+        "changed_circuits": 0,
+        "chosen_filter_count": 8,
+        "control_sha256": "007ad864f40450ae525b2ecb226b01d930ce2938b877c263c50e44e6907c26d8",
+        "candidate_sha256": "007ad864f40450ae525b2ecb226b01d930ce2938b877c263c50e44e6907c26d8",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac"
+      },
+      "Reorder": {
+        "cases": 62,
+        "invocations": 62,
+        "changed_circuits": 9,
+        "chosen_filter_count": 0,
+        "control_sha256": "d2acb91a9b1dcafd1307f412570f6bad36c7ed89d337a186424418f6dbafc08e",
+        "candidate_sha256": "dc08c5d825fed8ae3a9aeed21793eda107f80693c4ff27c095104a66ef64d90d",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac"
+      }
+    },
+    "final_replay": {
+      "cases": 62,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "mismatches": 0,
+      "shards": [
+        {
+          "manifest_sha256": "a960c6c14fc5da2f2df05fc286461d84ded0343cb9a167c7ad1d9b3dcf336285",
+          "records_sha256": "9832edea9db021fbae403dbd882a680589e1788a4873f921f3544aad226b1ddb"
+        },
+        {
+          "manifest_sha256": "9b73aac69e5333320417369da2e02a1c66c2910554ce046dedeb6e72cefac15a",
+          "records_sha256": "51e5b77c62adb06b2037a58b66dfe3118f78a52a0ebd28e01cc16e2d73877189"
+        }
+      ]
+    }
+  }
+}

@@ -192,6 +192,18 @@ public final class RustCircuitPass implements CircuitTransform {
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
 
     public record TemporalCandidate(String fingerprint, int conjunct) {}
+    public record TemporalBound(String fingerprint, boolean lower) {}
+    public record TimestampPartition(boolean first, Set<String> timestamps) {}
+
+    public static TimestampPartition[] temporalFilterOrder(List<TemporalBound> bounds, @Nullable String shared) {
+        try {
+            byte[] reply = transformWithContext("WindowGroups/TemporalOrder", MAPPER.writeValueAsBytes(bounds),
+                    0, "", MAPPER.writeValueAsBytes(shared));
+            return MAPPER.readValue(reply, TimestampPartition[].class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid temporal filter ordering from the Rust optimizer", error);
+        }
+    }
 
     /** Each sharing group contains pairs of filter and conjunct ordinals. */
     public static int[][][] sharedTemporalInputs(List<List<TemporalCandidate>> candidates, int threshold) {

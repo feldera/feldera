@@ -770,6 +770,13 @@ Detached replay matched direct Java on all 71 classic and 62 Gen-2 programs in
 the frozen population that ran temporal filter splitting, including competing
 timestamps across views. [Temporal input selection](evidence/p3-temporal-input-selection.json)
 
+Rust also orders the predicates on shared, bounded and upper-only timestamps.
+Java rebuilds the typed conjunction after each partition and classifies any
+casts it introduces. At the two pass boundaries, all 266 invocations matched
+the Java graph and name allocator. The scans agreed on all 16 selected filter
+inputs, and the reorders agreed on all 19 changed circuits.
+[Temporal filter ordering](evidence/p3-temporal-filter-ordering.json)
+
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations
 across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,
