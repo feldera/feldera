@@ -239,7 +239,18 @@ pub fn substitute_arguments(
     parameters: &[NodeId],
     values: &[NodeId],
 ) -> Result<NodeId, Error> {
-    substitute(edit, body, parameters, values, 0)
+    // A producer can itself call a closure. Reduce each argument before
+    // deciding whether its declarations need fresh copies at every use.
+    let mut beta = Rewrite::new(Substitute {
+        uses: HashMap::new(),
+        arguments: Vec::new(),
+        depth: 0,
+    });
+    let arguments = values
+        .iter()
+        .map(|&value| beta.apply(edit, value))
+        .collect::<Result<Vec<_>, _>>()?;
+    substitute(edit, body, parameters, &arguments, 0)
 }
 
 /// Apply a closure to typed operands, preserving simplification warnings.

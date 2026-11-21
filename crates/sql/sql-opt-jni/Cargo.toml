@@ -11,6 +11,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+feldera-sql-expr = { path = "../sql-expr" }
 feldera-sql-ir = { path = "../sql-ir" }
 feldera-sql-opt = { path = "../sql-opt" }
 jni = "0.22.4"

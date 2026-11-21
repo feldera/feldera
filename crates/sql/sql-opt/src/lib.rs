@@ -4,6 +4,8 @@ mod aggregate_groups;
 mod aggregate_fold;
 pub use aggregate_fold::lower_aggregate_fold;
 mod aggregate_zero;
+mod antijoin_projection;
+pub use antijoin_projection::{antijoin_projection, split_antijoin_projection};
 mod append_only;
 mod lexical_scope;
 mod map_fusion;

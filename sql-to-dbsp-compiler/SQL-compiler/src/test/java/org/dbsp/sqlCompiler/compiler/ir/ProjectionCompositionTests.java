@@ -3,13 +3,18 @@ package org.dbsp.sqlCompiler.compiler.ir;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Maybe;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -54,6 +59,21 @@ public class ProjectionCompositionTests {
         }
     }
 
+    @Test public void reduceAProducerCallBeforeSubstitutingItIntoAProjection() {
+        var rowType = b.tup(b.i32(), b.i32());
+        var swap = b.closure(rowType, row -> b.tuple(b.field(row, 1), b.field(row, 0)));
+        var before = b.closure(rowType, swap::call);
+        var after = b.closure(before.body.type, row -> b.tuple(b.field(row, 1), b.field(row, 0)));
+        var expected = after.applyAfter(this.compiler, before, Maybe.YES);
+        var input = before.parameters[0].asVariable();
+        var identity = b.tuple(b.field(input, 0), b.field(input, 1)).closure(before.parameters);
+        Assert.assertTrue(EquivalenceContext.equiv(identity, expected));
+        if (Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields")) {
+            var actual = RustCircuitPass.composeProjection(this.compiler, before, after);
+            Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+        }
+    }
+
     @Test public void inlineIndexedTupleWithBorrowedKeyAndValue() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
         var rowType = b.tup(b.i32());
@@ -95,5 +115,52 @@ public class ProjectionCompositionTests {
         Assert.assertSame(after.parameters[0].type, inner.variable.type);
         var borrowed = new DBSPRawTupleExpression(outer.variable.field(0).borrow(), outer.variable.field(1).borrow());
         Assert.assertTrue(EquivalenceContext.equiv(borrowed, inner.initializer));
+    }
+
+    @Test public void retainCompositeKeysOnBothAntijoinInputs() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var key = b.tup(b.tup(b.strn()), b.i32());
+        var input = new DBSPTypeIndexedZSet(CalciteObject.EMPTY, key, b.tup(b.str(), b.i32n()));
+        var projection = b.lambda(input.getKVRefType(), pair -> b.tuple(pair.field(1).deref().field(1)));
+        var pair = input.getKVRefType().var();
+        var borrowedKey = pair.field(0).deref();
+        var left = new DBSPRawTupleExpression(ExpressionCompiler.expandTuple(projection.getNode(), borrowedKey),
+                projection.call(pair).reduce(this.compiler)).closure(pair);
+        var right = new DBSPRawTupleExpression(
+                new DBSPTupleExpression(DBSPTypeTupleBase.flatten(borrowedKey), false),
+                new DBSPTupleExpression()).closure(pair);
+        long next = DBSPVariablePath.nextGeneratedName();
+        var actualLeft = RustCircuitPass.antijoinProjection(this.compiler, input, projection);
+        var actualRight = RustCircuitPass.antijoinProjection(this.compiler, input, null);
+        Assert.assertTrue(EquivalenceContext.equiv(left, actualLeft));
+        Assert.assertTrue(EquivalenceContext.equiv(right, actualRight));
+        Assert.assertSame(key, actualLeft.body.field(0).type);
+        Assert.assertEquals(next + 2, DBSPVariablePath.nextGeneratedName());
+    }
+
+    @Test public void splitAnIndexedProjectionAtTheAntijoin() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var key = b.tup(b.i32(), b.str());
+        var value = b.tup(b.i32(), b.i32n());
+        var input = new DBSPTypeRawTuple(key.ref(), value.ref());
+        var projection = b.lambda(input, pair -> new DBSPRawTupleExpression(
+                b.tuple(pair.field(0).deref().field(1).applyCloneIfNeeded()),
+                b.tuple(pair.field(1).deref().field(0))));
+        long next = DBSPVariablePath.nextGeneratedName();
+        var split = RustCircuitPass.splitAntijoinProjection(this.compiler, projection);
+        Assert.assertEquals(next, DBSPVariablePath.nextGeneratedName());
+        Assert.assertSame(projection.parameters[0], split.left.parameters[0]);
+        Assert.assertSame(input.tupFields[0], split.right.parameters[0].type.to(DBSPTypeRawTuple.class).tupFields[0]);
+        Assert.assertTrue(key.sameType(split.left.body.field(0).type));
+        Assert.assertTrue(projection.body.type.sameType(split.right.body.type));
+        var argument = new DBSPRawTupleExpression(split.left.body.field(0).borrow(), split.left.body.field(1).borrow());
+        var composed = split.right.call(argument).reduce(this.compiler).closure(split.left.parameters);
+        Assert.assertTrue(EquivalenceContext.equiv(projection.reduce(this.compiler), composed));
+
+        var invalid = b.lambda(input, pair -> new DBSPRawTupleExpression(
+                b.tuple(pair.field(1).deref().field(0)), b.tuple()));
+        var error = Assert.assertThrows(RuntimeException.class,
+                () -> RustCircuitPass.splitAntijoinProjection(this.compiler, invalid));
+        Assert.assertTrue(error.getMessage().contains("key projection reads the input value"));
     }
 }

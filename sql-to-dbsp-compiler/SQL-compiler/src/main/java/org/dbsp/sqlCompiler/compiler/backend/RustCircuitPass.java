@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
@@ -79,6 +80,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -209,11 +211,15 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
 
-    private static <T extends DBSPExpression> T loweredFunction(DBSPCompiler compiler,
-            ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
+    private static JsonDecoder expressionDecoder(ToJsonInnerVisitor writer) {
         var decoder = new JsonDecoder();
         Objects.requireNonNull(writer.liveNodes).forEach(decoder.inner::cache);
-        T function = decoder.decodeInner(result.required("function"), kind);
+        return decoder;
+    }
+
+    private static <T extends DBSPExpression> T loweredFunction(DBSPCompiler compiler,
+            ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
+        T function = expressionDecoder(writer).decodeInner(result.required("function"), kind);
         for (var warning : result.required("warnings"))
             compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
                     warning.required("error_type").textValue(), warning.required("message").textValue());
@@ -241,6 +247,27 @@ public final class RustCircuitPass implements CircuitTransform {
         return tryLowerFunction(compiler, "TryComposeProjection", before, after, DBSPClosureExpression.class);
     }
 
+    public static DBSPClosureExpression composeIndexedJoinOutput(DBSPCompiler compiler,
+            DBSPClosureExpression before, DBSPClosureExpression after) {
+        return lowerFunction(compiler, "ComposeIndexedJoinOutput", before, after, DBSPClosureExpression.class);
+    }
+
+    public static DBSPClosureExpression antijoinProjection(DBSPCompiler compiler,
+            DBSPTypeIndexedZSet input, @Nullable DBSPClosureExpression projection) {
+        return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
+    }
+
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> splitAntijoinProjection(
+            DBSPCompiler compiler, DBSPClosureExpression projection) {
+        var reply = invokeLowering(compiler, "SplitAntijoinProjection", projection, null);
+        var functions = reply.value;
+        if (!functions.isArray() || functions.size() != 2)
+            throw new IllegalStateException("Expected two antijoin projection closures");
+        var decoder = expressionDecoder(reply.writer);
+        return Pair.of(decoder.decodeInner(functions.get(0), DBSPClosureExpression.class),
+                decoder.decodeInner(functions.get(1), DBSPClosureExpression.class));
+    }
+
     @Nullable
     public static DBSPClosureExpression composeIndexedProjection(DBSPCompiler compiler,
             DBSPClosureExpression before, DBSPClosureExpression after, boolean onlyProjections) {
@@ -256,6 +283,18 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable
     private static <T extends DBSPExpression> T tryLowerFunction(DBSPCompiler compiler, String pass,
             IDBSPInnerNode input, @Nullable IDBSPInnerNode second, Class<T> kind) {
+        var reply = invokeLowering(compiler, pass, input, second);
+        if (reply.value.isNull())
+            return null;
+        var function = loweredFunction(compiler, reply.writer, reply.value, kind);
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return function;
+    }
+
+    private record LoweringReply(ToJsonInnerVisitor writer, JsonNode value) {}
+
+    private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass,
+            IDBSPInnerNode input, @Nullable IDBSPInnerNode second) {
         var json = JsonStream.compactCircuit();
         var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
         inner.liveNodes = new HashMap<>();
@@ -267,12 +306,7 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             byte[] reply = transformWithContext(pass, json.toString().getBytes(StandardCharsets.UTF_8),
                     DBSPVariablePath.nextGeneratedName(), "", EMPTY_CONTEXT);
-            var result = MAPPER.readTree(reply);
-            if (result.isNull())
-                return null;
-            var function = loweredFunction(compiler, inner, result, kind);
-            DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
-            return function;
+            return new LoweringReply(inner, MAPPER.readTree(reply));
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid function from Rust pass " + pass, error);
         }

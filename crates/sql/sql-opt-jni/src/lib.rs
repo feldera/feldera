@@ -95,6 +95,10 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
             };
             closure
         }
+        ("ComposeIndexedJoinOutput", [before, after]) => {
+            let before = edit.expression(*before)?;
+            feldera_sql_expr::compose_closures(&mut edit, before, true, *after, Some(&mut warnings))?
+        }
         ("ComposeIndexedProjection" | "TryIndexedProjection", [before, after]) => {
             let Some(closure) = feldera_sql_opt::compose_indexed_projection(
                 &mut edit, *before, *after, pass == "TryIndexedProjection", &mut next, &mut warnings,
@@ -102,6 +106,14 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
                 return Ok(Value::Null);
             };
             closure
+        }
+        ("SplitAntijoinProjection", [closure]) => {
+            let pair = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)?;
+            return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
+        }
+        ("AntijoinProjection", [stream, projection @ ..]) if projection.len() <= 1 => {
+            feldera_sql_opt::antijoin_projection(&mut edit, *stream, projection.first().copied(),
+                &mut next, &mut warnings)?
         }
         ("LowerAggregateFold", [list]) => feldera_sql_opt::lower_aggregate_fold(
             &mut edit, *list, None, &mut next, &mut warnings,
@@ -193,7 +205,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
-        | "ComposeIndexedProjection" | "TryIndexedProjection" => {
+        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection" | "SplitAntijoinProjection" => {
             return lower_function(pass, input, next);
         }
         "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {

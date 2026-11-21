@@ -337,6 +337,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
      *                 The assumption is that C only depends on A, but not on B.
      */
     Pair<DBSPClosureExpression, DBSPClosureExpression> splitClosure(DBSPClosureExpression closure) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.splitAntijoinProjection(this.compiler, closure);
         Utilities.enforce(closure.parameters.length == 1);
         final DBSPParameter param = closure.parameters[0];
         final DBSPTypeRawTuple paramType = param.getType().to(DBSPTypeRawTuple.class);
@@ -386,10 +388,21 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
     }
 
     DBSPClosureExpression keysOnly(DBSPTypeIndexedZSet paramType) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.antijoinProjection(this.compiler, paramType, null);
         DBSPVariablePath var = paramType.getKVRefType().var();
         return new DBSPRawTupleExpression(
                         new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var.field(0).deref()), false),
                         new DBSPTupleExpression()).closure(var);
+    }
+
+    private DBSPClosureExpression projectAntijoinValue(DBSPTypeIndexedZSet input, DBSPClosureExpression projection) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.antijoinProjection(this.compiler, input, projection);
+        DBSPVariablePath pair = input.getKVRefType().var();
+        return new DBSPRawTupleExpression(
+                ExpressionCompiler.expandTuple(projection.getNode(), pair.field(0).deref()),
+                projection.call(pair).reduce(this.compiler)).closure(pair);
     }
 
     /** Replace all references to the (only) free variable with another variable */
@@ -777,11 +790,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
 
                 DBSPClosureExpression proj = operator.getClosureFunction();
                 // We must preserve keys unchanged, but we can project away any values
-                DBSPVariablePath var = left.getOutputIndexedZSetType().getKVRefType().var();
-                DBSPClosureExpression computeValue = new DBSPRawTupleExpression(
-                        ExpressionCompiler.expandTuple(proj.getNode(), var.field(0).deref()),
-                        proj.call(var).reduce(this.compiler)
-                ).closure(var);
+                var computeValue = this.projectAntijoinValue(left.getOutputIndexedZSetType(), proj);
 
                 OutputPort leftPort = left;
                 if (!RemoveIdentityOperators.isIdentityFunction(computeValue)) {

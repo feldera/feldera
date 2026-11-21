@@ -5931,6 +5931,7 @@ dependencies = [
 name = "feldera-sql-opt-jni"
 version = "0.382.0"
 dependencies = [
+ "feldera-sql-expr",
  "feldera-sql-ir",
  "feldera-sql-opt",
  "jni",

@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.DetectShuffle;
@@ -28,6 +29,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Maybe;
 import org.dbsp.util.Utilities;
 
@@ -167,12 +169,26 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         super.postorder(operator);
     }
 
+    private static DBSPClosureExpression composeJoinOutput(
+            DBSPCompiler compiler, DBSPSimpleOperator source, DBSPSimpleOperator projection) {
+        var before = source.getClosureFunction();
+        var after = projection.getClosureFunction();
+        if (!source.outputType.is(DBSPTypeIndexedZSet.class)) {
+            if (compiler.options.ioOptions.rustOptimizerPasses)
+                return RustCircuitPass.composeProjection(compiler, before, after);
+            return after.applyAfter(compiler, before, Maybe.YES);
+        }
+        if (after.parameters.length != 1)
+            throw new InternalCompilerError("Expected closure with 1 parameter", projection);
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.composeIndexedJoinOutput(compiler, before, after);
+        var borrowed = new DBSPRawTupleExpression(before.body.field(0).borrow(), before.body.field(1).borrow());
+        return after.call(borrowed).reduce(compiler).closure(before.parameters);
+    }
+
     static DBSPSimpleOperator mapAfterJoin(
-            DBSPCompiler reporter, DBSPSimpleOperator source, DBSPMapOperator operator) {
-        DBSPClosureExpression joinFunction = source.getClosureFunction();
-        DBSPExpression function = operator.getFunction();
-        DBSPExpression newFunction = function.to(DBSPClosureExpression.class)
-                .applyAfter(reporter, joinFunction, Maybe.YES);
+            DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapOperator operator) {
+        var newFunction = composeJoinOutput(compiler, source, operator);
         return source.withFunction(newFunction, operator.outputType)
                 .copyAnnotations(source)
                 .to(DBSPSimpleOperator.class);
@@ -180,15 +196,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
 
     static DBSPSimpleOperator mapAfterJoinIndex(
             DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapOperator operator) {
-        final DBSPClosureExpression joinFunction = source.getClosureFunction();
-        final DBSPClosureExpression function = operator.getClosureFunction();
-        if (function.parameters.length != 1)
-            throw new InternalCompilerError("Expected closure with 1 parameter", operator);
-        final DBSPExpression argument = new DBSPRawTupleExpression(
-                joinFunction.body.field(0).borrow(),
-                joinFunction.body.field(1).borrow());
-        final DBSPExpression apply = function.call(argument).reduce(compiler);
-        final DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
+        var newFunction = composeJoinOutput(compiler, source, operator);
         final DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
         if (source.is(DBSPJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
@@ -214,11 +222,8 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPSimpleOperator mapIndexAfterJoin(
-            DBSPCompiler reporter, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
-        DBSPExpression function = operator.getFunction();
-        DBSPClosureExpression joinFunction = source.getClosureFunction();
-        DBSPClosureExpression newFunction = function.to(DBSPClosureExpression.class)
-                .applyAfter(reporter, joinFunction, Maybe.YES);
+            DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
+        var newFunction = composeJoinOutput(compiler, source, operator);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
         
@@ -247,16 +252,8 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPSimpleOperator mapIndexAfterJoinIndex(
-            DBSPCompiler reporter, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
-        DBSPClosureExpression joinFunction = source.getClosureFunction();
-        DBSPClosureExpression function = operator.getClosureFunction();
-        if (function.parameters.length != 1)
-            throw new InternalCompilerError("Expected closure with 1 parameter", operator);
-        DBSPExpression argument = new DBSPRawTupleExpression(
-                joinFunction.body.field(0).borrow(),
-                joinFunction.body.field(1).borrow());
-        DBSPExpression apply = function.call(argument).reduce(reporter);
-        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
+            DBSPCompiler compiler, DBSPSimpleOperator source, DBSPMapIndexOperator operator) {
+        var newFunction = composeJoinOutput(compiler, source, operator);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
 
         DBSPJoinBaseOperator join = source.as(DBSPJoinBaseOperator.class);
