@@ -1,14 +1,14 @@
 {
   "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
-  "compiler_sha256": "078c6536add8205e3bf67cfaa5239f209449f77cb0558fab57a0de8e7a79925a",
-  "optimizer_library_sha256": "b3366c4c864c756d4198f8a74b671aa1e90bc816005345fdea2dca20f49b7caf",
-  "compiler_jar_sha256": "3b77703cf182efe31215ff07ddd94a029470ed08684d99868b72de0aaca9518a",
+  "compiler_sha256": "d17d384644fba36cdb8c60c2fb7492a4dadf1dd7371f13a91f53e648588d193c",
+  "optimizer_library_sha256": "720d8ba55ebda5191458f952757f43417e3ea3d05e4fa6960b729de20f8250ee",
+  "compiler_jar_sha256": "3a2281a9958ebf125939d3e296871b479d843d539a98c6b55275b693ec9f9119",
   "programs": {
     "count": {
       "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
       "binary_sha256": {
-        "java": "518d0069f719d0f3716b33a2d700bf6f96a8dfcddf64446a8868a6ab6c31b46b",
-        "hybrid": "99106dac4b29bff6c33ac65fe59d63fb148d835ec043e089629aeed19cdef2fd"
+        "java": "4dbf1eeb33a66832e86acdcc2afbd575609cea4859ae0dd8b2ef45e1269b7c22",
+        "hybrid": "edd8075fe75c9d9e2b30e64748416e15c0cbb7c58160a46bd875b1212aff186e"
       },
       "generated_rust_sha256": {
         "java": "cbebb90de23c0696b251d37e5a2a5280bf6a989c5e60b9a5c35fed084634dbb9",
@@ -19,7 +19,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd4e-a10d-75d0-a2e9-aabe109f1c68",
+          "checkpoint_id": "01a1fd5b-0ee9-78b1-867f-70f9bfe0fa99",
           "restored_count_deltas": [
             [
               1,
@@ -35,7 +35,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd4e-a123-73c2-b6e9-e2f4830f6859",
+          "checkpoint_id": "01a1fd5b-0efc-78c1-aa0a-5c2ed8b7d557",
           "restored_count_deltas": [
             [
               1,
@@ -52,8 +52,8 @@
     "watermark": {
       "program_sha256": "d778579fa74100a0e4408047962393eb19f478b27181c9ec61000a85ada1792a",
       "binary_sha256": {
-        "java": "c5e321e81b3d2bf94be11ae7a3f43e71a3d0f55512688169aeefc0cecce179f5",
-        "hybrid": "87ba3f1ff519c73a08d65072e3dd9f8f3dae68fabaaef137dd4a1907fb5a9fb0"
+        "java": "55bb324c04900a409fc54a717a3b7374967c9ee287e812785599b85c386d0a30",
+        "hybrid": "caa6379188f91716a17ede7064198c66d8f73944d369844956a66dba4d9d69f9"
       },
       "generated_rust_sha256": {
         "java": "152aabc67cdc00b9a310d77632ebee7c4f4a36ee7eabd3d1d10090d5255e32f7",
@@ -64,7 +64,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd4f-2a24-7dd1-b253-488e2226a4fe",
+          "checkpoint_id": "01a1fd5b-8980-75e0-958e-28c9b8229196",
           "restored_count_deltas": [
             [
               1,
@@ -81,7 +81,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd4f-2a3c-7ab0-bb2c-c31f03de0521",
+          "checkpoint_id": "01a1fd5b-8995-7762-8791-dc560e979377",
           "restored_count_deltas": [
             [
               1,
