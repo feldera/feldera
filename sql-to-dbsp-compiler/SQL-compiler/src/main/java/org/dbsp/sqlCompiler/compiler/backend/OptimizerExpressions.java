@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -33,7 +34,7 @@ import java.util.Set;
 
 /** Project the inner roots a pass inspects, preserving shared expression and type identities. */
 final class OptimizerExpressions {
-    enum Roots { INITIALIZERS, INDEX_TYPES, DECLARED_FUNCTIONS }
+    enum Roots { INITIALIZERS, INDEX_TYPES, DECLARED_FUNCTIONS, FILTER_PREDICATES }
 
     private OptimizerExpressions() {}
 
@@ -159,7 +160,8 @@ final class OptimizerExpressions {
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
         json.label("declarations").beginArray();
         for (var declaration : circuit.declarations) {
-            if (roots != Roots.INDEX_TYPES && declaration.item instanceof DBSPFunctionItem) {
+            if ((roots == Roots.INITIALIZERS || roots == Roots.DECLARED_FUNCTIONS)
+                    && declaration.item instanceof DBSPFunctionItem) {
                 json.beginObject().appendClass(declaration).label("id").append(declaration.id);
                 declaration.accept(inner);
                 json.endObject();
@@ -177,6 +179,10 @@ final class OptimizerExpressions {
         for (var op : operators) {
             if (op instanceof DBSPNestedOperator nested) {
                 writeOperators(nested.getAllOperators(), roots, inner);
+            } else if (roots == Roots.FILTER_PREDICATES && op instanceof DBSPFilterOperator filter) {
+                json.beginObject().appendClass(filter).label("id").append(filter.id).label("function");
+                filter.getFunction().accept(inner);
+                json.endObject();
             } else if (roots == Roots.INDEX_TYPES &&
                     (op instanceof DBSPMapIndexOperator || op instanceof DBSPFlatMapIndexOperator)) {
                 json.beginObject().appendClass(op).label("id").append(op.id).label("outputType");

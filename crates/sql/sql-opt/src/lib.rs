@@ -156,7 +156,7 @@ pub use function_calls::{
 };
 pub use gen2::gen2_passes;
 pub use hints::{check_hints, HintDiagnostic};
-pub use hoist_filters::decompose_expensive_filters;
+pub use hoist_filters::{decompose_expensive_filters, filters_need_decomposition};
 pub use hop::expand_hop;
 pub use identity::{identity_closure, remove_identity_operators};
 pub use incrementalize::incrementalize;

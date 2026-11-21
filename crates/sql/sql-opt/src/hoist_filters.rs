@@ -153,19 +153,18 @@ fn insert_unary(
     })
 }
 
-fn decompose(
+struct Decomposition {
+    parameter: NodeId,
+    name: String,
+    predicate: Predicate,
+    values: Vec<NodeId>,
+}
+
+fn analyze_predicate(
     edit: &mut CircuitEditor,
-    body: NodeId,
-    id: NodeId,
-    names: &mut u64,
+    fun: NodeId,
     warnings: &mut Vec<SimplifyWarning>,
-) -> Result<Option<(NodeId, OutputPort)>, Error> {
-    let filter = edit.node(id)?;
-    let input = filter
-        .inputs()
-        .next()
-        .ok_or_else(|| Error::new("filter requires an input"))?;
-    let fun = filter.edge("function")?;
+) -> Result<Option<Decomposition>, Error> {
     let function = simplify_closure_with_warnings(edit, fun, Some(warnings))?;
     let closure = edit.node(function)?;
     let original = closure.edge("body")?;
@@ -179,7 +178,6 @@ fn decompose(
         .and_then(|n| n.as_str())
         .ok_or_else(|| Error::new("unnamed filter parameter"))?
         .to_owned();
-    let reference = edit.type_id(parameter.edge("type")?)?;
     let mut hoisted = Hoisted::default();
     let predicate = hoisted.collect(edit, original, std::slice::from_ref(&name), 0)?;
     if hoisted.values.is_empty()
@@ -187,16 +185,57 @@ fn decompose(
     {
         return Ok(None);
     }
+    Ok(Some(Decomposition {
+        parameter: param,
+        name,
+        predicate,
+        values: hoisted.values,
+    }))
+}
+
+/// A snapshot of the filter closures suffices when the pass would leave the
+/// graph unchanged. Replay warnings on the full graph to preserve their locations and order.
+pub fn filters_need_decomposition(circuit: Circuit) -> Result<bool, Error> {
+    let filters = circuit.root().edges("allOperators")?;
+    let mut edit = CircuitEditor::new(circuit);
+    let mut warnings = Vec::new();
+    for id in filters {
+        let function = edit.node(id)?.edge("function")?;
+        if analyze_predicate(&mut edit, function, &mut warnings)?.is_some() || !warnings.is_empty()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn decompose(
+    edit: &mut CircuitEditor,
+    body: NodeId,
+    id: NodeId,
+    names: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<(NodeId, OutputPort)>, Error> {
+    let filter = edit.node(id)?;
+    let input = filter
+        .inputs()
+        .next()
+        .ok_or_else(|| Error::new("filter requires an input"))?;
+    let Some(plan) = analyze_predicate(edit, filter.edge("function")?, warnings)? else {
+        return Ok(None);
+    };
+    let param = plan.parameter;
+    let reference = edit.type_id(edit.node(param)?.edge("type")?)?;
     let row_type = edit.type_id(edit.node(reference.into())?.edge("type")?)?;
     let width = edit.node(row_type.into())?.edges("tupFields")?.len();
-    let path = edit.named_variable(reference, &name)?;
+    let path = edit.named_variable(reference, &plan.name)?;
     let original_fields = |edit: &mut CircuitEditor, var| {
         (0..width)
             .map(|i| row_field(edit, var, i))
             .collect::<Result<Vec<_>, Error>>()
     };
     let mut fields = original_fields(edit, path)?;
-    for computed in hoisted.values {
+    for computed in plan.values {
         fields.push(edit.expression(computed)?);
     }
     let widened = edit.tuple_expr(id, false, &fields)?;
@@ -215,7 +254,7 @@ fn decompose(
 
     let borrowed = edit.reference_type(widened_type)?;
     let row = edit.variable(borrowed, names)?;
-    let predicate = predicate.rewrite(edit, row, width)?;
+    let predicate = plan.predicate.rewrite(edit, row, width)?;
     let prefix = original_fields(edit, row)?;
     let original_row = edit.tuple_with_type_at(id, row_type, &prefix)?;
     let argument = edit.borrow_value(original_row)?;

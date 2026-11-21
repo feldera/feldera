@@ -393,6 +393,9 @@ fn transform(
         let calls = serde_json::from_slice::<Vec<(String, usize)>>(state)?;
         return Ok(json!({"needs_full_snapshot": feldera_sql_opt::may_inline_udfs(circuit, &calls)?}));
     }
+    if pass == "DecomposeExpensiveFilters/Predicates" {
+        return Ok(json!({"needs_full_snapshot": feldera_sql_opt::filters_need_decomposition(circuit)?}));
+    }
     if pass == "MultisetAnalysis" {
         let facts = feldera_sql_opt::stream_multiplicities(&circuit)?;
         return Ok(multiplicities(facts));

@@ -100,6 +100,14 @@ request bytes from 135,781,212 to 120,454,899 and reply bytes from 22,830,197
 to 11,459,152 across 325 calls for Nexmark. The four compiler artifacts and
 the result manifest matched byte for byte. [Paired capture](evidence/p3-retained-relations.json)
 
+On Nexmark, sending the filter predicates reduced the input to
+`DecomposeExpensiveFilters` from 2,597,371 bytes across two requests to 89,873
+bytes in one request. Median filter-pass time fell from 739 ms to 15 ms over six
+alternating pairs. The next pass requiring a full snapshot, `PropagateEmptySources`,
+rose from 262 ms to 798 ms. The sum of timed pass calls had medians of 7.16 s
+and 7.01 s respectively. All twelve compiles produced byte-identical artifacts and
+result manifests. [Paired filter profiles](evidence/p3-filter-predicate-profile.json)
+
 On the same Nexmark input, the UDF and array-aggregate eligibility checks reduced
 request bytes from 120,454,899 to 114,217,010. The candidate made 323 calls
 against 325 for the baseline. All five files matched. [JNI byte counts](evidence/p3-aggregate-udf-probes.json)

@@ -1,0 +1,138 @@
+{
+  "scope": "Six alternating pairs of fresh JVMs compiling Nexmark on Linux ARM64 CPU 15. Both arms use the same packaged tools and override the timed Java adapter. Other compiler replays ran concurrently. Pass times include JNI, serialization and JVM warmup.",
+  "baseline": "Topology probe then full live circuit",
+  "candidate": "Only filter predicates unless a rewrite or warning requires the full graph",
+  "optimizer_library_sha256": "7bb141406da369758c7f757cc9ef90ef45a3290fe1f7e85a03afee35aba992af",
+  "sql_sha256": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+  "artifacts_sha256": {
+    "result.json": "0f33e6df1825223ad0c6e0aa47860fd23e310dd1582531ffde77a02be52c1573",
+    "circuit.rs": "5e13416c53dcdf4d39df9037c39f3f34ea22fd953c58db1cbcd6636620101d08",
+    "schema.json": "92ecfeae102c932e484feb3702a9cee9318f472c51fa1c362e4be5ac734a7c86",
+    "dataflow.json": "c6ea063c6b3d6737ce025f9a70d74d61b9a24ab0de0825042ea94fa2c756b3c9",
+    "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+  },
+  "profiles": {
+    "full": {
+      "samples": [
+        {
+          "filter_ms": 824.762558,
+          "empty_sources_ms": 265.406532,
+          "all_timed_passes_ms": 7754.73944,
+          "filter_request_bytes": {
+            "Topology/DecomposeExpensiveFilters": 47604,
+            "Live/DecomposeExpensiveFilters": 2549767
+          }
+        },
+        {
+          "filter_ms": 630.757243,
+          "empty_sources_ms": 235.491445,
+          "all_timed_passes_ms": 7230.820794,
+          "filter_request_bytes": {
+            "Topology/DecomposeExpensiveFilters": 47604,
+            "Live/DecomposeExpensiveFilters": 2549767
+          }
+        },
+        {
+          "filter_ms": 850.435977,
+          "empty_sources_ms": 267.134699,
+          "all_timed_passes_ms": 7087.13239,
+          "filter_request_bytes": {
+            "Topology/DecomposeExpensiveFilters": 47604,
+            "Live/DecomposeExpensiveFilters": 2549767
+          }
+        },
+        {
+          "filter_ms": 698.292917,
+          "empty_sources_ms": 258.256156,
+          "all_timed_passes_ms": 6902.949452,
+          "filter_request_bytes": {
+            "Topology/DecomposeExpensiveFilters": 47604,
+            "Live/DecomposeExpensiveFilters": 2549767
+          }
+        },
+        {
+          "filter_ms": 778.845136,
+          "empty_sources_ms": 297.142452,
+          "all_timed_passes_ms": 7261.212675,
+          "filter_request_bytes": {
+            "Topology/DecomposeExpensiveFilters": 47604,
+            "Live/DecomposeExpensiveFilters": 2549767
+          }
+        },
+        {
+          "filter_ms": 655.564746,
+          "empty_sources_ms": 254.350406,
+          "all_timed_passes_ms": 7086.42102,
+          "filter_request_bytes": {
+            "Topology/DecomposeExpensiveFilters": 47604,
+            "Live/DecomposeExpensiveFilters": 2549767
+          }
+        }
+      ],
+      "median_ms": {
+        "filter_ms": 738.5690265000001,
+        "empty_sources_ms": 261.831344,
+        "all_timed_passes_ms": 7158.976592
+      }
+    },
+    "filters": {
+      "samples": [
+        {
+          "filter_ms": 14.905669,
+          "empty_sources_ms": 866.478772,
+          "all_timed_passes_ms": 8000.5358,
+          "filter_request_bytes": {
+            "DecomposeExpensiveFilters/Predicates": 89873
+          }
+        },
+        {
+          "filter_ms": 17.098877,
+          "empty_sources_ms": 783.97993,
+          "all_timed_passes_ms": 6861.73708,
+          "filter_request_bytes": {
+            "DecomposeExpensiveFilters/Predicates": 89873
+          }
+        },
+        {
+          "filter_ms": 14.933377,
+          "empty_sources_ms": 767.308801,
+          "all_timed_passes_ms": 6802.968605,
+          "filter_request_bytes": {
+            "DecomposeExpensiveFilters/Predicates": 89873
+          }
+        },
+        {
+          "filter_ms": 18.197294,
+          "empty_sources_ms": 812.880723,
+          "all_timed_passes_ms": 6619.384708,
+          "filter_request_bytes": {
+            "DecomposeExpensiveFilters/Predicates": 89873
+          }
+        },
+        {
+          "filter_ms": 12.850543,
+          "empty_sources_ms": 708.992836,
+          "all_timed_passes_ms": 7611.621052,
+          "filter_request_bytes": {
+            "DecomposeExpensiveFilters/Predicates": 89873
+          }
+        },
+        {
+          "filter_ms": 15.585751,
+          "empty_sources_ms": 839.662601,
+          "all_timed_passes_ms": 7157.055245,
+          "filter_request_bytes": {
+            "DecomposeExpensiveFilters/Predicates": 89873
+          }
+        }
+      ],
+      "median_ms": {
+        "filter_ms": 15.259564000000001,
+        "empty_sources_ms": 798.4303265,
+        "all_timed_passes_ms": 7009.396162499999
+      }
+    }
+  },
+  "archive": ".bench-results/p3-filter-predicate-profile/2026-20-11-23-59-c5c80",
+  "compiler_jar_sha256": "88f3af009c5d3bdb27ee38b2ba4db69338e466e054c4fce70223e7c6ca234581"
+}
