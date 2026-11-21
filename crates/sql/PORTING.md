@@ -708,13 +708,14 @@ disabled, Rust returns unused table IDs and Java reports the warnings in
 declaration order. Rust uses the compiler's canonical error-view name when
 deciding which views to preserve.
 
-Rust and Java selected the same shared projections across 50,274 analysis invocations.
-Rust selected 747 producer groups on classic and 801 on Gen-2. The comparison
-covered the readers, their field paths and the depth of each projection.
-Java constructs the closures. Rust inserts the shared map or index and rewrites its
-readers. The replacement changed 512 graphs per engine across the same 50,274
-invocations. [Analysis](evidence/p3-find-common-projections.json) ·
-[Graph replacement](evidence/p3-replace-common-projections.json)
+Rust selected 747 shared projection groups on classic and 801 on Gen-2. It builds
+the producer's projection and rebinds each reader to the narrower row. For a
+nullable row it preserves the unwrap before the field access. The first reader
+determines the type shared by the group. Across all 50,274 invocations, the
+producer and reader closures matched Java, including their references into the
+entry circuit, and the allocator and graph matched after replacement. The
+replacement changed 512 graphs per engine. [Selection](evidence/p3-find-common-projections.json) ·
+[Closure comparisons](evidence/p3-shared-projection-closures.json) · [Graph replacement](evidence/p3-replace-common-projections.json)
 
 Rust rebinds both ASOF retention predicates to the concrete join's ordered value
 type and preserves each waterline input. All nine placements per engine changed

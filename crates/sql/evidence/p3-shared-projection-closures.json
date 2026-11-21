@@ -1,0 +1,81 @@
+{
+  "scope": "Compare the shared producer and reader closures in their entry circuit, the generated names, diagnostics and the graph after replacement. Both JVMs resumed the same frozen S2 for each case.",
+  "pass_name": "ReplaceCommonProjections",
+  "oracle_sha256": "fafbcea5e3a231d29a38072f50c8b3911d161a8b43ebabb7b124fac53247fa7c",
+  "jar_sha256": "dadc09588f36dde1eed2b4ff89dcc77c09b45b7bcbd3f869ebe9077754cb068d",
+  "optimizer_library_sha256": "7e0179b22117bdb5e0285dcf1b4d0a513ae5d8bd02ae1b3d7137ebe940c642a3",
+  "comparator_sha256": "f6c5b54b1b6b1c01a9d95ba1f0cc75770e7c225c64e1f6eb47e5b8bec5a000e2",
+  "engines": {
+    "classic": {
+      "cases": 8571,
+      "invocations": 25214,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "shards": [
+        {
+          "cases": 2143,
+          "invocations": 6247,
+          "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+          "control_sha256": "d59945037a8c9c5e7018888231b56360c9e91845cd20a4443c2eff257eab6fad",
+          "candidate_sha256": "75ac41948e8f0cf33c65a42186c3d27c3709afde0733de8810f437200a3732ca"
+        },
+        {
+          "cases": 2143,
+          "invocations": 6386,
+          "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+          "control_sha256": "dfbbfa2525c1df50f4a765767de88dcd7c837caed8d708e6a8b3f44a1f8230e3",
+          "candidate_sha256": "a4ea1728faec4c36237626da89bd1f02234ba5b19c19da1dcba203bba38d5c2c"
+        },
+        {
+          "cases": 2143,
+          "invocations": 6222,
+          "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+          "control_sha256": "9ad7533d7a1f80135ef3c930fe3db1873bf1f3d3da23949793d752230493eb6e",
+          "candidate_sha256": "5ef4ddf5ded057218bcee56dcea19e4b0a613484f8bae4d935008b4e7fb991fc"
+        },
+        {
+          "cases": 2142,
+          "invocations": 6359,
+          "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+          "control_sha256": "31c8e753e97e5edcbb9fdae28ba78b981abdf4cc889b0ebede2031f3e14b9e2d",
+          "candidate_sha256": "b4e78235e5c6bbaebe5c371881dd5f4b927f4839d20b1946df192d2f08b8d47e"
+        }
+      ]
+    },
+    "gen2": {
+      "cases": 8527,
+      "invocations": 25060,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "shards": [
+        {
+          "cases": 2132,
+          "invocations": 6408,
+          "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+          "control_sha256": "df7c1502d22b40c449b7be1f81a64ce53635d77c946d30d64c8a5c3c5b4df098",
+          "candidate_sha256": "0dd88f88826c48be7a39b3669ff37f61a5f042597a47e1d3c61df80059cfc2fb"
+        },
+        {
+          "cases": 2132,
+          "invocations": 6156,
+          "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+          "control_sha256": "e1a0a2d4915624db2c490232034848f8dfa6dacc2660e73d395f33d094f39024",
+          "candidate_sha256": "2ab273962272a6081459aec1fc1544a1efdda789ccc136c8b109d3c6513eeb32"
+        },
+        {
+          "cases": 2132,
+          "invocations": 6266,
+          "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+          "control_sha256": "c4d800e94014389e723c222cf7ec95062190a12f07bd092dfbaab6c47a790f15",
+          "candidate_sha256": "803536e968350ed757727b6d551de055dfc655c1f1ea801d9d90f794555c1f28"
+        },
+        {
+          "cases": 2131,
+          "invocations": 6230,
+          "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+          "control_sha256": "708b9d4a00084444dcf526c29fa749774a2df18e7cde4135a4d1d5f8e7853501",
+          "candidate_sha256": "e484adc2fbe349f6c67a78de6943c8f306d8d01b079d3eccec4b8dd8efe598e9"
+        }
+      ]
+    }
+  },
+  "total_invocations": 50274
+}
