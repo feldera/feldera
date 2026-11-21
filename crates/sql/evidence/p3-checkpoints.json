@@ -1,7 +1,7 @@
 {
   "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
-  "compiler_sha256": "b13e9577462db18740aed2b836e3f47b5f0d10fcbbfec4e8acc92fb4990a75c7",
-  "optimizer_library_sha256": "d275782b9af444194b8c53f5b21d0cf168d950e30552f9f163daf677f3f3fce9",
+  "compiler_sha256": "1d016ed83c28ee70068c85ea3419f760f339ed5dee1b9281692475223324ed9c",
+  "optimizer_library_sha256": "2316209ac4dd71db024a3096c5b8bc0cc1e34036d59034c37251ce02f0d0e55e",
   "compiler_jar_sha256": "294b0990a007b9e7ae7790fb24159bbb234c2244467a056f64a82544588a5ced",
   "programs": {
     "count": {
@@ -19,7 +19,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd42-122b-7f51-be99-df5a109b1f62",
+          "checkpoint_id": "01a1fd46-2340-78f2-a8b6-db6b3e80b1c8",
           "restored_count_deltas": [
             [
               1,
@@ -35,7 +35,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd42-123f-7eb2-96e5-9d450746c830",
+          "checkpoint_id": "01a1fd46-2356-7a82-9095-c8d1ba67206f",
           "restored_count_deltas": [
             [
               1,
@@ -64,7 +64,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd42-93a4-7b43-879c-14eb199fa99d",
+          "checkpoint_id": "01a1fd46-a22f-7383-a43b-0fb3126b330c",
           "restored_count_deltas": [
             [
               1,
@@ -81,7 +81,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fd42-93bb-7f91-b6da-05ffd919855b",
+          "checkpoint_id": "01a1fd46-a245-7610-ac4a-0f1dfe316284",
           "restored_count_deltas": [
             [
               1,
