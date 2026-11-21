@@ -155,13 +155,13 @@
       runtimeConfig: {
         title: `Runtime configuration`,
         editorClass: 'h-[40vh]',
-        filePath: `file://pipelines/${pipeline.current.name}/RuntimeConfig.json`,
+        filePath: `file://pipelines/${pipeline.current.id}/RuntimeConfig.json`,
         readOnlyMessage: configDisabledMessage
       },
       programConfig: {
         title: `Compilation configuration`,
         editorClass: 'h-24',
-        filePath: `file://pipelines/${pipeline.current.name}/ProgramConfig.json`,
+        filePath: `file://pipelines/${pipeline.current.id}/ProgramConfig.json`,
         readOnlyMessage: configDisabledMessage
       }
     }}

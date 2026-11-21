@@ -15,7 +15,7 @@
   import type { ECMouseEvent } from 'svelte-echarts'
   import { Chart } from 'svelte-echarts'
   import { resourceSizeBytes, timeSeriesAxisMax } from '#lib/functions/pipelineMetrics.ts'
-  import type { Pipeline } from '#lib/services/pipelineManager.ts'
+  import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
   import type { TimeSeriesEntry } from '#lib/types/pipelineManager.ts'
   import type { Snippet } from '#lib/types/svelte.ts'
 
@@ -25,7 +25,7 @@
     keepMs,
     headerAction
   }: {
-    pipeline: { current: Pipeline }
+    pipeline: { current: ExtendedPipeline }
     metrics: TimeSeriesEntry[]
     refetchMs: number
     keepMs: number
@@ -40,7 +40,8 @@
     TooltipComponent
   ])
 
-  const pipelineName = $derived(pipeline.current.name)
+  // Key the chart by id, so a rename does not recreate the chart
+  const pipelineId = $derived(pipeline.current.id)
 
   // Anchor the time axis to the newest sample's timestamp rather than to the
   // client clock.
@@ -225,7 +226,7 @@
   </div>
   <!-- The chart takes only the height left under the title, so its axis labels stay inside the card. -->
   <div class="min-h-0 flex-1">
-    {#key pipelineName}
+    {#key pipelineId}
       <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
     {/key}
   </div>
