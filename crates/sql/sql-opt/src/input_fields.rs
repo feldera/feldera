@@ -1,6 +1,7 @@
 //! Identify the source rows that a single consumer can trim and the fields it reads.
+use crate::row_fields::RowFields;
 use crate::stream_rewrites::{body_members, reader_counts};
-use feldera_sql_ir::{BodyOrder, Circuit, Error, NodeId, OperatorKind as Op};
+use feldera_sql_ir::{BodyOrder, Circuit, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub fn input_projections(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
@@ -45,11 +46,13 @@ pub fn input_field_uses(circuit: &Circuit) -> Result<Vec<InputFieldUse>, Error> 
         .collect()
 }
 
-/// Map closure IDs to the input paths used by one unused-field iteration.
+/// Record the paths to retain for each closure with unused fields. A fully used
+/// input has a null layout, distinct from a constant reader with no paths.
 /// The caller supplies a distinct closure for each root in the sparse circuit.
-pub fn map_field_dependencies(
-    circuit: &Circuit,
-) -> Result<BTreeMap<u64, BTreeSet<Vec<usize>>>, Error> {
+pub type MapInputLayouts = BTreeMap<u64, Option<BTreeSet<Vec<usize>>>>;
+
+pub fn map_field_dependencies(circuit: &Circuit) -> Result<MapInputLayouts, Error> {
+    let mut fields = RowFields::new(circuit);
     circuit
         .root()
         .edges("allOperators")?
@@ -62,10 +65,24 @@ pub fn map_field_dependencies(
             let NodeId::Inner(number) = function else {
                 return Err(Error::new("expected an inner map closure"));
             };
-            Ok((
-                number,
-                feldera_sql_expr::input_field_paths(circuit, function)?,
-            ))
+            let paths = feldera_sql_expr::input_field_paths(circuit, function)?;
+            let [param] = circuit
+                .node(function)
+                .expect("validated closure")
+                .edges("parameters")?
+                .try_into()
+                .map_err(|_| Error::new("expected a unary map"))?;
+            let ty = circuit
+                .node(param)
+                .expect("validated parameter")
+                .edge("type")?;
+            let borrowed = matches!(
+                circuit.node(ty).and_then(|n| n.inner_kind()),
+                Some(InnerKind::Type(TypeKind::Ref))
+            );
+            let depth = if borrowed { 1 } else { 2 };
+            let unused = fields.unused(ty, &mut Vec::new(), &paths, depth, 0)?;
+            Ok((number, unused.then_some(paths)))
         })
         .collect()
 }

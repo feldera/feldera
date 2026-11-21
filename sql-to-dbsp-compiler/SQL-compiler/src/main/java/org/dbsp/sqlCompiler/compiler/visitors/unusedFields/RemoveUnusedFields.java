@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
+import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
@@ -52,6 +53,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
+
+import javax.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -521,151 +524,78 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
-        if (operator.hasAnnotation(a -> a.is(IsProjection.class))
-                || !operator.getFunction().is(DBSPClosureExpression.class)
-                || this.done(operator, operator.getClosureFunction())) {
-            // avoid infinite recursion
+        if (!(operator.getFunction() instanceof DBSPClosureExpression) || !this.splitMap(operator))
             super.postorder(operator);
-            return;
-        }
-
-        DBSPClosureExpression closure = operator.getClosureFunction();
-        Utilities.enforce(closure.parameters.length == 1);
-        var useMap = this.mapFieldUse(closure);
-        int size = closure.getType().getToplevelFieldCount();
-
-        if (operator.input().outputType().is(DBSPTypeZSet.class)) {
-            if (!useMap.hasUnusedFields(1)) {
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 1);
-            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 1);
-
-            if (EquivalenceContext.equiv(closure, projection) ||
-                    EquivalenceContext.equiv(closure, compressed)) {
-                // This optimization achieves nothing
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-            OutputPort source = this.mapped(operator.input());
-            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
-                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            this.addOperator(adjust);
-
-            DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getRelNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
-            this.map(operator, result);
-        } else {
-            if (!useMap.hasUnusedFields(2)) {
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-            // closure = compressed \circ projection
-            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 2);
-            if (EquivalenceContext.equiv(closure, compressed)) {
-                // This optimization achieves nothing
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-
-            OutputPort source = this.mapped(operator.input());
-            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 2);
-            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
-                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            this.addOperator(adjust);
-            DBSPSimpleOperator result = new DBSPMapOperator(
-                    operator.getRelNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
-            this.map(operator, result);
-        }
     }
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
-        // almost identical to the Map case
-        if (operator.hasAnnotation(a -> a.is(IsProjection.class))
-                || this.done(operator, operator.getClosureFunction())) {
-            // avoid infinite recursion
+        if (!this.splitMap(operator))
             super.postorder(operator);
-            return;
-        }
+    }
 
-        DBSPClosureExpression closure = operator.getClosureFunction();
-        Utilities.enforce(closure.parameters.length == 1);
-        var useMap = this.mapFieldUse(closure);
-        int size = closure.getType().getToplevelFieldCount();
-
-        if (operator.input().outputType().is(DBSPTypeZSet.class)) {
-            if (!useMap.hasUnusedFields(1)) {
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 1);
-            OutputPort source = this.mapped(operator.input());
-            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 1);
-            if (EquivalenceContext.equiv(compressed, closure)) {
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-
-            DBSPSimpleOperator adjust = new DBSPMapOperator(operator.getRelNode(), projection, source)
-                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            this.addOperator(adjust);
-
-            DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
-            this.map(operator, result);
+    private boolean splitMap(DBSPUnaryOperator map) {
+        if (map.hasAnnotation(a -> a.is(IsProjection.class)) || this.done(map, map.getClosureFunction()))
+            return false;
+        var closure = map.getClosureFunction();
+        boolean indexedInput = !map.input().outputType().is(DBSPTypeZSet.class);
+        boolean indexedOutput = map instanceof DBSPMapIndexOperator;
+        Pair<DBSPClosureExpression, DBSPClosureExpression> split;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var paths = this.nativeMapFields.get(closure.id);
+            split = paths == null ? null : RustCircuitPass.splitMapInput(this.compiler, map, paths);
         } else {
-            if (!useMap.hasUnusedFields(2)) {
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-            // closure = compressed \circ projection
-            DBSPClosureExpression projection = this.projectMapInput(closure, useMap, 2);
-            if (EquivalenceContext.equiv(closure, projection) ||
-                    EquivalenceContext.equiv(closure, projection)) {
-                // This optimization achieves nothing
-                this.noUnusedFields(closure);
-                super.postorder(operator);
-                return;
-            }
-
-            DBSPClosureExpression compressed = this.rebindMapInput(closure, useMap, 2);
-            OutputPort source = this.mapped(operator.input());
-            DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
-                    .copyAnnotations(operator)
-                    .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
-            this.addOperator(adjust);
-            DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
-            this.map(operator, result);
+            split = this.splitMapClosure(closure, indexedInput, indexedOutput);
         }
+        if (split == null) {
+            this.noUnusedFields(closure);
+            return false;
+        }
+        var source = this.mapped(map.input());
+        DBSPSimpleOperator adjust = indexedInput
+                ? new DBSPMapIndexOperator(map.getRelNode(), split.left, source)
+                : new DBSPMapOperator(map.getRelNode(), split.left, source);
+        if (indexedInput && indexedOutput)
+            adjust.copyAnnotations(map);
+        adjust.addAnnotation(new IsProjection(closure.getType().getToplevelFieldCount()), DBSPSimpleOperator.class);
+        this.addOperator(adjust);
+        DBSPSimpleOperator result = indexedOutput
+                ? new DBSPMapIndexOperator(map.getRelNode(), split.right, map.getOutputIndexedZSetType(), adjust.outputPort())
+                : new DBSPMapOperator(map.getRelNode(), split.right, map.getOutputZSetType(), adjust.outputPort());
+        this.map(map, result);
+        return true;
     }
 
-    private DBSPClosureExpression projectMapInput(DBSPClosureExpression closure, ParameterFieldUse use, int depth) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.narrowMapInput(this.compiler, closure, this.nativeMapFields.get(closure.id), true);
-        return Objects.requireNonNull(use.get(closure.parameters[0]).getProjection(depth));
-    }
-
-    private DBSPClosureExpression rebindMapInput(DBSPClosureExpression closure, ParameterFieldUse use, int depth) {
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.narrowMapInput(this.compiler, closure, this.nativeMapFields.get(closure.id), false);
-        return use.getFieldRewriter(this.compiler, depth).rewriteClosure(closure);
-    }
-
-    private ParameterFieldUse mapFieldUse(DBSPClosureExpression closure) {
-        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
-            return this.find.findUsedFields(closure);
-        var paths = Objects.requireNonNull(this.nativeMapFields.get(closure.id));
-        return ParameterFieldUse.fromPaths(closure.parameters[0], paths);
+    /** Keep the allocation order of each input and output stream combination. */
+    @Nullable
+    private Pair<DBSPClosureExpression, DBSPClosureExpression> splitMapClosure(
+            DBSPClosureExpression closure, boolean indexedInput, boolean indexedOutput) {
+        Utilities.enforce(closure.parameters.length == 1);
+        var use = this.find.findUsedFields(closure);
+        int depth = indexedInput ? 2 : 1;
+        if (!use.hasUnusedFields(depth))
+            return null;
+        var rewriter = use.getFieldRewriter(this.compiler, depth);
+        var fields = rewriter.getUseMap(closure.parameters[0]);
+        DBSPClosureExpression projection;
+        DBSPClosureExpression reader;
+        if (indexedInput != indexedOutput) {
+            reader = rewriter.rewriteClosure(closure);
+            if (indexedInput && EquivalenceContext.equiv(closure, reader))
+                return null;
+            projection = Objects.requireNonNull(fields.getProjection(depth));
+            if (indexedOutput && EquivalenceContext.equiv(reader, closure))
+                return null;
+        } else {
+            projection = Objects.requireNonNull(fields.getProjection(depth));
+            if (indexedInput && EquivalenceContext.equiv(closure, projection))
+                return null;
+            reader = rewriter.rewriteClosure(closure);
+            if (!indexedInput && (EquivalenceContext.equiv(closure, projection)
+                    || EquivalenceContext.equiv(closure, reader)))
+                return null;
+        }
+        return Pair.of(projection, reader);
     }
 
     @Override

@@ -341,14 +341,15 @@ public final class RustCircuitPass implements CircuitTransform {
         return function;
     }
 
-    public static DBSPClosureExpression narrowMapInput(DBSPCompiler compiler, DBSPClosureExpression closure,
-            List<List<Integer>> paths, boolean projection) {
+    @Nullable
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> splitMapInput(DBSPCompiler compiler,
+            DBSPUnaryOperator map, List<List<Integer>> paths) {
         try {
-            var reply = invokeLowering(compiler, projection ? "ProjectMapInput" : "RebindMapInput",
-                    MAPPER.writeValueAsBytes(paths), closure);
-            var function = loweredFunction(compiler, reply.writer, reply.value, DBSPClosureExpression.class);
+            String pass = map instanceof DBSPMapIndexOperator ? "SplitIndexedMapInput" : "SplitRowMapInput";
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(paths), map.getClosureFunction());
             DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-            return function;
+            var functions = reply.value.required("functions");
+            return functions.isNull() ? null : decodeClosurePair(new LoweringReply(reply.writer, functions));
         } catch (IOException error) {
             throw new UncheckedIOException("Could not encode map input fields", error);
         }

@@ -232,6 +232,10 @@ impl RowProjection {
         components.iter().any(|part| part.used.contains(&false))
     }
 
+    pub(super) fn is_indexed(&self) -> bool {
+        matches!(self.element, Element::Indexed(_))
+    }
+
     pub(super) fn input_width(&self) -> usize {
         match &self.element {
             Element::Row(row) => row.used.len(),
@@ -324,28 +328,6 @@ impl RowProjection {
         )?;
         edit.expression(result)
     }
-}
-
-/// Construct one half of the map split at the point where the pass needs it.
-/// An indexed map reader can reject the compressed closure before requesting
-/// the projection, which leaves the generated-name counter untouched.
-pub fn narrow_map_input(
-    edit: &mut CircuitEditor,
-    reader: NodeId,
-    paths: &BTreeSet<Vec<usize>>,
-    next: &mut u64,
-    part: MapInputClosure,
-) -> Result<ExpressionId, Error> {
-    let layout = RowProjection::new(edit, reader, paths)?;
-    match part {
-        MapInputClosure::Projection => layout.project(edit, next, !paths.is_empty()),
-        MapInputClosure::Reader => layout.rebind(edit, reader),
-    }
-}
-
-pub enum MapInputClosure {
-    Projection,
-    Reader,
 }
 
 struct Rebind<'a> {

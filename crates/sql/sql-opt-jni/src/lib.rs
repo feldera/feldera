@@ -101,14 +101,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
-        ("ProjectMapInput" | "RebindMapInput", [reader]) => {
-            let paths = serde_json::from_slice(state)?;
-            let part = if pass == "ProjectMapInput" {
-                feldera_sql_opt::MapInputClosure::Projection
+        ("SplitRowMapInput" | "SplitIndexedMapInput", [reader]) => {
+            let output = if pass == "SplitIndexedMapInput" {
+                feldera_sql_opt::MapOutput::Indexed
             } else {
-                feldera_sql_opt::MapInputClosure::Reader
+                feldera_sql_opt::MapOutput::Row
             };
-            feldera_sql_opt::narrow_map_input(&mut edit, *reader, &paths, &mut next, part)?
+            let paths = serde_json::from_slice(state)?;
+            let pair = feldera_sql_opt::split_map_input(&mut edit, *reader, &paths, output, &mut next)?;
+            let functions = pair.map(|roots| edit.circuit().additional_expressions(&arena, &roots)).transpose()?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
         }
         ("ProjectUnnest", [flatmap, reader]) => {
             let Some(function) = feldera_sql_opt::project_unnest(&mut edit, *flatmap, *reader)? else {
@@ -255,7 +257,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "ProjectMapInput" | "RebindMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {
