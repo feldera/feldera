@@ -1,5 +1,6 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
+mod shared_indexes;
 mod temporal;
 use feldera_sql_ir::{BodyOrder, Circuit, Field, NodeId, OutputPort};
 use jni::{
@@ -182,15 +183,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
-        ("SharedIndexes/Keys", [left, right]) => {
-            let left = feldera_sql_opt::index_key(&mut edit, *left, &mut next, &mut warnings)?;
-            let right = feldera_sql_opt::index_key(&mut edit, *right, &mut next, &mut warnings)?;
-            let functions = edit.circuit().additional_expressions(&arena, &[left, right])?;
-            return Ok(json!({"functions": functions, "next_generated_name": next,
-                "warnings": warnings.into_iter().map(|w| json!({
-                    "range": w.position, "error_type": w.kind, "message": w.message,
-                })).collect::<Vec<_>>()}));
-        }
         ("RewriteNow/ClockIndex", [timestamp]) => {
             let timestamp = edit.type_id(*timestamp)?;
             feldera_sql_opt::clock_index(&mut edit, timestamp, &mut next)?
@@ -541,7 +533,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "SharedIndexes/Keys" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
+        "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "WindowGroups/ReorderPredicate"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
@@ -639,10 +631,6 @@ fn transform(
     }
     if pass == "Topology/FindSharedIndexes" {
         return Ok(json!(feldera_sql_opt::shared_index_payloads(&circuit)?));
-    }
-    if pass == "FindSharedIndexes" {
-        let edit = feldera_sql_ir::CircuitEditor::new(circuit);
-        return Ok(json!(feldera_sql_opt::shared_index_candidates(&edit)?));
     }
     if pass == "Topology/FindCommonProjections" {
         return Ok(json!(feldera_sql_opt::common_projection_payloads(

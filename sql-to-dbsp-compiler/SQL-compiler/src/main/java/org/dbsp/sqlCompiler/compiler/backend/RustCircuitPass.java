@@ -1449,14 +1449,12 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static boolean sameIndexKey(DBSPCompiler compiler, DBSPClosureExpression left, DBSPClosureExpression right) {
-        var reply = invokeLowering(compiler, "SharedIndexes/Keys", left, right);
-        var keys = loweredClosurePair(reply);
-        for (var warning : reply.value.required("warnings"))
-            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
-                    warning.required("error_type").textValue(), warning.required("message").textValue());
-        return keys.left.equivalent(keys.right);
+    @FunctionalInterface
+    private interface KeyEquality {
+        boolean equivalent(byte[] closures) throws IOException;
     }
+
+    private static native byte[] discoverIndexes(byte[] snapshot, long next, byte[] visited, KeyEquality equality);
 
     private void findSharedIndexes(DBSPCircuit circuit, long next, FindSharedIndexes find) throws IOException {
         var details = OptimizerTopology.Details.SHARED_INDEXES;
@@ -1464,9 +1462,19 @@ public final class RustCircuitPass implements CircuitTransform {
         var selected = MAPPER.convertValue(payloads, new TypeReference<Set<Long>>() {});
         if (selected.isEmpty())
             return;
-        var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, details);
-        var result = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8), next, EMPTY_CONTEXT);
-        find.collect(MAPPER.treeToValue(result, FindSharedIndexes.CandidateInput[].class), operatorsById(circuit));
+        var writer = OptimizerTopology.selectedForRewrite(this.compiler, circuit, selected, details);
+        byte[] result = discoverIndexes(writer.getJsonString().getBytes(StandardCharsets.UTF_8), next,
+                MAPPER.writeValueAsBytes(find.visitedIds()), bytes -> {
+                    var keys = decodeClosurePair(new LoweringReply(writer.innerVisitor, MAPPER.readTree(bytes)));
+                    return keys.left.equivalent(keys.right);
+                });
+        var state = MAPPER.readTree(result);
+        find.record(MAPPER.treeToValue(state.required("groups"), FindSharedIndexes.IndexReader[][].class),
+                MAPPER.treeToValue(state.required("visited"), long[].class), operatorsById(circuit));
+        for (var warning : state.required("warnings"))
+            this.compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
+                    warning.required("error_type").textValue(), warning.required("message").textValue());
+        DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
     }
 
     private void findCommonProjections(DBSPCircuit circuit, long next, FindCommonProjections analysis) throws IOException {

@@ -850,12 +850,19 @@ order, preserving nullable casts between successive partitions. All 133
 active `Reorder` boundaries matched the saved Java reference.
 [Temporal conjunction comparisons](evidence/p3-temporal-conjunction.json)
 
-Rust identifies indexes with one eligible consumer and a decomposable value.
-It partitions them by the producer output port and value nullability, then
-builds the key closures that Java compares. Across both frozen populations,
+The initial Rust analysis identified indexes with one eligible consumer and a decomposable value.
+It partitioned them by the producer output port and value nullability, then
+built the key closures for Java to compare. Across both frozen populations,
 the ordered groups, visited indexes, name counters and diagnostics matched
 at all 17,098 boundaries. The 813 groups contained 2,266 index inputs.
 [Shared-index candidate comparisons](evidence/p3-shared-index-candidates.json)
+
+Rust now selects the ordered groups and compares their keys, including
+temporal arithmetic, session-window ordering and calls with generic path
+arguments. The standalone optimizer matched the same 17,098 Java observations
+and all 2,431 key comparisons ran without invoking the JVM. In the live
+compiler, Java can compare expression forms outside the native comparator.
+[Standalone and live shared-index results](evidence/p3-shared-index-groups.json)
 
 Rust now finds clock calls in the predicate itself and combines residual
 conditions using the typed expression builders. Java supplies the monotonicity

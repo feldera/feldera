@@ -424,6 +424,28 @@ fn compare_invocation(
             let groups = serde_json::from_value::<Vec<_>>(invocation["groups"].clone())?;
             feldera_sql_opt::implement_window_groups(input, &groups, &mut next)?
         }
+        "FindSharedIndexes" => {
+            let previous = serde_json::from_value(invocation["previously_visited_indexes"].clone())?;
+            let mut edit = feldera_sql_ir::CircuitEditor::new(input.clone());
+            let found = feldera_sql_opt::find_shared_indexes(&mut edit, &previous, &mut next, |edit, keys| {
+                let kinds = keys.map(|key| {
+                    edit.node(key.into()).and_then(|node| node.edge("body"))
+                        .and_then(|id| Ok(edit.node(id)?.class()))
+                });
+                Err(feldera_sql_ir::Error::new(format!("key equivalence needs Java for {kinds:?}")))
+            })?;
+            let groups: Vec<Vec<_>> = found.groups.into_iter().map(|group| group.into_iter()
+                .map(|r| json!([r.index, r.consumer, r.slot])).collect()).collect();
+            let warnings: Vec<_> = found.warnings.into_iter().map(|w| json!({
+                "range":w.position, "error_type":w.kind, "message":w.message,
+                "warning":true, "continuation":false,
+            })).collect();
+            if json!(groups) != invocation["candidate_indexes"] || json!(found.visited) != invocation["visited_indexes"]
+                || json!(warnings) != invocation["diagnostics"] {
+                return Err(format!("shared-index groups, visited indexes or diagnostics differ at invocation {index}").into());
+            }
+            input
+        }
         "FindMapChains" => {
             let expected: Vec<Vec<u64>> = serde_json::from_value(invocation["map_chains"].clone())?;
             let expected: Vec<Vec<_>> = expected

@@ -1,0 +1,112 @@
+{
+  "scope": "Rust groups index inputs under their row parameter bindings, preserves visited indexes, and accounts for both generated projection parameters per comparison. The standalone replay treats a request for Java equivalence as a failure. The live comparison checks the original pass placement, entry and exit circuits, ordered candidate triples, visited indexes, generated names and diagnostics.",
+  "compiler_jar_sha256": "b45aca2433d2d33a6cc435186a22530bbfcb841af6de4b15cdd6d543a436399b",
+  "optimizer_library_sha256": "3bc5c19dc09b73838aeb54844a413881a86177fb57d416fd922c998d260f30af",
+  "java_reference_jar_sha256": "114e57290e9442a87ddadb0e64ecd30a3292ed434b848bdcd50bdf9f2cdbb888",
+  "shards": [
+    {
+      "shard": "classic-0",
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "cases": 2143,
+      "matched": 2143,
+      "programs_with_groups": 44,
+      "groups": 70,
+      "group_members": 186,
+      "key_comparisons": 181,
+      "java_observations_gzip_sha256": "d7e846e56fac1fcc38f6906e556d5528c13e170022093a06930b9387e6c80078",
+      "hybrid_observations_gzip_sha256": "f672ea03c4fbb1aae8a6df71eb0dcb348f537f5d191242fc30f88a638f5e0a4c",
+      "standalone_results_sha256": "60974c3abc739bc1acd8c0d3f8134bc8558f6029186b7d3a807200666617516d"
+    },
+    {
+      "shard": "classic-1",
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "cases": 2143,
+      "matched": 2143,
+      "programs_with_groups": 56,
+      "groups": 80,
+      "group_members": 238,
+      "key_comparisons": 261,
+      "java_observations_gzip_sha256": "7e7647db2021fdd54bf7193c165121c48529b9c0a0c8347a829cab1c1cff3bd7",
+      "hybrid_observations_gzip_sha256": "17481493cba37cd89f1d9182a75f8fc0053332e6147eb70c9edcdff3998fba14",
+      "standalone_results_sha256": "58e110e3acb73005e1b339ac3b7f74aa9b932d28f6da166c2cd0dd4e2375d743"
+    },
+    {
+      "shard": "classic-2",
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "cases": 2143,
+      "matched": 2143,
+      "programs_with_groups": 52,
+      "groups": 116,
+      "group_members": 286,
+      "key_comparisons": 306,
+      "java_observations_gzip_sha256": "965229e5c0f66f7c0e113a7e82fac59fb30723230aaac89761e4a9742ee0a207",
+      "hybrid_observations_gzip_sha256": "1b570feb6972a8ec38021e2ebfdef7a968248591f489197455efeda9a0365ef5",
+      "standalone_results_sha256": "e5f2c80984ea99e7db9fcc78822ededa7c05ae4bef679a447aa8a1885042f487"
+    },
+    {
+      "shard": "classic-3",
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "cases": 2142,
+      "matched": 2142,
+      "programs_with_groups": 50,
+      "groups": 117,
+      "group_members": 372,
+      "key_comparisons": 356,
+      "java_observations_gzip_sha256": "72321c0ca749a497ac9c74ee1a9f40708fd6704d0e0a18753859b09b167bb0bb",
+      "hybrid_observations_gzip_sha256": "4765b8e40bc925f71df807549bc48b2c1b82ed7bfc3b08eec46408e93f77ae74",
+      "standalone_results_sha256": "b8d0a6c0905a2bc5f8c4e7f24b63359ae2764870114fdc066e13de0d02d539ab"
+    },
+    {
+      "shard": "gen2-0",
+      "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+      "cases": 2132,
+      "matched": 2132,
+      "programs_with_groups": 60,
+      "groups": 92,
+      "group_members": 240,
+      "key_comparisons": 294,
+      "java_observations_gzip_sha256": "5f24a655c68693281698692221e51a4faf030354c7371d77fc5440e140486d76",
+      "hybrid_observations_gzip_sha256": "23d0b8b0b0d807359213774647882fc883b972e44c26504df3a44627c5433fdd",
+      "standalone_results_sha256": "477c35bbf58acc82e66aeb5f6aa39ac11634595719b732e70dadf5cd2fbd0cf8"
+    },
+    {
+      "shard": "gen2-1",
+      "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+      "cases": 2132,
+      "matched": 2132,
+      "programs_with_groups": 59,
+      "groups": 116,
+      "group_members": 367,
+      "key_comparisons": 431,
+      "java_observations_gzip_sha256": "1f677b6e6b6d485e79b760b14cf4fa6b004868e6127d0060d77843392dae61b4",
+      "hybrid_observations_gzip_sha256": "c934e8db5b6fb9eb52c12500e2dfc4cad11bc1bab1551c4025f9ed12abbc9f89",
+      "standalone_results_sha256": "0dd1b60a756e49c64cf45f6a5062ef30e0b727c5cfcc5b089cdcbfb9a54b81aa"
+    },
+    {
+      "shard": "gen2-2",
+      "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+      "cases": 2132,
+      "matched": 2132,
+      "programs_with_groups": 58,
+      "groups": 129,
+      "group_members": 307,
+      "key_comparisons": 322,
+      "java_observations_gzip_sha256": "d6ed6143d416654b6bb7abbcc1b772a40f0430c12b1054c4b1ff8e6c781248cd",
+      "hybrid_observations_gzip_sha256": "e5931ac80bccd59c32fcefaa415904ac0e32b506fd6e867a6f91888f4e968eeb",
+      "standalone_results_sha256": "2ec6ea0eb99ab8241f37561b11f44673d74ea4b737aa746c0c067c2b0eb00b57"
+    },
+    {
+      "shard": "gen2-3",
+      "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+      "cases": 2131,
+      "matched": 2131,
+      "programs_with_groups": 66,
+      "groups": 93,
+      "group_members": 270,
+      "key_comparisons": 280,
+      "java_observations_gzip_sha256": "81d543592d03ed4323bc622abcffa216aa20bfdd924a62bc4d2c152e2f0090ba",
+      "hybrid_observations_gzip_sha256": "4b2b48ade8eef2632910b37fec6c31745fdd8a5d3f51fd35594093f0e0664f5d",
+      "standalone_results_sha256": "3575bcfe2ca53d3e089c4f9e01fee7f160d28a390d458b11ff2d411edef84596"
+    }
+  ]
+}
