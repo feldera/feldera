@@ -764,6 +764,12 @@ failed in direct Java before the fixes. The corrected Java and mixed compilers
 agree on schema, diagnostics, final S3, persistent-ID inputs and emitted artifacts.
 [Input trimming comparisons](evidence/p3-trim-inputs.json) · [Upstream fix](https://github.com/feldera/feldera/pull/8035)
 
+In temporal filter analysis, Rust chooses which filters share each window input.
+Java classifies the temporal expressions and supplies their source fingerprints.
+Detached replay matched direct Java on all 71 classic and 62 Gen-2 programs in
+the frozen population that ran temporal filter splitting, including competing
+timestamps across views. [Temporal input selection](evidence/p3-temporal-input-selection.json)
+
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations
 across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,

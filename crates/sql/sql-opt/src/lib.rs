@@ -95,8 +95,8 @@ mod waterline;
 mod window_groups;
 
 pub use window_groups::{
-    implement_window_groups, qualifying_window_groups, shared_window_fields, window_candidates,
-    WindowFields, WindowProjection,
+    implement_window_groups, qualifying_window_groups, shared_temporal_inputs, shared_window_fields,
+    window_candidates, TemporalCandidate, WindowFields, WindowProjection,
 };
 
 pub use aggregate_groups::{aggregate_groups, AggregateKind};

@@ -151,6 +151,14 @@ fn transform(
                 feldera_sql_opt::shared_window_fields(&fields),
             )?);
         }
+        "WindowGroups/TemporalInputs" => {
+            let filters: Vec<Vec<feldera_sql_opt::TemporalCandidate>> =
+                serde_json::from_slice(input)?;
+            let threshold = serde_json::from_slice(state)?;
+            return Ok(json!(feldera_sql_opt::shared_temporal_inputs(
+                &filters, threshold
+            )));
+        }
         _ => {}
     }
     let circuit = if live.is_some() {

@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Conditional;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -410,6 +411,32 @@ public class ReorderTemporalFilters extends Passes {
         public void endVisit() {
             int threshold = this.compiler().metadata.windowSharingThreshold();
             this.chosenConjunct.clear();
+            int sharedInputs = this.compiler().options.ioOptions.rustOptimizerPasses
+                    ? this.chooseWithRust(threshold) : this.chooseWithJava(threshold);
+            Logger.INSTANCE.belowLevel(this, 1)
+                    .append("Shared window inputs: ")
+                    .append(sharedInputs)
+                    .append(", filters sharing them: ")
+                    .append(this.chosenConjunct.size())
+                    .newline();
+            super.endVisit();
+        }
+
+        private int chooseWithRust(int threshold) {
+            if (this.candidates.isEmpty())
+                return 0;
+            var filters = List.copyOf(this.candidates.keySet());
+            var inputs = this.candidates.values().stream().map(keys -> keys.entrySet().stream()
+                    .map(entry -> new RustCircuitPass.TemporalCandidate(entry.getKey(), entry.getValue()))
+                    .toList()).toList();
+            var groups = RustCircuitPass.sharedTemporalInputs(inputs, threshold);
+            for (var group : groups)
+                for (var member : group)
+                    Utilities.putNew(this.chosenConjunct, filters.get(member[0]), member[1]);
+            return groups.length;
+        }
+
+        private int chooseWithJava(int threshold) {
             // Group filters by fingerprint
             Map<String, Set<DBSPFilterOperator>> byFingerprint = new LinkedHashMap<>();
             for (Map.Entry<DBSPFilterOperator, Map<String, Integer>> filter : this.candidates.entrySet())
@@ -445,13 +472,7 @@ public class ReorderTemporalFilters extends Passes {
                 byFingerprint.remove(mostUsedFingerprint);
                 sharedInputs++;
             }
-            Logger.INSTANCE.belowLevel(this, 1)
-                    .append("Shared window inputs: ")
-                    .append(sharedInputs)
-                    .append(", filters sharing them: ")
-                    .append(this.chosenConjunct.size())
-                    .newline();
-            super.endVisit();
+            return sharedInputs;
         }
     }
 

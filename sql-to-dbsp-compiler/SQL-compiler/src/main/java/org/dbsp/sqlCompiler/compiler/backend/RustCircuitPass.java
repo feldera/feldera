@@ -191,6 +191,19 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
 
+    public record TemporalCandidate(String fingerprint, int conjunct) {}
+
+    /** Each sharing group contains pairs of filter and conjunct ordinals. */
+    public static int[][][] sharedTemporalInputs(List<List<TemporalCandidate>> candidates, int threshold) {
+        try {
+            byte[] reply = transformWithContext("WindowGroups/TemporalInputs", MAPPER.writeValueAsBytes(candidates),
+                    0, "", MAPPER.writeValueAsBytes(threshold));
+            return MAPPER.readValue(reply, int[][][].class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid temporal filter groups from the Rust optimizer", error);
+        }
+    }
+
     /** Indexes of the aggregate implementations that can share each operator. */
     public static List<List<Integer>> aggregateGroups(List<IAggregate> aggregates, boolean appendOnly) {
         var kinds = aggregates.stream().map(a -> a.getClass().getSimpleName()).toList();

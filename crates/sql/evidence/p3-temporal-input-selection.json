@@ -1,0 +1,57 @@
+{
+  "scope": "Select shared window inputs from the source fingerprints produced by Java. Directed SQL-to-artifact replay includes every frozen program that invoked temporal filter splitting on the retained-relation build. The Java control ran from SQL and the mixed candidate from detached S2.",
+  "jni_sha256": "53e45268acbc8e161a158890e2e2ba691b8c8af90dfca852a7a251687ea5c2db",
+  "control_jar_sha256": "93ad1ab49570bc4a00b0a5d8d6ad170ec5377e115eafbffb34caf2935459ceb9",
+  "candidate_overlay": {
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$1.class": "f1aa889507cb3b8b6e8c7fb946dcc86f7fcde681dc9fee7ad6b7ff9215a4bd02",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$2.class": "8cf09628be7c44787f258ec5fa2f5395d937000b2decb018fd0833895ade1ae1",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$3.class": "a9b85f76329af090bb7fd600c840bb415d6bc538c53c832316ba1a8ed4b060ac",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$4.class": "eed65253db05c773ddc2f900bc23a57d06ef8a4b768a430222bf6ac6bc2a0b35",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$5.class": "298ff7c934137eeccb8fa705d0d2739a1e294600bb8e5e73e76cf7b4a07710ca",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$6.class": "567c65aa98241ec710e6f2977854f26dcdc040ffb4fe71751ad2163db4bb0ccb",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$7.class": "f2d408c956e46a1db65a8fe01c64e3776d9a0bf758f6ba940a4ad2e5187fd766",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$InputFieldUse.class": "e65c7a2f4036ca77878898c44f79fc3be063e7995bf55caf0053cc3f8fecfdd9",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$OwnedOperator.class": "58b4d68615b98fe96335b4f82da2c97a6269184c970b713796d2c24e84dfd2f5",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$SharedProjection.class": "d90bf9992dcf46b443c14d2df8b1adcfa7c22dbf1fe42cddad4d541fa00e4b35",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$StateFinding.class": "10633127c65fc41f6d492508337b3a8c29d9c1abe2e84bd0412386e663f00eea",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass$TemporalCandidate.class": "89898d8bf26da5ffc5042f874302409c669aac4b7e4a48508b3fe6b1487d800c",
+    "org/dbsp/sqlCompiler/compiler/backend/RustCircuitPass.class": "49cc68d1b9a7ad7d59436a5116988c047edf34fb0c10a2c1ca746dc555dabebe",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$FilterOrderPolicy.class": "ded36f5c7f93a7bbaeb27f652af3df193f5553b84c3062da0b748bf44ed60443",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$PortAndClosure.class": "7382d35acf607ad8f9d58c1eceab3e559acbdad48d02c0526d54ac146e513a5f",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$PortAndClosureFingerprint.class": "37d227f9d483a88e75c98d669cfa5b142c0bbabd87101bf67d90ff99c8375d88",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$Reorder.class": "235d7386f16ed1c7d2b4b32691fdca03086fef043afae218d7447258c6745c9b",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$Scan.class": "d74dbe8e7367268b9a7e9a37cff3e9431de1674730ae83af214955e8535f19e5",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters$SourceAndMaps.class": "e73f19c991ddaff07e6a8788509905a089f6356e06d5afe53bc29b6e40c5ae3c",
+    "org/dbsp/sqlCompiler/compiler/visitors/outer/temporal/ReorderTemporalFilters.class": "ae6ffb6186246c691117e44553adeb8156e0303206ef49f650aec4148f7e51f1"
+  },
+  "classic": {
+    "cases": 71,
+    "mismatches": 0,
+    "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+    "shards": [
+      {
+        "manifest_sha256": "3c20ffe0810491b66fbf3b7879e82996091406d34a9f5dde39f335e67f521278",
+        "records_sha256": "612b14c129c16da841024a8e4f67aadbe89c9cee31a0118fcec47361b9c6dec9"
+      },
+      {
+        "manifest_sha256": "4e5e0458a6a107b0e0143e6daaf1e7f6f337335540f66293a9777602d052ce18",
+        "records_sha256": "c15a5eec77269e8b8f39e06f621e7c4b7087ab6b325e49507f97cdc4a19f5b6c"
+      }
+    ]
+  },
+  "gen2": {
+    "cases": 62,
+    "mismatches": 0,
+    "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+    "shards": [
+      {
+        "manifest_sha256": "a960c6c14fc5da2f2df05fc286461d84ded0343cb9a167c7ad1d9b3dcf336285",
+        "records_sha256": "9832edea9db021fbae403dbd882a680589e1788a4873f921f3544aad226b1ddb"
+      },
+      {
+        "manifest_sha256": "9b73aac69e5333320417369da2e02a1c66c2910554ce046dedeb6e72cefac15a",
+        "records_sha256": "e7667cabaa9a46918f3f150f1a114fa39795a75957e77295676fd53634ab4b37"
+      }
+    ]
+  }
+}
