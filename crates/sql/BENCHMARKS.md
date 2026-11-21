@@ -76,6 +76,13 @@ for each node’s fields reduced the median streaming decode from 22.48 ms to
 ratio of mean process medians was 0.654–0.672. Both decoders produced the same
 serialized circuit. [Decoder header measurements](evidence/p3-decoder-headers.json)
 
+Writing the Nexmark S3 checkpoint with compact JSON reduced its size from
+3,491,925 to 2,624,668 bytes. The median of seven JVM medians was 186.2 ms
+with formatted JSON and 156.7 ms with compact JSON on CPU 12. The paired
+95% bootstrap interval for the ratio of mean write times was 0.759–0.892.
+Each pair produced equal decoded checkpoints.
+[Checkpoint write measurements](evidence/p3-checkpoint-write.json)
+
 On Nexmark, the five read-only expression analyses can omit replay metadata,
 and the two retention analyses can compare unrelated policies from the operator
 graph alone. In a paired capture on the 97-pass build, request traffic at the

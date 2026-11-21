@@ -120,13 +120,13 @@ public final class CircuitReplay {
                 entry.set("range", late.range().asJson());
             }
         }
-        JsonStream settings = new JsonStream(new IndentStream(new StringBuilder()), true);
+        JsonStream settings = JsonStream.compactCircuit();
         compiler.metadata.writeSettings(new ToJsonInnerVisitor(compiler, settings, 1));
         result.putRawValue("settings", new RawValue(settings.toString()));
         StringBuilder plans = new StringBuilder();
         var planIds = compiler.getPlans(new IndentStream(plans));
         result.putRawValue("calcite_plan", new RawValue(plans.toString()));
-        ToJsonOuterVisitor writer = ToJsonOuterVisitor.createForReplay(compiler, planIds, new java.util.HashMap<>());
+        ToJsonOuterVisitor writer = ToJsonOuterVisitor.createForCheckpoint(compiler, planIds);
         writer.apply(circuit);
         if (writer.innerVisitor.serialized.contains(compiler.weightVar.getId()))
             weight.put("node", compiler.weightVar.getId());

@@ -1,0 +1,50 @@
+{
+  "scope": "Write a standalone classic S3 checkpoint from an already optimized Nexmark circuit to a new file. The timer covers CircuitReplay.write. Each independent JVM writes two warmups and seven measured checkpoints on one pinned devcontainer CPU. Consecutive pairs alternate the writer order. Structural equality was checked after every pair.",
+  "compiler_commit": "bdfd42c48",
+  "workspace_archive": ".bench-results/p3-checkpoint-write/2026-21-11-06-10-bdfd4",
+  "pinned_cpu": 12,
+  "alternating_pairs": 7,
+  "measured_writes_per_jvm": 7,
+  "warmup_writes_per_jvm": 2,
+  "bytes": {
+    "baseline": 3491925,
+    "candidate": 2624668
+  },
+  "median_ms": {
+    "baseline": 186.200814,
+    "candidate": 156.704238
+  },
+  "per_jvm_median_ms": {
+    "baseline": [
+      228.137797,
+      179.742297,
+      186.200814,
+      174.439033,
+      193.128206,
+      193.540332,
+      181.084176
+    ],
+    "candidate": [
+      162.401627,
+      156.12132,
+      151.194056,
+      171.820818,
+      156.704238,
+      173.008322,
+      128.143122
+    ]
+  },
+  "ratio_of_mean_medians": 0.8227314230268373,
+  "paired_bootstrap_95pct_interval": [
+    0.7586914933515333,
+    0.8923535770457425
+  ],
+  "bootstrap_seed": 42,
+  "input_sha256": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+  "jar_sha256": {
+    "baseline": "2012b0a83fe5552cc83c194a006e8b6dc55bb9b0d9b41393eb6d53fbcdd2d6b4",
+    "candidate": "8eabaf6dc821fdee010a3de4a4c5e3d98b4d62bdf0752a08e2af6813c8e5d605"
+  },
+  "changes_sha256": "cbf74773e6a6ce0918d1c68c87f3a8b8affe4e2904f2551b87feb04e42b46a0b",
+  "environment_sha256": "3fcefca1533d137e46911ad36e4e706c65c7004a51de32b6a2cb3877c1710701"
+}

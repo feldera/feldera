@@ -87,14 +87,21 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     /** Calcite allocates correlation names while printing SQL. A series of snapshots must
      * reuse the rendering of each relation to preserve its provenance between passes. */
     public static ToJsonOuterVisitor createForReplay(DBSPCompiler compiler, Map<RelReference, String> renderedSql) {
-        return createForReplay(compiler, compiler.getPlans(new NullIndentStream()), renderedSql);
+        var writer = create(compiler, 1, true);
+        writer.provenance = new ProvenanceCodec.Encoder(compiler, compiler.getPlans(new NullIndentStream()), renderedSql);
+        return writer;
     }
 
-    static ToJsonOuterVisitor createForReplay(DBSPCompiler compiler, Map<RelNode, Integer> plans,
-                                               Map<RelReference, String> renderedSql) {
-        ToJsonOuterVisitor writer = create(compiler, 1, true);
-        writer.provenance = new ProvenanceCodec.Encoder(compiler, plans, renderedSql);
+    /** Standalone checkpoints include full provenance and use compact JSON for transport. */
+    static ToJsonOuterVisitor createForCheckpoint(DBSPCompiler compiler, Map<RelNode, Integer> plans) {
+        var writer = compactWriter(compiler);
+        writer.provenance = new ProvenanceCodec.Encoder(compiler, plans, new HashMap<>());
         return writer;
+    }
+
+    private static ToJsonOuterVisitor compactWriter(DBSPCompiler compiler) {
+        var inner = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 1, true);
+        return new ToJsonOuterVisitor(compiler, 1, inner);
     }
 
     /** The front end has finished building the SQL plans before this optimizer starts.
@@ -112,8 +119,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         public ToJsonOuterVisitor writer() {
             if (this.plans == null)
                 this.plans = this.compiler.getPlans(new NullIndentStream());
-            var inner = new ToJsonInnerVisitor(this.compiler, JsonStream.compactCircuit(), 1, true);
-            var writer = new ToJsonOuterVisitor(this.compiler, 1, inner);
+            var writer = compactWriter(this.compiler);
             writer.retainProgramMetadata = true;
             writer.innerVisitor.liveShuffles = new HashMap<>();
             writer.retainedRelations = new ArrayList<>();
