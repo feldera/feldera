@@ -50,9 +50,9 @@ Path prefixes used in this document:
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 99 pass kinds
   in Rust. All 8,256 classic executable cases passed on the temporal-ordering build. Java still runs the
-  remaining passes. With the UDF and aggregate eligibility checks, the SQL-to-artifact
-  p95 exceeded the 1.2× ceiling on the array subquery (1.231× direct Java), Nexmark
-  (2.222×) and the outer join (1.337×). The owner confirmed that
+  remaining passes. The ASOF retainer build met the 1.2× SQL-to-artifact p95
+  ceiling on the outer join (1.176× direct Java). The array subquery (1.419×)
+  and Nexmark (2.275×) exceeded it. The owner confirmed that
   the field-shadow gate stays open until qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across

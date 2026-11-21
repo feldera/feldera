@@ -1,0 +1,57 @@
+{
+  "scope": "LowerAsof entry, exit and generated names on frozen SQL programs with ASOF joins. Each case and implementation ran in a fresh JVM.",
+  "initial_build": {
+    "commit": "fbff97a54",
+    "jar_sha256": "295da9597c697f05869862759a31ac24c6c5058e1bcaaedcb244f48fef84be2b",
+    "batch_first_difference": "ReduceExpressionsTests#asofJoinConstantFold on entry: provenance relation ID",
+    "isolated_first_difference": "SerializationTests#testStreamingOperators on exit: Rank.outputType and Chain.inputType lost sharing",
+    "repeated_isolated_java_controls": {
+      "classic": {
+        "LowerAsof": {
+          "cases": 24,
+          "invocations": 24,
+          "changed_circuits": 24,
+          "control_sha256": "86c592a163236ba630fdc60ceca0714f260c36a328147bbc6a5f3cefb354592e",
+          "candidate_sha256": "be51004d1fa355990ccd8fe5caf5195dd7bcbca2ca062934c9e3d018c4f8834e",
+          "population_sha256": "9fa2c2f35a9ba76c53cb9a560df6132edf0439e775301d901f91aa6b5fd28b3b"
+        }
+      },
+      "gen2": {
+        "LowerAsof": {
+          "cases": 22,
+          "invocations": 22,
+          "changed_circuits": 22,
+          "control_sha256": "18b0da0c4f9ac06100d7d1b204f9e73cc105e09d4429e1ef01e0e45346da9790",
+          "candidate_sha256": "72d1675b9406441a4353686e663624e9ae7d579eff9a5184fdcba1c270866feb",
+          "population_sha256": "7c8876d900bf00625521bb71d8bd0b77b4500bfcc04bb52d0e5e0deb5864db4d"
+        }
+      }
+    }
+  },
+  "repair": "Deserialize RANK using the indexed collection type recorded in the graph.",
+  "jar_sha256": "777825b4f6483f34d172d2ceafb91b743c7500b25af9b6cf08704252648d7e28",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f",
+  "optimizer_library_sha256": "e51f55859a414e30ca7acb9b4f800327095862085e6f0c753da3ea33bc9e817b",
+  "boundaries": {
+    "classic": {
+      "LowerAsof": {
+        "cases": 24,
+        "invocations": 24,
+        "changed_circuits": 24,
+        "control_sha256": "da6efb599ec1e4809addad60c4e71583eee572c6fa29716e3bd98fc2e7ffcd77",
+        "candidate_sha256": "57469e9f73e50ae3dcad73ffe91b6d81574bff04e67d4e860b450bdb58528a64",
+        "population_sha256": "9fa2c2f35a9ba76c53cb9a560df6132edf0439e775301d901f91aa6b5fd28b3b"
+      }
+    },
+    "gen2": {
+      "LowerAsof": {
+        "cases": 22,
+        "invocations": 22,
+        "changed_circuits": 22,
+        "control_sha256": "179cffd8a73a1e1930ef9c28e49c6de24a12105ab3a3d66ec23e84de3ffc506c",
+        "candidate_sha256": "74c6d5294908a4f50098af7a0617a571e59e8d27395bd5201036deae60819005",
+        "population_sha256": "7c8876d900bf00625521bb71d8bd0b77b4500bfcc04bb52d0e5e0deb5864db4d"
+      }
+    }
+  }
+}

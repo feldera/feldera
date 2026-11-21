@@ -14,9 +14,14 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 2.54 | 3.07 | 3.08 | 3.79 | 1.231× |
-| Nexmark suite | 5.91 | 12.96 | 6.67 | 14.82 | 2.222× |
-| Outer join | 2.44 | 2.90 | 2.82 | 3.77 | 1.337× |
+| Correlated array subquery | 1.89 | 2.33 | 2.35 | 3.33 | 1.419× |
+| Nexmark suite | 4.46 | 10.50 | 6.22 | 14.16 | 2.275× |
+| Outer join | 1.85 | 2.21 | 2.53 | 2.98 | 1.176× |
+
+The table measures the ASOF retainer build at `fbff97a54`. All 69 pairs
+passed the stricter public JSON comparison, which checks numeric precision,
+JSON types, duplicate keys and required artifacts. Only the outer join met
+the p95 ceiling. This timing predates the RANK decoder repair.
 
 The UDF and aggregate eligibility build exceeded the 1.2× ceiling on all three workloads. The earlier build with relational snapshots retained in the JVM measured 1.177×, 2.061× and 1.180× in workload order. Before that change, a separate run measured 1.312×, 1.994× and 1.248× in workload order. Host load varied between runs. The 97-pass build measured 1.175×, 1.980× and 1.241× in workload order. The 96-pass build measured 1.290×, 2.367× and 1.171× in workload order.
 The 94-pass build measured 1.303×, 2.693× and 1.230× in workload order. The 91-pass build with live graph encoding reuse measured 1.273×, 2.449× and 1.259×. Before the live codec change, the

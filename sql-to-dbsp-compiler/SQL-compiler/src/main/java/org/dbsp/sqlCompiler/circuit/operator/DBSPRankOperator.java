@@ -37,9 +37,7 @@ public class DBSPRankOperator extends DBSPUnaryOperator
     /** Closure which compares a row with a tuple containing just the sort fields */
     public final DBSPAsymmetricFieldComparatorExpression rankCmpFunc;
 
-    static DBSPType outputType(DBSPTypeIndexedZSet sourceType, @Nullable DBSPClosureExpression outputProducer) {
-        if (outputProducer == null)
-            return sourceType;
+    private static DBSPTypeIndexedZSet outputType(DBSPTypeIndexedZSet sourceType, DBSPClosureExpression outputProducer) {
         return new DBSPTypeIndexedZSet(sourceType.getNode(), sourceType.keyType,
                 outputProducer.getResultType());
     }
@@ -51,7 +49,7 @@ public class DBSPRankOperator extends DBSPUnaryOperator
      * @param numbering       How items in each group are numbered.
      * @param comparator      A {@link DBSPComparatorExpression} used to sort items in each group
      *                        (later could be a {@link DBSPPathExpression} too).
-     * @param outputProducer  Optional function with signature (rank, tuple) which produces the output.
+     * @param outputProducer  Function with signature (rank, tuple) which produces the output.
      * @param rankCmpFunc     Compares the rank of two elements.
      * @param projectionFunc  Projects the input row on the fields used for sorting.
      * @param source          Input operator.
@@ -61,9 +59,19 @@ public class DBSPRankOperator extends DBSPUnaryOperator
                             DBSPAsymmetricFieldComparatorExpression rankCmpFunc,
                             DBSPClosureExpression projectionFunc,
                             DBSPClosureExpression outputProducer, OutputPort source) {
-        super(node, "rank", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer), source);
-        DBSPType valueType = source.getOutputIndexedZSetType().elementType;
+        this(node, numbering, comparator, rankCmpFunc, projectionFunc, outputProducer, source,
+                outputType(source.getOutputIndexedZSetType(), outputProducer));
+    }
+
+    private DBSPRankOperator(CalciteRelNode node, DBSPIndexedTopKOperator.Numbering numbering,
+                             DBSPExpression comparator, DBSPAsymmetricFieldComparatorExpression rankCmpFunc,
+                             DBSPClosureExpression projectionFunc, DBSPClosureExpression outputProducer,
+                             OutputPort source, DBSPTypeIndexedZSet outputType) {
+        super(node, "rank", comparator, outputType, source);
+        DBSPTypeIndexedZSet inputType = source.getOutputIndexedZSetType();
+        DBSPType valueType = inputType.elementType;
+        Utilities.enforce(outputType.keyType.sameType(inputType.keyType));
+        Utilities.enforce(outputType.elementType.sameType(outputProducer.getResultType()));
         this.numbering = numbering;
         this.projectionFunc = projectionFunc;
         this.rankCmpFunc = rankCmpFunc;
@@ -139,7 +147,7 @@ public class DBSPRankOperator extends DBSPUnaryOperator
         DBSPAsymmetricFieldComparatorExpression rankCmpFunc =
                 fromJsonInner(node, "rankCmpFunc", decoder, DBSPAsymmetricFieldComparatorExpression.class);
         return new DBSPRankOperator(CalciteEmptyRel.INSTANCE, numbering,
-                info.getFunction(), rankCmpFunc, projectionFunc, outputProducer, info.getInput(0))
+                info.getFunction(), rankCmpFunc, projectionFunc, outputProducer, info.getInput(0), info.getIndexedZsetType())
                 .addAnnotations(info.annotations(), DBSPRankOperator.class);
     }
 }

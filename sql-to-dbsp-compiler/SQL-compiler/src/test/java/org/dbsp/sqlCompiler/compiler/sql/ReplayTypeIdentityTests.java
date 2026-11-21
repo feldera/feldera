@@ -1,9 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
@@ -16,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
@@ -23,6 +27,28 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class ReplayTypeIdentityTests {
+    @Test public void rankRetainsItsSerializedOutputType() throws Exception {
+        var options = new CompilerOptions();
+        options.languageOptions.incrementalize = true;
+        var compiler = new DBSPCompiler(options);
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t (k INT, v INT);
+                CREATE VIEW ranked AS SELECT k, v, RANK() OVER (PARTITION BY k ORDER BY v) AS r FROM t;
+                """);
+        var circuit = compiler.getFinalCircuit(false);
+        compiler.throwIfErrorsOccurred();
+        var rank = circuit.allOperators.stream().filter(DBSPRankOperator.class::isInstance)
+                .map(DBSPRankOperator.class::cast).findFirst().orElseThrow();
+        var writer = ToJsonOuterVisitor.createForReplay(compiler);
+        writer.apply(circuit);
+        var mapper = Utilities.deterministicObjectMapper();
+        var decoder = new JsonDecoder();
+        decoder.decodeOuter(mapper.readTree(writer.getJsonString()), DBSPCircuit.class);
+        var decodedRank = decoder.decodeOuter(mapper.createObjectNode().put("node", rank.id), DBSPRankOperator.class);
+        var typeReference = mapper.createObjectNode().put("node", rank.outputType.getId());
+        Assert.assertSame(decodedRank.outputType, decoder.decodeInner(typeReference, DBSPTypeIndexedZSet.class));
+    }
+
     private static void preservesSharedResultType(DBSPExpression expression) throws Exception {
         var tuple = new DBSPTupleExpression(expression, expression.getType().var());
         var stream = new JsonStream(new IndentStream(new StringBuilder()));
