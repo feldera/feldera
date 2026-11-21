@@ -174,6 +174,10 @@ fn transform(
     } else {
         Circuit::from_json_bytes(input)?
     };
+    if pass == "UDFInliner/Declarations" {
+        let calls = serde_json::from_slice::<Vec<(String, usize)>>(state)?;
+        return Ok(json!({"needs_full_snapshot": feldera_sql_opt::may_inline_udfs(circuit, &calls)?}));
+    }
     if pass == "MultisetAnalysis" {
         let facts = feldera_sql_opt::stream_multiplicities(&circuit)?;
         return Ok(multiplicities(facts));

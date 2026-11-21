@@ -172,7 +172,7 @@ pub use trace_retention::{
     check_and_prune_retention, duplicate_retention, retention_violation, DuplicateRetention,
     Retained, RetentionViolation,
 };
-pub use udf::inline_udfs;
+pub use udf::{inline_udfs, may_inline_udfs};
 pub use validation::{first_integral, recursive_violation, RecursiveViolation};
 pub use views::{constant_views, remove_views, ViewRemoval};
 pub use waterline::simplify_waterlines;

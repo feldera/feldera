@@ -1,0 +1,31 @@
+{
+  "scope": "Nexmark compile using the 99-pass optimizer. The candidate sends declaration-only UDF eligibility and aggregate result metadata. CPU 12. Both adapters have identical byte-count instrumentation.",
+  "base_commit": "272cd83da9ce7cfb16dec7f1bbc253cac0ce9aae",
+  "baseline_optimizer_commit": "61e9f32fe176da2e412e449a09945fac77957933",
+  "workspace_archive": ".bench-results/p3-jni-traffic/2026-21-11-04-21-272cd",
+  "changes_patch_sha256": "390746279282c36e1d51d29a35f47d344f398649657424bcfe0294124712f77d",
+  "baseline": {
+    "calls": 325,
+    "request_bytes": 120454899,
+    "pass_state_bytes": 132861,
+    "reply_bytes": 11459152,
+    "emitted_files": 5,
+    "emitted_file_hashes_sha256": "142ffd386aec6c1cb6ce6e6a8d6aaca7ddd5dc4a3597033a405283bdf42bd741",
+    "profile_sha256": "43f28e77cfb1732250c339ef87881f6fd96bbaf62d3a83ebd07c4dafefd82380",
+    "jar_sha256": "5c4331cae626695e3b355f57ab5eb8fd1df8ffa31899b3ec7c87c32469f742a9",
+    "jni_sha256": "1ad6b02731084822f6b6abf52f470e53dc1286337bc8173ab303a9549d313057",
+    "driver_sha256": "d9cfa0ffcc93a0320df198349ba75ee51b2884ee2769ab109511fd9a29209918"
+  },
+  "candidate": {
+    "calls": 323,
+    "request_bytes": 114217010,
+    "pass_state_bytes": 132988,
+    "reply_bytes": 11458996,
+    "emitted_files": 5,
+    "emitted_file_hashes_sha256": "142ffd386aec6c1cb6ce6e6a8d6aaca7ddd5dc4a3597033a405283bdf42bd741",
+    "profile_sha256": "b61c998e6a333c58c7f888dd3cc45bda11be2a596faf65a703dc3d796daf5424",
+    "jar_sha256": "e542acc99d1fd25ac6159d692c7420124e04d3aba59223b919d021e7aa533d68",
+    "jni_sha256": "2dcfd617f8f56b6dac3641e2498df34a03372450b24c7fb08b7b16c5cc9d2456",
+    "driver_sha256": "f3cf4588afa43b7b4bc1d63380dc077485feee83876a5e50d8318371ce826c62"
+  }
+}

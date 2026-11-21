@@ -32,7 +32,7 @@ import java.util.Set;
 
 /** Project the inner roots a pass inspects, preserving shared expression and type identities. */
 final class OptimizerExpressions {
-    enum Roots { INITIALIZERS, INDEX_TYPES }
+    enum Roots { INITIALIZERS, INDEX_TYPES, DECLARED_FUNCTIONS }
 
     private OptimizerExpressions() {}
 
@@ -142,14 +142,15 @@ final class OptimizerExpressions {
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
         json.label("declarations").beginArray();
         for (var declaration : circuit.declarations) {
-            if (roots == Roots.INITIALIZERS && declaration.item instanceof DBSPFunctionItem) {
+            if (roots != Roots.INDEX_TYPES && declaration.item instanceof DBSPFunctionItem) {
                 json.beginObject().appendClass(declaration).label("id").append(declaration.id);
                 declaration.accept(inner);
                 json.endObject();
             }
         }
         json.endArray().label("allOperators").beginArray();
-        writeOperators(circuit.getAllOperators(), roots, inner);
+        if (roots != Roots.DECLARED_FUNCTIONS)
+            writeOperators(circuit.getAllOperators(), roots, inner);
         json.endArray().endObject();
         return json.toString().getBytes(StandardCharsets.UTF_8);
     }

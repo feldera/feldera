@@ -1019,6 +1019,11 @@ public final class RustCircuitPass implements CircuitTransform {
                     if (circuit.declarations.stream().noneMatch(decl ->
                             decl.item instanceof DBSPFunctionItem function && function.function.body != null))
                         return circuit;
+                    var functions = OptimizerExpressions.encode(this.compiler, circuit, OptimizerExpressions.Roots.DECLARED_FUNCTIONS);
+                    var calls = OptimizerExpressions.operatorCalls(this.compiler, circuit);
+                    if (!this.invoke("UDFInliner/Declarations", functions, initial, calls)
+                            .required("needs_full_snapshot").booleanValue())
+                        return circuit;
                 }
                 case "SimplifyConditionals", "ExpandSafeCasts", "ExpandUnsafeCasts", "AdjustSqlIndex", "CreateRuntimeErrorWrappers" -> {
                     JsonNode probe = this.invoke("Expressions/" + this.nativeName,
@@ -1060,6 +1065,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         case "StrayGC" -> OptimizerTopology.Details.TRACE_RETENTION;
                         case "ExpandMetadataCasts" -> OptimizerTopology.Details.COLUMN_INITIALIZERS;
                         case "IndexedInputs" -> OptimizerTopology.Details.PRIMARY_KEYS;
+                        case "FuseIntoArrayAgg" -> OptimizerTopology.Details.AGGREGATE_RESULTS;
                         case "PropagateEmptySources" -> OptimizerTopology.Details.EMPTY_LITERALS;
                         case "RemoveConstantFilters" -> OptimizerTopology.Details.FILTER_PREDICATES;
                         default -> OptimizerTopology.Details.NONE;

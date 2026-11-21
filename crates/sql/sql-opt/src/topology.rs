@@ -96,11 +96,13 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
             reads(Op::Differentiate, &[Op::Map, Op::MapIndex]) || has_dead_code(true)?
         }
         "FuseIntoArrayAgg" => {
-            has(&[
-                Op::Aggregate,
-                Op::StreamAggregate,
-                Op::PartitionedRollingAggregate,
-            ]) || has_dead_code(true)?
+            order.iter().any(|&id| {
+                let n = node(id);
+                matches!(
+                    n.operator_kind(),
+                    Some(Op::Aggregate | Op::StreamAggregate | Op::PartitionedRollingAggregate)
+                ) && n.data("hasArrayResult").and_then(|v| v.as_bool()) != Some(false)
+            }) || has_dead_code(true)?
         }
         "PropagateEmptySources" => crate::empty_sources::topology_needs_rewrite(circuit)?,
         "RemoveConstantFilters" => order.iter().any(|&id| {
@@ -173,6 +175,25 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn scalar_aggregate_results_cannot_fuse_with_an_array_reader() {
+        let mut wire = json!({"class":"DBSPCircuit","id":0,"declarations":[], "allOperators":[
+            {"class":"DBSPSourceMultisetOperator","id":1,"inputs":[]},
+            {"class":"DBSPAggregateOperator","id":2,"inputs":[{"operator":{"node":1},"outputNumber":0}]},
+            {"class":"DBSPSinkOperator","id":3,"inputs":[{"operator":{"node":2},"outputNumber":0}]}
+        ]});
+        for (fact, expected) in [(None, true), (Some(true), true), (Some(false), false)] {
+            if let Some(value) = fact {
+                wire["allOperators"][1]["hasArrayResult"] = value.into();
+            }
+            let graph = Circuit::from_json(wire.clone()).unwrap();
+            assert_eq!(
+                needs_full_snapshot("FuseIntoArrayAgg", &graph).unwrap(),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn composites_check_dead_branches_even_when_their_own_pattern_is_absent() {

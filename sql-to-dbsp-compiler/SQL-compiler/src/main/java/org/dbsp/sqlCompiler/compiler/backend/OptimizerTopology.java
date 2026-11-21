@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.JsonStream;
 
 import javax.annotation.Nullable;
@@ -39,7 +40,7 @@ import java.util.Set;
 
 /** Circuit projection for passes that read only operator kinds, edges and annotations. */
 final class OptimizerTopology {
-    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, COLUMN_INITIALIZERS, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS }
+    enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, COLUMN_INITIALIZERS, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS }
 
     private OptimizerTopology() {}
 
@@ -134,6 +135,9 @@ final class OptimizerTopology {
             }
             if (details == Details.FILTER_PREDICATES && op instanceof DBSPFilterOperator filter)
                 json.label("literalPredicate").append(filter.getClosureFunction().body instanceof DBSPBoolLiteral);
+            if (details == Details.AGGREGATE_RESULTS && op instanceof DBSPAggregateOperatorBase aggregate)
+                json.label("hasArrayResult").append(aggregate.aggregateList != null &&
+                        aggregate.aggregateList.aggregates.stream().anyMatch(a -> a.getType() instanceof DBSPTypeArray));
             if (details == Details.TRACE_INTEGRATORS) {
                 if (op instanceof DBSPSourceTableOperator table)
                     json.label("metadata").beginObject().label("materialized").append(table.metadata.materialized).endObject();

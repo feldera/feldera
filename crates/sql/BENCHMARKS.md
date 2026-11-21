@@ -72,6 +72,10 @@ request bytes from 135,781,212 to 120,454,899 and reply bytes from 22,830,197
 to 11,459,152 across 325 calls for Nexmark. The four compiler artifacts and
 the result manifest matched byte for byte. [Paired capture](evidence/p3-retained-relations.json)
 
+On the same Nexmark input, the UDF and array-aggregate eligibility checks reduced
+request bytes from 120,454,899 to 114,217,010. The candidate made 323 calls
+against 325 for the baseline. All five files matched. [JNI byte counts](evidence/p3-aggregate-udf-probes.json)
+
 In a separate Nexmark run on the 18-pass compiler, Java Flight Recorder captured 1,054 main-thread
 stack samples. Of those, 340 were inside a Rust JNI call, 170 were encoding
 or applying pass results in Java and 386 were in the Java Rust printer.

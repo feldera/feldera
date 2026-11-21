@@ -830,7 +830,7 @@ grouped COUNT and a second program with LATENESS. All four cross-compiler
 restores resumed without bootstrap and emitted the expected deltas.
 [Reduced G9 checkpoints](evidence/p3-checkpoints.json)
 
-All 8,256 classic executable cases passed on the 97-pass build. The
+All 8,256 classic executable cases passed on the 99-pass build with retained relational snapshots. The
 verifier checked 11,407 input commands, 232 expected runtime errors and the
 identities of the 315 compile-only cases across the 8,571-program population.
 [Classic runtime replay](evidence/p3-classic-runtime.json)
@@ -886,6 +886,9 @@ With relational snapshots retained in the JVM, the 99-pass build measured
 The temporal input selection build measured 13.83 ms and 78,159,872 bytes, respectively.
 The temporal ordering build matched both frozen populations and both restore directions
 for COUNT and LATENESS. Its cancellation p95 was 13.82 ms with 78,217,216 bytes peak waiting RSS.
+With the UDF and aggregate eligibility checks, replay and both restore directions
+again matched. Cancellation p95 was 26.98 ms, above the 25 ms limit, with
+78,045,184 bytes peak waiting RSS.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds
