@@ -1,0 +1,44 @@
+{
+  "scope": "Rust resolves lexical declarations and selects the minimal expensive fragments of a simplified map closure. Both implementations visit a shared expression once per occurrence. Java still renders canonical fingerprints and checks duplicated columns in single maps.",
+  "compiler_commit": "eb580978e",
+  "engines": {
+    "classic": {
+      "saved_S2_comparisons": 95,
+      "active_cases": [
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testVariantSharing/0",
+        "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#testRounding/31",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testCrossViewFusion/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testUnionSharing/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testWithinSingleMap/0"
+      ],
+      "groups_by_member_count": {
+        "2": 3,
+        "1": 2
+      },
+      "population_sha256": "88edab94582a8b1ece924bcbae6ee3e83170bc631c9c63d0943cbc74017b7d49",
+      "java_gzip_sha256": "2f32a1690e4f787d971edfdad8e08345b60abf452c5ab846e750613a56c7e2eb",
+      "rust_gzip_sha256": "f5a9fb3ab209fe6c798c4c46ef89cc07afd925ad643156803b46144362ec0270"
+    },
+    "gen2": {
+      "saved_S2_comparisons": 94,
+      "active_cases": [
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testVariantSharing/0",
+        "org.dbsp.sqlCompiler.compiler.sql.functions.FunctionsTest#testRounding/31",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testCrossViewFusion/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testUnionSharing/0",
+        "org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMapsTests#testWithinSingleMap/0"
+      ],
+      "groups_by_member_count": {
+        "2": 3,
+        "1": 2
+      },
+      "population_sha256": "07ed55e986c7251cd475f6e4a73b3cc7bde341ad73e92413ffbf5a2abcaed732",
+      "java_gzip_sha256": "e1447046f4c78ff4c6406a30f4d5079445fe1844921c93bde24ac2f8e4da49e3",
+      "rust_gzip_sha256": "3b47fcd1894a8cac25ea34c7085d55fbdcf91cc30ca47626fd74737b23fadd85"
+    }
+  },
+  "directed_expression_tests": 13,
+  "comparator_sha256": "284e99170ac4d9ccadea0d03bf284c7510d37b58dbb681e5db974e5d9727b7b8",
+  "jar_sha256": "fd91d2582cb54892c78dec25a1a5550e936f384383f2e06d1882691473893494",
+  "jni_sha256": "b854961cda48bcfa153046f83a80f46a5fdf5f92f2871f59bd5730435ec134b7"
+}

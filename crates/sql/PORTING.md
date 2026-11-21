@@ -748,13 +748,18 @@ and source positions matched Java at all 17,098 placements. The pass changed
 when a closure receives another closure as an argument.
 [Canonical name comparisons](evidence/p3-canonical-form.json)
 
-Rust groups sibling maps that share expensive expressions. Java supplies
-expression fingerprints and checks single maps for duplicated columns.
-The groups and resulting circuits matched Java on 95 classic and 94 Gen-2
-programs, including all five programs per engine that fused maps. Three
-fused two maps and two shared a computation within a single map. Rust
-builds one map for the distinct columns and one projection per original
-map. The rewrite matched Java at all 17,098 frozen pass boundaries.
+Rust resolves variable references in each map closure and finds the smallest
+expensive expressions that can be shared. It preserves repeated uses and can
+move a whole let when its expensive child depends on the let binding. All
+13 directed expression tests passed, including a let that shadows a map
+parameter. Java renders canonical fingerprints and checks single maps for
+duplicated columns. Rust uses those fingerprints to group sibling maps. On
+95 classic and 94 Gen-2 programs the groups and resulting circuits matched
+Java, including all five programs per engine that fused maps. Three fused two
+maps and two shared a computation within a single map. Rust builds one map
+for the distinct columns and one projection per original map. The rewrite
+matched Java at all 17,098 frozen pass boundaries.
+[Expression selection](evidence/p3-map-fusion-fragments.json) ·
 [Sibling groups](evidence/p3-map-fusion-groups.json) · [Map rewrites](evidence/p3-map-fusion.json)
 
 With star joins disabled, Rust expands multiway joins into a balanced tree of binary
@@ -819,8 +824,7 @@ Rust counts distinct uses of an expensive expression within each closure. A
 borrow, clone, dereference or tuple passes its own uses on to its operands.
 Java supplies canonical expression IDs and constructs the lazy bindings.
 Rust chooses where to insert each binding so its dependencies are in scope.
-All 187
-selected pass invocations matched on entry and exit. Two classic cases and one
+All 187 selected pass invocations matched on entry and exit. Two classic cases and one
 Gen-2 case introduced a lazy binding. The 22 expression-equivalence tests also
 passed with Rust choosing the insertion point.
 [Expression-use comparisons](evidence/p3-expression-uses.json) · [Binding placement](evidence/p3-binding-placement.json)
