@@ -303,6 +303,16 @@ public final class RustCircuitPass implements CircuitTransform {
                 input, output, DBSPClosureExpression.class);
     }
 
+    public static DBSPClosureExpression minimumTransfer(DBSPCompiler compiler, CalciteObject origin,
+            DBSPType input, @Nullable DBSPClosureExpression postprocess) {
+        try {
+            return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Minimum",
+                    MAPPER.writeValueAsBytes(expressionSite(origin)), input, postprocess));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode aggregate source position", error);
+        }
+    }
+
     public record BinaryJoin(int left, int right, DBSPTypeIndexedZSet type, DBSPClosureExpression function) {}
     public record StarJoinTerm(List<BinaryJoin> joins, DBSPClosureExpression projection) {}
 

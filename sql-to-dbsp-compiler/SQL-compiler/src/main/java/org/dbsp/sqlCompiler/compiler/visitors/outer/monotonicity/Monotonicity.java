@@ -942,6 +942,25 @@ public class Monotonicity extends CircuitVisitor {
         DBSPTypeTupleBase pairType = projection.getType().to(DBSPTypeTupleBase.class);
         if (pairType.size() != 2)
             return false;
+        DBSPClosureExpression transfer = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.minimumTransfer(this.compiler(), node.getNode(), pairType, minMax.postProcessing)
+                : this.minimumTransfer(node, pairType, minMax);
+        DBSPType valueType = transfer.getResultType().to(DBSPTypeRawTuple.class).tupFields[1];
+        // An output shape the model does not describe yields no waterline.
+        if (!valueType.sameType(node.getOutputIndexedZSetType().elementType))
+            return false;
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+        // Null when neither the key nor the minimized value is monotone
+        MonotoneExpression result = analyzer.applyAnalysis(transfer);
+        if (result == null)
+            return false;
+        this.set(node, result);
+        return true;
+    }
+
+    private DBSPClosureExpression minimumTransfer(DBSPPrimitiveAggregateOperator node,
+                                                  DBSPTypeTupleBase pairType, DBSPMinMax minMax) {
         DBSPTypeRawTuple varType = new DBSPTypeRawTuple(pairType.tupFields[0].ref(), pairType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
 
@@ -952,19 +971,8 @@ public class Monotonicity extends CircuitVisitor {
             firstField(input).applyCloneIfNeeded());
         DBSPExpression value = minMax.postProcessing == null ? minimum :
                 minMax.postProcessing.call(minimum.borrow()).reduce(this.compiler());
-        DBSPType outputType = node.getOutputIndexedZSetType().elementType;
-        // An output shape the model does not describe yields no waterline
-        if (!value.getType().sameType(outputType))
-            return false;
         DBSPExpression body = new DBSPRawTupleExpression(var.field(0).deref(), value);
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
-        // Null when neither the key nor the minimized value is monotone
-        MonotoneExpression result = analyzer.applyAnalysis(body.closure(var));
-        if (result == null)
-            return false;
-        this.set(node, result);
-        return true;
+        return body.closure(var);
     }
 
     @Override

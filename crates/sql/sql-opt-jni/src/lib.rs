@@ -180,7 +180,7 @@ fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
 }
 
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
-    let (arena, roots) = if pass == "Monotonicity/Filter" {
+    let (arena, roots) = if matches!(pass, "Monotonicity/Filter" | "Monotonicity/Minimum") {
         serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
     } else {
         let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
@@ -442,6 +442,11 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let output = edit.type_id(*output)?;
             feldera_sql_opt::aggregate_transfer(&mut edit, kind, input, output, &mut next)?
         }
+        ("Monotonicity/Minimum", [input, postprocess @ ..]) if postprocess.len() <= 1 => {
+            let pair = edit.type_id(*input)?;
+            feldera_sql_opt::minimum_transfer(&mut edit, arena.root_id(), pair,
+                postprocess.first().copied(), &mut next, &mut warnings)?
+        }
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;
             let bound = edit.expression(*bound)?;
@@ -671,7 +676,7 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
+        | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Minimum" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"

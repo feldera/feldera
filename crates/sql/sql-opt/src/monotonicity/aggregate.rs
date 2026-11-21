@@ -1,6 +1,7 @@
 //! Transfer a group key or a rolling timestamp through an aggregate.
 use super::{indexed_parameter, unknown};
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, TypeId, TypeKind};
+use feldera_sql_expr::{SimplifyWarning, apply_closure};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, NodeId, TypeId, TypeKind};
 
 /// Tuple fields are analyzed individually. Preserve the tuple constructor,
 /// including its type and nullability, and mark each leaf as unknown.
@@ -36,6 +37,74 @@ pub enum AggregateTransfer {
     Group,
     /// A frame ending at or before the current row preserves the input timestamp.
     Rolling,
+}
+
+/// MIN compares the first leaf of its input. ARG_MIN can also carry a payload
+/// alongside that leaf. Its fields have no known lower bound.
+fn minimum_value(
+    edit: &mut CircuitEditor,
+    origin: NodeId,
+    value: ExpressionId,
+    ty: TypeId,
+    depth: usize,
+) -> Result<ExpressionId, Error> {
+    if depth > 128 {
+        return Err(Error::new(
+            "minimum waterline exceeds the circuit nesting limit",
+        ));
+    }
+    if !matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
+        let owned = edit.clone_if_needed(value)?;
+        return edit.cast(origin, owned, ty);
+    }
+    let members = edit.node(ty.into())?.edges("tupFields")?;
+    let (first, payload) = members
+        .split_first()
+        .ok_or_else(|| Error::new("minimum waterline requires a compared field"))?;
+    let first_value = edit.tuple_field(value, 0)?;
+    let mut fields = Vec::with_capacity(members.len());
+    fields.push(minimum_value(
+        edit,
+        origin,
+        first_value,
+        edit.type_id(*first)?,
+        depth + 1,
+    )?);
+    for &field in payload {
+        fields.push(unknown_value(edit, edit.type_id(field)?, depth + 1)?);
+    }
+    edit.tuple_with_type(ty, &fields)
+}
+
+pub fn minimum_transfer(
+    edit: &mut CircuitEditor,
+    origin: NodeId,
+    pair: TypeId,
+    postprocess: Option<NodeId>,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let [key, value] = edit
+        .node(pair.into())?
+        .edges("tupFields")?
+        .try_into()
+        .map_err(|_| Error::new("minimum waterline input requires a key and value"))?;
+    let value_type = edit.type_id(value)?;
+    let row = indexed_parameter(edit, edit.type_id(key)?, value_type, next)?;
+    let second_read = edit.derive_inner(row.into(), [])?;
+    let value = edit.tuple_field(edit.expression(second_read)?, 1)?;
+    let value = edit.dereference(value)?;
+    let minimum = minimum_value(edit, origin, value, value_type, 0)?;
+    let output = if let Some(function) = postprocess {
+        let borrowed = edit.borrow_value(minimum)?;
+        apply_closure(edit, function, &[borrowed], warnings)?
+    } else {
+        minimum
+    };
+    let key = edit.tuple_field(row, 0)?;
+    let key = edit.dereference(key)?;
+    let body = edit.tuple_expr(origin, true, &[key, output])?;
+    edit.closure_from_variables(body, &[row])
 }
 
 pub fn aggregate_transfer(
@@ -93,6 +162,43 @@ mod tests {
     use super::*;
     use feldera_sql_ir::{Circuit, ExpressionKind};
     use serde_json::json;
+
+    #[test]
+    fn minimum_of_nullable_tuple_bounds_only_the_nested_compared_field() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]
+        }))?;
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class":"DBSPTypeInteger","id":1,"mayBeNull":false,"code":"INT32","width":32,"signed":true
+        })])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let integer = roots[0];
+        let tuple = edit.tuple_type(integer, false, [integer, integer])?;
+        let nullable = edit.with_nullability(tuple, true)?;
+        let data = edit.tuple_type(integer, false, [nullable.into(), tuple.into()])?;
+        let pair = edit.tuple_type(integer, true, [integer, data.into()])?;
+        let mut next = 12;
+        let transfer = minimum_transfer(&mut edit, integer, pair, None, &mut next, &mut vec![])?;
+        let body = edit.node(transfer.into())?.edge("body")?;
+        let value = edit.node(body)?.edges("fields")?[1];
+        let fields = edit.node(value)?.edges("fields")?;
+        let compared = edit.node(fields[0])?.edges("fields")?;
+        let cast = edit.node(compared[0])?;
+        assert_eq!(
+            edit.expr_kind(edit.expression(compared[0])?)?,
+            ExpressionKind::Cast
+        );
+        assert_eq!(cast.edge("type")?, integer);
+        assert_eq!(edit.node(fields[0])?.edge("type")?, nullable.into());
+        for field in std::iter::once(compared[1]).chain(edit.node(fields[1])?.edges("fields")?) {
+            assert_eq!(
+                edit.expr_kind(edit.expression(field)?)?,
+                ExpressionKind::NoExpression
+            );
+        }
+        assert_eq!(next, 13);
+        Ok(())
+    }
 
     #[test]
     fn group_and_rolling_waterlines_place_the_key_in_different_output_fields() -> Result<(), Error>

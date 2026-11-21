@@ -987,6 +987,12 @@ both full frozen populations, passed 2,076 runtime commands and restored
 COUNT and LATENESS checkpoints in both directions.
 [Waterline comparisons](evidence/p3-aggregate-and-filter-waterlines.json)
 
+For a primitive MIN, Rust propagates the bound on the compared field through
+the aggregate's postprocessing closure. For ARG_MIN it leaves payload fields
+unbounded. A directed test checks a nested nullable tuple that requires a cast
+on the compared field. Both frozen populations and all 550 selected
+monotonicity boundaries matched Java. [Primitive minimum comparisons](evidence/p3-primitive-min-waterline.json)
+
 For tables and views with LATENESS, Rust builds the predicate that admits a
 row and the error payload for a rejected row. The 550 selected limiter
 boundaries matched Java, including 997 controlled filters and 29 keyed
