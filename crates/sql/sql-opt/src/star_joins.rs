@@ -1,5 +1,7 @@
 //! Replace a maximal tree of snapshot joins with one star join.
 mod analysis;
+mod expand;
+pub use expand::{expand_star_join_layer, remove_star_joins};
 use crate::{
     rebuild::{input_type, rebuild_input_closures},
     stream_rewrites::body_members,

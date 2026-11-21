@@ -33,6 +33,7 @@ class FrozenPlacements(unittest.TestCase):
 
     def test_disabling_star_joins_skips_the_graph_and_replacement(self):
         counts = BASE_COUNTS.copy()
+        counts["RemoveStarJoins"] = 1
         del counts["FindJoinTrees"]
         del counts["ReplaceStarJoins"]
         counts["Graph"] -= 1

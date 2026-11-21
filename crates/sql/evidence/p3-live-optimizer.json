@@ -49,6 +49,7 @@
       "FindUnusedInputFields": 8571,
       "FindWindowGroups": 8571,
       "FixupViewReferences": 8571,
+      "Fuse": 8571,
       "FuseIntoArrayAgg": 17142,
       "GcHashPrefixes": 8571,
       "Graph": 244265,
@@ -109,11 +110,11 @@
       },
       {
         "manifest_sha256": "32c32263c6515c6734cb3b60ff430745a13ce89d376f139de521f6290594803e",
-        "records_sha256": "66495afa18d05f50f1a624da15321fd9b326d16015fd611a272d7fd3f7d3ae36"
+        "records_sha256": "18aea3c19d664bac6764463d37d285b214f157b6a902ab61186352c9ffd3f8ec"
       },
       {
         "manifest_sha256": "ad14be7678a1d49611822c17220eb08e0c4aa01cdde4ced72cbef02a2c3b3330",
-        "records_sha256": "b2e527ff39d42ff87889863e0aa9cd71f0b9f201d5bdaa85271e9775cf625b74"
+        "records_sha256": "0afdd9203142ebb5117bf6ef18cbfc1976162778166a7ae6a628c5723d55c710"
       }
     ]
   },
@@ -167,6 +168,7 @@
       "FindUnusedInputFields": 8527,
       "FindWindowGroups": 8527,
       "FixupViewReferences": 8527,
+      "Fuse": 8527,
       "FuseIntoArrayAgg": 17054,
       "GcHashPrefixes": 8527,
       "Gen2Passes": 8526,
@@ -228,19 +230,19 @@
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "376fd622873d12e4bc82472e8a975ca3c4c736bc063d61e32e423eb71d1882c0"
+        "records_sha256": "6e272700cda1831a64afc6052b5aaf0f087f2c3d40fe248ec0af94985ae9bb8f"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
-        "records_sha256": "60ee98c75a206893797d2708f1888bff1c9964ba273dc72c6ea7931dcd73ff06"
+        "records_sha256": "d31eb5120301f92bb44c4bbf0e798bd7857e44de1f11b4bc0e08512cf435d254"
       }
     ]
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
-    "pass_kinds": 94,
-    "jar_sha256": "02701fcf7b9e69ba9abf2eec9ec0e1fe1103417058356792511c0e33aafbb0e3",
-    "driver_sha256": "2ede2b1be72595148a229b036ca69f85b1c8234f378b8196629989c4ea6b8842",
-    "optimizer_library_sha256": "ffdc718e41c43df580312728c7030e61dd0f0d9c5f04fdb6dfd0108de7d878dd"
+    "pass_kinds": 95,
+    "jar_sha256": "691bfdc8b2f41429316624d03722946700ff531ee977663ed1753314e33f6ba3",
+    "driver_sha256": "67807cafc3b37c97987ee5f77f410c7ca0ae20bd547f7514c1ef7b7a9dff2945",
+    "optimizer_library_sha256": "a60534b66f576d03889d7c35ed0e1827f688ccdb01ffc76ec14a6cb1bd87c142"
   }
 }

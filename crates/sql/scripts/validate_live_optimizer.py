@@ -55,7 +55,7 @@ def read_run(directory, entry):
 FROZEN_SCHEDULE = {
     "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
-    "Graph": 13, "Fuse": 1, "FindJoinTrees": 1, "CanonicalForm": 1, "ReplaceStarJoins": 1, "MoveGC": 0, "OrderGcDependencies": 0, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
+    "Graph": 13, "Fuse": 1, "RemoveStarJoins": 0, "FindJoinTrees": 1, "CanonicalForm": 1, "ReplaceStarJoins": 1, "MoveGC": 0, "OrderGcDependencies": 0, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
     "DetectStreamingOperations": 1, "FindGCedStreams": 1, "CollectUnbounded": 1, "FindBounded": 2, "EnsureExpressionTrees": 1, "MultisetAnalysis": 3, "OptimizeDistinctVisitor": 1,
     "AppendOnly": 1, "DecomposeExpensiveFilters": 1, "SimplifyWaterline": 1, "ContainsNow": 1,
     "OrderErrorConsumers": 1, "UDFInliner": 1, "ShareOutputIntegrators": 1,
@@ -93,6 +93,11 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
                       outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True):
     expected = dict(schedule)
+    if "RemoveStarJoins" in expected:
+        if star_joins_enabled:
+            del expected["RemoveStarJoins"]
+        else:
+            expected["RemoveStarJoins"] = 1
     if "ReplaceStarJoins" in expected and not star_joins_enabled:
         expected.pop("FindJoinTrees", None)
         del expected["ReplaceStarJoins"]

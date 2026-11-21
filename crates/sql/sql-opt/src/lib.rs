@@ -6,7 +6,7 @@ mod append_only;
 mod map_fusion;
 pub use map_fusion::{fuse_expensive_maps, FusionMember};
 mod star_joins;
-pub use star_joins::{find_join_trees, replace_star_joins, StarJoinTree};
+pub use star_joins::{expand_star_join_layer, find_join_trees, remove_star_joins, replace_star_joins, StarJoinTree};
 mod asof_retention;
 pub use asof_retention::move_asof_retention;
 mod array_agg;

@@ -518,6 +518,7 @@ fn transform(
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "ExpandStreamAggregates"
         | "Fuse"
+        | "RemoveStarJoins"
         | "OptimizeProjectionVisitor"
         | "PullFilterVisitor"
         | "PropagateConstants"
@@ -533,6 +534,7 @@ fn transform(
                     weight = result.new_weight;
                     (result.circuit, result.warnings)
                 }
+                "RemoveStarJoins" => feldera_sql_opt::remove_star_joins(circuit, &mut next)?,
                 "Fuse" => feldera_sql_opt::fuse_expensive_maps(
                     circuit, serde_json::from_slice(state)?, &mut next,
                 )?,

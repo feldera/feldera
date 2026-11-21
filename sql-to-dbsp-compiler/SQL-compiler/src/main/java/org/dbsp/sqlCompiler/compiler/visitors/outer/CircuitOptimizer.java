@@ -113,7 +113,8 @@ public class CircuitOptimizer extends Passes {
         if (!this.compiler.options.ioOptions.rustOptimizerPasses)
             return pass;
         if (pass instanceof Conditional conditional) {
-            if (conditional.transform instanceof Gen2Passes || conditional.transform instanceof InsertWeightValidation)
+            if (conditional.transform instanceof Gen2Passes || conditional.transform instanceof InsertWeightValidation
+                    || conditional.transform instanceof RemoveStarJoins)
                 return conditional.withTransform(new RustCircuitPass(this.compiler, conditional.transform, this.snapshots));
             return pass;
         }

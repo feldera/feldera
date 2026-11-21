@@ -1,0 +1,46 @@
+{
+  "scope": "Individual Java visitor iterations with generated-name counters and canonical circuit comparison across both frozen engine populations. The directed JUnit fixture also checks filtered five-way joins, with and without a trailing projection, and a nested filtered join.",
+  "comparator_sha256": "bff8a6919baed1f976a4bd8fb86e05668d3b936cb02fb8a56ead8aed7b03bd65",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "90fb19d7af2b3bff71bb1344497996e034db2bb4790180fe0a0828a39944ccd3",
+      "b9ce2734bc34f5be902d4c6d53fcc38e847a67fc73b97e651ab2f791da25cce3",
+      "cb61b385508e4b7d40c6b2522309748ebba5f74b22b07408b00c4234b3d544d3",
+      "737588763f380bb575ac562987dbbf89835f34ebd2a3b5e626a55f40f429318b"
+    ],
+    "pass": "RemoveStarJoinsPass",
+    "invocations": 2,
+    "changed": 1,
+    "cases_without_placement": 8570,
+    "oracle_stream_sha256": [
+      "60e95f1675b3716774a54e7173240c062bbf3766404361afc24ad0ff976537c1",
+      "080be6cc9bb0285b12751800c324cd15b8801e1641c206407ef91ef4c26a90aa",
+      "b1529dcc18d930d3351952174705f5f53a5132edcaf824a7a44bb9be7f799a2f",
+      "e5834391d6d05106bf3a204436531242f1c414b37b7cb9a9f0eb16a3c2d07e5f"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "e240a16e16a2b01c3e3825d479a92041677ca25fecc1354317e699e052797a8d",
+      "8dafa9b9b7124c57e5ca002c1d9de229c48c7def3526244edd023ab8120121f6",
+      "612aba7d2c4755a3ff53cabc9302ad8cf25d485f39ada2280a7a746231ce6edb",
+      "4f915adf302dc31edb7836cd9b2d1884ed968b9201fd8596716ce51a6aefaec2"
+    ],
+    "pass": "RemoveStarJoinsPass",
+    "invocations": 2,
+    "changed": 1,
+    "cases_without_placement": 8526,
+    "oracle_stream_sha256": [
+      "6238c40474ae5c0089477b1b5e9a85effaee95f459bb22f481e300a3ee24618d",
+      "5bb49a2e20a9202d487f4b7eaf0d149913151f6e1385148090f8174feb3d1c8b",
+      "f9105dccc1c19650c36ecf151c971ecb4571c8f1a653fa4f919053c5641e4571",
+      "a1798af7aebb6a377ef6979e2cd40ac23a323606e785773e9db746ddfb838cc9"
+    ]
+  }
+}
