@@ -17,7 +17,7 @@ pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgum
 pub use monotonicity::binary::{
     binary_waterline, BinaryWaterline, Domain as BinaryDomain, Operand as WaterlineOperand,
 };
-pub use monotonicity::{filter_lower_bounds, monotone_identity, FilterBound};
+pub use monotonicity::{filter_lower_bounds, monotone_identity, unary_waterline, FilterBound};
 mod static_candidates;
 mod static_items;
 pub use static_items::{renumber_static_errors, static_initializer, static_item};
@@ -168,7 +168,7 @@ pub use consumer_graph::{consumer_graphs, projected_consumer_graphs, ConsumerBod
 pub use cse::{common_subexpressions, common_subexpressions_with_names, cse_payloads, CseState};
 pub use dead_code::{eliminate_dead_code, pruning, remove_dead_operators, DeadCodeResult, Pruning};
 pub use distinct_outputs::ensure_distinct_outputs;
-pub use empty_sources::propagate_empty_sources;
+pub use empty_sources::{empty_stream_edits, propagate_empty_sources, EmptyStreamEdit};
 pub use error_consumers::{error_consumers, ErrorConsumerOrder};
 pub use error_wrappers::create_runtime_error_wrappers;
 pub use expand_aggregates::{expand_stream_aggregates, AggregateContext, ExpandedAggregates};

@@ -9,7 +9,7 @@ mod pass;
 pub use filter::{RowFilter, row_filter};
 pub use join::join_waterline;
 pub use keyed::KeyProjection;
-pub use pass::{insert_limiters, LimiterInputs};
+pub use pass::{insert_limiters, insert_limiters_with_warnings, LimiterInputs};
 mod projection;
 mod source;
 pub(crate) use source::timestamp_max;

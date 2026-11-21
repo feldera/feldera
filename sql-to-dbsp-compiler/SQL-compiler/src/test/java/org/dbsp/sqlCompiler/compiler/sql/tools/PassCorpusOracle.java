@@ -68,6 +68,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     private PassCorpusOracle(DBSPCompiler compiler, ObjectNode record, String passClass) {
         super(compiler, record);
         this.passClass = passClass;
+        if (Boolean.getBoolean("feldera.optimizer.observeLivePipeline"))
+            compiler.options.ioOptions.rustOptimizerPasses = true;
         this.compiler = compiler;
         record.put("pass", passClass);
         this.invocations = record.putArray("invocations");
@@ -81,6 +83,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     }
 
     private boolean selected(CircuitTransform pass) {
+        if (pass instanceof RustCircuitPass)
+            return pass.getName().equals(this.passClass);
         if (this.passClass.equals("Fuse"))
             return pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse;
         if (this.passClass.equals("InnerCSE") || this.passClass.equals("ExpandSafeCasts") || this.passClass.equals("ExpandUnsafeCasts")

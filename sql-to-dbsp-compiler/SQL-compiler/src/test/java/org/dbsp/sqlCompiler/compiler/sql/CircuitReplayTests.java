@@ -13,6 +13,7 @@ import org.dbsp.util.Utilities;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.LastRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.PositionOnlyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelReference;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelSequence;
@@ -44,6 +45,22 @@ public class CircuitReplayTests {
         relation.put("planId", 8);
         Assert.assertThrows(IllegalArgumentException.class,
                 () -> new ProvenanceCodec.Decoder(List.of(source)).decode(origin));
+    }
+
+    @Test
+    public void trimmedReadersShareTheirProducersOriginAfterRenumbering() {
+        var source = new PositionOnlyRel(SourcePositionRange.INVALID);
+        var other = new PositionOnlyRel(SourcePositionRange.INVALID);
+        var encoder = new ProvenanceCodec.Encoder(new DBSPCompiler(new CompilerOptions()),
+                java.util.Map.of(), new java.util.HashMap<>(), new ArrayList<>());
+        encoder.retainOriginIdentities();
+        var first = encoder.encode(source).put("id", 12);
+        var second = encoder.encode(other).put("id", 24);
+        var decoder = encoder.decoder();
+        Assert.assertSame(source, decoder.decode(first));
+        Assert.assertSame(other, decoder.decode(second));
+        Assert.assertSame(source, decoder.decode(first.objectNode().put("ref", 12)));
+        Assert.assertThrows(IllegalArgumentException.class, () -> new ProvenanceCodec.Decoder().decode(first));
     }
 
     @Test

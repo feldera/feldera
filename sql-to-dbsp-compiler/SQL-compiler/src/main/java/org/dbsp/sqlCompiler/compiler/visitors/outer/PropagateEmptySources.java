@@ -99,8 +99,12 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     /** An empty stream with the type and kind of 'operator': an empty incremental constant
      * when the operator produces deltas, else an empty constant. */
     static DBSPSimpleOperator emptyStream(DBSPSimpleOperator operator) {
+        return emptyStream(operator, operator.outputKind(0));
+    }
+
+    public static DBSPSimpleOperator emptyStream(DBSPSimpleOperator operator, StreamKind kind) {
         DBSPExpression empty = emptySet(operator.getType());
-        if (operator.outputKind(0) == StreamKind.DELTA)
+        if (kind == StreamKind.DELTA)
             return new DBSPIncrementalConstantOperator(operator.getRelNode(), empty);
         return new DBSPConstantOperator(operator.getRelNode(), empty);
     }

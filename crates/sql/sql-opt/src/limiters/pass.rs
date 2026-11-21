@@ -16,11 +16,35 @@ struct OperatorFacts {
     projection: Option<Projection>,
 }
 
+#[derive(Default, Deserialize)]
+struct TransferFunctions {
+    checkpoint: BTreeMap<u64, serde_json::Value>,
+    observation: BTreeMap<u64, serde_json::Value>,
+}
+
+impl TransferFunctions {
+    fn attach(self, circuit: Circuit) -> Result<(Circuit, BTreeMap<u64, NodeId>), Error> {
+        let checkpoint = circuit
+            .operators()
+            .any(|(_, node)| node.field("provenance").is_some());
+        let functions = if checkpoint {
+            self.checkpoint
+        } else {
+            self.observation
+        };
+        let (operators, definitions): (Vec<_>, Vec<_>) = functions.into_iter().unzip();
+        let (circuit, roots) = circuit.with_inner_roots(definitions)?;
+        Ok((circuit, operators.into_iter().zip(roots).collect()))
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LimiterInputs {
     pub next_generated_name: u64,
     gen2: bool,
     singletons: Vec<u64>,
+    #[serde(default)]
+    transfer_functions: TransferFunctions,
     operators: BTreeMap<u64, OperatorFacts>,
 }
 
@@ -146,6 +170,14 @@ fn relation_clocks(
 }
 
 pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circuit, u64), Error> {
+    insert_limiters_with_warnings(circuit, state, &mut Vec::new())
+}
+
+pub fn insert_limiters_with_warnings(
+    circuit: Circuit,
+    state: LimiterInputs,
+    warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
+) -> Result<(Circuit, u64), Error> {
     let body = circuit.root_id();
     let original = circuit.root().edges("allOperators")?;
     if original.len() != state.operators.len() {
@@ -154,6 +186,7 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
         ));
     }
     let clocks = relation_clocks(&circuit, &state.operators)?;
+    let (circuit, functions) = state.transfer_functions.attach(circuit)?;
     let mut edit = CircuitEditor::new(circuit);
     for number in state.singletons {
         let id = NodeId::Inner(number);
@@ -263,6 +296,37 @@ pub fn insert_limiters(circuit: Circuit, state: LimiterInputs) -> Result<(Circui
                         edit.place_before(body, first, id)?;
                     }
                 }
+            }
+            Some(Op::Map | Op::MapIndex | Op::Filter) => {
+                let [source] = inputs.as_slice() else {
+                    return Err(Error::new("map or filter requires one input stream"));
+                };
+                if let Some(projection) = projection {
+                    let function = functions.get(&number).copied().ok_or_else(|| {
+                        Error::new("limiter replay needs the reduced map or filter closure")
+                    })?;
+                    let (bound, _) = bounds.get(source).copied().ok_or_else(|| {
+                        Error::new("missing input waterline for monotone map or filter")
+                    })?;
+                    let function = super::apply_waterlines(
+                        &mut edit,
+                        function,
+                        &[bound.ty],
+                        &mut next,
+                        warnings,
+                    )?;
+                    let bound = apply_bound(&mut edit, body, bound, function)?;
+                    bounds.insert(output, (bound, projection));
+                    edit.place_before(body, bound.port.operator, id)?;
+                }
+                if let Some(input) = data.get(source) {
+                    if kind == Some(Op::Filter) {
+                        edit.replace_stream_inputs(id, &[input.port], input.ty)?;
+                    } else {
+                        edit.rewire_inputs(id, &[input.port])?;
+                    }
+                }
+                continue;
             }
             Some(Op::Sink) => {
                 if let Some(field) = super::FinalityColumn::from_sink(op, projection)? {

@@ -1096,6 +1096,7 @@ impl CircuitEditor {
             op.operator_kind(),
             Some(
                 crate::OperatorKind::View
+                    | crate::OperatorKind::Filter
                     | crate::OperatorKind::Sink
                     | crate::OperatorKind::Sum
                     | crate::OperatorKind::AtomicSum

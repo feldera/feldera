@@ -98,7 +98,7 @@ final class OptimizerTopology {
     private static byte[] encode(DBSPCircuit circuit, Details details, @Nullable DBSPCompiler typeContext) {
         var json = JsonStream.compactCircuit();
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);
-        if (details == Details.STATE_BOUNDS)
+        if (details == Details.STATE_BOUNDS || details == Details.EMPTY_LITERALS)
             json.label("incremental").append(circuit.incremental);
         json.label("declarations").beginArray();
         json.endArray();

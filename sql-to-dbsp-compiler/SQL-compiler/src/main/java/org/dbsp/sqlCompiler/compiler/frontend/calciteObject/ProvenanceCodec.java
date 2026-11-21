@@ -36,6 +36,7 @@ public final class ProvenanceCodec {
         private final Map<RelReference, Integer> references = new HashMap<>();
 
         @Nullable private final List<RelReference.Snapshot> retained;
+        @Nullable private List<CalciteRelNode> retainedOrigins;
 
         public Encoder(DBSPCompiler compiler, Map<RelNode, Integer> planIds, Map<RelReference, String> renderedSql) {
             this(compiler, planIds, renderedSql, null);
@@ -47,6 +48,16 @@ public final class ProvenanceCodec {
             this.compiler = compiler;
             this.planIds = planIds;
             this.renderedSql = renderedSql;
+        }
+
+        /** A partial circuit rebuild shares origins with operators that stay in the JVM. */
+        public void retainOriginIdentities() {
+            this.retainedOrigins = new ArrayList<>();
+        }
+
+        public Decoder decoder() {
+            return new Decoder(this.retained == null ? List.of() : this.retained,
+                    this.retainedOrigins == null ? List.of() : this.retainedOrigins);
         }
 
         private ObjectNode reference(RelReference reference) {
@@ -96,6 +107,10 @@ public final class ProvenanceCodec {
                 return result.put("ref", existing);
             int id = this.nodes.size();
             this.nodes.put(node, id);
+            if (this.retainedOrigins != null) {
+                result.put("retainedOrigin", this.retainedOrigins.size());
+                this.retainedOrigins.add(node);
+            }
             result.put("id", id);
             result.put("kind", node.getClass().getSimpleName());
             result.set("position", node.getPositionRange().asJson());
@@ -129,12 +144,19 @@ public final class ProvenanceCodec {
 
         private final List<RelReference.Snapshot> retained;
 
+        private final List<CalciteRelNode> retainedOrigins;
+
         public Decoder() {
             this(List.of());
         }
 
         public Decoder(List<RelReference.Snapshot> retained) {
+            this(retained, List.of());
+        }
+
+        private Decoder(List<RelReference.Snapshot> retained, List<CalciteRelNode> retainedOrigins) {
             this.retained = retained;
+            this.retainedOrigins = retainedOrigins;
         }
 
         private RelReference reference(JsonNode json) {
@@ -211,6 +233,18 @@ public final class ProvenanceCodec {
                 // Restore the stored list exactly, without constructors duplicating a primary range.
                 result.positions.clear();
                 result.positions.addAll(positions);
+            }
+            // Decode children and relations first. Later definitions can reference
+            // either, even when this origin belongs to an existing Java operator.
+            if (json.has("retainedOrigin")) {
+                int slot = Utilities.getIntProperty(json, "retainedOrigin");
+                if (slot < 0 || slot >= this.retainedOrigins.size())
+                    throw new IllegalArgumentException("Unknown retained origin " + slot);
+                var original = this.retainedOrigins.get(slot);
+                if (original.getClass() != result.getClass()
+                        || !original.getPositionRange().equals(position) || !original.positions.equals(positions))
+                    throw new IllegalArgumentException("Changed retained origin " + slot);
+                result = original;
             }
             Utilities.putNew(this.nodes, id, result);
             return result;

@@ -4,12 +4,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Utilities;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Entry facts from the expanded circuit, keyed by their corresponding original operators. */
 public final class LimiterInputs {
@@ -32,6 +40,34 @@ public final class LimiterInputs {
             node.put("monotone", type.mayBeMonotone());
         }
         return node;
+    }
+
+    /** The reduced closures belong to the matching expansion of this circuit. */
+    public static Map<Long, DBSPClosureExpression> transferFunctions(InsertLimiters pass, DBSPCircuit original) {
+        var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
+        for (var operator : original.allOperators) {
+            if (!(operator instanceof DBSPMapOperator || operator instanceof DBSPMapIndexOperator
+                    || operator instanceof DBSPFilterOperator))
+                continue;
+            var expansion = pass.getReplacement(operator.to(DBSPSimpleOperator.class));
+            if (expansion == null)
+                continue;
+            var value = pass.expansionMonotoneValues.get(expansion.replacement);
+            if (value != null)
+                functions.put(operator.id, value.getReducedExpression().to(DBSPClosureExpression.class));
+        }
+        return functions;
+    }
+
+    public static String encodeTransfers(ToJsonOuterVisitor circuit, Map<Long, DBSPClosureExpression> functions) {
+        var writer = circuit.additionalInnerNodes();
+        writer.stream.beginObject();
+        functions.forEach((id, function) -> {
+            writer.stream.label(Long.toString(id));
+            function.accept(writer);
+        });
+        writer.stream.endObject();
+        return writer.stream.toString();
     }
 
     public static ObjectNode capture(InsertLimiters pass, DBSPCircuit original) {

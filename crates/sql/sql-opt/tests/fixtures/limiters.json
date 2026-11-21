@@ -49,6 +49,9 @@
   "twofields": {
     "sql": "CREATE TABLE t(x INT NOT NULL LATENESS 2, y INT NOT NULL LATENESS 2); CREATE VIEW w AS SELECT * FROM t UNION ALL SELECT * FROM t;"
   },
+  "emitFinalAfterMapAndFilter": {
+    "sql": "CREATE TABLE t(x INTEGER NOT NULL, ts BIGINT NOT NULL LATENESS 2); CREATE VIEW v WITH ('emit_final' = 'b') AS SELECT ts + 1 AS b, x FROM t WHERE x > 0;"
+  },
   "emitFinalMissingWaterline": {
     "sql": "CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT); CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;",
     "error": "Could not infer a waterline for column 'v'.'other' which has an 'emit_final' annotation"

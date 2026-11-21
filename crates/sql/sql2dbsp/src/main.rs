@@ -154,11 +154,27 @@ impl<'a> Command<'a> {
                     source.as_bytes(),
                 )?)?;
                 let inputs = serde_json::from_slice(&fs::read(state)?)?;
-                let (result, next) = feldera_sql_opt::limiters::insert_limiters(graph, inputs)?;
-                write_json(
-                    &mut output,
-                    &serde_json::json!({"circuit":result.to_json(),"next_generated_name":next}),
+                let mut warnings = Vec::new();
+                let (result, next) = feldera_sql_opt::limiters::insert_limiters_with_warnings(
+                    graph,
+                    inputs,
+                    &mut warnings,
                 )?;
+                let mut record = serde_json::json!({
+                    "circuit": result.to_json(),
+                    "next_generated_name": next
+                });
+                if !warnings.is_empty() {
+                    record["warnings"] = warnings
+                        .into_iter()
+                        .map(|warning| serde_json::json!({
+                            "range": warning.position,
+                            "error_type": warning.kind,
+                            "message": warning.message
+                        }))
+                        .collect();
+                }
+                write_json(&mut output, &record)?;
             }
             Self::Statistics
             | Self::CheckNoIntegral

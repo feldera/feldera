@@ -20,6 +20,8 @@ def singleton_ids(value):
 
 def write_limiter_inputs(checkpoint, state, sidecar):
     inputs = {key: state[key] for key in ("operators", "next_generated_name", "gen2")}
+    if "transfer_functions" in state:
+        inputs["transfer_functions"] = state["transfer_functions"]
     inputs["singletons"] = [*singleton_ids(json.loads(checkpoint.read_bytes())), state["weight_type"]]
     sidecar.write_text(json.dumps(inputs))
 
@@ -70,6 +72,14 @@ def compare(trace, output, compiler, comparator, pass_name="CSE"):
                         write_limiter_inputs(checkpoint, state, sidecar)
                         command = [compiler, "--insert-limiters", sidecar, before]
                         resumed = json.loads(subprocess.check_output([*command[:-1], checkpoint]))
+                        if "warnings_after" in state:
+                            # Java deduplicates warnings that the compiler already reported.
+                            warnings = state["warnings_before"].copy()
+                            for warning in resumed.get("warnings", []):
+                                if warning not in warnings:
+                                    warnings.append(warning)
+                            if warnings != state["warnings_after"]:
+                                raise ValueError(f"Checkpoint warnings differ at {path}: {warnings}")
                         if resumed["next_generated_name"] != state["next_generated_name_after"]:
                             raise ValueError(f"Checkpoint name state differs at {path}")
                         checkpoint_actual = prefix.with_suffix(".rust-checkpoint")

@@ -57,10 +57,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 public class ToJsonOuterVisitor extends CircuitVisitor {
     @Nullable private ProvenanceCodec.Encoder provenance;
     private boolean retainProgramMetadata;
-    private List<RelReference.Snapshot> retainedRelations = List.of();
 
     ProvenanceCodec.Decoder liveProvenanceDecoder() {
-        return new ProvenanceCodec.Decoder(this.retainedRelations);
+        return Objects.requireNonNull(this.provenance).decoder();
     }
     public final JsonStream stream;
     final int verbosity;
@@ -117,13 +116,18 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         }
 
         public ToJsonOuterVisitor writer() {
+            return this.writer(false);
+        }
+
+        public ToJsonOuterVisitor writer(boolean retainOriginIdentities) {
             if (this.plans == null)
                 this.plans = this.compiler.getPlans(new NullIndentStream());
             var writer = compactWriter(this.compiler);
             writer.retainProgramMetadata = true;
             writer.innerVisitor.liveShuffles = new HashMap<>();
-            writer.retainedRelations = new ArrayList<>();
-            writer.provenance = new ProvenanceCodec.Encoder(this.compiler, this.plans, this.renderedSql, writer.retainedRelations);
+            writer.provenance = new ProvenanceCodec.Encoder(this.compiler, this.plans, this.renderedSql, new ArrayList<>());
+            if (retainOriginIdentities)
+                writer.provenance.retainOriginIdentities();
             return writer;
         }
     }

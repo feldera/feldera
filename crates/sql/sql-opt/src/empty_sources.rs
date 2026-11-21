@@ -2,7 +2,7 @@
 use crate::rebuild::{input_type, rebuild_input_closures};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node,
-    NodeId, OperatorKind as Op, OutputClocks, OutputPort,
+    NodeId, OperatorKind as Op, OutputClocks, OutputPort, StreamKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -128,19 +128,45 @@ fn plan<C>(
     Ok(Propagation { forwarded, changes })
 }
 
-/// The projected circuit carries the emptiness of each constant literal.
-/// Reachability and propagation use the same rules as the full transform.
+fn empty_literal_flag(node: &Node) -> Result<bool, Error> {
+    node.data("emptyLiteral")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| Error::new("constant topology requires its literal emptiness"))
+}
+
 pub(super) fn topology_needs_rewrite(circuit: &Circuit) -> Result<bool, Error> {
-    let edits = plan(
-        circuit,
-        |node| {
-            node.data("emptyLiteral")
-                .and_then(|v| v.as_bool())
-                .ok_or_else(|| Error::new("constant topology requires its literal emptiness"))
-        },
-        |_| Ok(()),
-    )?;
+    let edits = plan(circuit, empty_literal_flag, |_| Ok(()))?;
     Ok(!(edits.forwarded.is_empty() && edits.changes.is_empty()))
+}
+
+/// These edits refer to original ports. The consumer resolves them to their
+/// replacements as it visits the body in execution order.
+pub enum EmptyStreamEdit {
+    Constant(StreamKind),
+    Forward(OutputPort),
+    Sum(Vec<OutputPort>),
+}
+
+/// A left join with an empty right side needs the typed closure rewrite.
+pub fn empty_stream_edits(
+    circuit: &Circuit,
+) -> Result<Option<BTreeMap<NodeId, EmptyStreamEdit>>, Error> {
+    let mut clocks = OutputClocks::new(circuit)?;
+    let propagation = plan(circuit, empty_literal_flag, |port| clocks.get(port))?;
+    let mut edits = propagation
+        .forwarded
+        .into_iter()
+        .map(|(id, port)| (id, EmptyStreamEdit::Forward(port)))
+        .collect::<BTreeMap<_, _>>();
+    for (id, change) in propagation.changes {
+        let edit = match change {
+            Rewrite::Empty(clock) => EmptyStreamEdit::Constant(clock),
+            Rewrite::Sum(ports) => EmptyStreamEdit::Sum(ports),
+            Rewrite::LeftJoin(_) => return Ok(None),
+        };
+        edits.insert(id, edit);
+    }
+    Ok(Some(edits))
 }
 
 pub fn propagate_empty_sources(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {

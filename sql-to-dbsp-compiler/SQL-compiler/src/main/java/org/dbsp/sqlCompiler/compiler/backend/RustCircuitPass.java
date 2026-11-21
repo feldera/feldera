@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedC
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitStatistics;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.PropagateEmptySources;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandAggregateZero;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandAggregates.ExpandStreamAggregates;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.EnsureDistinctOutputs;
@@ -85,6 +86,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -99,6 +101,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
@@ -267,6 +270,11 @@ public final class RustCircuitPass implements CircuitTransform {
             compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
                     warning.required("error_type").textValue(), warning.required("message").textValue());
         return function;
+    }
+
+    @Nullable
+    public static DBSPExpression unaryWaterline(DBSPCompiler compiler, DBSPUnaryExpression operation, DBSPExpression bound) {
+        return tryLowerFunction(compiler, "Monotonicity/Unary", operation, bound, DBSPExpression.class);
     }
 
     public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {
@@ -1095,6 +1103,10 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private record AsofRetention(long retainer, long join, boolean rebuilt) {}
 
+    private boolean reusesOperators() {
+        return this.trimFilters != null || this.nativeName.equals("TrimWindows");
+    }
+
     private DBSPCircuit readGraph(DBSPCircuit input, JsonNode result, ToJsonOuterVisitor writer) throws IOException {
         JsonNode graph = result.required("circuit");
         if (graph.isNull())
@@ -1103,7 +1115,7 @@ public final class RustCircuitPass implements CircuitTransform {
         // Both trimming passes give inserted operators fresh IDs. The clone visitor
         // preserves other operators with unchanged inputs, including the identities
         // recorded by earlier iterations of unused-field removal.
-        var originalOperators = this.trimFilters != null || this.nativeName.equals("TrimWindows")
+        var originalOperators = this.reusesOperators()
                 ? operatorsById(input) : Map.<Long, DBSPOperator>of();
         var decoder = new JsonDecoder(null, writer.liveProvenanceDecoder()) {
             @Override
@@ -1362,6 +1374,41 @@ public final class RustCircuitPass implements CircuitTransform {
             if (op instanceof DBSPNestedOperator nested)
                 visitOperators(nested.getAllOperators(), visit);
         }
+    }
+
+    private DBSPCircuit applyEmptyStreamEdits(DBSPCircuit circuit, JsonNode edits) {
+        if (edits.isEmpty())
+            return circuit;
+        var originals = new HashMap<Long, DBSPOperator>();
+        visitOperators(circuit.getAllOperators(), op -> originals.put(op.id, op));
+        return new CircuitCloneVisitor(this.compiler, false) {
+            private OutputPort input(JsonNode port) {
+                var source = Objects.requireNonNull(originals.get(port.required(0).longValue()), "Unknown empty-stream input");
+                return this.mapped(source.getOutput(port.required(1).intValue()));
+            }
+
+            @Override
+            public void replace(DBSPSimpleOperator op) {
+                var edit = edits.get(Long.toString(op.id));
+                if (edit == null) {
+                    super.replace(op);
+                    return;
+                }
+                if (!this.visited.add(op))
+                    return;
+                switch (edit.required("kind").textValue()) {
+                    case "Delta" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.DELTA));
+                    case "Collection" -> this.map(op, PropagateEmptySources.emptyStream(op, StreamKind.COLLECTION));
+                    case "Forward" -> this.map(op.outputPort(), this.input(edit.required("inputs").required(0)), false);
+                    case "Sum" -> {
+                        var inputs = new ArrayList<OutputPort>();
+                        edit.required("inputs").forEach(port -> inputs.add(this.input(port)));
+                        this.map(op, op.withInputs(inputs, false).to(DBSPSimpleOperator.class));
+                    }
+                    default -> throw new IllegalStateException("Unknown empty-stream edit " + edit);
+                }
+            }
+        }.apply(circuit);
     }
 
     /** Apply one round to live operators. Rebuilt operators have fresh identities
@@ -2061,6 +2108,8 @@ public final class RustCircuitPass implements CircuitTransform {
                     };
                     JsonNode probe = this.invoke("Topology/" + this.nativeName, OptimizerTopology.encode(circuit, details),
                             initial, state);
+                    if (probe.has("empty_stream_edits"))
+                        return this.applyEmptyStreamEdits(circuit, probe.required("empty_stream_edits"));
                     if (probe.has("stream_aggregate")) {
                         var aggregate = findOperator(circuit.allOperators, probe.required("stream_aggregate").longValue());
                         throw new InternalCompilerError("StreamAggregate operator should have been removed " + Objects.requireNonNull(aggregate));
@@ -2074,7 +2123,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 }
             }
             if (result == null) {
-                writer = this.snapshots.writer();
+                writer = this.snapshots.writer(this.reusesOperators());
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
                 if (this.mapFusion != null)

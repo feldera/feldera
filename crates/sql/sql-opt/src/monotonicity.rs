@@ -3,8 +3,8 @@ pub mod binary;
 pub mod casts;
 pub mod functions;
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Node, NodeId, TypeId,
-    TypeKind,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId,
+    TypeId, TypeKind,
 };
 
 /// The transfer function takes a row reference, or a pair of references to an indexed row.
@@ -45,6 +45,48 @@ pub struct FilterBound {
     pub column: usize,
     pub comparison: BinaryOp,
     pub value: ExpressionId,
+}
+
+/// Apply an order-preserving unary operation to its input's lower bound.
+/// A waterline carries a concrete value even when the data column is nullable.
+pub fn unary_waterline(
+    edit: &mut CircuitEditor,
+    operator: ExpressionId,
+    bound: ExpressionId,
+) -> Result<Option<ExpressionId>, Error> {
+    if edit.expr_kind(operator)? != Expr::Unary {
+        return Err(Error::new("expected a unary waterline operation"));
+    }
+    let op =
+        opcode(edit.node(operator.into())?).ok_or_else(|| Error::new("missing unary opcode"))?;
+    if !matches!(
+        op,
+        "UNARY_PLUS"
+            | "TYPEDBOX"
+            | "DECIMAL_TO_INTEGER"
+            | "INTEGER_TO_DECIMAL"
+            | "SHORT_INTERVAL_TO_INTEGER"
+            | "INTEGER_TO_SHORT_INTERVAL"
+            | "LONG_INTERVAL_TO_INTEGER"
+            | "INTEGER_TO_LONG_INTERVAL"
+            | "UUID_TO_INTEGER"
+            | "INTEGER_TO_UUID"
+            | "BOOL_TO_INTEGER"
+            | "INTEGER_TO_BOOL"
+            | "BINARY_TO_U64"
+            | "BINARY_TO_U128"
+    ) {
+        return Ok(None);
+    }
+    let ty = edit.with_nullability(edit.expression_type(operator)?, false)?;
+    let reduced = edit.derive_inner(
+        operator.into(),
+        [
+            ("type", Field::Reference(ty.into())),
+            ("source", Field::Reference(bound.into())),
+        ],
+    )?;
+    Ok(Some(edit.expression(reduced)?))
 }
 
 fn opcode(node: &Node) -> Option<&str> {
@@ -197,6 +239,38 @@ mod tests {
     use super::*;
     use feldera_sql_ir::Circuit;
     use serde_json::json;
+
+    #[test]
+    fn unary_waterline_uses_the_reduced_operand_and_operation_location() -> Result<(), Error> {
+        let circuit = Circuit::from_json(
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+        )?;
+        let position =
+            json!({"start_line_number":3,"start_column":5,"end_line_number":3,"end_column":9});
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class":"DBSPUnaryExpression","id":1,"opcode":"UNARY_PLUS","sourceEmpty":false,"position":position,
+            "type":{"class":"DBSPTypeInteger","id":2,"width":32,"signed":true,"mayBeNull":true,"code":"INT32"},
+            "source":{"class":"DBSPVariablePath","id":3,"type":{"node":2},"variable":"column"}
+        })])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let operator = edit.expression(roots[0])?;
+        let bound_type = edit.with_nullability(edit.expression_type(operator)?, false)?;
+        let bound = edit.named_variable(bound_type, "bound")?;
+        let reduced =
+            unary_waterline(&mut edit, operator, bound)?.expect("unary plus preserves order");
+        let result = edit.node(reduced.into())?;
+        assert_eq!(
+            result.field("position").unwrap().source_range()?,
+            serde_json::from_value(position).unwrap()
+        );
+        assert_eq!(result.edge("source")?, bound.into());
+        assert_eq!(opcode(result), Some("UNARY_PLUS"));
+        assert!(!edit.nullable(edit.expression_type(reduced)?)?);
+        let negate = edit.derive_inner(operator.into(), [("opcode", Field::Data(json!("NEG")))])?;
+        let negate = edit.expression(negate)?;
+        assert_eq!(unary_waterline(&mut edit, negate, bound)?, None);
+        Ok(())
+    }
 
     #[test]
     fn filter_bounds_preserve_comparison_order_and_offset_direction() -> Result<(), Error> {

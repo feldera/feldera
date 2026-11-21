@@ -154,9 +154,18 @@ public final class CircuitDumps {
                     || (pass instanceof InsertLimiters && Boolean.getBoolean("feldera.dump.limiterState")));
             ObjectNode state = captureState ? this.mapper.createObjectNode() : null;
             if (state != null && pass instanceof InsertLimiters limiters) {
+                state.set("warnings_before", this.limiterWarnings());
                 state.set("operators", LimiterInputs.capture(limiters, circuit));
                 state.put("gen2", this.compiler.options.ioOptions.gen2);
-                this.writeLimiterCheckpoint("input", circuit);
+                var checkpoint = this.writeLimiterCheckpoint("input", circuit);
+                var functions = LimiterInputs.transferFunctions(limiters, circuit);
+                if (!functions.isEmpty()) {
+                    var observation = ToJsonOuterVisitor.create(this.compiler, 1);
+                    observation.apply(circuit);
+                    var transfers = state.putObject("transfer_functions");
+                    transfers.putRawValue("checkpoint", new RawValue(LimiterInputs.encodeTransfers(checkpoint, functions)));
+                    transfers.putRawValue("observation", new RawValue(LimiterInputs.encodeTransfers(observation, functions)));
+                }
                 state.put("weight_type", org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight.INSTANCE.getId());
             }
             int entrySequence = this.sequence;
@@ -172,8 +181,10 @@ public final class CircuitDumps {
                 state.set("path", this.passPath);
                 state.put("next_generated_name", nextName);
                 state.put("next_generated_name_after", DBSPVariablePath.nextGeneratedName());
-                if (pass instanceof InsertLimiters)
+                if (pass instanceof InsertLimiters) {
+                    state.set("warnings_after", this.limiterWarnings());
                     this.writeLimiterCheckpoint("result", result);
+                }
                 try {
                     Files.writeString(this.directory.resolve("pass-state.jsonl"), state + "\n",
                             StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -189,10 +200,23 @@ public final class CircuitDumps {
         }
     }
 
-    private void writeLimiterCheckpoint(String role, DBSPCircuit circuit) {
+    private ArrayNode limiterWarnings() {
+        var warnings = this.mapper.createArrayNode();
+        for (var diagnostic : this.compiler.messages.messages) {
+            if (diagnostic.warning) {
+                var warning = warnings.addObject().put("error_type", diagnostic.errorType)
+                        .put("message", diagnostic.message);
+                warning.set("range", diagnostic.range.asJson());
+            }
+        }
+        return warnings;
+    }
+
+    private ToJsonOuterVisitor writeLimiterCheckpoint(String role, DBSPCircuit circuit) {
         ToJsonOuterVisitor writer = ToJsonOuterVisitor.createForReplay(this.compiler, this.renderedSql);
         circuit.accept(writer);
         this.writeLimiterFile(role, writer.getJsonString());
+        return writer;
     }
 
     private void writeLimiterFile(String role, String value) {

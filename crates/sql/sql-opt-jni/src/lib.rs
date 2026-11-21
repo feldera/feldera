@@ -408,6 +408,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             };
             return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, nodes)?)?);
         }
+        ("Monotonicity/Unary", [operator, bound]) => {
+            let operator = edit.expression(*operator)?;
+            let bound = edit.expression(*bound)?;
+            let Some(reduced) = feldera_sql_opt::unary_waterline(&mut edit, operator, bound)? else {
+                return Ok(Value::Null);
+            };
+            reduced
+        }
         ("Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity", [row]) => {
             let ty = edit.type_id(*row)?;
             feldera_sql_opt::monotone_identity(&mut edit, ty, pass == "Monotonicity/IndexedIdentity", &mut next)?
@@ -608,7 +616,7 @@ fn transform(
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
-        | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
@@ -830,6 +838,26 @@ fn transform(
             return Ok(
                 json!({"payloads": operator_numbers(feldera_sql_opt::cse_payloads(&circuit)?)}),
             );
+        }
+        if name == "PropagateEmptySources" {
+            use feldera_sql_ir::StreamKind;
+            use feldera_sql_opt::EmptyStreamEdit::*;
+            let Some(edits) = feldera_sql_opt::empty_stream_edits(&circuit)? else {
+                return Ok(json!({"needs_full_snapshot": true}));
+            };
+            let port = |p: OutputPort| json!([operator_number(p.operator), p.number]);
+            let mut actions = BTreeMap::new();
+            for (id, edit) in edits {
+                let action = match edit {
+                    Constant(StreamKind::Delta) => json!({"kind":"Delta"}),
+                    Constant(StreamKind::Collection) => json!({"kind":"Collection"}),
+                    Constant(StreamKind::Waterline) => return Err("empty multiset has a waterline clock".into()),
+                    Forward(p) => json!({"kind":"Forward","inputs":[port(p)]}),
+                    Sum(ports) => json!({"kind":"Sum","inputs":ports.into_iter().map(port).collect::<Vec<_>>()}),
+                };
+                actions.insert(operator_number(id), action);
+            }
+            return Ok(json!({"empty_stream_edits": actions}));
         }
         if name == "SeparateIntegrators" {
             if let Some(id) = feldera_sql_opt::snapshot_aggregate(&circuit)? {
