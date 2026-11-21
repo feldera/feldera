@@ -78,18 +78,28 @@ pub struct Origin {
     pub positions: Vec<SourceRange>,
 }
 
+#[derive(Debug)]
+enum RelationRecord<'a> {
+    Snapshot(Relation<'a>),
+    Retained { plan_id: i32 },
+}
+
 /// Text is borrowed directly from the circuit. Only the indexes, source ranges,
 /// and child lists are allocated when an optimizer asks for provenance.
 #[derive(Debug, Default)]
 pub struct Provenance<'a> {
     operators: BTreeMap<NodeId, OriginId>,
     origins: BTreeMap<OriginId, Origin>,
-    relations: BTreeMap<RelationId, Relation<'a>>,
+    relations: BTreeMap<RelationId, RelationRecord<'a>>,
+    live_relations: bool,
 }
 
 impl Circuit {
     pub fn provenance(&self) -> Result<Provenance<'_>, Error> {
-        let mut index = Provenance::default();
+        let mut index = Provenance {
+            live_relations: self.live_relations,
+            ..Provenance::default()
+        };
         index.visit_node(self, self.root)?;
         Ok(index)
     }
@@ -219,7 +229,17 @@ impl<'a> Provenance<'a> {
     }
 
     pub fn relation(&self, id: RelationId) -> Option<&Relation<'a>> {
-        self.relations.get(&id)
+        match self.relations.get(&id)? {
+            RelationRecord::Snapshot(relation) => Some(relation),
+            RelationRecord::Retained { .. } => None,
+        }
+    }
+
+    pub(super) fn plan_id(&self, id: RelationId) -> i32 {
+        match &self.relations[&id] {
+            RelationRecord::Snapshot(relation) => relation.plan_id,
+            RelationRecord::Retained { plan_id } => *plan_id,
+        }
     }
 
     fn visit_node(&mut self, circuit: &'a Circuit, id: NodeId) -> Result<(), Error> {
@@ -259,7 +279,16 @@ impl<'a> Provenance<'a> {
                 .ok_or_else(|| Error(format!("unknown provenance relation {id:?}")));
         }
         let id = RelationId(number(&value["id"])?);
-        let relation = Relation::deserialize(value).map_err(invalid)?;
+        let relation = if let Some(slot) = value.get("retained") {
+            if !self.live_relations {
+                return Err(Error::new("a detached circuit cannot use a retained relation"));
+            }
+            number(slot)?;
+            let plan_id = i32::deserialize(&value["planId"]).map_err(invalid)?;
+            RelationRecord::Retained { plan_id }
+        } else {
+            RelationRecord::Snapshot(Relation::deserialize(value).map_err(invalid)?)
+        };
         if self.relations.insert(id, relation).is_some() {
             return Err(Error(format!("duplicate provenance relation {id:?}")));
         }

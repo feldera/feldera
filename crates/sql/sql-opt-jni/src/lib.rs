@@ -153,7 +153,11 @@ fn transform(
         }
         _ => {}
     }
-    let circuit = Circuit::from_json_bytes(input)?;
+    let circuit = if live.is_some() {
+        Circuit::from_live_json_bytes(input)?
+    } else {
+        Circuit::from_json_bytes(input)?
+    };
     if pass == "MultisetAnalysis" {
         let facts = feldera_sql_opt::stream_multiplicities(&circuit)?;
         return Ok(multiplicities(facts));

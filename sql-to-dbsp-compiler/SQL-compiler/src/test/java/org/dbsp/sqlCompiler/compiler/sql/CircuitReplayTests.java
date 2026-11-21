@@ -12,6 +12,7 @@ import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.LastRel;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelReference;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelSequence;
@@ -27,6 +28,24 @@ import java.util.List;
 
 /** Exercise the actual file/CLI boundary, including a fresh compiler context. */
 public class CircuitReplayTests {
+    @Test
+    public void retainedRelationSurvivesRenumberingWithinOneOptimizerCall() {
+        var source = new RelReference.Snapshot(64, 7, false, "digest", "plan", "SELECT 1", null, null);
+        var origin = Utilities.deterministicObjectMapper().createObjectNode().put("id", 0).put("kind", "LastRel");
+        origin.set("position", SourcePositionRange.INVALID.asJson());
+        origin.putArray("positions");
+        var relation = origin.putObject("relation").put("id", 4).put("retained", 0).put("planId", 7);
+        var decoder = new ProvenanceCodec.Decoder(List.of(source));
+        Assert.assertSame(source, decoder.decode(origin).to(LastRel.class).relNode);
+        var second = origin.deepCopy().put("id", 1);
+        second.putObject("relation").put("ref", 4);
+        Assert.assertSame(source, decoder.decode(second).to(LastRel.class).relNode);
+        Assert.assertThrows(IllegalArgumentException.class, () -> new ProvenanceCodec.Decoder().decode(origin));
+        relation.put("planId", 8);
+        Assert.assertThrows(IllegalArgumentException.class,
+                () -> new ProvenanceCodec.Decoder(List.of(source)).decode(origin));
+    }
+
     @Test
     public void liveFlatmapRetainsOnlyTheMatchingShuffle() {
         var mapper = Utilities.deterministicObjectMapper();

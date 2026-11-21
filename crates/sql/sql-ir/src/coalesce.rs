@@ -200,8 +200,10 @@ impl Circuit {
             }
         }
         writer.node(self.root, 0)?;
+        let mut circuit = wire::validated(self.root, writer.nodes)?;
+        circuit.live_relations = self.live_relations;
         Ok(CircuitRewrite {
-            circuit: wire::validated(self.root, writer.nodes)?,
+            circuit,
             rebuilt_inputs,
         })
     }

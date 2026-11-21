@@ -285,7 +285,7 @@ public final class RustCircuitPass implements CircuitTransform {
         // recorded by earlier iterations of unused-field removal.
         var originalOperators = this.trimFilters != null || this.nativeName.equals("TrimWindows")
                 ? operatorsById(input) : Map.<Long, DBSPOperator>of();
-        var decoder = new JsonDecoder() {
+        var decoder = new JsonDecoder(null, writer.liveProvenanceDecoder()) {
             @Override
             DBSPOperator decodedOperator(long id, DBSPOperator decoded) {
                 var original = originalOperators.get(id);
@@ -683,7 +683,7 @@ public final class RustCircuitPass implements CircuitTransform {
         if (result.has("needs_full_snapshot")) {
             var writer = this.snapshots.writer();
             writer.apply(circuit);
-            result = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8), initial, state);
+            result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8), initial, state);
         }
         return result.required("facts");
     }

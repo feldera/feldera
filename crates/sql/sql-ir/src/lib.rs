@@ -310,6 +310,8 @@ impl<T: Clone> DerefMut for Shared<T> {
 
 #[derive(Clone, Debug)]
 pub struct Circuit {
+    // A live optimizer request can refer to relation snapshots held by its JVM caller.
+    live_relations: bool,
     root: NodeId,
     nodes: Shared<BTreeMap<NodeId, Node>>,
 }

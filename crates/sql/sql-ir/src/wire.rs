@@ -31,6 +31,7 @@ pub(super) fn validated(root: NodeId, nodes: Arena) -> Result<Circuit, Error> {
         }
     }
     Ok(Circuit {
+        live_relations: false,
         root,
         nodes: super::Shared(nodes.into()),
     })

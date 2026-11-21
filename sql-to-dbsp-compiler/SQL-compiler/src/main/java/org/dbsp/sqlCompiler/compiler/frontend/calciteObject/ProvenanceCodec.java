@@ -11,10 +11,12 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.List;
 
 /** Internal seam codec for provenance. Its two identity spaces preserve both
  * relational references and sharing of composition nodes. Public dataflow JSON
@@ -33,7 +35,15 @@ public final class ProvenanceCodec {
         private final Map<RelReference, String> renderedSql;
         private final Map<RelReference, Integer> references = new HashMap<>();
 
+        @Nullable private final List<RelReference.Snapshot> retained;
+
         public Encoder(DBSPCompiler compiler, Map<RelNode, Integer> planIds, Map<RelReference, String> renderedSql) {
+            this(compiler, planIds, renderedSql, null);
+        }
+
+        public Encoder(DBSPCompiler compiler, Map<RelNode, Integer> planIds, Map<RelReference, String> renderedSql,
+                       @Nullable List<RelReference.Snapshot> retained) {
+            this.retained = retained;
             this.compiler = compiler;
             this.planIds = planIds;
             this.renderedSql = renderedSql;
@@ -47,10 +57,22 @@ public final class ProvenanceCodec {
             int id = this.references.size();
             this.references.put(reference, id);
             result.put("id", id);
-            result.put("relId", reference.id());
             int planId = reference instanceof RelReference.Live live
                     ? this.planIds.getOrDefault(live.node(), -1)
                     : ((RelReference.Snapshot) reference).planId();
+            if (this.retained != null) {
+                // The Rust pass can reorder definitions. Its local relation ID and
+                // the slot that points back into this writer must travel separately.
+                int slot = this.retained.size();
+                var snapshot = reference instanceof RelReference.Snapshot saved ? saved
+                        : new RelReference.Snapshot(reference.id(), planId, reference.isTableScan(),
+                                reference.digest(), reference.text(),
+                                this.renderedSql.computeIfAbsent(reference, RelReference::sql),
+                                reference.statefulSqlName(), reference.origin(this.compiler));
+                this.retained.add(snapshot);
+                return result.put("retained", slot).put("planId", planId);
+            }
+            result.put("relId", reference.id());
             result.put("planId", planId);
             result.put("tableScan", reference.isTableScan());
             result.put("digest", reference.digest());
@@ -105,10 +127,30 @@ public final class ProvenanceCodec {
         private final Map<Integer, CalciteRelNode> nodes = new HashMap<>();
         private final Map<Integer, RelReference> references = new HashMap<>();
 
+        private final List<RelReference.Snapshot> retained;
+
+        public Decoder() {
+            this(List.of());
+        }
+
+        public Decoder(List<RelReference.Snapshot> retained) {
+            this.retained = retained;
+        }
+
         private RelReference reference(JsonNode json) {
             if (json.has("ref"))
                 return Utilities.getExists(this.references, Utilities.getIntProperty(json, "ref"));
             int id = Utilities.getIntProperty(json, "id");
+            if (json.has("retained")) {
+                int slot = Utilities.getIntProperty(json, "retained");
+                if (slot < 0 || slot >= this.retained.size())
+                    throw new IllegalArgumentException("Unknown retained relation " + slot);
+                var reference = this.retained.get(slot);
+                if (reference.planId() != Utilities.getIntProperty(json, "planId"))
+                    throw new IllegalArgumentException("Plan ID changed for retained relation " + slot);
+                Utilities.putNew(this.references, id, reference);
+                return reference;
+            }
             ViewOrigins.ViewSourcePosition origin = null;
             if (json.has("origin")) {
                 JsonNode saved = json.get("origin");

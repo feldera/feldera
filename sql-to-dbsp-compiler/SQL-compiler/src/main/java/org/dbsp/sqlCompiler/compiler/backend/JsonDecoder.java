@@ -59,8 +59,7 @@ public class JsonDecoder {
         }
     }
 
-    private final ProvenanceCodec.Decoder provenance =
-            new ProvenanceCodec.Decoder();
+    private final ProvenanceCodec.Decoder provenance;
     final Cache<IDBSPInnerNode> inner;
     final Cache<IDBSPOuterNode> outer;
     @Nullable private final ProgramMetadata programMetadata;
@@ -75,6 +74,11 @@ public class JsonDecoder {
 
     /** Use the resumed compiler's metadata so its passes and circuit share schema mutations. */
     public JsonDecoder(@Nullable ProgramMetadata programMetadata) {
+        this(programMetadata, new ProvenanceCodec.Decoder());
+    }
+
+    JsonDecoder(@Nullable ProgramMetadata programMetadata, ProvenanceCodec.Decoder provenance) {
+        this.provenance = provenance;
         this.inner = new Cache<>();
         this.outer = new Cache<>();
         this.programMetadata = programMetadata;

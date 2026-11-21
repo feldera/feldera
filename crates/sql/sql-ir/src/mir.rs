@@ -401,10 +401,10 @@ fn plan_link(
     Ok(match &origin.kind {
         OriginKind::Empty | OriginKind::PositionOnly { .. } => Value::Null,
         OriginKind::Final(id) => {
-            json!({"final": origins.relation(*id).expect("validated relation").plan_id})
+            json!({"final": origins.plan_id(*id)})
         }
         OriginKind::Intermediate(id) => {
-            json!({"partial": origins.relation(*id).expect("validated relation").plan_id})
+            json!({"partial": origins.plan_id(*id)})
         }
         OriginKind::Intersection(children) if children.len() == 1 => {
             plan_link(origins, children[0], remaining, depth + 1)?

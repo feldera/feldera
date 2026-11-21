@@ -209,6 +209,14 @@ fn provenance_uses_separate_identities_for_origins_and_relations() {
         OriginKind::Intermediate(relation)
     );
     assert_eq!(origins.relation(relation).unwrap().plan_id, 9);
+    let mut retained = graph.clone();
+    retained["allOperators"][0]["provenance"]["children"][0]["relation"] =
+        json!({"id":0, "retained":17, "planId":9});
+    let wire = serde_json::to_vec(&retained).unwrap();
+    assert!(Circuit::from_json_bytes(&wire).unwrap().provenance().is_err());
+    let live = Circuit::from_live_json_bytes(&wire).unwrap();
+    assert_eq!(live.to_json(), retained);
+    assert!(live.provenance().unwrap().relation(relation).is_none());
     let mut invalid = graph;
     invalid["allOperators"][0]["provenance"]["children"][1]["relation"]["ref"] = 1.into();
     assert!(Circuit::from_json(invalid).unwrap().provenance().is_err());

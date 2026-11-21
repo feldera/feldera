@@ -10,6 +10,14 @@ use serde_json::Value;
 use std::{cell::Cell, fmt};
 
 impl Circuit {
+    /// Decode a graph for a single in-process optimizer call. Relational origins
+    /// may refer to snapshots retained by that call's Java writer.
+    pub fn from_live_json_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        let mut circuit = Self::from_json_bytes(bytes)?;
+        circuit.live_relations = true;
+        Ok(circuit)
+    }
+
     /// Parse a UTF-8 circuit and check object keys, identities and edges.
     pub fn from_json_bytes(bytes: &[u8]) -> Result<Self, Error> {
         if let Ok(circuit) = decode_ordered(bytes) {

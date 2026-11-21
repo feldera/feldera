@@ -1,0 +1,30 @@
+{
+  "scope": "Paired Nexmark SQL compilation on CPU 12, comparing full relational snapshots with call-local JVM references. Each compiler has the same pass schedule. The instrumentation records byte counts, not elapsed times.",
+  "workspace_archive": ".bench-results/p3-jni-traffic/2026-21-11-04-00-59f39",
+  "base_commit": "59f390d10b208b2c78fbfd17da8f2837dcd0abcf",
+  "changes_patch_sha256": "7eb03ff69b3bd1c24aa1ad173cebc1700017b0f0a564b4247b4ed078daa85c57",
+  "baseline": {
+    "calls": 325,
+    "request_bytes": 135781212,
+    "pass_state_bytes": 132861,
+    "reply_bytes": 22830197,
+    "emitted_files": 5,
+    "emitted_file_hashes_sha256": "4dbdca8923270d0a23e142a7079b68927e65f50f2c799c86b04c7a75daeaf82f",
+    "profile_sha256": "bea59869e2ec892e24295ee1d951ab3309d4f163bf4da5c127c53eed36e22cdb",
+    "jar_sha256": "eaa7beb9a4f18ae90ebfa29fa43e85ecb51dfd3bc9af42752102f58a35cd610e",
+    "jni_sha256": "3a787b149c4803d20c465a93c1a92b11732308037ed49ad0b71a5764f5e34e52",
+    "driver_sha256": "bde64f48b2861d1b91e5ce4ccb9db660acca7cd17e17f699057e894c01f341ac"
+  },
+  "candidate": {
+    "calls": 325,
+    "request_bytes": 120454899,
+    "pass_state_bytes": 132861,
+    "reply_bytes": 11459152,
+    "emitted_files": 5,
+    "emitted_file_hashes_sha256": "4dbdca8923270d0a23e142a7079b68927e65f50f2c799c86b04c7a75daeaf82f",
+    "profile_sha256": "43f28e77cfb1732250c339ef87881f6fd96bbaf62d3a83ebd07c4dafefd82380",
+    "jar_sha256": "93ad1ab49570bc4a00b0a5d8d6ad170ec5377e115eafbffb34caf2935459ceb9",
+    "jni_sha256": "ce5717add7e682c70620ed677f3db5f95f3883e72d28417463164607c5541789",
+    "driver_sha256": "3ab9561a8243b6a543567d415c50b4ca3f24fd6ec57ea94556eea8bfa4e3db3d"
+  }
+}

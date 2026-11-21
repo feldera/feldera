@@ -67,6 +67,11 @@ graph alone. In a paired capture on the 97-pass build, request traffic at the
 pass adapter fell from 143,617,231 to 128,736,618 bytes. All five emitted files
 matched byte for byte. [JNI byte counts](evidence/p3-analysis-payloads.json)
 
+On the 99-pass compiler, keeping relation snapshots in the calling JVM reduced
+request bytes from 135,781,212 to 120,454,899 and reply bytes from 22,830,197
+to 11,459,152 across 325 calls for Nexmark. The four compiler artifacts and
+the result manifest matched byte for byte. [Paired capture](evidence/p3-retained-relations.json)
+
 In a separate Nexmark run on the 18-pass compiler, Java Flight Recorder captured 1,054 main-thread
 stack samples. Of those, 340 were inside a Rust JNI call, 170 were encoding
 or applying pass results in Java and 386 were in the Java Rust printer.
