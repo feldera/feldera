@@ -78,6 +78,15 @@ struct Args {
     #[arg(long)]
     recursive: bool,
 
+    /// Makes the joins adaptive (`dev_tweaks.adaptive_joins`).
+    #[arg(long)]
+    adaptive: bool,
+
+    /// Exits once every host has built and prepared its circuit, and prints
+    /// how long that took.
+    #[arg(long)]
+    init_only: bool,
+
     /// Facts loaded before the measured transactions.
     #[arg(long, default_value_t = 100_000)]
     load: usize,
@@ -137,7 +146,7 @@ fn build(circuit: &mut RootCircuit, depth: usize, recursive: bool) -> Result<Inp
     for i in 0..depth as u64 {
         chain = chain
             .map_index(|Tup2(a, b)| (*b % KEYS, *a))
-            .join(&dim, move |_key, a, d| Tup2(*a, *d + i));
+            .join_balanced(&dim, move |_key, a, d| Tup2(*a, *d + i));
     }
     chain.output();
 
@@ -211,11 +220,14 @@ impl Hosts {
             threads: Vec::new(),
         };
         for config in host_configs(args.workers, args.hosts)? {
-            let config = if args.mode == Mode::Skewed {
+            let mut config = if args.mode == Mode::Skewed {
                 config.with_splitter_chunk_size_records(args.chunk_size)
             } else {
                 config
             };
+            if args.adaptive {
+                config.dev_tweaks.adaptive_joins = Some(true);
+            }
             let (depth, recursive) = (args.depth, args.recursive);
             let (command_sender, command_receiver) = channel();
             let (answer_sender, answer_receiver) = channel();
@@ -445,7 +457,15 @@ fn facts(first: u64, n: usize, value: impl Fn(u64) -> u64) -> Vec<Tup2<u64, u64>
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let start = Instant::now();
     let hosts = Hosts::start(&args)?;
+    if args.init_only {
+        // A host answers its first command only after building its circuit.
+        hosts.run(|_| Command::StartTransaction);
+        println!("init_s={:.3}", start.elapsed().as_secs_f64());
+        hosts.stop();
+        return Ok(());
+    }
 
     // Load the dimension table, the facts and, for `--recursive`, a path graph.
     let dim = (0..KEYS).map(|key| Tup2(key, key * 7 % KEYS)).collect();
@@ -456,7 +476,12 @@ fn main() -> Result<()> {
     };
     hosts.run(|_| Command::StartTransaction);
     hosts.append(facts(0, args.load, |id| id * 3), dim, edges);
-    hosts.commit();
+    let start = Instant::now();
+    let steps = hosts.commit();
+    println!(
+        "initial_commit_steps={steps} initial_commit_s={:.3}",
+        start.elapsed().as_secs_f64()
+    );
 
     let mut next_fact = args.load as u64;
     let mut samples = Vec::new();

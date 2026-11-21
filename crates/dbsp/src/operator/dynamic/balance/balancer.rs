@@ -9,16 +9,13 @@ use crate::{
     operator::dynamic::balance::{
         FlushState, MaxSat,
         accumulate_trace_balanced::{KeyDistribution, RebalancingExchangeSenderExchangeMetadata},
+        clustering,
         maxsat::{Cost, HardConstraint, VariableIndex},
     },
-    utils::{components, indent},
+    utils::indent,
 };
 use itertools::Itertools as _;
 use num::abs;
-use petgraph::{
-    algo::kosaraju_scc,
-    graph::{DiGraph, UnGraph},
-};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
@@ -225,10 +222,12 @@ impl From<PartitioningPolicy> for u8 {
     }
 }
 
-/// A strongly connected component of the join graph.
+/// A set of streams whose partitioning policies the balancer chooses together.
 ///
-/// There is a path consisting of joins between any two streams in the cluster.
-/// Streams in the cluster must be assigned partitioning policies in coordination.
+/// Streams that joins connect share a cluster.  So do two groups of joined
+/// streams that each depend on the other: as separate clusters, each would wait
+/// for the other to commit, and the circuit would never commit a transaction.
+/// [`clustering::compute_clusters`] computes the clusters.
 #[derive(Default, Debug)]
 struct Cluster {
     /// Map from input stream to the layer index it belongs to.
@@ -321,7 +320,7 @@ struct BalancerInner {
     /// Set the first time `prepare` is called and clusters are computed.
     prepared: bool,
 
-    /// Connected components of the join graph:
+    /// The clusters, in ascending order of their smallest stream.
     clusters: Vec<Cluster>,
 
     /// Map from input stream to the cluster index it belongs to.
@@ -1167,10 +1166,11 @@ impl BalancerInner {
 /// in the circuit based on key distributions and user hints.
 ///
 /// * Adaptive join operators register themselves with the balancer.
-/// * The balancer partitions the join graph (vertices are streams, edges are joins) into connected components
-///   at circuit construction time. Each connected component is optimized independently.
-/// * At the start of each step, the balancer solves the optimization problem for each connected component
-///   to determine an optimal partitioning policy for each stream in the component.
+/// * Before the circuit starts running, the balancer partitions the streams into clusters: streams that joins
+///   connect share a cluster, and so do groups of joined streams that depend on each other in a cycle.
+///   Each cluster is optimized independently.
+/// * At the start of each step, the balancer solves the optimization problem for each cluster
+///   to determine an optimal partitioning policy for each stream in the cluster.
 /// * The balancer works in tandem with the RebalancingExchangeSender operator, which keeps track of the
 ///   key distribution of the stream and enforces the policy selected by the balancer by redistributing the
 ///   state of the integral according to the latest policy.
@@ -1271,7 +1271,6 @@ impl Balancer {
         // These policies are set in AccumulateTraceBalanced::restore.
         if !self.inner.borrow().prepared {
             self.inner.borrow_mut().prepared = true;
-            // Compute connected components of the join graph.
             self.compute_clusters(circuit);
         }
 
@@ -1347,197 +1346,37 @@ impl Balancer {
         self.inner.borrow().get_policy_for_stream(node_id)
     }
 
-    /// Partition nodes in `cluster` into layers such that nodes within a layer only depend
-    /// on nodes in earlier layers.
+    /// Partitions the streams that the balancer manages into clusters, and the
+    /// streams of each cluster into layers.
     ///
-    /// Layer 0 consists of all nodes that don't depend on any other nodes in the cluster.
-    /// Layer 1 consists of all nodes that depend on nodes in layer 0.
-    /// Layer 2 consists of all nodes that depend on nodes in layers 0 and 1, etc.
+    /// # Arguments
     ///
-    /// Returns a map from layer index to the nodes in that layer and a map from node id to the layer index it belongs to.
-    fn compute_layers(
-        &self,
-        dependencies: &BTreeMap<NodeId, BTreeSet<NodeId>>,
-        cluster: &[NodeId],
-    ) -> (BTreeMap<usize, Vec<NodeId>>, BTreeMap<NodeId, usize>) {
-        let mut layers: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
-        let mut layer_index = 0;
-        let mut remaining_nodes = cluster.iter().cloned().collect::<BTreeSet<_>>();
-        let mut node_to_layer = BTreeMap::new();
-
-        while !remaining_nodes.is_empty() {
-            let mut layer = Vec::new();
-            let mut new_remaining_nodes = BTreeSet::new();
-
-            // Find all cluster nodes without dependencies among remaining nodes; add them to layer_index and remove them from cluster.
-            for node in remaining_nodes.iter() {
-                if dependencies
-                    .get(node)
-                    .unwrap()
-                    .iter()
-                    .any(|dep| remaining_nodes.contains(dep))
-                {
-                    new_remaining_nodes.insert(*node);
-                } else {
-                    layer.push(*node);
-                    node_to_layer.insert(*node, layer_index);
-                }
-            }
-
-            remaining_nodes = new_remaining_nodes;
-
-            layers.insert(layer_index, layer);
-            layer_index += 1;
-        }
-
-        (layers, node_to_layer)
-    }
-
+    /// * `circuit` - The root circuit, whose stream and dependency edges
+    ///   determine the clusters and layers.
     fn compute_clusters(&self, circuit: &dyn CircuitBase) {
-        // println!(
-        //     "{} compute_clusters: integrals: {:?}, joins: {:?}",
-        //     Runtime::worker_index(),
-        //     self.inner.borrow().integrals,
-        //     self.inner.borrow().joins
-        // );
-
-        // Build an undirected graph with vertices being streams and edges being joins.
         let mut inner = self.inner.borrow_mut();
+        let layouts = clustering::compute_clusters(
+            circuit.num_nodes(),
+            circuit.edges().iter().map(|edge| (edge.from, edge.to)),
+            inner.integrals.keys().copied(),
+            &inner.joins,
+        );
 
-        // Map from NodeId to a vertex index in the graph.
-        let mut node_to_index = BTreeMap::new();
-
-        let mut join_graph = UnGraph::<NodeId, NodeId>::new_undirected();
-
-        for node_id in inner.integrals.keys() {
-            let node_index = join_graph.add_node(*node_id);
-            node_to_index.insert(*node_id, node_index);
-        }
-
-        for (join, (left, right, _is_left_join)) in inner.joins.iter() {
-            let left_index = *node_to_index.get(left).unwrap();
-            let right_index = *node_to_index.get(right).unwrap();
-            join_graph.add_edge(left_index, right_index, *join);
-        }
-
-        // Compute connected components of the join graph.
-        let clusters = components(&join_graph);
-        let clusters = clusters
+        let clusters: Vec<Cluster> = layouts
             .into_iter()
-            .map(|(node_indices, edge_indices)| {
-                let nodes = node_indices
-                    .iter()
-                    .map(|node| *join_graph.node_weight(*node).unwrap())
-                    .collect::<Vec<_>>();
-                let edges = edge_indices
-                    .into_iter()
-                    .map(|edge| {
-                        let join_id = *join_graph.edge_weight(edge).unwrap();
-                        let join_descr = inner.joins.get(&join_id).unwrap();
-                        (join_id, *join_descr)
-                    })
-                    .collect::<BTreeMap<_, _>>();
-                (nodes, edges)
-            })
-            .collect::<Vec<_>>();
-
-        let dependencies: BTreeMap<NodeId, BTreeSet<NodeId>> = circuit.transitive_ancestors();
-
-        let cluster_nodes: Vec<BTreeSet<NodeId>> = clusters
-            .iter()
-            .map(|(nodes, _)| nodes.iter().cloned().collect())
-            .collect();
-
-        // For each cluster, compute the union of dependencies of its nodes.
-        let cluster_dependencies: Vec<BTreeSet<NodeId>> = cluster_nodes
-            .iter()
-            .map(|cluster_nodes| {
-                cluster_nodes
-                    .iter()
-                    .flat_map(|node| dependencies.get(node).into_iter().flatten())
-                    .cloned()
-                    .collect()
+            .map(|layout| Cluster {
+                streams: layout.streams,
+                joins: layout.joins,
+                layers: layout.layers,
+                ..Cluster::default()
             })
             .collect();
-
-        // Add an edge between two clusters in a DiGraph if there is a dependency between them.
-        let mut cluster_graph = DiGraph::<usize, ()>::new();
-        let cluster_indices: Vec<_> = (0..cluster_nodes.len())
-            .map(|i| cluster_graph.add_node(i))
-            .collect();
-
-        for (i, deps) in cluster_dependencies.iter().enumerate() {
-            for (j, other_nodes) in cluster_nodes.iter().enumerate() {
-                if i != j && deps.intersection(other_nodes).next().is_some() {
-                    cluster_graph.add_edge(cluster_indices[i], cluster_indices[j], ());
-                }
-            }
-        }
-
-        // Compute strongly connected components of the cluster dependency graph.
-        let sccs = kosaraju_scc(&cluster_graph);
-
-        // Merge all clusters in each component
-        let mut merged_clusters: Vec<(Vec<NodeId>, BTreeMap<NodeId, (NodeId, NodeId, bool)>)> =
-            Vec::new();
-
-        for scc in sccs {
-            if scc.is_empty() {
-                continue;
-            }
-
-            let mut merged_nodes = Vec::new();
-            let mut merged_edges: BTreeMap<NodeId, (NodeId, NodeId, bool)> = BTreeMap::new();
-
-            for cluster_idx in scc {
-                let original_cluster_idx = cluster_graph[cluster_idx];
-                let (nodes, edges) = &clusters[original_cluster_idx];
-                merged_nodes.extend(nodes.iter().cloned());
-                merged_edges.extend(
-                    edges
-                        .iter()
-                        .map(|(join_id, join_descr)| (*join_id, *join_descr)),
-                );
-            }
-
-            merged_clusters.push((merged_nodes, merged_edges));
-        }
-
-        let clusters: Vec<Cluster> = merged_clusters
-            .into_iter()
-            .map(|(nodes, joins)| {
-                let (layers, streams) = self.compute_layers(&dependencies, &nodes);
-                Cluster {
-                    streams,
-                    joins,
-                    layers,
-                    solution: BTreeMap::new(),
-                    last_distribution: BTreeMap::new(),
-                    refresh_requested: false,
-                }
-            })
-            .collect();
-
         for (index, cluster) in clusters.iter().enumerate() {
             for stream in cluster.streams.keys() {
                 inner.stream_to_cluster.insert(*stream, index);
             }
         }
-
-        // println!(
-        //     "{} balancer clusters: {:?}",
-        //     Runtime::worker_index(),
-        //     clusters
-        // );
-
         inner.clusters = clusters;
-
-        // TODO:
-        // Validation:
-        // - Each stream is in exactly one cluster.
-        // - Each join is in exactly one cluster.
-        // - Each cluster has at least one stream.
-        // - Each cluster has at least one join.
     }
 
     pub fn set_auto_rebalance(&self, enable: bool) -> Result<(), Error> {
