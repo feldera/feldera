@@ -14,11 +14,11 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 2.44 | 3.05 | 2.98 | 3.90 | 1.312× |
-| Nexmark suite | 5.31 | 13.10 | 7.79 | 15.53 | 1.994× |
-| Outer join | 2.12 | 2.65 | 2.67 | 3.33 | 1.248× |
+| Correlated array subquery | 2.44 | 3.12 | 3.25 | 3.82 | 1.177× |
+| Nexmark suite | 5.85 | 13.02 | 7.21 | 14.85 | 2.061× |
+| Outer join | 2.24 | 2.69 | 2.84 | 3.35 | 1.180× |
 
-All three workloads exceeded the 1.2× ceiling. The 97-pass build measured 1.175×, 1.980× and 1.241× in workload order. The 96-pass build measured 1.290×, 2.367× and 1.171× in workload order.
+With relational snapshots retained in the JVM, the array subquery and the outer join met the 1.2× ceiling. Nexmark exceeded it. Before that change, a separate run measured 1.312×, 1.994× and 1.248× in workload order. Host load varied between runs. The 97-pass build measured 1.175×, 1.980× and 1.241× in workload order. The 96-pass build measured 1.290×, 2.367× and 1.171× in workload order.
 The 94-pass build measured 1.303×, 2.693× and 1.230× in workload order. The 91-pass build with live graph encoding reuse measured 1.273×, 2.449× and 1.259×. Before the live codec change, the
 91-pass build measured 1.270×, 2.774× and 1.158×. The 89-pass build measured 1.211×,
 2.606× and 1.271× in workload order. The corrected 88-pass build measured
