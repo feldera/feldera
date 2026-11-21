@@ -2005,10 +2005,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
     record LatenessFilter(DBSPClosureExpression function, DBSPClosureExpression error) {}
 
     LatenessFilter latenessFilter(ProgramIdentifier tableOrViewName, DBSPType rowType,
-                                  IMaybeMonotoneType monotoneType, DBSPType controlType) {
+                                  PartiallyMonotoneTuple monotoneType, DBSPType controlType) {
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
         Utilities.enforce(leftSliceType.sameType(controlType),
                 () -> "Projection type does not match control type " + leftSliceType + "/" + controlType);
+
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var columns = new ArrayList<Integer>();
+            for (int i = 0; i < monotoneType.size(); i++)
+                if (monotoneType.getFieldType(i).mayBeMonotone())
+                    columns.add(i);
+            var pair = RustCircuitPass.latenessFilter(this.compiler, tableOrViewName, columns, rowType, controlType);
+            return new LatenessFilter(pair.left, pair.right);
+        }
 
         DBSPVariablePath dataVar = rowType.ref().var();
         DBSPExpression projection = monotoneType.projectExpression(dataVar.deref());

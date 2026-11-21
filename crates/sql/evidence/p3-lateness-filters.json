@@ -1,0 +1,30 @@
+{
+  "scope": "The Java limiter passes declared LATENESS column indices, the relation name and the row and waterline types to Rust. Rust builds the row predicate and error closure for sources and views.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from InsertLimiters, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "rust_gzip_sha256": "3b2d9c0c9791046c137290efff43df1a49eb379ce24675778d179578171dc04b",
+      "cases_adding_filters": 232,
+      "new_keyed_sources": 29,
+      "new_controlled_filters": 500
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "rust_gzip_sha256": "c47907de879689db4b579e27e4fcc4f8af6059938a182c2053bc34b9486a27f5",
+      "cases_adding_filters": 207,
+      "new_keyed_sources": 0,
+      "new_controlled_filters": 497
+    }
+  },
+  "compiler_jar_sha256": "2350a3ddda10e802f763ad9cf8b514521fc01985e3e90079b98dda45399307b0",
+  "optimizer_library_sha256": "d7d8ee5e364be540c4ef17b83b3b3005259fcb186f5dec7c4e2ab0969ed380fa",
+  "comparator_sha256": "b54092278f23f4c3cb2cd161b3e91bdb2edd572797130e75a48d9ea4a554cc58"
+}

@@ -145,6 +145,16 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let (key, left, right) = (edit.type_id(*key)?, edit.type_id(*left)?, edit.type_id(*right)?);
             feldera_sql_opt::asof_projection(&mut edit, *function, key, left, right, &mut next, &mut warnings)?
         }
+        ("Limiters/RowFilter", [row, waterline]) => {
+            let (name, columns): (String, Vec<usize>) = serde_json::from_slice(state)?;
+            let row = edit.type_id(*row)?;
+            let waterline = edit.type_id(*waterline)?;
+            let filter = feldera_sql_opt::limiters::row_filter(
+                &mut edit, &name, row, &columns, waterline, &mut next,
+            )?;
+            let functions = edit.circuit().additional_expressions(&arena, &[filter.function, filter.error])?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
+        }
         ("Limiters/Join", inputs) => {
             let shapes: [Option<feldera_sql_opt::limiters::Projection>; 2] = serde_json::from_slice(state)?;
             let mut types = inputs.iter();
@@ -393,7 +403,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

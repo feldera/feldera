@@ -267,6 +267,17 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Apply", roots));
     }
 
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> latenessFilter(DBSPCompiler compiler,
+            ProgramIdentifier name, List<Integer> columns, DBSPType row, DBSPType waterline) {
+        try {
+            var reply = invokeLowering(compiler, "Limiters/RowFilter",
+                    MAPPER.writeValueAsBytes(List.of(name.name(), columns)), row, waterline);
+            return loweredClosurePair(reply);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode LATENESS columns", error);
+        }
+    }
+
     public static DBSPClosureExpression joinWaterline(DBSPCompiler compiler,
             @Nullable OutputPort left, @Nullable IMaybeMonotoneType leftShape,
             @Nullable OutputPort right, @Nullable IMaybeMonotoneType rightShape) {
@@ -425,10 +436,16 @@ public final class RustCircuitPass implements CircuitTransform {
         return reply.value.isNull() ? null : decodeClosurePair(reply);
     }
 
+    private static Pair<DBSPClosureExpression, DBSPClosureExpression> loweredClosurePair(LoweringReply reply) {
+        var pair = decodeClosurePair(new LoweringReply(reply.writer, reply.value.required("functions")));
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return pair;
+    }
+
     private static Pair<DBSPClosureExpression, DBSPClosureExpression> decodeClosurePair(LoweringReply reply) {
         var functions = reply.value;
         if (!functions.isArray() || functions.size() != 2)
-            throw new IllegalStateException("Expected two projection closures from Rust");
+            throw new IllegalStateException("Expected two closures from Rust");
         var decoder = expressionDecoder(reply.writer);
         return Pair.of(decoder.decodeInner(functions.get(0), DBSPClosureExpression.class),
                 decoder.decodeInner(functions.get(1), DBSPClosureExpression.class));
@@ -522,9 +539,7 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             var reply = invokeLowering(compiler, "Asof/Timestamps",
                     MAPPER.writeValueAsBytes(new int[]{leftIndex, rightIndex}), left, right);
-            var pair = decodeClosurePair(new LoweringReply(reply.writer, reply.value.required("functions")));
-            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-            return pair;
+            return loweredClosurePair(reply);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode ASOF timestamp columns", error);
         }

@@ -210,13 +210,15 @@ pub(super) fn late_error(
     edit.tuple_expr(data.into(), false, &fields)
 }
 
-pub(super) struct RowFilter {
+/// The predicate and error-row closures used by a LATENESS input or view.
+pub struct RowFilter {
     pub function: ExpressionId,
     pub error: ExpressionId,
-    pub error_type: TypeId,
+    pub(super) error_type: TypeId,
 }
 
-pub(super) fn row_filter(
+/// Compare the declared columns, in row order, against the compacted waterline.
+pub fn row_filter(
     edit: &mut CircuitEditor,
     table: &str,
     row: TypeId,

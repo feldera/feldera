@@ -4,6 +4,7 @@ mod filter;
 mod join;
 mod keyed;
 mod pass;
+pub use filter::{RowFilter, row_filter};
 pub use join::join_waterline;
 pub use pass::{insert_limiters, LimiterInputs};
 mod projection;

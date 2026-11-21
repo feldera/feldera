@@ -855,6 +855,11 @@ available bound when only one side supplies a key. When both sides bound the
 key it takes the pointwise maximum. All 291 classic and 259 Gen-2 selected
 limiter boundaries matched Java. [Join waterline comparisons](evidence/p3-join-waterlines.json)
 
+For tables and views with LATENESS, Rust builds the predicate that admits a
+row and the error payload for a rejected row. The 550 selected limiter
+boundaries matched Java, including 997 controlled filters and 29 keyed
+sources. [Late-row filter comparisons](evidence/p3-lateness-filters.json)
+
 Rust projects compacted waterline rows and combines bounds with a balanced
 pointwise minimum. All 550 selected limiter boundaries matched, including 386
 new multi-input apply operators with two to five inputs. A directed test checks
