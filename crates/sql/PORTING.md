@@ -850,6 +850,11 @@ their calls before Java inserts the apply operators. The resulting graph,
 generated names and diagnostics matched Java at all 550 selected
 `InsertLimiters` boundaries. [Limiter closure comparisons](evidence/p3-limiter-applications.json)
 
+Rust builds the closure that combines a join’s input waterlines. It uses the
+available bound when only one side supplies a key. When both sides bound the
+key it takes the pointwise maximum. All 291 classic and 259 Gen-2 selected
+limiter boundaries matched Java. [Join waterline comparisons](evidence/p3-join-waterlines.json)
+
 Rust projects compacted waterline rows and combines bounds with a balanced
 pointwise minimum. All 550 selected limiter boundaries matched, including 386
 new multi-input apply operators with two to five inputs. A directed test checks

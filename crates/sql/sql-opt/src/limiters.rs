@@ -1,8 +1,10 @@
 //! Waterline operators built from monotonicity facts on the expanded circuit.
 
 mod filter;
+mod join;
 mod keyed;
 mod pass;
+pub use join::join_waterline;
 pub use pass::{insert_limiters, LimiterInputs};
 mod projection;
 mod source;

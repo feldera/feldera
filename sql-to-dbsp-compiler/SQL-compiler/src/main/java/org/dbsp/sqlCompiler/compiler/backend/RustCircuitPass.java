@@ -267,6 +267,28 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Apply", roots));
     }
 
+    public static DBSPClosureExpression joinWaterline(DBSPCompiler compiler,
+            @Nullable OutputPort left, @Nullable IMaybeMonotoneType leftShape,
+            @Nullable OutputPort right, @Nullable IMaybeMonotoneType rightShape) {
+        var shapes = MAPPER.createArrayNode();
+        var types = new ArrayList<DBSPType>(2);
+        for (int side = 0; side < 2; side++) {
+            var port = side == 0 ? left : right;
+            if (port == null) {
+                shapes.addNull();
+            } else {
+                types.add(port.outputType());
+                shapes.add(LimiterInputs.projection(Objects.requireNonNull(side == 0 ? leftShape : rightShape)));
+            }
+        }
+        try {
+            return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Join",
+                    MAPPER.writeValueAsBytes(shapes), types.toArray(DBSPType[]::new)));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode join waterline projections", error);
+        }
+    }
+
     public static DBSPClosureExpression minimumWaterline(DBSPCompiler compiler, List<OutputPort> inputs) {
         var types = inputs.stream().map(OutputPort::outputType).toArray(DBSPType[]::new);
         return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Minimum", types));

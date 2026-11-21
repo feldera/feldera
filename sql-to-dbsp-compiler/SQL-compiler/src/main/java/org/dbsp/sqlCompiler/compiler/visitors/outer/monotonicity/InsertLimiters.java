@@ -200,7 +200,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Inserts in the circuit an apply2 operator that computes {@code function} of the
      * waterlines produced by {@code left} and {@code right}. */
     OutputPort createApply2(OutputPort left, OutputPort right, DBSPClosureExpression function) {
-        var closure = applyWaterlines(this.compiler, List.of(left, right), function);
+        return this.insertApply2(left, right, applyWaterlines(this.compiler, List.of(left, right), function));
+    }
+
+    private OutputPort insertApply2(OutputPort left, OutputPort right, DBSPClosureExpression closure) {
         DBSPApply2Operator result = new DBSPApply2Operator(
                 left.node().getRelNode(), closure, left, right);
         result.addAnnotation(Waterline.INSTANCE, DBSPApply2Operator.class);
@@ -1590,7 +1593,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
             rightMono = Monotonicity.getBodyType(rm).to(PartiallyMonotoneTuple.class);
         }
 
-        if (leftLimiter != null && rightLimiter != null) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var closure = RustCircuitPass.joinWaterline(this.compiler, leftLimiter, leftMono, rightLimiter, rightMono);
+            merger = leftLimiter != null && rightLimiter != null
+                    ? this.insertApply2(leftLimiter, rightLimiter, closure)
+                    : this.insertApply(Objects.requireNonNullElse(leftLimiter, rightLimiter), closure);
+        } else if (leftLimiter != null && rightLimiter != null) {
             // (kl, l), (kr, r) -> (union(kl, kr), l, r)
             Utilities.enforce(leftMono != null);
             Utilities.enforce(rightMono != null);

@@ -145,6 +145,20 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let (key, left, right) = (edit.type_id(*key)?, edit.type_id(*left)?, edit.type_id(*right)?);
             feldera_sql_opt::asof_projection(&mut edit, *function, key, left, right, &mut next, &mut warnings)?
         }
+        ("Limiters/Join", inputs) => {
+            let shapes: [Option<feldera_sql_opt::limiters::Projection>; 2] = serde_json::from_slice(state)?;
+            let mut types = inputs.iter();
+            let mut side = |shape| -> Result<_, feldera_sql_ir::Error> {
+                let id = types.next().ok_or_else(|| feldera_sql_ir::Error::new("missing join waterline type"))?;
+                Ok((edit.type_id(*id)?, shape))
+            };
+            let [left, right] = shapes.each_ref().map(Option::as_ref);
+            let sides = [left.map(&mut side).transpose()?, right.map(side).transpose()?];
+            if types.next().is_some() {
+                return Err("unexpected extra join waterline type".into());
+            }
+            feldera_sql_opt::limiters::join_waterline(&mut edit, sides, &mut next, &mut warnings)?
+        }
         ("Limiters/Project", [input, declared]) => {
             let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] = serde_json::from_slice(state)?;
             let ty = edit.type_id(*input)?;
@@ -379,7 +393,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

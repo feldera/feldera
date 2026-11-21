@@ -1,0 +1,24 @@
+{
+  "scope": "Rust combines the available join bounds into a key, left value and right value. The Java monotonicity analysis supplies the two input projections.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from InsertLimiters, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "rust_gzip_sha256": "b823e2289cceb5971cad14987896be0ac10b14fbe504a2deaa584697a1bf8fe4"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "rust_gzip_sha256": "d9010d27b02e71df650eee24a953d596727603db5de506f72a50ab219bf48ea1"
+    }
+  },
+  "compiler_jar_sha256": "c0d4ebf2bb2a6ecc557a573e8c0f32a46f77232448ac1d756bc0dda1427485aa",
+  "optimizer_library_sha256": "976ea8dcb19807003f8ac681cf4840dcde3414453d787ede50587a011676d8e9",
+  "comparator_sha256": "b54092278f23f4c3cb2cd161b3e91bdb2edd572797130e75a48d9ea4a554cc58"
+}
