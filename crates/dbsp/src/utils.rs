@@ -3,7 +3,6 @@ mod sample;
 //pub(crate) mod tests;
 pub(crate) mod binary_heap;
 mod consolidation;
-mod graph;
 mod is_none;
 mod sort;
 mod supports_roaring;
@@ -28,7 +27,6 @@ pub use consolidation::{
     ConsolidatePairedSlices, consolidate, consolidate_from, consolidate_paired_slices,
     consolidate_payload_from, consolidate_slice,
 };
-pub use graph::components;
 
 pub use is_none::IsNone;
 pub use supports_roaring::SupportsRoaring;
