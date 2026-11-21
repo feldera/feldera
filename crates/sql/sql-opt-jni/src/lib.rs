@@ -609,6 +609,29 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "Views/RemoveOrdinary" | "Views/RemoveAll" => {
+            #[derive(serde::Deserialize)]
+            struct View {
+                id: u64,
+                name: String,
+                recursive: bool,
+                lateness: bool,
+                input: [u64; 2],
+            }
+            let mode = if pass == "Views/RemoveAll" {
+                feldera_sql_opt::ViewRemoval::All
+            } else {
+                feldera_sql_opt::ViewRemoval::Ordinary { error_view }
+            };
+            let views: Vec<View> = serde_json::from_slice(input)?;
+            let mut edits = BTreeMap::new();
+            for view in views {
+                if mode.removes(&view.name, view.recursive, view.lateness) {
+                    edits.insert(view.id, json!({"kind": "Forward", "inputs": [view.input]}));
+                }
+            }
+            return Ok(json!(edits));
+        }
         "Monotonicity/Function" => {
             let (name, arguments): (String, Vec<feldera_sql_opt::WaterlineArgument>) = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::function_waterline(&name, &arguments))?);

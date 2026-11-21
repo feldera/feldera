@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+The two view-removal passes send view metadata and input ports to Rust. Their
+placement, generated names, settings, diagnostics and canonical entry and exit
+circuits matched Java at all 1,100 observed LATENESS/NOW placements. On Nexmark,
+their combined request shrank from 3,544,712 bytes to 1,725. Across six measured
+pairs their median combined time fell from 511 ms to 35 ms. The median time
+summed over all instrumented passes rose from 5.18 s to 5.72 s. All seven pairs,
+including warmup, produced byte-identical published artifacts and manifests.
+[View-removal observations and profile](evidence/p3-view-forwarding.json)
+
 | Pass | Classic invocations | Gen-2 invocations | Invocations that changed the graph |
 |---|---:|---:|---:|
 | [RemoveNoops](evidence/p3-remove-noops.json) | 18,067 | 18,341 | 1,148 |

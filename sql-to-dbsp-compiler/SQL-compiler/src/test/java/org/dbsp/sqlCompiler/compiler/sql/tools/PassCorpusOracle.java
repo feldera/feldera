@@ -337,8 +337,10 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.active.put("table_name", table.tableName().name());
         if (pass instanceof DeadCode dead)
             this.active.put("keep_sources", dead.keepAllSources);
-        if (pass instanceof RemoveViewOperators views) {
-            this.active.put("remove_all", views.removesAllViews());
+        if (this.passClass.equals("RemoveViewOperators")) {
+            boolean removeAll = pass instanceof RustCircuitPass rust ? rust.removesAllViews()
+                    : ((RemoveViewOperators) pass).removesAllViews();
+            this.active.put("remove_all", removeAll);
             this.active.put("error_view", DBSPCompiler.ERROR_VIEW_NAME.name());
         }
         if (this.passClass.equals("CSE")) {

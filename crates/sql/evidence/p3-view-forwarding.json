@@ -1,0 +1,95 @@
+{
+  "pass": "RemoveViewOperators",
+  "build": {
+    "jar_sha256": "7a074eb501f65a409ee7f6f198920de2eb4850a765d015173854ee5c761bec44",
+    "optimizer_library_sha256": "bd49cd53d053a99f177a13747a0a390f83357eed2aedd938fe94836cef5ea92b",
+    "driver_sha256": "1fc44be178a44b554a91709aae057141779ddf56e59cf3caf2646bb952bb75d2",
+    "pass_kinds": 105
+  },
+  "full_s2_replay": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "s4": {
+    "classic": {
+      "cases": 291,
+      "invocations": 582,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_observations_sha256": "fd1ea2563044bfabdc46c2f50cd035ce2e4e3353295b7dcbe92c86110482f41f",
+      "rust_observations_sha256": "b403b4730e5474eb3c4814035d258e6a78d74b4b51528a5a15a64c5ac00261e8"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 518,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_observations_sha256": "8bb063d353ead1deabee35929c75f6c25933ea0b992851d3e64b9263dad41e86",
+      "rust_observations_sha256": "90dc15b6b944e02473a9fefed447c7968204f31c7cc62ef5890ad9cbd791ddc0"
+    }
+  },
+  "paired_nexmark_profile": {
+    "warmup_pairs": 1,
+    "measured_pairs": 6,
+    "order": "alternating",
+    "artifacts_and_manifests_byte_equal_in_every_pair": true,
+    "baseline": {
+      "view_request_bytes": [
+        3544712,
+        3544712,
+        3544712,
+        3544712,
+        3544712,
+        3544712
+      ],
+      "both_view_passes_ms": [
+        734.862,
+        688.161,
+        519.878,
+        502.152,
+        500.808,
+        398.004
+      ],
+      "all_instrumented_passes_ms": [
+        6969.29,
+        6920.005,
+        5225.886,
+        5133.01,
+        4921.599,
+        4911.946
+      ]
+    },
+    "candidate": {
+      "view_request_bytes": [
+        1725,
+        1725,
+        1725,
+        1725,
+        1725,
+        1725
+      ],
+      "both_view_passes_ms": [
+        54.168,
+        37.407,
+        32.289,
+        21.631,
+        24.407,
+        45.908
+      ],
+      "all_instrumented_passes_ms": [
+        6556.827,
+        5676.223,
+        5763.908,
+        5364.89,
+        5141.289,
+        7653.059
+      ]
+    }
+  }
+}

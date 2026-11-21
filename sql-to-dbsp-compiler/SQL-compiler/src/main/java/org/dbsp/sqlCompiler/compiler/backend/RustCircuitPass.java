@@ -1411,14 +1411,14 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    private DBSPCircuit applyEmptyStreamEdits(DBSPCircuit circuit, JsonNode edits) {
+    private DBSPCircuit applyStreamEdits(DBSPCircuit circuit, JsonNode edits) {
         if (edits.isEmpty())
             return circuit;
         var originals = new HashMap<Long, DBSPOperator>();
         visitOperators(circuit.getAllOperators(), op -> originals.put(op.id, op));
         return new CircuitCloneVisitor(this.compiler, false) {
             private OutputPort input(JsonNode port) {
-                var source = Objects.requireNonNull(originals.get(port.required(0).longValue()), "Unknown empty-stream input");
+                var source = Objects.requireNonNull(originals.get(port.required(0).longValue()), "Unknown stream input");
                 return this.mapped(source.getOutput(port.required(1).intValue()));
             }
 
@@ -1446,7 +1446,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         edit.required("inputs").forEach(port -> inputs.add(this.input(port)));
                         this.map(op, op.withInputs(inputs, false).to(DBSPSimpleOperator.class));
                     }
-                    default -> throw new IllegalStateException("Unknown empty-stream edit " + edit);
+                    default -> throw new IllegalStateException("Unknown stream edit " + edit);
                 }
             }
         }.apply(circuit);
@@ -1530,6 +1530,28 @@ public final class RustCircuitPass implements CircuitTransform {
             throw new IllegalStateException("RemoveTable returned an unknown source");
         this.compiler.removeTable(Objects.requireNonNull(this.tableToRemove));
         return result;
+    }
+
+    private record ViewFacts(long id, String name, boolean recursive, boolean lateness, long[] input) {}
+
+    public boolean removesAllViews() {
+        return this.nativeName.equals("RemoveAllViews");
+    }
+
+    private DBSPCircuit removeViews(DBSPCircuit circuit, long next) throws IOException {
+        var views = new ArrayList<ViewFacts>();
+        visitOperators(circuit.getAllOperators(), op -> {
+            if (op instanceof DBSPViewOperator view) {
+                var input = view.input();
+                views.add(new ViewFacts(view.id, view.viewName.name(), view.metadata.recursive,
+                        view.metadata.hasLateness(), new long[]{input.operator.id, input.outputNumber}));
+            }
+        });
+        if (views.isEmpty())
+            return circuit;
+        String pass = this.removesAllViews() ? "Views/RemoveAll" : "Views/RemoveOrdinary";
+        var edits = this.invoke(pass, MAPPER.writeValueAsBytes(views), next, EMPTY_CONTEXT);
+        return this.applyStreamEdits(circuit, edits);
     }
 
     private void findWindowGroups(DBSPCircuit circuit, FindWindowGroups analysis, long next) throws IOException {
@@ -2089,6 +2111,9 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "RemoveViewOperators", "RemoveAllViews" -> {
+                    return this.removeViews(circuit, initial);
+                }
                 case "FindJoinTrees" -> {
                     var isolated = this.invoke("Topology/FindJoinTrees", OptimizerTopology.encode(circuit,
                             OptimizerTopology.Details.CONSUMERS), initial, state);
@@ -2143,7 +2168,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "RemoveNoops", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
-                     "RemoveViewOperators", "RemoveAllViews", "ExpandAggregateZero", "ExpandMetadataCasts",
+                     "ExpandAggregateZero", "ExpandMetadataCasts",
                      "LinearPostprocessRetainKeys", "ExpandHop", "RemoveIdentityOperators", "BuildNestedOperators",
                      "SubstituteLeftJoins", "ChainVisitor", "ImplementChains", "StrayGC", "SeparateIntegrators" -> {
                     var details = switch (this.nativeName) {
@@ -2159,7 +2184,7 @@ public final class RustCircuitPass implements CircuitTransform {
                     JsonNode probe = this.invoke("Topology/" + this.nativeName, OptimizerTopology.encode(circuit, details),
                             initial, state);
                     if (probe.has("empty_stream_edits"))
-                        return this.applyEmptyStreamEdits(circuit, probe.required("empty_stream_edits"));
+                        return this.applyStreamEdits(circuit, probe.required("empty_stream_edits"));
                     if (probe.has("stream_aggregate")) {
                         var aggregate = findOperator(circuit.allOperators, probe.required("stream_aggregate").longValue());
                         throw new InternalCompilerError("StreamAggregate operator should have been removed " + Objects.requireNonNull(aggregate));

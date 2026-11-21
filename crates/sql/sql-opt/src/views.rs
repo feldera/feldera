@@ -9,7 +9,19 @@ pub enum ViewRemoval<'a> {
     All,
 }
 
-fn preserve(node: &Node, error_view: &str) -> Result<bool, Error> {
+impl ViewRemoval<'_> {
+    pub fn removes(&self, name: &str, recursive: bool, has_lateness: bool) -> bool {
+        match self {
+            Self::All => true,
+            Self::Ordinary { error_view } => name != *error_view && !recursive && !has_lateness,
+        }
+    }
+}
+
+fn removable(node: &Node, mode: &ViewRemoval<'_>) -> Result<bool, Error> {
+    if matches!(mode, ViewRemoval::All) {
+        return Ok(true);
+    }
     let Some(Field::Object(metadata)) = node.field("metadata") else {
         return Err(Error::new("view requires metadata"));
     };
@@ -19,13 +31,11 @@ fn preserve(node: &Node, error_view: &str) -> Result<bool, Error> {
     let Some(Field::Array(columns)) = metadata.get("columns") else {
         return Err(Error::new("view requires column metadata"));
     };
-    if node.relation_name("viewName")? == error_view
-        || recursive
-            .as_bool()
-            .ok_or_else(|| Error::new("invalid recursive flag"))?
-    {
-        return Ok(true);
-    }
+    let name = node.relation_name("viewName")?;
+    let recursive = recursive
+        .as_bool()
+        .ok_or_else(|| Error::new("invalid recursive flag"))?;
+    let mut has_lateness = false;
     for column in columns {
         let Field::Object(properties) = column else {
             return Err(Error::new("invalid view column"));
@@ -35,10 +45,11 @@ fn preserve(node: &Node, error_view: &str) -> Result<bool, Error> {
             .and_then(Field::node_id)
             .is_some()
         {
-            return Ok(true);
+            has_lateness = true;
+            break;
         }
     }
-    Ok(false)
+    Ok(mode.removes(name, recursive, has_lateness))
 }
 
 pub fn remove_views(
@@ -52,12 +63,9 @@ pub fn remove_views(
         if node.operator_kind() != Some(OperatorKind::View) {
             continue;
         }
-        if let ViewRemoval::Ordinary { error_view } = mode {
-            if preserve(node, error_view)? {
-                continue;
-            }
+        if removable(node, &mode)? {
+            removed.insert(id);
         }
-        removed.insert(id);
     }
     crate::rebuild::rebuild_input_closures(circuit.bypass_unary_operators(&removed)?, next)
 }
