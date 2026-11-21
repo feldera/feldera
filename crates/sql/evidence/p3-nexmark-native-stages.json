@@ -1,0 +1,42 @@
+{
+  "scope": "Elapsed time inside an instrumented JNI library during three fresh Nexmark compilations pinned to Linux ARM64 CPU 15. The decode interval includes validation. The rewrite interval runs from decode completion to the publishing callback. The encode interval constructs the live graph reply. Early-return analyses and final JSON serialization are outside the last two intervals. Other corpus work ran concurrently.",
+  "reference_commit": "a039e2fda",
+  "instrumented_crate_source_sha256": "ac172a2bc25d31f0c6061484a3791d155d097a3feba03adbd42fdba4ee6aaf14",
+  "library_sha256": "241c2ee5914ba32bc9d74b2debdacb081888e636a03c5b21fd820cd60c3c4a6e",
+  "driver_sha256": "52a1cf907b0ddf95677dc4110cd486266a80ce6c0b6699d9ee8734d473f479d2",
+  "jar_sha256": "5534a54d1bcf7483f4b539004f3364f6afb21e6fd88ac1f7ad8173e5221a0b1a",
+  "artifacts_sha256": {
+    "schema.json": "92ecfeae102c932e484feb3702a9cee9318f472c51fa1c362e4be5ac734a7c86",
+    "dataflow.json": "c6ea063c6b3d6737ce025f9a70d74d61b9a24ab0de0825042ea94fa2c756b3c9",
+    "circuit.rs": "5e13416c53dcdf4d39df9037c39f3f34ea22fd953c58db1cbcd6636620101d08",
+    "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+  },
+  "full_snapshot_calls": 46,
+  "full_snapshot_bytes": 87097055,
+  "runs": [
+    {
+      "raw_sha256": "ec5abeef324af89c069de5785464f6cec374fb23ce233051c024702b1d0de360",
+      "milliseconds": {
+        "decode": 821.029,
+        "rewrite": 1438.336,
+        "encode": 351.189
+      }
+    },
+    {
+      "raw_sha256": "4840b483666392412377910f8220faeecbaa056b3579aa3858211a1bcca90877",
+      "milliseconds": {
+        "decode": 800.021,
+        "rewrite": 1369.905,
+        "encode": 374.806
+      }
+    },
+    {
+      "raw_sha256": "d6eb37e597c964bc038a8a28a27a8968085f069a909ec37485ba6d430ece4047",
+      "milliseconds": {
+        "decode": 812.557,
+        "rewrite": 1236.034,
+        "encode": 310.678
+      }
+    }
+  ]
+}
