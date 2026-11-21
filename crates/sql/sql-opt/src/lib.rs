@@ -79,6 +79,8 @@ mod integrate;
 mod join_filter_map;
 pub use join_filter_map::lower_join_filter_map;
 mod left_joins;
+mod lower_circuit;
+pub use lower_circuit::{LoweringTypes, lower_circuit};
 pub mod limiters;
 mod linear_retention;
 mod merge_gc;

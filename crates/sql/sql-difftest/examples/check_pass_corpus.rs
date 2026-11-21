@@ -195,13 +195,20 @@ fn compare_invocation(
         )?,
         "SimplifyConditionals" => feldera_sql_opt::simplify_conditionals(input, &mut next)?,
         "ImplementChains" => feldera_sql_opt::implement_chains(input, &mut next)?,
-        "ExpandStreamAggregates"
+        "LowerCircuitVisitor"
+        | "ExpandStreamAggregates"
         | "Fuse"
         | "Simplify"
         | "PropagateConstants"
         | "PullFilterVisitor"
         | "OptimizeProjectionVisitor" => {
             let (result, warnings) = match pass {
+                "LowerCircuitVisitor" => {
+                    let types: feldera_sql_opt::LoweringTypes =
+                        serde_json::from_value(invocation["lowering_types"].clone())?;
+                    let (input, context) = types.bind(input)?;
+                    feldera_sql_opt::lower_circuit(input, &context, &mut next)?
+                }
                 "ExpandStreamAggregates" => {
                     let context = serde::Deserialize::deserialize(invocation)?;
                     let expanded =

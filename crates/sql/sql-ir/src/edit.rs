@@ -517,6 +517,56 @@ impl CircuitEditor {
         Ok(())
     }
 
+    /// Lower an identity stream to the backend map that produces the same collection.
+    pub fn lower_noop(&mut self, id: NodeId) -> Result<(), Error> {
+        use crate::{OperatorKind as Op, TypeKind};
+        let node = self.node(id)?;
+        if node.operator_kind() != Some(Op::Noop) {
+            return Err(Error::new("expected an identity stream"));
+        }
+        let kind = match self.type_kind(self.type_id(node.edge("outputType")?)?)? {
+            TypeKind::ZSet => Op::Map,
+            TypeKind::IndexedZSet => Op::MapIndex,
+            _ => return Err(Error::new("identity stream requires a collection output")),
+        };
+        self.clear_annotations(id)?;
+        self.circuit
+            .nodes
+            .get_mut(&id)
+            .expect("validated operator")
+            .class = NodeClass::Operator(kind);
+        Ok(())
+    }
+
+    /// Replace the operator's high-level payload with the executable function.
+    /// The decoder reads the function immediately after the output type, before rolling bounds.
+    pub fn install_lowered_function(
+        &mut self,
+        id: NodeId,
+        function: crate::ExpressionId,
+    ) -> Result<(), Error> {
+        use crate::OperatorKind as Op;
+        let kind = self.node(id)?.operator_kind();
+        match kind {
+            Some(
+                Op::Aggregate | Op::StreamAggregate | Op::PartitionedRollingAggregate
+                | Op::PartitionedRollingAggregateWithWaterline,
+            ) => self.clear_annotations(id)?,
+            Some(Op::FlatMap | Op::JoinFilterMap | Op::LeftJoinFilterMap | Op::StarJoinFilterMap) => {}
+            _ => return Err(Error::new("operator has no function to lower")),
+        }
+        self.set_operator_field(id, "function", Field::Reference(function.into()))?;
+        let node = self.circuit.nodes.get_mut(&id).expect("validated operator");
+        for key in ["aggregate", "aggregateList", "filter", "map"] {
+            node.fields.shift_remove(key);
+        }
+        let function = node.fields.shift_remove("function").expect("installed function");
+        let output = node.fields.get_index_of("outputType")
+            .ok_or_else(|| Error::new("operator lacks output type"))?;
+        node.fields.shift_insert(output + 1, "function".into(), function);
+        Ok(())
+    }
+
     /// Preserve a separate trace for an identity map whose retainer cannot move.
     /// Rebuild its projection in traversal order with the other rewritten Noops.
     pub fn identity_map_as_noop(&mut self, id: NodeId) -> Result<(), Error> {

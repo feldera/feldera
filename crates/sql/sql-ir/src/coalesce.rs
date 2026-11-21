@@ -256,6 +256,17 @@ impl Circuit {
                 rebuilt_inputs.push(id);
             }
             rebuilt.insert(id);
+            if node.operator_kind() == Some(Op::Chain) && !new_chain {
+                // withInputs retains the computation chain and its declared input type.
+                // A map in that chain constructs a fresh output collection wrapper.
+                let output = if chain_only_filters(node)? {
+                    node.edge("inputType")?
+                } else {
+                    self.insert_inner(self.nodes[&node.edge("outputType")?].clone())?
+                };
+                inherited.insert(id, output);
+                continue;
+            }
             if node.operator_kind() == Some(Op::ControlledKeyFilter) {
                 // withInputs creates a new error-stream ZSet. Its element is
                 // shared with the error closure, even if another operator
@@ -350,8 +361,7 @@ impl Circuit {
                 }
                 .ok_or_else(|| Error(format!("cannot inherit output type of {port:?}")))?;
                 if new_chain {
-                    let filters_only = matches!(node.field("kinds"), Some(Field::Array(kinds))
-                        if kinds.iter().all(|entry| matches!(entry, Field::Data(k) if k == "Filter")));
+                    let filters_only = chain_only_filters(node)?;
                     self.nodes
                         .get_mut(&id)
                         .expect("visited chain")
@@ -395,6 +405,13 @@ impl Circuit {
         self.nodes.insert(fresh, node);
         Ok(fresh)
     }
+}
+
+fn chain_only_filters(node: &Node) -> Result<bool, Error> {
+    let Some(Field::Array(kinds)) = node.field("kinds") else {
+        return Err(Error::new("missing chain computations"));
+    };
+    Ok(kinds.iter().all(|kind| matches!(kind, Field::Data(k) if k == "Filter")))
 }
 
 struct Writer<'a> {

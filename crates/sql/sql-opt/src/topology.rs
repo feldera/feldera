@@ -31,6 +31,11 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
     };
 
     Ok(match pass {
+        "LowerCircuitVisitor" => has(&[
+            Op::Apply, Op::Apply2, Op::ApplyN, Op::Noop, Op::FlatMap, Op::JoinFilterMap, Op::LeftJoinFilterMap, Op::StarJoinFilterMap,
+            Op::Aggregate, Op::StreamAggregate, Op::PartitionedRollingAggregate,
+            Op::PartitionedRollingAggregateWithWaterline,
+        ]),
         "ExpandStreamAggregates" => has(&[Op::StreamAggregate]),
         "IndexedInputs" => order.iter().any(|&id| {
             let n = node(id);

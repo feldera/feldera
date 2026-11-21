@@ -827,7 +827,13 @@ fn transform(
         edits.retain(|id, value| before.get(id) != Some(value));
         return Ok(json!({"annotations": edits, "next_generated_name": next}));
     }
-    let original = circuit;
+    let (original, lowering) = if pass == "LowerCircuitVisitor" {
+        let types: feldera_sql_opt::LoweringTypes = serde_json::from_slice(state)?;
+        let (circuit, context) = types.bind(circuit)?;
+        (circuit, Some(context))
+    } else {
+        (circuit, None)
+    };
     // Move the encoded graph into the reply. Passing it through json! would
     // traverse and allocate the entire graph again on every changed pass.
     let publish = |output: &Circuit, mut reply: Value| {
@@ -943,7 +949,8 @@ fn transform(
         "SimplifyConditionals" => feldera_sql_opt::simplify_conditionals(circuit, &mut next)?,
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(circuit, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
-        "ExpandStreamAggregates"
+        "LowerCircuitVisitor"
+        | "ExpandStreamAggregates"
         | "Fuse"
         | "RemoveStarJoins"
         | "OptimizeProjectionVisitor"
@@ -954,6 +961,9 @@ fn transform(
         | "BreakFilters" => {
             let mut weight = None;
             let (output, warnings) = match pass {
+                "LowerCircuitVisitor" => feldera_sql_opt::lower_circuit(
+                    circuit, lowering.as_ref().expect("bound lowering types"), &mut next,
+                )?,
                 "ExpandStreamAggregates" => {
                     let context = serde_json::from_slice(state)?;
                     let result =

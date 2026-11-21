@@ -153,6 +153,15 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof LowerCircuitVisitor) {
+            byte[] types = org.dbsp.sqlCompiler.compiler.backend.CircuitLoweringTypes.encode(
+                    writer, circuit, this.compiler.options.ioOptions.gen2);
+            try {
+                this.active.set("lowering_types", org.dbsp.util.Utilities.deterministicObjectMapper().readTree(types));
+            } catch (IOException error) {
+                throw new java.io.UncheckedIOException(error);
+            }
+        }
         if (pass instanceof LowerCircuitVisitor && (Boolean.getBoolean("feldera.optimizer.compareRustLowerCircuit")
                 || Boolean.getBoolean("feldera.optimizer.compareRustJoinFilterMap")))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;

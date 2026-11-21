@@ -883,6 +883,8 @@ public final class RustCircuitPass implements CircuitTransform {
             return MAPPER.writeValueAsBytes(Map.of("weight_id", this.compiler.weightVar.getId(),
                     "weight_name", this.compiler.weightVar.variable,
                     "append_only_inputs", this.streamAggregates.appendOnlyInputs()));
+        if (this.nativeName.equals("LowerCircuitVisitor"))
+            return CircuitLoweringTypes.encode(writer, circuit, this.compiler.options.ioOptions.gen2);
         if (this.nativeName.equals("IndexedInputs"))
             return MAPPER.writeValueAsBytes(Map.of("dedup_keys", this.compiler.options.ioOptions.gen2,
                     "lazy_upsert", this.compiler.metadata.lazyUpsert()));
@@ -1746,7 +1748,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "RemoveNoops", "PushDifferentialsUp",
+                case "LowerCircuitVisitor", "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "RemoveNoops", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "RemoveViewOperators", "RemoveAllViews", "ExpandAggregateZero", "ExpandMetadataCasts",

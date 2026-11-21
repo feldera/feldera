@@ -302,7 +302,7 @@ fn coalescing_recursive_deltas_rebuilds_nested_inputs_and_consumer_types() {
 }
 
 #[test]
-fn new_filter_chain_inherits_the_rebuilt_windows_indexed_stream_type() {
+fn rebuilt_chains_preserve_declared_inputs_and_construct_map_outputs() {
     let port = |id| json!({"operator":{"node":id},"outputNumber":0});
     let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
         {"class":"DBSPMapIndexOperator","id":1,"inputs":[],
@@ -313,7 +313,12 @@ fn new_filter_chain_inherits_the_rebuilt_windows_indexed_stream_type() {
         {"class":"DBSPChainOperator","id":4,"inputs":[port(3)],"kinds":["Filter","Filter"],
          "inputType":null,"outputType":{"node":11}},
         {"class":"DBSPChainOperator","id":5,"inputs":[port(3)],"kinds":["Filter","Filter"],
-         "inputType":{"node":11},"outputType":{"node":11}}
+         "inputType":{"node":11},"outputType":{"node":11}},
+        {"class":"DBSPChainOperator","id":6,"inputs":[port(3)],"kinds":["Map","Filter"],
+         "inputType":{"node":11},"outputType":{"class":"DBSPTypeZSet","id":12}},
+        {"class":"DBSPDistinctOperator","id":7,"inputs":[port(6)],"outputType":{"node":12}},
+        {"class":"DBSPChainOperator","id":8,"inputs":[port(7)],"kinds":["Filter","Filter"],
+         "inputType":{"node":12},"outputType":{"node":12}}
     ]});
     let result = Circuit::from_json(graph)
         .unwrap()
@@ -323,8 +328,13 @@ fn new_filter_chain_inherits_the_rebuilt_windows_indexed_stream_type() {
     assert_eq!(ty(3, "outputType"), ty(1, "outputType"));
     assert_eq!(ty(4, "inputType"), ty(3, "outputType"));
     assert_eq!(ty(4, "outputType"), ty(4, "inputType"));
-    // Extending an existing chain retains the type from its original prefix.
+    // Rebuilding an existing chain retains the type from its original prefix.
     assert_eq!(ty(5, "inputType"), NodeId::Inner(11));
+    assert_eq!(ty(5, "outputType"), ty(5, "inputType"));
+    assert_ne!(ty(6, "outputType"), NodeId::Inner(12));
+    assert_eq!(ty(7, "outputType"), ty(6, "outputType"));
+    assert_eq!(ty(8, "inputType"), NodeId::Inner(12));
+    assert_eq!(ty(8, "outputType"), ty(8, "inputType"));
 }
 
 #[test]
