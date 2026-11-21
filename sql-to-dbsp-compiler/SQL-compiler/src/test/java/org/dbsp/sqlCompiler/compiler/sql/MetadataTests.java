@@ -820,6 +820,35 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void trimInputWithNestedRow() {
+        DBSPTypeTuple input = this.trimmedInputType("""
+                CREATE TABLE t(a INT, b ROW(w INT, x VARCHAR), c BIGINT);
+                CREATE VIEW v AS SELECT t.b.x FROM t;""");
+        Assert.assertEquals(1, input.size());
+        DBSPTypeTuple nested = input.getFieldType(0).to(DBSPTypeTuple.class);
+        Assert.assertTrue(nested.mayBeNull);
+        Assert.assertEquals(2, nested.size());
+    }
+
+    @Test
+    public void trimAllInputsForCount() {
+        DBSPTypeTuple input = this.trimmedInputType("""
+                CREATE TABLE t(a INT, b BIGINT);
+                CREATE VIEW v AS SELECT COUNT(*) AS n FROM t;""");
+        Assert.assertEquals(0, input.size());
+    }
+
+    private DBSPTypeTuple trimmedInputType(String sql) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.incrementalize = true;
+        compiler.submitStatementsForCompilation(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        IInputOperator input = circuit.getInput(new ProgramIdentifier("t", false));
+        Assert.assertNotNull(input);
+        return input.getDataOutputType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
+    }
+
+    @Test
     public void trimUnusedInputColumns() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation("""
