@@ -940,6 +940,13 @@ All 24 directed limiter invocations matched Java on the S4 graph, checkpoint
 and next generated name. Four keyed Gen-2 inputs produced the expected refusal.
 [Limiter clock comparisons](evidence/p3-limiter-clocks.json)
 
+The live optimizer applies empty-stream edits to existing operators. When
+the right side of a left join is empty, Rust specializes the join closure to
+produce the null-extended row. Direct Java and the live optimizer matched
+at all 6,558 empty-stream placements in the selected classic and Gen-2
+populations and on five directed empty-right joins in each engine.
+[Empty-stream comparisons](evidence/p3-empty-sources.json)
+
 For an `EMIT FINAL` view, Rust indexes rows by the finality column and filters
 out NULL keys before the window stores them. The detached pass also builds
 the clock adapters and delayed key retention. Incremental and collection

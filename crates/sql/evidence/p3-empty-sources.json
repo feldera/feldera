@@ -36,5 +36,35 @@
     ],
     "oracle_sha256": "7f90cdc56dac6642607410f7aa7d3bdd1f18ffb405180dcf155ece236c18ffa9",
     "results_sha256": "0b0158d2e15eda355234d7e8c6905d6c7425a222e602e01edef8cbe8057fd3d3"
+  },
+  "live_stream_edits": {
+    "classic": {
+      "cases": 1101,
+      "matched_placements": 3303,
+      "population_sha256": "05be2a2f8016a7d1b29b6cdb4f8107a40e5043facae5fdb8f295ab044754df77",
+      "java_graphs_gzip_sha256": "b1bb17091e26ac382bf6d87c1e73be73e3b16075d814da9be9b988df045380de",
+      "hybrid_graphs_gzip_sha256": "6a09f8e107c825375a507faaae6ab8d74f93e26543c8529df4f46dfcc05337e4",
+      "directed_empty_right": {
+        "cases": 5,
+        "population_sha256": "1b3776ba00a75353018524a3be03b4c717c431e5b28b061c1401443fd6a4d40b",
+        "java_observations_sha256": "e212319eb6aa29d1b91733699ea1d7066b3a5ce789fcb06e4f78ac25e4ccc114",
+        "rust_observations_sha256": "aef178bdb867fc394e3ab770d4e47ae51051d144b90f6a51dc4660fa0ea2cc6f"
+      }
+    },
+    "gen2": {
+      "cases": 1085,
+      "matched_placements": 3255,
+      "population_sha256": "4e641e545c563b00d5b918fd43a781e915b9f738fcb079985eb485bacea4d097",
+      "java_graphs_gzip_sha256": "8fce0c04df6960a8bfbdf6a6e01605e053d0d479f21568650a10b15adc2a4f8d",
+      "hybrid_graphs_gzip_sha256": "b29ce370e093e5e9563f9fff64c11273f9e7f077d274c7df9955e15301e6a00d",
+      "directed_empty_right": {
+        "cases": 5,
+        "population_sha256": "909584d71ec5e0e17637c073e6d1809eeaf0647de421ef68e137ef50f45324f9",
+        "java_observations_sha256": "915a07c500b4221a71b5d49cfe5885ddbef71b41d8f4b154a8d91ebc85d7518a",
+        "rust_observations_sha256": "18badb21b4e2b5d4c3e5fa26e738a6032ff49aba4764903267df3e7a57a7852e"
+      }
+    },
+    "provenance_build": "7d9df50e5",
+    "empty_right_build": "b495688e2"
   }
 }
