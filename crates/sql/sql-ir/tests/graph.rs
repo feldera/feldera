@@ -26,7 +26,12 @@ fn recursive() -> Value {
 #[test]
 fn preserves_shared_fields_ordered_ports_and_definition_sites() {
     let raw = recursive();
-    let circuit = Circuit::from_json(raw.clone()).unwrap();
+    let bytes = serde_json::to_vec(&raw).unwrap();
+    let circuit = Circuit::from_json_bytes(&bytes).unwrap();
+    assert_eq!(
+        circuit.to_json(),
+        Circuit::from_json(raw.clone()).unwrap().to_json()
+    );
     let operators: Vec<_> = circuit.operators().map(|(id, _)| id).collect();
     assert_eq!(
         operators,
@@ -391,4 +396,31 @@ fn edited_structured_data_obeys_wire_identity_and_depth_rules() {
     assert!(rebuild(json!({"node":999})).is_err());
     let deep = (0..129).fold(Value::Null, |child, _| Value::Array(vec![child]));
     assert!(rebuild(deep).is_err());
+}
+
+#[test]
+fn byte_decoder_accepts_unordered_fields_and_preserves_exact_numbers() {
+    let bytes = br#"{"allOperators":[{"id":1,"class":"DBSPMapOperator","inputs":[
+        {"operator":{"node":1},"outputNumber":0}],"numeric":123456789123456789123456789.002}],
+        "metadata":{"node":-5},"id":0,"class":"DBSPCircuit","declarations":[]}"#;
+    let expected = Circuit::from_json(feldera_sql_ir::parse_json(bytes).unwrap()).unwrap();
+    assert_eq!(
+        Circuit::from_json_bytes(bytes).unwrap().to_json(),
+        expected.to_json()
+    );
+}
+
+#[test]
+fn byte_decoder_checks_keys_including_opaque_metadata_and_requires_complete_input() {
+    for bytes in [
+        r#"{"class":"DBSPCircuit","id":0,"id":0,"declarations":[],"allOperators":[]}"#,
+        r#"{"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[],"metadata":{"k":1,"k":2}}"#,
+        r#"{"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[{"node":42}]}"#,
+        r#"{"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]} {}"#,
+    ] {
+        assert!(
+            Circuit::from_json_bytes(bytes.as_bytes()).is_err(),
+            "{bytes}"
+        );
+    }
 }

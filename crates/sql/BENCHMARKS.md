@@ -53,6 +53,13 @@ graph from 19.20 ms to 9.33 ms (median of eight process medians). Both binaries
 produced the same 621,760 bytes. These timings exclude the JNI envelope and
 SQL compilation. [Live graph construction](evidence/p3-live-codec-latency.json)
 
+On the captured Nexmark fanout input, parsing directly into the Rust circuit arena
+reduced median decode and validation time from 42.61 ms to 30.42 ms. Both paths
+produced identical serialized circuits. Ten alternating pairs on one pinned
+Linux ARM64 CPU gave a 95% bootstrap interval of 0.703–0.735 for the ratio of
+mean process medians. This measurement excludes JNI and the optimizer passes.
+[Decoder timings](evidence/p3-stream-decode-latency.json)
+
 In a separate Nexmark run on the 18-pass compiler, Java Flight Recorder captured 1,054 main-thread
 stack samples. Of those, 340 were inside a Rust JNI call, 170 were encoding
 or applying pass results in Java and 386 were in the Java Rust printer.

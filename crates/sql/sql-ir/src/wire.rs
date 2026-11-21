@@ -1,6 +1,8 @@
 //! Decode graph identity before validating edges. A definition may occur after
 //! its first reference, and a recursive circuit may refer back to an ancestor.
 
+mod streaming;
+
 use super::{Circuit, Error, Field, Node, NodeClass, NodeId, OperatorKind, OutputPort};
 use indexmap::IndexMap;
 use serde_json::{json, Map, Value};
@@ -39,6 +41,14 @@ pub(super) fn check_depth(depth: usize) -> Result<(), Error> {
         return Err(Error("circuit exceeds 128 nested fields".into()));
     }
     Ok(())
+}
+
+fn opaque_field(key: &str, depth: usize, outer_node: bool) -> bool {
+    key == "annotations" || (key == "metadata" && depth == 0) || (key == "provenance" && outer_node)
+}
+
+fn outer_child(key: &str, port: bool) -> bool {
+    matches!(key, "declarations" | "allOperators") || (key == "operator" && port)
 }
 
 pub(super) fn read(
@@ -88,15 +98,10 @@ pub(super) fn read(
     let port = object.contains_key("outputNumber");
     let mut fields = IndexMap::new();
     for (key, value) in object {
-        let field = if key == "annotations"
-            || (key == "metadata" && depth == 0)
-            || (key == "provenance" && outer && header.is_some())
-        {
+        let field = if opaque_field(&key, depth, outer && header.is_some()) {
             Field::Data(value)
         } else {
-            let outer_child = matches!(key.as_str(), "declarations" | "allOperators")
-                || (key == "operator" && port);
-            read(value, outer_child, nodes, depth + 1)?
+            read(value, outer_child(&key, port), nodes, depth + 1)?
         };
         fields.insert(key, field);
     }

@@ -1,6 +1,6 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
-use feldera_sql_ir::{parse_json, BodyOrder, Circuit, Field, NodeId, OutputPort};
+use feldera_sql_ir::{BodyOrder, Circuit, Field, NodeId, OutputPort};
 use jni::{
     errors::ThrowRuntimeExAndDefault,
     objects::{JByteArray, JClass, JString},
@@ -153,38 +153,38 @@ fn transform(
         }
         _ => {}
     }
-    let wire = parse_json(input)?;
+    let circuit = Circuit::from_json_bytes(input)?;
     if pass == "MultisetAnalysis" {
-        let facts = feldera_sql_opt::stream_multiplicities(&Circuit::from_json(wire)?)?;
+        let facts = feldera_sql_opt::stream_multiplicities(&circuit)?;
         return Ok(multiplicities(facts));
     }
     if pass == "Topology/FindCommonProjections" {
         return Ok(json!(feldera_sql_opt::common_projection_payloads(
-            &Circuit::from_json(wire)?
+            &circuit
         )?));
     }
     if pass == "FindJoinTrees" {
-        let trees = feldera_sql_opt::find_join_trees(&Circuit::from_json(wire)?, &mut next)?;
+        let trees = feldera_sql_opt::find_join_trees(&circuit, &mut next)?;
         return Ok(json!({"join_trees":trees, "next_generated_name":next}));
     }
     if pass == "FindCommonProjections" {
         return Ok(json!(feldera_sql_opt::common_projections(
-            &Circuit::from_json(wire)?
+            &circuit
         )?));
     }
     if pass == "Topology/FindUnusedInputFields" {
         return Ok(json!(operator_numbers(feldera_sql_opt::input_projections(
-            &Circuit::from_json(wire)?
+            &circuit
         )?)));
     }
     if pass == "FindUnusedInputFields" {
         return Ok(json!(feldera_sql_opt::input_field_uses(
-            &Circuit::from_json(wire)?
+            &circuit
         )?));
     }
     if pass == "Topology/MultisetAnalysis" {
         use feldera_sql_opt::MultiplicityPlan;
-        let plan = feldera_sql_opt::plan_multiplicities(&Circuit::from_json(wire)?)?;
+        let plan = feldera_sql_opt::plan_multiplicities(&circuit)?;
         return Ok(match plan {
             MultiplicityPlan::Complete(facts) => json!({"facts": multiplicities(facts)}),
             MultiplicityPlan::NeedsPayloads(ids) => json!({"payloads": operator_numbers(ids)}),
@@ -192,7 +192,6 @@ fn transform(
     }
     let analysis = pass.strip_prefix("Topology/").unwrap_or(pass);
     if matches!(analysis, "FindEquivalentNoops" | "FindMultipleRetains") {
-        let circuit = Circuit::from_json(wire)?;
         // All other retention kinds can be compared from the flags and edges.
         if analysis != pass
             && circuit
@@ -217,12 +216,12 @@ fn transform(
     }
     if pass == "Graph" {
         return Ok(json!(feldera_sql_opt::consumer_graphs(
-            &Circuit::from_json(wire)?
+            &circuit
         )?));
     }
     if pass == "DetectStreamingOperations" {
         return Ok(json!(feldera_sql_opt::detects_streaming(
-            &Circuit::from_json(wire)?
+            &circuit
         )?));
     }
     if pass == "FindBounded" {
@@ -234,7 +233,7 @@ fn transform(
         }
         let context: BoundsContext = serde_json::from_slice(state)?;
         let bounded = feldera_sql_opt::propagate_bounds(
-            &Circuit::from_json(wire)?,
+            &circuit,
             ports(context.known),
             &ports(context.keys),
             &context.now_table,
@@ -244,25 +243,24 @@ fn transform(
     if pass == "CollectUnbounded" {
         let bounded = ports(serde_json::from_slice(state)?);
         return Ok(json!(feldera_sql_opt::unbounded_operators(
-            &Circuit::from_json(wire)?,
+            &circuit,
             &bounded
         )?));
     }
     if pass == "FindGCedStreams" {
         return Ok(wire_ports(feldera_sql_opt::pruned_streams(
-            &Circuit::from_json(wire)?,
+            &circuit,
         )?));
     }
     if pass == "AppendOnly" {
-        let streams = feldera_sql_opt::append_only_streams(&Circuit::from_json(wire)?)?;
+        let streams = feldera_sql_opt::append_only_streams(&circuit)?;
         return Ok(json!(operator_numbers(streams)));
     }
     if pass == "FindWindowGroups" {
-        let candidates = feldera_sql_opt::window_candidates(&Circuit::from_json(wire)?)?;
+        let candidates = feldera_sql_opt::window_candidates(&circuit)?;
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
-        let circuit = Circuit::from_json(wire)?;
         if name == "CSE" {
             return Ok(
                 json!({"payloads": operator_numbers(feldera_sql_opt::cse_payloads(&circuit)?)}),
@@ -287,7 +285,6 @@ fn transform(
         return Ok(json!({ "needs_full_snapshot": needs_full_snapshot }));
     }
     if matches!(pass, "NoIntegralVisitor" | "ValidateRecursiveOperators") {
-        let circuit = Circuit::from_json(wire)?;
         let violation = if pass == "NoIntegralVisitor" {
             feldera_sql_opt::first_integral(&circuit)?.map(|id| {
                 let NodeId::Outer(operator) = id else { unreachable!("integrator is an operator") };
@@ -302,7 +299,7 @@ fn transform(
         return Ok(json!({"violation":violation, "next_generated_name":next}));
     }
     if pass == "FindMapChains" {
-        let chains: Vec<_> = feldera_sql_opt::find_map_chains(&Circuit::from_json(wire)?)?
+        let chains: Vec<_> = feldera_sql_opt::find_map_chains(&circuit)?
             .into_iter()
             .map(operator_numbers)
             .collect();
@@ -311,23 +308,23 @@ fn transform(
     if pass == "OrderGcDependencies" {
         let edges: Vec<(u64, u64)> = serde_json::from_slice(state)?;
         let edges = edges.into_iter().map(|(a, b)| (NodeId::Outer(a), NodeId::Outer(b)));
-        let order = feldera_sql_opt::dependency_order(&Circuit::from_json(wire)?, edges)?;
+        let order = feldera_sql_opt::dependency_order(&circuit, edges)?;
         return Ok(json!(operator_numbers(order)));
     }
     if pass == "OrderErrorConsumers" {
         let table: &str = serde_json::from_slice(state)?;
-        let order = feldera_sql_opt::error_consumers(&Circuit::from_json(wire)?, table)?;
+        let order = feldera_sql_opt::error_consumers(&circuit, table)?;
         return Ok(
             json!({"order": operator_numbers(order.operators), "first_error": order.first_error}),
         );
     }
     if pass == "CheckRetain" {
-        let duplicate = feldera_sql_opt::duplicate_retention(&Circuit::from_json(wire)?)?;
+        let duplicate = feldera_sql_opt::duplicate_retention(&circuit)?;
         return Ok(json!({"duplicate_retention":duplicate,"next_generated_name":next}));
     }
     if pass == "FixupViewReferences" {
         return Ok(
-            match feldera_sql_opt::resolve_view_references(&Circuit::from_json(wire)?)? {
+            match feldera_sql_opt::resolve_view_references(&circuit)? {
                 feldera_sql_opt::ViewResolution::UndeclaredRecursion { operator, message } => {
                     json!({"violation":{"operator":operator_number(operator), "internal":false, "message":message}})
                 }
@@ -350,32 +347,31 @@ fn transform(
     }
     if pass == "RemoveTable" {
         let name: String = serde_json::from_slice(state)?;
-        let ids = feldera_sql_opt::unreferenced_table_sources(&Circuit::from_json(wire)?, &name)?;
+        let ids = feldera_sql_opt::unreferenced_table_sources(&circuit, &name)?;
         return Ok(json!({"remove_sources":operator_numbers(ids)}));
     }
     if pass == "CircuitStatistics" {
-        let stats = feldera_sql_opt::circuit_statistics(&Circuit::from_json(wire)?)?;
+        let stats = feldera_sql_opt::circuit_statistics(&circuit)?;
         return Ok(json!({"statistics":stats,"next_generated_name":next}));
     }
     if pass == "ConstantViews" {
-        let sinks = feldera_sql_opt::constant_views(&Circuit::from_json(wire)?, error_view)?;
+        let sinks = feldera_sql_opt::constant_views(&circuit, error_view)?;
         return Ok(json!({"constant_views":operator_numbers(sinks), "next_generated_name":next}));
     }
     if pass == "DeterministicFunctions" {
-        let findings = feldera_sql_opt::nondeterministic_initializers(&Circuit::from_json(wire)?)?;
+        let findings = feldera_sql_opt::nondeterministic_initializers(&circuit)?;
         return Ok(json!({"nondeterministic_initializers":findings,"next_generated_name":next}));
     }
     if pass == "CheckHints" {
-        let diagnostics = feldera_sql_opt::check_hints(&Circuit::from_json(wire)?)?;
+        let diagnostics = feldera_sql_opt::check_hints(&circuit)?;
         return Ok(json!({"diagnostics":diagnostics, "next_generated_name":next}));
     }
     if pass == "CheckPersistentIds" {
-        let findings = feldera_sql_opt::check_persistent_ids(&Circuit::from_json(wire)?)?;
+        let findings = feldera_sql_opt::check_persistent_ids(&circuit)?;
         return Ok(json!({"persistent_id_findings": findings}));
     }
     if matches!(pass, "DeltaHashPrefixes" | "GcHashPrefixes") {
         let inputs: feldera_sql_opt::PrefixInputs = serde_json::from_slice(state)?;
-        let circuit = Circuit::from_json(wire)?;
         let prefixes = if pass == "DeltaHashPrefixes" {
             inputs.delta_prefixes(&circuit)?
         } else {
@@ -386,7 +382,6 @@ fn transform(
     if matches!(pass, "CompactNames" | "TagRegions" | "SetOperatorHashes") {
         // Java implements these passes by mutating annotations on the live
         // operators. Preserve those identities for the subsequent hash pass.
-        let circuit = Circuit::from_json(wire)?;
         let before = annotations(&circuit)?;
         let changed = match pass {
             "CompactNames" => feldera_sql_opt::compact_names(circuit)?,
@@ -400,7 +395,7 @@ fn transform(
         edits.retain(|id, value| before.get(id) != Some(value));
         return Ok(json!({"annotations": edits, "next_generated_name": next}));
     }
-    let original = Circuit::from_json(wire)?;
+    let original = circuit;
     // Move the encoded graph into the reply. Passing it through json! would
     // traverse and allocate the entire graph again on every changed pass.
     let publish = |output: &Circuit, mut reply: Value| {

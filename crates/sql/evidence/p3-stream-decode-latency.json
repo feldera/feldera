@@ -1,0 +1,42 @@
+{
+  "scope": "Parse and validate the captured Nexmark fanout circuit, excluding serialization, destruction and JNI transport.",
+  "pinned_linux_cpu": 12,
+  "alternating_pairs": 10,
+  "calls_per_process": 16,
+  "warmup_calls_per_process": 2,
+  "round_median_ms": {
+    "tree": [
+      42.6419785,
+      44.682229,
+      43.1433735,
+      42.5919785,
+      42.6287285,
+      40.726894,
+      40.7658525,
+      40.147144,
+      41.1292065,
+      43.3607705
+    ],
+    "stream": [
+      30.8649525,
+      30.0488265,
+      31.0163475,
+      29.6799095,
+      30.121014,
+      30.711098,
+      29.440181,
+      30.7998685,
+      29.075889,
+      31.600952
+    ]
+  },
+  "paired_round_mean_ratio": 0.7191701792456394,
+  "paired_round_mean_ratio_95pct_bootstrap_interval": [
+    0.7034402670399938,
+    0.7352825979521249
+  ],
+  "input_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "serialized_output_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "binary_sha256": "41b4561131259e78ee3992f6effc3bc4cf0391c5bcfac2295f9ed62ca480705a",
+  "workspace_archive": ".bench-results/p3-circuit-decode/2026-21-11-03-18-82d58"
+}

@@ -5,8 +5,14 @@ use serde_json::{map::Entry, Map, Value};
 use std::{cell::Cell, fmt};
 
 #[derive(Clone, Copy)]
-struct CheckedValue<'a> {
+pub(crate) struct CheckedValue<'a> {
     needs_codec: &'a Cell<bool>,
+}
+
+impl<'a> CheckedValue<'a> {
+    pub(crate) fn new(needs_codec: &'a Cell<bool>) -> Self {
+        Self { needs_codec }
+    }
 }
 
 impl<'de> DeserializeSeed<'de> for CheckedValue<'_> {
@@ -94,10 +100,7 @@ impl<'de> Visitor<'de> for CheckedValue<'_> {
 pub fn parse_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
     let needs_codec = Cell::new(false);
     let mut input = serde_json::Deserializer::from_slice(bytes);
-    let value = CheckedValue {
-        needs_codec: &needs_codec,
-    }
-    .deserialize(&mut input)?;
+    let value = CheckedValue::new(&needs_codec).deserialize(&mut input)?;
     input.end()?;
     if needs_codec.get() {
         drop(value);
