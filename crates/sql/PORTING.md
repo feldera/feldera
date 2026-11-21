@@ -822,6 +822,13 @@ The selector matched Java on 29,888 combinations covering 475 registered names
 and unregistered variants. All 550 selected monotonicity boundaries matched.
 [Function waterline comparisons](evidence/p3-function-waterlines.json)
 
+Rust selects the waterline for a scalar cast. A cast that can fail can use a
+saturating bound when the runtime provides one. A failing `SAFE_CAST` rules
+out that bound because it can produce NULL. The selector matched Java on
+8,836 combinations of source type, destination type, nullability and cast
+mode. All 550 selected monotonicity boundaries matched.
+[Cast waterline comparisons](evidence/p3-cast-waterlines.json)
+
 Rust binds limiter closures to the actual waterline port types and reduces
 their calls before Java inserts the apply operators. The resulting graph,
 generated names and diagnostics matched Java at all 550 selected

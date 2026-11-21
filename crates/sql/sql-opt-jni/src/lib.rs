@@ -104,6 +104,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
         return Ok(serde_json::to_value(feldera_sql_expr::parameter_field_paths(&arena, *closure)?)?);
     }
+    if let ("Monotonicity/Cast", [from, to, bound]) = (pass, roots.as_slice()) {
+        let edit = feldera_sql_ir::CircuitEditor::new(arena);
+        let choice = feldera_sql_opt::cast_waterline(
+            &edit, edit.type_id(*from)?, edit.type_id(*to)?, edit.type_id(*bound)?,
+            serde_json::from_slice(state)?,
+        )?;
+        return Ok(serde_json::to_value(choice)?);
+    }
     if let ("IsIdentityProjection", [closure]) = (pass, roots.as_slice()) {
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
         let identity = feldera_sql_opt::identity_closure(&edit, *closure, &mut next)?;
@@ -355,7 +363,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

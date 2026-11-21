@@ -294,6 +294,18 @@ public final class RustCircuitPass implements CircuitTransform {
     public enum BinaryDomain { Scalar, Temporal, TimeOfDay }
     public enum BinaryWaterline { None, Left, Right, Both, InheritLeft, InheritRight, Coalesce }
     public record WaterlineOperand(boolean monotone, boolean constant, boolean positiveLiteral, boolean neverNull) {}
+    public enum CastWaterline { None, Identity, Ordinary, Saturating }
+
+    public static CastWaterline castWaterline(DBSPCompiler compiler, DBSPType from, DBSPType to,
+                                               DBSPType bound, boolean safe) {
+        try {
+            var reply = invokeLowering(compiler, "Monotonicity/Cast", MAPPER.writeValueAsBytes(safe), from, to, bound);
+            return MAPPER.treeToValue(reply.value, CastWaterline.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid cast waterline from Rust", error);
+        }
+    }
+
     public record FunctionArgument(boolean monotone, boolean constant, boolean doubleLiteralAboveOne) {}
 
     @Nullable

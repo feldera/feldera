@@ -1,0 +1,37 @@
+{
+  "scope": "Rust selects identity, ordinary, saturating or absent scalar cast waterlines. Java constructs the selected expression with the non-null destination type.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from MonotoneAnalyzer, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "added_operators": 11729,
+      "cases_gaining_operators": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "0002cf727de5180068cc3ebee2109eba6402ac7ff51132e6b9200c5b2369f10c",
+      "rust_gzip_sha256": "5b69fc9b3f41d402f9a0cdfbd6fc906018dae489f32cfe6c5a0e112583b2c166"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "added_operators": 11575,
+      "cases_gaining_operators": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "b80a3dc2c9d58be5c520df6ef7cf42054b6a1a9e2ed635e6f424014b37890656",
+      "rust_gzip_sha256": "3c9bb6dc92d794988241f661254e1f8feca4cfc4bb74369218cc2793f3c64893"
+    }
+  },
+  "directed_cast_matrix": {
+    "type_layouts": 47,
+    "no_bound": 5450,
+    "identity": 184,
+    "ordinary": 1524,
+    "saturating": 1678,
+    "cases": 8836,
+    "fixture_source_sha256": "12080ea8893d73e3ee0d7babd3d20714b3b3307c2e41debc81266e6a5e2b87f4"
+  },
+  "compiler_jar_sha256": "3b77703cf182efe31215ff07ddd94a029470ed08684d99868b72de0aaca9518a",
+  "optimizer_library_sha256": "b3366c4c864c756d4198f8a74b671aa1e90bc816005345fdea2dca20f49b7caf",
+  "comparator_sha256": "06e9800f32a4bf7829cb7470a68729ced9a4897e4c5682ef20e02fd1da31f391"
+}
