@@ -21,6 +21,12 @@ the generated Rust and pipeline startup fall outside these times.
 The table measures the static-declaration build at `a039e2fda` on November 21. All 69 pairs on CPU 15 matched on diagnostics and artifacts. The directed limiter comparisons overlapped the beginning of this run. The full corpus and restore runs started after the benchmark.
 
 The isolated snapshot join build at `65fbccc7f` measured 1.239×, 2.843× and 1.189× in workload order.
+On a captured Nexmark fanout rewrite, tracking emitted nodes in a preallocated
+hash set reduced the median from 92.26 ms to 85.54 ms. The 95% paired bootstrap
+interval for the reduction was 6.49–6.85 ms. Sixteen pairs used identical Cargo
+features and produced byte-identical graph replies. This timer covers the
+Rust rewrite inside one optimizer pass. [Paired measurements](evidence/p3-fanout-membership.json)
+
 The expression-cache build at `632a0670f` measured 1.277×, 2.235× and 1.236× in workload order.
 The shared-expression build at `eb580978e` measured 1.058×, 2.187× and 1.120× in workload order.
 The map grouping build at `6db65a1a9` measured 1.350×, 2.334× and 1.074× in workload order.

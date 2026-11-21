@@ -5,7 +5,7 @@
 use super::{wire, BodyOrder, Circuit, Error, Field, Node, NodeId, OperatorKind as Op, OutputPort};
 use indexmap::IndexMap;
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Surviving operators whose input changed, in constructor order. Some
 /// constructors synthesize fresh expressions and consume generated names.
@@ -190,7 +190,7 @@ impl Circuit {
             circuit: &self,
             aliases,
             inherited_types,
-            emitted: BTreeSet::new(),
+            emitted: HashSet::with_capacity(self.nodes.len()),
             nodes: BTreeMap::new(),
             origins: OriginDefinitions::default(),
         };
@@ -401,7 +401,7 @@ struct Writer<'a> {
     circuit: &'a Circuit,
     aliases: &'a BTreeMap<NodeId, Replacement>,
     inherited_types: BTreeMap<NodeId, NodeId>,
-    emitted: BTreeSet<NodeId>,
+    emitted: HashSet<NodeId>,
     nodes: BTreeMap<NodeId, Node>,
     origins: OriginDefinitions<'a>,
 }

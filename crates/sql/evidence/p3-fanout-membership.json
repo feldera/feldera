@@ -1,0 +1,159 @@
+{
+  "metric": "Median milliseconds for the fanout rewrite within each fresh process, after two warmups. The live reply and file write are outside the timed interval. Each bootstrap draw resamples whole process pairs.",
+  "pairs": [
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.6886345,
+      "before": 92.42032649999999
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.24605,
+      "before": 92.24984749999999
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.45391000000001,
+      "after": 85.4952375
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.14143100000001,
+      "after": 85.500279
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.19707700000001,
+      "after": 85.8690505
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.627092,
+      "before": 92.3356805
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.47905,
+      "before": 92.097014
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.2693055,
+      "after": 85.4314255
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.20941,
+      "after": 85.59688349999999
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.0243055,
+      "after": 85.279279
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.7348835,
+      "before": 92.577327
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.581467,
+      "before": 91.88072249999999
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 93.4921195,
+      "after": 85.5950295
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 85.47936250000001,
+      "before": 91.821034
+    },
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": 92.5544935,
+      "after": 85.5035925
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "after": 87.1649475,
+      "before": 92.264014
+    }
+  ],
+  "before_after_difference_medians_ms": [
+    92.25693075,
+    85.54252975,
+    -6.720140249999986
+  ],
+  "bootstrap_95pct_ms": [
+    [
+      92.14143100000001,
+      92.42032649999999
+    ],
+    [
+      85.47936250000001,
+      85.641832
+    ],
+    [
+      -6.8518495,
+      -6.4914117499999975
+    ]
+  ],
+  "input_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "output_sha256": "8a7652ae39865109a86538a0f3c4a80067ebfe83d7feb11c3c268032e6c47796",
+  "scope": "One captured Nexmark CloneOperatorsWithFanout graph. Only membership of emitted graph nodes changed, from BTreeSet to a preallocated HashSet. Iteration and graph output order are unchanged.",
+  "environment": "Linux ARM64 offline devcontainer, release profile, CPU 15, corpus replay idle. Each arm used the same Cargo example and feature tree.",
+  "features_sha256": "3f72f3ee8d1ab77a00a69386e5e3f1946e3215f8ae39ee8321a4f9faf165cd40",
+  "baseline_source_sha256": "9373fd1580640ce0b9c97387dbd54afc4ebc35f9abacacb1de8d813432d98f0e",
+  "candidate_source_sha256": "4ebd9403d0f3d0301e80d99e292122224ee913166d6c21329ca4fafaa63b5287"
+}
