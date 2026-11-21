@@ -46,17 +46,17 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The mixed optimizer at `b495688e2` ran 3,000,680 Rust pass adapter invocations on 17,098
-  frozen classic and Gen-2 programs. Detached S2 matched direct Java through
-  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 105 pass kinds
-  in Rust. All 8,256 classic executable cases passed on the filter-bound build
-  (`c5c800f7f`). The declared waterline build passed all 2,076 runtime commands
-  in the classic LATENESS and NOW() sample and restored COUNT and LATENESS checkpoints in
-  both directions. Java still runs the remaining passes. On the EMIT FINAL build (`88ee907de`), hybrid p95 was
-  1.223× direct Java on the array subquery, 2.306× on Nexmark and 1.118× on the
-  outer join. The owner confirmed that the field-shadow gate stays open until
-  qualifying field evidence exists.
-  [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
+- 2026-11-21. The HOP waterline build ran 3,040,897 Rust pass adapter
+  invocations across 105 pass kinds. All 17,098 frozen programs matched direct
+  Java through S3, persistent-ID inputs and emitted artifacts. The selected
+  LATENESS and NOW() programs passed 2,076 runtime commands, and COUNT and
+  LATENESS checkpoints restored in both directions. The last full classic
+  runtime run passed all 8,256 executable cases on the filter-bound build
+  (`c5c800f7f`). On the separately timed filter-trimming build, hybrid p95
+  was 1.239× direct Java on the array subquery, 2.119× on Nexmark and 1.183×
+  on the outer join. P3 remains opt-in while Java optimizer logic remains,
+  the 1.2× ceiling is exceeded, and the field-shadow gate is open.
+  [P3 implementation](crates/sql/PORTING.md#p3-optimizer-replay) · [Paired timings](crates/sql/BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
   limiter slice matched 296 Java S4 results and four Gen-2 refusals. The

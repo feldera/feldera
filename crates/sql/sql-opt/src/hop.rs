@@ -21,6 +21,67 @@ fn row_field(
     edit.tuple_field(value, index)
 }
 
+/// HOP forwards its input row and assigns both window columns the lower bound
+/// of the earliest window start. Rows with a NULL timestamp never enter a window.
+pub fn hop_waterline(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    input: TypeId,
+    output: TypeId,
+    timestamp_index: usize,
+    intervals: [ExpressionId; 3],
+    next: &mut u64,
+) -> Result<ExpressionId, Error> {
+    let width = edit.node(input.into())?.edges("tupFields")?.len();
+    let output_fields = edit.node(output.into())?.edges("tupFields")?;
+    if timestamp_index >= width || output_fields.len() != width + 2 {
+        return Err(Error::new(
+            "HOP waterline requires a timestamp column and two window bounds",
+        ));
+    }
+    let window_type = edit.type_id(output_fields[width])?;
+    let reference = edit.reference_type(input)?;
+    let row = edit.variable(reference, next)?;
+    let mut columns = Vec::with_capacity(width + 2);
+    for i in 0..width {
+        let read = edit.derive_inner(row.into(), [])?;
+        columns.push(row_field(edit, edit.expression(read)?, i)?);
+    }
+    let read = feldera_sql_expr::copy_expression(edit, columns[timestamp_index].into())?;
+    let mut timestamp = edit.expression(read)?;
+    let ty = edit.expression_type(timestamp)?;
+    if edit.nullable(ty)? {
+        let required = edit.with_nullability(ty, false)?;
+        timestamp = edit.make_expr(
+            site,
+            Expr::Unwrap,
+            required,
+            [
+                ("expression", edge(timestamp)),
+                ("message", Field::Data("HOP of a NULL timestamp".into())),
+            ],
+        )?;
+    }
+    let function = edit.function_path(row.into(), "hop_start_timestamp")?;
+    let [interval, size, offset] = intervals;
+    let start = edit.make_expr(
+        row.into(),
+        Expr::Apply,
+        window_type,
+        [
+            ("function", edge(function)),
+            (
+                "arguments",
+                Field::Array([timestamp, interval, size, offset].map(edge).into()),
+            ),
+        ],
+    )?;
+    let end_bound = feldera_sql_expr::copy_expression(edit, start.into())?;
+    columns.extend([start, edit.expression(end_bound)?]);
+    let result = edit.tuple_expr(row.into(), false, &columns)?;
+    edit.closure_from_variables(result, &[row])
+}
+
 fn collection(edit: &mut CircuitEditor, element: TypeId, kind: Ty) -> Result<TypeId, Error> {
     let (name, code) = match kind {
         Ty::Array => ("Array", "ARRAY"),

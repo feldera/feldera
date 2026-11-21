@@ -238,7 +238,14 @@ public class Monotonicity extends CircuitVisitor {
             return;
         IMaybeMonotoneType projection = getBodyType(input);
         DBSPTypeTuple varType = projection.getType().to(DBSPTypeTuple.class);
+        DBSPClosureExpression closure = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.hopTransfer(this.compiler(), node, varType) : hopTransfer(node, varType);
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
+        this.set(node, analyzer.applyAnalysis(closure));
+    }
 
+    private static DBSPClosureExpression hopTransfer(DBSPHopOperator node, DBSPTypeTuple varType) {
         DBSPVariablePath var = new DBSPVariablePath(varType.ref());
         DBSPExpression[] fields = new DBSPExpression[varType.size() + 2];
         DBSPTypeTupleBase outputType = node.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
@@ -253,11 +260,7 @@ public class Monotonicity extends CircuitVisitor {
                 timestamp, node.interval, node.size, node.start);
         fields[varType.size() + 1] = fields[varType.size()].deepCopy();
         DBSPExpression body = new DBSPTupleExpression(fields);
-        DBSPClosureExpression closure = body.closure(var);
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
-        MonotoneExpression result = analyzer.applyAnalysis(closure);
-        this.set(node, result);
+        return body.closure(var);
     }
 
     @Override

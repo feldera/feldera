@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -291,6 +292,17 @@ public final class RustCircuitPass implements CircuitTransform {
         byte[] offset = Integer.toString(lag.offset).getBytes(StandardCharsets.US_ASCII);
         return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Lag", offset,
                 lag.getClosureFunction(), lag.comparator, lag.input().getOutputIndexedZSetType()));
+    }
+
+    public static DBSPClosureExpression hopTransfer(DBSPCompiler compiler, DBSPHopOperator hop, DBSPType inputRow) {
+        var site = expressionSite(hop.getNode());
+        site.put("timestamp_index", hop.timestampIndex);
+        try {
+            return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Hop", MAPPER.writeValueAsBytes(site),
+                    inputRow, hop.getOutputZSetElementType(), hop.interval, hop.size, hop.start));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode HOP timestamp position", error);
+        }
     }
 
     public static DBSPClosureExpression monotoneIdentity(DBSPCompiler compiler, DBSPType row, boolean indexed) {

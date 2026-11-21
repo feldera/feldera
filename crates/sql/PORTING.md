@@ -462,6 +462,15 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Rust constructs the HOP lower-bound closure. It forwards the input row and uses
+the earliest window start as the lower bound for both window columns. Direct
+closure comparisons matched Java for six nonnullable timestamps and one nullable
+timestamp in each engine mode, including source positions and generated names.
+The build matched the 550 selected monotonicity placements and all 17,098 frozen
+programs. It passed 2,076 runtime commands and restored COUNT and LATENESS
+checkpoints in both directions.
+[HOP waterline evidence](evidence/p3-hop-waterline-transfer.json)
+
 Filter trimming sends Rust the circuit edges, then the reader and predicate
 closures for filters with one reader. The live pass matched Java at 1,832
 placements across 550 selected programs and on both full frozen populations.

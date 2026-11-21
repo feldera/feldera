@@ -170,6 +170,28 @@ fn declared_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value
     Ok(json!({"expressions": expressions, "next_generated_name": next}))
 }
 
+fn hop_waterline(input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Request {
+        timestamp_index: usize,
+        #[serde(flatten)]
+        site: ExpressionSite,
+    }
+    let request: Request = serde_json::from_slice(state)?;
+    let (arena, roots) = request.site.arena(input)?;
+    let &[row, output, interval, size, offset] = roots.as_slice() else {
+        return Err("expected HOP input and output types, interval, size and offset".into());
+    };
+    let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+    let row = edit.type_id(row)?;
+    let output = edit.type_id(output)?;
+    let intervals = [edit.expression(interval)?, edit.expression(size)?, edit.expression(offset)?];
+    let closure = feldera_sql_opt::hop_waterline(
+        &mut edit, arena.root_id(), row, output, request.timestamp_index, intervals, &mut next,
+    )?;
+    lowered_function_reply(&arena, &edit, Some(closure), next, Vec::new())
+}
+
 fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
     let (pairs, rest) = roots.as_chunks::<2>();
     if rest.is_empty() {
@@ -691,6 +713,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
+        "Monotonicity/Hop" => return hop_waterline(input, state, next),
         "Limiters/Finality" => return finality_functions(input, state, next),
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"

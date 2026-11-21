@@ -14,11 +14,16 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.76 | 2.20 | 2.28 | 2.79 | 1.223× |
-| Nexmark suite | 3.75 | 8.89 | 4.36 | 10.06 | 2.306× |
-| Outer join | 1.64 | 2.01 | 2.11 | 2.36 | 1.118× |
+| Correlated array subquery | 2.234 | 2.505 | 2.860 | 3.542 | 1.239× |
+| Nexmark suite | 4.962 | 11.524 | 7.328 | 15.525 | 2.119× |
+| Outer join | 1.829 | 2.311 | 2.791 | 3.302 | 1.183× |
 
-The table measures the EMIT FINAL window build at `88ee907de`. Each workload ran two warmup pairs and 21 measured pairs on CPU 15. All 69 pairs matched on diagnostics and emitted artifacts. The array subquery and Nexmark exceeded the 1.2× ceiling. The preceding wide-index build at `80f10608a` measured 1.237×, 2.142× and 1.223× in workload order. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
+The table measures the build that sends selected filter closures to Rust. Each
+workload ran two warmup pairs and 21 measured pairs on CPU 15. All 69 pairs
+matched on diagnostics and emitted artifacts. The array subquery and Nexmark
+exceeded the 1.2× ceiling. Corpus verification overlapped this run.
+The EMIT FINAL window build at `88ee907de` measured 1.223×, 2.306× and 1.118×
+in workload order. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
 On the earlier ASOF build (`54c227440`), the ratios were 0.961×, 2.551× and 1.369× in workload order. Compiler verification overlapped part of that run. The circuit lowering build at `99f23c273` measured 1.301×, 2.387× and 1.187×, respectively. The preceding checked waterline build at `5a92a1eb3` measured 1.247×, 2.521× and 1.117×. The earlier compact consumer graph build at `f08e3eb5d` measured 1.072×, 2.394× and 1.131× in workload order. The circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214×. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 

@@ -1,0 +1,80 @@
+{
+  "build": {
+    "jar_sha256": "c8d2085ef094cc36b10aef682c6debb5f84916f42116c75464ccabcbbf8e06a1",
+    "optimizer_library_sha256": "711da380977457dfe84c16b88fd709f0ebe39d4a69f4f648c7666961ab76fc1e",
+    "driver_sha256": "a7f922f18acae7ef64411edf5fea9897f7ee4123ee248ce68aee00c53988107d",
+    "pass_kinds": 105
+  },
+  "s4": {
+    "classic": {
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+      "rust_stream_sha256": "8c52fa18df58531ad7eeba0aaa424e1a64d803cb22e4fa12c37fbab651d23178",
+      "matched_invocations": 291
+    },
+    "gen2": {
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+      "rust_stream_sha256": "4d04cb861e01a361161483ef4139f18493e9ee9095fd0908f7ff65f281f75277",
+      "matched_invocations": 259
+    }
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "ced1ecf253efca1edb2cfa04f0188294fdc7dd5fa9b8a46955cb3b697c588522"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "13682f5bb12eacef0efec46d266303f97537555e38900c6e3d96ce941f438b42",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "170e96daf8148a9f791540b6bab0b1f36a280f115af9333bc782f8c13da8b38c",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 11.498923,
+    "largest_driver_plus_front_end_rss_bytes": 80089088
+  },
+  "directed_closures": {
+    "classic": {
+      "population_sha256": "60b103e91b3b0a3203adf4c776a4227212f211f9603905e406bd76bce938a762",
+      "programs": 7,
+      "matched_nullable": 1,
+      "matched_nonnullable": 6
+    },
+    "gen2": {
+      "population_sha256": "6153202d16c89a7ad5afbdaff0bacd21f40040060a159034421c6fd77e302bc5",
+      "programs": 7,
+      "matched_nullable": 1,
+      "matched_nonnullable": 6
+    }
+  },
+  "directed_method": "Instrumented both constructors at the same generated-name counter, checked the final counter, and compared independent serialized closures including replay metadata and node sharing with sql-difftest."
+}

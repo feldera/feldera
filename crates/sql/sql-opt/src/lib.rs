@@ -187,7 +187,7 @@ pub use function_calls::{
 pub use gen2::gen2_passes;
 pub use hints::{check_hints, HintDiagnostic};
 pub use hoist_filters::{decompose_expensive_filters, filters_need_decomposition};
-pub use hop::expand_hop;
+pub use hop::{expand_hop, hop_waterline};
 pub use identity::{identity_closure, remove_identity_operators};
 pub use incrementalize::incrementalize;
 pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
