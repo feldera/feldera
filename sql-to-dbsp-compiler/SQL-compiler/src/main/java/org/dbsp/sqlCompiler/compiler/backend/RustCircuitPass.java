@@ -1121,6 +1121,11 @@ public final class RustCircuitPass implements CircuitTransform {
         DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
     }
 
+    public static List<List<List<Integer>>> parameterFieldDependencies(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        var result = invokeLowering(compiler, "ParameterFieldDependencies", closure).value;
+        return MAPPER.convertValue(result, new TypeReference<>() {});
+    }
+
     /** Analyze each distinct reader closure once per unused-field iteration. */
     public static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
                                                                        Predicate<DBSPUnaryOperator> eligible) {

@@ -84,6 +84,9 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         return Err("expected an array of lowering inputs".into());
     };
     let (arena, roots) = expression_arena(roots)?;
+    if let ("ParameterFieldDependencies", [closure]) = (pass, roots.as_slice()) {
+        return Ok(serde_json::to_value(feldera_sql_expr::parameter_field_paths(&arena, *closure)?)?);
+    }
     if let ("IsIdentityProjection", [closure]) = (pass, roots.as_slice()) {
         let edit = feldera_sql_ir::CircuitEditor::new(arena);
         let identity = feldera_sql_opt::identity_closure(&edit, *closure, &mut next)?;
@@ -257,7 +260,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
         | "TrimAggregateProjection" | "ProjectUnnest" | "ProjectAggregateZero" | "IsIdentityProjection" => {

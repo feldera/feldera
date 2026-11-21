@@ -128,11 +128,28 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         this.fullyUsedFunctions.done(function);
     }
 
+    private ParameterFieldUse parameterFieldUse(DBSPClosureExpression closure) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return this.find.findUsedFields(closure);
+        var paths = RustCircuitPass.parameterFieldDependencies(this.compiler, closure);
+        Utilities.enforce(paths.size() == closure.parameters.length);
+        var uses = new ParameterFieldUse();
+        for (int i = 0; i < closure.parameters.length; i++) {
+            var parameter = closure.parameters[i];
+            var fields = paths.get(i);
+            if (fields.isEmpty())
+                uses.set(parameter, new FieldUseMap(parameter.getType(), false));
+            for (var field : fields)
+                new ParameterField(parameter, field).markParameterUse(uses);
+        }
+        return uses;
+    }
+
     boolean processStarJoin(DBSPStarJoinBaseOperator join) {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (this.done(join, joinFunction))
             return false;
-        var useMap = this.find.findUsedFields(joinFunction);
+        var useMap = this.parameterFieldUse(joinFunction);
 
         RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
         List<FieldUseMap> useMaps = new ArrayList<>();
@@ -167,7 +184,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression joinFunction = join.getClosureFunction();
         if (this.done(join, joinFunction))
             return false;
-        var useMap = this.find.findUsedFields(joinFunction);
+        var useMap = this.parameterFieldUse(joinFunction);
 
         Utilities.enforce(joinFunction.parameters.length == 3);
         DBSPParameter left = joinFunction.parameters[1];
@@ -209,7 +226,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             extra[tuple.size()] = left.asVariable().deref().field(join.leftTimestampIndex);
             extra[tuple.size() + 1] = right.asVariable().deref().field(join.rightTimestampIndex);
             DBSPClosureExpression fakeFunction = new DBSPTupleExpression(extra).closure(joinFunction.parameters);
-            var useMap = this.find.findUsedFields(fakeFunction);
+            var useMap = this.parameterFieldUse(fakeFunction);
             RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
             FieldUseMap leftRemap = rw.getUseMap(left);
             FieldUseMap rightRemap = rw.getUseMap(right);
@@ -334,7 +351,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             return;
         }
         Utilities.enforce(closure.parameters.length == 1);
-        var useMap = this.find.findUsedFields(closure);
+        var useMap = this.parameterFieldUse(closure);
 
         if (!useMap.hasUnusedFields(1)) {
             this.noUnusedFields(closure);
@@ -398,7 +415,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression producer = operator.outputProducer
                 .ensureTree(this.compiler).to(DBSPClosureExpression.class);
         Utilities.enforce(producer.parameters.length == 2);
-        ParameterFieldUse useMap = this.find.findUsedFields(producer);
+        ParameterFieldUse useMap = this.parameterFieldUse(producer);
         // The rank (parameter 0) is a scalar; mark it used
         useMap.get(producer.parameters[0]).setUsed();
         FieldUseMap rowUse = useMap.get(producer.parameters[1]);
@@ -437,8 +454,9 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         // Search for unused fields in the DBSPFlatmap expression
         DBSPTypeTuple inputTuple = operator.input().getOutputZSetElementType().to(DBSPTypeTuple.class);
-        FindUsedFields find = new FindUsedFields(this.compiler);
-        var useMap = find.findUsedFields(flatmap.collectionExpression);
+        var useMap = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? this.parameterFieldUse(flatmap.collectionExpression)
+                : new FindUsedFields(this.compiler).findUsedFields(flatmap.collectionExpression);
         FieldUseMap map = useMap.get(flatmap.collectionExpression.parameters[0]).deref();
         for (int index: flatmap.passthroughIndexes) {
             map.setUsed(index);

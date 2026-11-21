@@ -6,18 +6,26 @@ use feldera_sql_ir::{
 };
 use std::collections::{BTreeSet, HashMap};
 
-type Paths = BTreeSet<Vec<usize>>;
+/// A field belongs to the parameter that introduced it, including after
+/// tuple construction, field selection and scalar computations.
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+struct ParameterField {
+    parameter: usize,
+    indices: Vec<usize>,
+}
+
+type Dependencies = BTreeSet<ParameterField>;
 
 #[derive(Clone)]
 enum Use {
-    Field(Vec<usize>),
-    Borrowed(Vec<usize>),
+    Field(ParameterField),
+    Borrowed(ParameterField),
     Tuple(Vec<Use>),
-    Computed(Paths),
+    Computed(Dependencies),
 }
 
 impl Use {
-    fn collect(self, paths: &mut Paths) {
+    fn collect(self, paths: &mut Dependencies) {
         match self {
             Self::Field(path) | Self::Borrowed(path) => {
                 paths.insert(path);
@@ -35,10 +43,11 @@ enum ParameterShape {
 }
 
 impl ParameterShape {
-    fn binding(self) -> Use {
+    fn binding(self, parameter: usize) -> Use {
+        let borrowed = |indices| Use::Borrowed(ParameterField { parameter, indices });
         match self {
-            Self::IndexedPair => Use::Tuple(vec![Use::Borrowed(vec![0]), Use::Borrowed(vec![1])]),
-            Self::Borrowed { .. } => Use::Borrowed(vec![]),
+            Self::IndexedPair => Use::Tuple(vec![borrowed(vec![0]), borrowed(vec![1])]),
+            Self::Borrowed { .. } => borrowed(vec![]),
         }
     }
 
@@ -52,8 +61,8 @@ impl ParameterShape {
 
 struct RowProjection<'a> {
     circuit: &'a Circuit,
-    parameter: &'a str,
-    shape: ParameterShape,
+    parameters: HashMap<&'a str, usize>,
+    shapes: Vec<ParameterShape>,
     known: HashMap<NodeId, Use>,
 }
 
@@ -77,10 +86,13 @@ impl RowProjection<'_> {
         let mut operand = |field| self.value(node.edge(field)?, depth + 1);
         let result = match kind {
             Expr::VariablePath => {
-                if node.data("variable").and_then(|name| name.as_str()) != Some(self.parameter) {
-                    return Err(Error::new("unbound variable in an input projection"));
-                }
-                self.shape.binding()
+                let parameter = node
+                    .data("variable")
+                    .and_then(|name| name.as_str())
+                    .and_then(|name| self.parameters.get(name))
+                    .copied()
+                    .ok_or_else(|| Error::new("unbound variable in an input projection"))?;
+                self.shapes[parameter].binding(parameter)
             }
             Expr::Borrow => match operand("expression")? {
                 Use::Field(path) => Use::Borrowed(path),
@@ -98,7 +110,7 @@ impl RowProjection<'_> {
                     .ok_or_else(|| Error::new("invalid projection field index"))?;
                 match operand("expression")? {
                     Use::Field(mut path) => {
-                        path.push(index);
+                        path.indices.push(index);
                         Use::Field(path)
                     }
                     Use::Tuple(fields) => fields
@@ -118,8 +130,8 @@ impl RowProjection<'_> {
             }
             Expr::IsNull => match operand("expression")? {
                 // Checking the presence of the entire row does not read its columns.
-                Use::Field(path) if self.shape.is_row_null_test(&path) => {
-                    Use::Computed(Paths::new())
+                Use::Field(path) if self.shapes[path.parameter].is_row_null_test(&path.indices) => {
+                    Use::Computed(Dependencies::new())
                 }
                 other => other,
             },
@@ -158,13 +170,13 @@ impl RowProjection<'_> {
             | Expr::DirectComparator
             | Expr::EqualityComparator
             | Expr::FieldComparator
-            | Expr::NoComparator => Use::Computed(Paths::new()),
-            kind if kind.wire_name().ends_with("Literal") => Use::Computed(Paths::new()),
+            | Expr::NoComparator => Use::Computed(Dependencies::new()),
+            kind if kind.wire_name().ends_with("Literal") => Use::Computed(Dependencies::new()),
             _ => {
                 return Err(Error::new(format!(
                     "unsupported input projection expression {}",
                     node.class()
-                )))
+                )));
             }
         };
         self.known.insert(id, result.clone());
@@ -178,7 +190,7 @@ impl RowProjection<'_> {
                 field.collect_inner_edges(&mut children);
             }
         }
-        let mut paths = Paths::new();
+        let mut paths = Dependencies::new();
         for child in children {
             self.value(child, depth + 1)?.collect(&mut paths);
         }
@@ -192,51 +204,116 @@ pub fn input_field_paths(
     circuit: &Circuit,
     closure: NodeId,
 ) -> Result<BTreeSet<Vec<usize>>, Error> {
+    let [paths] = parameter_field_paths(circuit, closure)?
+        .try_into()
+        .map_err(|_| Error::new("expected one input row parameter"))?;
+    Ok(paths)
+}
+
+/// Analyze all parameters together so a join's key and each value keep their
+/// own field numbering when reads meet in a tuple or scalar expression.
+pub fn parameter_field_paths(
+    circuit: &Circuit,
+    closure: NodeId,
+) -> Result<Vec<BTreeSet<Vec<usize>>>, Error> {
     let node = circuit
         .node(closure)
         .ok_or_else(|| Error::new("missing input projection"))?;
-    let [parameter] = node
-        .edges("parameters")?
-        .try_into()
-        .map_err(|_| Error::new("expected one input row parameter"))?;
-    let param = circuit.node(parameter).expect("validated parameter");
-    let name = param
-        .data("name")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| Error::new("missing input parameter name"))?;
-    let ty = circuit
-        .node(param.edge("type")?)
-        .expect("validated parameter type");
-    let shape = match ty.inner_kind() {
-        Some(InnerKind::Type(TypeKind::Ref)) => ParameterShape::Borrowed {
-            tuple: matches!(
-                circuit.node(ty.edge("type")?).and_then(Node::inner_kind),
-                Some(InnerKind::Type(TypeKind::Tuple))
-            ),
-        },
-        Some(InnerKind::Type(TypeKind::RawTuple)) => {
-            let parts = ty.edges("tupFields")?;
-            if parts.len() != 2
-                || !parts.iter().all(|id| {
-                    matches!(
-                        circuit.node(*id).and_then(Node::inner_kind),
-                        Some(InnerKind::Type(TypeKind::Ref))
-                    )
-                })
-            {
-                return Err(Error::new("expected a borrowed key and value"));
-            }
-            ParameterShape::IndexedPair
+    let params = node.edges("parameters")?;
+    let arity = params.len();
+    let mut parameters = HashMap::with_capacity(params.len());
+    let mut shapes = Vec::with_capacity(params.len());
+    for (i, id) in params.into_iter().enumerate() {
+        let param = circuit.node(id).expect("validated parameter");
+        let name = param
+            .data("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::new("missing input parameter name"))?;
+        if parameters.insert(name, i).is_some() {
+            return Err(Error::new("duplicate map or join parameter name"));
         }
-        _ => return Err(Error::new("expected a borrowed row or indexed pair")),
-    };
-    let mut projection = RowProjection {
+        let ty = circuit
+            .node(param.edge("type")?)
+            .expect("validated parameter type");
+        let shape = match ty.inner_kind() {
+            Some(InnerKind::Type(TypeKind::RawTuple)) => {
+                let parts = ty.edges("tupFields")?;
+                if parts.len() != 2
+                    || !parts.iter().all(|id| {
+                        matches!(
+                            circuit.node(*id).and_then(Node::inner_kind),
+                            Some(InnerKind::Type(TypeKind::Ref))
+                        )
+                    })
+                {
+                    return Err(Error::new("expected a borrowed key and value"));
+                }
+                ParameterShape::IndexedPair
+            }
+            Some(InnerKind::Type(TypeKind::Ref)) => ParameterShape::Borrowed {
+                tuple: matches!(
+                    circuit.node(ty.edge("type")?).and_then(Node::inner_kind),
+                    Some(InnerKind::Type(TypeKind::Tuple))
+                ),
+            },
+            // TopK's rank argument is a scalar. Its entire parameter is read.
+            Some(InnerKind::Type(_)) if arity > 1 => ParameterShape::Borrowed { tuple: false },
+            _ => return Err(Error::new("expected a borrowed row or indexed pair")),
+        };
+        shapes.push(shape);
+    }
+    let mut paths = vec![BTreeSet::new(); shapes.len()];
+    let mut analysis = RowProjection {
         circuit,
-        parameter: name,
-        shape,
+        parameters,
+        shapes,
         known: HashMap::new(),
     };
-    let mut paths = Paths::new();
-    projection.value(node.edge("body")?, 0)?.collect(&mut paths);
+    let mut uses = Dependencies::new();
+    analysis.value(node.edge("body")?, 0)?.collect(&mut uses);
+    for field in uses {
+        paths[field.parameter].insert(field.indices);
+    }
     Ok(paths)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::CircuitEditor;
+    use serde_json::json;
+
+    #[test]
+    fn join_reads_distinguish_the_key_left_and_right_parameters() {
+        let circuit = Circuit::from_json(json!({
+            "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[],
+            "type":{"class":"DBSPTypeInteger","id":1,"code":"INT32","mayBeNull":false}
+        }))
+        .unwrap();
+        let mut edit = CircuitEditor::new(circuit);
+        let integer = edit.type_id(NodeId::Inner(1)).unwrap();
+        let row = edit
+            .tuple_type(integer.into(), false, [integer.into(), integer.into()])
+            .unwrap();
+        let borrowed = edit.reference_type(row).unwrap();
+        let key = edit.named_variable(borrowed, "key").unwrap();
+        let left = edit.named_variable(borrowed, "left").unwrap();
+        let right = edit.named_variable(borrowed, "right").unwrap();
+        let lhs = edit.dereference(left).unwrap();
+        let rhs = edit.dereference(right).unwrap();
+        let a = edit.tuple_field(lhs, 1).unwrap();
+        let b = edit.tuple_field(rhs, 0).unwrap();
+        let joined = edit.tuple_expr(row.into(), false, &[a, b, a]).unwrap();
+        let reader = edit
+            .closure_from_variables(joined, &[key, left, right])
+            .unwrap();
+        assert_eq!(
+            parameter_field_paths(edit.circuit(), reader.into()).unwrap(),
+            [
+                BTreeSet::new(),
+                BTreeSet::from([vec![1]]),
+                BTreeSet::from([vec![0]])
+            ]
+        );
+    }
 }
