@@ -180,10 +180,14 @@ fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
 }
 
 fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
-    let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
-        return Err("expected an array of lowering inputs".into());
+    let (arena, roots) = if pass == "Monotonicity/Filter" {
+        serde_json::from_slice::<ExpressionSite>(state)?.arena(input)?
+    } else {
+        let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
+            return Err("expected an array of lowering inputs".into());
+        };
+        expression_arena(roots)?
     };
-    let (arena, roots) = expression_arena(roots)?;
     if pass == "DeltaExpansion/StarJoinTerm" {
         return star_join::delta_term(arena, &roots, next);
     }
@@ -443,13 +447,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let ty = edit.type_id(*row)?;
             feldera_sql_opt::monotone_identity(&mut edit, ty, pass == "Monotonicity/IndexedIdentity", &mut next)?
         }
-        ("Monotonicity/FilterBounds", [closure]) => {
-            let bounds = feldera_sql_opt::filter_lower_bounds(&mut edit, *closure)?;
-            let values = edit.circuit().additional_inner_nodes(&arena, bounds.iter().map(|bound| bound.value.into()))?;
-            let ranges: Vec<_> = bounds.into_iter().zip(values).map(|(bound, value)| {
-                json!({"column": bound.column, "comparison": bound.comparison.wire_name(), "value": value})
-            }).collect();
-            return Ok(Value::Array(ranges));
+        ("Monotonicity/Filter", [closure, row]) => {
+            let closure = edit.expression(*closure)?;
+            let row = edit.type_id(*row)?;
+            feldera_sql_opt::filter_transfer(&mut edit, arena.root_id(), closure, row)?
         }
         ("InnerCSE/Let", [body, pairs @ ..]) => {
             let body = edit.expression(*body)?;
@@ -640,7 +641,7 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/Lag" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        | "Monotonicity/Lag" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"

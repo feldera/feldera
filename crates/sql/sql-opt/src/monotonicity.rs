@@ -179,18 +179,29 @@ pub fn filter_lower_bounds(
     edit: &mut CircuitEditor,
     closure: NodeId,
 ) -> Result<Vec<FilterBound>, Error> {
-    let function = edit.node(closure)?;
-    let [param] = function
+    let (name, _) = filter_parameter(edit, closure)?;
+    predicate_bounds(edit, edit.node(closure)?.edge("body")?, &name)
+}
+
+fn filter_parameter(edit: &CircuitEditor, closure: NodeId) -> Result<(String, TypeId), Error> {
+    let [param] = edit
+        .node(closure)?
         .edges("parameters")?
         .try_into()
         .map_err(|_| Error::new("filter requires one parameter"))?;
-    let parameter = edit
-        .node(param)?
+    let param = edit.node(param)?;
+    let name = param
         .data("name")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::new("filter parameter requires a name"))?
-        .to_owned();
-    let mut root = function.edge("body")?;
+        .ok_or_else(|| Error::new("filter parameter requires a name"))?;
+    Ok((name.to_owned(), edit.type_id(param.edge("type")?)?))
+}
+
+fn predicate_bounds(
+    edit: &mut CircuitEditor,
+    mut root: NodeId,
+    parameter: &str,
+) -> Result<Vec<FilterBound>, Error> {
     while edit.expr_kind(edit.expression(root)?)? == Expr::Unary
         && opcode(edit.node(root)?) == Some("WRAP_BOOL")
     {
@@ -223,7 +234,7 @@ pub fn filter_lower_bounds(
         } else {
             &both[..1]
         };
-        let bound = comparison_bound(edit, &parameter, sides)?;
+        let bound = comparison_bound(edit, parameter, sides)?;
         if let Some((column, value)) = bound {
             bounds.push(FilterBound {
                 column,
@@ -233,6 +244,37 @@ pub fn filter_lower_bounds(
         }
     }
     Ok(bounds)
+}
+
+/// A row that passes the predicate satisfies every lower bound on its columns.
+/// Fold each column's bounds in predicate order, starting at its input waterline.
+pub fn filter_transfer(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    closure: ExpressionId,
+    row: TypeId,
+) -> Result<ExpressionId, Error> {
+    let (name, argument) = filter_parameter(edit, closure.into())?;
+    let predicate = edit.node(closure.into())?.edge("body")?;
+    let bounds = predicate_bounds(edit, predicate, &name)?;
+    let var = edit.named_variable(argument, &name)?;
+    let count = edit.node(row.into())?.edges("tupFields")?.len();
+    let mut fields = Vec::with_capacity(count);
+    for i in 0..count {
+        // Each read is a distinct occurrence in the expression tree.
+        let occurrence = edit.named_variable(argument, &name)?;
+        let value = edit.dereference(occurrence)?;
+        fields.push(edit.tuple_field(value, i)?);
+    }
+    for bound in bounds {
+        let field = fields
+            .get_mut(bound.column)
+            .ok_or_else(|| Error::new("filter bound column outside the input row"))?;
+        let ty = edit.expression_type(*field)?;
+        *field = edit.binary_expression(site, ty, BinaryOp::Max, *field, bound.value)?;
+    }
+    let body = edit.tuple_with_type(row, &fields)?;
+    edit.closure_from_variables(body, &[var])
 }
 
 #[cfg(test)]
@@ -313,6 +355,17 @@ mod tests {
         assert_eq!(adjusted.edge("right")?, nine.into());
         assert_eq!((bounds[1].column, bounds[1].comparison), (1, BinaryOp::Eq));
         assert_eq!(bounds[1].value, offset);
+        let transfer = filter_transfer(&mut edit, nine.into(), closure, row)?;
+        let body = edit.node(transfer.into())?.edge("body")?;
+        let fields = edit.node(body)?.edges("fields")?;
+        assert_eq!(edit.node(body)?.edge("type")?, row.into());
+        assert_eq!(fields.len(), 2);
+        let first = edit.node(fields[0])?;
+        assert_eq!(opcode(first), Some("MAX"));
+        assert_eq!(opcode(edit.node(first.edge("right")?)?), Some("SUB"));
+        let second = edit.node(fields[1])?;
+        assert_eq!(opcode(second), Some("MAX"));
+        assert_eq!(second.edge("right")?, offset.into());
         Ok(())
     }
 }

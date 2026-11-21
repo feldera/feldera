@@ -476,8 +476,6 @@ public final class RustCircuitPass implements CircuitTransform {
         return result;
     }
 
-    public record FilterBound(int column, DBSPOpcode comparison, DBSPExpression value) {}
-
     public enum BinaryDomain { Scalar, Temporal, TimeOfDay }
     public enum BinaryWaterline { None, Left, Right, Both, InheritLeft, InheritRight, Coalesce }
     public record WaterlineOperand(boolean monotone, boolean constant, boolean positiveLiteral, boolean neverNull) {}
@@ -517,15 +515,13 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public static List<FilterBound> filterLowerBounds(DBSPCompiler compiler, DBSPClosureExpression closure) {
-        var reply = invokeLowering(compiler, "Monotonicity/FilterBounds", closure);
-        var decoder = expressionDecoder(reply.writer);
-        var bounds = new ArrayList<FilterBound>();
-        for (var bound : reply.value)
-            bounds.add(new FilterBound(bound.required("column").intValue(),
-                    DBSPOpcode.valueOf(bound.required("comparison").textValue()),
-                    decoder.decodeInner(bound.required("value"), DBSPExpression.class)));
-        return bounds;
+    public static DBSPClosureExpression filterTransfer(DBSPCompiler compiler, DBSPFilterOperator filter, DBSPType row) {
+        try {
+            return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Filter",
+                    MAPPER.writeValueAsBytes(expressionSite(filter.getNode())), filter.getClosureFunction(), row));
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode filter source position", error);
+        }
     }
 
     public static DBSPClosureExpression lowerFlatmap(DBSPCompiler compiler, DBSPFlatmap flatmap) {

@@ -807,9 +807,26 @@ public class Monotonicity extends CircuitVisitor {
             return;
         }
 
-        // Find out if the filter condition is a conjunction of comparisons.
-        // Extract all the comparisons of the form column >= expression.
-        ComparisonsAnalyzer comparisons = new ComparisonsAnalyzer(this.compiler(), node.getClosureFunction());
+        IMaybeMonotoneType projection = getBodyType(input);
+        if (!projection.mayBeMonotone())
+            return;
+        DBSPTypeTupleBase tuple = projection.getType().to(DBSPTypeTupleBase.class);
+        DBSPClosureExpression closure;
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            closure = RustCircuitPass.filterTransfer(this.compiler(), node, tuple);
+            if (Logger.INSTANCE.getLoggingLevel(this.getClass()) >= 2)
+                this.logComparisons(node, new ComparisonsAnalyzer(node.getClosureFunction()));
+        } else {
+            var comparisons = new ComparisonsAnalyzer(node.getClosureFunction());
+            this.logComparisons(node, comparisons);
+            closure = filterTransfer(node, tuple, comparisons);
+        }
+        var analyzer = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.ZSet, projection);
+        this.set(node, Objects.requireNonNull(analyzer.applyAnalysis(closure)));
+    }
+
+    private void logComparisons(DBSPFilterOperator node, ComparisonsAnalyzer comparisons) {
         if (!comparisons.isEmpty()) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(node::toString)
@@ -817,11 +834,10 @@ public class Monotonicity extends CircuitVisitor {
                     .appendSupplier(comparisons::toString)
                     .newline();
         }
+    }
 
-        IMaybeMonotoneType projection = getBodyType(input);
-        if (!projection.mayBeMonotone())
-            return;
-        DBSPTypeTupleBase tuple = projection.getType().to(DBSPTypeTupleBase.class);
+    private static DBSPClosureExpression filterTransfer(
+            DBSPFilterOperator node, DBSPTypeTupleBase tuple, ComparisonsAnalyzer comparisons) {
         DBSPVariablePath var = node.getClosureFunction().parameters[0].asVariable();
         DBSPExpression[] fields = new DBSPExpression[tuple.size()];
         for (int i = 0; i < tuple.size(); i++) {
@@ -833,12 +849,7 @@ public class Monotonicity extends CircuitVisitor {
             }
             fields[i] = field;
         }
-        DBSPClosureExpression closure = tuple.makeTuple(fields).closure(var);
-        MonotoneTransferFunctions.ArgumentKind argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
-        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.compiler(), node, argumentType, projection);
-        MonotoneExpression output = Objects.requireNonNull(analyzer.applyAnalysis(closure));
-        this.set(node, output);
+        return tuple.makeTuple(fields).closure(var);
     }
 
     /** Create a NoExpression with the specified type.
@@ -1198,14 +1209,9 @@ public class Monotonicity extends CircuitVisitor {
         public final List<Comparison> comparisons = new ArrayList<>();
 
         /** Collect the comparisons among the conjuncts of a filter condition */
-        public ComparisonsAnalyzer(DBSPCompiler compiler, DBSPClosureExpression clo) {
+        public ComparisonsAnalyzer(DBSPClosureExpression clo) {
             Utilities.enforce(clo.parameters.length == 1);
             DBSPParameter param = clo.parameters[0];
-            if (compiler.options.ioOptions.rustOptimizerPasses) {
-                for (var bound : RustCircuitPass.filterLowerBounds(compiler, clo))
-                    this.comparisons.add(new Comparison(bound.column(), bound.value(), bound.comparison(), param));
-                return;
-            }
             for (DBSPExpression conjunct : clo.body.conjuncts()) {
                 DBSPBinaryExpression binary = conjunct.as(DBSPBinaryExpression.class);
                 if (binary != null)
