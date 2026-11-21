@@ -26,6 +26,7 @@
       "CreateRuntimeErrorWrappers": 8571,
       "DeadCode": 226514,
       "DecomposeExpensiveFilters": 8571,
+      "DeferCarriedColumns": 8571,
       "DeltaHashPrefixes": 8571,
       "DesugarNowEquality": 71,
       "DetectStreamingOperations": 8571,
@@ -96,6 +97,7 @@
       "StrayGC": 8571,
       "SubstituteLeftJoins": 8571,
       "TagRegions": 8571,
+      "TrimFilters": 16643,
       "TrimInputs": 2,
       "TrimWindows": 16643,
       "UDFInliner": 8571,
@@ -112,11 +114,11 @@
       },
       {
         "manifest_sha256": "32c32263c6515c6734cb3b60ff430745a13ce89d376f139de521f6290594803e",
-        "records_sha256": "ec6ccfc59a608be6abd56276f30c70e8c3fe620f7419ee063654a90071d467d5"
+        "records_sha256": "da30603e91a4a57ca91fab4badc49503738f65f6e61b6be998966f656dc0106e"
       },
       {
         "manifest_sha256": "ad14be7678a1d49611822c17220eb08e0c4aa01cdde4ced72cbef02a2c3b3330",
-        "records_sha256": "73cc7000700de8ca918a0c46e2f1c887603d097066713c483fa3ea896e0d881c"
+        "records_sha256": "93fd0c26f5065361a48af1525be310f695cec031cc600ed419b14f69a7cab05d"
       }
     ]
   },
@@ -147,6 +149,7 @@
       "CreateRuntimeErrorWrappers": 8527,
       "DeadCode": 221407,
       "DecomposeExpensiveFilters": 8527,
+      "DeferCarriedColumns": 8527,
       "DeltaHashPrefixes": 8527,
       "DesugarNowEquality": 62,
       "DetectStreamingOperations": 8527,
@@ -218,6 +221,7 @@
       "StrayGC": 8527,
       "SubstituteLeftJoins": 8527,
       "TagRegions": 8527,
+      "TrimFilters": 16533,
       "TrimInputs": 2,
       "TrimWindows": 16533,
       "UDFInliner": 8527,
@@ -234,19 +238,19 @@
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "542606369122467652c85406ddf10096204cfa867be452273cdc0a1dd8a93b73"
+        "records_sha256": "1a48a3b96cf9e6a003c5893912eb615935d4e228fcf8f67e8042de29e76e2d49"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
-        "records_sha256": "c7382cce899ea9f7c892ad04137f8e07384e70d90e9df17338eb0d3081991efc"
+        "records_sha256": "d93cf800402b7fb27a4b61ca8cfa643f9a58389f643949f9b7499471c445aafc"
       }
     ]
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
-    "pass_kinds": 97,
-    "jar_sha256": "f027f8f03f95de677087a39d67399f94e68fbd42d21b300d99b3aae63c0710a3",
-    "driver_sha256": "920b08b19fbf0e31d9a414831c61d28e39a7592a214a2ade0c9999fd919424de",
-    "optimizer_library_sha256": "c88e1d017a64e7fc1539d59aff5b108b383e4c016333828cc8edfb81c097101d"
+    "pass_kinds": 99,
+    "jar_sha256": "eaa7beb9a4f18ae90ebfa29fa43e85ecb51dfd3bc9af42752102f58a35cd610e",
+    "driver_sha256": "bde64f48b2861d1b91e5ce4ccb9db660acca7cd17e17f699057e894c01f341ac",
+    "optimizer_library_sha256": "3a787b149c4803d20c465a93c1a92b11732308037ed49ad0b71a5764f5e34e52"
   }
 }
