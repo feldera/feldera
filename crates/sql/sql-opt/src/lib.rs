@@ -74,7 +74,7 @@ mod output_integrators;
 mod project_outputs;
 mod projection;
 mod projection_composition;
-pub use projection_composition::compose_projection;
+pub use projection_composition::{compose_indexed_projection, compose_projection};
 mod propagate_constants;
 pub use project_outputs::project_outputs;
 mod pull_filters;

@@ -241,6 +241,13 @@ public final class RustCircuitPass implements CircuitTransform {
         return tryLowerFunction(compiler, "TryComposeProjection", before, after, DBSPClosureExpression.class);
     }
 
+    @Nullable
+    public static DBSPClosureExpression composeIndexedProjection(DBSPCompiler compiler,
+            DBSPClosureExpression before, DBSPClosureExpression after, boolean onlyProjections) {
+        return tryLowerFunction(compiler, onlyProjections ? "TryIndexedProjection" : "ComposeIndexedProjection",
+                before, after, DBSPClosureExpression.class);
+    }
+
     private static <T extends DBSPExpression> T lowerFunction(DBSPCompiler compiler, String pass,
             IDBSPInnerNode input, @Nullable IDBSPInnerNode second, Class<T> kind) {
         return Objects.requireNonNull(tryLowerFunction(compiler, pass, input, second, kind));

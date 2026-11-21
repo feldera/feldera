@@ -1,6 +1,6 @@
 //! Fuse output projections into constants, UNNEST and single-reader joins.
 use crate::{
-    projection::{projection, Projection},
+    projection::{projection, simple_tuple, Projection},
     rebuild::ProjectionNames,
     stream_rewrites::{body_members, reader_counts},
 };
@@ -13,36 +13,6 @@ use feldera_sql_ir::{
     OperatorKind as Op, OutputPort, TypeKind,
 };
 use std::collections::{BTreeMap, HashMap};
-
-fn simple_tuple(edit: &CircuitEditor, ty: NodeId) -> Result<bool, Error> {
-    let kind = edit.type_kind(edit.type_id(ty)?)?;
-    if !matches!(kind, TypeKind::Tuple | TypeKind::RawTuple) {
-        return Ok(false);
-    }
-    let fields = edit.node(ty)?.edges("tupFields")?;
-    if kind == TypeKind::RawTuple {
-        if fields.len() != 2 {
-            return Ok(false);
-        }
-        for field in fields {
-            if edit.type_kind(edit.type_id(field)?)? != TypeKind::Tuple
-                || !simple_tuple(edit, field)?
-            {
-                return Ok(false);
-            }
-        }
-    } else {
-        for field in fields {
-            if matches!(
-                edit.type_kind(edit.type_id(field)?)?,
-                TypeKind::RawTuple | TypeKind::Tuple
-            ) {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(true)
-}
 
 /// DetectShuffle accepts only a tuple of fields of the closure parameter,
 /// allowing dereference and clone on either side of a field access.

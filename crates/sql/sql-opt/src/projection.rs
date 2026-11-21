@@ -7,12 +7,65 @@ pub(super) enum Projection {
     Fields(Vec<usize>),
 }
 
+pub(super) fn simple_tuple(edit: &CircuitEditor, ty: NodeId) -> Result<bool, Error> {
+    let kind = edit.type_kind(edit.type_id(ty)?)?;
+    if !matches!(kind, Ty::Tuple | Ty::RawTuple) {
+        return Ok(false);
+    }
+    let fields = edit.node(ty)?.edges("tupFields")?;
+    if kind == Ty::RawTuple {
+        if fields.len() != 2 {
+            return Ok(false);
+        }
+        for field in fields {
+            if edit.type_kind(edit.type_id(field)?)? != Ty::Tuple || !simple_tuple(edit, field)? {
+                return Ok(false);
+            }
+        }
+    } else {
+        for field in fields {
+            if matches!(
+                edit.type_kind(edit.type_id(field)?)?,
+                Ty::RawTuple | Ty::Tuple
+            ) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// A tuple of simple field accesses records its input columns. Nested tuples,
 /// literals and computed field paths may still project without such a mapping.
 pub(super) fn projection(
     edit: &CircuitEditor,
     body: NodeId,
     parameter: NodeId,
+) -> Result<Projection, Error> {
+    classify(edit, body, parameter, true)
+}
+
+/// The strict projection visitor requires a flat result and rejects casts,
+/// including casts that only change nullability.
+pub(super) fn strict_projection(
+    edit: &CircuitEditor,
+    body: NodeId,
+    parameter: NodeId,
+) -> Result<bool, Error> {
+    if !simple_tuple(edit, edit.node(body)?.edge("type")?)? {
+        return Ok(false);
+    }
+    Ok(!matches!(
+        classify(edit, body, parameter, false)?,
+        Projection::Other
+    ))
+}
+
+fn classify(
+    edit: &CircuitEditor,
+    body: NodeId,
+    parameter: NodeId,
+    allow_noop_casts: bool,
 ) -> Result<Projection, Error> {
     let name = edit.node(parameter)?.data("name");
     let mut pending = vec![body];
@@ -90,7 +143,7 @@ pub(super) fn projection(
                 }
                 pending.push(source);
             }
-            Expr::Cast => {
+            Expr::Cast if allow_noop_casts => {
                 let source = node.edge("source")?;
                 if !edit.same_type_ignoring_nullability(
                     edit.expression_type(edit.expression(source)?)?,

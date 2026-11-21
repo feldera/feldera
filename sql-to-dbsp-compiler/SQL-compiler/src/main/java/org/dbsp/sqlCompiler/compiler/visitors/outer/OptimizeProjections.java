@@ -111,6 +111,25 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 ? after.applyAfter(this.compiler, before, Maybe.YES) : null;
     }
 
+    @Nullable
+    private DBSPClosureExpression composeIndexed(DBSPClosureExpression before, DBSPClosureExpression after) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.composeIndexedProjection(this.compiler, before, after, this.onlyProjections);
+        boolean expensive = Expensive.isExpensive(this.compiler, before);
+        Projection projection = new Projection(this.compiler);
+        projection.apply(after);
+        if (!expensive || (before.body.is(DBSPBaseTupleExpression.class) && projection.isProjection)) {
+            var argument = new DBSPRawTupleExpression(before.body.field(0).borrow(), before.body.field(1).borrow());
+            return after.call(argument).reduce(this.compiler).closure(before.parameters);
+        }
+        if (this.onlyProjections)
+            return null;
+        DBSPVariablePath pair = before.body.type.var();
+        var borrowed = new DBSPRawTupleExpression(pair.field(0).borrow(), pair.field(1).borrow());
+        var apply = new DBSPLetExpression(after.parameters[0].asVariable(), borrowed, after.body);
+        return new DBSPLetExpression(pair, before.body, apply).closure(before.parameters);
+    }
+
     boolean done(DBSPOperator operator) {
         return this.operatorsAnalyzed.done(operator);
     }
@@ -159,31 +178,10 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             if (thisFunction.parameters.length != 1)
                 throw new InternalCompilerError("Expected closure with 1 parameter", operator);
 
-            final DBSPClosureExpression newFunction;
-            boolean isExpensive = Expensive.isExpensive(compiler, sourceFunction);
-            Projection projection = new Projection(compiler);
-            projection.apply(thisFunction);
-            if ((sourceFunction.body.is(DBSPBaseTupleExpression.class) && projection.isProjection)
-                    || !isExpensive) {
-                DBSPExpression argument = new DBSPRawTupleExpression(
-                        sourceFunction.body.field(0).borrow(),
-                        sourceFunction.body.field(1).borrow());
-                DBSPExpression apply = thisFunction.call(argument).reduce(this.compiler());
-                newFunction = apply.closure(sourceFunction.parameters);
-            } else {
-                if (this.onlyProjections) {
-                    super.postorder(operator);
-                    return;
-                }
-                DBSPVariablePath var = sourceFunction.body.type.var();
-                DBSPLetExpression let = new DBSPLetExpression(var,
-                        sourceFunction.body,
-                        new DBSPLetExpression(thisFunction.parameters[0].asVariable(),
-                        new DBSPRawTupleExpression(
-                                var.field(0).borrow(),
-                                var.field(1).borrow()),
-                                thisFunction.body));
-                newFunction = let.closure(sourceFunction.parameters);
+            var newFunction = this.composeIndexed(sourceFunction, thisFunction);
+            if (newFunction == null) {
+                super.postorder(operator);
+                return;
             }
             CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(

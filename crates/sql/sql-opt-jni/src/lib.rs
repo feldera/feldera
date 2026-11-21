@@ -95,6 +95,14 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
             };
             closure
         }
+        ("ComposeIndexedProjection" | "TryIndexedProjection", [before, after]) => {
+            let Some(closure) = feldera_sql_opt::compose_indexed_projection(
+                &mut edit, *before, *after, pass == "TryIndexedProjection", &mut next, &mut warnings,
+            )? else {
+                return Ok(Value::Null);
+            };
+            closure
+        }
         ("LowerAggregateFold", [list]) => feldera_sql_opt::lower_aggregate_fold(
             &mut edit, *list, None, &mut next, &mut warnings,
         )?,
@@ -184,7 +192,8 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection" => {
+        "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
+        | "ComposeIndexedProjection" | "TryIndexedProjection" => {
             return lower_function(pass, input, next);
         }
         "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
