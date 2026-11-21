@@ -808,6 +808,13 @@ across the two frozen populations. The comparison checks graph sharing,
 source positions, generated names, diagnostics and pass state. [Map input
 closures](evidence/p3-map-input-closures.json) · [Field dependencies](evidence/p3-map-dependencies.json)
 
+Rust also decides when narrowing would reproduce the original map. When a
+map reads an index and emits ordinary rows, it checks the reader before
+allocating a name for the projection. Field analysis now follows each join
+parameter separately and handles the rank and row parameters of TopK. UNNEST
+and linear aggregates use the same analysis. All 33,176 iterations matched
+the Java package built before these changes. [Parameter field comparisons](evidence/p3-parameter-field-use.json)
+
 Rust also computes the fields read by a map-index after an aggregate or TopK.
 The first implementation passed those paths to the Java rewriter. The graphs and
 generated-name counters matched at all 1,872 projection iterations on the 296

@@ -1,0 +1,83 @@
+{
+  "scope": "Compare the previous Java optimizer with Rust map split decisions and per-parameter used-field analysis for joins, TopK, linear aggregates and flatmap collection expressions on identical S2 inputs.",
+  "pass_name": "RemoveUnusedFields",
+  "oracle_sha256": "fafbcea5e3a231d29a38072f50c8b3911d161a8b43ebabb7b124fac53247fa7c",
+  "jar_sha256": "0453fd263364d8d5474f0708520efa61bd9b3f9671d51ada92b641e0668edc3e",
+  "optimizer_library_sha256": "38f21fb6aabe28a7bc8a36e39fcde8125fe84bd711b7faa6cc8e5f6dc2a86fee",
+  "comparator_sha256": "f6c5b54b1b6b1c01a9d95ba1f0cc75770e7c225c64e1f6eb47e5b8bec5a000e2",
+  "engines": {
+    "classic": {
+      "cases": 8571,
+      "invocations": 16643,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+      "shards": [
+        {
+          "cases": 2143,
+          "invocations": 4104,
+          "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+          "control_sha256": "1cad57c96fa0a90eac410db4190b7c566baca16c678e530f322ebc07f1e06d20",
+          "candidate_sha256": "b72f4d400fe9f855e8ec01ab40f6a80498cf31d37ab4ee2023c1cf059ee554dd"
+        },
+        {
+          "cases": 2143,
+          "invocations": 4243,
+          "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+          "control_sha256": "686bc491c2c85fdb541f2ad570b58ed9902ba6582d1bfd6a3346bd9ff640380e",
+          "candidate_sha256": "865208475718361fc8c1f6812e76260591097ebc753b93a57de4b977a26b3fe3"
+        },
+        {
+          "cases": 2143,
+          "invocations": 4079,
+          "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+          "control_sha256": "621e8010c2884488aa39622ee9379fef007f24896311a384d340d7644b596011",
+          "candidate_sha256": "3d0f283b5ce4c905df8b80e3b02b49a94421b9c984e63f89b43c50f86b14abeb"
+        },
+        {
+          "cases": 2142,
+          "invocations": 4217,
+          "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+          "control_sha256": "c0c0d06308dffc34bd932660926ecb6db34b462120d2dce4850fc9edb2095645",
+          "candidate_sha256": "5604f8786b5c86867ca1ff5f098c183e5546e2071bff0ea9a6c59aed92283d81"
+        }
+      ]
+    },
+    "gen2": {
+      "cases": 8527,
+      "invocations": 16533,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+      "shards": [
+        {
+          "cases": 2132,
+          "invocations": 4276,
+          "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+          "control_sha256": "4f24f0781b35f282f0f4409ae0fd4147b9a438cbe5c6e2430f1eee6f64e559c4",
+          "candidate_sha256": "cb02fdeecd576664170a51d522ab6237d427a6d980eb1e3e9cdbe76fd27be790"
+        },
+        {
+          "cases": 2132,
+          "invocations": 4024,
+          "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+          "control_sha256": "d58852d231e67ea3e22b5cfc75926b8a4268d2e497a83dd6c895230f5727d348",
+          "candidate_sha256": "1a5c860142bbd1bf8340e983ffe689ab1d26ba03466690f1ee3f00aac7d1f3e8"
+        },
+        {
+          "cases": 2132,
+          "invocations": 4134,
+          "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+          "control_sha256": "36f79c519ab5566faff3b3ae815dc8ac7afeba8371bd6cb9fffa758ec068aacf",
+          "candidate_sha256": "32017b944ecb9876138dbf3df93b05b19300bd26ded5d885b16452492e1ae6b6"
+        },
+        {
+          "cases": 2131,
+          "invocations": 4099,
+          "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+          "control_sha256": "b8f1dfb56b33c22bbc45b1ac0dbd31f7f6501e7d8cb950f187350f43bafa913b",
+          "candidate_sha256": "fd63b80fb982e915186703b54c2cac68c0000071c9a7f96f8fe39a68f7d25a60"
+        }
+      ]
+    }
+  },
+  "total_invocations": 33176,
+  "control_jar_sha256": "dadc09588f36dde1eed2b4ff89dcc77c09b45b7bcbd3f869ebe9077754cb068d",
+  "control_oracle_sha256": "fafbcea5e3a231d29a38072f50c8b3911d161a8b43ebabb7b124fac53247fa7c"
+}
