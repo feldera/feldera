@@ -1,14 +1,14 @@
 //! Move a single reader's value projection before a window. The key and the
 //! control stream retain their original values and window bounds.
 use crate::rebuild::ProjectionNames;
-use crate::row_fields::RowFields;
+use crate::row_projection::RowProjection;
 use crate::stream_rewrites::{body_members, reader_counts};
-use feldera_sql_expr::{input_field_paths, parameter_paths, Rewrite, Transformation, Visit};
+use feldera_sql_expr::input_field_paths;
 use feldera_sql_ir::{
-    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
-    InnerKind, NodeId, OperatorKind as Op, OutputPort, TypeId, TypeKind as Ty,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
+    OutputPort, TypeId,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 fn link(id: impl Into<NodeId>) -> Field {
     Field::Reference(id.into())
@@ -21,259 +21,21 @@ fn output(operator: NodeId) -> OutputPort {
     }
 }
 
-/// One component of the borrowed (key, value) pair. Raw tuples keep all
-/// positions and represent a discarded scalar with the empty SQL tuple.
-struct Component {
-    ty: TypeId,
-    used: Vec<bool>,
-    tuple: bool,
-    raw: bool,
-}
-
-impl Component {
-    fn new(
-        edit: &CircuitEditor,
-        reference: NodeId,
-        side: usize,
-        paths: &BTreeSet<Vec<usize>>,
-    ) -> Result<Self, Error> {
-        let ty = edit.type_id(edit.node(reference)?.edge("type")?)?;
-        let kind = edit.type_kind(ty)?;
-        let tuple = matches!(kind, Ty::RawTuple | Ty::Tuple);
-        let whole = side == 0 || paths.contains(&Vec::new()) || paths.contains([side].as_slice());
-        let used = if tuple {
-            let mut shape = RowFields::new(edit.circuit());
-            let mut used = Vec::new();
-            for (i, field) in edit
-                .node(ty.into())?
-                .edges("tupFields")?
-                .into_iter()
-                .enumerate()
-            {
-                used.push(whole || !shape.unused(field, &mut vec![side, i], paths, 0, 0)?);
-            }
-            used
-        } else {
-            vec![whole]
-        };
-        Ok(Self {
-            ty,
-            used,
-            tuple,
-            raw: kind == Ty::RawTuple,
-        })
-    }
-
-    fn compressed_type(&self, edit: &mut CircuitEditor) -> Result<TypeId, Error> {
-        if !self.tuple {
-            return if self.used[0] {
-                Ok(self.ty)
-            } else {
-                edit.tuple_type(self.ty.into(), false, [])
-            };
-        }
-        let mut kept = Vec::new();
-        for (ty, &used) in edit
-            .node(self.ty.into())?
-            .edges("tupFields")?
-            .into_iter()
-            .zip(&self.used)
-        {
-            if used {
-                kept.push(ty);
-            } else if self.raw {
-                if matches!(edit.type_kind(edit.type_id(ty)?)?, Ty::Tuple | Ty::RawTuple) {
-                    kept.push(ty);
-                } else {
-                    kept.push(edit.tuple_type(ty, false, [])?.into());
-                }
-            }
-        }
-        let ty = edit.tuple_type(self.ty.into(), self.raw, kept)?;
-        edit.with_nullability(ty, edit.nullable(self.ty)?)
-    }
-
-    fn project(
-        &self,
-        edit: &mut CircuitEditor,
-        value: ExpressionId,
-    ) -> Result<ExpressionId, Error> {
-        if !self.tuple {
-            return if self.used[0] {
-                edit.clone_if_needed(value)
-            } else {
-                edit.tuple_expr(value.into(), false, &[])
-            };
-        }
-        let nullable = edit.nullable(self.ty)?;
-        let mut kept = Vec::new();
-        for (i, &used) in self.used.iter().enumerate() {
-            if !used && !self.raw {
-                continue;
-            }
-            let source = if nullable {
-                let ty = edit.with_nullability(self.ty, false)?;
-                edit.make_expr(
-                    value.into(),
-                    Expr::Unwrap,
-                    ty,
-                    [
-                        ("expression", link(value)),
-                        ("message", Field::Data("".into())),
-                    ],
-                )?
-            } else {
-                value
-            };
-            let field = edit.tuple_field(source, i)?;
-            let nested_tuple = matches!(
-                edit.type_kind(edit.expression_type(field)?)?,
-                Ty::Tuple | Ty::RawTuple
-            );
-            kept.push(if used || nested_tuple {
-                edit.clone_if_needed(field)?
-            } else {
-                edit.tuple_expr(value.into(), false, &[])?
-            });
-        }
-        let tuple = edit.tuple_expr(value.into(), self.raw, &kept)?;
-        if !nullable || self.raw {
-            return Ok(tuple);
-        }
-        let tuple = edit.some_at(value.into(), tuple)?;
-        let ty = edit.expression_type(tuple)?;
-        let condition = edit.null_test(value)?;
-        let null = edit.typed_null(ty)?;
-        edit.make_expr(
-            tuple.into(),
-            Expr::If,
-            ty,
-            [
-                ("condition", link(condition)),
-                ("positive", link(null)),
-                ("negative", link(tuple)),
-            ],
-        )
-    }
-}
-
-struct Rebind<'a> {
-    bindings: HashSet<NodeId>,
-    name: &'a str,
-    pair: TypeId,
-    value: &'a Component,
-}
-
-impl Rebind<'_> {
-    // Recognize (*row.1).N before the visitor rebuilds it with the narrower type.
-    fn value_field(&self, edit: &CircuitEditor, id: NodeId) -> Result<Option<usize>, Error> {
-        let field = edit.node(id)?;
-        let deref = edit.node(field.edge("expression")?)?;
-        if !matches!(deref.inner_kind(), Some(InnerKind::Expression(Expr::Deref))) {
-            return Ok(None);
-        }
-        let side = edit.node(deref.edge("expression")?)?;
-        if !matches!(side.inner_kind(), Some(InnerKind::Expression(Expr::Field)))
-            || side.data("fieldNo").and_then(|v| v.as_u64()) != Some(1)
-            || !self.bindings.contains(&side.edge("expression")?)
-        {
-            return Ok(None);
-        }
-        let index = field
-            .data("fieldNo")
-            .and_then(|v| v.as_u64())
-            .and_then(|i| usize::try_from(i).ok())
-            .ok_or_else(|| Error::new("window reader requires a field index"))?;
-        if self.value.used.get(index) != Some(&true) {
-            return Err(Error::new("window reader references a discarded column"));
-        }
-        Ok(Some(if self.value.raw {
-            index
-        } else {
-            self.value.used[..index]
-                .iter()
-                .filter(|&&used| used)
-                .count()
-        }))
-    }
-}
-
-impl Transformation for Rebind<'_> {
-    fn preorder(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
-        if self.bindings.contains(&id) {
-            return Ok(Visit::Replace(
-                edit.named_variable(self.pair, self.name)?.into(),
-            ));
-        }
-        match edit.node(id)?.inner_kind() {
-            Some(InnerKind::Type(_) | InnerKind::Expression(Expr::Closure)) => Ok(Visit::Keep),
-            Some(InnerKind::Expression(Expr::Field)) => {
-                if let Some(column) = self.value_field(edit, id)? {
-                    let row = edit.named_variable(self.pair, self.name)?;
-                    let value = edit.tuple_field(row, 1)?;
-                    let value = edit.dereference(value)?;
-                    return Ok(Visit::Replace(edit.tuple_field(value, column)?.into()));
-                }
-                Ok(Visit::Children)
-            }
-            _ => Ok(Visit::Children),
-        }
-    }
-}
-
 fn closures(
     edit: &mut CircuitEditor,
     function: NodeId,
     next: &mut u64,
 ) -> Result<Option<(ExpressionId, ExpressionId)>, Error> {
-    let paths = input_field_paths(edit.circuit(), function)?;
-    let closure = edit.node(function)?;
-    let [param] = closure
-        .edges("parameters")?
-        .try_into()
-        .map_err(|_| Error::new("window reader must be unary"))?;
-    let body = closure.edge("body")?;
-    let parameter = edit.node(param)?;
-    let name = parameter
-        .data("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::new("missing window reader parameter name"))?
-        .to_owned();
-    let pair = edit.type_id(parameter.edge("type")?)?;
-    let [key, value] = edit
-        .node(pair.into())?
-        .edges("tupFields")?
-        .try_into()
-        .map_err(|_| Error::new("expected a window key and value"))?;
-    let value = Component::new(edit, value, 1, &paths)?;
-    if value.used.iter().all(|&used| used) {
+    let mut paths = input_field_paths(edit.circuit(), function)?;
+    paths.insert(vec![0]); // Window membership depends on the complete key.
+    let layout = RowProjection::new(edit, function, &paths)?;
+    if !layout.has_unused_fields() {
         return Ok(None);
     }
-    let key = Component::new(edit, key, 0, &paths)?;
-    let row = edit.variable(pair, next)?;
-    let mut components = Vec::new();
-    let mut references = Vec::new();
-    for (i, layout) in [&key, &value].into_iter().enumerate() {
-        let field = edit.tuple_field(row, i)?;
-        let field = edit.dereference(field)?;
-        components.push(layout.project(edit, field)?);
-        let compressed = layout.compressed_type(edit)?;
-        references.push(edit.reference_type(compressed)?.into());
-    }
-    let projected = edit.tuple_expr(pair.into(), true, &components)?;
-    let pre = edit.closure_from_variables(projected, &[row])?;
-    let pair = edit.tuple_type(pair.into(), true, references)?;
-    let narrowed = edit.derive_inner(param, [("type", link(pair))])?;
-    let bindings = parameter_paths(edit, body, param)?;
-    let body = Rewrite::new(Rebind {
-        bindings,
-        pair,
-        name: &name,
-        value: &value,
-    })
-    .apply(edit, body)?;
-    let post = edit.closure_with_parameters(edit.expression(body)?, &[narrowed])?;
-    Ok(Some((pre, post)))
+    Ok(Some((
+        layout.project(edit, next, true)?,
+        layout.rebind(edit, function)?,
+    )))
 }
 
 fn add_index(
@@ -357,7 +119,9 @@ pub fn trim_windows(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use feldera_sql_ir::ExpressionKind as Expr;
     use serde_json::json;
+    use std::collections::BTreeSet;
 
     #[test]
     fn nullable_window_values_retain_empty_rows_and_rebind_sparse_columns() {
@@ -418,9 +182,11 @@ mod tests {
             input_field_paths(edit.circuit(), post.into()).unwrap(),
             BTreeSet::from([vec![0], vec![1, 1]])
         );
-        assert!(closures(&mut edit, post.into(), &mut next)
-            .unwrap()
-            .is_none());
+        assert!(
+            closures(&mut edit, post.into(), &mut next)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(next, 2);
     }
 }

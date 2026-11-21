@@ -147,6 +147,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         }
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs trim)
             this.active.set("input_layouts", org.dbsp.util.Utilities.deterministicObjectMapper().valueToTree(trim.layouts()));
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters trim)
+            this.active.set("filter_readers", org.dbsp.util.Utilities.deterministicObjectMapper()
+                    .valueToTree(trim.candidateReaders(circuit, false)));
         if (this.passClass.equals("FindUnusedInputFields"))
             InputFieldOracle.capture(this.compiler, circuit, this.active.putArray("input_fields"));
         if (this.passClass.equals("IndexedInputs")) {

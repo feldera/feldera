@@ -1,9 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
@@ -16,6 +18,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.TriFunction;
 import org.dbsp.util.Utilities;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Trim unused fields from filters.
  * This is harder than it looks.
@@ -31,6 +36,29 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
                        AnalyzedSet<DBSPOperator> mapAfterFilter) {
         super(compiler, graphs);
         this.mapAfterFilter = mapAfterFilter;
+    }
+
+    /** Readers available to this iteration. The Java oracle peeks before running
+     * its visitor, while the live Rust pass consumes the same analysis state. */
+    public List<Long> candidateReaders(ICircuit circuit, boolean consume) {
+        var readers = new ArrayList<Long>();
+        this.collectReaders(circuit, consume, readers);
+        return readers;
+    }
+
+    private void collectReaders(ICircuit circuit, boolean consume, List<Long> readers) {
+        for (var op : circuit.getAllOperators()) {
+            if (op instanceof DBSPNestedOperator nested)
+                this.collectReaders(nested, consume, readers);
+            if (!(op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator))
+                continue;
+            var map = op.to(DBSPUnaryOperator.class);
+            if (!(map.getFunction() instanceof DBSPClosureExpression))
+                continue;
+            boolean seen = consume ? this.mapAfterFilter.done(op) : this.mapAfterFilter.contains(op);
+            if (!seen && map.input().node() instanceof DBSPFilterOperator)
+                readers.add(op.id);
+        }
     }
 
     public boolean process(

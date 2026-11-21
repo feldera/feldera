@@ -1,0 +1,46 @@
+{
+  "scope": "Individual filter-trimming placements in the unused-field loop, with the set of readers eligible in each Java iteration. The comparator checks circuit structure, expression sharing, source positions and generated names.",
+  "comparator_sha256": "81d120471999b86ec984db82e8b81fcb01b3c62db2dedb320c74356f59e8f384",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "ff16b9bbeb5ff483365a1b3c6efc1bde055abdfa3e43e880579e26b808dfd55e",
+      "c0c3f65c3d3458415eddd6883df736950df72852dfb1af9249af48de2895881f",
+      "57a4d0d9ec70aa0467b7016d7b98a638873e6307867dcf66cb23096acc75e75d",
+      "10b29b01d8b5378ac91abf371e8a0cc4f7d200618b2a18269cde36cf91e3e2ad"
+    ],
+    "pass": "TrimFilters",
+    "invocations": 16643,
+    "changed": 484,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "3f4f82d6fb68f8d8611b7862617ac743bfdcec0c1398331c4e64df98e4f1ccb8",
+      "025d3d6bf0f20ce26a07cb0f32e668317d23c6ab2480100017e236c1acf25bdd",
+      "d5116eb40b21d0bef2f2b83f07c99cc1171e37aa7c07962c32e07d636606f620",
+      "1fedf2947f0f3f77dae82077166555c20b90b8cda43cfb7e07fd2cfbdda30b5a"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "bb6a11880926714edea5ac6ed2a221e9c7285c39f588e7250dd86fa69dfe9f38",
+      "99e9a1c4c6ad7c44457e3791809d544886494d1e25b9caa47970d2107c6118a5",
+      "3c55a0847997672ce86391a925bbe74e3ef4741048c31dac43a41862b4d7f0ff",
+      "3502ec5e950d8fcf8b8ff54af5e791e76176c762f938107bfa1a60311dc95728"
+    ],
+    "pass": "TrimFilters",
+    "invocations": 16533,
+    "changed": 478,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "085bbdec8b93dd93bec7c4c8dc5f773ad33479254338a94b2be937e0303130b5",
+      "a05b9908caf8f18b7cb64fe4812aeb666eb28b63732df78fc0ad5a41fc9ad97d",
+      "88c981dce268eac2fdab1bf5131b7951639989766ff9410cdd0d8627eab41ecd",
+      "cdf8964d83f2fafcb45d42c6abed5ac4d3aada2a52384ce7534953d99141f4a5"
+    ]
+  }
+}
