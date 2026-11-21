@@ -1,0 +1,51 @@
+{
+  "scope": "StaticDeclarations after a shared Java S2 prefix. Rust classifies constants, identifies eligible lazy cells and resolves their reads. Java constructs declarations, names them and numbers error handlers.",
+  "compiler_commit": "740b2d73e",
+  "shards": {
+    "classic-0": {
+      "invocations": 2143,
+      "cases_with_added_declarations": 9,
+      "added_declarations": 58,
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "java_gzip_sha256": "a2eaf2670e73da89e3c9cef56e02645e3a3a1e0a2bf7ea7bba2eff09221a08fd",
+      "rust_gzip_sha256": "a2eaf2670e73da89e3c9cef56e02645e3a3a1e0a2bf7ea7bba2eff09221a08fd"
+    },
+    "classic-1": {
+      "invocations": 2143,
+      "cases_with_added_declarations": 9,
+      "added_declarations": 74,
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "java_gzip_sha256": "d2a4189df1e36cbd27d0bf2311ae7da77d0cbace482eb044e101fe558ba87e94",
+      "rust_gzip_sha256": "d2a4189df1e36cbd27d0bf2311ae7da77d0cbace482eb044e101fe558ba87e94"
+    },
+    "classic-2": {
+      "invocations": 2143,
+      "cases_with_added_declarations": 12,
+      "added_declarations": 70,
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "java_gzip_sha256": "a771a90a09d3056e75922f86626ece26630a0042f4dfa898077d01a7e8f7867e",
+      "rust_gzip_sha256": "a771a90a09d3056e75922f86626ece26630a0042f4dfa898077d01a7e8f7867e"
+    },
+    "classic-3": {
+      "invocations": 2142,
+      "cases_with_added_declarations": 9,
+      "added_declarations": 55,
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "java_gzip_sha256": "a900d146b96972560ea1cf48cb1786b37a6deae418eb7478e2441f9c73e840fe",
+      "rust_gzip_sha256": "a900d146b96972560ea1cf48cb1786b37a6deae418eb7478e2441f9c73e840fe"
+    },
+    "gen2-classic-mode": {
+      "invocations": 1,
+      "cases_with_added_declarations": 1,
+      "added_declarations": 22,
+      "population_sha256": "4ad6daa82e767e4ad8853c1098d103a6f050d707a305bde9ecd5f1ea463365a0",
+      "java_gzip_sha256": "75591737d37b20009aaecf8a68e7022b71df3328cd8b097d8ee1ba9a77d9212c",
+      "rust_gzip_sha256": "75591737d37b20009aaecf8a68e7022b71df3328cd8b097d8ee1ba9a77d9212c"
+    }
+  },
+  "gen2_enabled_cases_skipping_pass": 8526,
+  "directed_jni_tests": 24,
+  "jar_sha256": "c6e32d6ddaf1fa99bdbaad3acfbae7295bcf8331c3cd927bf0dfb46f8d0ae5cb",
+  "jni_sha256": "d4aac3bf300625cbd8404691d5f1d01ded04d28738c62009f186fc14ba505a15",
+  "comparator_sha256": "284e99170ac4d9ccadea0d03bf284c7510d37b58dbb681e5db974e5d9727b7b8"
+}
