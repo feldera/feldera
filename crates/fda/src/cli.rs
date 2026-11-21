@@ -323,6 +323,9 @@ pub enum Commands {
         #[command(subcommand)]
         action: DebugActions,
     },
+    /// Replay the welcome animation from the first run.
+    #[command(hide = true)]
+    Welcome,
 }
 
 #[derive(Subcommand)]
