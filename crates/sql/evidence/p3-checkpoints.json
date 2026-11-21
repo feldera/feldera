@@ -1,8 +1,8 @@
 {
   "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
-  "compiler_sha256": "895489c418dc9b01e4464f2747ca2b84f508abaa7c9a81aa4587bf3d91079d08",
-  "optimizer_library_sha256": "9e0e22c6cea2114aa58af6d647c074de328b50bc3c0b3efc92ada251f3831a5a",
-  "compiler_jar_sha256": "af2b050af4456baf12d2946eb41e2eea6cd9acf96a36f087a2f2cfcbc4deaa0c",
+  "compiler_sha256": "d3e398e1b62ce44c5ec5a31394395713a4d88bfb4b920749ef5684e9d8b6d6c9",
+  "optimizer_library_sha256": "9d18f2d454288077c8dba135e572bfe8ce5ff1bf966a69802d98be7732999d22",
+  "compiler_jar_sha256": "bce21a24eb30a684957ecdf721bcfe254daead623648a148bbe9a8e2bf463fcd",
   "programs": {
     "count": {
       "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
@@ -19,7 +19,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fe9c-3b88-7671-ac03-724dc5d26f08",
+          "checkpoint_id": "01a1feb1-8f9e-7353-a650-a13eedbe4978",
           "restored_count_deltas": [
             [
               1,
@@ -35,7 +35,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fe9c-3ba8-7040-bb2c-8042adeb60ab",
+          "checkpoint_id": "01a1feb1-8fb4-7c83-a959-0801dae6530a",
           "restored_count_deltas": [
             [
               1,
@@ -64,7 +64,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fe9d-03ee-7b62-a242-7b0ef04bff85",
+          "checkpoint_id": "01a1feb2-587a-77b0-ac0c-f2c826d55325",
           "restored_count_deltas": [
             [
               1,
@@ -81,7 +81,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fe9d-0419-7600-a7dd-449e62aefa06",
+          "checkpoint_id": "01a1feb2-5895-74b1-9df7-e1457481451f",
           "restored_count_deltas": [
             [
               1,
@@ -109,5 +109,51 @@
       "snippet": ""
     }
   ],
-  "pass_kinds": 99
+  "pass_kinds": 101,
+  "ordered_clock_diagnostics": {
+    "clock-map": [
+      {
+        "start_line_number": 2,
+        "start_column": 66,
+        "end_line_number": 2,
+        "end_column": 70,
+        "warning": true,
+        "error_type": "Inefficient pattern",
+        "message": "NOW() expression is used in a pattern that could require expensive computations\nSee https://docs.feldera.com/sql/datetime#now",
+        "snippet": "    1|CREATE TABLE t(x BIGINT ARRAY);\n    2|CREATE VIEW v AS SELECT TRANSFORM(x, e -> e + EXTRACT(EPOCH FROM NOW())) FROM t;\n                                                                       ^^^^^\n"
+      },
+      {
+        "start_line_number": 0,
+        "start_column": 0,
+        "end_line_number": 0,
+        "end_column": 0,
+        "warning": false,
+        "error_type": "Compilation error",
+        "message": "NOW() is not supported inside a lambda expression",
+        "snippet": ""
+      }
+    ],
+    "clock-filter": [
+      {
+        "start_line_number": 2,
+        "start_column": 40,
+        "end_line_number": 2,
+        "end_column": 90,
+        "warning": true,
+        "error_type": "Inefficient pattern",
+        "message": "NOW() expression is used in a pattern that could require expensive computations\nSee https://docs.feldera.com/sql/datetime#now",
+        "snippet": "    1|CREATE TABLE t(x BIGINT ARRAY);\n    2|CREATE VIEW v AS SELECT * FROM t WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));\n                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+      },
+      {
+        "start_line_number": 0,
+        "start_column": 0,
+        "end_line_number": 0,
+        "end_column": 0,
+        "warning": false,
+        "error_type": "Compilation error",
+        "message": "NOW() is not supported inside a lambda expression",
+        "snippet": ""
+      }
+    ]
+  }
 }
