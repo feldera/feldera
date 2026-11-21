@@ -1,5 +1,6 @@
 mod accumulate_trace_balanced;
 mod balancer;
+mod clustering;
 mod maxsat;
 mod rebalancing_accumulator;
 

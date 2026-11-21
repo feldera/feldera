@@ -77,7 +77,7 @@ use std::{
     any::{Any, type_name_of_val},
     borrow::Cow,
     cell::{Cell, Ref, RefCell, RefMut},
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     fmt::{self, Debug, Display, Write},
     future::Future,
     marker::PhantomData,
@@ -1792,10 +1792,6 @@ pub trait CircuitBase: 'static {
     /// connecting them.
     fn add_dependency(&self, from: NodeId, to: NodeId);
 
-    /// The set of transitive ancestors for each node in the circuit,
-    /// i.e., the set of all nodes that precede it (transitively) in the `Edges` relationship.
-    fn transitive_ancestors(&self) -> BTreeMap<NodeId, BTreeSet<NodeId>>;
-
     /// Allocate a new globally unique stream id.  This method can be invoked on any circuit in the pipeline,
     /// since all of them maintain a shared global counter.
     fn allocate_stream_id(&self) -> StreamId;
@@ -3462,31 +3458,6 @@ where
 {
     fn edges(&self) -> Ref<'_, Edges> {
         self.inner().edges.borrow()
-    }
-
-    fn transitive_ancestors(&self) -> BTreeMap<NodeId, BTreeSet<NodeId>> {
-        let edges = self.edges();
-        let mut result = BTreeMap::new();
-
-        // For each node, compute its transitive ancestors using BFS
-        for node_id in self.node_ids() {
-            let mut ancestors = BTreeSet::new();
-            let mut queue = vec![node_id];
-
-            // BFS to find all transitive ancestors
-            while let Some(current) = queue.pop() {
-                for edge in edges.inputs_of(current) {
-                    let ancestor_node = edge.from;
-                    if ancestors.insert(ancestor_node) {
-                        queue.push(ancestor_node);
-                    }
-                }
-            }
-
-            result.insert(node_id, ancestors);
-        }
-
-        result
     }
 
     fn edges_mut(&self) -> RefMut<'_, Edges> {
