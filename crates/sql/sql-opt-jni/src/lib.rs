@@ -181,26 +181,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
-        ("Asof/LeftIndex" | "Asof/RightIndex", [pair, comparator]) => {
-            let pair = edit.expression(*pair)?;
-            let comparator = edit.expression(*comparator)?;
-            feldera_sql_opt::asof_index(&mut edit, pair, comparator, pass == "Asof/LeftIndex")?
-        }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
             feldera_sql_opt::merge_temporal_predicates(&mut edit, source, filter, &mut next, &mut warnings)?
-        }
-        ("Asof/Timestamps", [left, right]) => {
-            let inputs = [edit.type_id(*left)?, edit.type_id(*right)?];
-            let columns = serde_json::from_slice(state)?;
-            let pair = feldera_sql_opt::asof_timestamps(&mut edit, inputs, columns, &mut next)?;
-            let functions = edit.circuit().additional_expressions(&arena, &pair)?;
-            return Ok(json!({"functions": functions, "next_generated_name": next}));
-        }
-        ("Asof/Projection", [function, key, left, right]) => {
-            let (key, left, right) = (edit.type_id(*key)?, edit.type_id(*left)?, edit.type_id(*right)?);
-            feldera_sql_opt::asof_projection(&mut edit, *function, key, left, right, &mut next, &mut warnings)?
         }
         ("Limiters/KeyFilter", [key, waterline]) => {
             let (name, keys, declared): (String, Vec<usize>, Vec<usize>) = serde_json::from_slice(state)?;
@@ -476,7 +460,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "MergeFilters/Predicate" | "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
@@ -652,9 +636,6 @@ fn transform(
         return Ok(json!(feldera_sql_opt::consumer_graphs(
             &circuit
         )?));
-    }
-    if pass == "AsofRetainers" {
-        return Ok(serde_json::to_value(feldera_sql_opt::asof_retainers(&circuit)?)?);
     }
     if pass == "DetectStreamingOperations" {
         return Ok(json!(feldera_sql_opt::detects_streaming(
@@ -955,6 +936,7 @@ fn transform(
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(circuit, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "LowerCircuitVisitor"
+        | "LowerAsofInner"
         | "ExpandStreamAggregates"
         | "Fuse"
         | "RemoveStarJoins"
@@ -965,7 +947,16 @@ fn transform(
         | "DecomposeExpensiveFilters"
         | "BreakFilters" => {
             let mut weight = None;
+            let mut retention = None;
             let (output, warnings) = match pass {
+                "LowerAsofInner" => {
+                    let lowered = feldera_sql_opt::lower_asof(circuit, serde_json::from_slice(state)?, &mut next)?;
+                    retention = Some(lowered.retention.into_iter().map(|binding| json!({
+                        "retainer":operator_number(binding.retainer), "join":operator_number(binding.join),
+                        "rebuilt":binding.rebuilt,
+                    })).collect::<Vec<_>>());
+                    (lowered.circuit, lowered.warnings)
+                }
                 "LowerCircuitVisitor" => feldera_sql_opt::lower_circuit(
                     circuit, lowering.as_ref().expect("bound lowering types"), &mut next,
                 )?,
@@ -998,10 +989,13 @@ fn transform(
                     })
                 })
                 .collect();
-            return Ok(publish(&output, json!({
-                "diagnostics":warnings, "weight_node":weight, "next_generated_name":next,
-                "unused_sources":[]
-            })));
+            let mut reply = json!({
+                "diagnostics":warnings, "weight_node":weight, "next_generated_name":next, "unused_sources":[]
+            });
+            if let Some(retention) = retention {
+                reply["asof_retention"] = Value::Array(retention);
+            }
+            return Ok(publish(&output, reply));
         }
         "RemoveIdentityOperators" => {
             feldera_sql_opt::remove_identity_operators(circuit, &mut next)?

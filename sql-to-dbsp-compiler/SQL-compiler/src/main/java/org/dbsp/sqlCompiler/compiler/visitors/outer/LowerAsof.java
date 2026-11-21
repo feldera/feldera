@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
@@ -69,7 +68,7 @@ public class LowerAsof implements CircuitTransform {
 
         // First scan the circuit, populate the maps, and replace asof operators
         var lower = new LowerAsofInner(compiler, graph.graphs, leftGces, rightGces, original);
-        circuit = this.compiler.applyObservedPass(this.getName(), 1, 0, lower, circuit);
+        circuit = this.compiler.applyObservedPass(this.getName(), 1, 0, this.select.apply(lower), circuit);
         if (leftGces.isEmpty()) {
             return circuit;
         }
@@ -235,13 +234,10 @@ public class LowerAsof implements CircuitTransform {
         }
     }
 
-    static class LowerAsofInner extends CircuitCloneWithGraphsVisitor {
+    public static class LowerAsofInner extends CircuitCloneWithGraphsVisitor {
         final Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces;
         final Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces;
         final Map<IGCOperator, IGCOperator> original;
-        // One LowerAsofInner instance visits one circuit. Most circuits contain no ASOF joins.
-        @javax.annotation.Nullable private Map<DBSPAsofJoinOperator, List<IGCOperator>> nativeRetainers;
-
         public LowerAsofInner(
                 DBSPCompiler compiler, CircuitGraphs graphs,
                 Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces,
@@ -253,18 +249,20 @@ public class LowerAsof implements CircuitTransform {
             this.original = original;
         }
 
+        /** Bind the Rust graph's retention decisions to the live operators of both circuits. */
+        public void recordRetainer(IGCOperator source, IGCOperator replacement, DBSPConcreteAsofJoinOperator join) {
+            var side = source instanceof DBSPIntegrateTraceRetainValuesOperator ? this.leftGces : this.rightGces;
+            Utilities.putNew(side, source, join);
+            Utilities.putNew(this.original, source, replacement);
+        }
+
         private DBSPMapIndexOperator indexInput(CalciteRelNode node, OutputPort input, DBSPType keyType,
                 DBSPVariablePath pair, DBSPComparatorExpression comparator, boolean left) {
-            DBSPClosureExpression function;
-            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-                function = RustCircuitPass.asofIndex(this.compiler(), pair, comparator, left);
-            } else {
-                var value = DBSPTupleExpression.flatten(pair.field(1).deref());
-                var wrapped = new DBSPCustomOrdExpression(node, value, comparator);
-                var key = pair.field(0).deref();
-                function = new DBSPRawTupleExpression(left ? DBSPTupleExpression.flatten(key) : key, wrapped)
-                        .closure(pair);
-            }
+            var value = DBSPTupleExpression.flatten(pair.field(1).deref());
+            var wrapped = new DBSPCustomOrdExpression(node, value, comparator);
+            var key = pair.field(0).deref();
+            var function = new DBSPRawTupleExpression(left ? DBSPTupleExpression.flatten(key) : key, wrapped)
+                    .closure(pair);
             var valueType = function.getResultType().to(DBSPTypeRawTuple.class).getFieldType(1);
             var index = new DBSPMapIndexOperator(node, function, TypeCompiler.makeIndexedZSet(keyType, valueType),
                     this.mapped(input));
@@ -274,10 +272,6 @@ public class LowerAsof implements CircuitTransform {
 
         private Pair<DBSPClosureExpression, DBSPClosureExpression> timestamps(DBSPAsofJoinOperator join,
                 DBSPTypeWithCustomOrd wrappedLeftType, DBSPTypeWithCustomOrd wrappedRightType) {
-            if (this.compiler().options.ioOptions.rustOptimizerPasses)
-                return RustCircuitPass.asofTimestamps(this.compiler(), wrappedLeftType, join.leftTimestampIndex,
-                        wrappedRightType, join.rightTimestampIndex);
-
             DBSPVariablePath leftVar = wrappedLeftType.ref().var();
             DBSPVariablePath rightVar = wrappedRightType.ref().var();
 
@@ -306,10 +300,6 @@ public class LowerAsof implements CircuitTransform {
 
         private DBSPClosureExpression projection(DBSPAsofJoinOperator join,
                 DBSPTypeWithCustomOrd wrappedLeftType, DBSPTypeWithCustomOrd wrappedRightType) {
-            if (this.compiler().options.ioOptions.rustOptimizerPasses)
-                return RustCircuitPass.asofProjection(this.compiler(), join.getClosureFunction(), join.getKeyType(),
-                        wrappedLeftType, wrappedRightType);
-
             DBSPVariablePath k = join.getKeyType().ref().var();
             DBSPVariablePath l0 = wrappedLeftType.ref().var();
             // Signature of the function is (k: &K, l: &L, r: Option<&R>)
@@ -364,20 +354,6 @@ public class LowerAsof implements CircuitTransform {
                     .copyAnnotations(join)
                     .to(DBSPConcreteAsofJoinOperator.class);
             this.map(join, result);
-
-            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-                if (this.nativeRetainers == null)
-                    this.nativeRetainers = RustCircuitPass.asofRetainers(this.getCircuit());
-                for (var retainer : this.nativeRetainers.getOrDefault(join, List.of())) {
-                    if (retainer instanceof DBSPIntegrateTraceRetainValuesOperator)
-                        Utilities.putNew(this.leftGces, retainer, result);
-                    else if (retainer instanceof DBSPIntegrateTraceRetainNValuesOperator)
-                        Utilities.putNew(this.rightGces, retainer, result);
-                    else
-                        throw new IllegalStateException("Unexpected ASOF retention operator " + retainer);
-                }
-                return;
-            }
 
             // If there is an IntegrateTraceRetainValues operator on the left input, it needs to be moved.
             // The graph has edges per operator, so a successor can read another output of the input.

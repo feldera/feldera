@@ -181,6 +181,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star)
             captureJoinTrees(this.active, writer, star.replacements());
+        if (pass instanceof LowerAsof.LowerAsofInner)
+            this.active.set("asof_row_types", org.dbsp.util.Utilities.deterministicObjectMapper()
+                    .valueToTree(org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass.asofRowTypes(circuit)));
         if (pass instanceof LowerAsof.OrderGcDependencies order)
             this.active.set("extra_edges", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(order.edgeIds()));

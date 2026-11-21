@@ -138,7 +138,7 @@ public class CircuitOptimizer extends Passes {
             supported = pass instanceof LowerCircuitVisitor
                     || pass instanceof Graph || pass instanceof CreateStarJoins.FindJoinTrees
                     || pass instanceof FuseExpensiveMaps.Fuse || pass instanceof CreateStarJoins.ReplaceStarJoins
-                    || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies
+                    || pass instanceof LowerAsof.LowerAsofInner || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies
                     || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
                     || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds
                     || pass instanceof MergeGC.FindEquivalentNoops

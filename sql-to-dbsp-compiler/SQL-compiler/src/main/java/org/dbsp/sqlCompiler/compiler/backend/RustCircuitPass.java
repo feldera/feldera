@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -159,6 +160,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final CreateStarJoins.FindJoinTrees joinTrees;
     @Nullable private final CreateStarJoins.ReplaceStarJoins starJoins;
     @Nullable private final ReplaceCommonProjections replaceCommon;
+    @Nullable private final LowerAsof.LowerAsofInner asofLowering;
     @Nullable private final LowerAsof.MoveGC asofRetention;
     @Nullable private final LowerAsof.OrderGcDependencies asofOrder;
     @Nullable private final MultisetAnalysis multiplicities;
@@ -198,6 +200,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.joinTrees = original instanceof CreateStarJoins.FindJoinTrees find ? find : null;
         this.starJoins = original instanceof CreateStarJoins.ReplaceStarJoins joins ? joins : null;
         this.replaceCommon = original instanceof ReplaceCommonProjections replace ? replace : null;
+        this.asofLowering = original instanceof LowerAsof.LowerAsofInner lower ? lower : null;
         this.asofRetention = original instanceof LowerAsof.MoveGC move ? move : null;
         this.asofOrder = original instanceof LowerAsof.OrderGcDependencies order ? order : null;
         this.commonProjections = original instanceof FindCommonProjections common ? common : null;
@@ -581,28 +584,6 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "MergeFilters/Predicate", source, filter, DBSPClosureExpression.class);
     }
 
-    public static DBSPClosureExpression asofIndex(DBSPCompiler compiler, DBSPVariablePath pair,
-            DBSPExpression comparator, boolean left) {
-        return lowerFunction(compiler, left ? "Asof/LeftIndex" : "Asof/RightIndex", pair, comparator,
-                DBSPClosureExpression.class);
-    }
-
-    public static Pair<DBSPClosureExpression, DBSPClosureExpression> asofTimestamps(
-            DBSPCompiler compiler, DBSPType left, int leftIndex, DBSPType right, int rightIndex) {
-        try {
-            var reply = invokeLowering(compiler, "Asof/Timestamps",
-                    MAPPER.writeValueAsBytes(new int[]{leftIndex, rightIndex}), left, right);
-            return loweredClosurePair(reply);
-        } catch (IOException error) {
-            throw new UncheckedIOException("Cannot encode ASOF timestamp columns", error);
-        }
-    }
-
-    public static DBSPClosureExpression asofProjection(DBSPCompiler compiler, DBSPClosureExpression function,
-            DBSPType key, DBSPType left, DBSPType right) {
-        return loweredClosure(compiler, invokeLowering(compiler, "Asof/Projection", function, key, left, right));
-    }
-
     public static DBSPClosureExpression lowerJoinFilterMap(DBSPCompiler compiler, DBSPCircuit circuit,
             DBSPSimpleOperator operator, DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
         var json = JsonStream.compactCircuit();
@@ -925,6 +906,8 @@ public final class RustCircuitPass implements CircuitTransform {
             throw new IllegalStateException("DeadCode reported an unknown input");
     }
 
+    private record AsofRetention(long retainer, long join, boolean rebuilt) {}
+
     private DBSPCircuit readGraph(DBSPCircuit input, JsonNode result, ToJsonOuterVisitor writer) throws IOException {
         JsonNode graph = result.required("circuit");
         if (graph.isNull())
@@ -966,6 +949,16 @@ public final class RustCircuitPass implements CircuitTransform {
             graph = graph.required("graph");
         }
         var output = decoder.decodeOuter(graph, DBSPCircuit.class);
+        if (this.asofLowering != null) {
+            for (var binding : MAPPER.treeToValue(result.required("asof_retention"), AsofRetention[].class)) {
+                var retainer = decoder.outer.lookup(binding.retainer, DBSPOperator.class).to(IGCOperator.class);
+                var source = binding.rebuilt
+                        ? Objects.requireNonNull(findOperator(input.allOperators, binding.retainer)).to(IGCOperator.class)
+                        : retainer;
+                var join = decoder.outer.lookup(binding.join, DBSPConcreteAsofJoinOperator.class);
+                this.asofLowering.recordRetainer(source, retainer, join);
+            }
+        }
         var weight = this.compiler.weightVar;
         JsonNode expandedWeight = result.get("weight_node");
         long id = expandedWeight == null || expandedWeight.isNull() ? weight.getId() : expandedWeight.longValue();
@@ -1344,25 +1337,14 @@ public final class RustCircuitPass implements CircuitTransform {
         return operators;
     }
 
-    public static Map<DBSPAsofJoinOperator, List<IGCOperator>> asofRetainers(DBSPCircuit circuit) {
-        try {
-            var topology = OptimizerTopology.encode(circuit, OptimizerTopology.Details.CONSUMERS);
-            var reply = transformWithContext("AsofRetainers", topology, 0, "", EMPTY_CONTEXT);
-            var pairs = MAPPER.readValue(reply, long[][].class);
-            if (pairs.length == 0)
-                return Map.of();
-            var operators = operatorsById(circuit);
-            Map<DBSPAsofJoinOperator, List<IGCOperator>> result = new HashMap<>();
-            for (var pair : pairs) {
-                if (pair.length != 2 || !(operators.get(pair[0]) instanceof DBSPAsofJoinOperator join)
-                        || !(operators.get(pair[1]) instanceof IGCOperator retainer))
-                    throw new IllegalStateException("Invalid ASOF join and retainer pair");
-                result.computeIfAbsent(join, ignored -> new ArrayList<>()).add(retainer);
-            }
-            return result;
-        } catch (IOException error) {
-            throw new UncheckedIOException("Invalid ASOF retainers from the Rust optimizer", error);
-        }
+    /** Row renderings are inputs to the stable names of ASOF comparator declarations. */
+    public static Map<Long, List<String>> asofRowTypes(DBSPCircuit circuit) {
+        Map<Long, List<String>> rows = new HashMap<>();
+        visitOperators(circuit.getAllOperators(), op -> {
+            if (op instanceof DBSPAsofJoinOperator join)
+                rows.put(op.id, List.of(join.getLeftInputValueType().toString(), join.getRightInputValueType().toString()));
+        });
+        return rows;
     }
 
     private record StateFinding(long operator, List<Integer> inputs) {}
@@ -1642,6 +1624,12 @@ public final class RustCircuitPass implements CircuitTransform {
                     this.mapChains.appendChains(chains, operators::get);
                 }
                 return circuit;
+            }
+            if (this.asofLowering != null) {
+                var rows = asofRowTypes(circuit);
+                if (rows.isEmpty())
+                    return circuit;
+                state = MAPPER.writeValueAsBytes(rows);
             }
             if (this.asofOrder != null) {
                 var order = this.invoke(this.nativeName, OptimizerTopology.encode(circuit, OptimizerTopology.Details.CONSUMERS),

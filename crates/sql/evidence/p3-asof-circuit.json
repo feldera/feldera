@@ -1,0 +1,30 @@
+{
+  "scope": "LowerAsofInner circuit rewrite and ordered retainer bindings on every frozen program with an active ASOF join.",
+  "checks": [
+    "Compare Rust replay of the Java LowerAsofInner observation, including name allocation, diagnostics, provenance and circuit identity.",
+    "Compile the same detached S2 through the mixed LowerAsof and compare the output of the entire pass, including GC movement, against the saved Java implementation."
+  ],
+  "java_reference_commit": "f08e3eb5d",
+  "compiler_jar_sha256": "079601f3a43ac32e6844ccad4b209200a9e4fe6250e89e0d6fab054593e427dd",
+  "optimizer_library_sha256": "9c015176acc4a8e885737b1e56d031975ddeb0408fdeb677e4905b96e89ace18",
+  "populations": {
+    "classic": {
+      "cases": 24,
+      "changed": 24,
+      "mismatches": 0,
+      "population_sha256": "9fa2c2f35a9ba76c53cb9a560df6132edf0439e775301d901f91aa6b5fd28b3b",
+      "java_lowering_sha256": "b35156bf8fdb5bf6490245610cfda31ee6924e9b6af058f18324af8edea38b49",
+      "java_complete_pass_sha256": "70f8bce4acac97f23baee47507ec169dd8c2cdd6a3d4418e96bd560a51fb50c5",
+      "hybrid_complete_pass_sha256": "4aeec7e0d46519095e1ce7630ed47b420a82b293e266333f5492f152617d8155"
+    },
+    "gen2": {
+      "cases": 22,
+      "changed": 22,
+      "mismatches": 0,
+      "population_sha256": "7c8876d900bf00625521bb71d8bd0b77b4500bfcc04bb52d0e5e0deb5864db4d",
+      "java_lowering_sha256": "16d47eb85962f8ce31d3716dfe09439a933bd5b21b5352e547d277600d76cba2",
+      "java_complete_pass_sha256": "e1a30f6013724860571b7a5b75560fc07d8f94af84fb948fa7ce7d433596f863",
+      "hybrid_complete_pass_sha256": "aa72573b9e450925a13caabc294d2428bb36d950c61f87d0ce45711f81c5f5d0"
+    }
+  }
+}

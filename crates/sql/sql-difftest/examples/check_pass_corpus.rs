@@ -196,6 +196,7 @@ fn compare_invocation(
         "SimplifyConditionals" => feldera_sql_opt::simplify_conditionals(input, &mut next)?,
         "ImplementChains" => feldera_sql_opt::implement_chains(input, &mut next)?,
         "LowerCircuitVisitor"
+        | "LowerAsofInner"
         | "ExpandStreamAggregates"
         | "Fuse"
         | "Simplify"
@@ -203,6 +204,11 @@ fn compare_invocation(
         | "PullFilterVisitor"
         | "OptimizeProjectionVisitor" => {
             let (result, warnings) = match pass {
+                "LowerAsofInner" => {
+                    let rows = serde_json::from_value(invocation["asof_row_types"].clone())?;
+                    let lowered = feldera_sql_opt::lower_asof(input, rows, &mut next)?;
+                    (lowered.circuit, lowered.warnings)
+                }
                 "LowerCircuitVisitor" => {
                     let types: feldera_sql_opt::LoweringTypes =
                         serde_json::from_value(invocation["lowering_types"].clone())?;

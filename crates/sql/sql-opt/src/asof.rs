@@ -1,4 +1,7 @@
 //! Build the timestamp extractors and row projection of a concrete ASOF join.
+mod lower;
+pub use lower::{lower_asof, AsofRetention, LoweredAsof};
+
 use feldera_sql_expr::{SimplifyWarning, apply_closure, flatten_tuple_fields};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId, TypeKind,
@@ -6,7 +9,7 @@ use feldera_sql_ir::{
 
 /// Materialize an index row with a timestamp-ordered value. The left map
 /// reconstructs the key tuple. The right map forwards its dereferenced key.
-pub fn asof_index(
+fn asof_index(
     edit: &mut CircuitEditor,
     pair: ExpressionId,
     comparator: ExpressionId,
@@ -80,7 +83,7 @@ fn parameter(
     edit.variable(reference, next)
 }
 
-pub fn asof_timestamps(
+fn asof_timestamps(
     edit: &mut CircuitEditor,
     wrappers: [TypeId; 2],
     indices: [usize; 2],
@@ -115,7 +118,7 @@ pub fn asof_timestamps(
 
 /// The left row always exists. The optional right row supplies a nullable field
 /// for every projected column when the join finds no match.
-pub fn asof_projection(
+fn asof_projection(
     edit: &mut CircuitEditor,
     function: NodeId,
     key: TypeId,

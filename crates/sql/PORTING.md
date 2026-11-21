@@ -724,17 +724,19 @@ replacement changed 512 graphs per engine. [Selection](evidence/p3-find-common-p
 
 Rust rebinds both ASOF retention predicates to the concrete join's ordered value
 type and preserves each waterline input. All nine placements per engine changed
-the graph. Java lowers the abstract ASOF join. Rust associates each retainer
+the graph. Rust associates each retainer
 with the join that reads the same data port. A pass comparison also found that
 decoding a RANK operator broke a shared type reference to a downstream chain.
 With the decoder repaired, all 46 active LowerAsof comparisons matched Java
 through the complete pass in fresh JVMs.
 [ASOF retention](evidence/p3-asof-retention.json) · [Pass comparisons and original failure](evidence/p3-asof-retainers.json)
 
-Rust builds the two indexed input maps, both timestamp extractors and the
-output projection for each concrete ASOF join. The resulting circuits and
-generated names matched the Java build from before the port on all 24
-classic and 22 Gen-2 ASOF cases. [ASOF closure comparisons](evidence/p3-asof-functions.json)
+Rust lowers each abstract ASOF join to two ordered indexes and a concrete join.
+The Java type printer supplies the row text used to name the comparators. Rust
+preserves retainer traversal order and records which retainers the clone visitor
+would rebuild. All 24 classic and 22 Gen-2 ASOF cases matched Java at the inner
+rewrite and after the complete pass, including generated names and provenance
+sharing. [ASOF lowering comparisons](evidence/p3-asof-circuit.json)
 
 Rust ordered the concrete joins before their retainers at all 18 active ASOF
 placements. The exact permutations of the original operators matched Java in
