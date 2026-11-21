@@ -75,13 +75,64 @@ struct Observation {
     gen2: bool,
     pass: String,
     invocations: Vec<Invocation>,
+    streamed_invocations: Option<usize>,
 }
 
 fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn compare_case(pass: &str, source: &Value, rows: [Value; 2]) -> Result<usize, String> {
+/// The streaming oracle emits one graph pair per line and confirms the count
+/// and the S2 identity in the final record for that program.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Chunk {
+    id: String,
+    input_sha256: String,
+    pass: String,
+    index: usize,
+    invocation: Invocation,
+}
+
+fn compare_invocation(i: usize, left: &Invocation, right: &Invocation) -> Result<(), String> {
+    if left.placement != right.placement {
+        return Err(format!(
+            "invocation {i}: placement, generated names, diagnostics or pass state differs"
+        ));
+    }
+    for (boundary, a, b) in [
+        ("entry", &left.before, &right.before),
+        ("exit", &left.after, &right.after),
+    ] {
+        compare_circuits(a, b).map_err(|e| format!("invocation {i} {boundary}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn compare_chunk(pass: &str, source: &Value, rows: [Value; 2], index: usize) -> Result<(), String> {
+    let [left, right] = rows.map(serde_json::from_value::<Chunk>);
+    let left = left.map_err(|e| format!("invalid control chunk: {e}"))?;
+    let right = right.map_err(|e| format!("invalid candidate chunk: {e}"))?;
+    for chunk in [&left, &right] {
+        if source["id"].as_str() != Some(&chunk.id)
+            || source["input_sha256"].as_str() != Some(&chunk.input_sha256)
+            || chunk.pass != pass
+            || chunk.index != index
+        {
+            return Err(format!(
+                "invalid identity or sequence at invocation {index}"
+            ));
+        }
+    }
+    compare_invocation(index, &left.invocation, &right.invocation)
+}
+
+fn compare_case(
+    pass: &str,
+    source: &Value,
+    rows: [Value; 2],
+    streamed: usize,
+) -> Result<usize, String> {
     let [control, candidate] = rows.map(serde_json::from_value::<Observation>);
     let control = control.map_err(|e| format!("invalid control observation: {e}"))?;
     let candidate = candidate.map_err(|e| format!("invalid candidate observation: {e}"))?;
@@ -102,6 +153,19 @@ fn compare_case(pass: &str, source: &Value, rows: [Value; 2]) -> Result<usize, S
     if control.s2_sha256 != candidate.s2_sha256 {
         return Err("different S2 checkpoints".into());
     }
+    if control.streamed_invocations.is_some()
+        || candidate.streamed_invocations.is_some()
+        || streamed != 0
+    {
+        for row in [&control, &candidate] {
+            if row.streamed_invocations != Some(streamed) || !row.invocations.is_empty() {
+                return Err(format!(
+                    "expected a summary of {streamed} streamed invocations"
+                ));
+            }
+        }
+        return Ok(streamed);
+    }
     let count = control.invocations.len();
     if count != candidate.invocations.len() {
         return Err(format!(
@@ -115,17 +179,7 @@ fn compare_case(pass: &str, source: &Value, rows: [Value; 2]) -> Result<usize, S
         .zip(&candidate.invocations)
         .enumerate()
     {
-        if left.placement != right.placement {
-            return Err(format!(
-                "invocation {i}: placement, generated names, diagnostics or pass state differs"
-            ));
-        }
-        for (boundary, a, b) in [
-            ("entry", &left.before, &right.before),
-            ("exit", &left.after, &right.after),
-        ] {
-            compare_circuits(a, b).map_err(|e| format!("invocation {i} {boundary}: {e}"))?;
-        }
+        compare_invocation(i, left, right)?;
     }
     Ok(count)
 }
@@ -159,9 +213,17 @@ pub fn compare(
                 Error::Difference(format!("{} ended before {id}", stream.path.display()))
             })
         };
-        let pair = [required(&mut control)?, required(&mut candidate)?];
-        invocations +=
-            compare_case(pass, &row, pair).map_err(|e| Error::Difference(format!("{id}: {e}")))?;
+        let difference = |e| Error::Difference(format!("{id}: {e}"));
+        let mut streamed = 0;
+        loop {
+            let pair = [required(&mut control)?, required(&mut candidate)?];
+            if pair[0].get("invocation").is_none() {
+                invocations += compare_case(pass, &row, pair, streamed).map_err(difference)?;
+                break;
+            }
+            compare_chunk(pass, &row, pair, streamed).map_err(difference)?;
+            streamed += 1;
+        }
     }
     if control.next()?.is_some() || candidate.next()?.is_some() {
         return Err(Error::Difference(

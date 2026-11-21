@@ -264,5 +264,26 @@ fn paired_pass_replay_requires_the_same_checkpoint_state_and_population() {
     }
     assert_eq!(compare(""), Some(1));
     assert_eq!(compare(&format!("{baseline}\n{baseline}")), Some(1));
+    let chunk = json!({"id":"case", "input_sha256":digest, "pass":"Lower", "index":0,
+        "invocation":baseline["invocations"][0]});
+    let mut summary = baseline.clone();
+    summary["invocations"] = json!([]);
+    summary["streamed_invocations"] = json!(1);
+    let stream = format!("{chunk}\n{summary}");
+    fs::write(&control, &stream).unwrap();
+    assert_eq!(compare(&stream), Some(0));
+    assert_eq!(compare(&chunk.to_string()), Some(1));
+    for (field, value) in [
+        ("/id", json!("other")),
+        ("/index", json!(1)),
+        ("/input_sha256", json!("cd".repeat(32))),
+        ("/invocation/extra_state", json!([])),
+    ] {
+        let mut changed = chunk.clone();
+        *changed.pointer_mut(field).unwrap() = value;
+        assert_eq!(compare(&format!("{changed}\n{summary}")), Some(1), "{field}");
+    }
+    summary["streamed_invocations"] = json!(2);
+    assert_eq!(compare(&format!("{chunk}\n{summary}")), Some(1));
     fs::remove_dir_all(directory).unwrap();
 }
