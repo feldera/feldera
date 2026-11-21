@@ -80,6 +80,8 @@ mod terms;
 mod topology;
 mod trace_integrators;
 mod trace_retention;
+mod defer_carried;
+pub use defer_carried::{defer_carried_columns, ChainLayout};
 mod trim_filters;
 pub use trim_filters::trim_filters;
 mod trim_windows;

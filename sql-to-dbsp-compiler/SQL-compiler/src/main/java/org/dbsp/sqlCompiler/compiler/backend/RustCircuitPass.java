@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
@@ -121,6 +122,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindUnusedInputFields inputFields;
     @Nullable private final TrimInputs trimInputs;
     @Nullable private final TrimFilters trimFilters;
+    @Nullable private final DeferCarriedColumns deferCarried;
     @Nullable private final FindCommonProjections commonProjections;
     @Nullable private final FuseExpensiveMaps.Fuse mapFusion;
     @Nullable private final CreateStarJoins.FindJoinTrees joinTrees;
@@ -168,6 +170,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.asofRetention = original instanceof LowerAsof.MoveGC move ? move : null;
         this.asofOrder = original instanceof LowerAsof.OrderGcDependencies order ? order : null;
         this.commonProjections = original instanceof FindCommonProjections common ? common : null;
+        this.deferCarried = original instanceof DeferCarriedColumns defer ? defer : null;
         this.trimFilters = original instanceof TrimFilters trim ? trim : null;
         this.trimInputs = original instanceof TrimInputs trim ? trim : null;
         this.inputFields = original instanceof FindUnusedInputFields fields ? fields : null;
@@ -804,6 +807,12 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (this.replaceCommon != null && this.replaceCommon.analysis().outputProjection.isEmpty())
                 return circuit;
+            if (this.deferCarried != null) {
+                var layouts = this.deferCarried.layouts();
+                if (layouts.isEmpty())
+                    return circuit;
+                state = MAPPER.writeValueAsBytes(layouts);
+            }
             if (this.trimFilters != null) {
                 var readers = this.trimFilters.candidateReaders(circuit, true);
                 if (readers.isEmpty())

@@ -72,6 +72,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowInt
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimWindows;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -120,7 +121,7 @@ public class CircuitOptimizer extends Passes {
                 return conditional.withTransform(new RustCircuitPass(this.compiler, conditional.transform, this.snapshots));
             return pass;
         }
-        if (pass instanceof FuseExpensiveMaps || pass instanceof MergeGC || pass instanceof FindUnboundedState || pass instanceof ShareIndexes || pass instanceof ExpandIndexedInputs || pass instanceof ExpandAggregates || pass instanceof MerkleHashes
+        if (pass instanceof LeftJoinChains || pass instanceof FuseExpensiveMaps || pass instanceof MergeGC || pass instanceof FindUnboundedState || pass instanceof ShareIndexes || pass instanceof ExpandIndexedInputs || pass instanceof ExpandAggregates || pass instanceof MerkleHashes
                 || pass instanceof RemoveUselessLeftJoins || pass instanceof ShareWindowIntegrals) {
             ((Passes) pass).passes.replaceAll(this::selectImplementation);
             return pass;
@@ -145,7 +146,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof FindMapChains || pass instanceof DuplicateSharedIndexes
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections
-                    || pass instanceof TrimFilters || pass instanceof TrimWindows || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs
+                    || pass instanceof DeferCarriedColumns || pass instanceof TrimFilters || pass instanceof TrimWindows || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs
                     || pass instanceof ExpandIndexedInputs.IndexedInputs || pass instanceof ExpandAggregates.ExpandStreamAggregates
                     || pass instanceof OptimizeProjectionVisitor || pass instanceof PullFilterVisitor
                     || pass instanceof ShareOutputIntegrators || pass instanceof FilterJoinVisitor || pass instanceof AppendOnly

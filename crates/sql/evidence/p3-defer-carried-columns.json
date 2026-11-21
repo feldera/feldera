@@ -1,0 +1,68 @@
+{
+  "scope": "Rebuild the lookup join from the preceding left-join chain analysis. Comparisons cover reused indexes, new indexes, recursive views, multiple consumers and both engine schedules.",
+  "comparator_sha256": "6ccbbbd757b0350d4b2d7c9c458e295f449ff1adedcd130aebad1ad5ee4c47c2",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "bca37efa15451eeba15910123c1f07b1c62ba4dd4f685451d604813f6778bfd4",
+      "6a0f453bb4b74da4171b60e1908fbfba95c8891ae07264f8f4065ac64f809593",
+      "ef588ae05abbc9b182b0ff31e45527d27e787e08519cbaccbb077b10db57db42",
+      "d4e9d11b08b198f532d972ea93be151f59415354ed71f442811c46c00bd5563d"
+    ],
+    "pass": "DeferCarriedColumns",
+    "invocations": 8571,
+    "changed": 9,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "9ee7b22ab22027436cc6401b5b23400217f176e0c0457374e906642004317c4c",
+      "7d88e25756ff36a7b7bd9b8efd37b07ae187fa376187f8fb0e39788db45fe01c",
+      "64a049f08751a9b05874df77324ed525ba4ce000fa9494588e2252aa24cbf8a8",
+      "f65740b9f4864786898542706fdd745436d5d38e3161ab5242b736268a9a23c5"
+    ],
+    "changed_cases": [
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#forkedChainDefersEachBranch/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#fanOutGetsTheSamePayload/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#payloadIsDeferred/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#leftJoinChainCarriesPayload/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#droppedRowStaysDropped/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#keyReadByTheChainIsPreferred/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#chainInsideARecursiveView/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#lookupReusesTheStartIndex/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#leftJoinChainKeyFromTopK/0"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "4aa1b31c876ec238fbc47564e6204db3c3ec7a9685d8154a0d499278430d3d62",
+      "f5cf93834b3357c6cb5e6f89fc4bc8e152477761e5be1bfd97b0b888775f39e6",
+      "66a5f4d06b9ccd534c37c14e6fce4080dfeabb6d37104e62d429b3f8ed2662e7",
+      "354a2c9c98cac93ad560356ab88593a7bb85e2285a0432070038172b4a007512"
+    ],
+    "pass": "DeferCarriedColumns",
+    "invocations": 8527,
+    "changed": 9,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "cc0e6f879fc6e437180dc03536f0c72ce58da3aa1eb696efb29239aabc420544",
+      "71844fbbce0cc86a5ef8d59db46ec7c897e57b615aa3d72a55aea6ae2ca7f376",
+      "20d957661efc26192e9dc2cc99c2a2fe3d518a91aab1983f466aea92dfb2bc58",
+      "09889eabcecae87bd637f5283ad277db20d677c53b551ded1f57fbfc8d8a7aa6"
+    ],
+    "changed_cases": [
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#forkedChainDefersEachBranch/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#fanOutGetsTheSamePayload/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#payloadIsDeferred/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#leftJoinChainCarriesPayload/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#droppedRowStaysDropped/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#keyReadByTheChainIsPreferred/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#chainInsideARecursiveView/0",
+      "org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumnsTests#lookupReusesTheStartIndex/0",
+      "org.dbsp.sqlCompiler.compiler.sql.simple.RedundantStateTests#leftJoinChainKeyFromTopK/0"
+    ]
+  }
+}

@@ -24,6 +24,7 @@ import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +45,28 @@ public class DeferCarriedColumns extends CircuitCloneVisitor {
     public DeferCarriedColumns(DBSPCompiler compiler, Map<OutputPort, Chain> chains) {
         super(compiler, false);
         this.chains = chains;
+    }
+
+    public record ColumnCopy(Column source, Column result) {}
+    public record Layout(long start, int port, boolean reuseIndex, List<ColumnCopy> key,
+                         List<ColumnCopy> deferred, List<ColumnCopy> copies) {}
+
+    /** Column correspondence from the preceding chain analysis, before
+     * this pass builds either index or the final lookup join. */
+    public Map<Long, Layout> layouts() {
+        var layouts = new LinkedHashMap<Long, Layout>();
+        this.chains.forEach((end, chain) -> {
+            boolean reuse = chain.startIsIndexedByKey();
+            var keys = reuse ? chain.keyInIndexOrder() : chain.keyColumns();
+            var key = keys.stream().map(c -> new ColumnCopy(c, chain.inputToOutputRemap().get(c))).toList();
+            var deferred = chain.deferrable().stream()
+                    .map(c -> new ColumnCopy(c, chain.inputToOutputRemap().get(c))).toList();
+            var copies = chain.outputToInputRemap().entrySet().stream().sorted(Map.Entry.comparingByKey())
+                    .map(e -> new ColumnCopy(e.getValue(), e.getKey())).toList();
+            layouts.put(end.node().id, new Layout(chain.start().node().id, chain.start().outputNumber,
+                    reuse, key, deferred, copies));
+        });
+        return layouts;
     }
 
     @Override

@@ -562,6 +562,7 @@ fn transform(
         )?,
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
             circuit, serde_json::from_slice(state)?, &mut next)?,
+        "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(circuit, serde_json::from_slice(state)?, &mut next)?,
         "TrimFilters" => feldera_sql_opt::trim_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
         "TrimWindows" => feldera_sql_opt::trim_windows(circuit, &mut next)?,
         "TrimInputs" => {

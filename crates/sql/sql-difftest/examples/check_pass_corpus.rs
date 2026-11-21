@@ -144,6 +144,7 @@ fn compare_invocation(
         )?,
         "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
             input, serde_json::from_value(invocation["projection_closures"].clone())?, &mut next)?,
+        "DeferCarriedColumns" => feldera_sql_opt::defer_carried_columns(input, serde_json::from_value(invocation["carried_columns"].clone())?, &mut next)?,
         "TrimFilters" => feldera_sql_opt::trim_filters(input, serde_json::from_value(invocation["filter_readers"].clone())?, &mut next)?,
         "TrimWindows" => feldera_sql_opt::trim_windows(input, &mut next)?,
         "TrimInputs" => feldera_sql_opt::trim_inputs(
