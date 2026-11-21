@@ -1420,6 +1420,12 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             JsonNode result = null;
             switch (this.nativeName) {
+                case "FindJoinTrees" -> {
+                    var isolated = this.invoke("Topology/FindJoinTrees", OptimizerTopology.encode(circuit,
+                            OptimizerTopology.Details.CONSUMERS), initial, state);
+                    if (!isolated.isNull())
+                        result = isolated;
+                }
                 case "UDFInliner" -> {
                     if (circuit.declarations.stream().noneMatch(decl ->
                             decl.item instanceof DBSPFunctionItem function && function.function.body != null))

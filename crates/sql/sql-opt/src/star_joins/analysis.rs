@@ -228,6 +228,42 @@ impl Candidates {
     }
 }
 
+/// For independent binary joins the analysis creates a parameter for the key
+/// and each of the two values, then discards the closure. The live compiler
+/// can advance its name counter without serializing those closures or types.
+pub fn names_after_isolated_joins(circuit: &Circuit, next: u64) -> Result<Option<u64>, Error> {
+    let members = circuit.root().edges("allOperators")?;
+    let kind = |position: usize| {
+        circuit
+            .node(members[position])
+            .expect("validated circuit member")
+            .operator_kind()
+    };
+    let is_join = |kind| matches!(kind, Some(Op::StreamJoin | Op::StreamJoinIndex));
+    let mut joins = (0..members.len()).filter(|&i| is_join(kind(i))).peekable();
+    if joins.peek().is_none() {
+        return Ok(Some(next));
+    }
+
+    let consumers = successors(circuit, circuit.root_id())?;
+    let mut names = next;
+    for join in joins {
+        if let [(reader, _)] = consumers[join].as_slice() {
+            let reader = kind(*reader);
+            // A join can grow a tree or become an indexed child through a map.
+            if is_join(reader)
+                || (kind(join) == Some(Op::StreamJoin) && reader == Some(Op::MapIndex))
+            {
+                return Ok(None);
+            }
+        }
+        names = names
+            .checked_add(3)
+            .ok_or_else(|| Error::new("generated names exhausted"))?;
+    }
+    Ok(Some(names))
+}
+
 /// Analyze only the outer circuit. Recursive operators form opaque leaves.
 pub fn find_join_trees(circuit: &Circuit, next: &mut u64) -> Result<Vec<StarJoinTree>, Error> {
     let ids = circuit.root().edges("allOperators")?;

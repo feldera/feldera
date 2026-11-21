@@ -370,6 +370,12 @@ fn transform(
             &circuit
         )?));
     }
+    if pass == "Topology/FindJoinTrees" {
+        return Ok(match feldera_sql_opt::names_after_isolated_joins(&circuit, next)? {
+            Some(next) => json!({"join_trees": [], "next_generated_name": next}),
+            None => Value::Null,
+        });
+    }
     if pass == "FindJoinTrees" {
         let trees = feldera_sql_opt::find_join_trees(&circuit, &mut next)?;
         return Ok(json!({"join_trees":trees, "next_generated_name":next}));

@@ -42,5 +42,19 @@
       "85df604d83eb33471a3fbff9d63ead5b61a7303b55353c36706fa1c0915b4a00",
       "206cfc25834ecb508f1cf45a8b04f3b36b7f8466718e1e64dea8548a66a5256e"
     ]
+  },
+  "topology_analysis": {
+    "scope": "Compare the empty replacement plan and generated-name counter with the full Rust analysis and the Java observation wherever the join inputs and consumers prove every binary join is isolated.",
+    "classic": {
+      "no_join": 7868,
+      "needs_closures": 67,
+      "isolated_joins": 635
+    },
+    "gen2": {
+      "no_join": 7833,
+      "needs_closures": 67,
+      "isolated_joins": 626
+    },
+    "replay_comparator_sha256": "f6fffc60fb5e7fa2690c355215f7755ea66f76709eea3bba2fc150f750c06198"
   }
 }

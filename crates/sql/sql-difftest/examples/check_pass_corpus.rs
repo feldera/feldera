@@ -128,7 +128,11 @@ fn compare_invocation(
         "RemoveStarJoinsPass" => feldera_sql_opt::expand_star_join_layer(input, &mut next, &mut Vec::new())?,
         "CanonicalForm" => feldera_sql_opt::canonicalize_names(input, &mut next)?,
         "FindJoinTrees" => {
+            let isolated = feldera_sql_opt::names_after_isolated_joins(&input, next)?;
             let trees = feldera_sql_opt::find_join_trees(&input, &mut next)?;
+            if isolated.is_some_and(|after| after != next || !trees.is_empty()) {
+                return Err("isolated join analysis disagrees with the full join tree analysis".into());
+            }
             if !trees.is_empty() || invocation["join_trees"] != json!([]) {
                 // The closures share definitions with their circuit and with one another.
                 let mut expected = invocation["before"].clone();

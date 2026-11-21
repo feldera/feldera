@@ -740,6 +740,9 @@ in order and integrate the indexed result for its downstream consumer. The
 closures produced the same nested row, and the complete rewritten circuits
 were structurally equal. The corrected Rust pass also reproduced all eight
 frozen result shards. [Upstream Java fix](https://github.com/feldera/feldera/pull/8037)
+Rust needed only the graph edges for 16,962 of the 17,096 join-tree analyses.
+For each isolated binary join it reserved the three names Java allocates for
+the key and input values. The other 134 analyses read the closures.
 [Join-tree analysis](evidence/p3-find-join-trees.json) ·
 [Star join replacements](evidence/p3-star-joins.json)
 

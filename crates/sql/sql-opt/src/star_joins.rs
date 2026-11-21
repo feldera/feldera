@@ -6,7 +6,7 @@ use crate::{
     rebuild::{input_type, rebuild_input_closures},
     stream_rewrites::body_members,
 };
-pub use analysis::find_join_trees;
+pub use analysis::{find_join_trees, names_after_isolated_joins};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort,
 };

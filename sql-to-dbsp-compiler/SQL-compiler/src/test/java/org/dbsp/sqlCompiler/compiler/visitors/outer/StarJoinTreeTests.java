@@ -52,6 +52,22 @@ public class StarJoinTreeTests {
     }
 
     @Test
+    public void isolatedJoinAllocatesThreeNamesWithoutChangingTheCircuit() {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var integer = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, false);
+        var type = new DBSPTypeIndexedZSet(CalciteObject.EMPTY, integer, integer);
+        indexedJoin(circuit, input(circuit, type), input(circuit, type));
+
+        var snapshots = new OptimizerSnapshots(compiler);
+        var pass = new CreateStarJoins(compiler, original -> Boolean.getBoolean("feldera.optimizer.rustPasses")
+                ? new RustCircuitPass(compiler, original, snapshots) : original);
+        long initial = DBSPVariablePath.nextGeneratedName();
+        Assert.assertSame(circuit, pass.apply(circuit));
+        Assert.assertEquals(initial + 3, DBSPVariablePath.nextGeneratedName());
+    }
+
+    @Test
     public void indexedRootPreservesLeafOrder() throws IOException {
         var compiler = new DBSPCompiler(new CompilerOptions());
         var circuit = new DBSPCircuit(new ProgramMetadata(), false);
