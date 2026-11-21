@@ -807,15 +807,17 @@ and 58 Gen-2 inputs, including 263 iterations that changed the circuit.
 [Unused-field replay](evidence/p3-map-dependencies.json)
 
 Rust also computes the fields read by a map-index after an aggregate or TopK.
-Java uses those paths to narrow the producer and rewrite the reader. The graphs
-and generated-name counters matched at all 1,872 projection iterations on the
-296 selected inputs. Of those iterations, 770 changed the graph.
+The first implementation passed those paths to the Java rewriter. The graphs and
+generated-name counters matched at all 1,872 projection iterations on the 296
+selected inputs. Of those iterations, 770 changed the graph.
 [Projection field comparisons](evidence/p3-projection-fields.json)
 
 Rust composes ordinary maps, indexed maps and join output closures. It also
 splits an antijoin projection into a value projection before the join and a key
 projection after it. When an indexed producer is expensive, the unrestricted
 pass can bind the result once and reuse its key and value.
+Rust classifies strict and nested projections and narrows TopK output rows,
+preserving the key and rebinding each value field to its new offset.
 All 86,472 projection invocations matched Java across 8,571 classic
 and 8,527 Gen-2 programs. The comparison checked the entry and exit graphs,
 including type sharing and source positions, as well as the allocator,
