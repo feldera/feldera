@@ -17,6 +17,8 @@ pub use monotonicity::binary::{
 };
 pub use monotonicity::{filter_lower_bounds, monotone_identity, FilterBound};
 mod static_candidates;
+mod static_items;
+pub use static_items::{static_initializer, static_item};
 pub use static_candidates::{static_candidates, StaticCandidates};
 pub use map_fusion::{fuse_expensive_maps, map_fusion_fragments, map_fusion_groups, FusionMember};
 mod star_joins;

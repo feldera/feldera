@@ -35,14 +35,18 @@ public class DBSPStaticExpression extends DBSPExpression {
 
     public static String generateName(
             DBSPExpression initializer, @Nullable DBSPOperator operatorContext, DBSPCompiler compiler) {
+        return MerkleInner.hash(renderInitializer(initializer, operatorContext, compiler)).makeIdentifier("STATIC");
+    }
+
+    public static String renderInitializer(
+            DBSPExpression initializer, @Nullable DBSPOperator operatorContext, DBSPCompiler compiler) {
         IndentStream stream = new IndentStreamBuilder();
         ToRustInnerVisitor toRust = new ToRustInnerVisitor(compiler, stream, null, false);
         toRust.setOperatorContext(operatorContext);
         initializer.accept(toRust);
         stream.append(":");
         initializer.type.accept(toRust);
-        String str = stream.toString();
-        return MerkleInner.hash(str).makeIdentifier("STATIC");
+        return stream.toString();
     }
 
     @Override

@@ -5925,6 +5925,7 @@ dependencies = [
  "indexmap 2.14.2",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

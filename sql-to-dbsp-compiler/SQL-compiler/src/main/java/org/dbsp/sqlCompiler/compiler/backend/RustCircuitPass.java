@@ -88,6 +88,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
@@ -537,6 +540,29 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public record StaticPlan(Set<Long> candidates, Set<Long> cells, Map<Long, Long> reads) {}
+
+    public record StaticItem(DBSPStaticItem declaration, DBSPPathExpression reference) {}
+
+    private static StaticItem decodeStaticItem(LoweringReply reply) {
+        var decoder = expressionDecoder(reply.writer);
+        return new StaticItem(decoder.decodeInner(reply.value.required(0), DBSPStaticItem.class),
+                decoder.decodeInner(reply.value.required(1), DBSPPathExpression.class));
+    }
+
+    public static StaticItem declareStatic(DBSPCompiler compiler, DBSPStaticExpression existing) {
+        return decodeStaticItem(invokeLowering(compiler, "Statics/Declare", existing));
+    }
+
+    public static DBSPExpression defineStatic(DBSPCompiler compiler, DBSPExpression origin, DBSPExpression initializer,
+            String rendered, boolean declare, List<DBSPStaticItem> declarations) {
+        var reply = invokeLowering(compiler, declare ? "Statics/Define" : "Statics/Inline",
+                rendered.getBytes(StandardCharsets.UTF_8), origin, initializer);
+        if (!declare)
+            return expressionDecoder(reply.writer).decodeInner(reply.value.required(0), DBSPStaticExpression.class);
+        StaticItem item = decodeStaticItem(reply);
+        declarations.add(item.declaration);
+        return item.reference;
+    }
 
     public static StaticPlan staticCandidates(DBSPCompiler compiler, DBSPClosureExpression closure) {
         var snapshot = ClosureSnapshot.capture(compiler, closure);

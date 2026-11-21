@@ -1,0 +1,50 @@
+{
+  "scope": "StaticDeclarations on shared detached S2. Rust selects static expressions and cells, hashes the classic printer output, constructs static items or inline initializers, and supplies typed paths to declarations. Java renumbers error handlers and owns literal reuse and visitor placement.",
+  "shards": {
+    "classic-0": {
+      "invocations": 2143,
+      "cases_with_added_declarations": 9,
+      "added_declarations": 58,
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "java_gzip_sha256": "05100f5fc1e30b47064279e0e54a29cd91a5bfada80f3d49bce33448172ef5ad",
+      "rust_gzip_sha256": "05100f5fc1e30b47064279e0e54a29cd91a5bfada80f3d49bce33448172ef5ad"
+    },
+    "classic-1": {
+      "invocations": 2143,
+      "cases_with_added_declarations": 9,
+      "added_declarations": 74,
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "java_gzip_sha256": "b06457a1582d4ab5f411bfeca491a6eaf1014b8d2d1998371ebae96b73260629",
+      "rust_gzip_sha256": "b06457a1582d4ab5f411bfeca491a6eaf1014b8d2d1998371ebae96b73260629"
+    },
+    "classic-2": {
+      "invocations": 2143,
+      "cases_with_added_declarations": 12,
+      "added_declarations": 70,
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "java_gzip_sha256": "98a2ae1323657acce38930075268d04af5b25aa3265c15fa5c58faedab46228a",
+      "rust_gzip_sha256": "98a2ae1323657acce38930075268d04af5b25aa3265c15fa5c58faedab46228a"
+    },
+    "classic-3": {
+      "invocations": 2142,
+      "cases_with_added_declarations": 9,
+      "added_declarations": 55,
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "java_gzip_sha256": "49f1bb138040dcebed9adb538061597629c5385bdf28ef68ae68362b13a4ab22",
+      "rust_gzip_sha256": "49f1bb138040dcebed9adb538061597629c5385bdf28ef68ae68362b13a4ab22"
+    },
+    "gen2-classic-mode": {
+      "invocations": 1,
+      "cases_with_added_declarations": 1,
+      "added_declarations": 22,
+      "population_sha256": "4ad6daa82e767e4ad8853c1098d103a6f050d707a305bde9ecd5f1ea463365a0",
+      "java_gzip_sha256": "75591737d37b20009aaecf8a68e7022b71df3328cd8b097d8ee1ba9a77d9212c",
+      "rust_gzip_sha256": "75591737d37b20009aaecf8a68e7022b71df3328cd8b097d8ee1ba9a77d9212c"
+    }
+  },
+  "gen2_enabled_cases_skipping_pass": 8526,
+  "directed_jni_tests": 22,
+  "jar_sha256": "5534a54d1bcf7483f4b539004f3364f6afb21e6fd88ac1f7ad8173e5221a0b1a",
+  "jni_sha256": "afaa0aab0737309c8cfbfa9e153e0c985b1402ebff0e4d5fc9105ae8ce52a1e1",
+  "comparator_sha256": "a3a9f1319f21867fd59596545a06077ad21a6353e8354566a3b2d79087bd90ca"
+}

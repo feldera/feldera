@@ -177,8 +177,16 @@ public class ImplementStatics extends ExpressionTranslator {
     /** Create a static that holds the value of 'expression'; return a reference to the static */
     DBSPExpression makeStatic(DBSPExpression expression) {
         DBSPExpression renumbered = this.renumber.apply(expression).to(DBSPExpression.class);
-        String name = DBSPStaticExpression.generateName(renumbered, this.operatorContext, this.compiler);
-        DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), renumbered, name);
+        return this.defineStatic(expression, renumbered);
+    }
+
+    private DBSPExpression defineStatic(DBSPExpression origin, DBSPExpression initializer) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            String rendered = DBSPStaticExpression.renderInitializer(initializer, this.operatorContext, this.compiler);
+            return RustCircuitPass.defineStatic(this.compiler, origin, initializer, rendered, this.declare, this.newDeclarations);
+        }
+        String name = DBSPStaticExpression.generateName(initializer, this.operatorContext, this.compiler);
+        DBSPStaticExpression stat = new DBSPStaticExpression(origin.getNode(), initializer, name);
         if (!this.declare)
             return stat;
         DBSPStaticItem item = new DBSPStaticItem(stat);
@@ -293,17 +301,9 @@ public class ImplementStatics extends ExpressionTranslator {
         }
 
         if (canonical == null) {
-            String name = DBSPStaticExpression.generateName(expression, this.operatorContext, this.compiler);
-            DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), expression, name);
-            if (this.declare) {
-                DBSPStaticItem item = new DBSPStaticItem(stat);
-                this.newDeclarations.add(item);
-                DBSPPathExpression path = item.getReference();
-                canonical = path;
-                this.canonical.add(new Pair<>(expression, path));
-            } else {
-                canonical = stat;
-            }
+            canonical = this.defineStatic(expression, expression);
+            if (this.declare)
+                this.canonical.add(new Pair<>(expression, canonical.to(DBSPPathExpression.class)));
         }
         this.map(expression, canonical.applyClone());
         return VisitDecision.STOP;
@@ -321,7 +321,11 @@ public class ImplementStatics extends ExpressionTranslator {
 
     @Override
     public VisitDecision preorder(DBSPStaticExpression expression) {
-        if (this.declare) {
+        if (this.declare && this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var item = RustCircuitPass.declareStatic(this.compiler, expression);
+            this.newDeclarations.add(item.declaration());
+            this.map(expression, item.reference());
+        } else if (this.declare) {
             DBSPStaticItem item = new DBSPStaticItem(expression);
             this.newDeclarations.add(item);
             DBSPExpression result = item.getReference();

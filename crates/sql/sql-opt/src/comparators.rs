@@ -40,27 +40,7 @@ impl Transformation for DeclareComparators {
                     )?;
                     editor.declare_item(item)?;
                 }
-                let segment = editor.empty_origin_node(
-                    id,
-                    InnerKind::Other("DBSPSimplePathSegment".into()),
-                    [
-                        ("genericArgs", Field::Array(Vec::new())),
-                        ("identifier", Field::Data(name.into())),
-                    ],
-                )?;
-                let path = editor.empty_origin_node(
-                    id,
-                    InnerKind::Other("DBSPPath".into()),
-                    [("components", Field::Array(vec![Field::Reference(segment)]))],
-                )?;
-                let reference = editor.inner_at(
-                    ty,
-                    InnerKind::Expression(Expr::Path),
-                    [
-                        ("type", Field::Reference(ty)),
-                        ("path", Field::Reference(path)),
-                    ],
-                )?;
+                let reference = editor.named_path(editor.type_id(ty)?, &name)?.into();
                 self.paths.insert(id, reference);
                 Ok(Visit::Replace(reference))
             }

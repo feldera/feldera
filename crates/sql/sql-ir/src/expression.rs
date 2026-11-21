@@ -140,8 +140,14 @@ impl CircuitEditor {
     /// Project a field of a tuple. A nullable row makes its field nullable.
     /// A runtime function or method with one path segment and no generic arguments.
     pub fn function_path(&mut self, site: NodeId, name: &str) -> Result<ExpressionId, Error> {
+        let any = self.standard_type(site, Ty::Any)?;
+        self.named_path(any, name)
+    }
+
+    /// Reference a named item with a single path segment and its declared type.
+    pub fn named_path(&mut self, ty: TypeId, name: &str) -> Result<ExpressionId, Error> {
         let segment = self.empty_origin_node(
-            site,
+            ty.into(),
             InnerKind::Other("DBSPSimplePathSegment".into()),
             [
                 ("identifier", Field::Data(name.into())),
@@ -149,15 +155,14 @@ impl CircuitEditor {
             ],
         )?;
         let path = self.empty_origin_node(
-            site,
+            ty.into(),
             InnerKind::Other("DBSPPath".into()),
             [("components", Field::Array(vec![Field::Reference(segment)]))],
         )?;
-        let any = self.standard_type(site, Ty::Any)?;
         self.make_expr(
-            any.into(),
+            ty.into(),
             Expr::Path,
-            any,
+            ty,
             [("path", Field::Reference(path))],
         )
     }

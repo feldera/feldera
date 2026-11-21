@@ -121,6 +121,23 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("Statics/Inline" | "Statics/Define" | "Statics/Declare", _) => {
+            let value = match (pass, roots.as_slice()) {
+                ("Statics/Declare", [existing]) => edit.expression(*existing)?,
+                ("Statics/Inline" | "Statics/Define", [origin, initializer]) => {
+                    let initializer = edit.expression(*initializer)?;
+                    feldera_sql_opt::static_initializer(&mut edit, *origin, initializer, state)?
+                }
+                _ => return Err("invalid static initializer inputs".into()),
+            };
+            let nodes = if pass == "Statics/Inline" {
+                vec![value.into()]
+            } else {
+                let (item, reference) = feldera_sql_opt::static_item(&mut edit, value)?;
+                vec![item, reference.into()]
+            };
+            return Ok(serde_json::to_value(edit.circuit().additional_inner_nodes(&arena, nodes)?)?);
+        }
         ("Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity", [row]) => {
             let ty = edit.type_id(*row)?;
             feldera_sql_opt::monotone_identity(&mut edit, ty, pass == "Monotonicity/IndexedIdentity", &mut next)?
@@ -312,7 +329,8 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
