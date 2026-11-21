@@ -80,7 +80,10 @@ Writing the Nexmark S3 checkpoint with compact JSON reduced its size from
 3,491,925 to 2,624,668 bytes. The median of seven JVM medians was 186.2 ms
 with formatted JSON and 156.7 ms with compact JSON on CPU 12. The paired
 95% bootstrap interval for the ratio of mean write times was 0.759–0.892.
-Each pair produced equal decoded checkpoints.
+Each pair produced equal decoded checkpoints. In a separate Nexmark run on CPU 15,
+the hybrid compiler with compact checkpoints took 15.657 s at p95 from SQL
+to artifacts. Direct Java took 7.567 s (2.069×). The schema, dataflow, Rust
+source and stubs matched in both warmups and all 21 measured pairs.
 [Checkpoint write measurements](evidence/p3-checkpoint-write.json)
 
 On Nexmark, the five read-only expression analyses can omit replay metadata,

@@ -46,5 +46,38 @@
     "candidate": "8eabaf6dc821fdee010a3de4a4c5e3d98b4d62bdf0752a08e2af6813c8e5d605"
   },
   "changes_sha256": "cbf74773e6a6ce0918d1c68c87f3a8b8affe4e2904f2551b87feb04e42b46a0b",
-  "environment_sha256": "3fcefca1533d137e46911ad36e4e706c65c7004a51de32b6a2cb3877c1710701"
+  "environment_sha256": "3fcefca1533d137e46911ad36e4e706c65c7004a51de32b6a2cb3877c1710701",
+  "sql_to_artifact": {
+    "workload": "nexmark-suite.sql",
+    "pinned_cpu": 15,
+    "compiler_sha256": "495ab10af93e860ec9e78f59115fa88ba01e32a24058cd611c5b5066650cd891",
+    "optimizer_library_sha256": "c08671ce9b3fb4b28476d6fec3034eef6adb97885d034965f55090d22f88fc43",
+    "warmup_pairs": 2,
+    "measured_pairs": 21,
+    "results": {
+      "hybrid": {
+        "samples": 21,
+        "p50_seconds": 13.756089036,
+        "empirical_p95_seconds": 15.656668856
+      },
+      "direct": {
+        "samples": 21,
+        "p50_seconds": 6.008134169,
+        "empirical_p95_seconds": 7.567272693
+      },
+      "p95_ratio": 2.068997575636858,
+      "mean_ratio_paired_95pct_interval": [
+        2.1591372173341967,
+        2.2870069315298696
+      ]
+    },
+    "artifact_sha256": {
+      "schema.json": "92ecfeae102c932e484feb3702a9cee9318f472c51fa1c362e4be5ac734a7c86",
+      "dataflow.json": "c6ea063c6b3d6737ce025f9a70d74d61b9a24ab0de0825042ea94fa2c756b3c9",
+      "circuit.rs": "5e13416c53dcdf4d39df9037c39f3f34ea22fd953c58db1cbcd6636620101d08",
+      "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+    },
+    "pairs_sha256": "b1afbc25e8075f3def540e07152e03e714cb0300399a7cb9e2500ae71fa857aa",
+    "environment_sha256": "75e77cd03a32fab3d1a995cb83086ffd5840c376eee8a96469bca1441bba997c"
+  }
 }
