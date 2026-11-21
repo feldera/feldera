@@ -87,6 +87,58 @@ fn expression_arena(roots: impl IntoIterator<Item = Value>) -> Result<(Circuit, 
     }))?.with_inner_roots(roots)
 }
 
+/// The arena root carries the table or view location for expressions created
+/// by the live builder. The supplied row and intervals keep their own origins.
+fn declared_waterline(
+    input: &[u8],
+    state: &[u8],
+    mut next: u64,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Site {
+        columns: Vec<usize>,
+        empty: bool,
+        position: Option<Value>,
+    }
+    let site: Site = serde_json::from_slice(state)?;
+    let mut header = json!({
+        "class":"DBSPCircuit", "id":0, "declarations":[], "allOperators":[], "sourceEmpty":site.empty
+    });
+    if let Some(range) = site.position {
+        header["position"] = range;
+    }
+    let Value::Array(inputs) = feldera_sql_ir::parse_json(input)? else {
+        return Err(
+            "expected a row parameter followed by its declared lateness expressions".into(),
+        );
+    };
+    let (arena, roots) = Circuit::from_json(header)?.with_inner_roots(inputs)?;
+    let Some((&row, intervals)) = roots.split_first() else {
+        return Err("missing waterline row".into());
+    };
+    if site.columns.len() != intervals.len() {
+        return Err("expected one interval per LATENESS column".into());
+    }
+    let columns: Vec<_> = site
+        .columns
+        .into_iter()
+        .zip(intervals.iter().copied())
+        .collect();
+    let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+    let row = edit.expression(row)?;
+    let result = feldera_sql_opt::limiters::declared_waterline(
+        &mut edit,
+        arena.root_id(),
+        row,
+        &columns,
+        &mut next,
+    )?;
+    let expressions = edit
+        .circuit()
+        .additional_expressions(&arena, &[result.timestamp, result.initial, result.maximum])?;
+    Ok(json!({"expressions": expressions, "next_generated_name": next}))
+}
+
 fn binding_pairs(roots: &[NodeId]) -> Result<&[[NodeId; 2]], &'static str> {
     let (pairs, rest) = roots.as_chunks::<2>();
     if rest.is_empty() {
@@ -418,6 +470,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
+        "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"

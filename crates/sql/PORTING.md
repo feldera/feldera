@@ -869,6 +869,15 @@ key. The classic build matched Java for all 29 keyed waterline sources in
 commands. A directed case checks two late key columns at different positions
 in the key and in the waterline. [Late-key filter comparisons](evidence/p3-late-key-filters.json)
 
+Rust constructs each table and view’s declared waterline from its LATENESS
+columns. A null field contributes its type minimum, and subtraction saturates.
+The mixed build matched Java at all 550 selected limiter boundaries. A directed
+case with eleven nullable numeric and temporal columns checks the live and
+detached builders in both engines. It covers the midnight `TIME` literal and
+the UTC minimum for `TIMESTAMP WITH TIME ZONE`. All 217 executable classic
+programs in the selection passed their 2,076 input commands.
+[Declared waterline comparisons](evidence/p3-declared-source-waterlines.json)
+
 When a view declares LATENESS and inherits a waterline, Rust combines the
 two bounds. A column covered by both takes the maximum. The 550 selected
 limiter boundaries matched Java, including views with a tighter inherited

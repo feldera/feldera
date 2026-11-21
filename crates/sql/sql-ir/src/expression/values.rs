@@ -91,13 +91,17 @@ impl CircuitEditor {
                 )
             }
             Ty::Date => (Expr::DateLiteral, ty, (-719162).into()),
-            Ty::Time => (Expr::TimeLiteral, ty, "0".into()),
+            Ty::Time => (Expr::TimeLiteral, ty, "00:00:00".into()),
             Ty::Timestamp => (
                 Expr::TimestampLiteral,
                 self.primitive_singleton(ty.0, kind, &code, nullable)?,
                 "-62135596800000000".into(),
             ),
-            Ty::TimestampTz => (Expr::TimestampTzLiteral, ty, "-62135596800000000".into()),
+            Ty::TimestampTz => (
+                Expr::TimestampTzLiteral,
+                ty,
+                "0001-01-01 00:00:00 UTC".into(),
+            ),
             Ty::ShortInterval | Ty::LongInterval => {
                 let fresh = TypeId(self.derive_inner(ty.0, [])?);
                 if kind == Ty::ShortInterval {

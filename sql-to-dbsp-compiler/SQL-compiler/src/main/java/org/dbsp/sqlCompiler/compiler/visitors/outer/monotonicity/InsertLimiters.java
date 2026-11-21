@@ -1776,6 +1776,22 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return lateError(tableName, k).closure(w, k, weight);
     }
 
+    public record DeclaredWaterline(DBSPTupleExpression timestamp, DBSPExpression initial, DBSPClosureExpression maximum) {}
+
+    private DeclaredWaterline declaredWaterline(CalciteObject site, DBSPVariablePath row,
+            List<Integer> columns, List<DBSPExpression> intervals) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.declaredWaterline(this.compiler, site, row, columns, intervals);
+        List<DBSPExpression> timestamps = new ArrayList<>(columns.size());
+        for (int i = 0; i < columns.size(); i++) {
+            DBSPExpression field = waterlineValue(site, row.deref().field(columns.get(i)));
+            timestamps.add(subtractLateness(site, field, intervals.get(i)));
+        }
+        var timestamp = new DBSPTupleExpression(timestamps, false);
+        var initial = timestamp.getType().minimumValue();
+        return new DeclaredWaterline(timestamp, initial, timestampMax(site, initial.getType().to(DBSPTypeTupleBase.class)));
+    }
+
     /** Process LATENESS annotations.
      * @return Return the original operator if there aren't any annotations, or
      * the operator that produces the result of the input filtered otherwise.
@@ -1809,7 +1825,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // The columns with a LATENESS declaration, as a projection of the row
         List<IMaybeMonotoneType> declaredFields = new ArrayList<>();
-        List<DBSPExpression> timestamps = new ArrayList<>();
+        List<DBSPExpression> intervals = new ArrayList<>();
         int index = 0;
         DBSPTypeTupleBase rowType = operator.getOutputZSetType().elementType.to(DBSPTypeTupleBase.class);
         DBSPVariablePath t = rowType.ref().var();
@@ -1817,8 +1833,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPType columnType = rowType.getFieldType(index);
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
-                DBSPExpression field = waterlineValue(operator.getNode(), t.deref().field(index));
-                timestamps.add(subtractLateness(operator.getNode(), field, lateness));
+                intervals.add(lateness);
                 declaredFields.add(new MonotoneType(columnType));
             } else {
                 declaredFields.add(NonMonotoneType.nonMonotone(columnType));
@@ -1826,7 +1841,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             index++;
         }
 
-        if (timestamps.isEmpty()) {
+        if (intervals.isEmpty()) {
             this.nonMonotone(expansion);
             return operator;
         }
@@ -1836,10 +1851,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // The waterline operator computes, for each column with a LATENESS, the smallest
         // value that a new row can have without being late.  The output signature contains
         // only the columns that have lateness.
-        DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
-        DBSPExpression minValue = timestamp.getType().minimumValue();
-        DBSPClosureExpression max = timestampMax(operator.getRelNode(), minValue.getType().to(DBSPTypeTupleBase.class));
         PartiallyMonotoneTuple declared = new PartiallyMonotoneTuple(declaredFields, false, false);
+        List<Integer> declaredColumns = monotoneColumns(declared);
+        DeclaredWaterline bounds = this.declaredWaterline(operator.getNode(), t, declaredColumns, intervals);
+        DBSPTupleExpression timestamp = bounds.timestamp();
+        DBSPExpression minValue = bounds.initial();
+        DBSPClosureExpression max = bounds.maximum();
         LatenessFilter lateness = this.latenessFilter(viewOrTable, rowType, declared, minValue.getType());
 
         DBSPOperator result;
@@ -1860,7 +1877,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             LatenessFilter lateKey;
             if (this.compiler.options.ioOptions.rustOptimizerPasses) {
                 var pair = RustCircuitPass.lateKeyFilter(this.compiler, viewOrTable, keyFields,
-                        monotoneColumns(declared), keyType, minValue.getType());
+                        declaredColumns, keyType, minValue.getType());
                 lateKey = new LatenessFilter(pair.left, pair.right);
             } else {
                 lateKey = new LatenessFilter(keyFilter(keyLateness(multisetInput), minValue.getType(), keyType),

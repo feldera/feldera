@@ -171,6 +171,39 @@ fn timestamp_max(
     edit.closure_from_variables(result, &[left, right])
 }
 
+/// Expressions shared by the source operator, its delay and its late-row filter.
+pub struct DeclaredWaterline {
+    pub timestamp: ExpressionId,
+    pub initial: ExpressionId,
+    pub maximum: ExpressionId,
+}
+
+/// Construct a contribution per LATENESS column in table order. The initial
+/// value and maximum closure share the timestamp tuple's field types.
+pub fn declared_waterline(
+    edit: &mut CircuitEditor,
+    site: NodeId,
+    row: ExpressionId,
+    columns: &[(usize, NodeId)],
+    next: &mut u64,
+) -> Result<DeclaredWaterline, Error> {
+    let fields = columns
+        .iter()
+        .map(|&(index, lateness)| contribution(edit, site, row, index, lateness))
+        .collect::<Result<Vec<_>, _>>()?;
+    let timestamp = edit.tuple_expr(row.into(), false, &fields)?;
+    let ty = edit.expression_type(timestamp)?;
+    let initial = edit.minimum_value(ty)?;
+    let mut names = *next;
+    let maximum = timestamp_max(edit, site, ty, &mut names)?;
+    *next = names;
+    Ok(DeclaredWaterline {
+        timestamp,
+        initial,
+        maximum,
+    })
+}
+
 pub(super) struct SourceOutputs {
     pub data: Stream,
     pub error: Stream,
@@ -241,15 +274,12 @@ pub(super) fn source_bounds(
     let collection = edit.type_id(edit.node(site)?.edge("outputType")?)?;
     let row = edit.type_id(edit.node(collection.into())?.edge("elementType")?)?;
     let t = arg(edit, row, next)?;
-    let fields = columns
-        .declared
-        .iter()
-        .map(|&(index, lateness)| contribution(edit, site, t, index, lateness))
-        .collect::<Result<Vec<_>, _>>()?;
-    let timestamp = edit.tuple_expr(row.into(), false, &fields)?;
+    let DeclaredWaterline {
+        timestamp,
+        initial,
+        maximum: max,
+    } = declared_waterline(edit, site, t, &columns.declared, next)?;
     let ty = edit.expression_type(timestamp)?;
-    let initial = edit.minimum_value(ty)?;
-    let max = timestamp_max(edit, site, ty, next)?;
     let indices = columns.declared.iter().map(|&(i, _)| i).collect::<Vec<_>>();
     let filter = row_filter(edit, table, row, &indices, ty, next)?;
     let init = edit.closure_from_variables(initial, &[])?;

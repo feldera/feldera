@@ -70,6 +70,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.LimiterInputs;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MergeGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
@@ -306,6 +308,33 @@ public final class RustCircuitPass implements CircuitTransform {
                     MAPPER.writeValueAsBytes(shapes), types.toArray(DBSPType[]::new)));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode join waterline projections", error);
+        }
+    }
+
+    public static InsertLimiters.DeclaredWaterline declaredWaterline(DBSPCompiler compiler, CalciteObject origin,
+            DBSPVariablePath row, List<Integer> columns, List<DBSPExpression> intervals) {
+        var site = MAPPER.createObjectNode();
+        site.put("empty", origin.isEmpty());
+        var range = origin.getPositionRange();
+        if (!origin.isEmpty() || range.isValid())
+            site.set("position", range.asJson());
+        site.set("columns", MAPPER.valueToTree(columns));
+        var inputs = new ArrayList<DBSPExpression>(intervals.size() + 1);
+        inputs.add(row);
+        inputs.addAll(intervals);
+        try {
+            var reply = invokeLowering(compiler, "Limiters/DeclaredWaterline",
+                    MAPPER.writeValueAsBytes(site), inputs.toArray(DBSPExpression[]::new));
+            var decoder = expressionDecoder(reply.writer);
+            var roots = reply.value.required("expressions");
+            var result = new InsertLimiters.DeclaredWaterline(
+                    decoder.decodeInner(roots.required(0), DBSPTupleExpression.class),
+                    decoder.decodeInner(roots.required(1), DBSPExpression.class),
+                    decoder.decodeInner(roots.required(2), DBSPClosureExpression.class));
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return result;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Cannot encode the declared waterline", error);
         }
     }
 

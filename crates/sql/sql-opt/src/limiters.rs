@@ -12,6 +12,7 @@ mod projection;
 mod source;
 mod streams;
 pub use projection::Projection;
+pub use source::{declared_waterline, DeclaredWaterline};
 pub use streams::{connect_error_view, window, Stream, StreamKind, WindowBounds};
 
 use feldera_sql_ir::{

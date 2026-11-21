@@ -1,0 +1,71 @@
+{
+  "scope": "The live and detached Rust builders construct the timestamp contribution, minimum value and maximum closure for a table or view with LATENESS. The reference is direct Java on the same detached S2. The comparison checks the InsertLimiters graph, diagnostics and generated names.",
+  "compiler": {
+    "profile": "Linux ARM64, offline Maven package and release Rust tools",
+    "pass_kinds": 99,
+    "jar_sha256": "9d66f611d7a87e0ccc71f55d5ebcbd7b127b199a4da34032ef7cab44c664ba43",
+    "driver_sha256": "b5b00bf36227249970b238a17aca1e0837b9a5f152afcb046514a9a598b8a6e9",
+    "optimizer_library_sha256": "351024c521092947ce00c3752afbaf979e6821e17554b77448fd53987c3c91ac"
+  },
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "matched_insert_limiters": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "rust_gzip_sha256": "a520998e86f7cdbb3c5884deea66b4bcb6fcfcfd26e2ba07a8531d5d681b45e0"
+    },
+    "gen2": {
+      "cases": 259,
+      "matched_insert_limiters": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "rust_gzip_sha256": "1563fcf9426f8a76f06cc9c2c20a6676c27cecf5a2efdc6a52a93439db001e3e"
+    }
+  },
+  "directed_test": {
+    "fixture": "mixedDeclaredWaterlineTypes",
+    "sql_sha256": "01f5242abffe39872ce66e5c4363b8387b1260fad30413d717cc93407e906bb1",
+    "checks": [
+      "S4 observation and checkpoint with generated-name parity in detached Rust replay",
+      "live compiler checkpoint equality",
+      "byte-equal emitted classic Rust",
+      "canonical Gen-2 circuit equality"
+    ],
+    "classic": {
+      "detached": [
+        {
+          "sequence": 206,
+          "before": 5,
+          "after": 9,
+          "wire_changed": true
+        }
+      ],
+      "direct_product_sha256": "9d58cc901429ba1310ffaeff78a0e529b114e669216bac340aac765ef8244ade",
+      "rust_product_sha256": "9d58cc901429ba1310ffaeff78a0e529b114e669216bac340aac765ef8244ade"
+    },
+    "gen2": {
+      "detached": [
+        {
+          "sequence": 206,
+          "before": 5,
+          "after": 9,
+          "wire_changed": true
+        }
+      ],
+      "direct_product_sha256": "aa8c6958a1f0cc03fe82d182a13bcde219f28afb612c244e9bf35aa8842d46e4",
+      "rust_product_sha256": "49347d7a547a40bfa6c69d1b454619b781f563e77afebc9223f9268d5984b29d"
+    }
+  },
+  "classic_runtime": {
+    "worker_sha256": "b5b00bf36227249970b238a17aca1e0837b9a5f152afcb046514a9a598b8a6e9",
+    "optimizer_library_sha256": "351024c521092947ce00c3752afbaf979e6821e17554b77448fd53987c3c91ac",
+    "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+    "batch_receipts_sha256": "be2704cef86524c8fe5c082081169b2e0016701cfebe7589d38d51128b5c6c43",
+    "executed": 217,
+    "compile_only": 74,
+    "total_frozen_cases": 291,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0
+  }
+}
