@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -12,6 +13,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.util.Linq;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /** We do something very simple:
  * - if an operator has a fanout greater than 1,
  * - if any of its successors can be merged with it,
@@ -20,6 +24,23 @@ import org.dbsp.util.Linq;
 public class CloneOperatorsWithFanout extends CircuitCloneWithGraphsVisitor {
     public CloneOperatorsWithFanout(DBSPCompiler compiler, CircuitGraphs graphs) {
         super(compiler, graphs);
+    }
+
+    /** Apply the reader choices made on the graph at the start of this iteration. */
+    public DBSPCircuit cloneSelected(DBSPCircuit circuit, Set<Long> readers) {
+        if (readers.isEmpty())
+            return circuit;
+        var remaining = new HashSet<>(readers);
+        var clone = new CloneOperatorsWithFanout(this.compiler, this.graphs) {
+            @Override
+            protected boolean shouldCloneInput(DBSPUnaryOperator operator) {
+                return remaining.remove(operator.id);
+            }
+        };
+        var result = clone.apply(circuit);
+        if (!remaining.isEmpty())
+            throw new IllegalStateException("Unknown fanout readers " + remaining);
+        return result;
     }
 
     protected boolean shouldCloneInput(DBSPUnaryOperator operator) {

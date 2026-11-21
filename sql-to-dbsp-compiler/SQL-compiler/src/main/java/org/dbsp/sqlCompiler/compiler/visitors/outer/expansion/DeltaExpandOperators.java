@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -306,8 +307,10 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
         DBSPAntiJoinOperator antiJoin = new DBSPAntiJoinOperator(node, inputs.get(0), inputs.get(1));
         this.addOperator(antiJoin);
-        DBSPClosureExpression function = SubstituteLeftJoins.createMapFunction(this.compiler, operator)
-                .ensureTree(this.compiler).to(DBSPClosureExpression.class);
+        DBSPClosureExpression function = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.unmatchedRows(this.compiler, operator)
+                : SubstituteLeftJoins.createMapFunction(this.compiler, operator)
+                    .ensureTree(this.compiler).to(DBSPClosureExpression.class);
         DBSPSimpleOperator map;
         if (operator.outputType.is(DBSPTypeIndexedZSet.class))
             map = new DBSPMapIndexOperator(node, function, operator.getOutputIndexedZSetType(), antiJoin.outputPort());

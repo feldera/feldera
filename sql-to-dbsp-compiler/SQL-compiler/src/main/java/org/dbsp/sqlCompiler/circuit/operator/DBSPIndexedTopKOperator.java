@@ -62,7 +62,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
      * the function is converted to a declaration, whereas the comparator is not. */
     public final DBSPEqualityComparatorExpression equalityComparator;
 
-    static DBSPType outputType(DBSPTypeIndexedZSet sourceType, @Nullable DBSPClosureExpression outputProducer) {
+    static DBSPTypeIndexedZSet outputType(DBSPTypeIndexedZSet sourceType, @Nullable DBSPClosureExpression outputProducer) {
         if (outputProducer == null)
             return sourceType;
         return new DBSPTypeIndexedZSet(sourceType.getNode(), sourceType.keyType,
@@ -86,8 +86,16 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
                                    DBSPEqualityComparatorExpression equalityComparator,
                                    DBSPClosureExpression outputProducer,
                                    OutputPort source) {
-        super(node, "topK", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer), source);
+        this(node, numbering, comparator, limit, equalityComparator, outputProducer, source,
+                outputType(source.getOutputIndexedZSetType(), outputProducer));
+    }
+
+    private DBSPIndexedTopKOperator(CalciteRelNode node, Numbering numbering,
+                                    DBSPExpression comparator, DBSPExpression limit,
+                                    DBSPEqualityComparatorExpression equalityComparator,
+                                    DBSPClosureExpression outputProducer,
+                                    OutputPort source, DBSPTypeIndexedZSet outputType) {
+        super(node, "topK", comparator, outputType, source);
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
                 comparator.is(DBSPPathExpression.class));
         this.limit = limit;
@@ -95,8 +103,10 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
         this.outputProducer = outputProducer;
         this.equalityComparator = equalityComparator;
         Utilities.enforce(this.limit.getType().is(DBSPTypeUSize.class));
-        Utilities.enforce(this.outputType.is(DBSPTypeIndexedZSet.class),
-                () -> "Expected the input to be an IndexedZSet type" + source.outputType());
+        var inputType = source.getOutputIndexedZSetType();
+        Utilities.enforce(outputType.keyType.sameType(inputType.keyType));
+        Utilities.enforce(outputType.elementType.sameType(
+                outputProducer == null ? inputType.elementType : outputProducer.getResultType()));
     }
 
     /** True if the output producer emits the rank parameter as one of its fields. */
@@ -190,7 +200,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
                 fromJsonInner(node, "equalityComparator", decoder, DBSPEqualityComparatorExpression.class);
         return new DBSPIndexedTopKOperator(CalciteEmptyRel.INSTANCE, numbering,
                 info.getFunction(),
-                limit, equalityComparator, outputProducer, info.getInput(0))
+                limit, equalityComparator, outputProducer, info.getInput(0), info.getIndexedZsetType())
                 .addAnnotations(info.annotations(), DBSPIndexedTopKOperator.class);
     }
 }

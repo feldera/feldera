@@ -412,6 +412,14 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let ty = edit.type_id(*indexed)?;
             feldera_sql_opt::empty_right_join_closure(&mut edit, *function, ty, &mut next)?
         }
+        ("DeltaExpansion/UnmatchedRows", [function, indexed]) => {
+            let ty = edit.type_id(*indexed)?;
+            let projection = feldera_sql_opt::unmatched_row_projection(
+                &mut edit, *function, ty, &mut next, Some(&mut warnings),
+            )?;
+            let tree = feldera_sql_expr::ensure_expression_tree(&mut edit, projection.into())?;
+            edit.expression(tree)?
+        }
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;
             let bound = edit.expression(*bound)?;
@@ -620,7 +628,7 @@ fn transform(
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
-        | "EmptyRightJoin" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
@@ -838,6 +846,9 @@ fn transform(
         return Ok(json!(operator_numbers(candidates)));
     }
     if let Some(name) = pass.strip_prefix("Topology/") {
+        if name == "FanoutProducers" {
+            return Ok(json!(operator_numbers(feldera_sql_opt::fanout_producers(&circuit)?)));
+        }
         if name == "CSE" {
             return Ok(
                 json!({"payloads": operator_numbers(feldera_sql_opt::cse_payloads(&circuit)?)}),
@@ -879,6 +890,9 @@ fn transform(
         }
         let needs_full_snapshot = feldera_sql_opt::needs_full_snapshot(name, &circuit)?;
         return Ok(json!({ "needs_full_snapshot": needs_full_snapshot }));
+    }
+    if pass == "FanoutReaders" {
+        return Ok(json!(operator_numbers(feldera_sql_opt::fanout_readers(&circuit)?)));
     }
     if matches!(pass, "NoIntegralVisitor" | "ValidateRecursiveOperators") {
         let violation = if pass == "NoIntegralVisitor" {

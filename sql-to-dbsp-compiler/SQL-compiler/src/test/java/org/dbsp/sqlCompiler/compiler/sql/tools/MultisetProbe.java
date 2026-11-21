@@ -36,7 +36,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IContainsIntegrator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -1181,17 +1180,13 @@ public final class MultisetProbe {
             }
             if (remaining.isEmpty())
                 return circuit;
+            if (pass.equals("CloneOperatorsWithFanout"))
+                return new CloneOperatorsWithFanout(compiler, new CircuitGraphs()).cloneSelected(circuit, remaining);
             CircuitTransform builder = switch (pass) {
                 case "BalancedJoins" -> new BalancedJoins(compiler, new CircuitGraphs()) {
                     @Override
                     protected boolean canBalance(DBSPJoinBaseOperator join) {
                         return remaining.remove(join.getId());
-                    }
-                };
-                case "CloneOperatorsWithFanout" -> new CloneOperatorsWithFanout(compiler, new CircuitGraphs()) {
-                    @Override
-                    protected boolean shouldCloneInput(DBSPUnaryOperator operator) {
-                        return remaining.remove(operator.getId());
                     }
                 };
                 default -> throw new IllegalArgumentException("Unknown selected rewrite " + pass);

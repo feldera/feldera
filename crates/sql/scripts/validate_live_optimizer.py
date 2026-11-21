@@ -78,7 +78,7 @@ FROZEN_SCHEDULE = {
 # Their Java iterations invoke Rust for cleanup. Fully ported graph passes prune internally.
 GRAPH_CLEANUP_PASSES = (
     "OptimizeProjections", "OptimizeProjectionVisitor", "PullFilterVisitor",
-    "FilterJoinVisitor", "TrimFilters", "TrimWindows",
+    "FilterJoinVisitor", "TrimFilters", "TrimWindows", "CloneOperatorsWithFanout",
 )
 
 
@@ -161,7 +161,7 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
         if "Graph" in expected:
             expected["Graph"] += sum(graph_cleanups.values())
         expected["FilterJoinVisitor"] = graph_cleanups["FilterJoinVisitor"]
-        for name in ("PullFilterVisitor", "OptimizeProjectionVisitor", "TrimFilters", "TrimWindows"):
+        for name in ("PullFilterVisitor", "OptimizeProjectionVisitor", "TrimFilters", "TrimWindows", "CloneOperatorsWithFanout"):
             if name in expected:
                 expected[name] = graph_cleanups[name]
     if incremental:

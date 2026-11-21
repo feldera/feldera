@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -47,7 +49,8 @@ public final class LimiterInputs {
         var functions = new LinkedHashMap<Long, DBSPClosureExpression>();
         for (var operator : original.allOperators) {
             if (!(operator instanceof DBSPMapOperator || operator instanceof DBSPMapIndexOperator
-                    || operator instanceof DBSPFilterOperator))
+                    || operator instanceof DBSPFilterOperator || operator instanceof DBSPFlatMapOperator
+                    || operator instanceof DBSPHopOperator))
                 continue;
             var expansion = pass.getReplacement(operator.to(DBSPSimpleOperator.class));
             if (expansion == null)

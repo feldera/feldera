@@ -297,16 +297,16 @@ pub fn insert_limiters_with_warnings(
                     }
                 }
             }
-            Some(Op::Map | Op::MapIndex | Op::Filter) => {
+            Some(Op::Map | Op::MapIndex | Op::Filter | Op::Hop | Op::FlatMap) => {
                 let [source] = inputs.as_slice() else {
-                    return Err(Error::new("map or filter requires one input stream"));
+                    return Err(Error::new(format!("{} requires one input stream", op.class())));
                 };
                 if let Some(projection) = projection {
                     let function = functions.get(&number).copied().ok_or_else(|| {
-                        Error::new("limiter replay needs the reduced map or filter closure")
+                        Error::new(format!("missing reduced waterline closure for {}", op.class()))
                     })?;
                     let (bound, _) = bounds.get(source).copied().ok_or_else(|| {
-                        Error::new("missing input waterline for monotone map or filter")
+                        Error::new(format!("missing input waterline for {}", op.class()))
                     })?;
                     let function = super::apply_waterlines(
                         &mut edit,

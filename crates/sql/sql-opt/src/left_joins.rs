@@ -1,7 +1,7 @@
 //! Expand a left join into matched and null-extended rows inside a recursive body.
 use crate::rebuild::{input_type, rebuild_input_closures};
 use crate::stream_rewrites::body_members;
-use feldera_sql_expr::reduce_closure_body;
+use feldera_sql_expr::{SimplifyWarning, reduce_closure_body, reduce_closure_body_with_warnings};
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId,
     OperatorKind as Op, OutputPort, TypeId,
@@ -30,7 +30,7 @@ fn unmatched_arguments(
     let mut column = |i| -> Result<NodeId, Error> {
         let field = edit.tuple_field(var, i)?;
         let field = edit.dereference(field)?;
-        let field = edit.clone_value(field)?;
+        let field = edit.clone_if_needed(field)?;
         Ok(edit.borrow_value(field)?.into())
     };
     let key = column(0)?;
@@ -62,6 +62,22 @@ pub fn empty_right_join_closure(
         ],
     )?;
     edit.closure_from_variables(edit.expression(call)?, &[var])
+}
+
+/// Inline the join body for the null-padded rows produced by the antijoin.
+pub fn unmatched_row_projection(
+    edit: &mut CircuitEditor,
+    function: NodeId,
+    indexed: TypeId,
+    next: &mut u64,
+    warnings: Option<&mut Vec<SimplifyWarning>>,
+) -> Result<ExpressionId, Error> {
+    let (row, args) = unmatched_arguments(edit, function, indexed, next)?;
+    let closure = edit.node(function)?;
+    let body = closure.edge("body")?;
+    let parameters = closure.edges("parameters")?;
+    let body = reduce_closure_body_with_warnings(edit, body, &parameters, &args, warnings)?;
+    edit.closure_from_variables(edit.expression(body)?, &[row])
 }
 
 pub fn substitute_left_joins(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
@@ -109,23 +125,10 @@ pub fn substitute_left_joins(circuit: Circuit, next: &mut u64) -> Result<Circuit
             &inputs,
             [("outputType", Field::Reference(left_type.into()))],
         )?;
-        let (var, args) = unmatched_arguments(&mut edit, function, left_type, &mut counter)?;
-        let closure = edit.node(function)?;
-        let body_expr = closure.edge("body")?;
-        let params = closure.edges("parameters")?;
-        let reduced = reduce_closure_body(&mut edit, body_expr, &params, &args)?;
-        let expr = edit.expression(reduced)?;
-        let collection = edit.zset_type(edit.expression_type(expr)?)?;
-        let projection = edit.closure_from_variables(expr, &[var])?;
-        let map = edit.append_operator(
-            body,
-            id,
-            Op::Map,
-            &[port(anti)],
-            [
-                ("outputType", Field::Reference(collection.into())),
-                ("function", Field::Reference(projection.into())),
-            ],
+        let projection =
+            unmatched_row_projection(&mut edit, function, left_type, &mut counter, None)?;
+        let (map, _) = crate::stream_rewrites::append_map(
+            &mut edit, body, id, Op::Map, port(anti), projection,
         )?;
         let sum = edit.append_operator(
             body,

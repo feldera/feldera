@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CloneOperatorsWithFanout;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
@@ -156,6 +157,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindUnboundedState.FindBounded bounded;
     @Nullable private final FindUnboundedState.CollectUnbounded unbounded;
     @Nullable private final Graph graph;
+    @Nullable private final CloneOperatorsWithFanout fanout;
     @Nullable private final HashPrefixPass hashPrefixes;
     @Nullable private final SetOperatorHashes setHashes;
     @Nullable private final MergeGC.MergeRetain mergeRetain;
@@ -209,6 +211,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.hashPrefixes = original instanceof HashPrefixPass prefix ? prefix : null;
         this.setHashes = original instanceof SetOperatorHashes set ? set : null;
         this.graph = original instanceof Graph graph ? graph : null;
+        this.fanout = original instanceof CloneOperatorsWithFanout fanout ? fanout : null;
         this.streaming = original instanceof FindUnboundedState.DetectStreamingOperations detector ? detector : null;
         this.bounded = original instanceof FindUnboundedState.FindBounded propagation ? propagation : null;
         this.unbounded = original instanceof FindUnboundedState.CollectUnbounded collect ? collect : null;
@@ -651,6 +654,11 @@ public final class RustCircuitPass implements CircuitTransform {
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> clockJoinFunctions(
             DBSPCompiler compiler, DBSPType row, DBSPType timestamp) {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/Join", row, DBSPTypeTuple.EMPTY, timestamp));
+    }
+
+    public static DBSPClosureExpression unmatchedRows(DBSPCompiler compiler, DBSPJoinBaseOperator join) {
+        return lowerFunction(compiler, "DeltaExpansion/UnmatchedRows", join.getClosureFunction(),
+                join.left().outputType(), DBSPClosureExpression.class);
     }
 
     public static DBSPClosureExpression clockIndex(DBSPCompiler compiler, DBSPType timestamp) {
@@ -1816,6 +1824,15 @@ public final class RustCircuitPass implements CircuitTransform {
             ToJsonOuterVisitor writer = null;
             if (this.seenConstants != null)
                 return this.applyCse(circuit);
+            if (this.fanout != null) {
+                var producers = this.invoke("Topology/FanoutProducers", OptimizerTopology.encode(circuit), initial, state);
+                if (producers.isEmpty())
+                    return circuit;
+                var selected = MAPPER.convertValue(producers, new TypeReference<Set<Long>>() {});
+                var payload = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, OptimizerTopology.Details.NONE);
+                var readers = this.invoke("FanoutReaders", payload.getJsonString().getBytes(StandardCharsets.UTF_8), initial, state);
+                return this.fanout.cloneSelected(circuit, MAPPER.convertValue(readers, new TypeReference<Set<Long>>() {}));
+            }
             if (this.commonProjections != null) {
                 this.findCommonProjections(circuit, initial, this.commonProjections);
                 return circuit;

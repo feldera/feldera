@@ -6,7 +6,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator.ComputationChain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator.ComputationKind;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
@@ -39,23 +41,31 @@ import org.junit.Test;
 
 public class ReplayTypeIdentityTests {
     @Test public void rankRetainsItsSerializedOutputType() throws Exception {
+        checkRankedOutputType(DBSPRankOperator.class,
+                "SELECT k, v, RANK() OVER (PARTITION BY k ORDER BY v) AS r FROM t");
+    }
+
+    @Test public void topKRetainsItsSerializedOutputType() throws Exception {
+        checkRankedOutputType(DBSPIndexedTopKOperator.class, """
+                SELECT * FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY v) AS r FROM t)
+                WHERE r <= 3""");
+    }
+
+    private static <T extends DBSPSimpleOperator> void checkRankedOutputType(Class<T> kind, String query)
+            throws Exception {
         var options = new CompilerOptions();
         options.languageOptions.incrementalize = true;
         var compiler = new DBSPCompiler(options);
-        compiler.submitStatementsForCompilation("""
-                CREATE TABLE t (k INT, v INT);
-                CREATE VIEW ranked AS SELECT k, v, RANK() OVER (PARTITION BY k ORDER BY v) AS r FROM t;
-                """);
+        compiler.submitStatementsForCompilation("CREATE TABLE t (k INT, v INT); CREATE VIEW ranked AS " + query + ";");
         var circuit = compiler.getFinalCircuit(false);
         compiler.throwIfErrorsOccurred();
-        var rank = circuit.allOperators.stream().filter(DBSPRankOperator.class::isInstance)
-                .map(DBSPRankOperator.class::cast).findFirst().orElseThrow();
+        var rank = circuit.allOperators.stream().filter(kind::isInstance).map(kind::cast).findFirst().orElseThrow();
         var writer = ToJsonOuterVisitor.createForReplay(compiler);
         writer.apply(circuit);
         var mapper = Utilities.deterministicObjectMapper();
         var decoder = new JsonDecoder();
         decoder.decodeOuter(mapper.readTree(writer.getJsonString()), DBSPCircuit.class);
-        var decodedRank = decoder.decodeOuter(mapper.createObjectNode().put("node", rank.id), DBSPRankOperator.class);
+        var decodedRank = decoder.decodeOuter(mapper.createObjectNode().put("node", rank.id), kind);
         var typeReference = mapper.createObjectNode().put("node", rank.outputType.getId());
         Assert.assertSame(decodedRank.outputType, decoder.decodeInner(typeReference, DBSPTypeIndexedZSet.class));
     }

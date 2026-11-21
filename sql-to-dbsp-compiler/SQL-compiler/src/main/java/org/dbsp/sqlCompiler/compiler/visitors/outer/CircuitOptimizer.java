@@ -132,13 +132,14 @@ public class CircuitOptimizer extends Passes {
         boolean supported;
         if (pass instanceof OptimizeWithGraph graph) {
             supported = switch (pass.getName()) {
-                case "RemoveNoops", "PushDifferentialsUp", "CloneOperatorsWithFanout", "BalancedJoins", "ChainVisitor", "StrayGC" -> true;
+                case "RemoveNoops", "PushDifferentialsUp", "BalancedJoins", "ChainVisitor", "StrayGC" -> true;
                 default -> false;
             };
             if (!supported && graph.transform instanceof Passes iteration)
                 iteration.passes.replaceAll(this::selectImplementation);
         } else {
             supported = pass instanceof LowerCircuitVisitor
+                    || pass instanceof CloneOperatorsWithFanout
                     || pass instanceof Graph || pass instanceof CreateStarJoins.FindJoinTrees
                     || pass instanceof FuseExpensiveMaps.Fuse || pass instanceof CreateStarJoins.ReplaceStarJoins
                     || pass instanceof LowerAsof.LowerAsofInner || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies

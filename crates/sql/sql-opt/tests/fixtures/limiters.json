@@ -52,6 +52,12 @@
   "emitFinalAfterMapAndFilter": {
     "sql": "CREATE TABLE t(x INTEGER NOT NULL, ts BIGINT NOT NULL LATENESS 2); CREATE VIEW v WITH ('emit_final' = 'b') AS SELECT ts + 1 AS b, x FROM t WHERE x > 0;"
   },
+  "emitFinalAfterHop": {
+    "sql": "CREATE TABLE events(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE); CREATE VIEW v WITH ('emit_final' = 'window_start') AS SELECT window_start, window_end FROM TABLE(HOP(TABLE events, DESCRIPTOR(ts), INTERVAL '5' MINUTE, INTERVAL '10' MINUTE));"
+  },
+  "emitFinalAfterUnnest": {
+    "sql": "CREATE TABLE events(ts BIGINT NOT NULL LATENESS 1, vals INT ARRAY); CREATE VIEW v WITH ('emit_final' = 'ts') AS SELECT ts, n FROM events CROSS JOIN UNNEST(vals) AS u(n);"
+  },
   "emitFinalMissingWaterline": {
     "sql": "CREATE TABLE t(ts BIGINT LATENESS 1, other BIGINT); CREATE VIEW v WITH ('emit_final' = 'other') AS SELECT * FROM t;",
     "error": "Could not infer a waterline for column 'v'.'other' which has an 'emit_final' annotation"

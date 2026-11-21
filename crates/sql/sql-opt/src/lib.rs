@@ -173,7 +173,7 @@ pub use error_consumers::{error_consumers, ErrorConsumerOrder};
 pub use error_wrappers::create_runtime_error_wrappers;
 pub use expand_aggregates::{expand_stream_aggregates, AggregateContext, ExpandedAggregates};
 pub use expression_visitor::{ensure_expression_trees, simplify_expressions};
-pub use fanout::{clone_operators_with_fanout, optimize_fanout};
+pub use fanout::{clone_operators_with_fanout, fanout_producers, fanout_readers, optimize_fanout};
 pub use feldera_sql_expr::adjust_sql_index;
 pub use feldera_sql_expr::CastSafety;
 pub use filter_joins::filter_joins;
@@ -189,7 +189,9 @@ pub use identity::{identity_closure, remove_identity_operators};
 pub use incrementalize::incrementalize;
 pub use indexed_inputs::{expand_indexed_inputs, IndexOptions};
 pub use integrate::remove_redundant_integrates;
-pub use left_joins::{empty_right_join_closure, remove_useless_left_joins, substitute_left_joins};
+pub use left_joins::{
+    empty_right_join_closure, remove_useless_left_joins, substitute_left_joins, unmatched_row_projection,
+};
 pub use linear_retention::{linear_postprocess_retain_keys, linear_retention_order};
 pub use merge_gc::{
     merge_retention_policies, retention_groups, share_trace_inputs, RetentionGroup, SharedTraceInputs,

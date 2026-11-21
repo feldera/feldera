@@ -6,7 +6,7 @@ use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, ExpressionKind as Expr, InnerKind, Node, NodeId,
     OperatorKind as Op, TypeKind,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub(super) fn expensive(circuit: &Circuit, root: NodeId) -> Result<bool, Error> {
     let mut pending = vec![root];
@@ -96,27 +96,48 @@ pub(super) fn has_candidates(circuit: &Circuit) -> Result<bool, Error> {
     Ok(!candidates(circuit)?.is_empty())
 }
 
+/// Only these producers need their closure serialized for the live cost check.
+pub fn fanout_producers(circuit: &Circuit) -> Result<BTreeSet<NodeId>, Error> {
+    Ok(candidates(circuit)?
+        .into_iter()
+        .map(|site| site.producer)
+        .collect())
+}
+
+/// Readers that get a private copy of their input in this iteration.
+pub fn fanout_readers(circuit: &Circuit) -> Result<Vec<NodeId>, Error> {
+    Ok(cheap_sites(circuit)?
+        .into_iter()
+        .map(|site| site.consumer)
+        .collect())
+}
+
 /// One Java visitor invocation. The graph is measured before any clones are added.
 pub fn clone_operators_with_fanout(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
     Ok(clone_once(circuit, next)?.0)
 }
 
-fn clone_once(circuit: Circuit, next: &mut u64) -> Result<(Circuit, bool), Error> {
+fn cheap_sites(circuit: &Circuit) -> Result<Vec<Site>, Error> {
     let mut costs = HashMap::new();
     let mut sites = Vec::new();
-    for site in candidates(&circuit)? {
+    for site in candidates(circuit)? {
         let node = circuit.node(site.producer).expect("validated producer");
         let function = node.edge("function")?;
         let cost = match costs.entry(function) {
             std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),
             std::collections::hash_map::Entry::Vacant(entry) => {
-                *entry.insert(expensive(&circuit, function)?)
+                *entry.insert(expensive(circuit, function)?)
             }
         };
         if !cost {
             sites.push(site);
         }
     }
+    Ok(sites)
+}
+
+fn clone_once(circuit: Circuit, next: &mut u64) -> Result<(Circuit, bool), Error> {
+    let sites = cheap_sites(&circuit)?;
     if sites.is_empty() {
         return Ok((circuit, false));
     }
