@@ -4009,6 +4009,82 @@
           ]
         }
       }
+    },
+    {
+      "profile": "Hash membership in the circuit writer, with concurrent compiler verification on other cores",
+      "native_pass_kinds": 99,
+      "inputs_sha256": {
+        "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+        "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+        "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+      },
+      "jar_or_classpath_sha256": {
+        "/stage/p3-verified-u0m6raxd/hashed-membership/maven/sql-compiler.jar": "294b0990a007b9e7ae7790fb24159bbb234c2244467a056f64a82544588a5ced"
+      },
+      "compiler_sha256": "1d016ed83c28ee70068c85ea3419f760f339ed5dee1b9281692475223324ed9c",
+      "jni_sha256": "2316209ac4dd71db024a3096c5b8bc0cc1e34036d59034c37251ce02f0d0e55e",
+      "logical_cpus": [
+        15
+      ],
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n",
+      "matched_pairs": 69,
+      "raw_pairs_sha256": "d8de455495256883dee91fa8b1fd4d9431ea24d9224fad176dc58c21a1244321",
+      "environment_sha256": "ca7cb294fd7d986d1da92ca903e2b7e6ba4050cd1149e9677d8e0d82bcb61d54",
+      "workspace_archive": ".bench-results/p3-live-compiler/2026-21-11-08-54-54727",
+      "results": {
+        "array-subquery.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.354481615,
+            "empirical_p95_seconds": 3.49463968
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 1.863813741,
+            "empirical_p95_seconds": 2.805742412
+          },
+          "p95_ratio": 1.2455311881281852,
+          "mean_ratio_paired_95pct_interval": [
+            1.14607153735702,
+            1.271276526539558
+          ]
+        },
+        "nexmark-suite.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 10.573814916,
+            "empirical_p95_seconds": 14.420455758
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 4.228910699,
+            "empirical_p95_seconds": 6.828440168
+          },
+          "p95_ratio": 2.1118228179809395,
+          "mean_ratio_paired_95pct_interval": [
+            2.29859108523104,
+            2.484485267615886
+          ]
+        },
+        "outer-join.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.031779523,
+            "empirical_p95_seconds": 2.356956326
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 1.701057255,
+            "empirical_p95_seconds": 1.940932854
+          },
+          "p95_ratio": 1.2143420217462093,
+          "mean_ratio_paired_95pct_interval": [
+            1.1833054554003803,
+            1.2672141001164352
+          ]
+        }
+      }
     }
   ],
   "nexmark_profile": {

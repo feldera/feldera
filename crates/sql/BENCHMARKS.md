@@ -14,11 +14,13 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.37 | 1.68 | 1.41 | 1.74 | 1.237× |
-| Nexmark suite | 3.11 | 7.62 | 3.19 | 7.77 | 2.435× |
-| Outer join | 1.30 | 1.52 | 1.31 | 1.57 | 1.198× |
+| Correlated array subquery | 1.86 | 2.35 | 2.81 | 3.49 | 1.246× |
+| Nexmark suite | 4.23 | 10.57 | 6.83 | 14.42 | 2.112× |
+| Outer join | 1.70 | 2.03 | 1.94 | 2.36 | 1.214× |
 
-The table measures the static-declaration build at `a039e2fda` on November 21. All 69 pairs on CPU 15 matched on diagnostics and artifacts. The directed limiter comparisons overlapped the beginning of this run. The full corpus and restore runs started after the benchmark.
+The table measures the circuit-writer build at `5472764d0` on November 21. All 69 pairs on CPU 15 matched on diagnostics and artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently. All three p95 ratios exceeded 1.2×. [Raw pair digests and summaries](evidence/p3-hybrid-latency.json)
+
+The static-declaration build at `a039e2fda` measured 1.237×, 2.435× and 1.198× in workload order. The directed limiter comparisons overlapped the beginning of that run. The full corpus and restore runs started after that benchmark.
 
 The isolated snapshot join build at `65fbccc7f` measured 1.239×, 2.843× and 1.189× in workload order.
 On a captured Nexmark fanout rewrite, tracking emitted nodes in a preallocated
