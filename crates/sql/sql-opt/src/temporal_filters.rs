@@ -1,10 +1,41 @@
 //! Split temporal conjunctions and disjunctions before implementing NOW windows.
 use crate::{filters::rewrite_filters, function_calls::contains_now};
-use feldera_sql_expr::{simplify_closure_with_warnings, SimplifyWarning};
+use feldera_sql_expr::{SimplifyWarning, simplify_closure_with_warnings};
 use feldera_sql_ir::{
-    Circuit, CircuitEditor, Error, ExpressionKind as Expr, Field, NodeId, OperatorKind as Op,
-    OutputPort,
+    BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
+    OperatorKind as Op, OutputPort,
 };
+
+/// Combine two compatible temporal bounds on a single row. Both calls use the
+/// same parameter. Reducing the completed closure preserves shared expressions.
+pub fn merge_temporal_predicates(
+    edit: &mut CircuitEditor,
+    source: ExpressionId,
+    filter: ExpressionId,
+    next: &mut u64,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let [parameter] = edit
+        .node(source.into())?
+        .edges("parameters")?
+        .try_into()
+        .map_err(|_| Error::new("a temporal filter requires one row parameter"))?;
+    let input = edit.type_id(edit.node(parameter)?.edge("type")?)?;
+    let row = edit.variable(input, next)?;
+    let left = edit.call_closure(source, &[row])?;
+    let right = edit.call_closure(filter, &[row])?;
+    let result = edit.expression_type(right)?;
+    let both = edit.binary_expression(source.into(), result, BinaryOp::And, left, right)?;
+    let closure = edit.closure_from_variables(both, &[row])?;
+    let reduced = feldera_sql_expr::reduce_closure_body_with_warnings(
+        edit,
+        closure.into(),
+        &[],
+        &[],
+        Some(warnings),
+    )?;
+    edit.expression(reduced)
+}
 
 pub fn break_temporal_filters(
     circuit: Circuit,

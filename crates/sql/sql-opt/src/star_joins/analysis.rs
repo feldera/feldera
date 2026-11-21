@@ -30,28 +30,6 @@ fn reference_variable(
     edit.variable(ty, next)
 }
 
-fn apply(
-    edit: &mut CircuitEditor,
-    function: ExpressionId,
-    args: &[ExpressionId],
-) -> Result<ExpressionId, Error> {
-    let ty = edit.expression_type(function)?;
-    let result = edit.node(ty.into())?.edge("resultType")?;
-    let call = edit.empty_origin_node(
-        function.into(),
-        InnerKind::Expression(Expr::Apply),
-        [
-            ("type", Field::Reference(result)),
-            ("function", Field::Reference(function.into())),
-            (
-                "arguments",
-                Field::Array(args.iter().map(|&a| Field::Reference(a.into())).collect()),
-            ),
-        ],
-    )?;
-    edit.expression(call)
-}
-
 /// A child index may compute its output key from the joined rows. Project that key,
 /// substitute placeholders for both value arguments, and test for the identity.
 fn preserves_key(
@@ -149,7 +127,7 @@ impl Candidates {
                 child_arguments.push(value);
             }
             let value = if let Some(child) = child {
-                let result = apply(edit, child.closure, &child_arguments)?;
+                let result = edit.call_closure(child.closure, &child_arguments)?;
                 let value = edit.tuple_field(result, 1)?;
                 let borrowed = edit.borrow_value(value)?;
                 let reduced = reduce_closure_body(edit, borrowed.into(), &[], &[])?;
@@ -159,7 +137,7 @@ impl Candidates {
             };
             arguments.push(value);
         }
-        let call = apply(edit, binary, &arguments)?;
+        let call = edit.call_closure(binary, &arguments)?;
         let closure = edit.closure_from_variables(call, &parameters)?;
         Ok(Tree {
             operator: None,

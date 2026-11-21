@@ -576,6 +576,11 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public static DBSPClosureExpression mergeTemporalPredicates(DBSPCompiler compiler,
+            DBSPClosureExpression source, DBSPClosureExpression filter) {
+        return lowerFunction(compiler, "MergeFilters/Predicate", source, filter, DBSPClosureExpression.class);
+    }
+
     public static DBSPClosureExpression asofIndex(DBSPCompiler compiler, DBSPVariablePath pair,
             DBSPExpression comparator, boolean left) {
         return lowerFunction(compiler, left ? "Asof/LeftIndex" : "Asof/RightIndex", pair, comparator,

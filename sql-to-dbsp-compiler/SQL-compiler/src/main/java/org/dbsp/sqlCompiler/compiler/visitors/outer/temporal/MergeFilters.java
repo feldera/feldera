@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -66,16 +67,22 @@ public class MergeFilters extends CircuitCloneVisitor {
             return;
         }
 
+        DBSPExpression combined = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.mergeTemporalPredicates(this.compiler, sourceFunction, function)
+                : this.mergePredicates(sourceFunction, function);
+        DBSPFilterOperator newFilter = new DBSPFilterOperator(filter.getRelNode(), combined, source.input());
+        this.map(filter, newFilter);
+    }
+
+    private DBSPExpression mergePredicates(DBSPClosureExpression sourceFunction, DBSPClosureExpression function) {
         Utilities.enforce(sourceFunction.parameters.length == 1);
         Utilities.enforce(function.parameters.length == 1);
         DBSPVariablePath var = sourceFunction.parameters[0].getType().var();
-        DBSPExpression combined = ExpressionCompiler.makeBinaryExpression(
+        return ExpressionCompiler.makeBinaryExpression(
                 sourceFunction.getNode(),
                 function.getResultType(),
                 DBSPOpcode.AND,
                 sourceFunction.call(var),
                 function.call(var)).closure(var).reduce(this.compiler);
-        DBSPFilterOperator newFilter = new DBSPFilterOperator(filter.getRelNode(), combined, source.input());
-        this.map(filter, newFilter);
     }
 }

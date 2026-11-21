@@ -204,7 +204,7 @@ pub use stream_rewrites::{
 pub use sums::merge_sums;
 pub use temporal_comparisons::{classify_temporal_predicates, TemporalPredicate, TemporalPredicatePart};
 pub use temporal_equality::desugar_now_equality;
-pub use temporal_filters::break_temporal_filters;
+pub use temporal_filters::{break_temporal_filters, merge_temporal_predicates};
 pub use topology::needs_full_snapshot;
 pub use trace_integrators::{separate_integrators, snapshot_aggregate};
 pub use trace_retention::{

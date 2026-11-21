@@ -13,6 +13,29 @@ pub struct RefParameter {
 }
 
 impl CircuitEditor {
+    /// Construct a call before beta reduction, retaining the closure's result type.
+    pub fn call_closure(
+        &mut self,
+        function: ExpressionId,
+        arguments: &[ExpressionId],
+    ) -> Result<ExpressionId, Error> {
+        let ty = self.expression_type(function)?;
+        let result = self.node(ty.into())?.edge("resultType")?;
+        let call = self.empty_origin_node(
+            function.into(),
+            InnerKind::Expression(Expr::Apply),
+            [
+                ("type", Field::Reference(result)),
+                ("function", Field::Reference(function.into())),
+                (
+                    "arguments",
+                    refs(arguments.iter().copied().map(NodeId::from)),
+                ),
+            ],
+        )?;
+        self.expression(call)
+    }
+
     /// Call an iterator method whose result type is inferred by Rust.
     pub fn iterator_method(
         &mut self,
