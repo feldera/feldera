@@ -1,0 +1,46 @@
+{
+  "scope": "Compare the Rust shared projection insertion and reader rewrites against every frozen Java pass boundary, using the closures from the preceding analysis.",
+  "comparator_sha256": "eda68b99c3c017a8741da735e1adf976a4a105c5be4e645b520f38daf9076c85",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "1c5a0cf4020d5dc5a8491a1054725ee1b7f68d6c046550fbe2a28c7137a02178",
+      "b6d5016a140825952e976fd77219d5a1a0e452954c84ac12e802d7bbe677bcfa",
+      "00950e05bd44bb268cb4535ba79ede665d767c5cd50373e397fb02a9c4b6b950",
+      "1f6b5bba3f818cb4e87a71272e787add77027738158aef4ff3f53800e4cac276"
+    ],
+    "pass": "ReplaceCommonProjections",
+    "invocations": 25214,
+    "changed": 512,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "ca0361244aaf70f669183baeee05618784541eb9596dc64c9d8033edc72f1fa6",
+      "fd0d1ecd54c0fdd2ee57d5fa905ba5fd30c833a36b5f92cad5e2eb1009028603",
+      "0dfed1201bad9e19aa9d088b2cc68e497aa315ed5e627ad6db88ad17c8a682d6",
+      "34ff3c07dc708cb5d507cc2afababc6b4cbf8287a43e1a3226c7d15cb5bdd85d"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "a595691b3d00eebfa394ca818891a97a051e588a0b38750e7243fa77b7bd87f4",
+      "a68b13a38587d9985a306c246e95d70b1debe1fadc406e3f5d6362b502a9f32b",
+      "c4c5c29c0eb9a76a3f3d7fd7ed388f4ab8b9dc0957a47705c4a1d1369d48ea0b",
+      "5373db084dc656f0b2c2653277bdeac81fa8d44b5a7030608ced738471005367"
+    ],
+    "pass": "ReplaceCommonProjections",
+    "invocations": 25060,
+    "changed": 512,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "229d97cb3b12c8e67fd2bf300dec4ba5a59a736f3d5f9607be536628ac28ab2c",
+      "9e1c2a72e9fdb829dedd7a78da1d8e4f897b46923d1fde4747c6fa86962220d1",
+      "e04b02caee2b2d4efb6801caa96395fa7653874bb1e282248ebbbc4effd1dc09",
+      "a3386354589a68b782bfa800483d89caf69999508d703625caaeeec71dc1c5ba"
+    ]
+  }
+}

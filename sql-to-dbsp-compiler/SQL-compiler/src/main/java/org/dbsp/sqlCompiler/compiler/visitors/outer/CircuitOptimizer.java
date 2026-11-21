@@ -137,6 +137,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof MergeGC.FindMultipleRetains || pass instanceof CollapseSharedChains || pass instanceof RemoveUselessLeftJoinsVisitor
                     || pass instanceof FindWindowGroups || pass instanceof ImplementWindowGroups
                     || pass instanceof FindMapChains || pass instanceof DuplicateSharedIndexes
+                    || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections
                     || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs
                     || pass instanceof ExpandIndexedInputs.IndexedInputs || pass instanceof ExpandAggregates.ExpandStreamAggregates

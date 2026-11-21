@@ -53,7 +53,7 @@ def read_run(directory, entry):
 # Counts for one uninterrupted top-level optimizer sequence in the frozen replay.
 # The case options, rather than the population label, determine the Gen-2 placement.
 FROZEN_SCHEDULE = {
-    "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
+    "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
     "Graph": 11, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
     "DetectStreamingOperations": 1, "FindGCedStreams": 1, "CollectUnbounded": 1, "FindBounded": 2, "EnsureExpressionTrees": 1, "MultisetAnalysis": 3, "OptimizeDistinctVisitor": 1,
@@ -119,9 +119,10 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
     if unused_field_iterations is not None:
         if type(unused_field_iterations) is not int or unused_field_iterations < 1:
             raise ValueError(f"{case}: invalid Java unused-field iterations {unused_field_iterations}")
-        if "FindCommonProjections" in expected:
-            # ExpandIndexedInputs also runs this analysis once after the loop.
-            expected["FindCommonProjections"] += unused_field_iterations
+        # ExpandIndexedInputs also runs both shared-projection passes once after the loop.
+        for name in ("FindCommonProjections", "ReplaceCommonProjections"):
+            if name in expected:
+                expected[name] += unused_field_iterations
         expected["CSE"] += unused_field_iterations
         expected["DeadCode"] += 2 * unused_field_iterations
         if "Graph" in expected:

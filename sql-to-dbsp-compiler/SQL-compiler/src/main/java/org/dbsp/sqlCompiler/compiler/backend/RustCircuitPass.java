@@ -52,6 +52,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.CircuitContainsNow;
@@ -116,6 +117,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindUnusedInputFields inputFields;
     @Nullable private final TrimInputs trimInputs;
     @Nullable private final FindCommonProjections commonProjections;
+    @Nullable private final ReplaceCommonProjections replaceCommon;
     @Nullable private final MultisetAnalysis multiplicities;
     @Nullable private final EnsureDistinctOutputs distinctOutputs;
     @Nullable private final CircuitContainsNow clockUses;
@@ -149,6 +151,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.bounded = original instanceof FindUnboundedState.FindBounded propagation ? propagation : null;
         this.unbounded = original instanceof FindUnboundedState.CollectUnbounded collect ? collect : null;
         this.garbageCollected = original instanceof FindUnboundedState.FindGCedStreams streams ? streams : null;
+        this.replaceCommon = original instanceof ReplaceCommonProjections replace ? replace : null;
         this.commonProjections = original instanceof FindCommonProjections common ? common : null;
         this.trimInputs = original instanceof TrimInputs trim ? trim : null;
         this.inputFields = original instanceof FindUnusedInputFields fields ? fields : null;
@@ -756,6 +759,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 this.findCommonProjections(circuit, initial, this.commonProjections);
                 return circuit;
             }
+            if (this.replaceCommon != null && this.replaceCommon.analysis().outputProjection.isEmpty())
+                return circuit;
             if (this.trimInputs != null) {
                 var layouts = this.trimInputs.layouts();
                 if (layouts.isEmpty())
@@ -988,7 +993,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 writer = this.snapshots.writer();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
-                if (state == EMPTY_CONTEXT)
+                if (this.replaceCommon != null)
+                    state = SharedProjectionState.encode(writer, this.replaceCommon.analysis());
+                else if (state == EMPTY_CONTEXT)
                     state = this.passState(circuit, writer);
                 result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                         initial, state);

@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.ProvenanceCodec;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelReference;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -44,6 +46,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
@@ -501,6 +504,20 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     public void postorder(DBSPCircuit circuit) {
         super.postorder(circuit);
         this.stream.endObject();
+    }
+
+    /** Origin of a synthesized operator, in this snapshot's relational identity space. */
+    public JsonNode emptyRelOrigin() {
+        return Objects.requireNonNull(this.provenance).encode(CalciteEmptyRel.INSTANCE);
+    }
+
+    /** Serialize pass inputs that refer to nodes in the circuit snapshot. */
+    public ToJsonInnerVisitor additionalInnerNodes() {
+        var inner = new ToJsonInnerVisitor(this.compiler, JsonStream.compactCircuit(),
+                this.verbosity, this.innerVisitor.replayMetadata);
+        inner.serialized.addAll(this.innerVisitor.serialized);
+        inner.liveShuffles = this.innerVisitor.liveShuffles;
+        return inner;
     }
 
     public String getJsonString() {

@@ -8,6 +8,8 @@ mod balanced_joins;
 mod chains;
 mod collapse_shared_chains;
 mod comparators;
+mod replace_projections;
+pub use replace_projections::{replace_common_projections, ProjectionClosures};
 mod common_projections;
 pub use common_projections::{common_projection_payloads, common_projections, CommonProjection};
 mod conditionals;

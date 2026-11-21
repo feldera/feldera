@@ -321,6 +321,38 @@ impl Circuit {
         wire::decode(value)
     }
 
+    /// Decode additional expression roots written in this circuit's identity space.
+    /// A root can refer to the snapshot or to another expression in the same batch.
+    pub fn with_inner_roots(
+        mut self,
+        expressions: impl IntoIterator<Item = Value>,
+    ) -> Result<(Self, Vec<NodeId>), Error> {
+        let mut extra = BTreeMap::new();
+        let mut roots = Vec::new();
+        for expression in expressions {
+            let root = wire::read(expression, false, &mut extra, 0)?
+                .node_id()
+                .ok_or_else(|| Error::new("expected a serialized inner node"))?;
+            roots.push(root);
+        }
+        let ids: Vec<_> = extra.keys().copied().collect();
+        for (id, node) in extra {
+            if !matches!(id, NodeId::Inner(_)) || self.nodes.contains_key(&id) {
+                return Err(Error(format!("invalid additional inner node {id:?}")));
+            }
+            self.nodes.insert(id, node);
+        }
+        for id in ids {
+            for field in self.nodes[&id].fields.values() {
+                wire::check_links(field, &self.nodes)?;
+            }
+        }
+        for &root in &roots {
+            wire::check_links(&Field::Reference(root), &self.nodes)?;
+        }
+        Ok((self, roots))
+    }
+
     pub fn to_json(&self) -> Value {
         wire::encode_node(self.root, &self.nodes)
     }

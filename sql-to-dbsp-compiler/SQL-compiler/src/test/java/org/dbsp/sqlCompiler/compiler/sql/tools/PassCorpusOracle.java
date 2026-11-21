@@ -104,7 +104,16 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("container", container).put("index", index).put("iteration", iteration);
         this.active.put("instance", this.instances.computeIfAbsent(pass, ignored -> this.instances.size()));
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
-        this.active.set("before", this.snapshot(circuit));
+        var writer = this.snapshotWriter(circuit);
+        this.active.set("before", this.snapshot(writer));
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections replace) {
+            var state = org.dbsp.sqlCompiler.compiler.backend.SharedProjectionState.encode(writer, replace.analysis());
+            try {
+                this.active.set("projection_closures", org.dbsp.util.Utilities.deterministicObjectMapper().readTree(state));
+            } catch (java.io.IOException error) {
+                throw new java.io.UncheckedIOException(error);
+            }
+        }
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs trim)
             this.active.set("input_layouts", org.dbsp.util.Utilities.deterministicObjectMapper().valueToTree(trim.layouts()));
         if (this.passClass.equals("FindUnusedInputFields"))

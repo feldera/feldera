@@ -31,6 +31,10 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
         this.preservesTypes = false;
     }
 
+    public FindCommonProjections analysis() {
+        return this.fcp;
+    }
+
     public boolean process(DBSPSimpleOperator operator) {
         if (this.fcp.outputProjection.containsKey(operator)) {
             List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);

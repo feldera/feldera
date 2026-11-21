@@ -42,7 +42,7 @@ class FrozenPlacements(unittest.TestCase):
                               False, cast_iterations=iterations)
 
     def test_unused_fields_runs_cse_and_two_dead_code_passes_per_iteration(self):
-        counts = {**FROZEN_SCHEDULE, "FindCommonProjections": 4, "CSE": FROZEN_SCHEDULE["CSE"] + 3,
+        counts = {**FROZEN_SCHEDULE, "FindCommonProjections": 4, "ReplaceCommonProjections": 4, "CSE": FROZEN_SCHEDULE["CSE"] + 3,
                   "DeadCode": FROZEN_SCHEDULE["DeadCode"] + 6, "Graph": FROZEN_SCHEDULE["Graph"] + 6}
         verify_placements("three iterations", counts, False, unused_field_iterations=3)
         with self.assertRaisesRegex(ValueError, "Rust placements"):

@@ -545,6 +545,8 @@ fn transform(
         "RemoveIdentityOperators" => {
             feldera_sql_opt::remove_identity_operators(circuit, &mut next)?
         }
+        "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
+            circuit, serde_json::from_slice(state)?, &mut next)?,
         "TrimInputs" => {
             feldera_sql_opt::trim_inputs(circuit, &serde_json::from_slice(state)?, &mut next)?
         }

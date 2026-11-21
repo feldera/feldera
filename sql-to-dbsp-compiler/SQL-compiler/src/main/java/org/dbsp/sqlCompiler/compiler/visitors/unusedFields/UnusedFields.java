@@ -71,7 +71,7 @@ public class UnusedFields extends Passes {
                 this.add(select.apply(graph));
                 FindCommonProjections fcp = new FindCommonProjections(compiler, graph.getGraphs());
                 this.add(select.apply(fcp));
-                this.add(new ReplaceCommonProjections(compiler, fcp));
+                this.add(select.apply(new ReplaceCommonProjections(compiler, fcp)));
                 this.add(select.apply(new OptimizeWithGraph(compiler,
                         g -> new TrimFilters(compiler, g, mapAfterFilter), 1)));
                 this.add(select.apply(new OptimizeWithGraph(compiler,

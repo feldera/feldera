@@ -120,6 +120,8 @@ fn compare_invocation(
             }
             input
         }
+        "ReplaceCommonProjections" => feldera_sql_opt::replace_common_projections(
+            input, serde_json::from_value(invocation["projection_closures"].clone())?, &mut next)?,
         "TrimInputs" => feldera_sql_opt::trim_inputs(
             input,
             &serde_json::from_value(invocation["input_layouts"].clone())?,

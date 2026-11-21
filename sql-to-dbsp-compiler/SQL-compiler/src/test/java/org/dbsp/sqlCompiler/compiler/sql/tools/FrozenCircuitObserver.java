@@ -31,8 +31,16 @@ abstract class FrozenCircuitObserver implements DBSPCompiler.StateObserver {
     }
 
     final JsonNode snapshot(DBSPCircuit circuit) {
+        return snapshot(snapshotWriter(circuit));
+    }
+
+    final ToJsonOuterVisitor snapshotWriter(DBSPCircuit circuit) {
         var writer = ToJsonOuterVisitor.createForReplay(this.compiler, this.renderedSql);
         writer.apply(circuit);
+        return writer;
+    }
+
+    final JsonNode snapshot(ToJsonOuterVisitor writer) {
         try {
             return Utilities.deterministicObjectMapper().readTree(writer.getJsonString());
         } catch (JsonProcessingException error) {

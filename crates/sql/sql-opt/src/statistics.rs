@@ -177,7 +177,7 @@ fn port_width(
     type_width(circuit, ty, widths, 0)
 }
 
-fn type_width(
+pub(super) fn type_width(
     circuit: &Circuit,
     id: NodeId,
     widths: &mut BTreeMap<NodeId, usize>,
