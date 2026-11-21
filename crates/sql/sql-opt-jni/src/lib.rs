@@ -559,6 +559,7 @@ fn transform(
             feldera_sql_opt::remove_identity_operators(circuit, &mut next)?
         }
         "MoveGC" => feldera_sql_opt::move_asof_retention(circuit, serde_json::from_slice(state)?, &mut next)?,
+        "CanonicalForm" => feldera_sql_opt::canonicalize_names(circuit, &mut next)?,
         "ReplaceStarJoins" => feldera_sql_opt::replace_star_joins(
             circuit, serde_json::from_slice(state)?, &mut next,
         )?,

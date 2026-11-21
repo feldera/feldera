@@ -5891,6 +5891,7 @@ dependencies = [
  "feldera-sql-ir",
  "num-bigint 0.4.8",
  "num-traits",
+ "serde_json",
  "uuid",
 ]
 

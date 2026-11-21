@@ -1,0 +1,46 @@
+{
+  "scope": "Compare canonical parameter and local names, aggregate copies and shared types against the Java circuit, including generated-name counters and unchanged declarations.",
+  "comparator_sha256": "f65d9588e70cc6c3d7beb9c0637ad93a2b0c9d441be1c2de5b164b376d1886d3",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "d5d6b5b7c1ab8ee41f1589456780002f6dd19a0b86a49f2e911a55ded842d4bf",
+      "4eeb2c4e1ae883f2198a45405c3881fb21f1de7cb750bebfa7f75a255eb373ac",
+      "e5f0b3f55aa6fe074f4f74f02a685bd358c2a7b7da5618cb1e7d9d405419f719",
+      "a97b898e843c369d3c26542bb98b5773f7c354566da77fb0108c49d30a87a96e"
+    ],
+    "pass": "CanonicalForm",
+    "invocations": 8571,
+    "changed": 6930,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "d9ca18d053af57d87b73a39489b884011ecaa78d823dc6231e00b79645f58e92",
+      "0ae502d14f4c409944f72e88df2773194af1d77a53e676238d38241620472d52",
+      "2db4bbe6388e45acf940c69ec2b53deaff7589293da3cd58247296f405c4f4aa",
+      "70024507b71e3860fc616f7f2e2df30517ca86c346d7463398ff502206d054e9"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "140e8df6641466efd4041df4304814de764b3b66ad02ad9e076847df9d61a84c",
+      "df9f003b83bf00b54596771c1ed944b52a36263212ee9b2ff204b84c59989d40",
+      "b423b27eae74ed080c661efb5a88fcc97431feabb28f442edd61bff3fd637af6",
+      "121de03c785bb278896494ea2dc83c53521abea829169a35b071abc047f7a541"
+    ],
+    "pass": "CanonicalForm",
+    "invocations": 8527,
+    "changed": 6906,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "fc8bd758bf67584865dcc760092ec66c476663d5c158eb255b3b97d9184a18b0",
+      "ab44045f55ead76c8546796882920bbea891b740aa8a92aabec9519c88f02341",
+      "cf77cc33979d36331393aa6f4e776adc7b68bc98570e53191d8a76b4f31e2b94",
+      "639110d58686d466ab020fb2c4f70d66745fb484e3b709adb8b30c430d804157"
+    ]
+  }
+}

@@ -135,6 +135,32 @@ pub fn ensure_expression_trees(circuit: Circuit, next: &mut u64) -> Result<Circu
     })
 }
 
+/// Canonicalize the bindings in each operator expression independently.
+pub fn canonicalize_names(circuit: Circuit, next: &mut u64) -> Result<Circuit, Error> {
+    rewrite_expressions(circuit, next, |edit, root, context, _| match context {
+        Context::Declaration => Ok(root),
+        _ => {
+            let result = feldera_sql_expr::canonicalize_names(edit, root)?;
+            if let Context::Operator(id) = context {
+                if root != result
+                    && matches!(
+                        edit.node(id)?.operator_kind(),
+                        Some(Op::Constant | Op::IncrementalConstant)
+                    )
+                {
+                    let ty = edit.node(result)?.edge("type")?;
+                    edit.set_operator_field(
+                        id,
+                        "outputType",
+                        feldera_sql_ir::Field::Reference(ty),
+                    )?;
+                }
+            }
+            Ok(result)
+        }
+    })
+}
+
 /// Apply one scalar simplification pass to each declaration and operator expression.
 pub fn simplify_expressions(
     circuit: Circuit,

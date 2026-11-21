@@ -1,5 +1,8 @@
 //! Shared transformations of circuit expressions and types.
 
+pub mod constant_rows;
+mod canonical;
+pub use canonical::canonicalize_names;
 mod tree;
 pub use tree::{copy_expression, ensure_expression_tree};
 mod beta;

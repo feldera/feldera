@@ -73,7 +73,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
 
     private boolean selected(CircuitTransform pass) {
         if (this.passClass.equals("ExpandSafeCasts") || this.passClass.equals("ExpandUnsafeCasts")
-                || this.passClass.equals("EnsureExpressionTrees") || this.passClass.equals("UDFInliner")
+                || this.passClass.equals("EnsureExpressionTrees") || this.passClass.equals("CanonicalForm")
+                || this.passClass.equals("UDFInliner")
                 || this.passClass.equals("SimplifyConditionals")
                 || this.passClass.equals("Simplify") || this.passClass.equals("SimplifyWaterline"))
             return pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter

@@ -2,11 +2,11 @@
 use crate::{
     collapse_shared_chains::compose_with_warnings,
     projection::{projection, Projection},
-    propagate_constants::{multiset, rows},
     rebuild::ProjectionNames,
     stream_rewrites::{body_members, reader_counts},
 };
 use feldera_sql_expr::{project_flatmap, reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::constant_rows::{self as rows, multiset};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
     OperatorKind as Op, OutputPort, TypeKind,

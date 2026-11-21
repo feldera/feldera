@@ -734,6 +734,13 @@ collection inputs directly to the delta-only indexed star join.
 [Join-tree analysis](evidence/p3-find-join-trees.json) ·
 [Star join replacements](evidence/p3-star-joins.json)
 
+Rust assigns canonical names to closure parameters and local variables, including
+the row shared by an aggregate's closures. The names, types, expression sharing
+and source positions matched Java at all 17,098 placements. The pass changed
+6,930 classic and 6,906 Gen-2 graphs. A directed test checks binding order
+when a closure receives another closure as an argument.
+[Canonical name comparisons](evidence/p3-canonical-form.json)
+
 Only two frozen cases per engine enable input trimming, and neither changes its graph.
 A separate 12-program comparison exercises ten rewrites per engine, including
 retaining a nested ROW and trimming every column for COUNT(*). Both regressions

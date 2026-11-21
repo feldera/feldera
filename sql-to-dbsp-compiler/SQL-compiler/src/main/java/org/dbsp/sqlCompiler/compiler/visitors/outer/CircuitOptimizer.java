@@ -167,7 +167,8 @@ public class CircuitOptimizer extends Passes {
                     || (pass instanceof CircuitDispatcher dispatcher && dispatcher.innerVisitor instanceof NoConnectorMetadata)
                     || (pass instanceof CircuitRewriter rewriter && (rewriter.transform instanceof AdjustSqlIndex
                         || rewriter.getName().equals("EnsureExpressionTrees") || rewriter.transform instanceof SimplifyWaterline
-                        || rewriter.transform instanceof SimplifyConditionals || rewriter.transform.getClass() == Simplify.class
+                        || rewriter.transform instanceof CanonicalForm || rewriter.transform instanceof SimplifyConditionals
+                        || rewriter.transform.getClass() == Simplify.class
                         || rewriter.transform instanceof ExpandSafeCasts || rewriter.transform instanceof ExpandUnsafeCasts
                         || rewriter.transform instanceof CreateRuntimeErrorWrappers || rewriter.transform instanceof UDFInliner))
                     || pass instanceof RemoveViewOperators || pass instanceof CheckHints

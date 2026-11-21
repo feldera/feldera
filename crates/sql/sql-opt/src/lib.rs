@@ -29,6 +29,7 @@ mod error_consumers;
 mod error_wrappers;
 mod expand_aggregates;
 mod expression_visitor;
+pub use expression_visitor::canonicalize_names;
 mod fanout;
 mod filter_joins;
 mod filters;

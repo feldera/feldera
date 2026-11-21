@@ -1,12 +1,37 @@
 //! Weighted constants use ISameValue when appending rows. Literal elements of
 //! Java collections use equals, which also compares types. Other expressions
 //! in those collections compare by object identity.
-use feldera_sql_expr::same_literal_value;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId};
+use crate::same_literal_value;
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
+};
 
 type Row = (ExpressionId, i64);
 
-pub(crate) fn entries(edit: &CircuitEditor, set: ExpressionId) -> Result<Vec<Row>, Error> {
+pub fn multiset(
+    edit: &mut CircuitEditor,
+    element: TypeId,
+    entries: impl IntoIterator<Item = (ExpressionId, i64)>,
+) -> Result<ExpressionId, Error> {
+    let ty = edit.zset_type(element)?;
+    let (data, weights) = entries
+        .into_iter()
+        .map(|(v, w)| (Field::Reference(v.into()), Field::Data(w.into())))
+        .unzip();
+    let literal = edit.empty_origin_node(
+        element.into(),
+        InnerKind::Expression(Expr::ZSet),
+        [
+            ("elementType", Field::Reference(element.into())),
+            ("type", Field::Reference(ty.into())),
+            ("data", Field::Array(data)),
+            ("weights", Field::Array(weights)),
+        ],
+    )?;
+    edit.expression(literal)
+}
+
+pub fn entries(edit: &CircuitEditor, set: ExpressionId) -> Result<Vec<Row>, Error> {
     let node = edit.node(set.into())?;
     let rows = node.edges("data")?;
     let Some(Field::Array(weights)) = node.field("weights") else {
@@ -30,7 +55,7 @@ pub(crate) fn entries(edit: &CircuitEditor, set: ExpressionId) -> Result<Vec<Row
         .collect()
 }
 
-pub(super) fn append(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
+pub fn append(edit: &CircuitEditor, rows: &mut Vec<Row>, row: Row) -> Result<(), Error> {
     append_at(edit, rows, row, 0)
 }
 
@@ -53,7 +78,7 @@ fn append_at(
     Ok(())
 }
 
-pub(crate) fn object_equals(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool, Error> {
+pub fn object_equals(edit: &CircuitEditor, a: NodeId, b: NodeId) -> Result<bool, Error> {
     if a == b {
         return Ok(true);
     }

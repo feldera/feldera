@@ -125,6 +125,7 @@ fn compare_invocation(
             serde_json::from_value(invocation["asof_joins"].clone())?,
             &mut next,
         )?,
+        "CanonicalForm" => feldera_sql_opt::canonicalize_names(input, &mut next)?,
         "FindJoinTrees" => {
             let trees = feldera_sql_opt::find_join_trees(&input, &mut next)?;
             if !trees.is_empty() || invocation["join_trees"] != json!([]) {

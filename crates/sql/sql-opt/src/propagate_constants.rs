@@ -1,5 +1,5 @@
 //! Evaluate filters, maps and weight negation on constant collections.
-pub(super) mod rows;
+use feldera_sql_expr::constant_rows::{self as rows, multiset};
 
 use crate::{
     multiset::{input_fact, record_outputs},
@@ -11,7 +11,7 @@ use feldera_sql_expr::{
 };
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field,
-    InnerKind, NodeId, OperatorKind as Op, OutputPort, TypeId,
+    NodeId, OperatorKind as Op, OutputPort,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -60,29 +60,6 @@ fn evaluate_row(
         reduce_closure_body_with_warnings(edit, body, &params, &[arg.into()], Some(warnings))?;
     let value = simplify_closure_with_warnings(edit, body, Some(warnings))?;
     edit.expression(value)
-}
-
-pub(super) fn multiset(
-    edit: &mut CircuitEditor,
-    element: TypeId,
-    entries: impl IntoIterator<Item = (ExpressionId, i64)>,
-) -> Result<ExpressionId, Error> {
-    let ty = edit.zset_type(element)?;
-    let (data, weights) = entries
-        .into_iter()
-        .map(|(v, w)| (Field::Reference(v.into()), Field::Data(w.into())))
-        .unzip();
-    let literal = edit.empty_origin_node(
-        element.into(),
-        InnerKind::Expression(Expr::ZSet),
-        [
-            ("elementType", Field::Reference(element.into())),
-            ("type", Field::Reference(ty.into())),
-            ("data", Field::Array(data)),
-            ("weights", Field::Array(weights)),
-        ],
-    )?;
-    edit.expression(literal)
 }
 
 pub(super) fn evaluate_constant_input(
