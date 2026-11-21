@@ -104,6 +104,28 @@ struct ProjectionState {
 }
 
 impl Invocation {
+    /// Reader IDs belong to this entry graph. Resolve them with its operator
+    /// references so allocator differences cannot hide a changed selection.
+    fn attach_filter_readers(&mut self) -> Result<(), String> {
+        let Some(readers) = self.placement.state.remove("filter_readers") else {
+            return Ok(());
+        };
+        let readers: Vec<u64> = serde_json::from_value(readers).map_err(|e| e.to_string())?;
+        let graph = self
+            .before
+            .as_object_mut()
+            .ok_or("expected an entry graph")?;
+        if graph.contains_key("filter_readers") {
+            return Err("entry graph already has a filter_readers field".into());
+        }
+        let ports = readers
+            .into_iter()
+            .map(|id| serde_json::json!({"outputNumber":0,"operator":{"node":id}}))
+            .collect();
+        graph.insert("filter_readers".into(), Value::Array(ports));
+        Ok(())
+    }
+
     /// Projection closures can reference nodes defined in the entry graph and
     /// each other. Compare them in that graph's namespace, in operator order.
     fn attach_projection_state(&mut self) -> Result<(), String> {
@@ -148,6 +170,8 @@ impl Invocation {
 fn compare_invocation(i: usize, mut left: Invocation, mut right: Invocation) -> Result<(), String> {
     left.attach_projection_state()?;
     right.attach_projection_state()?;
+    left.attach_filter_readers()?;
+    right.attach_filter_readers()?;
     if left.placement != right.placement {
         return Err(format!(
             "invocation {i}: placement, generated names, diagnostics or pass state differs"
@@ -328,5 +352,23 @@ mod tests {
             .get_mut("projection_closures")
             .unwrap()["outputs"]["19"]["type"] = json!({"class":"DBSPTypeBool","id":13});
         assert!(compare_invocation(0, shared_projection(9, 2, 1), copied).is_err());
+    }
+
+    #[test]
+    fn filter_readers_compare_in_entry_graph_order() {
+        fn observed(first: u64, second: u64, readers: &[u64]) -> Invocation {
+            let graph = json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[
+                {"class":"DBSPMapOperator","id":first,"inputs":[]},
+                {"class":"DBSPMapOperator","id":second,"inputs":[]}
+            ]});
+            serde_json::from_value(json!({
+                "before":graph,"after":graph,"container":"TrimFilters","index":1,"iteration":0,
+                "instance":0,"names_before":0,"names_after":0,"diagnostics":[],"filter_readers":readers
+            })).unwrap()
+        }
+        let original = || observed(5, 8, &[5, 8]);
+        assert!(compare_invocation(0, original(), observed(51, 12, &[51, 12])).is_ok());
+        assert!(compare_invocation(0, original(), observed(51, 12, &[12, 51])).is_err());
+        assert!(compare_invocation(0, original(), observed(51, 12, &[51, 99])).is_err());
     }
 }

@@ -41,7 +41,10 @@ pub enum AggregateTransfer {
     Rolling,
 }
 
-fn first_leaf(edit: &mut CircuitEditor, mut value: ExpressionId) -> Result<ExpressionId, Error> {
+pub(super) fn first_leaf(
+    edit: &mut CircuitEditor,
+    mut value: ExpressionId,
+) -> Result<ExpressionId, Error> {
     while matches!(
         edit.type_kind(edit.expression_type(value)?)?,
         TypeKind::Tuple | TypeKind::RawTuple

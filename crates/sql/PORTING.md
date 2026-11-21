@@ -462,6 +462,13 @@ reached its CPU-hour budget and completed every batch within the deadline.
 
 ### P3 optimizer replay
 
+Filter trimming sends Rust the circuit edges, then the reader and predicate
+closures for filters with one reader. The live pass matched Java at 1,832
+placements across 550 selected programs and on both full frozen populations.
+Across seven paired Nexmark compilations the median time spent in this pass
+fell from 728 ms to 127 ms. Each pair produced identical artifacts.
+[Filter-trimming measurements](evidence/p3-trim-filter-closures.json)
+
 The two view-removal passes send view metadata and input ports to Rust. Their
 placement, generated names, settings, diagnostics and canonical entry and exit
 circuits matched Java at all 1,100 observed LATENESS/NOW placements. On Nexmark,
@@ -994,9 +1001,12 @@ on the compared field. Both frozen populations and all 550 selected
 monotonicity boundaries matched Java. [Primitive minimum comparisons](evidence/p3-primitive-min-waterline.json)
 
 For a chain of minimums, Rust binds each update's compared field to the
-incoming row and builds the bound for each accumulator. Java checks agreement
-between the initializer and update. All 550 selected monotonicity boundaries
-and both full frozen replays matched. [Chained minimum comparisons](evidence/p3-chain-minimum-waterline.json)
+incoming row and builds the bound for each accumulator. It checks that every
+initializer and update minimizes the same row expression. Comparisons that
+need an additional Java expression-equivalence rule use the Java check.
+All 550 selected monotonicity boundaries and both full frozen replays matched.
+[Chained minimum transfers](evidence/p3-chain-minimum-waterline.json)
+[Eligibility comparisons](evidence/p3-chain-minimum-eligibility.json)
 
 For tables and views with LATENESS, Rust builds the predicate that admits a
 row and the error payload for a rejected row. The 550 selected limiter

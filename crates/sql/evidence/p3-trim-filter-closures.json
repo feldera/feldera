@@ -1,0 +1,175 @@
+{
+  "build": {
+    "jar_sha256": "82874296f16d96e77632cccc2e5dc91f10fce8a9089ba51ebde2c9b639ebaaa3",
+    "optimizer_library_sha256": "b21e291959260e4004379b3c1347985ac3b9140d020df58a279a3b52b54ffb87",
+    "driver_sha256": "b71a7ead3b0edc07fed8673cbd5d2131cd5d2dcdc7981ef0e03ecfbcfa340faf",
+    "pass_kinds": 105
+  },
+  "s4": {
+    "classic": {
+      "cases": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_stream_sha256": "6fcf6c88c3ec97a217581a293e87c5bc9bd3f47e2c67bf5dd9eedecb1a71774d",
+      "rust_stream_sha256": "a3c36cc4a62d1778d96477f3a37ccafe033270a301a93e5111e1f7eb1b2bc821",
+      "matched_invocations": 955
+    },
+    "gen2": {
+      "cases": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_stream_sha256": "3bdf510d6a9addee76d38ee80e8d66a39f816772140b66b38f2cb3b9212ef6ed",
+      "rust_stream_sha256": "2f15c194a25e5df88b85b1995143833cbca2a9e596188b705cc9ad33c6e29a70",
+      "matched_invocations": 877
+    }
+  },
+  "s2_to_s3": {
+    "classic": {
+      "cases": 8571,
+      "mismatches": 0,
+      "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+    },
+    "gen2": {
+      "cases": 8527,
+      "mismatches": 0,
+      "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+    }
+  },
+  "classic_runtime": {
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "95c4708e5d3a515a41afc31bb7fbaaba8e28fda2eefa0da28aaa94a4e09dbf2e"
+  },
+  "checkpoint_restores": {
+    "count": {
+      "receipt_sha256": "cb9ac4c3c208c39d20de31e17d66f0e4d41095f173c84f9ebad89fd0d544b4b2",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    },
+    "watermark": {
+      "receipt_sha256": "42f989ac44c7e27c3b1a07aa0d9ef070ef5dce5a77e0bec52bd733346ef03d3e",
+      "directions": [
+        "java to hybrid",
+        "hybrid to java"
+      ]
+    }
+  },
+  "worker_limits": {
+    "rounds": 5,
+    "slots_per_round": 4,
+    "p95_ms": 14.925425,
+    "largest_driver_plus_front_end_rss_bytes": 80019456
+  },
+  "nexmark_profile": {
+    "description": "Nexmark filter trimming, seven alternating paired hybrid compilations on CPU 14. The baseline sends full circuits for TrimFilters. The candidate uses topology and sends the predicate and reader closures for selected filters. Both use the same release library and JAR. Each pair must publish identical artifacts and manifests.",
+    "pairs": [
+      {
+        "baseline": {
+          "pass_ms": 833.737,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 127.84,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      },
+      {
+        "baseline": {
+          "pass_ms": 803.603,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 130.397,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      },
+      {
+        "baseline": {
+          "pass_ms": 1022.563,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 127.536,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      },
+      {
+        "baseline": {
+          "pass_ms": 694.067,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 105.662,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      },
+      {
+        "baseline": {
+          "pass_ms": 703.737,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 96.637,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      },
+      {
+        "baseline": {
+          "pass_ms": 728.179,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 126.507,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      },
+      {
+        "baseline": {
+          "pass_ms": 616.265,
+          "jni_input_bytes": 5882058,
+          "jni_output_bytes": 561660,
+          "calls": 4
+        },
+        "candidate": {
+          "pass_ms": 95.456,
+          "jni_input_bytes": 638145,
+          "jni_output_bytes": 67023,
+          "calls": 56
+        }
+      }
+    ],
+    "artifacts_sha256": {
+      "result.json": "3eb385d0d0a6a273264112dc33acb501bb277c6aeb44cb205f462ee46a30a996",
+      "circuit.rs": "5e13416c53dcdf4d39df9037c39f3f34ea22fd953c58db1cbcd6636620101d08",
+      "schema.json": "92ecfeae102c932e484feb3702a9cee9318f472c51fa1c362e4be5ac734a7c86",
+      "dataflow.json": "c6ea063c6b3d6737ce025f9a70d74d61b9a24ab0de0825042ea94fa2c756b3c9",
+      "stubs.rs": "e5d0b861b67cdb2a764089bfd4ab7af2333ed23ee43f35811ff865b37e0c5e5c"
+    }
+  }
+}

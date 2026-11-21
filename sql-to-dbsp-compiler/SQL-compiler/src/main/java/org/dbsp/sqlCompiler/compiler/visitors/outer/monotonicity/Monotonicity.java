@@ -1000,9 +1000,8 @@ public class Monotonicity extends CircuitVisitor {
             return;
         }
 
-        List<DBSPConditionalIncrementExpression> updates = this.minUpdates(node);
-        if (updates != null) {
-            this.setMinChainMonotonicity(node, updates);
+        if (this.isMinimumChain(node)) {
+            this.setMinChainMonotonicity(node);
             return;
         }
         // TODO: for MAX the output is always monotone, but we cannot use this information.
@@ -1010,16 +1009,18 @@ public class Monotonicity extends CircuitVisitor {
         this.aggregate(node);
     }
 
-    /** The list of instructions which update the accumulator of a chain aggregate,
-     * one per accumulator field, when every one of them computes the minimum of
-     * the same expression of the input row; null otherwise. */
-    @Nullable
-    List<DBSPConditionalIncrementExpression> minUpdates(DBSPChainAggregateOperator node) {
+    /** Every accumulator and its initializer must minimize the same expression of the row. */
+    private boolean isMinimumChain(DBSPChainAggregateOperator node) {
+        if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+            Boolean decision = RustCircuitPass.isMinimumChain(this.compiler(), node);
+            if (decision != null)
+                return decision;
+        }
         // The update function has the shape |acc, row, weight| Tup(update0, update1, ...)
         DBSPClosureExpression function = node.getClosureFunction();
         DBSPBaseTupleExpression body = function.body.as(DBSPBaseTupleExpression.class);
         if (function.parameters.length != 3 || body == null || body.fields == null)
-            return null;
+            return false;
         DBSPParameter row = function.parameters[1];
         // The first row of a group goes through init, |row, weight| Tup(init0, init1, ...);
         // each init must compute the minimum of the same expression as its update.
@@ -1027,35 +1028,33 @@ public class Monotonicity extends CircuitVisitor {
         DBSPBaseTupleExpression initBody = init.body.as(DBSPBaseTupleExpression.class);
         if (init.parameters.length != 2 || initBody == null || initBody.fields == null ||
                 initBody.fields.length != body.fields.length)
-            return null;
-        List<DBSPConditionalIncrementExpression> updates = new ArrayList<>();
+            return false;
         DBSPClosureExpression first = null;
         for (int i = 0; i < body.fields.length; i++) {
             DBSPConditionalIncrementExpression update = body.fields[i].as(DBSPConditionalIncrementExpression.class);
             if (update == null || update.condition != null)
-                return null;
+                return false;
             DBSPExpression compared = comparedValue(update);
             if (compared == null)
-                return null;
+                return false;
             DBSPClosureExpression closure = compared.closure(row);
             // Check that the compared depends on the row alone (parameters[1]).
             ResolveReferences resolver = new ResolveReferences(this.compiler(), true);
             resolver.apply(closure);
             if (resolver.hasFreeVariables())
-                return null;
+                return false;
             if (first == null)
                 first = closure;
             else if (!first.equivalent(closure))
-                return null;
+                return false;
             DBSPConditionalIncrementExpression initial = initBody.fields[i].as(DBSPConditionalIncrementExpression.class);
             if (initial == null || initial.condition != null || initial.opcode != update.opcode)
-                return null;
+                return false;
             DBSPExpression initCompared = comparedValue(initial);
             if (initCompared == null || !first.equivalent(initCompared.closure(init.parameters[0])))
-                return null;
-            updates.add(update);
+                return false;
         }
-        return updates;
+        return true;
     }
 
     /** The expression whose minimum an accumulator update computes; null for updates that
@@ -1094,7 +1093,7 @@ public class Monotonicity extends CircuitVisitor {
      * the same expression.  Every change to a group's row carries a compared value at or 
      * above the input waterline.  The accumulator fields holding the compared value are 
      * monotone with the input's waterline. */
-    private void setMinChainMonotonicity(DBSPChainAggregateOperator node, List<DBSPConditionalIncrementExpression> updates) {
+    private void setMinChainMonotonicity(DBSPChainAggregateOperator node) {
         MonotoneExpression inputValue = this.getMonotoneExpression(node.input());
         if (inputValue == null)
             return;
@@ -1104,7 +1103,7 @@ public class Monotonicity extends CircuitVisitor {
             return;
         var transfer = this.compiler().options.ioOptions.rustOptimizerPasses
                 ? RustCircuitPass.chainMinimumTransfer(this.compiler(), node, pairType)
-                : this.chainMinimumTransfer(node, pairType, updates);
+                : this.chainMinimumTransfer(node, pairType);
         if (transfer == null)
             return;
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
@@ -1116,7 +1115,7 @@ public class Monotonicity extends CircuitVisitor {
 
     @Nullable
     private DBSPClosureExpression chainMinimumTransfer(DBSPChainAggregateOperator node,
-            DBSPTypeTupleBase pairType, List<DBSPConditionalIncrementExpression> updates) {
+            DBSPTypeTupleBase pairType) {
         DBSPTypeRawTuple varType = new DBSPTypeRawTuple(pairType.tupFields[0].ref(), pairType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
         DBSPParameter row = node.getClosureFunction().parameters[1];
@@ -1124,11 +1123,13 @@ public class Monotonicity extends CircuitVisitor {
             return null;
 
         DBSPTypeTuple accumulators = node.getOutputIndexedZSetType().getElementTypeTuple();
-        if (accumulators.size() != updates.size())
+        var updates = Objects.requireNonNull(node.getClosureFunction().body.to(DBSPBaseTupleExpression.class).fields);
+        if (accumulators.size() != updates.length)
             return null;
         List<DBSPExpression> fields = new ArrayList<>();
         int index = 0;
-        for (DBSPConditionalIncrementExpression update : updates) {
+        for (var expression : updates) {
+            var update = expression.to(DBSPConditionalIncrementExpression.class);
             DBSPType accumulatorType = accumulators.getFieldType(index++);
             // The compared expression applied to var.1, the row
             DBSPExpression compared = Objects.requireNonNull(comparedValue(update)).closure(row)

@@ -2,6 +2,7 @@
 pub mod aggregate;
 pub mod binary;
 pub mod casts;
+pub mod chain_minimum;
 pub mod functions;
 pub mod lag;
 use feldera_sql_ir::{

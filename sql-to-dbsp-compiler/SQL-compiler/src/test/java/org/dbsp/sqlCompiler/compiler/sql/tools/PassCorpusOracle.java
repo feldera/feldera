@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.DeadCode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandAggregateZero;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.ExpandAggregates;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeWithGraph;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTable;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisitor;
@@ -135,14 +136,12 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         // pass that consumes the finder stay in their original positions.
         if (pass instanceof ShareIndexes sharing && this.passClass.equals("FindSharedIndexes")
                 && Boolean.getBoolean("feldera.optimizer.compareRustSharedIndexes")) {
-            sharing.passes.replaceAll(step -> {
-                if (!(step instanceof FindSharedIndexes))
-                    return step;
-                var snapshots = new org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots(this.compiler);
-                var rust = new RustCircuitPass(this.compiler, step, snapshots);
-                this.originalPasses.put(rust, step);
-                return rust;
-            });
+            this.replaceObservedPass(sharing);
+        }
+        if (pass instanceof OptimizeWithGraph group && group.transform instanceof Passes steps
+                && group.getName().equals("TrimFilters") && this.passClass.equals("TrimFilters")
+                && Boolean.getBoolean("feldera.optimizer.compareRustTrimFilters")) {
+            this.replaceObservedPass(steps);
         }
         if (pass instanceof ReorderTemporalFilters ordering
                 && (this.passClass.equals("Scan") || this.passClass.equals("Reorder"))
@@ -354,6 +353,17 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 }
             }.getCircuitVisitor(true).apply(circuit);
         }
+    }
+
+    private void replaceObservedPass(Passes group) {
+        group.passes.replaceAll(step -> {
+            if (step instanceof RustCircuitPass || !this.selected(step))
+                return step;
+            var snapshots = new org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots(this.compiler);
+            var rust = new RustCircuitPass(this.compiler, step, snapshots);
+            this.originalPasses.put(rust, step);
+            return rust;
+        });
     }
 
     private boolean compareSharedProjections(CircuitTransform pass) {

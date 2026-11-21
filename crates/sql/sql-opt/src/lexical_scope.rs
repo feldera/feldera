@@ -30,6 +30,26 @@ enum Visit<'a> {
 }
 
 pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, Error> {
+    match resolve_variables(circuit, closure)? {
+        Resolution::Bound(references) => Ok(references),
+        Resolution::Free(name) => Err(Error::new(format!("unbound variable {name} in closure"))),
+    }
+}
+
+pub(crate) fn has_free_variables(circuit: &Circuit, closure: NodeId) -> Result<bool, Error> {
+    Ok(matches!(
+        resolve_variables(circuit, closure)?,
+        Resolution::Free(_)
+    ))
+}
+
+enum Resolution<'a> {
+    Bound(References),
+    Free(&'a str),
+}
+
+/// An unbound name is a normal outcome when testing a partially projected closure.
+fn resolve_variables(circuit: &Circuit, closure: NodeId) -> Result<Resolution<'_>, Error> {
     let mut references = HashMap::new();
     let mut bindings = Vec::new();
     let mut path = HashSet::new();
@@ -58,11 +78,13 @@ pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
         match node.inner_kind() {
             Some(InnerKind::Expression(Expr::VariablePath)) => {
                 let variable = name(node, "variable")?;
-                let declaration = bindings
+                let Some(declaration) = bindings
                     .iter()
                     .rev()
                     .find_map(|&(bound, id)| (bound == variable).then_some(id))
-                    .ok_or_else(|| Error::new(format!("unbound variable {variable} in closure")))?;
+                else {
+                    return Ok(Resolution::Free(variable));
+                };
                 record(&mut references, id, declaration)?;
             }
             Some(InnerKind::Expression(Expr::Closure)) => {
@@ -99,7 +121,7 @@ pub(crate) fn resolve(circuit: &Circuit, closure: NodeId) -> Result<References, 
             }
         }
     }
-    Ok(references)
+    Ok(Resolution::Bound(references))
 }
 
 pub(crate) fn expression_children(node: &Node) -> Vec<NodeId> {
