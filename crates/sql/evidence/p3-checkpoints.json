@@ -1,8 +1,8 @@
 {
   "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
-  "compiler_sha256": "f338228270353b2ccf27b8f09019c433466af987bc7a11471d5dabac7f618cae",
-  "optimizer_library_sha256": "4262f8fc453ad3fd24effeb84133cb500e451e09e107132a6900323c3114e73a",
-  "compiler_jar_sha256": "c40d4984eb5eec055c99223293e1a6cd859d612ea328c25702ae661398b0ae41",
+  "compiler_sha256": "74c5e578aba7e5847445582337f2e8c01fad4374e5088c95169bc4c050911b97",
+  "optimizer_library_sha256": "dcd3c99e5c4f33273bd5ea2783fae8694c5b4e0dc499bc2441041c80c0a56dc9",
+  "compiler_jar_sha256": "4326c83f956c519612d226ead207ad198c688e86c7a6e6b222c4a8f85c584127",
   "programs": {
     "count": {
       "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
@@ -19,7 +19,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fbed-1691-7cb2-8924-1dd5be6f9c01",
+          "checkpoint_id": "01a1fbef-f25e-7483-ae9f-73adad06977d",
           "restored_count_deltas": [
             [
               1,
@@ -35,7 +35,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fbed-16b4-7953-aec2-966a4175aef9",
+          "checkpoint_id": "01a1fbef-f27b-7d60-bd94-dd8ac7b10631",
           "restored_count_deltas": [
             [
               1,
@@ -64,7 +64,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fbee-3d0e-7741-b4a5-c138a3773d6f",
+          "checkpoint_id": "01a1fbf0-b1d5-7343-8e7e-c2c726059ca7",
           "restored_count_deltas": [
             [
               1,
@@ -81,7 +81,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fbee-3d38-7931-a8a3-4c351632df9f",
+          "checkpoint_id": "01a1fbf0-b1f2-7b93-8fdb-bae153b57015",
           "restored_count_deltas": [
             [
               1,
@@ -109,5 +109,5 @@
       "snippet": ""
     }
   ],
-  "pass_kinds": 91
+  "pass_kinds": 92
 }
