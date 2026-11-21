@@ -205,6 +205,13 @@ impl RowProjection {
         components.iter().any(|part| part.used.contains(&false))
     }
 
+    pub(super) fn used_value_fields(&self) -> Result<&[bool], Error> {
+        match &self.element {
+            Element::Indexed([_, value]) => Ok(&value.used),
+            Element::Row(_) => Err(Error::new("expected an indexed reader")),
+        }
+    }
+
     pub(super) fn project(
         &self,
         edit: &mut CircuitEditor,

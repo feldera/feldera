@@ -7,7 +7,10 @@ import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -23,6 +26,57 @@ import org.junit.Test;
 public class ProjectionCompositionTests {
     private final ExpressionBuilder b = new ExpressionBuilder();
     private final DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+
+    private void checkProjection(DBSPClosureExpression closure, boolean strict, boolean nested) {
+        for (boolean allowNestedAndCasts : new boolean[]{false, true}) {
+            var oracle = new Projection(this.compiler, allowNestedAndCasts, allowNestedAndCasts);
+            oracle.apply(closure);
+            Assert.assertEquals(allowNestedAndCasts ? nested : strict, oracle.isProjection);
+            if (Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"))
+                Assert.assertEquals(oracle.isProjection,
+                        RustCircuitPass.isMapProjection(this.compiler, closure, allowNestedAndCasts));
+        }
+    }
+
+    @Test public void classifyProjectionsForJoinsAndSums() {
+        var rowType = b.tup(b.i32());
+        this.checkProjection(b.closure(rowType, row -> b.tuple(b.field(row, 0))), true, true);
+        this.checkProjection(b.closure(rowType, row -> b.tuple(b.tuple(b.field(row, 0)))), false, true);
+        this.checkProjection(b.closure(rowType, row -> b.tuple(b.field(row, 0)
+                .nullabilityCast(b.i32n(), DBSPCastExpression.CastType.SqlUnsafe))), false, true);
+        this.checkProjection(b.closure(rowType, row -> b.tuple(b.add(b.field(row, 0), b.lit(1)))), false, false);
+        var indexed = new DBSPTypeRawTuple(rowType.ref(), rowType.ref());
+        this.checkProjection(b.lambda(indexed, pair -> b.tuple(pair.field(1).deref().field(0))), true, true);
+    }
+
+    @Test public void trimMiddleTopKColumnAndRebindTheReader() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var key = b.tup(b.str(), b.i32());
+        var row = b.tup(b.i32(), b.str(), b.i32n());
+        var producer = b.closure(row, r -> b.tuple(b.field(r, 0), b.field(r, 1), b.field(r, 2)));
+        var reader = b.lambda(new DBSPTypeRawTuple(key.ref(), row.ref()), pair ->
+                new DBSPRawTupleExpression(b.tuple(pair.field(0).deref().field(1)),
+                        b.tuple(pair.field(1).deref().field(2), pair.field(1).deref().field(0))));
+        var narrowed = RustCircuitPass.trimTopKProjection(this.compiler, producer, reader);
+        Assert.assertNotNull(narrowed);
+        Assert.assertSame(producer.parameters[0], narrowed.left.parameters[0]);
+        var expectedProducer = b.closure(row, r -> b.tuple(b.field(r, 0), b.field(r, 2)));
+        var narrowRow = b.tup(b.i32(), b.i32n());
+        var expectedReader = b.lambda(new DBSPTypeRawTuple(key.ref(), narrowRow.ref()), pair ->
+                new DBSPRawTupleExpression(b.tuple(pair.field(0).deref().field(1)),
+                        b.tuple(pair.field(1).deref().field(1), pair.field(1).deref().field(0))));
+        Assert.assertTrue(EquivalenceContext.equiv(expectedProducer, narrowed.left));
+        Assert.assertTrue(EquivalenceContext.equiv(expectedReader, narrowed.right));
+    }
+
+    @Test public void keepTopKWhenTheReaderUsesTheWholeValue() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var row = b.tup(b.i32(), b.i32());
+        var producer = b.closure(row, r -> b.tuple(b.field(r, 0), b.field(r, 1)));
+        var reader = b.lambda(new DBSPTypeRawTuple(b.tup(b.i32()).ref(), row.ref()), pair ->
+                new DBSPRawTupleExpression(b.tuple(), pair.field(1).deref()));
+        Assert.assertNull(RustCircuitPass.trimTopKProjection(this.compiler, producer, reader));
+    }
 
     @Test public void projectTheResultOfABlockAndKeepItsBindings() {
         var before = b.closure(b.tup(b.i32()), row ->

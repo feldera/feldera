@@ -130,6 +130,15 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         return new DBSPLetExpression(pair, before.body, apply).closure(before.parameters);
     }
 
+    private boolean isProjection(DBSPSimpleOperator map, boolean allowNestedAndCasts) {
+        var function = map.getFunction();
+        if (this.compiler.options.ioOptions.rustOptimizerPasses && function instanceof DBSPClosureExpression closure)
+            return RustCircuitPass.isMapProjection(this.compiler, closure, allowNestedAndCasts);
+        var projection = new Projection(this.compiler, allowNestedAndCasts, allowNestedAndCasts);
+        projection.apply(function);
+        return projection.isProjection;
+    }
+
     boolean done(DBSPOperator operator) {
         return this.operatorsAnalyzed.done(operator);
     }
@@ -217,9 +226,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                     .newline();
-            Projection projection = new Projection(this.compiler(), true, true);
-            projection.apply(operator.getFunction());
-            if (!projection.isProjection || aggregate.aggregateList == null) {
+            if (!this.isProjection(operator, true) || aggregate.aggregateList == null) {
                 super.postorder(operator);
                 return;
             }
@@ -232,9 +239,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                     .newline();
-            Projection projection = new Projection(this.compiler(), true, true);
-            projection.apply(operator.getFunction());
-            if (!projection.isProjection) {
+            if (!this.isProjection(operator, true)) {
                 super.postorder(operator);
                 return;
             }
@@ -243,9 +248,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 super.postorder(operator);
             return;
         } else {
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (!this.onlyProjections || projection.isProjection) {
+            if (!this.onlyProjections || this.isProjection(operator, false)) {
                 if (source.node().is(DBSPJoinOperator.class)
                         || source.node().is(DBSPLeftJoinOperator.class)
                         || source.node().is(DBSPStreamJoinOperator.class)
@@ -270,9 +273,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     return;
                 }
             }
-            if (projection.isProjection &&
-                    (source.node().is(DBSPAntiJoinOperator.class)
-                    || source.node().is(DBSPStreamAntiJoinOperator.class))) {
+            if ((source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class))
+                    && this.isProjection(operator, false)) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
                         .newline();
@@ -549,33 +551,44 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
      * required changes, false if they are unchanged.  When the
      * operators require change, they are inserted in the circuit and map is replaced. */
     boolean processTopK(DBSPIndexedTopKOperator topK, DBSPMapIndexOperator map) {
+        var functions = this.topKClosures(topK, map);
+        if (functions == null)
+            return false;
+        DBSPSimpleOperator newTopK = new DBSPIndexedTopKOperator(topK.getRelNode(), topK.numbering,
+                topK.getFunction(), topK.limit, topK.equalityComparator, functions.left, topK.input())
+                .copyAnnotations(topK).to(DBSPSimpleOperator.class);
+        this.addOperator(newTopK);
+
+        DBSPSimpleOperator result = new DBSPMapIndexOperator(map.getRelNode(), functions.right, newTopK.outputPort())
+                .copyAnnotations(map).to(DBSPSimpleOperator.class);
+        this.map(map, result);
+        return true;
+    }
+
+    @Nullable
+    private Pair<DBSPClosureExpression, DBSPClosureExpression> topKClosures(
+            DBSPIndexedTopKOperator topK, DBSPMapIndexOperator map) {
+        DBSPClosureExpression function = map.getClosureFunction();
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.trimTopKProjection(this.compiler, topK.outputProducer, function);
         DBSPClosureExpression topKClosure = topK.outputProducer
                 .ensureTree(this.compiler).to(DBSPClosureExpression.class);
         DBSPTupleExpression produced = topKClosure.body.as(DBSPTupleExpression.class);
         if (produced == null || produced.fields == null || produced.getType().mayBeNull)
-            return false;
+            return null;
 
-        DBSPClosureExpression function = map.getClosureFunction();
         ParameterFieldUse uses = this.indexProjectionFields(map);
         FieldUseMap useMap = uses.get(function.parameters[0]);
         useMap.setUsed(0);
         if (!useMap.hasUnusedFields(2))
-            return false;
+            return null;
 
         List<Integer> keptOutputs = useMap.field(1).deref().getUsedFields();
         List<DBSPExpression> kept = Linq.map(keptOutputs, i -> produced.fields[i].deepCopy());
         DBSPClosureExpression newProducer = new DBSPTupleExpression(kept, false).closure(topKClosure.parameters);
-        DBSPSimpleOperator newTopK = new DBSPIndexedTopKOperator(topK.getRelNode(), topK.numbering,
-                topK.getFunction(), topK.limit, topK.equalityComparator, newProducer, topK.input())
-                .copyAnnotations(topK).to(DBSPSimpleOperator.class);
-        this.addOperator(newTopK);
-
         RewriteFields rewriter = uses.getFieldRewriter(this.compiler, 2);
         DBSPClosureExpression post = rewriter.rewriteClosure(function);
-        DBSPSimpleOperator result = new DBSPMapIndexOperator(map.getRelNode(), post, newTopK.outputPort())
-                .copyAnnotations(map).to(DBSPSimpleOperator.class);
-        this.map(map, result);
-        return true;
+        return Pair.of(newProducer, post);
     }
 
     @Override
@@ -592,9 +605,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (!this.onlyProjections || projection.isProjection) {
+            if (!this.onlyProjections || this.isProjection(operator, false)) {
                 // map(joinFilter) = joinFilter
                 DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
                 DBSPClosureExpression newMap = operator.getClosureFunction();
@@ -612,9 +623,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (!this.onlyProjections || projection.isProjection) {
+            if (!this.onlyProjections || this.isProjection(operator, false)) {
                 // map(joinFilter) = joinFilter
                 DBSPStarJoinFilterMapOperator jfm = source.node().to(DBSPStarJoinFilterMapOperator.class);
                 DBSPClosureExpression newMap = operator.getClosureFunction();
@@ -636,9 +645,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (!this.onlyProjections || projection.isProjection) {
+            if (!this.onlyProjections || this.isProjection(operator, false)) {
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoin(
                         this.compiler(), source.simpleNode(), operator);
                 this.map(operator, result);
@@ -648,9 +655,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (projection.isProjection) {
+            if (this.isProjection(operator, false)) {
                 // Only combine with pure projections
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoin(
                         this.compiler(), source.simpleNode(), operator);
@@ -665,9 +670,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (!this.onlyProjections || projection.isProjection) {
+            if (!this.onlyProjections || this.isProjection(operator, false)) {
                 DBSPSimpleOperator result = OptimizeProjectionVisitor.mapAfterJoinIndex(
                         this.compiler(), source.simpleNode(), operator);
                 this.map(operator, result);
@@ -730,9 +733,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             if (source.node().is(DBSPSumOperator.class)
                     || source.node().is(DBSPSubtractOperator.class)
                     || source.node().is(DBSPAtomicSumOperator.class)) {
-                Projection projection = new Projection(this.compiler(), true, true);
-                projection.apply(operator.getFunction());
-                if (!projection.isProjection) {
+                if (!this.isProjection(operator, true)) {
                     // swapping arbitrary maps with sum is not sound
                     // since it may apply operations like div by 0 to tuples that may never appear
                     super.postorder(operator);
@@ -758,9 +759,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
-            Projection projection = new Projection(this.compiler(), true, true);
-            projection.apply(operator.getFunction());
-            if (!projection.isProjection) {
+            if (!this.isProjection(operator, true)) {
                 super.postorder(operator);
                 return;
             }
@@ -782,9 +781,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
             DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
-            Projection projection = new Projection(this.compiler());
-            projection.apply(operator.getFunction());
-            if (projection.isProjection && inputFanout == 1) {
+            if (this.isProjection(operator, false) && inputFanout == 1) {
                 OutputPort left = join.left();
                 OutputPort right = join.right();
 

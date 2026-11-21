@@ -84,6 +84,15 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
         return Err("expected an array of lowering inputs".into());
     };
     let (arena, roots) = expression_arena(roots)?;
+    if matches!(pass, "IsStrictProjection" | "IsNestedProjection") {
+        let [closure] = roots.as_slice() else {
+            return Err("expected one map closure".into());
+        };
+        let edit = feldera_sql_ir::CircuitEditor::new(arena);
+        return Ok(Value::Bool(feldera_sql_opt::is_map_projection(
+            &edit, *closure, pass == "IsNestedProjection",
+        )?));
+    }
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
@@ -106,6 +115,12 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
                 return Ok(Value::Null);
             };
             closure
+        }
+        ("TrimTopKProjection", [producer, reader]) => {
+            let Some(pair) = feldera_sql_opt::trim_topk_projection(&mut edit, *producer, *reader)? else {
+                return Ok(Value::Null);
+            };
+            return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
         }
         ("SplitAntijoinProjection", [closure]) => {
             let pair = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)?;
@@ -205,7 +220,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
-        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection" | "SplitAntijoinProjection" => {
+        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection" | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection" => {
             return lower_function(pass, input, next);
         }
         "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {

@@ -61,6 +61,29 @@ pub(super) fn strict_projection(
     ))
 }
 
+/// Decide whether a map may move across its producer. Sum and aggregate
+/// rewrites accept nested tuples and casts that only adjust nullability.
+pub fn is_map_projection(
+    edit: &CircuitEditor,
+    closure: NodeId,
+    allow_nested_and_casts: bool,
+) -> Result<bool, Error> {
+    let node = edit.node(closure)?;
+    let [parameter] = node
+        .edges("parameters")?
+        .try_into()
+        .map_err(|_| Error::new("map projection requires one parameter"))?;
+    let body = node.edge("body")?;
+    if allow_nested_and_casts {
+        Ok(!matches!(
+            projection(edit, body, parameter)?,
+            Projection::Other
+        ))
+    } else {
+        strict_projection(edit, body, parameter)
+    }
+}
+
 fn classify(
     edit: &CircuitEditor,
     body: NodeId,
@@ -68,9 +91,38 @@ fn classify(
     allow_noop_casts: bool,
 ) -> Result<Projection, Error> {
     let name = edit.node(parameter)?.data("name");
-    let mut pending = vec![body];
+    enum Visit {
+        Expression(NodeId),
+        RecordField(NodeId),
+    }
+    let mut pending = vec![Visit::Expression(body)];
     let mut fields = Some(Vec::new());
-    while let Some(id) = pending.pop() {
+    while let Some(visit) = pending.pop() {
+        let id = match visit {
+            Visit::Expression(id) => id,
+            Visit::RecordField(id) => {
+                // An indexed access such as (*pair.1).2 is a projection, but
+                // visiting pair.1 discards the flat field map before we get here.
+                if let Some(indices) = &mut fields {
+                    let field = edit.node(id)?;
+                    let mut base = field.edge("expression")?;
+                    if edit.expr_kind(edit.expression(base)?)? == Expr::Deref {
+                        base = edit.node(base)?.edge("expression")?;
+                    }
+                    if edit.expr_kind(edit.expression(base)?)? != Expr::VariablePath {
+                        return Ok(Projection::Other);
+                    }
+                    indices.push(
+                        field
+                            .data("fieldNo")
+                            .and_then(|v| v.as_u64())
+                            .and_then(|v| usize::try_from(v).ok())
+                            .ok_or_else(|| Error::new("invalid projection index"))?,
+                    );
+                }
+                continue;
+            }
+        };
         let node = edit.node(id)?;
         let kind = edit.expr_kind(edit.expression(id)?)?;
         match kind {
@@ -88,11 +140,15 @@ fn classify(
                 if nested {
                     fields = None;
                 } else {
-                    pending.extend(items.into_iter().rev());
+                    pending.extend(items.into_iter().rev().map(Visit::Expression));
                 }
             }
             Expr::Block if node.edges("contents")?.is_empty() => {
-                pending.extend(node.field("lastExpression").and_then(Field::node_id));
+                pending.extend(
+                    node.field("lastExpression")
+                        .and_then(Field::node_id)
+                        .map(Visit::Expression),
+                );
             }
             Expr::Field
             | Expr::CustomOrdField
@@ -112,22 +168,7 @@ fn classify(
                         {
                             fields = None;
                         }
-                        if let Some(indices) = &mut fields {
-                            let base = if source_kind == Expr::Deref {
-                                edit.node(source)?.edge("expression")?
-                            } else {
-                                source
-                            };
-                            if edit.expr_kind(edit.expression(base)?)? != Expr::VariablePath {
-                                return Ok(Projection::Other);
-                            }
-                            let field = node
-                                .data("fieldNo")
-                                .and_then(|v| v.as_u64())
-                                .and_then(|v| usize::try_from(v).ok())
-                                .ok_or_else(|| Error::new("invalid projection index"))?;
-                            indices.push(field);
-                        }
+                        pending.push(Visit::RecordField(id));
                     }
                     Expr::Deref
                         if !(source_kind == Expr::VariablePath
@@ -141,7 +182,7 @@ fn classify(
                     Expr::UnwrapCustomOrd if source_kind != Expr::Deref => fields = None,
                     _ => {}
                 }
-                pending.push(source);
+                pending.push(Visit::Expression(source));
             }
             Expr::Cast if allow_noop_casts => {
                 let source = node.edge("source")?;
@@ -151,7 +192,7 @@ fn classify(
                 )? {
                     return Ok(Projection::Other);
                 }
-                pending.push(source);
+                pending.push(Visit::Expression(source));
             }
             _ if node.class().ends_with("Literal") => fields = None,
             _ => return Ok(Projection::Other),

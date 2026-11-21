@@ -257,12 +257,31 @@ public final class RustCircuitPass implements CircuitTransform {
         return lowerFunction(compiler, "AntijoinProjection", input, projection, DBSPClosureExpression.class);
     }
 
+    public static boolean isMapProjection(DBSPCompiler compiler, DBSPClosureExpression closure, boolean allowNestedAndCasts) {
+        String pass = allowNestedAndCasts ? "IsNestedProjection" : "IsStrictProjection";
+        var result = invokeLowering(compiler, pass, closure, null).value;
+        if (!result.isBoolean())
+            throw new IllegalStateException("Expected a boolean projection decision from Rust");
+        return result.booleanValue();
+    }
+
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> splitAntijoinProjection(
             DBSPCompiler compiler, DBSPClosureExpression projection) {
         var reply = invokeLowering(compiler, "SplitAntijoinProjection", projection, null);
+        return decodeClosurePair(reply);
+    }
+
+    @Nullable
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> trimTopKProjection(
+            DBSPCompiler compiler, DBSPClosureExpression producer, DBSPClosureExpression reader) {
+        var reply = invokeLowering(compiler, "TrimTopKProjection", producer, reader);
+        return reply.value.isNull() ? null : decodeClosurePair(reply);
+    }
+
+    private static Pair<DBSPClosureExpression, DBSPClosureExpression> decodeClosurePair(LoweringReply reply) {
         var functions = reply.value;
         if (!functions.isArray() || functions.size() != 2)
-            throw new IllegalStateException("Expected two antijoin projection closures");
+            throw new IllegalStateException("Expected two projection closures from Rust");
         var decoder = expressionDecoder(reply.writer);
         return Pair.of(decoder.decodeInner(functions.get(0), DBSPClosureExpression.class),
                 decoder.decodeInner(functions.get(1), DBSPClosureExpression.class));
