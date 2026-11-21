@@ -991,6 +991,7 @@ direct at p95. Nexmark measured 15.32 s and 8.39 s, and the outer join
 measured 3.70 s and 3.28 s. Only the outer join met the 1.2× ceiling.
 With compact checkpoints, the Nexmark hybrid p95 was 15.657 s across 21
 measured pairs. Direct Java took 7.567 s. [Checkpoint and compilation measurements](evidence/p3-checkpoint-write.json)
+The static-declaration build measured 1.237× on the correlated array subquery, 2.435× on Nexmark and 1.198× on the outer join. Each ratio uses 21 measured SQL-to-artifact pairs.
 [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-20)
 
 On the 21-pass build, cancellation p95 for four occupied workers was 33.23 ms

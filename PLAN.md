@@ -51,10 +51,10 @@ Path prefixes used in this document:
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 99 pass kinds
   in Rust. All 8,256 classic executable cases passed on the filter-bound build
   (`c5c800f7f`). Java still runs the
-  remaining passes. With compact checkpoints, Nexmark took 15.657 s hybrid
-  and 7.567 s direct at p95 (2.069×), above the 1.2× SQL-to-artifact ceiling.
-  On the static-cell build, the array subquery measured 1.378× and the outer join 1.127×. The owner confirmed that
-  the field-shadow gate stays open until qualifying field evidence exists.
+  remaining passes. On the static-declaration build (`a039e2fda`), hybrid p95 was
+  1.237× direct Java on the array subquery, 2.435× on Nexmark and 1.198× on the
+  outer join. The owner confirmed that the field-shadow gate stays open until
+  qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across
   17,098 classic and Gen-2 cases. CSE, ARRAY_AGG fusion and the representative
