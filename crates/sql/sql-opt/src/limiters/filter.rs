@@ -76,9 +76,17 @@ fn compare_fields(
     right: ExpressionId,
 ) -> Result<ExpressionId, Error> {
     let ty = edit.expression_type(left)?;
+    let other = edit.expression_type(right)?;
     match edit.type_kind(ty)? {
         Ty::Tuple | Ty::RawTuple => {
             let size = edit.node(ty.into())?.edges("tupFields")?.len();
+            if !matches!(edit.type_kind(other)?, Ty::Tuple | Ty::RawTuple)
+                || size != edit.node(other.into())?.edges("tupFields")?.len()
+            {
+                return Err(Error::new(
+                    "waterline comparison requires tuples of equal width",
+                ));
+            }
             for index in 0..size {
                 let a = edit.tuple_field(left, index)?;
                 let b = edit.tuple_field(right, index)?;
@@ -91,7 +99,29 @@ fn compare_fields(
             let b = edit.dereference(right)?;
             compare_fields(edit, predicate, a, b)
         }
-        _ => {
+        Ty::Binary
+        | Ty::Bool
+        | Ty::Date
+        | Ty::Decimal
+        | Ty::Double
+        | Ty::GeoPoint
+        | Ty::Integer
+        | Ty::LongInterval
+        | Ty::Null
+        | Ty::Real
+        | Ty::ShortInterval
+        | Ty::String
+        | Ty::Time
+        | Ty::Timestamp
+        | Ty::TimestampTz
+        | Ty::USize
+        | Ty::Uuid
+        | Ty::Variant => {
+            if !edit.same_type_ignoring_nullability(ty, other)? {
+                return Err(Error::new(
+                    "waterline comparison requires matching scalar types",
+                ));
+            }
             let boolean = edit.standard_type(left.into(), Ty::Bool)?;
             let cmp = edit.make_expr(
                 boolean.into(),
@@ -115,6 +145,9 @@ fn compare_fields(
                 ],
             )
         }
+        kind => Err(Error::new(format!(
+            "unsupported waterline comparison type {kind:?}"
+        ))),
     }
 }
 
@@ -251,4 +284,51 @@ pub fn row_filter(
         error,
         error_type,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_sql_ir::Circuit;
+    use serde_json::json;
+
+    #[test]
+    fn row_filter_checks_waterline_width_and_leaf_types() -> Result<(), Error> {
+        let circuit = Circuit::from_json(json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+        }))?;
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class": "DBSPTypeInteger", "id": 1, "width": 32, "signed": true,
+            "mayBeNull": false, "code": "INT32"
+        })])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let int = edit.type_id(roots[0])?;
+        let nullable_int = edit.with_nullability(int, true)?;
+        let boolean = edit.bool_type(int.into(), false)?;
+        let row = edit.tuple_type(int.into(), false, [nullable_int.into()])?;
+        let mut next = 0;
+        let control = edit.tuple_type(int.into(), false, [int.into()])?;
+        row_filter(&mut edit, "t", row, &[0], control, &mut next)?;
+
+        let wider = edit.tuple_type(int.into(), false, [int.into(), int.into()])?;
+        let different = edit.tuple_type(int.into(), false, [boolean.into()])?;
+        for (bound, error) in [
+            (wider, "waterline comparison requires tuples of equal width"),
+            (
+                different,
+                "waterline comparison requires matching scalar types",
+            ),
+        ] {
+            let result = row_filter(&mut edit, "t", row, &[0], bound, &mut next);
+            assert_eq!(result.map(|_| ()).unwrap_err().to_string(), error);
+        }
+        let any = edit.standard_type(int.into(), Ty::Any)?;
+        let unresolved = edit.tuple_type(int.into(), false, [any.into()])?;
+        let result = row_filter(&mut edit, "t", unresolved, &[0], unresolved, &mut next);
+        assert_eq!(
+            result.map(|_| ()).unwrap_err().to_string(),
+            "unsupported waterline comparison type Any"
+        );
+        Ok(())
+    }
 }
