@@ -1,10 +1,10 @@
 {
   "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
-  "worker_sha256": "08de7161156651d80483febb3e6ad4f8d672c48d77c0daea518b7b3bf722d85d",
+  "worker_sha256": "d3e398e1b62ce44c5ec5a31394395713a4d88bfb4b920749ef5684e9d8b6d6c9",
   "batch_size": 64,
   "rust_min_stack": 8388608,
   "case_named_tests": true,
-  "optimizer_library_sha256": "05c8480c8b5bc239140ad0a0001c2bc173f940ff68ed48fdc6798b0c9ebdc80d",
+  "optimizer_library_sha256": "9d18f2d454288077c8dba135e572bfe8ce5ff1bf966a69802d98be7732999d22",
   "executed": 8256,
   "compile_only": 315,
   "batches": 143,
@@ -13,11 +13,11 @@
   "expected_runtime_errors": 232,
   "catalog_cases": 0,
   "handle_cases": 8256,
-  "batch_receipts_sha256": "e8660b3794d3bd092ee9c9bf41980726a5f1eb4eb6441717a82d480541374992",
+  "batch_receipts_sha256": "5debfe479ab7e5f1900ac1ed997fd63b5720bc385cf22f75205e0d04883d2439",
   "environment": {
     "classpath_sha256": [
-      "9c28dc7aaa2b1bf1cae5a4458c61507d2c6ea3bd04a7d1b24a8fcfc8b88eb3a5",
-      "cd191232ec21088058e44e92ca7d7d0459c8ad5b81e8689473aaf6bf2b7f0072",
+      "a93c02a7f7ab8ecd9b05586940720d4dd5b222fabab9fbc7b6b699b789ffe915",
+      "bce21a24eb30a684957ecdf721bcfe254daead623648a148bbe9a8e2bf463fcd",
       "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
       "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9",
       "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
@@ -28,5 +28,5 @@
     "cargo": "/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)\ncargo 1.99.0 (5f94df478 2026-08-27)",
     "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)"
   },
-  "pass_kinds": 99
+  "pass_kinds": 101
 }
