@@ -1,0 +1,41 @@
+{
+  "scope": "Replace NOW() in a joined map or residual filter with the extra timestamp field and rebind references to the widened row. Replay the same detached S2 through the reference and candidate.",
+  "java_reference_commit": "54c227440",
+  "compiler_jar_sha256": "fab5021dcc5a411f25c0672e189b05d881de27c7f9b91eaa090e014ba75b727c",
+  "optimizer_library_sha256": "46f22d221fa808bbe3f4084237f9157005d3c2c976a3f13245294052fda6fbed",
+  "populations": {
+    "classic": {
+      "cases": 71,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_sha256": "ddd0078d5b87eb0f7d71bde39b908f9fe307e5c7544c7f9498807c8adbb87c04",
+      "hybrid_sha256": "64108639cdc124fc9b257c8f1e83a06be4eeee1cc9714547049f889fb125e70b"
+    },
+    "gen2": {
+      "cases": 62,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_sha256": "a7a01e1e395f5ab65667052aa069dbe064eace19e1ec0d5abdb7dd49948a7cab",
+      "hybrid_sha256": "77d684867ad98ac844d129d1f63f6759f0ab9b541fe36c4c5e241ac847f89bf0"
+    }
+  },
+  "nested_lambda_diagnostics": {
+    "map": {
+      "sql": "CREATE TABLE t(x BIGINT ARRAY);\nCREATE VIEW v AS SELECT TRANSFORM(x, e -> e + EXTRACT(EPOCH FROM NOW())) FROM t;",
+      "messages_sha256": "1fa0b14693848db3c8cde556f3116c2cdc9bc6b1b41ffdfa30589b439ed55627",
+      "matches_java": true
+    },
+    "filter": {
+      "sql": "CREATE TABLE t(x BIGINT ARRAY);\nCREATE VIEW v AS SELECT * FROM t WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));",
+      "messages_sha256": "7c9f2c1575344516d985bc30a1417ac710a8ecf5ed8a893f737529f7ccbaaec9",
+      "matches_java": true
+    }
+  },
+  "classic_runtime": {
+    "executed": 52,
+    "compile_only": 19,
+    "input_commands": 181,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "39dd0a615324ccaf74a24558475440702fbe44ddc1c14a4f429e80088408733a"
+  }
+}

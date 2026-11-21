@@ -586,6 +586,17 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosurePair(invokeLowering(compiler, "RewriteNow/Join", row, DBSPTypeTuple.EMPTY, timestamp));
     }
 
+    public static DBSPClosureExpression rewriteClockClosure(DBSPCompiler compiler, DBSPClosureExpression closure,
+                                                           DBSPType timestamp) {
+        var reply = invokeLowering(compiler, "RewriteNow/Closure", closure, timestamp);
+        var unsupported = reply.value.get("unsupported_lambda");
+        if (unsupported != null) {
+            var lambda = expressionDecoder(reply.writer).decodeInner(unsupported, DBSPClosureExpression.class);
+            throw new CompilationError("NOW() is not supported inside a lambda expression", lambda.getNode());
+        }
+        return loweredClosure(compiler, reply);
+    }
+
     public static DBSPClosureExpression dropClock(DBSPCompiler compiler, DBSPType joinedRow) {
         return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/DropClock", joinedRow));
     }

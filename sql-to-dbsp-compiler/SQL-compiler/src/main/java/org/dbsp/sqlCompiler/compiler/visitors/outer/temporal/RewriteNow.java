@@ -229,6 +229,12 @@ public class RewriteNow extends CircuitCloneVisitor {
         return new DBSPTupleExpression(fields, false).closure(var);
     }
 
+    private DBSPClosureExpression rewriteClockClosure(DBSPClosureExpression closure) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.rewriteClockClosure(this.compiler, closure, ContainsNow.timestampType());
+        return new RewriteNowClosure(this.compiler()).apply(closure).to(DBSPClosureExpression.class);
+    }
+
     void warnExpensive(@Nullable DBSPExpression expression) {
         this.compiler.reportWarning(
                 Objects.requireNonNull(expression).getSourcePosition(), "Inefficient pattern",
@@ -246,8 +252,7 @@ public class RewriteNow extends CircuitCloneVisitor {
             this.warnExpensive(cn.nowExpression);
             DBSPSimpleOperator join = this.createJoin(
                     input.simpleNode(), operator, Objects.requireNonNull(cn.nowExpression));
-            RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
-            function = rn.apply(function).to(DBSPExpression.class);
+            function = this.rewriteClockClosure(function.to(DBSPClosureExpression.class));
             DBSPSimpleOperator result = new DBSPMapOperator(
                     operator.getRelNode(), function, operator.getOutputZSetType(), join.outputPort());
             this.map(operator, result);
@@ -517,10 +522,8 @@ public class RewriteNow extends CircuitCloneVisitor {
             cn.apply(filterBody);
             DBSPSimpleOperator join = this.createJoin(
                     result, operator, Objects.requireNonNull(cn.nowExpression));
-            RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
             this.warnExpensive(filterBody);
-            function = filterBody.closure(function.parameters);
-            function = rn.apply(function).to(DBSPClosureExpression.class);
+            function = this.rewriteClockClosure(filterBody.closure(function.parameters));
             DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());
             this.addOperator(filter);
             // Drop the extra field

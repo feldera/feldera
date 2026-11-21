@@ -181,6 +181,17 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("RewriteNow/Closure", [closure, timestamp]) => {
+            let closure = edit.expression(*closure)?;
+            let timestamp = edit.type_id(*timestamp)?;
+            match feldera_sql_opt::rewrite_clock_closure(&mut edit, closure, timestamp)? {
+                feldera_sql_opt::ClockClosure::Rewritten(function) => function,
+                feldera_sql_opt::ClockClosure::UnsupportedLambda(lambda) => {
+                    let functions = edit.circuit().additional_expressions(&arena, &[lambda])?;
+                    return Ok(json!({"unsupported_lambda": functions[0]}));
+                }
+            }
+        }
         ("RewriteNow/Join", [row, key, timestamp]) => {
             let (row, key, timestamp) = (edit.type_id(*row)?, edit.type_id(*key)?, edit.type_id(*timestamp)?);
             let roots = feldera_sql_opt::clock_join_functions(&mut edit, row, key, timestamp, &mut next)?;
@@ -497,7 +508,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/WindowBounds" | "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/WindowBounds" | "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

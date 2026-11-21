@@ -828,6 +828,12 @@ appends the clock to the joined row and drops it from the filtered output.
 The pass matched Java on all 71 classic and 62 Gen-2 temporal cases.
 [Clock join comparisons](evidence/p3-clock-join.json)
 
+Rust rebinds each joined map or residual filter to its widened input and reads
+the clock from its final column. The 133 temporal pass comparisons matched,
+and 52 classic programs passed all 181 input commands. Two directed compiler
+runs matched Java’s ordered diagnostics when a nested lambda used `NOW()`,
+one in a projection and one in a filter. [Clock closure comparisons](evidence/p3-clock-closures.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

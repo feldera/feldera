@@ -1,6 +1,10 @@
 //! Append the clock to a row for NOW expressions that require a stream join.
-use feldera_sql_expr::flatten_tuple_fields;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, TypeId};
+use crate::function_calls::{contains_now, function_name, is_clock_call};
+use feldera_sql_expr::{Rewrite, Transformation, Visit, flatten_tuple_fields, parameter_paths};
+use feldera_sql_ir::{
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, NodeId, TypeId,
+};
+use std::collections::HashSet;
 
 fn parameter(edit: &mut CircuitEditor, ty: TypeId, next: &mut u64) -> Result<ExpressionId, Error> {
     let reference = edit.reference_type(ty)?;
@@ -50,4 +54,91 @@ pub fn drop_clock(
         .ok_or_else(|| Error::new("missing clock column on a temporal join"))?;
     let restored = edit.tuple_expr(row.into(), false, &fields)?;
     edit.closure_from_variables(restored, &[row])
+}
+
+/// A clock call in a nested lambda refers to a row outside that lambda's scope.
+/// Return the original lambda so the caller can report its SQL location.
+pub enum ClockClosure {
+    Rewritten(ExpressionId),
+    UnsupportedLambda(ExpressionId),
+}
+
+struct JoinedClock {
+    uses: HashSet<NodeId>,
+    row: ExpressionId,
+    clock: ExpressionId,
+    unsupported: Option<ExpressionId>,
+}
+
+impl Transformation for JoinedClock {
+    fn preorder(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
+        let node = edit.node(id)?;
+        if self.unsupported.is_some() || matches!(node.inner_kind(), Some(InnerKind::Type(_))) {
+            return Ok(Visit::Keep);
+        }
+        if matches!(
+            node.inner_kind(),
+            Some(InnerKind::Expression(Expr::Closure))
+        ) {
+            if contains_now(edit.circuit(), &[node.edge("body")?])? {
+                self.unsupported = Some(edit.expression(id)?);
+            }
+            return Ok(Visit::Keep);
+        }
+        if self.uses.contains(&id) {
+            return Ok(Visit::Replace(self.row.into()));
+        }
+        if let Some(name) = function_name(edit.circuit(), node)? {
+            if is_clock_call(&name, node.edges("arguments")?.len()) {
+                return Ok(Visit::Replace(self.clock.into()));
+            }
+        }
+        Ok(Visit::Children)
+    }
+}
+
+/// Widen the input parameter by one timestamp and read NOW() from that column.
+pub fn rewrite_clock_closure(
+    edit: &mut CircuitEditor,
+    closure: ExpressionId,
+    timestamp: TypeId,
+) -> Result<ClockClosure, Error> {
+    let node = edit.node(closure.into())?;
+    let body = node.edge("body")?;
+    let [parameter] = node
+        .edges("parameters")?
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::new("a clock join needs a unary closure"))?;
+    let decl = edit.node(parameter)?;
+    let name = decl
+        .data("name")
+        .and_then(|n| n.as_str())
+        .ok_or_else(|| Error::new("clock input parameter requires a name"))?
+        .to_owned();
+    let row = edit.type_id(edit.node(decl.edge("type")?)?.edge("type")?)?;
+    let mut fields = edit.node(row.into())?.edges("tupFields")?;
+    let clock_index = fields.len();
+    fields.push(timestamp.into());
+    let nullable = edit.nullable(row)?;
+    let joined = edit.tuple_type(row.into(), false, fields)?;
+    let joined = edit.with_nullability(joined, nullable)?;
+    let reference = edit.reference_type(joined)?;
+    let row = edit.named_variable(reference, &name)?;
+    let clock_row = edit.named_variable(reference, &name)?;
+    let clock_row = edit.dereference(clock_row)?;
+    let clock = edit.tuple_field(clock_row, clock_index)?;
+    let mut rewrite = Rewrite::new(JoinedClock {
+        uses: parameter_paths(edit, body, parameter)?,
+        row,
+        clock,
+        unsupported: None,
+    });
+    let body = rewrite.apply(edit, body)?;
+    match rewrite.rule.unsupported {
+        Some(lambda) => Ok(ClockClosure::UnsupportedLambda(lambda)),
+        None => Ok(ClockClosure::Rewritten(
+            edit.closure_from_variables(edit.expression(body)?, &[row])?,
+        )),
+    }
 }
