@@ -139,6 +139,7 @@ pub fn needs_full_snapshot(pass: &str, circuit: &Circuit) -> Result<bool, Error>
         "RemoveIdentityOperators" => has(&[Op::Map, Op::MapIndex]),
         "BuildNestedOperators" => has(&[Op::ViewDeclaration]),
         "SubstituteLeftJoins" => has(&[Op::Nested]) && has(&[Op::LeftJoin]),
+        "TrimWindows" => reads(Op::MapIndex, &[Op::Window]),
         "ExpandHop" => has(&[Op::Hop]),
         "LinearPostprocessRetainKeys" => reads(
             Op::IntegrateTraceRetainKeys,

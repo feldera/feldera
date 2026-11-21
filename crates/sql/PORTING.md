@@ -487,6 +487,7 @@ reached its CPU-hour budget and completed every batch within the deadline.
 | [ExpandStreamAggregates](evidence/p3-expand-stream-aggregates.json) | 8,571 | 8,527 | 1,907 |
 | [FindUnusedInputFields](evidence/p3-find-unused-input-fields.json) | 8,571 | 8,527 | 2,496 |
 | [TrimInputs](evidence/p3-trim-inputs.json) | 2 | 2 | 0 |
+| [TrimWindows](evidence/p3-trim-windows.json) | 16,643 | 16,533 | 82 |
 | [FindCommonProjections](evidence/p3-find-common-projections.json) | 25,214 | 25,060 | 0 |
 | [ReplaceCommonProjections](evidence/p3-replace-common-projections.json) | 25,214 | 25,060 | 1,024 |
 | [LowerAsof.MoveGC](evidence/p3-asof-retention.json) | 9 | 9 | 18 |

@@ -1,0 +1,46 @@
+{
+  "scope": "Individual Java window-trimming placements in the unused-field loop. Each comparison checks circuit structure, sharing, provenance and generated names. The Rust unit case also checks sparse columns, a retained empty row and nullable values.",
+  "comparator_sha256": "eda007f8a5f910dc40f58b1c5b7cd21fda7599f6340aba0aba5e12f5483b213e",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "f099759a07d24ee3280d4666caec7e8b43d81fb16b8e814ba37decfc9cf8dd07",
+      "6eaab655c6f24d93cad8972992ff15345343371cad66ed85832e2064c71bb180",
+      "1441e7b001a3d667acd3ed982e271c1e7795c02aa5b2e89555101a1023386d41",
+      "d0c2be51d31811d181bdb00ac349f361a24f46fc8ff6ccf10fbdb1b0be9c6a65"
+    ],
+    "pass": "TrimWindows",
+    "invocations": 16643,
+    "changed": 42,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "a5cfb7e1fca3343c9843c15e7091fa2f0c0ce1fd93ecba7848d027eaaf40fdb3",
+      "30ae2be3b9f323268cf947862748e69f5cfb077d666ee183902529c19ab81238",
+      "bdb48d6428eece0ab1ca80b779ff689d4d5ac9bd14a8e163e04c34d8f8b62d5a",
+      "d37114191fb82a0e068ee53272dbb688027b5afa70c85937d6d6b41c79119904"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "b9c0dc63c7d7056bf9ba97eaea63b26d45229458729e2ee668f87531f1c2448f",
+      "f15a9d444efdce814be44586627167c59101e10cd567d089c250459aeac17926",
+      "6984538a42e3a7ee731ae0d3ce0cc9fcc56ca1298119676ebb28a98e971d5600",
+      "377e55acb76631f7e91f47b89832c0e3d7d7a8cfb93870c23fc4d638b49e9137"
+    ],
+    "pass": "TrimWindows",
+    "invocations": 16533,
+    "changed": 40,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "28a0f390b7e40f0f86220e1ab323274d7db29d2020776990ff33a4cef0a4841c",
+      "e1fc192eb028f78e12d8c18a1fde0292a86012432bd283a37850d68babf6e72e",
+      "6b5b35b7f0a96c3ceca49891eefa04f5f4abaf6ce8a7e890139c9835b35a36b2",
+      "4c7d4680ae34e0ce12f5af0c344903912da3cbf9807ccad9f9ffa491b19f9e59"
+    ]
+  }
+}

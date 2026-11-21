@@ -1,10 +1,10 @@
 //! Find fanouts whose readers can share a narrower input row.
-use crate::consumer_graph::consumer_graphs;
+use crate::{consumer_graph::consumer_graphs, row_fields::RowFields};
 use feldera_sql_ir::{
     BodyOrder, Circuit, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind as Ty,
 };
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 type Paths = BTreeSet<Vec<usize>>;
 
@@ -54,78 +54,6 @@ pub fn common_projection_payloads(circuit: &Circuit) -> Result<BTreeSet<u64>, Er
         .collect())
 }
 
-struct RowFields<'a> {
-    circuit: &'a Circuit,
-    empty_tuples: HashMap<NodeId, bool>,
-}
-
-impl RowFields<'_> {
-    // A zero-column tuple counts as used, even when its enclosing row is discarded.
-    fn contains_empty_tuple(&mut self, ty: NodeId, level: usize) -> Result<bool, Error> {
-        if level > 128 {
-            return Err(Error::new("input field type exceeds the nesting limit"));
-        }
-        if let Some(&empty) = self.empty_tuples.get(&ty) {
-            return Ok(empty);
-        }
-        let node = self.circuit.node(ty).expect("validated row type");
-        let result = match node.inner_kind() {
-            Some(InnerKind::Type(Ty::Ref)) => {
-                self.contains_empty_tuple(node.edge("type")?, level + 1)?
-            }
-            Some(InnerKind::Type(Ty::Tuple | Ty::RawTuple)) => {
-                let fields = node.edges("tupFields")?;
-                let mut empty = fields.is_empty();
-                for f in fields {
-                    if self.contains_empty_tuple(f, level + 1)? {
-                        empty = true;
-                        break;
-                    }
-                }
-                empty
-            }
-            _ => false,
-        };
-        self.empty_tuples.insert(ty, result);
-        Ok(result)
-    }
-
-    fn unused(
-        &mut self,
-        ty: NodeId,
-        prefix: &mut Vec<usize>,
-        paths: &Paths,
-        depth: usize,
-        level: usize,
-    ) -> Result<bool, Error> {
-        if level > 128 {
-            return Err(Error::new("input field type exceeds the nesting limit"));
-        }
-        if paths.contains(prefix) {
-            return Ok(false);
-        }
-        let node = self.circuit.node(ty).expect("validated field type");
-        match node.inner_kind() {
-            Some(InnerKind::Type(Ty::Ref)) => {
-                self.unused(node.edge("type")?, prefix, paths, depth, level + 1)
-            }
-            Some(InnerKind::Type(Ty::Tuple | Ty::RawTuple)) if depth > 0 => {
-                for (i, field) in node.edges("tupFields")?.into_iter().enumerate() {
-                    prefix.push(i);
-                    let unused = self.unused(field, prefix, paths, depth - 1, level + 1)?;
-                    prefix.pop();
-                    if unused {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            _ => Ok(!paths.iter().any(|p| p.starts_with(prefix))
-                && !self.contains_empty_tuple(ty, level)?),
-        }
-    }
-}
-
 #[derive(Serialize)]
 pub struct CommonProjection {
     pub producer: u64,
@@ -137,10 +65,7 @@ pub struct CommonProjection {
 pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Error> {
     let mut candidates = candidates(circuit)?;
     let mut result = Vec::new();
-    let mut shape = RowFields {
-        circuit,
-        empty_tuples: HashMap::new(),
-    };
+    let mut shape = RowFields::new(circuit);
     for producer in circuit.operator_order(BodyOrder::Postorder)? {
         let Some(readers) = candidates.remove(&producer) else {
             continue;

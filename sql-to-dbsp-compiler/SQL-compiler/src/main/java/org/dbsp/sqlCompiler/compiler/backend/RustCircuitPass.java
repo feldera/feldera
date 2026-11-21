@@ -995,7 +995,7 @@ public final class RustCircuitPass implements CircuitTransform {
                         OptimizerTopology.encode(circuit, OptimizerTopology.Details.VIEW_NAMES), initial, state);
                 case "CheckRetain", "ValidateRecursiveOperators", "NoIntegralVisitor", "CheckHints", "CompactNames", "TagRegions" ->
                         result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit), initial, state);
-                case "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "DecomposeExpensiveFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "RemoveNoops", "PushDifferentialsUp",
+                case "TrimWindows", "ExpandStreamAggregates", "IndexedInputs", "OptimizeProjectionVisitor", "PullFilterVisitor", "DesugarNowEquality", "BreakFilters", "SimplifyWaterline", "DecomposeExpensiveFilters", "FilterJoinVisitor", "ShareOutputIntegrators", "DuplicateSharedIndexes", "BalancedJoins", "DeadCode", "DeadCodeKeepSources", "RemoveNoops", "PushDifferentialsUp",
                      "FuseIntoArrayAgg", "PropagateConstants", "PropagateEmptySources", "RemoveConstantFilters", "CloneOperatorsWithFanout", "OptimizeDistinctVisitor",
                      "RemoveDeindexOperators", "RemoveIAfterD", "ImplementJoins", "MergeSums", "OptimizeIncrementalVisitor",
                      "RemoveViewOperators", "RemoveAllViews", "ExpandAggregateZero", "ExpandMetadataCasts",

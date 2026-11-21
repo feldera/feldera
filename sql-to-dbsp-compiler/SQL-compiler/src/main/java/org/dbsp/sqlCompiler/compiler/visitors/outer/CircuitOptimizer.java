@@ -72,6 +72,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowInt
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.FindWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ImplementWindowGroups;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimWindows;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
 
@@ -143,7 +144,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof FindMapChains || pass instanceof DuplicateSharedIndexes
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections
-                    || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs
+                    || pass instanceof TrimWindows || pass instanceof UnusedFields.FindUnusedInputFields || pass instanceof UnusedFields.TrimInputs
                     || pass instanceof ExpandIndexedInputs.IndexedInputs || pass instanceof ExpandAggregates.ExpandStreamAggregates
                     || pass instanceof OptimizeProjectionVisitor || pass instanceof PullFilterVisitor
                     || pass instanceof ShareOutputIntegrators || pass instanceof FilterJoinVisitor || pass instanceof AppendOnly

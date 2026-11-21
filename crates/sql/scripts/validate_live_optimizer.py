@@ -53,7 +53,7 @@ def read_run(directory, entry):
 # Counts for one uninterrupted top-level optimizer sequence in the frozen replay.
 # The case options, rather than the population label, determine the Gen-2 placement.
 FROZEN_SCHEDULE = {
-    "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
+    "TrimWindows": 1, "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
     "Graph": 13, "Fuse": 1, "RemoveStarJoins": 0, "FindJoinTrees": 1, "CanonicalForm": 1, "ReplaceStarJoins": 1, "MoveGC": 0, "OrderGcDependencies": 0, "MergeRetain": 1, "MergeNoops": 1, "FindMultipleRetains": 1, "FindEquivalentNoops": 1,
     "DetectStreamingOperations": 1, "FindGCedStreams": 1, "CollectUnbounded": 1, "FindBounded": 2, "EnsureExpressionTrees": 1, "MultisetAnalysis": 3, "OptimizeDistinctVisitor": 1,
@@ -151,7 +151,7 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
         if "Graph" in expected:
             expected["Graph"] += sum(graph_cleanups.values())
         expected["FilterJoinVisitor"] = graph_cleanups["FilterJoinVisitor"]
-        for name in ("PullFilterVisitor", "OptimizeProjectionVisitor"):
+        for name in ("PullFilterVisitor", "OptimizeProjectionVisitor", "TrimWindows"):
             if name in expected:
                 expected[name] = graph_cleanups[name]
     if incremental:
