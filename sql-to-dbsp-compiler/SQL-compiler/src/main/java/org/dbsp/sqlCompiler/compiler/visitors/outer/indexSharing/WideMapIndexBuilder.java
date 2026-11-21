@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -62,27 +63,30 @@ class WideMapIndexBuilder {
             if (!valueType.getFieldType(i).mayBeNull && outputI.getType().mayBeNull)
                 outputI = outputI.neverFailsUnwrap(outputI.getNode());
             outputI = outputI.reduce(compiler);
-            boolean found = false;
-            List<DBSPExpression> fields = this.outputFields;
-            for (int j = 0; j < fields.size(); j++) {
-                DBSPExpression outputJ = fields.get(j);
-                if (this.eqContext.equivalent(outputI, outputJ)) {
-                    currentOutputs.add(j);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                currentOutputs.add(this.outputFields.size());
-                this.outputFields.add(outputI);
-            }
+            currentOutputs.add(this.outputIndex(outputI));
         }
         this.outputIndexes.add(currentOutputs);
+    }
+
+    private int outputIndex(DBSPExpression field) {
+        for (int i = 0; i < this.outputFields.size(); i++)
+            if (this.eqContext.equivalent(field, this.outputFields.get(i)))
+                return i;
+        int index = this.outputFields.size();
+        this.outputFields.add(field);
+        return index;
     }
 
     public static WideMapIndexBuilder create(
             CalciteRelNode node, DBSPCompiler compiler, List<DBSPClosureExpression> closures) {
         Utilities.enforce(closures.size() > 1);
+        if (compiler.options.ioOptions.rustOptimizerPasses) {
+            var fields = RustCircuitPass.wideIndexFields(compiler, closures);
+            var builder = new WideMapIndexBuilder(node, fields.variable(), fields.key(), fields.nullable());
+            for (var row : fields.rows())
+                builder.outputIndexes.add(Linq.map(row, builder::outputIndex));
+            return builder;
+        }
         DBSPClosureExpression first = closures.get(0);
         Utilities.enforce(first.parameters.length == 1);
         DBSPVariablePath var = first.parameters[0].type.var();

@@ -1,0 +1,80 @@
+{
+  "scope": "Project a shared key and each narrow value column onto one row variable. Compare the original Java, current Java and opt-in Rust field builder at ReplaceSharedIndexes, including entry and exit circuits, shared expression identities, generated names and diagnostic order.",
+  "java_reference_jar_sha256": "1c7e58eea2e78ef42dd93b5b180567164be2c98841c39ba557c36a887e12bc5a",
+  "compiler_jar_sha256": "35faeabb6ed29cc8070cdfa8c5a938943b3334255ac7c2e27174f1a39baf3a46",
+  "optimizer_library_sha256": "09d596aa8dfd2aeaf3bc77db205e56fed59f854b261c3083937357c1759c34d4",
+  "shards": [
+    {
+      "shard": "classic-0",
+      "cases": 2143,
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "programs_with_candidate_groups": 44,
+      "java_reference_gzip_sha256": "423317e9413b0d36cec2970288b6677ebcbb72a4df3d040f7eb645dca4b13342",
+      "java_current_gzip_sha256": "423317e9413b0d36cec2970288b6677ebcbb72a4df3d040f7eb645dca4b13342",
+      "hybrid_gzip_sha256": "bd9ed90f9e08a2e5ed2ce9a9b170facf189bad3d4deab02ad5bb5dc49346e0f5"
+    },
+    {
+      "shard": "classic-1",
+      "cases": 2143,
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "programs_with_candidate_groups": 56,
+      "java_reference_gzip_sha256": "026e9fda11ef39f31b7d4b0b9ff2b21097539139123d82299c8ecfbaf1979dc5",
+      "java_current_gzip_sha256": "026e9fda11ef39f31b7d4b0b9ff2b21097539139123d82299c8ecfbaf1979dc5",
+      "hybrid_gzip_sha256": "00eae84b81ae09dafa4058c161cd5782831b809c5941ebf452e9a4e0e8f77b0e"
+    },
+    {
+      "shard": "classic-2",
+      "cases": 2143,
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "programs_with_candidate_groups": 52,
+      "java_reference_gzip_sha256": "d4ca332931773d8072fed2ac00a6cd326dd9df2f6d663b11a829c7094dfa79c5",
+      "java_current_gzip_sha256": "d4ca332931773d8072fed2ac00a6cd326dd9df2f6d663b11a829c7094dfa79c5",
+      "hybrid_gzip_sha256": "552929c1c13ae6d6510b5c45ab25ab947270c523629c6d6f1d7f2734a8f14bc6"
+    },
+    {
+      "shard": "classic-3",
+      "cases": 2142,
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "programs_with_candidate_groups": 50,
+      "java_reference_gzip_sha256": "7fa64a48c1ba07c5a35e4306133cf8adea077147cfbc84f290196249d096438e",
+      "java_current_gzip_sha256": "7fa64a48c1ba07c5a35e4306133cf8adea077147cfbc84f290196249d096438e",
+      "hybrid_gzip_sha256": "6122328498ceb224a66908494d8a1c48fff8795fa36ec605800008d7a9bde9b4"
+    },
+    {
+      "shard": "gen2-0",
+      "cases": 2132,
+      "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+      "programs_with_candidate_groups": 60,
+      "java_reference_gzip_sha256": "93b8050c3cbfdc20f1238fe4dcbfdfa5d3fc39e23f06a04d917b4f131b21a3f6",
+      "java_current_gzip_sha256": "93b8050c3cbfdc20f1238fe4dcbfdfa5d3fc39e23f06a04d917b4f131b21a3f6",
+      "hybrid_gzip_sha256": "454fdaefde80f8eca48bc9e9cb7c539e33db15da5c4a65a5e0dd62f4c662dbf3"
+    },
+    {
+      "shard": "gen2-1",
+      "cases": 2132,
+      "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+      "programs_with_candidate_groups": 59,
+      "java_reference_gzip_sha256": "b39630d191006319fa34fdaf4d641288f7d836a3903be31e5ffd95c7435d785e",
+      "java_current_gzip_sha256": "b39630d191006319fa34fdaf4d641288f7d836a3903be31e5ffd95c7435d785e",
+      "hybrid_gzip_sha256": "7bcc38b034034081750d9bebfbcdbd0c01c4ca56cc3e6a80ed962696e4a2cc43"
+    },
+    {
+      "shard": "gen2-2",
+      "cases": 2132,
+      "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+      "programs_with_candidate_groups": 58,
+      "java_reference_gzip_sha256": "931b676e4c5572644e73b63f1adb89f2782b87f9ba3d1600718b08e7ba57a5be",
+      "java_current_gzip_sha256": "931b676e4c5572644e73b63f1adb89f2782b87f9ba3d1600718b08e7ba57a5be",
+      "hybrid_gzip_sha256": "f31cac1e6653acc2d82b1eb7657ddc94c1a326e4c517b12417f081875a75e6fa"
+    },
+    {
+      "shard": "gen2-3",
+      "cases": 2131,
+      "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+      "programs_with_candidate_groups": 66,
+      "java_reference_gzip_sha256": "52024afd2bc6e618c274022f501d0a2f5056368cdcdb86e661182c091aafe171",
+      "java_current_gzip_sha256": "52024afd2bc6e618c274022f501d0a2f5056368cdcdb86e661182c091aafe171",
+      "hybrid_gzip_sha256": "d448e3f3806e9cb63efab5f131c5e369037022ea93136204dceaa68a85bdc551"
+    }
+  ]
+}

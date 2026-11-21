@@ -174,6 +174,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         if (pass instanceof FindSharedIndexes find)
             this.active.set("previously_visited_indexes", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(find.visitedIds()));
+        if (pass.getName().equals("ReplaceSharedIndexes") && Boolean.getBoolean("feldera.optimizer.compareRustWideIndexes"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerCircuitVisitor) {
             byte[] types = org.dbsp.sqlCompiler.compiler.backend.CircuitLoweringTypes.encode(
                     writer, circuit, this.compiler.options.ioOptions.gen2);

@@ -1449,6 +1449,32 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public record WideIndexFields(DBSPVariablePath variable, DBSPExpression key, boolean nullable,
+                                  List<List<DBSPExpression>> rows) {}
+
+    public static WideIndexFields wideIndexFields(DBSPCompiler compiler, List<DBSPClosureExpression> functions) {
+        var reply = invokeLowering(compiler, "SharedIndexes/WideFields", functions.toArray(DBSPClosureExpression[]::new));
+        var decoder = expressionDecoder(reply.writer);
+        var expressions = reply.value.required("expressions");
+        var variable = decoder.decodeInner(expressions.required(0), DBSPVariablePath.class);
+        var key = decoder.decodeInner(expressions.required(1), DBSPExpression.class);
+        var rows = new ArrayList<List<DBSPExpression>>(functions.size());
+        int i = 2;
+        for (var width : reply.value.required("widths")) {
+            var fields = new ArrayList<DBSPExpression>(width.intValue());
+            for (int field = 0; field < width.intValue(); field++)
+                fields.add(decoder.decodeInner(expressions.required(i++), DBSPExpression.class));
+            rows.add(fields);
+        }
+        if (rows.size() != functions.size() || i != expressions.size())
+            throw new IllegalStateException("Invalid column counts in Rust shared index");
+        for (var warning : reply.value.required("warnings"))
+            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
+                    warning.required("error_type").textValue(), warning.required("message").textValue());
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return new WideIndexFields(variable, key, reply.value.required("nullable").booleanValue(), rows);
+    }
+
     @FunctionalInterface
     private interface KeyEquality {
         boolean equivalent(byte[] closures) throws IOException;

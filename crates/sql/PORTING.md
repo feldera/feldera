@@ -864,6 +864,12 @@ and all 2,431 key comparisons ran without invoking the JVM. In the live
 compiler, Java can compare expression forms outside the native comparator.
 [Standalone and live shared-index results](evidence/p3-shared-index-groups.json)
 
+Rust projects the shared key and each narrow value field onto the same row
+variable. It preserves required fields inside nullable tuples. Both compiler
+paths matched the Java reference at every frozen `ReplaceSharedIndexes`
+boundary, including the graph consumed by the following dead-code pass.
+[Wide index field projections](evidence/p3-wide-index-fields.json)
+
 Rust now finds clock calls in the predicate itself and combines residual
 conditions using the typed expression builders. Java supplies the monotonicity
 of comparison operands. All 532 `Scan`, `Reorder`, `MergeFilters` and
