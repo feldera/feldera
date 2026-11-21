@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -283,6 +284,12 @@ public final class RustCircuitPass implements CircuitTransform {
     public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {
         return lowerFunction(compiler, "LowerAggregateFold", aggregates,
                 aggregates.isEmpty() ? DBSPTypeTuple.EMPTY : null, DBSPFold.class);
+    }
+
+    public static DBSPClosureExpression lagTransfer(DBSPCompiler compiler, DBSPLagOperator lag) {
+        byte[] offset = Integer.toString(lag.offset).getBytes(StandardCharsets.US_ASCII);
+        return loweredClosure(compiler, invokeLowering(compiler, "Monotonicity/Lag", offset,
+                lag.getClosureFunction(), lag.comparator, lag.input().getOutputIndexedZSetType()));
     }
 
     public static DBSPClosureExpression monotoneIdentity(DBSPCompiler compiler, DBSPType row, boolean indexed) {

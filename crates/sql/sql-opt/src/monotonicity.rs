@@ -2,6 +2,7 @@
 pub mod binary;
 pub mod casts;
 pub mod functions;
+pub mod lag;
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId,
     TypeId, TypeKind,

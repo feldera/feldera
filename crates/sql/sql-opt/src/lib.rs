@@ -12,6 +12,7 @@ mod append_only;
 mod lexical_scope;
 mod map_fusion;
 mod monotonicity;
+pub use monotonicity::lag::lag_transfer;
 pub use monotonicity::casts::{cast_waterline, CastWaterline};
 pub use monotonicity::functions::{function_waterline, Argument as WaterlineArgument};
 pub use monotonicity::binary::{

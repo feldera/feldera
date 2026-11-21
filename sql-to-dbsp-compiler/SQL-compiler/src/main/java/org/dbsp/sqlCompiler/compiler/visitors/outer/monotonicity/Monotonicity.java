@@ -648,6 +648,14 @@ public class Monotonicity extends CircuitVisitor {
         if (input == null)
             return;
         IMaybeMonotoneType projection = Monotonicity.getBodyType(input);
+        DBSPExpression transfer = this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.lagTransfer(this.compiler(), node) : this.lagTransfer(node);
+        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+        this.set(node, mm.applyAnalysis(transfer));
+    }
+
+    private DBSPExpression lagTransfer(DBSPLagOperator node) {
         // The lag operator function has 2 inputs, although the operator has
         // a single input.  The first parameter is actually fed from the
         // operator's input.  The second parameter is fed from the lagged version of
@@ -675,16 +683,8 @@ public class Monotonicity extends CircuitVisitor {
         }
         DBSPExpression current = new DBSPTupleExpression(currentRow, valueType.mayBeNull).borrow();
         DBSPExpression dataPart = function.call(current, noExpression);
-        DBSPExpression transfer = new DBSPRawTupleExpression(
-                kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler())
-                .ensureTree(this.compiler());
-        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
-                this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
-        MonotoneExpression result = mm.applyAnalysis(transfer);
-        if (result == null)
-            return;
-        this.set(node, result);
+        return new DBSPRawTupleExpression(kx.field(0).deref(), dataPart)
+                .closure(kx).reduce(this.compiler()).ensureTree(this.compiler());
     }
 
     @Override

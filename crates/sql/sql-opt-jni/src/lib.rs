@@ -424,6 +424,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let tree = feldera_sql_expr::ensure_expression_tree(&mut edit, projection.into())?;
             edit.expression(tree)?
         }
+        ("Monotonicity/Lag", [function, comparator, input]) => {
+            let function = edit.expression(*function)?;
+            let comparator = edit.expression(*comparator)?;
+            let input = edit.type_id(*input)?;
+            feldera_sql_opt::lag_transfer(&mut edit, function, comparator, input,
+                serde_json::from_slice(state)?, &mut next, &mut warnings)?
+        }
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;
             let bound = edit.expression(*bound)?;
@@ -633,7 +640,7 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
+        | "Monotonicity/Lag" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
