@@ -892,20 +892,27 @@ public class Monotonicity extends CircuitVisitor {
 
         Utilities.enforce(tuple0.getType().sameType(outputValueType.tupFields[0]),
                 () -> "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0]);
-        DBSPTypeTupleBase varType = projection.getType().to(DBSPTypeTupleBase.class);
-        DBSPTypeTupleBase finalVarType = varType;
-        Utilities.enforce(varType.size() == 2, () -> "Expected a pair, got " + finalVarType);
-        varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
-        DBSPVariablePath var = varType.var();
-        // Drop field 1 of the value projection.
-        DBSPExpression body = new DBSPRawTupleExpression(
-                var.field(0).deref(),
-                makeNoExpression(ix.elementType));
-        DBSPClosureExpression closure = body.closure(var);
+        DBSPClosureExpression closure = this.aggregateTransfer(projection, ix, false);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, Objects.requireNonNull(result));
+    }
+
+    private DBSPClosureExpression aggregateTransfer(IMaybeMonotoneType projection, DBSPTypeIndexedZSet output,
+                                                    boolean rolling) {
+        DBSPTypeTupleBase pair = projection.getType().to(DBSPTypeTupleBase.class);
+        if (this.compiler().options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.aggregateTransfer(this.compiler(), pair, output, rolling);
+        Utilities.enforce(pair.size() == 2, () -> "Expected a pair, got " + pair);
+        var row = new DBSPTypeRawTuple(pair.tupFields[0].ref(), pair.tupFields[1].ref()).var();
+        var key = row.field(0).deref();
+        if (rolling) {
+            var values = output.elementType.to(DBSPTypeTupleBase.class);
+            return new DBSPRawTupleExpression(makeNoExpression(output.keyType),
+                    new DBSPTupleExpression(key, makeNoExpression(values.tupFields[1]).someIfNeeded())).closure(row);
+        }
+        return new DBSPRawTupleExpression(key, makeNoExpression(output.elementType)).closure(row);
     }
 
     @Override
@@ -1142,18 +1149,7 @@ public class Monotonicity extends CircuitVisitor {
 
         Utilities.enforce(timestamp.getType().sameType(outputValueType.tupFields[0]),
                 () -> "Types differ " + timestampType + " and " + outputValueType.tupFields[0]);
-        DBSPTypeTupleBase varType = inputProjection.getType().to(DBSPTypeTupleBase.class);
-        DBSPTypeTupleBase finalVarType = varType;
-        Utilities.enforce(varType.size() == 2, () -> "Expected a pair, got " + finalVarType);
-        varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
-        DBSPVariablePath var = varType.var();
-        DBSPExpression body =
-                new DBSPRawTupleExpression(
-                        makeNoExpression(ix.keyType),
-                        new DBSPTupleExpression(
-                                var.field(0).deref(),
-                                makeNoExpression(outputValueType.tupFields[1]).someIfNeeded()));
-        DBSPClosureExpression closure = body.closure(var);
+        DBSPClosureExpression closure = this.aggregateTransfer(inputProjection, ix, true);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);

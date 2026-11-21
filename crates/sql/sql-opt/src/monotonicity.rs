@@ -1,12 +1,34 @@
 //! Transfer almost-monotone columns through identity operators and filter comparisons.
+pub mod aggregate;
 pub mod binary;
 pub mod casts;
 pub mod functions;
 pub mod lag;
 use feldera_sql_ir::{
-    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, Node, NodeId,
-    TypeId, TypeKind,
+    BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node,
+    NodeId, TypeId, TypeKind,
 };
+
+fn unknown(edit: &mut CircuitEditor, ty: NodeId) -> Result<ExpressionId, Error> {
+    let id = edit.empty_origin_node(
+        ty,
+        InnerKind::Expression(Expr::NoExpression),
+        [("type", Field::Reference(ty))],
+    )?;
+    edit.expression(id)
+}
+
+fn indexed_parameter(
+    edit: &mut CircuitEditor,
+    key: TypeId,
+    value: TypeId,
+    next: &mut u64,
+) -> Result<ExpressionId, Error> {
+    let key_ref = edit.reference_type(key)?;
+    let value_ref = edit.reference_type(value)?;
+    let pair = edit.tuple_type(key.into(), true, [key_ref.into(), value_ref.into()])?;
+    edit.variable(pair, next)
+}
 
 /// The transfer function takes a row reference, or a pair of references to an indexed row.
 pub fn monotone_identity(

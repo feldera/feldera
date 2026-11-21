@@ -978,6 +978,15 @@ available bound when only one side supplies a key. When both sides bound the
 key it takes the pointwise maximum. All 291 classic and 259 Gen-2 selected
 limiter boundaries matched Java. [Join waterline comparisons](evidence/p3-join-waterlines.json)
 
+Rust constructs the transfer closures for LAG/LEAD, ordered filter bounds,
+grouped aggregates and rolling aggregates. The rolling frame propagates its
+timestamp when it ends at or before the current row. LAG/LEAD matched Java
+on eight selected cases per engine. The filter and aggregate builds each
+matched Java at all 550 selected monotonicity boundaries. Each build matched
+both full frozen populations, passed 2,076 runtime commands and restored
+COUNT and LATENESS checkpoints in both directions.
+[Waterline comparisons](evidence/p3-aggregate-and-filter-waterlines.json)
+
 For tables and views with LATENESS, Rust builds the predicate that admits a
 row and the error payload for a rejected row. The 550 selected limiter
 boundaries matched Java, including 997 controlled filters and 29 keyed

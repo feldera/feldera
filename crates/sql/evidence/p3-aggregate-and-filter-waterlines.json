@@ -1,0 +1,191 @@
+{
+  "lag-transfer": {
+    "build": {
+      "jar_sha256": "b7513adcbf7e02c2052c871240a14e79ae077c24b376bec2aa1cda6f15bee3f3",
+      "optimizer_library_sha256": "d027b870e1af4396f354a479173c96047c8b4d30f07c7222f67ba78e591a51e0",
+      "driver_sha256": "7a846317b00f2c7cef9cfede6f335a9e79102f058fe6b1fc544fd7c340b4fde9",
+      "pass_kinds": 105
+    },
+    "s4": {
+      "classic": {
+        "cases": 8,
+        "population_sha256": "5b10194d9a96559d2d06d2928234a62acfe32a5238b0ad90a7b8279b6ef55978",
+        "java_stream_sha256": "b84faf897a84a9a0c5ebeaeb767a87c7a2ccf3c8929026e1fb3594d9e852f067",
+        "rust_stream_sha256": "6c925629bd56048b00f0ed34bafd76437fe8816c2dc6e3c1f96be850ff2c0fa4"
+      },
+      "gen2": {
+        "cases": 8,
+        "population_sha256": "fe58e171dfbd5eef555d988c8676ebbab480b0ad0276014ced25f68547bf4b6e",
+        "java_stream_sha256": "1ce825057f7c6900f43c5c49382400abd2a9faae3f46678cc0af6c3545cbbac2",
+        "rust_stream_sha256": "54893808eb47112978ba4a72450d8bc4541a07b1a2dea785bacd801666012f6e"
+      }
+    },
+    "s2_to_s3": {
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+      }
+    },
+    "classic_runtime": {
+      "executed": 217,
+      "compile_only": 74,
+      "input_commands": 2076,
+      "expected_runtime_errors": 0,
+      "batch_receipts_sha256": "91f21e690a6168292364175bfda739e55d1e9da8c48928eb87464ee91d5af059"
+    },
+    "checkpoint_restores": {
+      "count": {
+        "receipt_sha256": "25c879273b66c5bf3a8bd93121fb6cae44ad929471a88477a47a41d9de8b0cb4",
+        "directions": [
+          "java to hybrid",
+          "hybrid to java"
+        ]
+      },
+      "watermark": {
+        "receipt_sha256": "96ae5a51c9eb61aa04e78f74b8529b61816dfef93036fb8bf3728049016b061c",
+        "directions": [
+          "java to hybrid",
+          "hybrid to java"
+        ]
+      }
+    },
+    "worker_limits": {
+      "rounds": 5,
+      "slots_per_round": 4,
+      "p95_ms": 19.972645,
+      "largest_driver_plus_front_end_rss_bytes": 80179200
+    }
+  },
+  "filter-transfer": {
+    "build": {
+      "jar_sha256": "d378b31c8d5bd1e0dc786c04971744445695cd03a6646a88afaaa2b0418e3d1a",
+      "optimizer_library_sha256": "41e7614f2eca5ca45cc1049aee76b9c7009fb1e5850f57025ec7ee3d5db0c596",
+      "driver_sha256": "0da5781e169999835993a9a49ae9690e4e26ad565f3f69c39239852ddcb94b1a",
+      "pass_kinds": 105
+    },
+    "s4": {
+      "classic": {
+        "cases": 291,
+        "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+        "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+        "rust_stream_sha256": "bbbb8411931d945fbc74e498d468be67c8e11062797ef742ebd2fbd8f1ea35dc"
+      },
+      "gen2": {
+        "cases": 259,
+        "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+        "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+        "rust_stream_sha256": "7266d0e76ea4cc9b52af918c4f94a6329f7c5944d2d939666b6ca1342812dfda"
+      }
+    },
+    "s2_to_s3": {
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+      }
+    },
+    "classic_runtime": {
+      "executed": 217,
+      "compile_only": 74,
+      "input_commands": 2076,
+      "expected_runtime_errors": 0,
+      "batch_receipts_sha256": "07546d4aff4190475bcc446e7ad0f0638f2c414b93ce8ada697f6e59efb32ca9"
+    },
+    "checkpoint_restores": {
+      "count": {
+        "receipt_sha256": "b8167aff5caeca5951eb304cfc95407f6e10172cd750bac5e836acc2f3e00424",
+        "directions": [
+          "java to hybrid",
+          "hybrid to java"
+        ]
+      },
+      "watermark": {
+        "receipt_sha256": "10147bbe5ea729f68184c4a66f12f40126b55a79b13f30758f19e08f2d9e8504",
+        "directions": [
+          "java to hybrid",
+          "hybrid to java"
+        ]
+      }
+    },
+    "worker_limits": {
+      "rounds": 5,
+      "slots_per_round": 4,
+      "p95_ms": 18.068012,
+      "largest_driver_plus_front_end_rss_bytes": 79966208
+    }
+  },
+  "aggregate-transfer": {
+    "build": {
+      "jar_sha256": "1960f650e02fc034eac747b3fb1fac236ab0a097b820ab2695273b9143de50d8",
+      "optimizer_library_sha256": "2be14540c0955e59aa395126abbf04ba5300589c6539d7b8f9948a601686887f",
+      "driver_sha256": "bd88ac46a1249b0a953f077627489f0a59a9b4abe5ee817a1d221fd37a14e423",
+      "pass_kinds": 105
+    },
+    "s4": {
+      "classic": {
+        "cases": 291,
+        "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+        "java_stream_sha256": "394084a76fd20b7cfdcbe7ef54b3cfe8b21f22b36f8fcfefb276a39bb6b194e7",
+        "rust_stream_sha256": "80aaccabbfca1a9c24a876f7177cee50b996238224d1b296834cec8d43d72ba0"
+      },
+      "gen2": {
+        "cases": 259,
+        "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+        "java_stream_sha256": "12b2c06d99729cabe4a32e0989378a73a1a21a0181a6f5a5daf9b4a3bba2d167",
+        "rust_stream_sha256": "7195bda226425a7a5324cc97bf84131261156566e974bb94f4f26fbfc25fc5e3"
+      }
+    },
+    "s2_to_s3": {
+      "classic": {
+        "cases": 8571,
+        "mismatches": 0,
+        "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638"
+      },
+      "gen2": {
+        "cases": 8527,
+        "mismatches": 0,
+        "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7"
+      }
+    },
+    "classic_runtime": {
+      "executed": 217,
+      "compile_only": 74,
+      "input_commands": 2076,
+      "expected_runtime_errors": 0,
+      "batch_receipts_sha256": "9ce0fa2221be78b53239ef6dd1a36726ce27b5d2194896a2d463a59ccfcff8b1"
+    },
+    "checkpoint_restores": {
+      "count": {
+        "receipt_sha256": "0ee6d57c133f0fdda53a95bcfd6d55e7d89c70430167e9439fac910d19888b9a",
+        "directions": [
+          "java to hybrid",
+          "hybrid to java"
+        ]
+      },
+      "watermark": {
+        "receipt_sha256": "648abf3c70af3a4ba02a940c438e5156ec7a895306142c7e9f28708e023b6160",
+        "directions": [
+          "java to hybrid",
+          "hybrid to java"
+        ]
+      }
+    },
+    "worker_limits": {
+      "rounds": 5,
+      "slots_per_round": 4,
+      "p95_ms": 12.5078,
+      "largest_driver_plus_front_end_rss_bytes": 80076800
+    }
+  }
+}

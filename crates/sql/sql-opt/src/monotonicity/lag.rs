@@ -1,10 +1,9 @@
 //! Transfer waterlines through LAG and LEAD in partition order.
+use super::{indexed_parameter, unknown};
 use feldera_sql_expr::{
     SimplifyWarning, ensure_expression_tree, reduce_closure_body_with_warnings,
 };
-use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
-};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId, TypeId};
 use std::collections::HashSet;
 
 /// The innermost field comparator is the first SQL sort key. A late change can
@@ -46,15 +45,6 @@ fn preserved_field(
     Ok(preserves.then_some(index))
 }
 
-fn unknown(edit: &mut CircuitEditor, ty: NodeId) -> Result<ExpressionId, Error> {
-    let id = edit.empty_origin_node(
-        ty,
-        InnerKind::Expression(Expr::NoExpression),
-        [("type", Field::Reference(ty))],
-    )?;
-    edit.expression(id)
-}
-
 /// Apply the output closure to the current row and an unknown offset row.
 /// Only the partition key and the preserved sort column carry input bounds.
 pub fn lag_transfer(
@@ -71,10 +61,7 @@ pub fn lag_transfer(
     let value = edit.type_id(indexed.edge("elementType")?)?;
     let fields = edit.node(value.into())?.edges("tupFields")?;
     let preserved = preserved_field(edit, comparator, &fields, offset)?;
-    let key_ref = edit.reference_type(key)?;
-    let value_ref = edit.reference_type(value)?;
-    let pair = edit.tuple_type(input.into(), true, [key_ref.into(), value_ref.into()])?;
-    let row = edit.variable(pair, next)?;
+    let row = indexed_parameter(edit, key, value, next)?;
 
     let [_, delayed] = edit
         .node(function.into())?

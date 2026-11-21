@@ -297,6 +297,12 @@ public final class RustCircuitPass implements CircuitTransform {
                 row, null, DBSPClosureExpression.class);
     }
 
+    public static DBSPClosureExpression aggregateTransfer(DBSPCompiler compiler, DBSPType input,
+                                                            DBSPTypeIndexedZSet output, boolean rolling) {
+        return lowerFunction(compiler, rolling ? "Monotonicity/Rolling" : "Monotonicity/Group",
+                input, output, DBSPClosureExpression.class);
+    }
+
     public record BinaryJoin(int left, int right, DBSPTypeIndexedZSet type, DBSPClosureExpression function) {}
     public record StarJoinTerm(List<BinaryJoin> joins, DBSPClosureExpression projection) {}
 

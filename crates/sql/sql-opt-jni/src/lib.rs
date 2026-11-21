@@ -435,6 +435,13 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             feldera_sql_opt::lag_transfer(&mut edit, function, comparator, input,
                 serde_json::from_slice(state)?, &mut next, &mut warnings)?
         }
+        ("Monotonicity/Group" | "Monotonicity/Rolling", [input, output]) => {
+            use feldera_sql_opt::AggregateTransfer;
+            let kind = if pass == "Monotonicity/Group" { AggregateTransfer::Group } else { AggregateTransfer::Rolling };
+            let input = edit.type_id(*input)?;
+            let output = edit.type_id(*output)?;
+            feldera_sql_opt::aggregate_transfer(&mut edit, kind, input, output, &mut next)?
+        }
         ("Monotonicity/Unary", [operator, bound]) => {
             let operator = edit.expression(*operator)?;
             let bound = edit.expression(*bound)?;
@@ -664,7 +671,7 @@ fn transform(
         | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Window" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "EmptyRightJoin" | "DeltaExpansion/UnmatchedRows" | "DeltaExpansion/StarJoinTerm"
-        | "Monotonicity/Lag" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
+        | "Monotonicity/Lag" | "Monotonicity/Group" | "Monotonicity/Rolling" | "Monotonicity/Unary" | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/Filter"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
         | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection"
