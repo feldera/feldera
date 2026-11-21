@@ -794,7 +794,7 @@ grouped COUNT and a second program with LATENESS. All four cross-compiler
 restores resumed without bootstrap and emitted the expected deltas.
 [Reduced G9 checkpoints](evidence/p3-checkpoints.json)
 
-All 8,256 classic executable cases passed on the 89-pass build. The
+All 8,256 classic executable cases passed on the 92-pass build. The
 verifier checked 11,407 input commands, 232 expected runtime errors and the
 identities of the 315 compile-only cases across the 8,571-program population.
 [Classic runtime replay](evidence/p3-classic-runtime.json)

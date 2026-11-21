@@ -49,7 +49,7 @@ Path prefixes used in this document:
 - 2026-11-20. The mixed optimizer ran 2,814,241 Rust pass invocations on 17,098
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 93 pass kinds
-  in Rust. All 8,256 classic executable cases passed on the 89-pass build. Java still runs the
+  in Rust. All 8,256 classic executable cases passed on the 92-pass build. Java still runs the
   remaining passes. On the 91-pass build with the codec change, SQL-to-artifact p95 was
   1.273× direct Java for the array subquery, 2.449× for Nexmark and 1.259× for the
   outer join. All three exceeded the 1.2× ceiling. The owner confirmed that
