@@ -741,6 +741,12 @@ and source positions matched Java at all 17,098 placements. The pass changed
 when a closure receives another closure as an argument.
 [Canonical name comparisons](evidence/p3-canonical-form.json)
 
+Given the sibling groups discovered by Java, Rust builds one map for their
+distinct output columns and one projection per original map. The rewrite
+matched all 17,098 Java pass boundaries. Five programs per engine changed,
+including a repeated expensive expression within one map and expressions
+shared across views. [Map fusion comparisons](evidence/p3-map-fusion.json)
+
 Only two frozen cases per engine enable input trimming, and neither changes its graph.
 A separate 12-program comparison exercises ten rewrites per engine, including
 retaining a nested ROW and trimming every column for COUNT(*). Both regressions
@@ -749,8 +755,8 @@ agree on schema, diagnostics, final S3, persistent-ID inputs and emitted artifac
 [Input trimming comparisons](evidence/p3-trim-inputs.json) · [Upstream fix](https://github.com/feldera/feldera/pull/8035)
 
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
-detached S2 and ran the mixed schedule. All 2,831,339 Rust invocations completed
-across the two populations. Final S3, hash inputs, schema, diagnostics,
+detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,831,339 scheduled invocations
+across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,
 classic workspace bytes, canonical Gen-2 IR and parsed dataflow matched.
 The clean Maven package initially hit Calcite nullability assertions on two
 frozen set operations. Restoring the P0 coercion fix allowed all four

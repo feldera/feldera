@@ -117,7 +117,7 @@ public class CircuitOptimizer extends Passes {
                 return conditional.withTransform(new RustCircuitPass(this.compiler, conditional.transform, this.snapshots));
             return pass;
         }
-        if (pass instanceof MergeGC || pass instanceof FindUnboundedState || pass instanceof ShareIndexes || pass instanceof ExpandIndexedInputs || pass instanceof ExpandAggregates || pass instanceof MerkleHashes
+        if (pass instanceof FuseExpensiveMaps || pass instanceof MergeGC || pass instanceof FindUnboundedState || pass instanceof ShareIndexes || pass instanceof ExpandIndexedInputs || pass instanceof ExpandAggregates || pass instanceof MerkleHashes
                 || pass instanceof RemoveUselessLeftJoins || pass instanceof ShareWindowIntegrals) {
             ((Passes) pass).passes.replaceAll(this::selectImplementation);
             return pass;
@@ -132,7 +132,7 @@ public class CircuitOptimizer extends Passes {
                 iteration.passes.replaceAll(this::selectImplementation);
         } else {
             supported = pass instanceof Graph || pass instanceof CreateStarJoins.FindJoinTrees
-                    || pass instanceof CreateStarJoins.ReplaceStarJoins
+                    || pass instanceof FuseExpensiveMaps.Fuse || pass instanceof CreateStarJoins.ReplaceStarJoins
                     || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies
                     || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
                     || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds

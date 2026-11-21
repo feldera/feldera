@@ -50,7 +50,7 @@ public class FuseExpensiveMaps extends Passes {
      * @param operator The original map operator.
      * @param function A single-parameter closure with a tuple body.
      * @param minimal  Minimal expensive subexpressions of the function body. */
-    record MapInfo(DBSPMapOperator operator, DBSPClosureExpression function,
+    public record MapInfo(DBSPMapOperator operator, DBSPClosureExpression function,
                    List<DBSPExpression> minimal) {
         DBSPParameter param() {
             return this.function.parameters[0];
@@ -272,12 +272,27 @@ public class FuseExpensiveMaps extends Passes {
     }
 
     /** Rewrites the clusters found by {@link FindFusableMaps} */
-    static class Fuse extends CircuitCloneVisitor {
+    public static class Fuse extends CircuitCloneVisitor {
         final FindFusableMaps found;
 
         Fuse(DBSPCompiler compiler, FindFusableMaps found) {
             super(compiler, false);
             this.found = found;
+        }
+
+        /** Each cluster starts with the first map visited by the rewriter. */
+        public List<List<MapInfo>> clusters() {
+            return this.found.groups.values().stream().flatMap(List::stream)
+                    .filter(info -> {
+                        var cluster = this.found.clusters.get(info.operator());
+                        return cluster != null && cluster.get(0) == info;
+                    })
+                    .map(info -> this.found.clusters.get(info.operator()))
+                    .toList();
+        }
+
+        public boolean hasClusters() {
+            return !this.found.clusters.isEmpty();
         }
 
         /** Index of an equivalent column, or -1 */

@@ -517,6 +517,7 @@ fn transform(
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(circuit, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "ExpandStreamAggregates"
+        | "Fuse"
         | "OptimizeProjectionVisitor"
         | "PullFilterVisitor"
         | "PropagateConstants"
@@ -532,6 +533,9 @@ fn transform(
                     weight = result.new_weight;
                     (result.circuit, result.warnings)
                 }
+                "Fuse" => feldera_sql_opt::fuse_expensive_maps(
+                    circuit, serde_json::from_slice(state)?, &mut next,
+                )?,
                 "OptimizeProjectionVisitor" => {
                     feldera_sql_opt::project_outputs(circuit, &mut next)?
                 }

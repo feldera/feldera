@@ -1,0 +1,46 @@
+{
+  "scope": "Compare shared computations and per-map projections with Java, including graph order, expression sharing, source locations, diagnostics and generated names.",
+  "comparator_sha256": "862046004e3c69cb45136a3c416b9ba13ac8e8023f9281ee1e218dab7f1bffaa",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "c9dd9b48b4ea04ad6b94ac2c1aef0675f29ffb579d0a438ca8a4f4eea986d200",
+      "879fa6c59ee424ad37e4998b175e6638e2ba5fd2fa5282fadf1f80f7038ce353",
+      "b92d7af1f4a6788208be22f242c73d211b37f3775a9bfc63bc0311931e84cca6",
+      "848452772c65ec238012779359cd4aea325f69207ad374d50d030e0c6c4d2bf6"
+    ],
+    "pass": "Fuse",
+    "invocations": 8571,
+    "changed": 5,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "856ddddea8ccfb6b739c6bdf81e87be09eb2307ff6a549667351db2ce30820ea",
+      "d385f29e7f7f76808ae2111935a16b0ae52934ff40e42ae95ed7f6adc397073f",
+      "c2b81144fbfbf8bd348a8267e5c7f2e25ca772fa05deee998956ae68401b9196",
+      "8d16406fe0636c648abe01daaa4494337f68b0c1e40c93ee583e446b1cc396a1"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "48577c180a18b6d965ffb49af70d9b354c757f4331eadc2697819d8368e259a7",
+      "29f78b25606113a68bd6016809a99e0b2b4b5e90d00331490a6016544ab9419f",
+      "97ef9fcbfc69e0018bb8ce0e06c9068c611bcda598645ffa045465b4646a626e",
+      "bf21c1c131a89d8b456ca20704ebd9b8c631590ebaae6548ca53531d9ad76b3a"
+    ],
+    "pass": "Fuse",
+    "invocations": 8527,
+    "changed": 5,
+    "cases_without_placement": 0,
+    "oracle_stream_sha256": [
+      "a38e075ea58c668999a4dc8a45416800597b400e8def0f536d6c35d4165e0546",
+      "b575e092cbdf1c2123054c200c67f1a0f601936cb527d27c1018d58f28196445",
+      "e7e8c3dd6ac3bd45172cdc011a717773d28fdd8d1aa4598c73cf16bd0d1ea05f",
+      "808e157e4f1232401a5645bc8fda6939d52e1558c784bae2bd24304ee31b290c"
+    ]
+  }
+}

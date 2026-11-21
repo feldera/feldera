@@ -72,6 +72,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     }
 
     private boolean selected(CircuitTransform pass) {
+        if (this.passClass.equals("Fuse"))
+            return pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse;
         if (this.passClass.equals("ExpandSafeCasts") || this.passClass.equals("ExpandUnsafeCasts")
                 || this.passClass.equals("EnsureExpressionTrees") || this.passClass.equals("CanonicalForm")
                 || this.passClass.equals("UDFInliner")
@@ -124,6 +126,14 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         if (pass instanceof LowerAsof.OrderGcDependencies order)
             this.active.set("extra_edges", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(order.edgeIds()));
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse fuse) {
+            try {
+                this.active.set("map_clusters", org.dbsp.util.Utilities.deterministicObjectMapper().readTree(
+                        org.dbsp.sqlCompiler.compiler.backend.MapFusionState.encode(writer, fuse)));
+            } catch (IOException error) {
+                throw new java.io.UncheckedIOException(error);
+            }
+        }
         if (pass instanceof LowerAsof.MoveGC move)
             this.active.set("asof_joins", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(move.retentionJoins()));
@@ -143,7 +153,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             this.active.put("dedup_keys", this.compiler.options.ioOptions.gen2);
             this.active.put("lazy_upsert", this.compiler.metadata.lazyUpsert());
         }
-        if (this.passClass.equals("ExpandStreamAggregates") || this.passClass.equals("Simplify") || this.passClass.equals("PropagateConstants")
+        if (this.passClass.equals("Fuse") || this.passClass.equals("ExpandStreamAggregates") || this.passClass.equals("Simplify") || this.passClass.equals("PropagateConstants")
                 || this.passClass.equals("PullFilterVisitor") || this.passClass.equals("OptimizeProjectionVisitor"))
             this.diagnostics = this.active.putArray("diagnostics");
         if (pass instanceof ExpandAggregates.ExpandStreamAggregates expand) {

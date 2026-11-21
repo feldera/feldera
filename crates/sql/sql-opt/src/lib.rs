@@ -3,6 +3,8 @@
 mod aggregate_groups;
 mod aggregate_zero;
 mod append_only;
+mod map_fusion;
+pub use map_fusion::{fuse_expensive_maps, FusionMember};
 mod star_joins;
 pub use star_joins::{find_join_trees, replace_star_joins, StarJoinTree};
 mod asof_retention;
