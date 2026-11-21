@@ -783,6 +783,17 @@ can be grouped. Scan, Reorder, MergeFilters and RewriteNow matched at all 532
 observed invocations, including 35 merges and 133 clock rewrites.
 [Temporal comparison replay](evidence/p3-temporal-comparisons.json)
 
+Rust chooses the key for each candidate left-join chain and decides whether
+deferring columns saves enough work. Across 17 classic and 17 Gen-2 cases,
+Java and Rust selected the same 20 chains and agreed on every column layout.
+[Left-join key selection](evidence/p3-chain-key-choice.json)
+
+During unused-field removal, Rust finds the input fields read by each distinct
+map and map-index closure. Java uses those fields to rewrite the operators.
+The circuit and name allocator matched through 497 iterations on 58 classic
+and 58 Gen-2 inputs, including 263 iterations that changed the circuit.
+[Unused-field replay](evidence/p3-map-dependencies.json)
+
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations
 across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,

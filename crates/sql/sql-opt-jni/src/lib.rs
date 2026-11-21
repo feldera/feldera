@@ -159,6 +159,10 @@ fn transform(
                 &filters, threshold
             )));
         }
+        "LeftJoinChains/Key" => {
+            let facts = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::choose_chain_key(&facts))?);
+        }
         "TemporalComparisons" => {
             let nodes: Vec<feldera_sql_opt::TemporalPredicate> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::classify_temporal_predicates(&nodes)?)?);
@@ -204,6 +208,9 @@ fn transform(
         return Ok(json!(operator_numbers(feldera_sql_opt::input_projections(
             &circuit
         )?)));
+    }
+    if pass == "MapFieldDependencies" {
+        return Ok(serde_json::to_value(feldera_sql_opt::map_field_dependencies(&circuit)?)?);
     }
     if pass == "FindUnusedInputFields" {
         return Ok(json!(feldera_sql_opt::input_field_uses(

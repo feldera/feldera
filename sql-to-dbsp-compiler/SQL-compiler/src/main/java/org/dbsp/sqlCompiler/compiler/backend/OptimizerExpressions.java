@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -133,6 +134,22 @@ final class OptimizerExpressions {
             json.append(opcode.name());
         json.endArray().label("unwrap").append(visitor.unwrap)
                 .label("conditional").append(visitor.conditional).endObject();
+        return json.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Emit the closure roots in one IR identity space. Field-use analysis never follows input edges. */
+    static byte[] mapFunctions(DBSPCompiler compiler, DBSPCircuit circuit, Iterable<DBSPUnaryOperator> readers) {
+        var json = JsonStream.compactCircuit();
+        var inner = new ToJsonInnerVisitor(compiler, json, 0);
+        json.beginObject().appendClass(circuit).label("id").append(circuit.id);
+        json.label("declarations").beginArray();
+        json.endArray().label("allOperators").beginArray();
+        for (var reader : readers) {
+            json.beginObject().appendClass(reader).label("id").append(reader.id).label("function");
+            reader.getFunction().accept(inner);
+            json.endObject();
+        }
+        json.endArray().endObject();
         return json.toString().getBytes(StandardCharsets.UTF_8);
     }
 

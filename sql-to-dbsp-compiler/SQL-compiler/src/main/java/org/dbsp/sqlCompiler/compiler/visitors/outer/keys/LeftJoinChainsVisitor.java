@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
@@ -39,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.SortedSet;
 import java.util.TreeSet;
 
 /** Finds chains of LEFT JOINs and keeps track of the columns each chain carries unchanged from
@@ -392,6 +394,10 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         this.record(result, node.outputPort());
     }
 
+    public record KeyInput(List<List<SortedSet<Column>>> keys, Set<Column> carried, Set<Column> read,
+                           int length, int endWidth, @Nullable Integer indexWidth) {}
+    public record KeyChoice(@Nullable Integer key, boolean worthwhile) {}
+
     /** Logs every chain where it ends. */
     @Override
     public void endVisit() {
@@ -433,8 +439,8 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         // the chain must end at the integrator that turns its deltas back into a collection
         if (!end.node().is(DBSPIntegrateOperator.class))
             return;
-        Chain chain = this.chainOf(carried, end);
-        if (!chain.worthDeferring())
+        Chain chain = this.profitableChain(carried, end);
+        if (chain == null)
             return;
         // A later integrator of the same chain replaces an earlier one
         OutputPort previous = this.chainStartToEnd.put(carried.start(), end);
@@ -443,10 +449,35 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         this.chainEnd.put(end, chain);
     }
 
+    @Nullable
+    private Chain profitableChain(Carried carried, OutputPort end) {
+        if (!this.compiler().options.ioOptions.rustOptimizerPasses) {
+            Chain chain = this.chainOf(carried, end);
+            return chain.worthDeferring() ? chain : null;
+        }
+        var keys = this.keys.getKeys(carried.start()).keys;
+        var columns = keys.stream().map(key -> key.sets().stream().map(EquivalentColumnSet::columns).toList()).toList();
+        Integer indexWidth = carried.start().getShape() instanceof IndexedShape shape ? shape.indexFields() : null;
+        var endShape = end.getShape();
+        Utilities.enforce(endShape != null, () -> "A chain ends at a collection");
+        var facts = new KeyInput(columns, carried.inputToOutputRemap().keySet(), carried.read(),
+                carried.length(), endShape.width(), indexWidth);
+        var choice = RustCircuitPass.chooseChainKey(facts);
+        if (!choice.worthwhile())
+            return null;
+        return new Chain(carried.start(), end, carried.length(), keys.get(java.util.Objects.requireNonNull(choice.key())),
+                onlyCarried(carried), carried.inputToOutputRemap(), carried.outputToInputRemap());
+    }
+
+    private static Set<Column> onlyCarried(Carried carried) {
+        Set<Column> columns = new TreeSet<>(carried.inputToOutputRemap().keySet());
+        columns.removeAll(carried.read());
+        return columns;
+    }
+
     /** Builds the {@link Chain} described by {@code carried}, ending at {@code end}. */
     private Chain chainOf(Carried carried, OutputPort end) {
-        Set<Column> onlyCarried = new TreeSet<>(carried.inputToOutputRemap().keySet());
-        onlyCarried.removeAll(carried.read());
+        Set<Column> onlyCarried = onlyCarried(carried);
         // Among the keys of the start that the chain carries, pick the one that leaves
         // the most columns deferrable.  Keys come smallest first, so ties go to the smallest
         Chain best = null;

@@ -1,0 +1,30 @@
+{
+  "scope": "Compare the selected left-join chains, key and carried column layout, circuit and generated-name counter at each visitor boundary.",
+  "boundaries": {
+    "classic": {
+      "LeftJoinChainsVisitor": {
+        "cases": 17,
+        "invocations": 17,
+        "changed_circuits": 0,
+        "selected_chains": 10,
+        "control_sha256": "d2de7de278bcfc83f3cb80c5f548dcbea83745031d3fb5f98bc2276b66327012",
+        "candidate_sha256": "d2de7de278bcfc83f3cb80c5f548dcbea83745031d3fb5f98bc2276b66327012",
+        "population_sha256": "e3273980cb81d19fabfc60b01521f0c36048806ebf54f3b6b31546d7570dbeaf"
+      }
+    },
+    "gen2": {
+      "LeftJoinChainsVisitor": {
+        "cases": 17,
+        "invocations": 17,
+        "changed_circuits": 0,
+        "selected_chains": 10,
+        "control_sha256": "90480e1f6cb2711a67dcec661dde2fb6a5ee6c50e978a4f3a4db0d4c0ce0c4c7",
+        "candidate_sha256": "90480e1f6cb2711a67dcec661dde2fb6a5ee6c50e978a4f3a4db0d4c0ce0c4c7",
+        "population_sha256": "a7da195b1911a91512f9686f69a86293d0eb7f5ea5c61f482ab182bee35df1b9"
+      }
+    }
+  },
+  "jar_sha256": "07a83b1dab46996c29bea66c87a70dbfca6d059ceecb8646771d5645dbe34a00",
+  "optimizer_library_sha256": "8730e5bb65b4e4ffe139d7e9ad53988d784dc11ffbacb2e5da3eb08ac7bb6dd9",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f"
+}

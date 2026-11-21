@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.CheckPersistentIds;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisitor;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalConstantOperator;
@@ -54,6 +55,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
@@ -89,6 +91,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.LinkedHashMap;
 import javax.annotation.Nullable;
 
 /** A Rust pass at its original position in a live optimizer. Java owns the compiler
@@ -190,6 +194,15 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
+
+    public static LeftJoinChainsVisitor.KeyChoice chooseChainKey(LeftJoinChainsVisitor.KeyInput facts) {
+        try {
+            byte[] reply = transformWithContext("LeftJoinChains/Key", MAPPER.writeValueAsBytes(facts), 0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, LeftJoinChainsVisitor.KeyChoice.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid left-join chain key from the Rust optimizer", error);
+        }
+    }
 
     public sealed interface TemporalPredicate {}
     public record Conjunction(int[] children) implements TemporalPredicate {}
@@ -780,6 +793,31 @@ public final class RustCircuitPass implements CircuitTransform {
             var readers = java.util.Arrays.stream(plan.readers)
                     .mapToObj(id -> operators.get(id).to(DBSPUnaryOperator.class)).toList();
             analysis.record(operators.get(plan.producer), readers, plan.depth, plan.paths);
+        }
+    }
+
+    /** Analyze each distinct reader closure once per unused-field iteration. */
+    public static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
+                                                                       Predicate<DBSPUnaryOperator> eligible) {
+        var readers = new LinkedHashMap<Long, DBSPUnaryOperator>();
+        visitOperators(circuit.getAllOperators(), op -> {
+            if (op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator) {
+                var map = op.to(DBSPUnaryOperator.class);
+                if (eligible.test(map))
+                    readers.putIfAbsent(map.getFunction().id, map);
+            }
+        });
+        if (readers.isEmpty())
+            return Map.of();
+        try {
+            var input = OptimizerExpressions.mapFunctions(compiler, circuit, readers.values());
+            var reply = transformWithContext("MapFieldDependencies", input, 0, "", EMPTY_CONTEXT);
+            Map<Long, List<List<Integer>>> paths = MAPPER.readValue(reply, new TypeReference<>() {});
+            if (!paths.keySet().equals(readers.keySet()))
+                throw new IllegalStateException("Incomplete map closure dependencies");
+            return paths;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid map field dependencies from the Rust optimizer", error);
         }
     }
 

@@ -132,6 +132,12 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow)
                 && Boolean.getBoolean("feldera.optimizer.compareRustTemporalPolicy"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RemoveUnusedFields
+                && Boolean.getBoolean("feldera.optimizer.compareRustMapDependencies"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor
+                && Boolean.getBoolean("feldera.optimizer.compareRustChainKeys"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star)
             captureJoinTrees(this.active, writer, star.replacements());
         if (pass instanceof LowerAsof.OrderGcDependencies order)
@@ -271,6 +277,10 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             throw new IllegalStateException("Incomplete " + this.passClass);
         var current = Objects.requireNonNull(this.active);
         this.compiler.options.ioOptions.rustOptimizerPasses = this.previousRustPasses;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor chains) {
+            var reader = new org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns(this.compiler, chains.chainEnd);
+            current.set("carried_columns", org.dbsp.util.Utilities.deterministicObjectMapper().valueToTree(reader.layouts()));
+        }
         if (pass instanceof ReorderTemporalFilters.Scan scan) {
             var chosen = current.putArray("chosen_conjuncts");
             scan.chosenConjunct.forEach((filter, conjunct) -> chosen.addArray().add(filter.id).add(conjunct));

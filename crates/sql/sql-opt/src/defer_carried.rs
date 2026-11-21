@@ -1,5 +1,8 @@
 //! Fetch the payload carried through a chain of left joins once, at its end.
 //! The chain analysis supplies the identifying key and column correspondence.
+mod keys;
+pub use keys::{ChainKeyChoice, ChainKeys, choose_chain_key};
+
 use crate::rebuild::{ProjectionNames, input_type};
 use crate::stream_rewrites::{append_map, body_members};
 use feldera_sql_ir::{

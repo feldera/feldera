@@ -1,0 +1,28 @@
+{
+  "scope": "Compare the circuit and generated-name counter before and after each unused-field iteration on the selected classic and Gen-2 inputs.",
+  "boundaries": {
+    "classic": {
+      "RemoveUnusedFields": {
+        "cases": 58,
+        "invocations": 250,
+        "changed_circuits": 132,
+        "control_sha256": "529d45a2616f219d4513a6bb9e5a97016d4db40ef8598c6ee87ac0a4de0cae60",
+        "candidate_sha256": "2d6c8acae050aa529bcb245e2987659c8cba4027dce7479022dec36c3dd133a5",
+        "population_sha256": "8fbf8211ac5f0c105c5742a22aad131da77b64afd50a10e15dc693c4dc82c551"
+      }
+    },
+    "gen2": {
+      "RemoveUnusedFields": {
+        "cases": 58,
+        "invocations": 247,
+        "changed_circuits": 131,
+        "control_sha256": "29712d5443179524931853bf424ff922ab7cc72a5f71a7ffc37337ff46712f1f",
+        "candidate_sha256": "821547e195544466e3a8505c6fe2e91640acb4653072a5a4d3ad616441391b2f",
+        "population_sha256": "b65bca8a96b0d4700bf5215e9a1ea2c17838701356e17e4ba1fc08c738642b11"
+      }
+    }
+  },
+  "jar_sha256": "05f6af58c20216041287d09e82d3025724030fd66d1edfb84d0f89cb7c66c04b",
+  "optimizer_library_sha256": "18145c2e5994e648229b011a229c8ac24cb4f62a58c9ce01f9d4d0c4f69acc5b",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f"
+}

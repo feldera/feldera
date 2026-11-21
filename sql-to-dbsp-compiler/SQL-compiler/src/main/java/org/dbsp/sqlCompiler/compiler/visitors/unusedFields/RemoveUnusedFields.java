@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
@@ -74,6 +76,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
     /** Functions analyzed before which have no unused fields.  An operator whose inputs
      * changed is a new operator with the same function, which needs no new analysis. */
     final AnalyzedSet<DBSPExpression> fullyUsedFunctions;
+    private Map<Long, List<List<Integer>>> nativeMapFields = Map.of();
 
     public RemoveUnusedFields(DBSPCompiler compiler, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
         super(compiler, false);
@@ -528,7 +531,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPClosureExpression closure = operator.getClosureFunction();
         Utilities.enforce(closure.parameters.length == 1);
-        var useMap = this.find.findUsedFields(closure);
+        var useMap = this.mapFieldUse(closure);
         int size = closure.getType().getToplevelFieldCount();
 
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
@@ -597,7 +600,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPClosureExpression closure = operator.getClosureFunction();
         Utilities.enforce(closure.parameters.length == 1);
-        var useMap = this.find.findUsedFields(closure);
+        var useMap = this.mapFieldUse(closure);
         int size = closure.getType().getToplevelFieldCount();
 
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
@@ -654,9 +657,26 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         }
     }
 
+    private ParameterFieldUse mapFieldUse(DBSPClosureExpression closure) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return this.find.findUsedFields(closure);
+        var paths = Objects.requireNonNull(this.nativeMapFields.get(closure.id));
+        var parameter = closure.parameters[0];
+        var use = new ParameterFieldUse();
+        for (var path : paths)
+            new ParameterField(parameter, path).markParameterUse(use);
+        if (paths.isEmpty())
+            use.set(parameter, new FieldUseMap(parameter.getType(), false));
+        return use;
+    }
+
     @Override
     public Token startVisit(IDBSPOuterNode circuit) {
-        // ToDot.dumper(compiler, "x.png", 2).apply(circuit.to(DBSPCircuit.class));
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            this.nativeMapFields = RustCircuitPass.mapFieldDependencies(this.compiler, circuit.to(DBSPCircuit.class),
+                    map -> map.getFunction() instanceof DBSPClosureExpression function
+                            && !map.hasAnnotation(a -> a.is(IsProjection.class))
+                            && !this.operatorsAnalyzed.contains(map) && !this.fullyUsedFunctions.contains(function));
         return super.startVisit(circuit);
     }
 }
