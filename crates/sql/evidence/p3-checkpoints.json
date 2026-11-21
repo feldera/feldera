@@ -1,8 +1,8 @@
 {
   "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
-  "compiler_sha256": "3ab9561a8243b6a543567d415c50b4ca3f24fd6ec57ea94556eea8bfa4e3db3d",
-  "optimizer_library_sha256": "ce5717add7e682c70620ed677f3db5f95f3883e72d28417463164607c5541789",
-  "compiler_jar_sha256": "93ad1ab49570bc4a00b0a5d8d6ad170ec5377e115eafbffb34caf2935459ceb9",
+  "compiler_sha256": "675709844cb53ce88c67345c60fe7a36038bda3a9b16de835b12b89c619cabb5",
+  "optimizer_library_sha256": "53e45268acbc8e161a158890e2e2ba691b8c8af90dfca852a7a251687ea5c2db",
+  "compiler_jar_sha256": "63c14362ce6ec5e9bfe9129749ce36233df81fa3b8f64da8ec4562896327172e",
   "programs": {
     "count": {
       "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
@@ -19,7 +19,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fc44-1f9b-7853-b8f2-fbe43de431fb",
+          "checkpoint_id": "01a1fc4b-8c98-7892-963d-2e94ed25271e",
           "restored_count_deltas": [
             [
               1,
@@ -35,7 +35,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fc44-1fc1-7eb3-b349-f2752ba8b1b1",
+          "checkpoint_id": "01a1fc4b-8cba-7230-8061-48b0f5c0091f",
           "restored_count_deltas": [
             [
               1,
@@ -64,7 +64,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fc44-fa97-7061-b603-4db5ed9cf6ef",
+          "checkpoint_id": "01a1fc4c-90aa-7fa1-bc9e-ff39bccf4b93",
           "restored_count_deltas": [
             [
               1,
@@ -81,7 +81,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fc44-fab5-7282-a45f-dea1fb62b742",
+          "checkpoint_id": "01a1fc4c-90e0-7011-a46c-82a361e17048",
           "restored_count_deltas": [
             [
               1,

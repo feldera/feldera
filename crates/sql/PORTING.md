@@ -881,6 +881,7 @@ The 97-pass build measured 8.55 ms p95 and 78,139,392 bytes peak waiting RSS.
 The 99-pass build exceeded the cancellation ceiling at 27.54 ms p95. Peak waiting RSS was 78,307,328 bytes.
 With relational snapshots retained in the JVM, the 99-pass build measured
 8.02 ms cancellation p95 and 78,331,904 bytes peak waiting RSS.
+The temporal input selection build measured 13.83 ms and 78,159,872 bytes, respectively.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds
