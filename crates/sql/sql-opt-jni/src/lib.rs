@@ -7,7 +7,10 @@ use jni::{
     EnvUnowned,
 };
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+};
 
 #[derive(Debug, thiserror::Error)]
 enum BridgeError {
@@ -15,6 +18,11 @@ enum BridgeError {
     Jni(#[from] jni::errors::Error),
     #[error("{0}")]
     Optimizer(String),
+}
+
+// A compiler may optimize another circuit synchronously on the same JVM thread.
+thread_local! {
+    static LIVE_DECODERS: RefCell<Vec<feldera_sql_ir::LiveCircuitDecoder>> = const { RefCell::new(Vec::new()) };
 }
 
 const MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -326,7 +334,10 @@ fn transform(
         _ => {}
     }
     let circuit = if live.is_some() {
-        Circuit::from_live_json_bytes(input)?
+        LIVE_DECODERS.with_borrow_mut(|stack| match stack.last_mut() {
+            Some(decoder) => decoder.decode(input),
+            None => Circuit::from_live_json_bytes(input),
+        })?
     } else {
         Circuit::from_json_bytes(input)?
     };
@@ -833,6 +844,34 @@ fn transform(
     Ok(publish(&result, json!({
         "next_generated_name": next, "unused_sources": unused_sources
     })))
+}
+
+// SAFETY: these export names and signatures match the static methods of RustCircuitPass.
+// Each scope belongs to the calling thread and is closed by the Java finally block.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPass_enterSnapshotScope(
+    mut env: EnvUnowned<'_>,
+    _class: JClass<'_>,
+) {
+    env.with_env(|_| -> Result<(), BridgeError> {
+        LIVE_DECODERS.with_borrow_mut(|stack| stack.push(Default::default()));
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>();
+}
+
+// SAFETY: the export name and signature match RustCircuitPass.leaveSnapshotScope.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_dbsp_sqlCompiler_compiler_backend_RustCircuitPass_leaveSnapshotScope(
+    mut env: EnvUnowned<'_>,
+    _class: JClass<'_>,
+) {
+    env.with_env(|_| -> Result<(), BridgeError> {
+        LIVE_DECODERS.with_borrow_mut(|stack| stack.pop())
+            .ok_or_else(|| BridgeError::Optimizer("no active optimizer snapshot scope".into()))?;
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>();
 }
 
 // SAFETY: the export name is unique to the matching static native method in

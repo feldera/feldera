@@ -20,6 +20,7 @@ mod mir;
 mod operator;
 pub mod provenance;
 mod wire;
+pub use wire::LiveCircuitDecoder;
 
 pub use inner::{ExpressionKind, InnerKind, TypeKind};
 pub use json::parse_json;

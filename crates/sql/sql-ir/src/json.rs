@@ -1,17 +1,37 @@
 //! Decode a compiler artifact while enforcing unique keys at every nesting level.
 
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde_json::{map::Entry, Map, Value};
+use serde_json::{Map, Value, map::Entry};
 use std::{cell::Cell, fmt};
 
 #[derive(Clone, Copy)]
 pub(crate) struct CheckedValue<'a> {
     needs_codec: &'a Cell<bool>,
+    depth: usize,
 }
 
 impl<'a> CheckedValue<'a> {
     pub(crate) fn new(needs_codec: &'a Cell<bool>) -> Self {
-        Self { needs_codec }
+        Self::at_depth(needs_codec, 0)
+    }
+
+    pub(crate) fn at_depth(needs_codec: &'a Cell<bool>, depth: usize) -> Self {
+        Self { needs_codec, depth }
+    }
+
+    fn child(self) -> Self {
+        Self {
+            depth: self.depth + 1,
+            ..self
+        }
+    }
+}
+
+// A detached field starts a new serde_json deserializer. At the codec's
+// recursion boundary, reparse the entire document with its original budget.
+pub(crate) fn check_document_depth(depth: usize, needs_codec: &Cell<bool>) {
+    if depth >= 127 {
+        needs_codec.set(true);
     }
 }
 
@@ -31,6 +51,7 @@ impl<'de> Visitor<'de> for CheckedValue<'_> {
     }
 
     fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Value, M::Error> {
+        check_document_depth(self.depth, self.needs_codec);
         let mut fields = Map::new();
         while let Some(key) = map.next_key::<String>()? {
             // serde_json passes arbitrary-precision numbers through Serde as
@@ -57,7 +78,7 @@ impl<'de> Visitor<'de> for CheckedValue<'_> {
             match fields.entry(key) {
                 Entry::Occupied(_) => return Err(de::Error::custom("duplicate JSON object key")),
                 Entry::Vacant(slot) => {
-                    slot.insert(map.next_value_seed(self)?);
+                    slot.insert(map.next_value_seed(self.child())?);
                 }
             }
         }
@@ -65,8 +86,9 @@ impl<'de> Visitor<'de> for CheckedValue<'_> {
     }
 
     fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Value, S::Error> {
+        check_document_depth(self.depth, self.needs_codec);
         let mut items = Vec::new();
-        while let Some(value) = seq.next_element_seed(self)? {
+        while let Some(value) = seq.next_element_seed(self.child())? {
             items.push(value);
         }
         Ok(Value::Array(items))

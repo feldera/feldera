@@ -108,6 +108,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.LinkedHashMap;
 import javax.annotation.Nullable;
 
@@ -207,6 +208,19 @@ public final class RustCircuitPass implements CircuitTransform {
         this.errorOrder = original instanceof OrderErrorConsumers order ? order : null;
         this.tableToRemove = original instanceof RemoveTable table ? table.tableName() : null;
         this.seenConstants = original instanceof CSE ? Collections.newSetFromMap(new WeakHashMap<>()) : null;
+    }
+
+    private static native void enterSnapshotScope();
+    private static native void leaveSnapshotScope();
+
+    /** Release cached expressions when this optimizer returns, including on pass failure. */
+    public static DBSPCircuit withLiveSnapshots(Supplier<DBSPCircuit> optimize) {
+        enterSnapshotScope();
+        try {
+            return optimize.get();
+        } finally {
+            leaveSnapshotScope();
+        }
     }
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);

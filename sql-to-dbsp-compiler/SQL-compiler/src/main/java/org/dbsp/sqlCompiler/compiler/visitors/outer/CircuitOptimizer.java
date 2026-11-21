@@ -362,6 +362,13 @@ public class CircuitOptimizer extends Passes {
             new TestSerialize(this.compiler).apply(circuit);
     }
 
+    @Override
+    public DBSPCircuit apply(DBSPCircuit input) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.withLiveSnapshots(() -> super.apply(input));
+        return super.apply(input);
+    }
+
     public DBSPCircuit optimize(DBSPCircuit input) {
         DBSPCircuit result = this.apply(input);
         // A pass can stop before incrementalization after reporting a user error.

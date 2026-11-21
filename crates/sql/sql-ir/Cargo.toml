@@ -10,5 +10,5 @@ rust-version.workspace = true
 [dependencies]
 feldera-sql-source = { path = "../sql-source" }
 indexmap.workspace = true
-serde_json = { workspace = true, features = ["preserve_order"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde = { workspace = true, features = ["derive"] }

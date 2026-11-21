@@ -2,6 +2,7 @@
 //! its first reference, and a recursive circuit may refer back to an ancestor.
 
 mod streaming;
+pub use streaming::LiveCircuitDecoder;
 
 use super::{Circuit, Error, Field, Node, NodeClass, NodeId, OperatorKind, OutputPort};
 use indexmap::IndexMap;
