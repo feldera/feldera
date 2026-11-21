@@ -75,6 +75,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -205,6 +208,38 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
 
+    private static <T extends DBSPExpression> T loweredFunction(DBSPCompiler compiler,
+            ToJsonInnerVisitor writer, JsonNode result, Class<T> kind) {
+        var decoder = new JsonDecoder();
+        Objects.requireNonNull(writer.liveNodes).forEach(decoder.inner::cache);
+        T function = decoder.decodeInner(result.required("function"), kind);
+        for (var warning : result.required("warnings"))
+            compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
+                    warning.required("error_type").textValue(), warning.required("message").textValue());
+        return function;
+    }
+
+    public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {
+        var json = JsonStream.compactCircuit();
+        var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
+        inner.liveNodes = new HashMap<>();
+        json.beginArray();
+        aggregates.accept(inner);
+        if (aggregates.isEmpty())
+            DBSPTypeTuple.EMPTY.accept(inner);
+        json.endArray();
+        try {
+            byte[] reply = transformWithContext("LowerAggregateFold", json.toString().getBytes(StandardCharsets.UTF_8),
+                    DBSPVariablePath.nextGeneratedName(), "", EMPTY_CONTEXT);
+            var result = MAPPER.readTree(reply);
+            var fold = loweredFunction(compiler, inner, result, DBSPFold.class);
+            DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
+            return fold;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid aggregate fold from Rust", error);
+        }
+    }
+
     public static DBSPClosureExpression lowerJoinFilterMap(DBSPCompiler compiler, DBSPCircuit circuit,
             DBSPSimpleOperator operator, DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
         var json = JsonStream.compactCircuit();
@@ -227,14 +262,7 @@ public final class RustCircuitPass implements CircuitTransform {
         try {
             byte[] reply = transformWithContext("LowerJoinFilterMap", json.toString().getBytes(StandardCharsets.UTF_8),
                     0, "", EMPTY_CONTEXT);
-            var result = MAPPER.readTree(reply);
-            var decoder = new JsonDecoder();
-            inner.liveNodes.forEach(decoder.inner::cache);
-            var closure = decoder.decodeInner(result.required("function"), DBSPClosureExpression.class);
-            for (var warning : result.required("warnings"))
-                compiler.reportWarning(SourcePositionRange.fromJson(warning.required("range")),
-                        warning.required("error_type").textValue(), warning.required("message").textValue());
-            return closure;
+            return loweredFunction(compiler, inner, MAPPER.readTree(reply), DBSPClosureExpression.class);
         } catch (IOException error) {
             throw new UncheckedIOException("Invalid join-filter-map closure from Rust", error);
         }

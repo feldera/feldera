@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -312,7 +313,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPFold function = node.getAggregateList().asFold(this.compiler());
+        DBSPFold function = this.lowerFold(node.getAggregateList());
         DBSPSimpleOperator result = new DBSPStreamAggregateOperator(
                 node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -326,7 +327,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPFold function = node.getAggregateList().asFold(this.compiler());
+        DBSPFold function = this.lowerFold(node.getAggregateList());
         DBSPSimpleOperator result = new DBSPAggregateOperator(
                 node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -385,6 +386,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         if (this.compiler().options.ioOptions.rustOptimizerPasses)
             return RustCircuitPass.lowerJoinFilterMap(this.compiler(), this.getCircuit(), node, filter, map);
         return lowerJoinFilterMapFunctions(this.compiler(), node.getClosureFunction(), filter, map);
+    }
+
+    private DBSPFold lowerFold(DBSPAggregateList aggregates) {
+        return this.compiler().options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.lowerAggregateFold(this.compiler(), aggregates) : aggregates.asFold(this.compiler());
     }
 
     @Override
@@ -448,7 +454,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPFold function = node.getAggregateList().asFold(this.compiler());
+        DBSPFold function = this.lowerFold(node.getAggregateList());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
@@ -461,7 +467,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPFold function = node.aggregateList.asFold(this.compiler());
+        DBSPFold function = this.lowerFold(node.aggregateList);
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),

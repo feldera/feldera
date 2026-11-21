@@ -139,10 +139,34 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
+        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "LowerAggregateFold" => {
             let empty = Circuit::from_json(json!({
                 "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
             }))?;
+            if pass == "LowerAggregateFold" {
+                let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
+                    return Err("expected an array of aggregate roots".into());
+                };
+                let (arena, roots) = empty.with_inner_roots(roots)?;
+                let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+                let (list, empty_tuple) = match roots.as_slice() {
+                    [list] => (*list, None),
+                    [list, ty] => (*list, Some(edit.type_id(*ty)?)),
+                    _ => return Err("expected an aggregate list and optional empty tuple type".into()),
+                };
+                let mut warnings = Vec::new();
+                let fold = feldera_sql_opt::lower_aggregate_fold(
+                    &mut edit, list, empty_tuple, &mut next, &mut warnings,
+                )?;
+                let mut functions = edit.circuit().additional_expressions(&arena, &[fold])?;
+                return Ok(json!({
+                    "function": functions.pop().expect("one requested fold"),
+                    "next_generated_name": next,
+                    "warnings": warnings.into_iter().map(|w| json!({
+                        "range": w.position, "error_type": w.kind, "message": w.message,
+                    })).collect::<Vec<_>>()
+                }));
+            }
             let (arena, roots) = empty.with_inner_roots([feldera_sql_ir::parse_json(input)?])?;
             return if pass == "ImplementStatics/Candidates" {
                 Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, roots[0])?)?)

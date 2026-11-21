@@ -1,6 +1,8 @@
 //! Transform the circuit in explicit pass order, preserving operator identities.
 
 mod aggregate_groups;
+mod aggregate_fold;
+pub use aggregate_fold::lower_aggregate_fold;
 mod aggregate_zero;
 mod append_only;
 mod lexical_scope;

@@ -45,7 +45,7 @@ fn has_declaration(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
         let node = edit.node(id)?;
         match node.inner_kind() {
             Some(InnerKind::Parameter | InnerKind::Expression(Expr::Let | Expr::For)) => {
-                return Ok(true)
+                return Ok(true);
             }
             Some(InnerKind::Type(_)) => continue,
             _ if node.class() == "DBSPLetStatement" => return Ok(true),
@@ -151,6 +151,18 @@ impl Transformation for Substitute {
     fn preorder(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
         if let Some(index) = self.uses.get(&id) {
             let arg = &self.arguments[*index];
+            let replacement = edit.node(arg.value)?;
+            let path = edit.node(id)?;
+            // Rebinding a name to itself keeps each occurrence and its source position.
+            // Equal type structure alone does not preserve the declaration's type identity.
+            if matches!(
+                replacement.inner_kind(),
+                Some(InnerKind::Expression(Expr::VariablePath))
+            ) && replacement.data("variable") == path.data("variable")
+                && replacement.edge("type")? == path.edge("type")?
+            {
+                return Ok(Visit::Keep);
+            }
             let value = if arg.freshen {
                 Rewrite::new(CopyArgument).apply(edit, arg.value)?
             } else {

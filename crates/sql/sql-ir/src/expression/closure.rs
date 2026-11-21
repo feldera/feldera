@@ -181,12 +181,20 @@ impl CircuitEditor {
     }
 
     pub fn reference_type(&mut self, ty: TypeId) -> Result<TypeId, Error> {
+        self.reference_type_with_mutability(ty, false)
+    }
+
+    pub fn reference_type_with_mutability(
+        &mut self,
+        ty: TypeId,
+        mutable: bool,
+    ) -> Result<TypeId, Error> {
         self.inner_at(
             ty.0,
             InnerKind::Type(Ty::Ref),
             [
                 ("type", Field::Reference(ty.0)),
-                ("mutable", Field::Data(false.into())),
+                ("mutable", Field::Data(mutable.into())),
                 ("code", Field::Data("REF".into())),
                 ("mayBeNull", Field::Data(false.into())),
             ],
