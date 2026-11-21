@@ -167,7 +167,7 @@ pub enum InnerKind {
 }
 
 impl InnerKind {
-    pub(crate) fn decode(class: String) -> Self {
+    pub(crate) fn decode(class: std::borrow::Cow<'_, str>) -> Self {
         if let Some(kind) = ExpressionKind::from_wire(&class) {
             Self::Expression(kind)
         } else if let Some(kind) = TypeKind::from_wire(&class) {
@@ -177,7 +177,7 @@ impl InnerKind {
         } else if class == "DBSPParameter" {
             Self::Parameter
         } else {
-            Self::Other(class)
+            Self::Other(class.into_owned())
         }
     }
 

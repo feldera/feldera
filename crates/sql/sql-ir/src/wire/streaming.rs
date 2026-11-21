@@ -7,7 +7,11 @@ use crate::{json::CheckedValue, Circuit, Error, Field, Node, NodeClass, NodeId};
 use indexmap::IndexMap;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
-use std::{cell::Cell, fmt};
+use std::{borrow::Cow, cell::Cell, fmt};
+
+/// Headers can usually borrow their text directly from the input buffer.
+#[derive(serde::Deserialize)]
+struct Text<'a>(#[serde(borrow)] Cow<'a, str>);
 
 impl Circuit {
     /// Decode a graph for a single in-process optimizer call. Relational origins
@@ -93,7 +97,7 @@ impl<'de> Visitor<'de> for ReadField<'_> {
     }
 
     fn visit_map<M: MapAccess<'de>>(mut self, mut map: M) -> Result<Field, M::Error> {
-        let mut key = map.next_key::<String>()?;
+        let mut key = map.next_key::<Text<'de>>()?.map(|text| text.0);
         if key.as_deref() == Some("node") {
             let id = self.id(map.next_value()?);
             if map.next_key::<de::IgnoredAny>()?.is_some() {
@@ -102,29 +106,35 @@ impl<'de> Visitor<'de> for ReadField<'_> {
             return Ok(Field::Reference(id));
         }
         let header = if key.as_deref() == Some("class") {
-            let class = map.next_value::<String>()?;
-            if map.next_key::<String>()?.as_deref() != Some("id") {
+            let class = map.next_value::<Text<'de>>()?.0;
+            if map
+                .next_key::<Text<'de>>()?
+                .as_ref()
+                .map(|key| key.0.as_ref())
+                != Some("id")
+            {
                 return Err(de::Error::custom("expected node id after class"));
             }
             let id = self.id(map.next_value()?);
-            key = map.next_key()?;
+            key = map.next_key::<Text<'de>>()?.map(|text| text.0);
             Some((id, NodeClass::decode(id, class).map_err(de::Error::custom)?))
         } else {
             None
         };
-        let mut fields = IndexMap::new();
+        // A typed node usually has three to six fields after its header.
+        let mut fields = IndexMap::with_capacity(if header.is_some() { 6 } else { 0 });
         while let Some(name) = key {
-            if matches!(name.as_str(), "class" | "id") || name.starts_with("$serde_json::private::")
+            if matches!(name.as_ref(), "class" | "id") || name.starts_with("$serde_json::private::")
             {
                 return Err(de::Error::custom("field requires general decoding"));
             }
-            let port = fields.contains_key("outputNumber");
+            let port = name == "operator" && fields.contains_key("outputNumber");
             if name == "operator" && !port {
                 return Err(de::Error::custom("expected output number before operator"));
             }
             let opaque = super::opaque_field(&name, self.depth, self.outer && header.is_some());
             let outer = super::outer_child(&name, port);
-            let indexmap::map::Entry::Vacant(slot) = fields.entry(name) else {
+            let indexmap::map::Entry::Vacant(slot) = fields.entry(name.into_owned()) else {
                 return Err(de::Error::custom("duplicate JSON object key"));
             };
             let field = if opaque {
@@ -133,7 +143,7 @@ impl<'de> Visitor<'de> for ReadField<'_> {
                 map.next_value_seed(self.child(outer))?
             };
             slot.insert(field);
-            key = map.next_key()?;
+            key = map.next_key::<Text<'de>>()?.map(|text| text.0);
         }
         if let Some((id, class)) = header {
             insert_node(self.nodes, id, Node::new(class, fields)).map_err(de::Error::custom)?;

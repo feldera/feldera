@@ -107,7 +107,7 @@ pub(super) fn read(
         fields.insert(key, field);
     }
     if let Some((id, class)) = header {
-        let class = NodeClass::decode(id, class)?;
+        let class = NodeClass::decode(id, class.into())?;
         insert_node(nodes, id, Node::new(class, fields))?;
         Ok(Field::Definition(id))
     } else {

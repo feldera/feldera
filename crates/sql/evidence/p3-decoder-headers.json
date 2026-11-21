@@ -1,0 +1,56 @@
+{
+  "scope": "Parse and validate the 3 MiB Nexmark fanout circuit. Both implementations use the ordered streaming decoder.",
+  "workspace_archive": ".bench-results/p3-circuit-decode/2026-21-11-05-14-8df89",
+  "base_commit": "8df895950394abbcff8edf5cf0e07d374109f190",
+  "changes_sha256": "92dc3c578ab0a121c68c39f252ad2ccd78da8b3a52a1ae0a581bf29eb69a5246",
+  "input_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "output_sha256": "5f61f35260219abb5ccac89de33981e74359d4e1727d29022b7c434978d8719b",
+  "binary_sha256": {
+    "baseline": "c948212fec34b77039bdbc92784d2355a34f1f9f6b9c2ff82f93b0a5d257d5a0",
+    "candidate": "1d3246e65dbdccdce9339431b1962b779d2d943549d46b2da17383c562fd23b6"
+  },
+  "pinned_linux_cpu": 12,
+  "alternating_pairs": 12,
+  "calls_per_process": 16,
+  "warmup_calls_per_process": 2,
+  "round_median_ms": {
+    "baseline": [
+      23.213009,
+      24.2406345,
+      22.0544035,
+      22.311779,
+      21.8139025,
+      22.617237,
+      23.515655,
+      22.6662165,
+      22.350904,
+      21.466236,
+      22.260382,
+      23.1387165
+    ],
+    "candidate": [
+      15.0960195,
+      15.5114365,
+      14.7270605,
+      14.9602275,
+      14.67879,
+      14.8156025,
+      15.289186,
+      15.0287485,
+      14.6626435,
+      15.114644,
+      14.8820185,
+      15.07154
+    ]
+  },
+  "median_ms": {
+    "baseline": 22.4840705,
+    "candidate": 14.994488
+  },
+  "ratio_of_mean_process_medians": 0.6620229303891005,
+  "paired_bootstrap_95pct_interval": [
+    0.6539064502984714,
+    0.6715860736631544
+  ],
+  "bootstrap_seed": 42
+}

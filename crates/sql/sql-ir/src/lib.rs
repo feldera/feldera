@@ -142,10 +142,10 @@ enum NodeClass {
 }
 
 impl NodeClass {
-    fn decode(id: NodeId, class: String) -> Result<Self, Error> {
+    fn decode(id: NodeId, class: std::borrow::Cow<'_, str>) -> Result<Self, Error> {
         Ok(match id {
             NodeId::Inner(_) => Self::Inner(InnerKind::decode(class)),
-            NodeId::Outer(_) => match class.as_str() {
+            NodeId::Outer(_) => match class.as_ref() {
                 "DBSPCircuit" => Self::Circuit,
                 "DBSPDeclaration" => Self::Declaration,
                 name => Self::Operator(

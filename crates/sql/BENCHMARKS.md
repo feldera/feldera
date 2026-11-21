@@ -23,6 +23,8 @@ passed the stricter public JSON comparison, which checks numeric precision,
 JSON types, duplicate keys and required artifacts. Only the outer join met
 the p95 ceiling. This timing predates the RANK decoder repair.
 
+On the join-filter build at `77879893f`, all 69 pairs matched. The array subquery took 1.92 s hybrid and 1.57 s direct at p95 (1.223×), Nexmark took 6.40 s and 2.62 s (2.442×), and the outer join took 1.58 s and 1.37 s (1.152×). This run allowed CPUs 0–15. The earlier pinned runs and this run have different scheduling conditions.
+
 The UDF and aggregate eligibility build exceeded the 1.2× ceiling on all three workloads. The earlier build with relational snapshots retained in the JVM measured 1.177×, 2.061× and 1.180× in workload order. Before that change, a separate run measured 1.312×, 1.994× and 1.248× in workload order. Host load varied between runs. The 97-pass build measured 1.175×, 1.980× and 1.241× in workload order. The 96-pass build measured 1.290×, 2.367× and 1.171× in workload order.
 The 94-pass build measured 1.303×, 2.693× and 1.230× in workload order. The 91-pass build with live graph encoding reuse measured 1.273×, 2.449× and 1.259×. Before the live codec change, the
 91-pass build measured 1.270×, 2.774× and 1.158×. The 89-pass build measured 1.211×,
@@ -37,7 +39,7 @@ The 94-pass build measured 1.303×, 2.693× and 1.230× in workload order. The 9
 
 Each workload has two warmup pairs and 21 measured pairs. All 69 pairs
 matched on diagnostics and output artifacts. The harness alternated compiler
-order and rotated workload order on one pinned Linux ARM64 CPU with a warm
+order and rotated workload order. The ASOF retainer run used one pinned Linux ARM64 CPU with a warm
 filesystem cache on a shared host. The p95 is the twentieth ordered observation out of 21.
 
 The earlier twelve-pass run used Java class directories on a bind mount. The
@@ -65,6 +67,12 @@ produced identical serialized circuits. Ten alternating pairs on one pinned
 Linux ARM64 CPU gave a 95% bootstrap interval of 0.703–0.735 for the ratio of
 mean process medians. This measurement excludes JNI and the optimizer passes.
 [Decoder timings](evidence/p3-stream-decode-latency.json)
+
+On the same fanout input, borrowing the JSON header strings and reserving space
+for each node’s fields reduced the median streaming decode from 22.48 ms to
+14.99 ms across 12 alternating pairs. The 95% paired bootstrap interval for the
+ratio of mean process medians was 0.654–0.672. Both decoders produced the same
+serialized circuit. [Decoder header measurements](evidence/p3-decoder-headers.json)
 
 On Nexmark, the five read-only expression analyses can omit replay metadata,
 and the two retention analyses can compare unrelated policies from the operator
