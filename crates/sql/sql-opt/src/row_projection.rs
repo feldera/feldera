@@ -1,6 +1,6 @@
 //! Build a projection of a borrowed stream element and rebind its consumers.
 use crate::row_fields::RowFields;
-use feldera_sql_expr::{Rewrite, Transformation, Visit, parameter_paths};
+use feldera_sql_expr::{Rewrite, Transformation, Visit, input_field_paths, parameter_paths};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
     TypeKind as Ty,
@@ -149,6 +149,26 @@ impl Component {
     }
 }
 
+/// Flatten one level and clone non-Copy fields of the borrowed row.
+pub(super) fn tuple_of_fields(
+    edit: &mut CircuitEditor,
+    row: ExpressionId,
+) -> Result<ExpressionId, Error> {
+    let ty = edit.expression_type(row)?;
+    let fields = if matches!(edit.type_kind(ty)?, Ty::Tuple | Ty::RawTuple) {
+        let count = edit.node(ty.into())?.edges("tupFields")?.len();
+        (0..count)
+            .map(|i| {
+                let field = edit.tuple_field(row, i)?;
+                edit.clone_if_needed(field)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        vec![row]
+    };
+    edit.tuple_expr(row.into(), false, &fields)
+}
+
 enum Element {
     Row(Component),
     Indexed([Component; 2]),
@@ -195,6 +215,13 @@ impl RowProjection {
             parameter_type: ty,
             element,
         })
+    }
+
+    /// Output narrowing preserves every key field, including keys the reader omits.
+    pub(super) fn preserving_key(edit: &CircuitEditor, reader: NodeId) -> Result<Self, Error> {
+        let mut paths = input_field_paths(edit.circuit(), reader)?;
+        paths.insert(vec![0]);
+        Self::new(edit, reader, &paths)
     }
 
     pub(super) fn has_unused_fields(&self) -> bool {

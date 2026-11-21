@@ -122,6 +122,17 @@ fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<
             };
             return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
         }
+        ("TrimAggregateProjection", [reader, empty_row, key]) => {
+            let Some(projection) = feldera_sql_opt::trim_aggregate_projection(
+                &mut edit, *reader, *empty_row, *key, &mut next,
+            )? else {
+                return Ok(Value::Null);
+            };
+            let expressions = edit.circuit().additional_expressions(
+                &arena, &[projection.empty_row, projection.filler],
+            )?;
+            return Ok(json!({"retained": projection.retained, "expressions": expressions, "next_generated_name": next}));
+        }
         ("SplitAntijoinProjection", [closure]) => {
             let pair = feldera_sql_opt::split_antijoin_projection(&mut edit, *closure)?;
             return Ok(serde_json::to_value(edit.circuit().additional_expressions(&arena, &pair)?)?);
@@ -220,7 +231,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
-        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection" | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection" => {
+        | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection" | "SplitAntijoinProjection" | "IsNestedProjection" | "IsStrictProjection" | "TrimTopKProjection" | "TrimAggregateProjection" => {
             return lower_function(pass, input, next);
         }
         "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {

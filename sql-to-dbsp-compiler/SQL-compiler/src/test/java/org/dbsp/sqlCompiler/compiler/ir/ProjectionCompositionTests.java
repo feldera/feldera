@@ -8,6 +8,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -22,6 +24,8 @@ import org.dbsp.util.Maybe;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Test;
+
+import java.util.List;
 
 public class ProjectionCompositionTests {
     private final ExpressionBuilder b = new ExpressionBuilder();
@@ -76,6 +80,42 @@ public class ProjectionCompositionTests {
         var reader = b.lambda(new DBSPTypeRawTuple(b.tup(b.i32()).ref(), row.ref()), pair ->
                 new DBSPRawTupleExpression(b.tuple(), pair.field(1).deref()));
         Assert.assertNull(RustCircuitPass.trimTopKProjection(this.compiler, producer, reader));
+    }
+
+    @Test public void fillDroppedAggregateColumnsWithTheirOriginalEmptySetResults() {
+        Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
+        var row = b.i32().var();
+        var map = row.closure(row);
+        var first = new LinearAggregate(CalciteObject.EMPTY, map, map, b.lit(7));
+        var second = new LinearAggregate(CalciteObject.EMPTY, map, map, b.lit(11));
+        var list = new DBSPAggregateList(CalciteObject.EMPTY, row, List.of(first, second));
+        var output = new DBSPTypeIndexedZSet(CalciteObject.EMPTY, b.tup(b.str(), b.i32()), list.getEmptySetResultType());
+        var all = b.lambda(output.getKVRefType(), pair -> pair.field(1).deref());
+        long next = DBSPVariablePath.nextGeneratedName();
+        Assert.assertNull(RustCircuitPass.trimAggregateProjection(this.compiler, list, output, all));
+        Assert.assertEquals(next, DBSPVariablePath.nextGeneratedName());
+
+        for (boolean keepSecond : new boolean[]{true, false}) {
+            var reader = b.lambda(output.getKVRefType(), pair -> keepSecond ? pair.field(1).deref().field(1) : b.tuple());
+            next = DBSPVariablePath.nextGeneratedName();
+            var projected = RustCircuitPass.trimAggregateProjection(this.compiler, list, output, reader);
+            Assert.assertNotNull(projected);
+            Assert.assertEquals(next + 1, DBSPVariablePath.nextGeneratedName());
+            Assert.assertEquals(keepSecond ? List.of(second) : List.of(), projected.left.aggregates);
+            var filler = projected.right;
+            var input = filler.parameters[0].type.to(DBSPTypeRawTuple.class);
+            Assert.assertSame(output.keyType, input.tupFields[0].deref());
+            Assert.assertSame(projected.left.getEmptySetResultType(), input.tupFields[1].deref());
+            var values = filler.body.to(DBSPRawTupleExpression.class).fields[1].to(DBSPTupleExpression.class);
+            Assert.assertSame(first.emptySetResult, values.fields[0]);
+            if (keepSecond) {
+                var expected = filler.parameters[0].asVariable().field(1).deref().field(0);
+                Assert.assertTrue(EquivalenceContext.equiv(expected.closure(filler.parameters),
+                        values.fields[1].closure(filler.parameters)));
+            } else {
+                Assert.assertSame(second.emptySetResult, values.fields[1]);
+            }
+        }
     }
 
     @Test public void projectTheResultOfABlockAndKeepItsBindings() {

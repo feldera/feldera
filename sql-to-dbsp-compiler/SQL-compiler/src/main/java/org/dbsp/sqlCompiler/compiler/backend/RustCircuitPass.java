@@ -63,7 +63,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
-import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUse;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
@@ -84,6 +83,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.util.Shuffle;
 import org.dbsp.util.JsonStream;
@@ -288,6 +288,22 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     @Nullable
+    public static Pair<DBSPAggregateList, DBSPClosureExpression> trimAggregateProjection(
+            DBSPCompiler compiler, DBSPAggregateList aggregates, DBSPTypeIndexedZSet output, DBSPClosureExpression reader) {
+        var reply = invokeLowering(compiler, "TrimAggregateProjection", reader, aggregates.getEmptySetResult(), output.keyType);
+        if (reply.value.isNull())
+            return null;
+        List<Integer> retained = MAPPER.convertValue(reply.value.required("retained"), new TypeReference<>() {});
+        var expressions = reply.value.required("expressions");
+        var decoder = expressionDecoder(reply.writer);
+        var emptyRow = decoder.decodeInner(expressions.required(0), DBSPTupleExpression.class);
+        var filler = decoder.decodeInner(expressions.required(1), DBSPClosureExpression.class);
+        var projected = aggregates.project(retained, emptyRow);
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return Pair.of(projected, filler);
+    }
+
+    @Nullable
     public static DBSPClosureExpression composeIndexedProjection(DBSPCompiler compiler,
             DBSPClosureExpression before, DBSPClosureExpression after, boolean onlyProjections) {
         return tryLowerFunction(compiler, onlyProjections ? "TryIndexedProjection" : "ComposeIndexedProjection",
@@ -312,15 +328,14 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private record LoweringReply(ToJsonInnerVisitor writer, JsonNode value) {}
 
-    private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass,
-            IDBSPInnerNode input, @Nullable IDBSPInnerNode second) {
+    private static LoweringReply invokeLowering(DBSPCompiler compiler, String pass, IDBSPInnerNode... inputs) {
         var json = JsonStream.compactCircuit();
         var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
         inner.liveNodes = new HashMap<>();
         json.beginArray();
-        input.accept(inner);
-        if (second != null)
-            second.accept(inner);
+        for (var input : inputs)
+            if (input != null)
+                input.accept(inner);
         json.endArray();
         try {
             byte[] reply = transformWithContext(pass, json.toString().getBytes(StandardCharsets.UTF_8),
@@ -1079,14 +1094,6 @@ public final class RustCircuitPass implements CircuitTransform {
             }
         });
         return mapFieldDependencies(compiler, circuit, readers);
-    }
-
-    /** Analyze one reader when projection optimization reaches an aggregate or TopK. */
-    public static ParameterFieldUse indexProjectionFields(DBSPCompiler compiler, DBSPCircuit circuit,
-                                                         DBSPMapIndexOperator reader) {
-        var closure = reader.getClosureFunction();
-        var paths = mapFieldDependencies(compiler, circuit, Map.of(closure.id, reader));
-        return ParameterFieldUse.fromPaths(closure.parameters[0], paths.get(closure.id));
     }
 
     private static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,

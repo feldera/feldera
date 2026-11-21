@@ -57,7 +57,6 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
-import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -67,8 +66,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -474,77 +471,53 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         super.postorder(operator);
     }
 
-    private ParameterFieldUse indexProjectionFields(DBSPMapIndexOperator map) {
-        DBSPClosureExpression function = map.getClosureFunction();
-        Utilities.enforce(function.parameters.length == 1);
-        if (this.compiler.options.ioOptions.rustOptimizerPasses)
-            return RustCircuitPass.indexProjectionFields(this.compiler, this.getCircuit(), map);
-        return new FindUsedFields(this.compiler).findUsedFields(function);
+    /** Drop aggregate components the following map never reads. */
+    boolean processAggregate(DBSPStreamAggregateOperator aggregate, DBSPMapIndexOperator map) {
+        var aggregates = Objects.requireNonNull(aggregate.aggregateList);
+        var output = aggregate.getOutputIndexedZSetType();
+        var reader = map.getClosureFunction();
+        var projection = this.compiler.options.ioOptions.rustOptimizerPasses
+                ? RustCircuitPass.trimAggregateProjection(this.compiler, aggregates, output, reader)
+                : this.aggregateProjection(aggregates, output, reader);
+        if (projection == null)
+            return false;
+
+        var projectedType = new DBSPTypeIndexedZSet(output.getNode(), output.keyType, projection.left.getEmptySetResultType());
+        var narrowed = new DBSPStreamAggregateOperator(aggregate.getRelNode(), projectedType,
+                null, projection.left, aggregate.input());
+        this.addOperator(narrowed);
+        var filler = new DBSPMapIndexOperator(map.getRelNode(), projection.right, narrowed.outputPort());
+        this.addOperator(filler);
+        this.map(map, map.withInputs(Linq.list(filler.outputPort()), false).to(DBSPSimpleOperator.class));
+        return true;
     }
 
-    /** Process an aggregate followed by a MapIndex operator; return 'true' if the operators
-     * required changes, false if they are unchanged.  When the operator requires change,
-     * it is inserted in the circuit and map is remapped to the new operator. */
-    boolean processAggregate(DBSPStreamAggregateOperator aggregate, DBSPMapIndexOperator map) {
-        DBSPClosureExpression function = map.getClosureFunction();
-        ParameterFieldUse uses = this.indexProjectionFields(map);
-        FieldUseMap useMap = uses.get(function.parameters[0]);
-        FieldUseMap valueUse = useMap.field(1);
-        DBSPTypeIndexedZSet ix = aggregate.getOutputIndexedZSetType();
+    @Nullable
+    private Pair<DBSPAggregateList, DBSPClosureExpression> aggregateProjection(
+            DBSPAggregateList aggregates, DBSPTypeIndexedZSet output, DBSPClosureExpression reader) {
+        var uses = new FindUsedFields(this.compiler).findUsedFields(reader);
+        var valueUse = uses.get(reader.parameters[0]).field(1);
+        if (!valueUse.hasUnusedFields(1))
+            return null;
+        var retained = valueUse.deref().getUsedFields();
+        if (retained.size() == aggregates.size())
+            return null;
 
-        if (valueUse.hasUnusedFields(1)) {
-            List<Integer> usedFields = valueUse.deref().getUsedFields();
-            // We must determine whether we can remove any aggregates from the aggregate list.
-            // An aggregate can be removed if none of the fields it is producing are needed.
-            final List<IAggregate> used = new ArrayList<>();
-            {
-                int index = 0;
-                for (IAggregate agg : Objects.requireNonNull(aggregate.aggregateList).aggregates) {
-                    if (usedFields.contains(index))
-                        used.add(agg);
-                    index++;
-                }
-            }
-            if (used.size() < aggregate.aggregateList.aggregates.size()) {
-                // Build a new aggregate which only generates the used fields
-                DBSPAggregateList list = new DBSPAggregateList(
-                        aggregate.aggregateList.getNode(), aggregate.aggregateList.rowVar, used);
-                DBSPType elementType = list.getType().to(DBSPTypeFunction.class).resultType;
-                DBSPStreamAggregateOperator newAggregate = new DBSPStreamAggregateOperator(
-                        aggregate.getRelNode(), new DBSPTypeIndexedZSet(ix.getNode(), ix.keyType, elementType),
-                        null, list, aggregate.input());
-                this.addOperator(newAggregate);
-
-                // Synthesize a MapIndex after the aggregate which fills the removed spaces with the
-                // "zeros" from the removed aggregates
-                DBSPVariablePath var = newAggregate.getOutputIndexedZSetType().getKVRefType().var();
-                int index = 0;
-                int newAggregateIndex = 0;
-                final List<DBSPExpression> fields = new ArrayList<>();
-                for (IAggregate agg : Objects.requireNonNull(aggregate.aggregateList).aggregates) {
-                    if (usedFields.contains(index)) {
-                        fields.add(var.field(1).deref().field(newAggregateIndex));
-                        newAggregateIndex++;
-                    } else {
-                        fields.add(agg.getEmptySetResult());
-                    }
-                    index++;
-                }
-
-                DBSPClosureExpression closure = new DBSPRawTupleExpression(
-                        new DBSPTupleExpression(DBSPTypeTuple.flatten(var.field(0).deref()), false),
-                        new DBSPTupleExpression(fields, false))
-                        .closure(var);
-                DBSPMapIndexOperator filler = new DBSPMapIndexOperator(map.getRelNode(), closure, newAggregate.outputPort());
-                this.addOperator(filler);
-
-                DBSPSimpleOperator rewritten = map.withInputs(Linq.list(filler.outputPort()), false)
-                        .to(DBSPSimpleOperator.class);
-                this.map(map, rewritten);
-                return true;
-            }
+        var list = new DBSPAggregateList(aggregates.getNode(), aggregates.rowVar, Linq.map(retained, aggregates.aggregates::get));
+        var pair = new DBSPTypeRawTuple(output.keyType.ref(), list.getEmptySetResultType().ref()).var();
+        // Recreate the reader's input with the dropped aggregates' empty-set results.
+        var fields = new ArrayList<DBSPExpression>();
+        int offset = 0;
+        for (int i = 0; i < aggregates.size(); i++) {
+            if (retained.contains(i))
+                fields.add(pair.field(1).deref().field(offset++));
+            else
+                fields.add(aggregates.aggregates.get(i).getEmptySetResult());
         }
-        return false;
+        var filler = new DBSPRawTupleExpression(
+                new DBSPTupleExpression(DBSPTypeTuple.flatten(pair.field(0).deref()), false),
+                new DBSPTupleExpression(fields, false)).closure(pair);
+        return Pair.of(list, filler);
     }
 
     /** Process a TopK followed by a MapIndex operator; return 'true' if the operators
@@ -577,7 +550,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         if (produced == null || produced.fields == null || produced.getType().mayBeNull)
             return null;
 
-        ParameterFieldUse uses = this.indexProjectionFields(map);
+        ParameterFieldUse uses = new FindUsedFields(this.compiler).findUsedFields(function);
         FieldUseMap useMap = uses.get(function.parameters[0]);
         useMap.setUsed(0);
         if (!useMap.hasUnusedFields(2))

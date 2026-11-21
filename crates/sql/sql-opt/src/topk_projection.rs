@@ -1,6 +1,6 @@
 //! Narrow a TopK output producer and rebind the indexed map that reads it.
 use crate::row_projection::RowProjection;
-use feldera_sql_expr::{copy_expression, ensure_expression_tree, input_field_paths};
+use feldera_sql_expr::{copy_expression, ensure_expression_tree};
 use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind, NodeId};
 
 pub fn trim_topk_projection(
@@ -16,9 +16,7 @@ pub fn trim_topk_projection(
     {
         return Ok(None);
     }
-    let mut paths = input_field_paths(edit.circuit(), reader)?;
-    paths.insert(vec![0]); // TopK always keeps the whole key.
-    let projection = RowProjection::new(edit, reader, &paths)?;
+    let projection = RowProjection::preserving_key(edit, reader)?;
     let used = projection.used_value_fields()?;
     if !used.contains(&false) {
         return Ok(None);

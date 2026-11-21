@@ -74,6 +74,11 @@ public final class DBSPAggregateList extends DBSPNode
         return this.getEmptySetResult().getType().to(DBSPTypeTuple.class);
     }
 
+    /** The filler for a narrowed aggregate shares the projected empty row's type. */
+    public DBSPAggregateList project(List<Integer> retained, DBSPTupleExpression emptyRow) {
+        return new DBSPAggregateList(this.getNode(), this.rowVar, Linq.map(retained, this.aggregates::get), emptyRow);
+    }
+
     public DBSPExpression getEmptySetResult() {
         return this.emptySetResult;
     }

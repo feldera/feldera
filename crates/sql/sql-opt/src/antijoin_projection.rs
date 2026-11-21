@@ -1,6 +1,7 @@
 //! Build the input projections pushed through an antijoin. Both inputs retain the key.
+use crate::row_projection::tuple_of_fields;
 use feldera_sql_expr::{
-    apply_closure, parameter_paths, Rewrite, SimplifyWarning, Transformation, Visit,
+    Rewrite, SimplifyWarning, Transformation, Visit, apply_closure, parameter_paths,
 };
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, InnerKind, NodeId, TypeKind,
@@ -38,23 +39,6 @@ pub fn antijoin_projection(
     };
     let indexed_row = edit.tuple_expr(stream, true, &fields)?;
     edit.closure_from_variables(indexed_row, &[pair])
-}
-
-/// Flatten one level and clone non-Copy fields of the borrowed row.
-fn tuple_of_fields(edit: &mut CircuitEditor, row: ExpressionId) -> Result<ExpressionId, Error> {
-    let ty = edit.expression_type(row)?;
-    let fields = if matches!(edit.type_kind(ty)?, TypeKind::Tuple | TypeKind::RawTuple) {
-        let count = edit.node(ty.into())?.edges("tupFields")?.len();
-        (0..count)
-            .map(|i| {
-                let field = edit.tuple_field(row, i)?;
-                edit.clone_if_needed(field)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    } else {
-        vec![row]
-    };
-    edit.tuple_expr(row.into(), false, &fields)
 }
 
 struct RebindKey {
