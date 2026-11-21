@@ -800,12 +800,12 @@ the frozen population that ran temporal filter splitting, including competing
 timestamps across views. [Temporal input selection](evidence/p3-temporal-input-selection.json)
 
 Rust also orders the predicates on shared, bounded and upper-only timestamps.
-Java rebuilds the typed conjunction after each partition. At the two pass boundaries, all 266 invocations matched
+The first implementation rebuilt the typed conjunction in Java after each partition. At the two pass boundaries, all 266 invocations matched
 the Java graph and name allocator. The scans agreed on all 16 selected filter
 inputs, and the reorders agreed on all 19 changed circuits.
 [Temporal filter ordering](evidence/p3-temporal-filter-ordering.json)
 
-The mixed optimizer classifies each filter's conjunction in Rust using clock-use
+The first classification port analyzed each filter's conjunction in Rust using clock-use
 and monotonicity facts from Java. A one-sided monotone clock comparison becomes a
 window bound. The first residual condition constrains how the remaining predicates
 can be grouped. Scan, Reorder, MergeFilters and RewriteNow matched at all 532
@@ -849,6 +849,12 @@ that can share an input. Rust rebuilds the filter conjunction in the chosen
 order, preserving nullable casts between successive partitions. All 133
 active `Reorder` boundaries matched the saved Java reference.
 [Temporal conjunction comparisons](evidence/p3-temporal-conjunction.json)
+
+Rust now finds clock calls in the predicate itself and combines residual
+conditions using the typed expression builders. Java supplies the monotonicity
+of comparison operands. All 532 `Scan`, `Reorder`, `MergeFilters` and
+`RewriteNow` invocations matched the saved Java reference.
+[Typed temporal comparison results](evidence/p3-typed-temporal-comparisons.json)
 
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including

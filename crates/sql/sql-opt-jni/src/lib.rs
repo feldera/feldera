@@ -1,5 +1,6 @@
 //! Run typed circuit passes inside the compiler JVM. Java retains the original
 //! objects when an invocation changes only the generated-name counter.
+mod temporal;
 use feldera_sql_ir::{BodyOrder, Circuit, Field, NodeId, OutputPort};
 use jni::{
     errors::ThrowRuntimeExAndDefault,
@@ -241,6 +242,7 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
                 "lower_inclusive": window.lower_inclusive, "upper_inclusive": window.upper_inclusive,
                 "lower_unbounded": window.lower_unbounded}));
         }
+        ("TemporalComparisons", [body]) => return temporal::classify(&arena, &mut edit, *body, state),
         ("WindowGroups/ReorderPredicate", [body]) => {
             #[derive(serde::Deserialize)]
             struct TemporalOrder {
@@ -531,7 +533,7 @@ fn transform(
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
-        | "WindowGroups/ReorderPredicate"
+        | "TemporalComparisons" | "WindowGroups/ReorderPredicate"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
@@ -588,10 +590,6 @@ fn transform(
         "LeftJoinChains/Key" => {
             let facts = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::choose_chain_key(&facts))?);
-        }
-        "TemporalComparisons" => {
-            let nodes: Vec<feldera_sql_opt::TemporalPredicate> = serde_json::from_slice(input)?;
-            return Ok(serde_json::to_value(feldera_sql_opt::classify_temporal_predicates(&nodes)?)?);
         }
         _ => {}
     }

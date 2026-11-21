@@ -3,9 +3,9 @@ use crate::{WindowEndpoint, temporal_window_bounds, window_projection};
 use feldera_sql_ir::{
     BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId, TypeId,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum WindowComparison {
     #[serde(rename = "GT")]
     Greater,

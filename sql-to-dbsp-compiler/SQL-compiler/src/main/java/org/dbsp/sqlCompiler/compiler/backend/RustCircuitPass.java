@@ -844,21 +844,24 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public sealed interface TemporalPredicate {}
-    public record Conjunction(int[] children) implements TemporalPredicate {}
-    public record ClockOperand(boolean clock, boolean monotone) {}
-    public record BinaryPredicate(String opcode, ClockOperand left, ClockOperand right) implements TemporalPredicate {}
-    public record OpaquePredicate(boolean clock) implements TemporalPredicate {}
     public enum PredicateKind { NoNow, Residual, LT, LTE, GT, GTE }
-    public record PredicatePart(int index, PredicateKind kind) {}
+    public record TemporalComparison(PredicateKind kind, DBSPExpression expression, @Nullable DBSPExpression clock) {}
 
-    public static PredicatePart[][] classifyTemporalPredicates(List<TemporalPredicate> predicates) {
+    public static List<TemporalComparison> classifyTemporalPredicates(DBSPCompiler compiler,
+            DBSPExpression body, Set<Long> monotoneOperands) {
         try {
-            byte[] reply = transformWithContext("TemporalComparisons", MAPPER.writeValueAsBytes(predicates),
-                    0, "", EMPTY_CONTEXT);
-            return MAPPER.readValue(reply, PredicatePart[][].class);
+            var reply = invokeLowering(compiler, "TemporalComparisons", MAPPER.writeValueAsBytes(monotoneOperands), body);
+            var decoder = expressionDecoder(reply.writer);
+            var parts = new ArrayList<TemporalComparison>();
+            for (var part : reply.value) {
+                var kind = PredicateKind.valueOf(part.required("kind").textValue());
+                var expression = decoder.decodeInner(part.required("expression"), DBSPExpression.class);
+                var clock = part.has("clock") ? decoder.decodeInner(part.required("clock"), DBSPExpression.class) : null;
+                parts.add(new TemporalComparison(kind, expression, clock));
+            }
+            return parts;
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid temporal comparison plan from the Rust optimizer", error);
+            throw new UncheckedIOException("Cannot encode temporal monotonicity facts", error);
         }
     }
 

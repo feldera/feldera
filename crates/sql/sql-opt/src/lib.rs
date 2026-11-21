@@ -212,7 +212,7 @@ pub use stream_rewrites::{
     implement_joins, insert_weight_validation, optimize_differentials, push_differentials_up,
 };
 pub use sums::merge_sums;
-pub use temporal_comparisons::{classify_temporal_predicates, TemporalPredicate, TemporalPredicatePart};
+pub use temporal_comparisons::{classify_temporal_predicates, TemporalPredicate};
 pub use temporal_equality::desugar_now_equality;
 pub use temporal_filters::{break_temporal_filters, merge_temporal_predicates};
 pub use topology::needs_full_snapshot;

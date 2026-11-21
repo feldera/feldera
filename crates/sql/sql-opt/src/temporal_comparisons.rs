@@ -1,211 +1,180 @@
-//! Classify the conjuncts that can become window bounds. Once a residual
-//! predicate interrupts the prefix, keep each remaining right subtree intact.
-use feldera_sql_ir::Error;
-use serde::{Deserialize, Serialize};
+//! Split a filter into a prefix of window bounds and the predicates evaluated after it.
+use crate::{function_calls::contains_now, WindowComparison};
+use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind};
+use std::collections::HashSet;
 
-#[derive(Deserialize)]
-pub struct ClockOperand {
-    clock: bool,
-    monotone: bool,
-}
-
-/// Conjunction children index earlier entries in left-to-right postorder.
-#[derive(Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TemporalPredicate {
-    Conjunction {
-        children: [usize; 2],
-    },
-    Binary {
-        opcode: String,
-        left: ClockOperand,
-        right: ClockOperand,
-    },
-    Other {
-        clock: bool,
+    NoNow(ExpressionId),
+    Residual(ExpressionId),
+    Bound {
+        key: ExpressionId,
+        clock: ExpressionId,
+        comparison: WindowComparison,
     },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
-pub enum TemporalPredicateKind {
-    NoNow,
-    Residual,
-    #[serde(rename = "LT")]
-    Less,
-    #[serde(rename = "LTE")]
-    LessEqual,
-    #[serde(rename = "GT")]
-    Greater,
-    #[serde(rename = "GTE")]
-    GreaterEqual,
-}
-
-impl TemporalPredicateKind {
-    fn opaque(clock: bool) -> Self {
-        if clock {
-            Self::Residual
-        } else {
-            Self::NoNow
-        }
-    }
-
-    fn binary(opcode: &str, left: &ClockOperand, right: &ClockOperand) -> Self {
-        use TemporalPredicateKind::*;
-        if !left.clock && !right.clock {
-            return NoNow;
-        }
-        if left.clock == right.clock || !(if left.clock { left } else { right }).monotone {
-            return Residual;
-        }
-        match (opcode, left.clock) {
-            ("LT", false) | ("GT", true) => Less,
-            ("LTE", false) | ("GTE", true) => LessEqual,
-            ("GT", false) | ("LT", true) => Greater,
-            ("GTE", false) | ("LTE", true) => GreaterEqual,
-            _ => Residual,
-        }
+fn comparison(opcode: &str, clock_on_left: bool) -> Option<WindowComparison> {
+    use WindowComparison::*;
+    match (opcode, clock_on_left) {
+        ("LT", false) | ("GT", true) => Some(Less),
+        ("LTE", false) | ("GTE", true) => Some(LessEqual),
+        ("GT", false) | ("LT", true) => Some(Greater),
+        ("GTE", false) | ("LTE", true) => Some(GreaterEqual),
+        _ => None,
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct TemporalPredicatePart {
-    index: usize,
-    kind: TemporalPredicateKind,
+fn has_clock(edit: &CircuitEditor, expression: ExpressionId) -> Result<bool, Error> {
+    contains_now(edit.circuit(), &[expression.into()])
 }
 
-/// A group with several parts is a left-associated residual conjunction.
-/// Its individual parts retain their SQL nullability in the calling compiler.
+fn classify_binary(
+    edit: &CircuitEditor,
+    id: ExpressionId,
+    monotone: &HashSet<ExpressionId>,
+) -> Result<TemporalPredicate, Error> {
+    let node = edit.node(id.into())?;
+    let left = edit.expression(node.edge("left")?)?;
+    let right = edit.expression(node.edge("right")?)?;
+    let (key, clock, swapped) = match (has_clock(edit, left)?, has_clock(edit, right)?) {
+        (false, false) => return Ok(TemporalPredicate::NoNow(id)),
+        (true, true) => return Ok(TemporalPredicate::Residual(id)),
+        (true, false) => (right, left, true),
+        (false, true) => (left, right, false),
+    };
+    let opcode = node
+        .data("opcode")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| Error::new("missing binary opcode"))?;
+    if let Some(comparison) = comparison(opcode, swapped).filter(|_| monotone.contains(&clock)) {
+        return Ok(TemporalPredicate::Bound {
+            key,
+            clock,
+            comparison,
+        });
+    }
+    Ok(TemporalPredicate::Residual(id))
+}
+
+/// Once a residual interrupts the prefix, consume each pending right subtree as
+/// a whole. The first clock-dependent residual absorbs all following predicates.
 pub fn classify_temporal_predicates(
-    nodes: &[TemporalPredicate],
-) -> Result<Vec<Vec<TemporalPredicatePart>>, Error> {
-    let mut roots = Vec::new();
-    let mut clocks = Vec::with_capacity(nodes.len());
-    for (index, node) in nodes.iter().enumerate() {
-        let clock = match node {
-            TemporalPredicate::Conjunction {
-                children: [left, right],
-            } => {
-                if roots.pop() != Some(*right) || roots.pop() != Some(*left) {
-                    return Err(Error::new("invalid temporal conjunction children"));
-                }
-                clocks[*left] || clocks[*right]
-            }
-            TemporalPredicate::Binary { left, right, .. } => left.clock || right.clock,
-            TemporalPredicate::Other { clock } => *clock,
-        };
-        clocks.push(clock);
-        roots.push(index);
-    }
-    if roots.len() != 1 {
-        return Err(Error::new("expected one temporal predicate tree"));
-    }
-
-    let mut groups: Vec<Vec<TemporalPredicatePart>> = Vec::new();
-    let mut scanning_bounds = true;
-    while let Some(index) = roots.pop() {
-        if !scanning_bounds {
-            let kind = TemporalPredicateKind::opaque(clocks[index]);
-            let group = groups.last_mut().expect("a residual ended the prefix");
-            let combine = group[0].kind == TemporalPredicateKind::Residual
-                || kind == TemporalPredicateKind::NoNow;
-            let part = TemporalPredicatePart { index, kind };
-            if combine {
-                group.push(part);
+    edit: &mut CircuitEditor,
+    body: ExpressionId,
+    monotone: &HashSet<ExpressionId>,
+) -> Result<Vec<TemporalPredicate>, Error> {
+    use TemporalPredicate::*;
+    let mut parts = Vec::new();
+    let mut pending = vec![body];
+    let mut scanning = true;
+    while let Some(id) = pending.pop() {
+        let node = edit.node(id.into())?;
+        if scanning && edit.expr_kind(id)? == ExpressionKind::Binary {
+            if node.data("opcode").and_then(|v| v.as_str()) == Some("AND") {
+                pending.push(edit.expression(node.edge("right")?)?);
+                pending.push(edit.expression(node.edge("left")?)?);
             } else {
-                groups.push(vec![part]);
+                let part = classify_binary(edit, id, monotone)?;
+                scanning = !matches!(part, Residual(_));
+                parts.push(part);
             }
             continue;
         }
-        let kind = match &nodes[index] {
-            TemporalPredicate::Conjunction {
-                children: [left, right],
-            } => {
-                roots.extend([*right, *left]);
+
+        let clock = has_clock(edit, id)?;
+        if !scanning {
+            let previous = match parts.last_mut() {
+                Some(Residual(previous)) => Some(previous),
+                Some(NoNow(previous)) if !clock => Some(previous),
+                _ => None,
+            };
+            if let Some(previous) = previous {
+                let nullable = edit.nullable(edit.expression_type(*previous)?)?
+                    || edit.nullable(edit.expression_type(id)?)?;
+                let ty = edit.bool_type((*previous).into(), nullable)?;
+                let and =
+                    edit.binary_expression((*previous).into(), ty, BinaryOp::And, *previous, id)?;
+                *previous = edit.wrap_bool_if_needed(and)?;
                 continue;
             }
-            TemporalPredicate::Binary {
-                opcode,
-                left,
-                right,
-            } => {
-                let kind = TemporalPredicateKind::binary(opcode, left, right);
-                scanning_bounds = kind != TemporalPredicateKind::Residual;
-                kind
-            }
-            TemporalPredicate::Other { clock } => {
-                // A non-binary expression ends the prefix even when it is clock-free.
-                scanning_bounds = false;
-                TemporalPredicateKind::opaque(*clock)
-            }
-        };
-        groups.push(vec![TemporalPredicatePart { index, kind }]);
+        }
+        scanning = false;
+        parts.push(if clock { Residual(id) } else { NoNow(id) });
     }
-    Ok(groups)
+    Ok(parts)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use feldera_sql_ir::Circuit;
     use serde_json::json;
 
     #[test]
-    fn keeps_the_unvisited_right_subtree_after_a_residual() {
-        let predicates = serde_json::from_value::<Vec<TemporalPredicate>>(json!([
-            {"opcode":"LT","left":{"clock":true,"monotone":true},"right":{"clock":false,"monotone":false}},
-            {"clock":false}, {"children":[0,1]},
-            {"clock":false}, {"clock":true}, {"children":[3,4]}, {"children":[2,5]},
-            {"clock":false}, {"children":[6,7]}
-        ])).unwrap();
-        use TemporalPredicateKind::*;
-        let part = |index, kind| TemporalPredicatePart { index, kind };
+    fn a_clock_bound_requires_one_monotone_clock_operand() -> Result<(), Error> {
+        let circuit = Circuit::from_json(
+            json!({"class":"DBSPCircuit","id":0,"declarations":[],"allOperators":[]}),
+        )?;
+        let (circuit, roots) = circuit.with_inner_roots([json!({
+            "class":"DBSPApplyExpression","id":1,"arguments":[],
+            "type":{"class":"DBSPTypeInteger","id":8,"width":32,"signed":true,"mayBeNull":false,"code":"INT32"},
+            "function":{"class":"DBSPPathExpression","id":2,"path":{"class":"DBSPPath","id":3,
+            "components":[{"class":"DBSPSimplePathSegment","id":4,"identifier":"now","genericArgs":[]}]}}
+        })])?;
+        let mut edit = CircuitEditor::new(circuit);
+        let clock = edit.expression(roots[0])?;
+        let key = edit.named_variable(edit.expression_type(clock)?, "key")?;
+        let boolean = edit.bool_type(key.into(), false)?;
+        let compare = |edit: &mut CircuitEditor, op, a, b| {
+            edit.binary_expression(key.into(), boolean, op, a, b)
+        };
+        let direct = compare(&mut edit, BinaryOp::Gte, key, clock)?;
+        let swapped = compare(&mut edit, BinaryOp::Lte, clock, key)?;
+        let monotone = HashSet::from([clock]);
+        for id in [direct, swapped] {
+            assert_eq!(
+                classify_binary(&edit, id, &monotone)?,
+                TemporalPredicate::Bound {
+                    key,
+                    clock,
+                    comparison: WindowComparison::GreaterEqual
+                }
+            );
+            assert_eq!(
+                classify_binary(&edit, id, &HashSet::new())?,
+                TemporalPredicate::Residual(id)
+            );
+        }
+        let both = compare(&mut edit, BinaryOp::Gt, clock, clock)?;
         assert_eq!(
-            classify_temporal_predicates(&predicates).unwrap(),
+            classify_binary(&edit, both, &monotone)?,
+            TemporalPredicate::Residual(both)
+        );
+        let ordinary = compare(&mut edit, BinaryOp::Eq, key, key)?;
+        assert_eq!(
+            classify_binary(&edit, ordinary, &monotone)?,
+            TemporalPredicate::NoNow(ordinary)
+        );
+
+        // The scalar predicate ends the prefix. Preserve the following AND as
+        // one residual, even though its individual comparisons are window bounds.
+        let scalar = edit.named_variable(boolean, "flag")?;
+        let bounds = compare(&mut edit, BinaryOp::And, direct, swapped)?;
+        let interrupted = compare(&mut edit, BinaryOp::And, scalar, bounds)?;
+        let body = compare(&mut edit, BinaryOp::And, direct, interrupted)?;
+        assert_eq!(
+            classify_temporal_predicates(&mut edit, body, &monotone)?,
             [
-                vec![part(0, Greater)],
-                vec![part(1, NoNow)],
-                vec![part(5, Residual), part(7, NoNow)]
+                TemporalPredicate::Bound {
+                    key,
+                    clock,
+                    comparison: WindowComparison::GreaterEqual
+                },
+                TemporalPredicate::NoNow(scalar),
+                TemporalPredicate::Residual(bounds),
             ]
         );
-    }
-
-    #[test]
-    fn bounds_require_exactly_one_monotone_clock_operand() {
-        use TemporalPredicateKind::*;
-        let ordinary = ClockOperand {
-            clock: false,
-            monotone: true,
-        };
-        let clock = ClockOperand {
-            clock: true,
-            monotone: true,
-        };
-        let varying = ClockOperand {
-            clock: true,
-            monotone: false,
-        };
-        assert_eq!(
-            TemporalPredicateKind::binary("GTE", &clock, &ordinary),
-            LessEqual
-        );
-        assert_eq!(
-            TemporalPredicateKind::binary("GTE", &ordinary, &clock),
-            GreaterEqual
-        );
-        assert_eq!(
-            TemporalPredicateKind::binary("GT", &ordinary, &varying),
-            Residual
-        );
-        assert_eq!(
-            TemporalPredicateKind::binary("GT", &clock, &clock),
-            Residual
-        );
-        assert_eq!(
-            TemporalPredicateKind::binary("EQ", &clock, &ordinary),
-            Residual
-        );
-        assert_eq!(
-            TemporalPredicateKind::binary("EQ", &ordinary, &ordinary),
-            NoNow
-        );
+        Ok(())
     }
 }
