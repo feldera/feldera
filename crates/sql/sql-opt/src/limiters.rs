@@ -23,6 +23,27 @@ pub struct Bound {
     pub ty: TypeId,
 }
 
+/// Bind a limiter closure to the actual waterline input types. The caller supplies
+/// an input for every formal parameter, in port order.
+pub fn apply_waterlines(
+    edit: &mut CircuitEditor,
+    function: NodeId,
+    input_types: &[TypeId],
+    next: &mut u64,
+    warnings: &mut Vec<feldera_sql_expr::SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let mut names = *next;
+    let mut arguments = Vec::with_capacity(input_types.len());
+    for &ty in input_types {
+        let reference = edit.reference_type(ty)?;
+        arguments.push(edit.variable(reference, &mut names)?);
+    }
+    let body = feldera_sql_expr::apply_closure(edit, function, &arguments, warnings)?;
+    let closure = edit.closure_from_variables(body, &arguments)?;
+    *next = names;
+    Ok(closure)
+}
+
 fn min_component(
     edit: &mut CircuitEditor,
     params: &[RefParameter],

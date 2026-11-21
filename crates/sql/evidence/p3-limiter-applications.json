@@ -1,0 +1,28 @@
+{
+  "scope": "Rust binds the one-, two- and variadic-input limiter closures to their waterline port types and reduces the resulting calls. Java schedules limiter insertion and constructs the operators.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from InsertLimiters, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "added_operators": 11304,
+      "cases_gaining_operators": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "rust_gzip_sha256": "8f93f32930697d9b671500213368d6fa056646ac1d82f6bc79dae3e0d9e7b7eb"
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "added_operators": 11137,
+      "cases_gaining_operators": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "rust_gzip_sha256": "18b74a6f76e7d6d138c4b7b5e223c756052a4f9c5c7e4df59778539c3595df20"
+    }
+  },
+  "compiler_jar_sha256": "f9e80d4506398429b066c08725374bb8071706bd47e8491590d5cb307c22d319",
+  "optimizer_library_sha256": "32435f21c44d57b09bb381324af5cf5e68118836f6866ee1b6cf6ca07db72be1",
+  "comparator_sha256": "a3a9f1319f21867fd59596545a06077ad21a6353e8354566a3b2d79087bd90ca"
+}

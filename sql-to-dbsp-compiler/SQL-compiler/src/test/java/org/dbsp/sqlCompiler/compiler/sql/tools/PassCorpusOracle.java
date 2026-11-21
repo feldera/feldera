@@ -138,6 +138,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.set("before", this.snapshot(writer));
         // Switch only for the selected observation, after capturing its Java prefix.
         this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters
+                && Boolean.getBoolean("feldera.optimizer.compareRustLimiterApply"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter rewriter
                 && rewriter.transform instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE
                 && Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses"))

@@ -256,6 +256,18 @@ public final class RustCircuitPass implements CircuitTransform {
                 row, null, DBSPClosureExpression.class);
     }
 
+    public static DBSPClosureExpression applyWaterlines(DBSPCompiler compiler,
+            DBSPClosureExpression function, List<OutputPort> inputs) {
+        var roots = new IDBSPInnerNode[inputs.size() + 1];
+        roots[0] = function;
+        for (int i = 0; i < inputs.size(); i++)
+            roots[i + 1] = inputs.get(i).outputType();
+        var reply = invokeLowering(compiler, "Limiters/Apply", roots);
+        var closure = loweredFunction(compiler, reply.writer, reply.value, DBSPClosureExpression.class);
+        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+        return closure;
+    }
+
     public record FilterBound(int column, DBSPOpcode comparison, DBSPExpression value) {}
 
     public enum BinaryDomain { Scalar, Temporal, TimeOfDay }

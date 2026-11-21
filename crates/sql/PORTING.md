@@ -815,6 +815,11 @@ The expanded-graph comparison matched Java on all 550 selected programs,
 including tuple-valued expressions with no lower bound.
 [Binary waterline comparisons](evidence/p3-binary-waterlines.json)
 
+Rust binds limiter closures to the actual waterline port types and reduces
+their calls before Java inserts the apply operators. The resulting graph,
+generated names and diagnostics matched Java at all 550 selected
+`InsertLimiters` boundaries. [Limiter closure comparisons](evidence/p3-limiter-applications.json)
+
 Rust chooses the key for each candidate left-join chain and decides whether
 deferring columns saves enough work. Across 17 classic and 17 Gen-2 cases,
 Java and Rust selected the same 20 chains and agreed on every column layout.
@@ -960,7 +965,7 @@ grouped COUNT and a second program with LATENESS. All four cross-compiler
 restores resumed without bootstrap and emitted the expected deltas.
 [Reduced G9 checkpoints](evidence/p3-checkpoints.json)
 
-All 8,256 classic executable cases passed on the 99-pass aggregate-fold build. The
+All 8,256 classic executable cases passed on the filter-bound build at `c5c800f7f`. The
 verifier checked 11,407 input commands, 232 expected runtime errors and the
 identities of the 315 compile-only cases across the 8,571-program population.
 [Classic runtime replay](evidence/p3-classic-runtime.json)

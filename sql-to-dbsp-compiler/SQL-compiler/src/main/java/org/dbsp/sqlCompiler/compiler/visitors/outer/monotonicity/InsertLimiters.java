@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.IColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -185,9 +186,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Inserts in the circuit an apply operator that computes {@code function} of the
      * waterline produced by {@code source}; the class documentation has the invariants. */
     OutputPort createApply(OutputPort source, DBSPClosureExpression function) {
-        DBSPVariablePath var = source.outputType().ref().var();
-        DBSPExpression call = function.call(var).reduce(this.compiler);
-        DBSPApplyOperator result = new DBSPApplyOperator(source.node().getRelNode(), call.closure(var),
+        var closure = applyWaterlines(this.compiler, List.of(source), function);
+        DBSPApplyOperator result = new DBSPApplyOperator(source.node().getRelNode(), closure,
                 source.simpleNode().outputPort(), null);
         this.addOperator(result);
         result.addAnnotation(Waterline.INSTANCE, DBSPApplyOperator.class);
@@ -197,11 +197,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Inserts in the circuit an apply2 operator that computes {@code function} of the
      * waterlines produced by {@code left} and {@code right}. */
     OutputPort createApply2(OutputPort left, OutputPort right, DBSPClosureExpression function) {
-        DBSPVariablePath leftVar = left.outputType().ref().var();
-        DBSPVariablePath rightVar = right.outputType().ref().var();
-        DBSPExpression call = function.call(leftVar, rightVar).reduce(this.compiler);
+        var closure = applyWaterlines(this.compiler, List.of(left, right), function);
         DBSPApply2Operator result = new DBSPApply2Operator(
-                left.node().getRelNode(), call.closure(leftVar, rightVar), left, right);
+                left.node().getRelNode(), closure, left, right);
         result.addAnnotation(Waterline.INSTANCE, DBSPApply2Operator.class);
         this.addOperator(result);
         return result.outputPort();
@@ -214,13 +212,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort first = inputs.get(0);
         CalciteRelNode relNode = first.node().getRelNode();
 
+        DBSPApplyNOperator result = new DBSPApplyNOperator(relNode, applyWaterlines(compiler, inputs, function), inputs);
+        result.addAnnotation(Waterline.INSTANCE, DBSPApplyNOperator.class);
+        return result.outputPort();
+    }
+
+    private static DBSPClosureExpression applyWaterlines(DBSPCompiler compiler,
+            List<OutputPort> inputs, DBSPClosureExpression function) {
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.applyWaterlines(compiler, function, inputs);
         List<DBSPVariablePath> vars = Linq.map(inputs, i -> i.outputType().ref().var());
         List<DBSPExpression> arguments = Linq.map(vars, v -> v);
         DBSPExpression call = function.call(arguments).reduce(compiler);
-        DBSPVariablePath[] params = vars.toArray(new DBSPVariablePath[0]);
-        DBSPApplyNOperator result = new DBSPApplyNOperator(relNode, call.closure(params), inputs);
-        result.addAnnotation(Waterline.INSTANCE, DBSPApplyNOperator.class);
-        return result.outputPort();
+        return call.closure(vars.toArray(new DBSPVariablePath[0]));
     }
 
     /**
