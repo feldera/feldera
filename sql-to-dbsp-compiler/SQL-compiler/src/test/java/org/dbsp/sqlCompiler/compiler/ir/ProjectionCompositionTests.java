@@ -40,6 +40,20 @@ public class ProjectionCompositionTests {
             Assert.assertNull(RustCircuitPass.tryComposeProjection(this.compiler, before, after));
     }
 
+    @Test public void deriveTheFieldTypeAfterRemovingACloneOfANullableRow() {
+        var record = b.tup(b.i32(), b.str()).withMayBeNull(true);
+        var before = b.closure(b.tup(record), row -> b.tuple(b.field(row, 0).applyCloneIfNeeded().field(0)));
+        var after = b.closure(before.body.type, row -> b.field(row, 0));
+        var expected = after.applyAfter(this.compiler, before, Maybe.YES);
+        Assert.assertTrue(expected.body.type.mayBeNull);
+        Assert.assertNotSame(before.body.field(0).type, expected.body.type);
+        if (Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields")) {
+            var actual = RustCircuitPass.composeProjection(this.compiler, before, after);
+            Assert.assertTrue(EquivalenceContext.equiv(expected, actual));
+            Assert.assertNotSame(before.body.field(0).type, actual.body.type);
+        }
+    }
+
     @Test public void inlineIndexedTupleWithBorrowedKeyAndValue() {
         Assume.assumeTrue(Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"));
         var rowType = b.tup(b.i32());

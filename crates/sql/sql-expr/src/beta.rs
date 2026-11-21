@@ -56,32 +56,6 @@ fn has_declaration(edit: &CircuitEditor, root: NodeId) -> Result<bool, Error> {
     Ok(false)
 }
 
-struct CopyArgument;
-impl Transformation for CopyArgument {
-    fn preorder(&mut self, edit: &mut CircuitEditor, id: NodeId) -> Result<Visit, Error> {
-        let node = edit.node(id)?;
-        Ok(match node.inner_kind() {
-            Some(InnerKind::Type(_)) => Visit::Keep,
-            Some(InnerKind::Expression(Expr::VariablePath | Expr::Path))
-            | Some(InnerKind::Parameter) => Visit::Replace(edit.derive_unlocated_inner(id, [])?),
-            _ => Visit::Children,
-        })
-    }
-
-    fn postorder_rebuilt(
-        &mut self,
-        edit: &mut CircuitEditor,
-        original: NodeId,
-        rebuilt: NodeId,
-    ) -> Result<NodeId, Error> {
-        if rebuilt == original {
-            edit.derive_inner(original, [])
-        } else {
-            Ok(rebuilt)
-        }
-    }
-}
-
 /// Resolve paths before substitution. In particular, a let initializer reads
 /// the enclosing binding and its consumer reads the newly introduced binding.
 fn resolve<'a>(
@@ -165,7 +139,7 @@ impl Transformation for Substitute {
                 return Ok(Visit::Keep);
             }
             let value = if arg.freshen {
-                Rewrite::new(CopyArgument).apply(edit, arg.value)?
+                crate::tree::copy_argument(edit, arg.value)?
             } else {
                 arg.value
             };
@@ -397,19 +371,31 @@ impl Transformation for SimplifyArgument<'_> {
                     .ok_or_else(|| Error::new("expected a tuple field index"))?;
                 match edit.expr_kind(row)? {
                     Expr::Block => {
-                        let last = edit.expression(edit.node(row.into())?.edge("lastExpression")?)?;
+                        let last =
+                            edit.expression(edit.node(row.into())?.edge("lastExpression")?)?;
                         let projected = edit.tuple_field(last, index)?;
                         edit.derive_unlocated_inner(
                             row.into(),
                             [
                                 ("lastExpression", Field::Reference(projected.into())),
-                                ("type", Field::Reference(edit.expression_type(projected)?.into())),
+                                (
+                                    "type",
+                                    Field::Reference(edit.expression_type(projected)?.into()),
+                                ),
                             ],
                         )
                     }
                     Expr::Clone => {
                         let value = edit.node(row.into())?.edge("expression")?;
-                        edit.derive_inner(id, [("expression", Field::Reference(value))])
+                        let row_type = edit.expression_type(edit.expression(value)?)?;
+                        let field_type = edit.tuple_field_type(row_type, index)?;
+                        edit.derive_inner(
+                            id,
+                            [
+                                ("expression", Field::Reference(value)),
+                                ("type", Field::Reference(field_type.into())),
+                            ],
+                        )
                     }
                     Expr::If => {
                         let branch = edit.node(row.into())?;

@@ -14,7 +14,7 @@ pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<
             continue;
         }
         if matches!(node.inner_kind(), Some(InnerKind::Expression(_))) && !seen.insert(id) {
-            return copy(edit, root, Some(root), 0);
+            return copy(edit, root, Parameters::KeepRoot(root), 0);
         }
         for (key, field) in node.fields() {
             if !matches!(key, "type" | "originalStruct") {
@@ -28,13 +28,25 @@ pub fn ensure_expression_tree(edit: &mut CircuitEditor, root: NodeId) -> Result<
 /// Each use gets a fresh expression. Parameters belong to the closure that
 /// binds them and types retain the identities chosen by their constructors.
 pub fn copy_expression(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
-    copy(edit, root, None, 0)
+    copy(edit, root, Parameters::KeepAll, 0)
+}
+
+/// Substituting an argument into multiple sites gives each copy its own declarations.
+pub(super) fn copy_argument(edit: &mut CircuitEditor, root: NodeId) -> Result<NodeId, Error> {
+    copy(edit, root, Parameters::Fresh, 0)
+}
+
+#[derive(Clone, Copy)]
+enum Parameters {
+    KeepAll,
+    KeepRoot(NodeId),
+    Fresh,
 }
 
 fn copy(
     edit: &mut CircuitEditor,
     id: NodeId,
-    tree_root: Option<NodeId>,
+    parameters: Parameters,
     depth: usize,
 ) -> Result<NodeId, Error> {
     if depth > 128 {
@@ -53,7 +65,7 @@ fn copy(
         return Ok(id);
     }
     if node.class() == "DBSPExpressionStatement" {
-        let expression = copy(edit, node.edge("expression")?, tree_root, depth + 1)?;
+        let expression = copy(edit, node.edge("expression")?, parameters, depth + 1)?;
         return edit.inner_at(
             expression,
             InnerKind::Other("DBSPExpressionStatement".into()),
@@ -70,7 +82,7 @@ fn copy(
                 .data("mutable")
                 .cloned()
                 .ok_or_else(|| Error::new("let statement requires mutability"))?;
-            let initializer = copy(edit, initializer, tree_root, depth + 1)?;
+            let initializer = copy(edit, initializer, parameters, depth + 1)?;
             let ty = edit.node(initializer)?.edge("type")?;
             return edit.inner_at(
                 initializer,
@@ -99,9 +111,15 @@ fn copy(
         .map(|(key, field)| (key.to_owned(), field.clone()))
         .collect();
     for (_, field) in &mut fields {
-        field.map_inner_edges(&mut |child| copy(edit, child, tree_root, depth + 1))?;
+        field.map_inner_edges(&mut |child| copy(edit, child, parameters, depth + 1))?;
     }
-    if kind == Some(Expr::Closure) && tree_root.is_some_and(|root| root != id) {
+    if kind == Some(Expr::Closure)
+        && match parameters {
+            Parameters::KeepAll => false,
+            Parameters::KeepRoot(root) => root != id,
+            Parameters::Fresh => true,
+        }
+    {
         let params = edit.node(id)?.edges("parameters")?;
         let mut fresh = Vec::with_capacity(params.len());
         for param in params {
@@ -144,7 +162,7 @@ fn copy(
     // deepCopy uses the explicit IsNull constructor. The expression keeps
     // its own location and gets a fresh boolean type even for a literal.
     if kind == Some(Expr::IsNull) {
-        if tree_root.is_some() {
+        if !matches!(parameters, Parameters::KeepAll) {
             // Freshening nested parameters visits the whole copied tree and
             // calls is_null(), which folds tests on constructors and clones.
             let operand = edit.node(copied)?.edge("expression")?;
