@@ -49,10 +49,10 @@ Path prefixes used in this document:
 - 2026-11-20. The mixed optimizer ran 2,931,889 Rust pass adapter invocations on 17,098
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 99 pass kinds
-  in Rust. All 8,256 classic executable cases passed on the 99-pass build with retained relational snapshots. Java still runs the
-  remaining passes. With relational snapshots retained in the JVM, the 99-pass SQL-to-artifact
-  p95 met the 1.2× ceiling for the array subquery (1.177× direct Java) and the outer
-  join (1.180×). Nexmark exceeded the ceiling at 2.061×. The owner confirmed that
+  in Rust. All 8,256 classic executable cases passed on the temporal-ordering build. Java still runs the
+  remaining passes. With the UDF and aggregate eligibility checks, the SQL-to-artifact
+  p95 exceeded the 1.2× ceiling on the array subquery (1.231× direct Java), Nexmark
+  (2.222×) and the outer join (1.337×). The owner confirmed that
   the field-shadow gate stays open until qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
 - 2026-11-19. The P1 IR codec passed 7,030,934 observation round-trips across

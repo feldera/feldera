@@ -847,7 +847,7 @@ grouped COUNT and a second program with LATENESS. All four cross-compiler
 restores resumed without bootstrap and emitted the expected deltas.
 [Reduced G9 checkpoints](evidence/p3-checkpoints.json)
 
-All 8,256 classic executable cases passed on the 99-pass build with retained relational snapshots. The
+All 8,256 classic executable cases passed on the 99-pass temporal-ordering build. The
 verifier checked 11,407 input commands, 232 expected runtime errors and the
 identities of the 315 compile-only cases across the 8,571-program population.
 [Classic runtime replay](evidence/p3-classic-runtime.json)
@@ -867,7 +867,7 @@ The corrected 97-pass build measured 1.175×, 1.980× and 1.241×.
 The 99-pass build before the retained-relation change measured 1.312×, 1.994× and 1.248×.
 With relational snapshots retained in the JVM the ratios were 1.177×, 2.061× and 1.180×.
 Nexmark exceeded the ceiling with a hybrid p95 of 14.85 s against direct Java's 7.21 s.
-Each timing covers SQL through emitted classic artifacts.
+On the UDF and aggregate eligibility build, p95 measured 1.231×, 2.222× and 1.337×, respectively. Each timing covers SQL through emitted classic artifacts.
 [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-20)
 
 On the 21-pass build, cancellation p95 for four occupied workers was 33.23 ms
@@ -906,6 +906,11 @@ for COUNT and LATENESS. Its cancellation p95 was 13.82 ms with 78,217,216 bytes 
 With the UDF and aggregate eligibility checks, replay and both restore directions
 again matched. Cancellation p95 was 26.98 ms, above the 25 ms limit, with
 78,045,184 bytes peak waiting RSS.
+The temporal classification, left-join key and unused-field builds each
+matched both frozen populations and restored COUNT and LATENESS checkpoints
+in both directions. Their four-worker cancellation p95s were 35.25 ms,
+15.35 ms and 10.82 ms, respectively. Peak waiting RSS on the unused-field
+build was 78,012,416 bytes per worker.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds
