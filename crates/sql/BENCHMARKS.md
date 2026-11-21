@@ -6,7 +6,7 @@ Java p95 on representative workloads.
 
 ## Packaged mixed optimizer, 2026-11-21
 
-The opt-in compiler ran 100 Rust pass kinds. Each timing starts a fresh
+The opt-in compiler ran 101 Rust pass kinds. Each timing starts a fresh
 process and ends when it publishes the classic Rust source, UDF stubs,
 schema and dataflow. The hybrid starts one JVM and an isolated Rust worker.
 The baseline runs direct Java from the same Maven JAR. Cargo compilation of
@@ -14,11 +14,11 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.50 | 1.98 | 2.00 | 2.60 | 1.301× |
-| Nexmark suite | 3.44 | 8.64 | 4.85 | 11.59 | 2.387× |
-| Outer join | 1.43 | 1.65 | 1.86 | 2.21 | 1.187× |
+| Correlated array subquery | 2.38 | 2.98 | 4.63 | 4.45 | 0.961× |
+| Nexmark suite | 5.26 | 12.94 | 6.61 | 16.86 | 2.551× |
+| Outer join | 2.32 | 2.71 | 2.96 | 4.05 | 1.369× |
 
-The table measures the complete circuit lowering pass at `99f23c273`. All 69 pairs on CPU 15 matched on diagnostics and emitted artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently for part of the run. The outer join met the latency ceiling. The preceding checked waterline build at `5a92a1eb3` measured 1.247×, 2.521× and 1.117×. The earlier compact consumer graph build at `f08e3eb5d` measured 1.072×, 2.394× and 1.131× in workload order. The circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214×. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
+The table measures the ASOF build at `54c227440`. All 69 pairs on CPU 15 matched on diagnostics and emitted artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently for part of the run. Only the correlated array subquery met the 1.2× latency ceiling. The circuit lowering build at `99f23c273` measured 1.301×, 2.387× and 1.187×, respectively. The preceding checked waterline build at `5a92a1eb3` measured 1.247×, 2.521× and 1.117×. The earlier compact consumer graph build at `f08e3eb5d` measured 1.072×, 2.394× and 1.131× in workload order. The circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214×. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
 The static-declaration build at `a039e2fda` measured 1.237×, 2.435× and 1.198× in workload order. The directed limiter comparisons overlapped the beginning of that run. The full corpus and restore runs started after that benchmark.
 

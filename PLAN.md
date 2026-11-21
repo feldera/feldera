@@ -46,14 +46,14 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-21. The mixed optimizer ran 2,948,987 Rust pass adapter invocations on 17,098
+- 2026-11-21. The mixed optimizer ran 2,966,085 Rust pass adapter invocations on 17,098
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
-  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 100 pass kinds
+  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 101 pass kinds
   in Rust. All 8,256 classic executable cases passed on the filter-bound build
   (`c5c800f7f`). The declared waterline build passed all 2,076 runtime commands
   in the classic LATENESS and NOW() sample and restored COUNT and LATENESS checkpoints in
-  both directions. Java still runs the remaining passes. On the circuit lowering build (`99f23c273`), hybrid p95 was
-  1.301× direct Java on the array subquery, 2.387× on Nexmark and 1.187× on the
+  both directions. Java still runs the remaining passes. On the ASOF build (`54c227440`), hybrid p95 was
+  0.961× direct Java on the array subquery, 2.551× on Nexmark and 1.369× on the
   outer join. The owner confirmed that the field-shadow gate stays open until
   qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
