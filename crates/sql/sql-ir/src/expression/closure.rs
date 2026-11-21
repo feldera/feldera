@@ -13,6 +13,28 @@ pub struct RefParameter {
 }
 
 impl CircuitEditor {
+    /// Call an iterator method whose result type is inferred by Rust.
+    pub fn iterator_method(
+        &mut self,
+        site: NodeId,
+        name: &str,
+        receiver: ExpressionId,
+        args: &[ExpressionId],
+    ) -> Result<ExpressionId, Error> {
+        let path = self.function_path(site, name)?;
+        let any = self.standard_type(site, Ty::Any)?;
+        self.make_expr(
+            site,
+            Expr::ApplyMethod,
+            any,
+            [
+                ("self", Field::Reference(receiver.into())),
+                ("function", Field::Reference(path.into())),
+                ("arguments", refs(args.iter().copied().map(NodeId::from))),
+            ],
+        )
+    }
+
     pub fn ref_parameter(
         &mut self,
         argument: TypeId,
@@ -220,14 +242,32 @@ impl CircuitEditor {
         if kind == Ty::Ref {
             return self.type_id(self.node(source.0)?.edge("type")?);
         }
+        match kind {
+            Ty::TypedBox | Ty::Lazy => {
+                let args = self.node(source.0)?.edges("typeArgs")?;
+                self.type_id(
+                    *args
+                        .first()
+                        .ok_or_else(|| Error::new("missing pointee type"))?,
+                )
+            }
+            Ty::Array | Ty::Map => self.collection_storage_type(source, self.nullable(source)?),
+            _ => Err(Error::new("expected a dereferenceable type")),
+        }
+    }
+
+    /// The owned Rust representation of a SQL array or map.
+    pub fn collection_storage_type(
+        &mut self,
+        source: TypeId,
+        nullable: bool,
+    ) -> Result<TypeId, Error> {
         let args = self.node(source.0)?.edges("typeArgs")?;
-        let (target, name) = match (kind, args.as_slice()) {
-            (Ty::TypedBox | Ty::Lazy, [value, ..]) => return self.type_id(*value),
+        let (target, name) = match (self.type_kind(source)?, args.as_slice()) {
             (Ty::Array, [_]) => (Ty::Vec, "Vec"),
             (Ty::Map, [_, _]) => (Ty::BTreeMap, "BTreeMap"),
-            _ => return Err(Error::new("expected a dereferenceable type")),
+            _ => return Err(Error::new("expected an array or map")),
         };
-        let nullable = self.nullable(source)?;
         self.inner_at(
             args[0],
             InnerKind::Type(target),

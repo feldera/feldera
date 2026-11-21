@@ -110,6 +110,40 @@ fn rebuild_from_row(edit: &mut CircuitEditor, id: NodeId, row: NodeId) -> Result
     )
 }
 
+/// Column positions before and after an UNNEST output shuffle.
+pub struct FlatmapColumns {
+    pub width: usize,
+    pub output: Vec<usize>,
+    pub passthrough: Vec<usize>,
+}
+
+impl FlatmapColumns {
+    pub fn read(node: &feldera_sql_ir::Node) -> Result<Self, Error> {
+        let Some(Field::Object(shuffle)) = node.field("shuffle") else {
+            return Err(Error::new("flatmap requires an output shuffle"));
+        };
+        let width = shuffle
+            .get("inputLength")
+            .and_then(index)
+            .ok_or_else(|| Error::new("invalid flatmap shuffle width"))?;
+        let output = match shuffle.get("class") {
+            Some(Field::Data(name)) if name == "IdShuffle" => (0..width).collect(),
+            Some(Field::Data(name)) if name == "ExplicitShuffle" => {
+                indexes(shuffle.get("indexes"))?
+            }
+            _ => return Err(Error::new("unknown flatmap shuffle")),
+        };
+        if output.iter().any(|&i| i >= width) {
+            return Err(Error::new("flatmap shuffle index exceeds input width"));
+        }
+        Ok(Self {
+            width,
+            output,
+            passthrough: indexes(node.field("passthroughIndexes"))?,
+        })
+    }
+}
+
 /// Compose an output projection with UNNEST's existing shuffle. Discard
 /// passthrough and postprocessing columns that the composition no longer emits.
 pub fn project_flatmap(
@@ -119,18 +153,11 @@ pub fn project_flatmap(
 ) -> Result<NodeId, Error> {
     let node = edit.node(id)?;
     let input = node.edge("inputRowType")?;
-    let Some(Field::Object(shuffle)) = node.field("shuffle") else {
-        return Err(Error::new("flatmap requires an output shuffle"));
-    };
-    let width = shuffle
-        .get("inputLength")
-        .and_then(index)
-        .ok_or_else(|| Error::new("invalid flatmap shuffle width"))?;
-    let output = match shuffle.get("class") {
-        Some(Field::Data(name)) if name == "IdShuffle" => (0..width).collect(),
-        Some(Field::Data(name)) if name == "ExplicitShuffle" => indexes(shuffle.get("indexes"))?,
-        _ => return Err(Error::new("unknown flatmap shuffle")),
-    };
+    let FlatmapColumns {
+        width,
+        output,
+        passthrough,
+    } = FlatmapColumns::read(node)?;
     let selected = fields
         .iter()
         .map(|&i| {
@@ -142,7 +169,6 @@ pub fn project_flatmap(
         .collect::<Result<Vec<_>, _>>()?;
     let emitted: std::collections::HashSet<_> = selected.iter().copied().collect();
     let mut discarded = vec![false; width];
-    let passthrough = indexes(node.field("passthroughIndexes"))?;
     let mut kept = Vec::new();
     for (slot, &column) in passthrough.iter().enumerate() {
         if emitted.contains(&column) {

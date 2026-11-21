@@ -20,6 +20,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Utilities;
@@ -89,6 +91,12 @@ public class ReplayTypeIdentityTests {
 
     @Test public void someKeepsSharedType() throws Exception {
         preservesSharedResultType(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false).var().some());
+    }
+
+    @Test public void dereferencedCollectionKeepsSharedType() throws Exception {
+        var element = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false);
+        preservesSharedResultType(new DBSPTypeArray(element, false).var().deref());
+        preservesSharedResultType(new DBSPTypeMap(element, element, true).var().deref());
     }
 
     private static DBSPNoComparatorExpression tupleComparator() {

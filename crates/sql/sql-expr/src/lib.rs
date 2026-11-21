@@ -7,7 +7,7 @@ mod tree;
 pub use tree::{copy_expression, ensure_expression_tree};
 mod beta;
 pub use beta::{
-    parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
+    apply_closure, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
     simplify_closure_expression, simplify_closure_with_warnings,
 };
 mod casts;
@@ -16,7 +16,7 @@ mod field_use;
 mod flatmap;
 pub use field_use::input_field_paths;
 pub use error_sites::ErrorSites;
-pub use flatmap::project_flatmap;
+pub use flatmap::{project_flatmap, FlatmapColumns};
 mod sql_index;
 pub use casts::{
     expand_sql_casts, prepare_column_default, same_literal_value, CastSafety, SimplifyWarning,

@@ -139,28 +139,34 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "LowerAggregateFold" => {
+        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "LowerAggregateFold" | "LowerFlatmap" => {
             let empty = Circuit::from_json(json!({
                 "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
             }))?;
-            if pass == "LowerAggregateFold" {
+            if matches!(pass, "LowerAggregateFold" | "LowerFlatmap") {
                 let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
-                    return Err("expected an array of aggregate roots".into());
+                    return Err("expected an array of lowering inputs".into());
                 };
                 let (arena, roots) = empty.with_inner_roots(roots)?;
                 let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
-                let (list, empty_tuple) = match roots.as_slice() {
-                    [list] => (*list, None),
-                    [list, ty] => (*list, Some(edit.type_id(*ty)?)),
-                    _ => return Err("expected an aggregate list and optional empty tuple type".into()),
-                };
                 let mut warnings = Vec::new();
-                let fold = feldera_sql_opt::lower_aggregate_fold(
-                    &mut edit, list, empty_tuple, &mut next, &mut warnings,
-                )?;
-                let mut functions = edit.circuit().additional_expressions(&arena, &[fold])?;
+                let function = match (pass, roots.as_slice()) {
+                    ("LowerAggregateFold", [list]) => feldera_sql_opt::lower_aggregate_fold(
+                        &mut edit, *list, None, &mut next, &mut warnings,
+                    )?,
+                    ("LowerAggregateFold", [list, empty]) => {
+                        let ty = edit.type_id(*empty)?;
+                        feldera_sql_opt::lower_aggregate_fold(&mut edit, *list, Some(ty), &mut next, &mut warnings)?
+                    }
+                    ("LowerFlatmap", [flatmap, element]) => {
+                        let ty = edit.type_id(*element)?;
+                        feldera_sql_opt::lower_flatmap(&mut edit, *flatmap, ty, &mut next, &mut warnings)?
+                    }
+                    _ => return Err(format!("unexpected inputs to {pass}").into()),
+                };
+                let mut functions = edit.circuit().additional_expressions(&arena, &[function])?;
                 return Ok(json!({
-                    "function": functions.pop().expect("one requested fold"),
+                    "function": functions.pop().expect("one requested expression"),
                     "next_generated_name": next,
                     "warnings": warnings.into_iter().map(|w| json!({
                         "range": w.position, "error_type": w.kind, "message": w.message,

@@ -1,5 +1,5 @@
 //! Lower a classic aggregate list to the DBSP fold over its tuple of accumulators.
-use feldera_sql_expr::{SimplifyWarning, reduce_closure_body_with_warnings};
+use feldera_sql_expr::{SimplifyWarning, apply_closure};
 use feldera_sql_ir::{
     CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, NodeId, TypeId,
     TypeKind as Ty,
@@ -58,7 +58,7 @@ impl Component {
         weight: ExpressionId,
         warnings: &mut Vec<SimplifyWarning>,
     ) -> Result<NodeId, Error> {
-        let step = call(edit, self.increment, &[field, row, weight], warnings)?;
+        let step = apply_closure(edit, self.increment, &[field, row, weight], warnings)?;
         let body = edit.expression(edit.node(self.increment)?.edge("body")?)?;
         let update = if edit.type_kind(edit.expression_type(body)?)? == Ty::Void {
             step
@@ -77,20 +77,6 @@ impl Component {
             [("expression", link(update))],
         )
     }
-}
-
-fn call(
-    edit: &mut CircuitEditor,
-    closure: NodeId,
-    args: &[ExpressionId],
-    warnings: &mut Vec<SimplifyWarning>,
-) -> Result<ExpressionId, Error> {
-    let node = edit.node(closure)?;
-    let body = node.edge("body")?;
-    let params = node.edges("parameters")?;
-    let args = args.iter().copied().map(NodeId::from).collect::<Vec<_>>();
-    let value = reduce_closure_body_with_warnings(edit, body, &params, &args, Some(warnings))?;
-    edit.expression(value)
 }
 
 fn semigroup(
@@ -170,7 +156,7 @@ pub fn lower_aggregate_fold(
         statements.push(link(part.update(edit, field, row, weight, warnings)?));
         let field = edit.tuple_field(post_arg, i)?;
         let value = edit.clone_if_needed(field)?;
-        posts.push(call(edit, part.post, &[value], warnings)?);
+        posts.push(apply_closure(edit, part.post, &[value], warnings)?);
     }
     let step = if parts.is_empty() {
         edit.make_expr(void.into(), Expr::VoidLiteral, void, [])?

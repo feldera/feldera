@@ -29,14 +29,20 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** An expression of the form '*expression' */
 public final class DBSPDerefExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPDerefExpression(DBSPExpression expression) {
-        super(expression.getNode(), expression.getType().deref());
+        this(expression, expression.getType().deref());
+    }
+
+    private DBSPDerefExpression(DBSPExpression expression, DBSPType type) {
+        super(expression.getNode(), type);
         this.expression = expression;
     }
 
@@ -88,6 +94,11 @@ public final class DBSPDerefExpression extends DBSPExpression {
     @SuppressWarnings("unused")
     public static DBSPDerefExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
-        return new DBSPDerefExpression(expression);
+        if (!node.has("type"))
+            return new DBSPDerefExpression(expression);
+        // Another expression can refer to the exact Vec or BTreeMap type produced here.
+        DBSPType type = getJsonType(node, decoder);
+        Utilities.enforce(type.sameType(expression.getType().deref()));
+        return new DBSPDerefExpression(expression, type);
     }
 }

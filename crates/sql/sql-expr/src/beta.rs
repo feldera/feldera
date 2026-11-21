@@ -1,7 +1,8 @@
 //! Substitute closure arguments using the lexical declarations in the closure body.
-use crate::{Rewrite, Transformation, Visit};
+use crate::{Rewrite, SimplifyWarning, Transformation, Visit};
 use feldera_sql_ir::{
-    CircuitEditor, Error, ExpressionKind as Expr, Field, InnerKind, Node, NodeId, TypeKind,
+    CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, InnerKind, Node, NodeId,
+    TypeKind,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -265,6 +266,21 @@ pub fn substitute_arguments(
     values: &[NodeId],
 ) -> Result<NodeId, Error> {
     substitute(edit, body, parameters, values, 0)
+}
+
+/// Apply a closure to typed operands, preserving simplification warnings.
+pub fn apply_closure(
+    edit: &mut CircuitEditor,
+    closure: NodeId,
+    args: &[ExpressionId],
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<ExpressionId, Error> {
+    let node = edit.node(closure)?;
+    let body = node.edge("body")?;
+    let params = node.edges("parameters")?;
+    let args = args.iter().copied().map(NodeId::from).collect::<Vec<_>>();
+    let value = reduce_closure_body_with_warnings(edit, body, &params, &args, Some(warnings))?;
+    edit.expression(value)
 }
 
 /// Reduce an applied closure before inserting its result in the surrounding expression.

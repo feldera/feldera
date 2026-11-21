@@ -74,6 +74,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveViewOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
@@ -220,23 +222,34 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     public static DBSPFold lowerAggregateFold(DBSPCompiler compiler, DBSPAggregateList aggregates) {
+        return lowerFunction(compiler, "LowerAggregateFold", aggregates,
+                aggregates.isEmpty() ? DBSPTypeTuple.EMPTY : null, DBSPFold.class);
+    }
+
+    public static DBSPClosureExpression lowerFlatmap(DBSPCompiler compiler, DBSPFlatmap flatmap) {
+        return lowerFunction(compiler, "LowerFlatmap", flatmap, flatmap.getCollectionElementType(),
+                DBSPClosureExpression.class);
+    }
+
+    private static <T extends DBSPExpression> T lowerFunction(DBSPCompiler compiler, String pass,
+            IDBSPInnerNode input, @Nullable DBSPType retainedType, Class<T> kind) {
         var json = JsonStream.compactCircuit();
         var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
         inner.liveNodes = new HashMap<>();
         json.beginArray();
-        aggregates.accept(inner);
-        if (aggregates.isEmpty())
-            DBSPTypeTuple.EMPTY.accept(inner);
+        input.accept(inner);
+        if (retainedType != null)
+            retainedType.accept(inner);
         json.endArray();
         try {
-            byte[] reply = transformWithContext("LowerAggregateFold", json.toString().getBytes(StandardCharsets.UTF_8),
+            byte[] reply = transformWithContext(pass, json.toString().getBytes(StandardCharsets.UTF_8),
                     DBSPVariablePath.nextGeneratedName(), "", EMPTY_CONTEXT);
             var result = MAPPER.readTree(reply);
-            var fold = loweredFunction(compiler, inner, result, DBSPFold.class);
+            var function = loweredFunction(compiler, inner, result, kind);
             DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
-            return fold;
+            return function;
         } catch (IOException error) {
-            throw new UncheckedIOException("Invalid aggregate fold from Rust", error);
+            throw new UncheckedIOException("Invalid function from Rust pass " + pass, error);
         }
     }
 

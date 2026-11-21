@@ -46,6 +46,8 @@ pub use expression_visitor::canonicalize_names;
 mod fanout;
 mod filter_joins;
 mod filters;
+mod flatmap;
+pub use flatmap::lower_flatmap;
 mod function_calls;
 mod gen2;
 mod hints;

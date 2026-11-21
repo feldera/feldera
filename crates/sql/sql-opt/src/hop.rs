@@ -40,30 +40,6 @@ fn collection(edit: &mut CircuitEditor, element: TypeId, kind: Ty) -> Result<Typ
     edit.type_id(id)
 }
 
-fn method(
-    edit: &mut CircuitEditor,
-    site: NodeId,
-    name: &str,
-    receiver: ExpressionId,
-    args: &[ExpressionId],
-) -> Result<ExpressionId, Error> {
-    let path = edit.function_path(site, name)?;
-    let any = edit.standard_type(site, Ty::Any)?;
-    edit.make_expr(
-        site,
-        Expr::ApplyMethod,
-        any,
-        [
-            ("self", edge(receiver)),
-            ("function", edge(path)),
-            (
-                "arguments",
-                Field::Array(args.iter().copied().map(edge).collect()),
-            ),
-        ],
-    )
-}
-
 fn bind(
     edit: &mut CircuitEditor,
     name: &str,
@@ -224,7 +200,7 @@ impl Hop {
         let owned = edit.clone_value(data_vec)?;
         let (statement, items) = bind(edit, "array_clone", owned)?;
         statements.push(edge(statement));
-        let iter = method(edit, items.into(), "into_iter", items, &[])?;
+        let iter = edit.iterator_method(items.into(), "into_iter", items, &[])?;
         fields.push(start);
         fields.push(edit.binary_expression(
             self.site,
@@ -235,7 +211,7 @@ impl Hop {
         )?);
         let tuple = edit.tuple_expr(self.site, false, &fields)?;
         let produce = edit.closure_from_variables(tuple, &[start])?;
-        let rows = method(edit, self.site, "map", iter, &[produce])?;
+        let rows = edit.iterator_method(self.site, "map", iter, &[produce])?;
         let ty = edit.expression_type(rows)?;
         let block = edit.empty_origin_node(
             self.site,

@@ -9,7 +9,7 @@ use crate::{
     stream_rewrites::body_members,
     AggregateKind,
 };
-use feldera_sql_expr::{copy_expression, reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::{copy_expression, apply_closure, SimplifyWarning};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, Field, NodeId, OperatorKind as Op,
     OperatorSite, OutputPort, TypeId, TypeKind as Ty,
@@ -52,15 +52,7 @@ impl Expansion<'_> {
     }
 
     fn call(&mut self, closure: NodeId, args: &[ExpressionId]) -> Result<ExpressionId, Error> {
-        let c = self.edit.node(closure)?;
-        let result = reduce_closure_body_with_warnings(
-            self.edit,
-            c.edge("body")?,
-            &c.edges("parameters")?,
-            &args.iter().copied().map(Into::into).collect::<Vec<_>>(),
-            Some(self.warnings),
-        )?;
-        self.edit.expression(result)
+        apply_closure(self.edit, closure, args, self.warnings)
     }
 
     fn pair_variable(&mut self, value: TypeId) -> Result<ExpressionId, Error> {

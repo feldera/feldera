@@ -71,6 +71,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
      * @param flatmap  Flatmap operation to rewrite. */
     public static DBSPExpression rewriteFlatmap(
             DBSPFlatmap flatmap, @Nullable DBSPCompiler compiler) {
+        if (compiler != null && compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.lowerFlatmap(compiler, flatmap);
         //   move |x: &Tuple2<Array<i32>, Option<i32>>, | -> _ {
         //     let x0: Array<i32> = (*x.0).clone();
         //     let x1: x.1.clone();
