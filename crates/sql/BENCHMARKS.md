@@ -6,7 +6,7 @@ Java p95 on representative workloads.
 
 ## Packaged mixed optimizer, 2026-11-20
 
-The opt-in compiler ran 99 Rust pass kinds and used Rust to select shared map expressions. Each timing starts a fresh
+The opt-in compiler ran 99 Rust pass kinds. Each timing starts a fresh
 process and ends when it publishes the classic Rust source, UDF stubs,
 schema and dataflow. The hybrid starts one JVM and an isolated Rust worker.
 The baseline runs direct Java from the same Maven JAR. Cargo compilation of
@@ -14,12 +14,14 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 2.13 | 2.65 | 3.45 | 3.65 | 1.058× |
-| Nexmark suite | 4.58 | 10.34 | 6.43 | 14.06 | 2.187× |
-| Outer join | 1.99 | 2.49 | 2.71 | 3.04 | 1.120× |
+| Correlated array subquery | 1.83 | 2.23 | 2.04 | 2.60 | 1.277× |
+| Nexmark suite | 4.19 | 10.96 | 6.16 | 13.76 | 2.235× |
+| Outer join | 1.69 | 1.99 | 2.29 | 2.84 | 1.236× |
 
-The table measures commit `eb580978e` on CPU 15. All 69 pairs matched on
-diagnostics and artifacts. Nexmark exceeded the 1.2× p95 ceiling.
+The table measures commit `632a0670f`, which reuses unchanged expression fields across
+optimizer snapshots. All 69 pairs on CPU 15 matched on diagnostics and artifacts.
+All three workloads exceeded the 1.2× p95 ceiling.
+The shared-expression build at `eb580978e` measured 1.058×, 2.187× and 1.120× in workload order.
 The map grouping build at `6db65a1a9` measured 1.350×, 2.334× and 1.074× in workload order.
 The preceding decoder build at `b3a0afd8c` measured 1.208×, 2.428× and
 1.228× in workload order. On the earlier ASOF retainer build at `fbff97a54`, the ratios were

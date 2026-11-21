@@ -1012,7 +1012,9 @@ in both directions. Their four-worker cancellation p95s were 35.25 ms,
 build was 78,012,416 bytes per worker. The shared-projection build measured
 25.95 ms during corpus replay and 10.81 ms with replay idle. The subsequent
 map-input build measured 7.49 ms with replay idle, with 77,963,264 bytes
-peak waiting RSS.
+peak waiting RSS. On the isolated-join build (`65fbccc7f`), four workers
+cancelled in 11.87 ms at p95 during frozen corpus replay. Peak waiting RSS
+was 78,434,304 bytes per worker.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds
