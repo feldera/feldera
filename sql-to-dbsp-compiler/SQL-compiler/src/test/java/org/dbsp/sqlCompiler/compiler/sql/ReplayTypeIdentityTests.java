@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -49,6 +50,11 @@ public class ReplayTypeIdentityTests {
         checkRankedOutputType(DBSPIndexedTopKOperator.class, """
                 SELECT * FROM (SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY v) AS r FROM t)
                 WHERE r <= 3""");
+    }
+
+    @Test public void rowNumberRetainsItsSerializedOutputType() throws Exception {
+        checkRankedOutputType(DBSPRowNumberOperator.class,
+                "SELECT k, v, ROW_NUMBER() OVER (PARTITION BY k ORDER BY v) AS r FROM t");
     }
 
     private static <T extends DBSPSimpleOperator> void checkRankedOutputType(Class<T> kind, String query)

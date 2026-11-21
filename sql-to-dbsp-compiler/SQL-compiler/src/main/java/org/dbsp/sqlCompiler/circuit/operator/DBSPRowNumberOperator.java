@@ -31,13 +31,6 @@ public class DBSPRowNumberOperator extends DBSPUnaryOperator
      * (i64, sorted_tuple) -> output_tuple.  i64 is the rank of the current row. */
     public final DBSPClosureExpression outputProducer;
 
-    static DBSPType outputType(DBSPTypeIndexedZSet sourceType, @Nullable DBSPClosureExpression outputProducer) {
-        if (outputProducer == null)
-            return sourceType;
-        return new DBSPTypeIndexedZSet(sourceType.getNode(), sourceType.keyType,
-                outputProducer.getResultType());
-    }
-
     /**
      * Create a {@link DBSPRowNumberOperator} operator.  This operator is incremental only.
      * For a non-incremental version it should be sandwiched between a D-I.
@@ -50,9 +43,18 @@ public class DBSPRowNumberOperator extends DBSPUnaryOperator
     public DBSPRowNumberOperator(CalciteRelNode node,
                                  DBSPExpression comparator,
                                  DBSPClosureExpression outputProducer, OutputPort source) {
-        super(node, "row_number_custom_order", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer), source);
-        DBSPType valueType = source.getOutputIndexedZSetType().elementType;
+        this(node, comparator, outputProducer, source,
+                DBSPIndexedTopKOperator.outputType(source.getOutputIndexedZSetType(), outputProducer));
+    }
+
+    private DBSPRowNumberOperator(CalciteRelNode node, DBSPExpression comparator,
+                                  DBSPClosureExpression outputProducer, OutputPort source,
+                                  DBSPTypeIndexedZSet outputType) {
+        super(node, "row_number_custom_order", comparator, outputType, source);
+        var inputType = source.getOutputIndexedZSetType();
+        DBSPType valueType = inputType.elementType;
+        Utilities.enforce(outputType.keyType.sameType(inputType.keyType));
+        Utilities.enforce(outputType.elementType.sameType(outputProducer.getResultType()));
         this.outputProducer = outputProducer;
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
                 comparator.is(DBSPPathExpression.class));
@@ -104,7 +106,7 @@ public class DBSPRowNumberOperator extends DBSPUnaryOperator
         CommonInfo info = commonInfoFromJson(node, decoder);
         DBSPClosureExpression outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);
         return new DBSPRowNumberOperator(CalciteEmptyRel.INSTANCE,
-                info.getFunction(), outputProducer, info.getInput(0))
+                info.getFunction(), outputProducer, info.getInput(0), info.getIndexedZsetType())
                 .addAnnotations(info.annotations(), DBSPRowNumberOperator.class);
     }
 }
