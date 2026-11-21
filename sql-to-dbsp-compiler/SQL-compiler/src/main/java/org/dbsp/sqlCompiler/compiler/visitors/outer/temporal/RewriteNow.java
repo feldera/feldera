@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -366,30 +367,22 @@ public class RewriteNow extends CircuitCloneVisitor {
         // Now input comes from here
         CalciteRelNode relNode = operator.getRelNode();
         DBSPSimpleOperator scalarNow = this.scalarNow();
-        WindowBounds bounds = comparisons.getWindowBounds(this.compiler());
-        DBSPExpression common = bounds.common();
-        // This exact type is shared by the indexed stream and both window bounds.
+        DBSPTypeTupleBase inputType = source.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
+        DBSPExpression common = comparisons.comparisons().get(0).noNow();
+        // The index and the bounds must share this exact key type.
         DBSPType windowKeyType = common.getType().withMayBeNull(false);
-        DBSPClosureExpression makeWindow = bounds.makeWindow(windowKeyType);
-        DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getRelNode(),
-                makeWindow, scalarNow.outputPort(), null);
+        var functions = this.windowFunctions(comparisons, inputType, common, windowKeyType);
+        DBSPClosureExpression makeWindow = functions.bounds();
+        DBSPSimpleOperator windowBounds = new DBSPApplyOperator(relNode, makeWindow, scalarNow.outputPort(), null);
         this.addOperator(windowBounds);
 
-        // Filter null keys away; they would not be selected anyway, and the
-        // window operator requires non-nullable keys.
-        DBSPTypeTupleBase inputType = source.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
-        DBSPParameter param = comparisons.getParameter();
-        if (common.getType().mayBeNull) {
-            DBSPClosureExpression nonNull =
-                    common.is_null().not().closure(param);
-            DBSPFilterOperator filter = new DBSPFilterOperator(relNode, nonNull, source.outputPort());
+        if (functions.nonnull() != null) {
+            var filter = new DBSPFilterOperator(relNode, functions.nonnull(), source.outputPort());
             this.addOperator(filter);
             source = filter;
         }
 
-        WindowProjection projection = this.compiler.options.ioOptions.rustOptimizerPasses
-                ? RustCircuitPass.windowProjection(this.compiler, param, inputType, common, windowKeyType)
-                : windowProjection(bounds, param, inputType, windowKeyType);
+        WindowProjection projection = functions.projection();
         DBSPClosureExpression indexFunction = projection.index();
         var valueType = indexFunction.getResultType().to(DBSPTypeRawTuple.class).getFieldType(1);
         DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(), windowKeyType, valueType);
@@ -400,16 +393,13 @@ public class RewriteNow extends CircuitCloneVisitor {
         // Apply window function.  Operator is incremental, so add D & I around it
         DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(relNode, index.outputPort());
         this.addOperator(diffIndex);
-        boolean lowerInclusive = bounds.lower() == null || bounds.lower().inclusive();
-        boolean upperInclusive = bounds.upper() == null || bounds.upper().inclusive();
         CalciteRelNode windowNode = relNode.copy();
         FindSourcePositions finder = new FindSourcePositions(this.compiler, false);
         finder.apply(makeWindow);
         windowNode.addSourcePositions(finder.positions);
         DBSPSimpleOperator window = new DBSPWindowOperator(
-                windowNode, lowerInclusive, upperInclusive,
-                // -infinity if not specified
-                bounds.lower() == null, diffIndex.outputPort(), windowBounds.outputPort());
+                windowNode, functions.lowerInclusive(), functions.upperInclusive(),
+                functions.lowerUnbounded(), diffIndex.outputPort(), windowBounds.outputPort());
         this.addOperator(window);
         DBSPSimpleOperator winInt = new DBSPIntegrateOperator(relNode, window.outputPort());
         this.addOperator(winInt);
@@ -421,6 +411,30 @@ public class RewriteNow extends CircuitCloneVisitor {
             deindex = new DBSPMapOperator(relNode, projection.restore(), new DBSPTypeZSet(inputType), winInt.outputPort());
         this.addOperator(deindex);
         return deindex;
+    }
+
+    public record WindowFunctions(DBSPClosureExpression bounds, @Nullable DBSPClosureExpression nonnull,
+                                  WindowProjection projection, boolean lowerInclusive, boolean upperInclusive,
+                                  boolean lowerUnbounded) {}
+
+    private WindowFunctions windowFunctions(TemporalFilterList comparisons, DBSPTypeTupleBase inputType,
+                                            DBSPExpression common, DBSPType keyType) {
+        DBSPParameter param = comparisons.getParameter();
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var terms = comparisons.comparisons();
+            var domain = keyType.to(IsBoundedType.class);
+            boolean hasUpperBound = terms.stream().anyMatch(t -> !isGreater(t.opcode()));
+            return RustCircuitPass.temporalWindow(this.compiler, param, inputType, common, keyType,
+                    ContainsNow.timestampType().getMinValue(), domain.getMinValue(),
+                    hasUpperBound ? domain.getMinValue() : domain.getMaxValue(),
+                    Linq.map(terms, TemporalFilter::opcode), Linq.map(terms, TemporalFilter::withNow));
+        }
+        WindowBounds bounds = comparisons.getWindowBounds(this.compiler);
+        DBSPClosureExpression window = bounds.makeWindow(keyType);
+        DBSPClosureExpression nonnull = common.getType().mayBeNull ? common.is_null().not().closure(param) : null;
+        return new WindowFunctions(window, nonnull, windowProjection(bounds, param, inputType, keyType),
+                bounds.lower() == null || bounds.lower().inclusive(), bounds.upper() == null || bounds.upper().inclusive(),
+                bounds.lower() == null);
     }
 
     public record WindowProjection(DBSPClosureExpression index, @Nullable DBSPClosureExpression restore) {}

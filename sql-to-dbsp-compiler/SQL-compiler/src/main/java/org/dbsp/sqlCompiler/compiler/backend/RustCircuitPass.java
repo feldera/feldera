@@ -623,28 +623,27 @@ public final class RustCircuitPass implements CircuitTransform {
         return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/DropClock", joinedRow));
     }
 
-    public static DBSPClosureExpression temporalWindowBounds(DBSPCompiler compiler, DBSPType key,
-            DBSPExpression clockMinimum, DBSPExpression lowerInitial, DBSPExpression upperInitial,
-            @Nullable DBSPExpression lower, @Nullable DBSPExpression upper) {
+    public static RewriteNow.WindowFunctions temporalWindow(DBSPCompiler compiler, DBSPParameter parameter,
+            DBSPType row, DBSPExpression key, DBSPType keyType, DBSPExpression clockMinimum, DBSPExpression lowerInitial,
+            DBSPExpression upperInitial, List<DBSPOpcode> comparisons, List<DBSPExpression> bounds) {
+        var inputs = new ArrayList<IDBSPInnerNode>(List.of(parameter, row, key, keyType, clockMinimum, lowerInitial, upperInitial));
+        inputs.addAll(bounds);
         try {
-            return loweredClosure(compiler, invokeLowering(compiler, "RewriteNow/WindowBounds",
-                    MAPPER.writeValueAsBytes(lower != null), key, clockMinimum, lowerInitial, upperInitial, lower, upper));
+            var reply = invokeLowering(compiler, "RewriteNow/Window", MAPPER.writeValueAsBytes(comparisons.stream()
+                    .map(Enum::name).toList()), inputs.toArray(IDBSPInnerNode[]::new));
+            var roots = reply.value.required("functions");
+            var decoder = expressionDecoder(reply.writer);
+            var window = decoder.decodeInner(roots.required(0), DBSPClosureExpression.class);
+            var nonnull = roots.required(1).isNull() ? null : decoder.decodeInner(roots.get(1), DBSPClosureExpression.class);
+            var index = decoder.decodeInner(roots.required(2), DBSPClosureExpression.class);
+            var restore = roots.required(3).isNull() ? null : decoder.decodeInner(roots.get(3), DBSPClosureExpression.class);
+            DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
+            return new RewriteNow.WindowFunctions(window, nonnull, new RewriteNow.WindowProjection(index, restore),
+                    reply.value.required("lower_inclusive").booleanValue(), reply.value.required("upper_inclusive").booleanValue(),
+                    reply.value.required("lower_unbounded").booleanValue());
         } catch (IOException error) {
-            throw new UncheckedIOException("Cannot encode temporal window bounds", error);
+            throw new UncheckedIOException("Cannot encode temporal window comparisons", error);
         }
-    }
-
-    public static RewriteNow.WindowProjection windowProjection(DBSPCompiler compiler, DBSPParameter parameter,
-            DBSPType row, DBSPExpression key, DBSPType keyType) {
-        var reply = invokeLowering(compiler, "RewriteNow/WindowProjection", parameter, row, key, keyType);
-        var functions = reply.value.required("functions");
-        if (!functions.isArray() || functions.isEmpty() || functions.size() > 2)
-            throw new IllegalStateException("Expected a window index and an optional restore closure");
-        var decoder = expressionDecoder(reply.writer);
-        var index = decoder.decodeInner(functions.required(0), DBSPClosureExpression.class);
-        var restore = functions.size() == 2 ? decoder.decodeInner(functions.required(1), DBSPClosureExpression.class) : null;
-        DBSPVariablePath.restoreGeneratedNames(reply.value.required("next_generated_name").longValue());
-        return new RewriteNow.WindowProjection(index, restore);
     }
 
     public static DBSPClosureExpression mergeTemporalPredicates(DBSPCompiler compiler,

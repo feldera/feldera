@@ -839,6 +839,11 @@ also builds the table’s maximum aggregate and the scalar waterline that feeds
 each temporal window. Both Java and hybrid paths matched the saved Java
 reference at all 133 temporal pass boundaries. [Clock source comparisons](evidence/p3-clock-source.json)
 
+Rust folds compatible bounds for each temporal window in source order. It builds
+the bound function, nullable-key filter, index and optional row restoration in
+one call. Both compiler paths matched the Java reference at all 133 active
+`RewriteNow` boundaries. [Temporal window comparisons](evidence/p3-temporal-window.json)
+
 Rust builds the row and indexed identity closures used by monotonicity analysis.
 For an unindexed filter it extracts lower bounds from comparisons, including
 columns offset by numeric or temporal literals. The Java transfer functions

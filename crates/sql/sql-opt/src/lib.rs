@@ -115,6 +115,8 @@ mod clock_source;
 pub use clock_source::{clock_aggregate, clock_index, scalar_clock};
 mod clock_join;
 pub use clock_join::{ClockClosure, clock_join_functions, drop_clock, rewrite_clock_closure};
+mod temporal_window;
+pub use temporal_window::{InitialBounds, WindowComparison, WindowFunctions, WindowKey, temporal_window};
 mod window_bounds;
 pub use window_bounds::{temporal_window_bounds, WindowEndpoint};
 mod window_projection;

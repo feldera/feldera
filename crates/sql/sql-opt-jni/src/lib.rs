@@ -221,32 +221,25 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let row = edit.type_id(*row)?;
             feldera_sql_opt::drop_clock(&mut edit, row, &mut next)?
         }
-        ("RewriteNow/WindowBounds", [key, clock_min, lower_initial, upper_initial, bounds @ ..]) => {
-            let lower_present: bool = serde_json::from_slice(state)?;
-            let (lower, upper) = match (lower_present, bounds) {
-                (true, [lower, upper]) => (Some(*lower), Some(*upper)),
-                (true, [lower]) => (Some(*lower), None),
-                (false, [upper]) => (None, Some(*upper)),
-                _ => return Err("invalid temporal window endpoints".into()),
-            };
-            let endpoint = |initial, expr: Option<NodeId>| -> Result<_, feldera_sql_ir::Error> {
-                Ok(feldera_sql_opt::WindowEndpoint {initial:edit.expression(initial)?,
-                    expression:expr.map(|id| edit.expression(id)).transpose()?})
-            };
-            let lower = endpoint(*lower_initial, lower)?;
-            let upper = endpoint(*upper_initial, upper)?;
-            let key = edit.type_id(*key)?;
-            let clock_min = edit.expression(*clock_min)?;
-            feldera_sql_opt::temporal_window_bounds(&mut edit, key, clock_min, lower, upper, &mut next)?
-        }
-        ("RewriteNow/WindowProjection", [parameter, row, key, key_type]) => {
-            let row = edit.type_id(*row)?;
-            let key = edit.expression(*key)?;
-            let key_type = edit.type_id(*key_type)?;
-            let projection = feldera_sql_opt::window_projection(&mut edit, *parameter, row, key, key_type, &mut next)?;
-            let roots: Vec<_> = std::iter::once(projection.index).chain(projection.restore).collect();
-            let functions = edit.circuit().additional_expressions(&arena, &roots)?;
-            return Ok(json!({"functions":functions, "next_generated_name":next}));
+        ("RewriteNow/Window", [parameter, row, key, ty, clock, lower, upper, operands @ ..]) => {
+            let comparisons: Vec<feldera_sql_opt::WindowComparison> = serde_json::from_slice(state)?;
+            if comparisons.len() != operands.len() {
+                return Err("expected one expression for each temporal comparison".into());
+            }
+            let key = feldera_sql_opt::WindowKey { parameter: *parameter, row: edit.type_id(*row)?,
+                expression: edit.expression(*key)?, nonnull_type: edit.type_id(*ty)? };
+            let initial = feldera_sql_opt::InitialBounds { minimum_clock: edit.expression(*clock)?,
+                lower: edit.expression(*lower)?, upper: edit.expression(*upper)? };
+            let values = operands.iter().map(|&id| edit.expression(id)).collect::<Result<Vec<_>, _>>()?;
+            let window = feldera_sql_opt::temporal_window(&mut edit, key, initial,
+                comparisons.into_iter().zip(values), &mut next)?;
+            let slots = [Some(window.bounds), window.nonnull, Some(window.index), window.restore];
+            let roots: Vec<_> = slots.into_iter().flatten().collect();
+            let mut encoded = edit.circuit().additional_expressions(&arena, &roots)?.into_iter();
+            let functions = slots.map(|slot| slot.and_then(|_| encoded.next()));
+            return Ok(json!({"functions": functions, "next_generated_name": next,
+                "lower_inclusive": window.lower_inclusive, "upper_inclusive": window.upper_inclusive,
+                "lower_unbounded": window.lower_unbounded}));
         }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
@@ -528,7 +521,7 @@ fn transform(
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
-        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/WindowBounds" | "RewriteNow/WindowProjection" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

@@ -1,0 +1,31 @@
+{
+  "scope": "Fold compatible temporal comparisons in source order and build the window bounds, nullable-key filter, index and optional row restoration in a single Rust call.",
+  "java_reference_commit": "54c227440",
+  "compiler_jar_sha256": "bce21a24eb30a684957ecdf721bcfe254daead623648a148bbe9a8e2bf463fcd",
+  "optimizer_library_sha256": "9d18f2d454288077c8dba135e572bfe8ce5ff1bf966a69802d98be7732999d22",
+  "populations": {
+    "classic": {
+      "cases": 71,
+      "mismatches": 0,
+      "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+      "java_reference_sha256": "ddd0078d5b87eb0f7d71bde39b908f9fe307e5c7544c7f9498807c8adbb87c04",
+      "java_current_sha256": "465c55801b26d8242d326860b5550919e60115f8c89e7dc163f98a7a1f8277d2",
+      "hybrid_sha256": "f5ee6b7e04a572485305550e849dbef9d2f620ab9109ac79761eea2f4998a5f9"
+    },
+    "gen2": {
+      "cases": 62,
+      "mismatches": 0,
+      "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+      "java_reference_sha256": "a7a01e1e395f5ab65667052aa069dbe064eace19e1ec0d5abdb7dd49948a7cab",
+      "java_current_sha256": "b62e2a194cf768e03cd8b91afdbc339f3c228e82206f6acebe63679389e58676",
+      "hybrid_sha256": "2dc2fe5a32731285c5a20e3f369877146d19cb202210f25bea08ed6c5c0550a4"
+    }
+  },
+  "classic_runtime": {
+    "executed": 52,
+    "compile_only": 19,
+    "input_commands": 181,
+    "expected_runtime_errors": 0,
+    "batch_receipts_sha256": "3bec159e5952755b4eabb12b5c2045a2c92d6d7589f9185648289cac96d106a9"
+  }
+}
