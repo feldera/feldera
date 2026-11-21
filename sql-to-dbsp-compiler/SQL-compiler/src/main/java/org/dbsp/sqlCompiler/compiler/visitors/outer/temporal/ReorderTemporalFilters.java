@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -24,6 +25,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Logger;
@@ -70,7 +72,7 @@ public class ReorderTemporalFilters extends Passes {
         this.add(select.apply(graph));
         Scan scan = new Scan(compiler, graph.getGraphs());
         this.add(new Conditional(compiler, scan, () -> !compiler.metadata.windowSharingDisabled()));
-        this.add(new Conditional(compiler, new Reorder(compiler, scan.chosenConjunct),
+        this.add(new Conditional(compiler, select.apply(new Reorder(compiler, scan.chosenConjunct)),
                 () -> !compiler.metadata.windowSharingDisabled()));
     }
 
@@ -291,7 +293,7 @@ public class ReorderTemporalFilters extends Passes {
     }
 
     /** An output port and a chain of functions applied to that port. */
-    record SourceAndMaps(OutputPort port, List<DBSPClosureExpression> maps) {}
+    public record SourceAndMaps(OutputPort port, List<DBSPClosureExpression> maps) {}
 
     /** Given a conjunct of a temporal filter and a source that should produce it,
      * compute the transformation producing the timestamp needed by the conjunct
@@ -371,10 +373,7 @@ public class ReorderTemporalFilters extends Passes {
      * @param condition The filter's condition, as an expression tree.
      */
     static Map<String, Integer> sourceFingerprints(
-            DBSPCompiler compiler, CircuitGraph graph, DBSPFilterOperator filter, DBSPClosureExpression condition) {
-        SourceAndMaps source = filterSourcePath(graph, filter, condition.parameters[0]);
-        if (source == null)
-            return Map.of();
+            DBSPCompiler compiler, SourceAndMaps source, DBSPFilterOperator filter, DBSPClosureExpression condition) {
         Map<String, Integer> keys = new LinkedHashMap<>();
         List<DBSPExpression> conjuncts = condition.body.conjuncts();
         for (int i = 0; i < conjuncts.size(); i++) {
@@ -396,6 +395,8 @@ public class ReorderTemporalFilters extends Passes {
          * the closure computing the expression.  Each maps to the position of its conjunct. */
         private final Map<DBSPFilterOperator, Map<String, Integer>> candidates = new LinkedHashMap<>();
 
+        private Map<DBSPFilterOperator, SourceAndMaps> nativeSources = Map.of();
+
         public Scan(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
         }
@@ -403,11 +404,22 @@ public class ReorderTemporalFilters extends Passes {
 
         @Override
         public void postorder(DBSPFilterOperator filter) {
-            DBSPClosureExpression condition = condition(this.compiler(), filter);
-            if (condition == null)
-                return;
-            Map<String, Integer> keys = sourceFingerprints(
-                    this.compiler(), this.getGraph(), filter, condition);
+            DBSPClosureExpression condition;
+            SourceAndMaps source;
+            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
+                source = this.nativeSources.get(filter);
+                if (source == null)
+                    return;
+                condition = filter.getClosureFunction().ensureTree(this.compiler()).to(DBSPClosureExpression.class);
+            } else {
+                condition = condition(this.compiler(), filter);
+                if (condition == null)
+                    return;
+                source = filterSourcePath(this.getGraph(), filter, condition.parameters[0]);
+                if (source == null)
+                    return;
+            }
+            Map<String, Integer> keys = sourceFingerprints(this.compiler(), source, filter, condition);
             if (!keys.isEmpty())
                 this.candidates.put(filter, keys);
         }
@@ -415,12 +427,15 @@ public class ReorderTemporalFilters extends Passes {
         @Override
         public Token startVisit(IDBSPOuterNode node) {
             this.candidates.clear();
+            if (this.compiler().options.ioOptions.rustOptimizerPasses)
+                this.nativeSources = RustCircuitPass.temporalFilterSources(this.compiler(), node.to(DBSPCircuit.class));
             return super.startVisit(node);
         }
 
         /** Compute for each filter the conjunct to place first (chosenConjunct) */
         @Override
         public void endVisit() {
+            this.nativeSources = Map.of();
             int threshold = this.compiler().metadata.windowSharingThreshold();
             this.chosenConjunct.clear();
             int sharedInputs = this.compiler().options.ioOptions.rustOptimizerPasses
@@ -509,9 +524,7 @@ public class ReorderTemporalFilters extends Passes {
 
             DBSPParameter parameter = condition.parameters[0];
             Integer chosen = this.chosenConjunct.get(filter);
-            DBSPExpression result = this.compiler().options.ioOptions.rustOptimizerPasses
-                    ? this.reorderWithRust(filter, condition, chosen)
-                    : this.reorderWithJava(filter, condition, chosen);
+            DBSPExpression result = this.reorderWithJava(filter, condition, chosen);
             if (result == condition.body) {
                 super.postorder(filter);
                 return;
@@ -521,22 +534,34 @@ public class ReorderTemporalFilters extends Passes {
             this.map(filter, replacement);
         }
 
-        private DBSPExpression reorderWithRust(DBSPFilterOperator filter, DBSPClosureExpression condition,
-                                               @Nullable Integer chosen) {
+        public record TemporalOrder(List<RustCircuitPass.TemporalBound> bounds, @Nullable Integer chosen,
+                                    long classification_names) {}
+
+        /** The Rust graph pass consumes classifications in the order of the original conjuncts. */
+        @Nullable
+        public TemporalOrder classify(DBSPFilterOperator filter) {
+            var condition = condition(this.compiler(), filter);
+            if (condition == null)
+                return null;
             var conjuncts = condition.body.conjuncts();
             if (conjuncts.size() < 2)
-                return condition.body;
+                return null;
+            long start = DBSPVariablePath.nextGeneratedName();
             DBSPParameter parameter = condition.parameters[0];
             var bounds = new ArrayList<RustCircuitPass.TemporalBound>(conjuncts.size());
             for (var conjunct : conjuncts) {
                 var bound = temporalFilter(this.compiler(), filter, parameter, conjunct);
-                String key = bound == null ? null : CanonicalForm.asString(this.compiler(),
-                        timestampClosure(this.compiler(), parameter, bound.noNow()));
-                bounds.add(bound == null ? null : new RustCircuitPass.TemporalBound(key, RewriteNow.isGreater(bound.opcode())));
+                if (bound == null) {
+                    bounds.add(null);
+                } else {
+                    var key = CanonicalForm.asString(this.compiler(), timestampClosure(this.compiler(), parameter, bound.noNow()));
+                    bounds.add(new RustCircuitPass.TemporalBound(key, RewriteNow.isGreater(bound.opcode())));
+                }
             }
-            if (bounds.stream().allMatch(Objects::isNull))
-                return condition.body;
-            return RustCircuitPass.reorderTemporalPredicate(this.compiler(), condition.body, bounds, chosen);
+            long names = DBSPVariablePath.nextGeneratedName() - start;
+            if (names == 0 && bounds.stream().allMatch(Objects::isNull))
+                return null;
+            return new TemporalOrder(bounds, this.chosenConjunct.get(filter), names);
         }
 
         private DBSPExpression reorderWithJava(DBSPFilterOperator filter, DBSPClosureExpression condition,

@@ -154,6 +154,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof OptimizeProjectionVisitor || pass instanceof PullFilterVisitor
                     || pass instanceof ShareOutputIntegrators || pass instanceof FilterJoinVisitor || pass instanceof AppendOnly
                     || pass instanceof DecomposeExpensiveFilters || pass instanceof CircuitContainsNow || pass instanceof BreakFilters
+                    || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters.Reorder
                     || pass instanceof DesugarNowEquality
                     || pass instanceof FuseIntoArrayAgg || pass instanceof ComparatorDeclarations
                     || pass instanceof CompactNames || pass instanceof TagRegions

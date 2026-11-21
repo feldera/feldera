@@ -41,6 +41,13 @@ class FrozenPlacements(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("skipped star joins", counts, False)
 
+    def test_temporal_order_requires_a_clock_and_enabled_sharing(self):
+        with_clock = {**BASE_COUNTS, "ContainsNow": 2, "DesugarNowEquality": 1, "Graph": BASE_COUNTS["Graph"] + 1}
+        verify_placements("sharing off", with_clock, False, clock_scans=2, window_sharing_enabled=False)
+        verify_placements("sharing on", {**with_clock, "Reorder": 1}, False, clock_scans=2)
+        with self.assertRaisesRegex(ValueError, "Rust placements"):
+            verify_placements("missing temporal order", with_clock, False, clock_scans=2)
+
     def test_trim_inputs_runs_only_for_programs_with_the_option(self):
         enabled = {**BASE_COUNTS, "TrimInputs": 1}
         verify_placements("trim enabled", enabled, False, trim_inputs=True)

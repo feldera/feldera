@@ -1,6 +1,12 @@
 //! Rebuild a filter's conjunction in the order chosen for its temporal windows.
-use super::temporal::{TemporalBound, temporal_filter_order};
-use feldera_sql_ir::{BinaryOp, CircuitEditor, Error, ExpressionId, ExpressionKind, Field};
+use super::temporal::{temporal_filter_order, TemporalBound};
+use crate::filters::rewrite_filters;
+use feldera_sql_expr::ensure_expression_tree;
+use feldera_sql_ir::{
+    BinaryOp, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind, Field, NodeId,
+    OperatorKind, OutputPort,
+};
+use serde::Deserialize;
 use std::collections::HashMap;
 
 fn is_wrapper(edit: &CircuitEditor, expr: ExpressionId) -> Result<bool, Error> {
@@ -90,4 +96,70 @@ pub fn reorder_temporal_predicate(
         };
     }
     Ok(body)
+}
+
+/// Classification of one filter in original conjunct order. The Java monotonicity
+/// analysis can allocate temporary names even when the filter stays in place.
+#[derive(Deserialize)]
+pub struct TemporalOrder {
+    bounds: Vec<Option<TemporalBound>>,
+    chosen: Option<usize>,
+    classification_names: u64,
+}
+
+pub fn reorder_temporal_filters(
+    circuit: Circuit,
+    mut orders: HashMap<u64, TemporalOrder>,
+    next: &mut u64,
+) -> Result<Circuit, Error> {
+    let (result, _) = rewrite_filters(circuit, next, |edit, parent, id, next, _| {
+        let NodeId::Outer(number) = id else {
+            return Err(Error::new("expected a filter operator"));
+        };
+        let Some(order) = orders.remove(&number) else {
+            return Ok(None);
+        };
+        *next = next
+            .checked_add(order.classification_names)
+            .ok_or_else(|| Error::new("generated names exhausted classifying temporal filters"))?;
+        if order.bounds.iter().all(Option::is_none) {
+            return Ok(None);
+        }
+        let filter = edit.node(id)?;
+        let output_type = filter.edge("outputType")?;
+        let function = filter.edge("function")?;
+        let input = filter
+            .inputs()
+            .next()
+            .ok_or_else(|| Error::new("temporal filter requires an input"))?;
+        let tree = ensure_expression_tree(edit, function)?;
+        let body = edit.expression(edit.node(tree)?.edge("body")?)?;
+        let ordered = reorder_temporal_predicate(edit, body, &order.bounds, order.chosen)?;
+        if ordered == body {
+            return Ok(None);
+        }
+        let parameters = edit.node(tree)?.edges("parameters")?;
+        let closure = edit.closure_with_parameters(ordered, &parameters)?;
+        let replacement = edit.append_operator(
+            parent,
+            id,
+            OperatorKind::Filter,
+            &[input],
+            [
+                ("function", Field::Reference(closure.into())),
+                ("outputType", Field::Reference(output_type)),
+            ],
+        )?;
+        Ok(Some((
+            replacement,
+            OutputPort {
+                operator: replacement,
+                number: 0,
+            },
+        )))
+    })?;
+    if !orders.is_empty() {
+        return Err(Error::new("temporal order refers to a missing filter"));
+    }
+    Ok(result)
 }

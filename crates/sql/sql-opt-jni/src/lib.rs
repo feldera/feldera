@@ -283,16 +283,6 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
         }
         ("TemporalComparisons", [body]) => return temporal::classify(&arena, &mut edit, *body, state),
-        ("WindowGroups/ReorderPredicate", [body]) => {
-            #[derive(serde::Deserialize)]
-            struct TemporalOrder {
-                bounds: Vec<Option<feldera_sql_opt::TemporalBound>>,
-                chosen: Option<usize>,
-            }
-            let order: TemporalOrder = serde_json::from_slice(state)?;
-            let body = edit.expression(*body)?;
-            feldera_sql_opt::reorder_temporal_predicate(&mut edit, body, &order.bounds, order.chosen)?
-        }
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
             let filter = edit.expression(*filter)?;
@@ -573,7 +563,7 @@ fn transform(
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
-        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ReorderPredicate"
+        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
@@ -778,6 +768,15 @@ fn transform(
     if pass == "AppendOnly" {
         let streams = feldera_sql_opt::append_only_streams(&circuit)?;
         return Ok(json!(operator_numbers(streams)));
+    }
+    if pass == "WindowGroups/FilterSources" {
+        let paths = feldera_sql_opt::temporal_filter_sources(circuit)?;
+        return Ok(Value::Array(paths.into_iter().map(|path| json!({
+            "filter": operator_number(path.filter),
+            "source": operator_number(path.source.operator),
+            "port": path.source.number,
+            "maps": operator_numbers(path.maps)
+        })).collect()));
     }
     if pass == "FindWindowGroups" {
         let candidates = feldera_sql_opt::window_candidates(&circuit)?;
@@ -1039,6 +1038,7 @@ fn transform(
         "FilterJoinVisitor" => feldera_sql_opt::filter_joins(circuit, &mut next)?,
         "SimplifyConditionals" => feldera_sql_opt::simplify_conditionals(circuit, &mut next)?,
         "SimplifyWaterline" => feldera_sql_opt::simplify_waterlines(circuit, &mut next)?,
+        "Reorder" => feldera_sql_opt::reorder_temporal_filters(circuit, serde_json::from_slice(state)?, &mut next)?,
         "DesugarNowEquality" => feldera_sql_opt::desugar_now_equality(circuit, &mut next)?,
         "LowerCircuitVisitor"
         | "LowerAsofInner"

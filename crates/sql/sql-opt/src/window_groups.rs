@@ -2,8 +2,10 @@
 //! canonical closure text while it owns the expression printer.
 mod implement;
 mod reorder;
+mod source;
+pub use source::{temporal_filter_sources, TemporalFilterSource};
 mod temporal;
-pub use reorder::reorder_temporal_predicate;
+pub use reorder::{reorder_temporal_filters, reorder_temporal_predicate, TemporalOrder};
 use feldera_sql_ir::{
     BodyOrder, Circuit, Error, ExpressionKind as Expr, Field, InnerKind, NodeId, OperatorKind,
 };

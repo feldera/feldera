@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveUselessLeftJoinsVisitor;
@@ -60,6 +61,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTable;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.StrayGC;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerAsof;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.FindUnusedInputFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.DeferCarriedColumns;
@@ -173,6 +175,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final MultisetAnalysis multiplicities;
     @Nullable private final EnsureDistinctOutputs distinctOutputs;
     @Nullable private final CircuitContainsNow clockUses;
+    @Nullable private final ReorderTemporalFilters.Reorder temporalOrder;
     @Nullable private final CollapseSharedChains collapseChains;
     @Nullable private final FindWindowGroups windowGroups;
     @Nullable private final ImplementWindowGroups windowImplementation;
@@ -185,6 +188,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public RustCircuitPass(DBSPCompiler compiler, CircuitTransform original, OptimizerSnapshots snapshots) {
         this.compiler = compiler;
         this.name = original.getName();
+        this.temporalOrder = original instanceof ReorderTemporalFilters.Reorder reorder ? reorder : null;
         if (original instanceof DeadCode dead && dead.keepAllSources)
             this.nativeName = "DeadCodeKeepSources";
         else if (original instanceof RemoveViewOperators views && views.removesAllViews())
@@ -904,21 +908,36 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    public record TemporalCandidate(String fingerprint, int conjunct) {}
-    public record TemporalBound(String fingerprint, boolean lower) {}
+    private record TemporalPath(long filter, long source, int port, List<Long> maps) {}
 
-    private record TemporalOrder(List<TemporalBound> bounds, @Nullable Integer chosen) {}
-
-    public static DBSPExpression reorderTemporalPredicate(DBSPCompiler compiler, DBSPExpression body,
-            List<TemporalBound> bounds, @Nullable Integer chosen) {
+    public static Map<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps> temporalFilterSources(
+            DBSPCompiler compiler, DBSPCircuit circuit) {
+        var operators = operatorsById(circuit);
+        var payloads = new HashSet<Long>();
+        for (var op : operators.values())
+            if (op instanceof DBSPFilterOperator || op instanceof DBSPMapOperator || op instanceof DBSPMapIndexOperator)
+                payloads.add(op.id);
+        var writer = OptimizerTopology.selectedExpressions(compiler, circuit, payloads, OptimizerTopology.Details.NONE);
         try {
-            var reply = invokeLowering(compiler, "WindowGroups/ReorderPredicate",
-                    MAPPER.writeValueAsBytes(new TemporalOrder(bounds, chosen)), body);
-            return loweredFunction(compiler, reply.writer, reply.value, DBSPExpression.class);
+            byte[] result = transformWithContext("WindowGroups/FilterSources",
+                    writer.getJsonString().getBytes(StandardCharsets.UTF_8), 0, "", EMPTY_CONTEXT);
+            List<TemporalPath> paths = MAPPER.readValue(result, new TypeReference<>() {});
+            var sources = new HashMap<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps>();
+            for (var path : paths) {
+                var source = Utilities.getExists(operators, path.source()).getOutput(path.port());
+                var maps = path.maps().stream().map(id -> Utilities.getExists(operators, id)
+                        .to(DBSPSimpleOperator.class).getClosureFunction()).toList();
+                var filter = Utilities.getExists(operators, path.filter()).to(DBSPFilterOperator.class);
+                Utilities.putNew(sources, filter, new ReorderTemporalFilters.SourceAndMaps(source, maps));
+            }
+            return sources;
         } catch (IOException error) {
-            throw new UncheckedIOException("Cannot encode temporal filter classifications", error);
+            throw new UncheckedIOException("Invalid temporal filter source paths", error);
         }
     }
+
+    public record TemporalCandidate(String fingerprint, int conjunct) {}
+    public record TemporalBound(String fingerprint, boolean lower) {}
 
     /** Each sharing group contains pairs of filter and conjunct ordinals. */
     public static int[][][] sharedTemporalInputs(List<List<TemporalCandidate>> candidates, int threshold) {
@@ -1725,6 +1744,19 @@ public final class RustCircuitPass implements CircuitTransform {
             if (this.multiplicities != null) {
                 this.analyzeMultiplicities(circuit, initial, this.multiplicities);
                 return circuit;
+            }
+            if (this.temporalOrder != null) {
+                var orders = new LinkedHashMap<Long, ReorderTemporalFilters.Reorder.TemporalOrder>();
+                visitOperators(circuit.getAllOperators(), op -> {
+                    if (op instanceof DBSPFilterOperator filter) {
+                        var order = this.temporalOrder.classify(filter);
+                        if (order != null)
+                            orders.put(filter.id, order);
+                    }
+                });
+                if (orders.isEmpty())
+                    return circuit;
+                state = MAPPER.writeValueAsBytes(orders);
             }
             if (this.clockUses != null) {
                 if (!this.clockUses.found()) {

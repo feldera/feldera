@@ -53,6 +53,7 @@ def read_run(directory, entry):
 # Counts for one uninterrupted top-level optimizer sequence in the frozen replay.
 # The case options, rather than the population label, determine the Gen-2 placement.
 FROZEN_SCHEDULE = {
+    "Reorder": 0,
     "LowerCircuitVisitor": 1, "LowerAsofInner": 1,
     "DeferCarriedColumns": 1, "TrimFilters": 1, "TrimWindows": 1, "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
@@ -92,7 +93,8 @@ def graph_cleanup_counts(case, record):
 def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCHEDULE, *,
                       validate_weights=False, cast_iterations=None, unused_field_iterations=None,
                       graph_cleanups=None, clock_scans=None, temporal_splits=None, now_stream=None,
-                      outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True):
+                      outputs_are_sets=False, trim_inputs=False, asof_retention_moves=0, star_joins_enabled=True,
+                      window_sharing_enabled=True):
     expected = dict(schedule)
     if "RemoveStarJoins" in expected:
         if star_joins_enabled:
@@ -113,6 +115,11 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                 else:
                     del expected[name]
         expected["Graph"] += asof_retention_moves
+    if "Reorder" in expected:
+        if clock_scans == 2 and window_sharing_enabled:
+            expected["Reorder"] = 1
+        else:
+            del expected["Reorder"]
     if trim_inputs:
         expected["TrimInputs"] = 1
     if outputs_are_sets:
@@ -213,6 +220,9 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
             clock_scans = control.get("clock_scans")
             if "ContainsNow" in schedule and (clock_scans is None or clock_scans != row.get("clock_scans")):
                 raise ValueError(f"{key}: candidate and Java clock scans differ")
+            sharing = control.get("window_sharing_enabled")
+            if "Reorder" in schedule and (type(sharing) is not bool or row.get("window_sharing_enabled") is not sharing):
+                raise ValueError(f"{key}: temporal window sharing policy differs from direct Java")
             splits = control.get("temporal_filter_iterations")
             if "ContainsNow" in schedule and (splits is None or splits != row.get("temporal_filter_iterations")):
                 raise ValueError(f"{key}: candidate and Java temporal filter iterations differ")
@@ -228,7 +238,7 @@ def compare(population, references, candidates, schedule=FROZEN_SCHEDULE):
                               unused_field_iterations=unused_fields, graph_cleanups=graph_cleanups,
                               clock_scans=clock_scans, temporal_splits=splits, now_stream=expected[key][3],
                               outputs_are_sets=expected[key][4], trim_inputs=expected[key][5],
-                              asof_retention_moves=asof_moves, star_joins_enabled=star_joins)
+                              asof_retention_moves=asof_moves, star_joins_enabled=star_joins, window_sharing_enabled=sharing)
             invocations.update(counts)
     if controls:
         raise ValueError(f"{len(controls)} cases missing from S2 replay")

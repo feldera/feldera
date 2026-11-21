@@ -140,6 +140,18 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
                 return rust;
             });
         }
+        if (pass instanceof ReorderTemporalFilters ordering && this.passClass.equals("Reorder")
+                && Boolean.getBoolean("feldera.optimizer.compareRustTemporalPolicy")) {
+            ordering.passes.replaceAll(step -> {
+                if (!(step instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.Conditional guard)
+                        || !(guard.transform instanceof ReorderTemporalFilters.Reorder))
+                    return step;
+                var snapshots = new org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots(this.compiler);
+                var rust = new RustCircuitPass(this.compiler, guard.transform, snapshots);
+                this.originalPasses.put(rust, guard.transform);
+                return guard.withTransform(rust);
+            });
+        }
         pass = this.originalPasses.getOrDefault(pass, pass);
         if (this.compareMonotonicity(pass))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;

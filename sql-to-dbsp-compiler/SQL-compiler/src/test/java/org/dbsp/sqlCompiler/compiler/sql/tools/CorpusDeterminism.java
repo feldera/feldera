@@ -414,6 +414,7 @@ public final class CorpusDeterminism {
             result.set("cast_iterations", MAPPER.valueToTree(castIterations));
             result.put("unused_field_iterations", unusedFieldIterations.get());
             result.put("clock_scans", clockScans.get());
+            result.put("window_sharing_enabled", !compiler.metadata.windowSharingDisabled());
             result.put("asof_retention_moves", asofMoves.get());
             result.put("temporal_filter_iterations", temporalSplits.get());
             result.set("dead_code_by_container", MAPPER.valueToTree(graphCleanups));
