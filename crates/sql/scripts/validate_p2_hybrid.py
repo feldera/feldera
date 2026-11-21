@@ -13,29 +13,26 @@ import tempfile
 import time
 
 
-def recursive_error_parity(compiler, classpath, directory):
-    sql = directory / "recursive-error.sql"
-    sql.write_text("CREATE TABLE E(x INT, y INT);\n"
-                   "DECLARE RECURSIVE VIEW CLOSURE(x INT, y INT);\n"
-                   "CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION\n"
-                   "(SELECT LAG(x) OVER (PARTITION BY x ORDER BY y), x FROM CLOSURE);\n")
-    reference = directory / "recursive-java.json"
+def check_sql_error(compiler, classpath, directory, name, program, expected):
+    sql = directory / f"{name}-error.sql"
+    sql.write_text(program)
+    reference = directory / f"{name}-java.json"
     command = ["java", "-cp", classpath, "org.dbsp.sqlCompiler.CompilerMain", "-i", "-je",
                "--alltables", "--ignoreOrder", "--errors", reference, "-o", directory / "unused.rs", sql]
     direct = subprocess.run(command, timeout=60)
     messages = json.loads(reference.read_bytes())
-    if direct.returncode == 0 or not any("Unsupported operation 'LAG' in recursive code" in m["message"] for m in messages):
-        raise ValueError("Expected the Java recursive LAG diagnostic")
-    request = directory / "recursive-request.json"
+    if direct.returncode == 0 or not any(not m["warning"] and expected in m["message"] for m in messages):
+        raise ValueError(f"Expected the Java {name} diagnostic: {messages}")
+    request = directory / f"{name}-request.json"
     request.write_text(json.dumps(dict(java_classpath=classpath, engine="classic", sql=str(sql),
         producer_commit="p3-check", runtime_abi="p3-check", slots=str(directory / "slots"),
         deadline_ms=60000, rust_optimizer_passes=True, allow_stateless_java_fallback=True)))
-    attempt = directory / "recursive-attempt"
+    attempt = directory / f"{name}-attempt"
     probe = subprocess.run([compiler, "--hybrid", request, attempt], timeout=65)
     result = json.loads((attempt / "result/result.json").read_bytes())
     if (probe.returncode == 0 or result["status"] != "sql_error" or result["messages"] != messages
             or result["attempts"] != 1 or result["compiler"] != "hybrid" or result["artifacts"]):
-        raise ValueError("Hybrid recursive diagnostic or terminal outcome differs from direct Java")
+        raise ValueError(f"Hybrid {name} diagnostic or terminal outcome differs from direct Java")
     return messages
 
 
@@ -115,7 +112,19 @@ def validate(compiler, comparator, classpath, directory, lateness=False, rust_op
     assert sql["attempts"] == 1 and any(m["warning"] is False for m in sql["messages"])
 
     if rust_optimizer_passes:
-        recursive_error_parity(compiler, classpath, directory)
+        check_sql_error(compiler, classpath, directory, "recursive",
+                        "CREATE TABLE E(x INT, y INT);\n"
+                        "DECLARE RECURSIVE VIEW CLOSURE(x INT, y INT);\n"
+                        "CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM E) UNION\n"
+                        "(SELECT LAG(x) OVER (PARTITION BY x ORDER BY y), x FROM CLOSURE);\n",
+                        "Unsupported operation 'LAG' in recursive code")
+        for name, query in [
+            ("clock-map", "SELECT TRANSFORM(x, e -> e + EXTRACT(EPOCH FROM NOW())) FROM t"),
+            ("clock-filter", "SELECT * FROM t WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()))"),
+        ]:
+            check_sql_error(compiler, classpath, directory, name,
+                            f"CREATE TABLE t(x BIGINT ARRAY);\nCREATE VIEW v AS {query};",
+                            "NOW() is not supported inside a lambda expression")
 
     # Hold Java at an ordinary input read so the process cannot finish before cancellation.
     with tempfile.TemporaryDirectory() as local:
