@@ -163,6 +163,10 @@ fn transform(
             &Circuit::from_json(wire)?
         )?));
     }
+    if pass == "FindJoinTrees" {
+        let trees = feldera_sql_opt::find_join_trees(&Circuit::from_json(wire)?, &mut next)?;
+        return Ok(json!({"join_trees":trees, "next_generated_name":next}));
+    }
     if pass == "FindCommonProjections" {
         return Ok(json!(feldera_sql_opt::common_projections(
             &Circuit::from_json(wire)?

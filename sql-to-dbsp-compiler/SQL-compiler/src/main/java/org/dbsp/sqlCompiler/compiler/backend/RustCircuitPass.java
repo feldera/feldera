@@ -119,6 +119,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final FindUnusedInputFields inputFields;
     @Nullable private final TrimInputs trimInputs;
     @Nullable private final FindCommonProjections commonProjections;
+    @Nullable private final CreateStarJoins.FindJoinTrees joinTrees;
     @Nullable private final CreateStarJoins.ReplaceStarJoins starJoins;
     @Nullable private final ReplaceCommonProjections replaceCommon;
     @Nullable private final LowerAsof.MoveGC asofRetention;
@@ -156,6 +157,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.bounded = original instanceof FindUnboundedState.FindBounded propagation ? propagation : null;
         this.unbounded = original instanceof FindUnboundedState.CollectUnbounded collect ? collect : null;
         this.garbageCollected = original instanceof FindUnboundedState.FindGCedStreams streams ? streams : null;
+        this.joinTrees = original instanceof CreateStarJoins.FindJoinTrees find ? find : null;
         this.starJoins = original instanceof CreateStarJoins.ReplaceStarJoins joins ? joins : null;
         this.replaceCommon = original instanceof ReplaceCommonProjections replace ? replace : null;
         this.asofRetention = original instanceof LowerAsof.MoveGC move ? move : null;
@@ -361,6 +363,13 @@ public final class RustCircuitPass implements CircuitTransform {
     }
 
     private DBSPCircuit applyResult(DBSPCircuit circuit, @Nullable ToJsonOuterVisitor writer, JsonNode result) throws IOException {
+        if (this.joinTrees != null) {
+            JsonNode trees = result.required("join_trees");
+            if (!trees.isArray())
+                throw new IllegalStateException("Expected an array of star join replacements");
+            this.joinTrees.setNativeReplacements(trees.isEmpty() ? EMPTY_CONTEXT : MAPPER.writeValueAsBytes(trees));
+            return circuit;
+        }
         if (result.has("duplicate_retention")) {
             JsonNode finding = result.required("duplicate_retention");
             if (!finding.isNull()) {
@@ -769,9 +778,11 @@ public final class RustCircuitPass implements CircuitTransform {
                 this.findCommonProjections(circuit, initial, this.commonProjections);
                 return circuit;
             }
-            var trees = this.starJoins == null ? null : this.starJoins.replacements();
-            if (trees != null && trees.isEmpty())
-                return circuit;
+            if (this.starJoins != null) {
+                state = this.starJoins.nativeReplacements();
+                if (state.length == 0)
+                    return circuit;
+            }
             if (this.replaceCommon != null && this.replaceCommon.analysis().outputProjection.isEmpty())
                 return circuit;
             if (this.trimInputs != null) {
@@ -1012,9 +1023,7 @@ public final class RustCircuitPass implements CircuitTransform {
                 writer = this.snapshots.writer();
                 writer.innerVisitor.liveNodes = new HashMap<>();
                 writer.apply(circuit);
-                if (trees != null)
-                    state = StarJoinState.encode(writer, trees);
-                else if (this.replaceCommon != null)
+                if (this.replaceCommon != null)
                     state = SharedProjectionState.encode(writer, this.replaceCommon.analysis());
                 else if (state == EMPTY_CONTEXT)
                     state = this.passState(circuit, writer);

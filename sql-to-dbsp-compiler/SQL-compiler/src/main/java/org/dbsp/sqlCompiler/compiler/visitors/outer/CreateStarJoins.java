@@ -53,7 +53,7 @@ public class CreateStarJoins extends Passes {
         Graph g = new Graph(compiler);
         this.add(select.apply(g));
         FindJoinTrees fjt = new FindJoinTrees(compiler, g.graphs);
-        this.add(fjt);
+        this.add(select.apply(fjt));
         this.add(select.apply(new ReplaceStarJoins(compiler, fjt.joinTrees)));
     }
 
@@ -159,6 +159,19 @@ public class CreateStarJoins extends Passes {
         /** The set of join operators which have a join tree but are not a child of another join tree */
         final Set<DBSPJoinBaseOperator> maximalJoinRoots;
 
+        // The two native passes run consecutively on the same circuit snapshot.
+        @Nullable byte[] nativeReplacements;
+
+        /** Only maximal trees containing at least two joins are replaced. */
+        public List<Replacement> replacements() {
+            return this.maximalJoinRoots.stream()
+                    .sorted(Comparator.comparingLong(op -> op.id))
+                    .map(root -> Objects.requireNonNull(this.get(root)))
+                    .filter(tree -> tree.size() > 1)
+                    .map(tree -> new Replacement(tree.root.id, tree.inputs, tree.closure))
+                    .toList();
+        }
+
         JoinTrees() {
             this.treeByRoot = new HashMap<>();
             this.maximalJoinRoots = new HashSet<>();
@@ -173,7 +186,7 @@ public class CreateStarJoins extends Passes {
         }
     }
 
-    static class FindJoinTrees extends CircuitWithGraphsVisitor {
+    public static class FindJoinTrees extends CircuitWithGraphsVisitor {
         final JoinTrees joinTrees;
 
         public FindJoinTrees(DBSPCompiler compiler, CircuitGraphs graphs) {
@@ -185,6 +198,14 @@ public class CreateStarJoins extends Passes {
         public VisitDecision preorder(DBSPNestedOperator operator) {
             // Do not look inside nested operators
             return VisitDecision.STOP;
+        }
+
+        public List<Replacement> replacements() {
+            return this.joinTrees.replacements();
+        }
+
+        public void setNativeReplacements(byte[] replacements) {
+            this.joinTrees.nativeReplacements = replacements;
         }
 
         @Nullable
@@ -278,14 +299,12 @@ public class CreateStarJoins extends Passes {
             this.joinTrees = joinTrees;
         }
 
-        /** Only maximal trees containing at least two joins are replaced. */
         public List<Replacement> replacements() {
-            return this.joinTrees.maximalJoinRoots.stream()
-                    .sorted(Comparator.comparingLong(op -> op.id))
-                    .map(root -> Objects.requireNonNull(this.joinTrees.get(root)))
-                    .filter(tree -> tree.size() > 1)
-                    .map(tree -> new Replacement(tree.root.id, tree.inputs, tree.closure))
-                    .toList();
+            return this.joinTrees.replacements();
+        }
+
+        public byte[] nativeReplacements() {
+            return Objects.requireNonNull(this.joinTrees.nativeReplacements);
         }
 
         @Override

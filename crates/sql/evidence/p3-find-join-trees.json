@@ -1,0 +1,46 @@
+{
+  "scope": "Compare generated-name allocation, ordered maximal roots, ports and closures in their shared input circuit identity space against the uninterrupted Java analysis.",
+  "comparator_sha256": "556742dfdf5adee19047059cd0e239a2b3d6b37464394b2a84fb734e54e7ba25",
+  "classic": {
+    "cases": 8571,
+    "mismatches": 0,
+    "population_sha256": "3eb606cd10c903a20a5dd2b21db5a2a7874c873bbf59f55fdfedb8539a72a638",
+    "result_shards_sha256": [
+      "71845b334327743344eec1de3825b76f8139b848bcacd5135832aaa4482e72e0",
+      "fc56c3db1757a1f019c6ebcbba0782eae5ab4fe3a8b69b882239ca6bda2ac05e",
+      "e081c7728dd34747727d2cef8dd25362d89a4fb2a8c78b050d8e7cbe6f71fc2d",
+      "0f7666faf951bc264ac052164e8f9c326716692c2d68b092b405e3dc56ec3438"
+    ],
+    "pass": "FindJoinTrees",
+    "invocations": 8570,
+    "changed": 0,
+    "cases_without_placement": 1,
+    "oracle_stream_sha256": [
+      "2de2bcffc986c127295816e0c242bc091e9b8fa01d586328c7806da8d4220251",
+      "a9a1695490dfca8e2ca421a7bad9c118c76f602f891c61ba128a0542008f1967",
+      "067af298c002ee790d6b7ceb98e5458ddda40e72cfe6ee4df59fbab2bbf5a1a0",
+      "772b9ef36446195929204db5d15490cb1f81cbcf2d74aa39417b7686ad86b268"
+    ]
+  },
+  "gen2": {
+    "cases": 8527,
+    "mismatches": 0,
+    "population_sha256": "71e4015ac0c7bdfa24cdb6e12f94b3c21cf481ebe98c31d3efcea759e5ed91f7",
+    "result_shards_sha256": [
+      "8ac8dc386a9eee4fdaf39e63e4ab98a4b8c7164d878b2022c31b1f71d01fc946",
+      "cc3ac650ad3eaf06347ade67bf919023e98dccd648e5a644472de9271b356c3d",
+      "749a8f1c38cfb606f849b7c2d6c1e418e9b8c75ce0b2f5f59ac7e2a3a4e86d4f",
+      "8049964cfa59090518b65e47e1dff75da1d0f33aae5142fc85853d15a432c6dd"
+    ],
+    "pass": "FindJoinTrees",
+    "invocations": 8526,
+    "changed": 0,
+    "cases_without_placement": 1,
+    "oracle_stream_sha256": [
+      "6377736d7c327aa41b2a37316037c21e76e05c6fbe9c6911458f083ed3d80c36",
+      "be42772a8d154c84102e376a37bcf4f5947d168152478d6dc690bd9cb2d7a4b1",
+      "85df604d83eb33471a3fbff9d63ead5b61a7303b55353c36706fa1c0915b4a00",
+      "206cfc25834ecb508f1cf45a8b04f3b36b7f8466718e1e64dea8548a66a5256e"
+    ]
+  }
+}

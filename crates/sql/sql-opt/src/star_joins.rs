@@ -1,8 +1,10 @@
 //! Replace a maximal tree of snapshot joins with one star join.
+mod analysis;
 use crate::{
     rebuild::{input_type, rebuild_input_closures},
     stream_rewrites::body_members,
 };
+pub use analysis::find_join_trees;
 use feldera_sql_ir::{
     Circuit, CircuitEditor, Error, Field, NodeId, OperatorKind as Op, OutputPort,
 };
@@ -11,7 +13,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// The preceding analysis supplies the ordered leaves and a closure over their shared key.
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StarJoinTree {
     root: u64,

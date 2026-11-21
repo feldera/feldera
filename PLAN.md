@@ -46,9 +46,9 @@ Path prefixes used in this document:
   passed, including 232 expected runtime errors. The checkpoint and decoder
   results and the outstanding independent reviews are recorded in the
   [phase status](crates/sql/PORTING.md#local-compiler-and-phase-status).
-- 2026-11-20. The mixed optimizer ran 2,797,145 Rust pass invocations on 17,098
+- 2026-11-20. The mixed optimizer ran 2,814,241 Rust pass invocations on 17,098
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
-  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 92 pass kinds
+  final S3, persistent-ID inputs and emitted artifacts. The verified build ran 93 pass kinds
   in Rust. All 8,256 classic executable cases passed on the 89-pass build. Java still runs the
   remaining passes. On the 91-pass build with the codec change, SQL-to-artifact p95 was
   1.273× direct Java for the array subquery, 2.449× for Nexmark and 1.259× for the

@@ -125,6 +125,18 @@ fn compare_invocation(
             serde_json::from_value(invocation["asof_joins"].clone())?,
             &mut next,
         )?,
+        "FindJoinTrees" => {
+            let trees = feldera_sql_opt::find_join_trees(&input, &mut next)?;
+            if !trees.is_empty() || invocation["join_trees"] != json!([]) {
+                // The closures share definitions with their circuit and with one another.
+                let mut expected = invocation["before"].clone();
+                let mut actual = expected.clone();
+                expected["join_trees"] = invocation["join_trees"].clone();
+                actual["join_trees"] = serde_json::to_value(trees)?;
+                compare_circuits(&expected, &actual)?;
+            }
+            input
+        }
         "ReplaceStarJoins" => feldera_sql_opt::replace_star_joins(
             input, serde_json::from_value(invocation["join_trees"].clone())?, &mut next,
         )?,
@@ -572,7 +584,7 @@ fn compare_invocation(
         _ => return Err(format!("no Rust implementation selected for {pass}").into()),
     };
     if Some(next) != invocation["names_after"].as_u64() {
-        return Err(format!("{pass} invocation {index} generated-name counter differs").into());
+        return Err(format!("{pass} invocation {index} generated-name counter is {next}, expected {}", invocation["names_after"]).into());
     }
     compare_circuits(&invocation["after"], &actual.to_json())
         .map_err(|e| format!("{pass} invocation {index}: {e}"))?;

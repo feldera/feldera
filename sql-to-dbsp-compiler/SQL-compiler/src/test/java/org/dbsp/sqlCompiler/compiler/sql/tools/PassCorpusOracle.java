@@ -41,6 +41,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Objects;
 
 /** Record every invocation of the selected pass, including repeat iterations. */
@@ -95,6 +96,16 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         }
     }
 
+    private static void captureJoinTrees(ObjectNode record, org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor writer,
+            List<org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.Replacement> replacements) {
+        byte[] trees = org.dbsp.sqlCompiler.compiler.backend.StarJoinState.encode(writer, replacements);
+        try {
+            record.set("join_trees", org.dbsp.util.Utilities.deterministicObjectMapper().readTree(trees));
+        } catch (java.io.IOException error) {
+            throw new java.io.UncheckedIOException(error);
+        }
+    }
+
     @Override
     public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {
         if (!this.selected(pass))
@@ -107,14 +118,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.put("names_before", DBSPVariablePath.nextGeneratedName());
         var writer = this.snapshotWriter(circuit);
         this.active.set("before", this.snapshot(writer));
-        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star) {
-            byte[] trees = org.dbsp.sqlCompiler.compiler.backend.StarJoinState.encode(writer, star.replacements());
-            try {
-                this.active.set("join_trees", org.dbsp.util.Utilities.deterministicObjectMapper().readTree(trees));
-            } catch (java.io.IOException error) {
-                throw new java.io.UncheckedIOException(error);
-            }
-        }
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star)
+            captureJoinTrees(this.active, writer, star.replacements());
         if (pass instanceof LowerAsof.OrderGcDependencies order)
             this.active.set("extra_edges", org.dbsp.util.Utilities.deterministicObjectMapper()
                     .valueToTree(order.edgeIds()));
@@ -238,6 +243,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
             throw new IllegalStateException("Incomplete " + this.passClass);
         var current = Objects.requireNonNull(this.active);
         this.diagnostics = null;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.FindJoinTrees find)
+            captureJoinTrees(current, this.snapshotWriter(circuit), find.replacements());
         if (pass instanceof HashPrefixPass prefix)
             current.set("prefixes", org.dbsp.util.Utilities.deterministicObjectMapper().valueToTree(prefix.prefixesById()));
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections common)

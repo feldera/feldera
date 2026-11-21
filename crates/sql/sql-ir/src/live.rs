@@ -44,7 +44,8 @@ impl Circuit {
         let can_share = self.nodes.range(NodeId::Inner(0)..).all(|(id, node)| {
             previous.node(*id).is_none_or(|old| {
                 if Arc::ptr_eq(&old.fields.0, &node.fields.0) {
-                    return old.class() == node.class() && !node.fields.values().any(has_outer_edge);
+                    return old.class() == node.class()
+                        && !node.fields.values().any(has_outer_edge);
                 }
                 old.class() == node.class()
                     && old.fields.len() == node.fields.len()
@@ -85,5 +86,74 @@ impl Circuit {
             .into_iter()
             .collect(),
         ))
+    }
+}
+
+impl Circuit {
+    /// Encode analysis expressions against the input snapshot. Every new node
+    /// gets one definition across the entire batch, even if multiple roots share it.
+    pub fn additional_expressions(
+        &self,
+        input: &Self,
+        roots: &[crate::ExpressionId],
+    ) -> Result<Vec<Value>, crate::Error> {
+        let mut emitted = BTreeSet::new();
+        roots
+            .iter()
+            .map(|&root| {
+                self.additional_field(&Field::Reference(root.into()), input, &mut emitted, 0)
+            })
+            .collect()
+    }
+
+    fn additional_field(
+        &self,
+        field: &Field,
+        input: &Self,
+        emitted: &mut BTreeSet<NodeId>,
+        depth: usize,
+    ) -> Result<Value, crate::Error> {
+        crate::wire::check_depth(depth)?;
+        match field {
+            Field::Reference(id) | Field::Definition(id) => {
+                if input.node(*id).is_some() || !emitted.insert(*id) {
+                    return Ok(serde_json::json!({"node": id.number()}));
+                }
+                if !matches!(id, NodeId::Inner(_)) {
+                    return Err(crate::Error::new(
+                        "analysis expression introduces an outer operator",
+                    ));
+                }
+                let node = self
+                    .node(*id)
+                    .ok_or_else(|| crate::Error::new("missing analysis expression"))?;
+                let mut object = serde_json::Map::with_capacity(node.fields.len() + 2);
+                object.insert("class".into(), node.class().into());
+                object.insert("id".into(), id.number().into());
+                for (key, value) in node.fields.iter() {
+                    object.insert(
+                        key.clone(),
+                        self.additional_field(value, input, emitted, depth + 1)?,
+                    );
+                }
+                Ok(Value::Object(object))
+            }
+            Field::Data(value) => Ok(value.clone()),
+            Field::Array(values) => values
+                .iter()
+                .map(|v| self.additional_field(v, input, emitted, depth + 1))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::Array),
+            Field::Object(fields) => fields
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k.clone(),
+                        self.additional_field(v, input, emitted, depth + 1)?,
+                    ))
+                })
+                .collect::<Result<_, _>>()
+                .map(Value::Object),
+        }
     }
 }

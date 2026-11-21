@@ -131,7 +131,8 @@ public class CircuitOptimizer extends Passes {
             if (!supported && graph.transform instanceof Passes iteration)
                 iteration.passes.replaceAll(this::selectImplementation);
         } else {
-            supported = pass instanceof Graph || pass instanceof CreateStarJoins.ReplaceStarJoins
+            supported = pass instanceof Graph || pass instanceof CreateStarJoins.FindJoinTrees
+                    || pass instanceof CreateStarJoins.ReplaceStarJoins
                     || pass instanceof LowerAsof.MoveGC || pass instanceof LowerAsof.OrderGcDependencies
                     || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
                     || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds

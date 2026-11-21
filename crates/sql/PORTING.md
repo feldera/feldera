@@ -30,7 +30,7 @@ constructed from the SQL. [Bootstrap provenance](evidence/a-binder-constant-prog
 | P0 | The owner recorded go for tracks M, N and F and confirmed the Forge IR contract owner. [Exit checklist](P0.md#exit-checklist) | Independent maintainer and licensing acceptance. |
 | P1 | The arena codec passed 7,030,934 S2/S3/S4 round-trips. The three Spike 8 ports matched all 296 directed Java S4 results and four Gen-2 refusals. Java and Forge consumer results are recorded below. | Independent maintainer acceptance under PLAN.md §4.1. |
 | P2 | Java imported Rust-written S3 for all [8,571 classic cases](evidence/p2-classic-worker.json) and reproduced the generated workspace and persistent-ID hash inputs. All [8,527 Gen-2 cases](evidence/p2-gen2-worker.json) matched the Java circuit after canonicalization. Both populations matched the Java dataflow. All [8,256 classic runtime cases](evidence/p2-classic-runtime.json) passed. The [hybrid driver](evidence/p2-hybrid-worker.json), checkpoint restores and [one-CPU-hour decoder campaign](evidence/p2-decoder-campaign.json) passed the local gates. | Independent maintainer acceptance under PLAN.md §4.1. |
-| P3 | The opt-in mixed optimizer executed 92 Rust pass kinds in the verified replay. Detached S2 replay matched direct Java on all 8,571 classic and 8,527 Gen-2 programs through final S3, persistent-ID inputs and engine output. [Pass comparisons](#p3-optimizer-replay) | Port the remaining Java passes, including projection optimization, monotonicity and limiter insertion. Verify its S4 boundaries and run the phase gates on that complete build. The latency ceiling and field-shadow window remain open. |
+| P3 | The opt-in mixed optimizer executed 93 Rust pass kinds in the verified replay. Detached S2 replay matched direct Java on all 8,571 classic and 8,527 Gen-2 programs through final S3, persistent-ID inputs and engine output. [Pass comparisons](#p3-optimizer-replay) | Port the remaining Java passes, including projection optimization, monotonicity and limiter insertion. Verify its S4 boundaries and run the phase gates on that complete build. The latency ceiling and field-shadow window remain open. |
 | P4 | Rust S1-to-S2 lowering for unkeyed tables, table scans, literal rows, column projections and selected integer comparisons. Java resumes Rust checkpoints. | Query operators and scalar expressions through S2, then corpus parity. |
 | P5 | JVM-free syntax checking, structured syntax diagnostics, formatting, one-batch API submissions, bound schema preview and low-verbosity query-plan output for supported programs. | Negative syntax and diagnostic parity, catalog and binder coverage, relational rules and decorrelation, product integration and P5d acceptance gates. |
 
@@ -725,7 +725,13 @@ results on all 17,098 frozen cases. [Ordering comparisons](evidence/p3-asof-gc-o
 
 Rust replaced maximal join trees with star joins at 17,096 placements. Thirty
 placements changed the graph, all matching Java. One program per engine disabled
-star joins. Java still discovers the trees and builds their closures.
+star joins. Rust also discovers the maximal trees and builds their closures.
+At all 17,096 active placements the ordered roots, input ports, shared expressions
+and generated-name counter matched Java. A directed indexed-root test checks
+the ordered leaves and names on both implementations. The subsequent replacement
+on that directed circuit exposes a Java stream-kind error when it connects
+collection inputs directly to the delta-only indexed star join.
+[Join-tree analysis](evidence/p3-find-join-trees.json) ·
 [Star join replacements](evidence/p3-star-joins.json)
 
 Only two frozen cases per engine enable input trimming, and neither changes its graph.
@@ -736,7 +742,7 @@ agree on schema, diagnostics, final S3, persistent-ID inputs and emitted artifac
 [Input trimming comparisons](evidence/p3-trim-inputs.json) · [Upstream fix](https://github.com/feldera/feldera/pull/8035)
 
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
-detached S2 and ran the mixed schedule. All 2,797,145 Rust invocations completed
+detached S2 and ran the mixed schedule. All 2,814,241 Rust invocations completed
 across the two populations. Final S3, hash inputs, schema, diagnostics,
 classic workspace bytes, canonical Gen-2 IR and parsed dataflow matched.
 The clean Maven package initially hit Calcite nullability assertions on two
@@ -826,7 +832,8 @@ The 89-pass build measured 23.26 ms and 78,123,008 bytes. The 90-pass build meas
 25 ms limit at 33.01 ms p95. Peak waiting RSS was 78,213,120 bytes. After
 the live codec change, the four-worker run measured 10.81 ms p95 and
 78,073,856 bytes peak waiting RSS. The 92-pass build measured 17.82 ms p95
-and 78,204,928 bytes peak waiting RSS.
+and 78,204,928 bytes peak waiting RSS. The 93-pass run exceeded the cancellation
+limit at 29.04 ms p95, with peak waiting RSS of 78,196,736 bytes.
 [Worker limits and trial timings](evidence/p3-worker-limits.json)
 
 The release decoder processed 5,807,488 inputs in 3,600 worker CPU seconds
