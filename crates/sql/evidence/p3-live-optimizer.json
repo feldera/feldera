@@ -244,19 +244,19 @@
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "5c03f9f62fe2ba2e961e0dd18d7468479aff73b25e684e907348081228b746ff"
+        "records_sha256": "ddd2c4bcc1c582decf03dfe1f646552c7e315a9c3b524dd7dff78dae46d97ce7"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
-        "records_sha256": "0574c3036815e7c29ca6ec1414043c628409e93a762ce7f99bc09e6243f2a6d2"
+        "records_sha256": "996450d91acfbf3d60642e174a1c42c57ffad484df1c5f38a0a7c24c4b5e0cca"
       }
     ]
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
     "pass_kinds": 102,
-    "jar_sha256": "313137d4fb8453a824e8e131745f23f3fda9418115d7d8a1918b9058e9d9e0fa",
-    "driver_sha256": "d732a4a1ead698cec3b760d495c4e2f6e1154b9e9a51eb785d112fb8b57ddd7f",
-    "optimizer_library_sha256": "55e368cf8ed49239418fa01841ae5dc7c95664a5d9a0b3b0ae0ce1ac96b4d07c"
+    "jar_sha256": "35faeabb6ed29cc8070cdfa8c5a938943b3334255ac7c2e27174f1a39baf3a46",
+    "driver_sha256": "a28fc29ca8306d9dcbcd4c6780d0a060f263833d42223baed53691af1f8f4a99",
+    "optimizer_library_sha256": "09d596aa8dfd2aeaf3bc77db205e56fed59f854b261c3083937357c1759c34d4"
   }
 }

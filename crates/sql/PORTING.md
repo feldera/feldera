@@ -870,6 +870,13 @@ paths matched the Java reference at every frozen `ReplaceSharedIndexes`
 boundary, including the graph consumed by the following dead-code pass.
 [Wide index field projections](evidence/p3-wide-index-fields.json)
 
+On build `80f10608a`, all 8,571 classic and 8,527 Gen-2 programs matched
+direct Java through final S3 and their emitted artifacts. COUNT and LATENESS
+checkpoints restored in both directions. With four workers and corpus replay
+running, cancellation p95 was 24.96 ms against the 25 ms ceiling. The
+largest waiting worker used 80,048,128 bytes across its driver and front end.
+[Artifact replay](evidence/p3-live-optimizer.json) · [Checkpoint restores](evidence/p3-checkpoints.json) · [Worker measurements](evidence/p3-worker-limits.json)
+
 Rust now finds clock calls in the predicate itself and combines residual
 conditions using the typed expression builders. Java supplies the monotonicity
 of comparison operands. All 532 `Scan`, `Reorder`, `MergeFilters` and
