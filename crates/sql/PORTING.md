@@ -812,6 +812,13 @@ and generated-name counters matched at all 1,872 projection iterations on the
 296 selected inputs. Of those iterations, 770 changed the graph.
 [Projection field comparisons](evidence/p3-projection-fields.json)
 
+Rust composes ordinary and indexed map closures. When an indexed producer is
+expensive, the unrestricted pass can bind the result once and reuse its key
+and value. All 86,472 projection invocations matched Java across 8,571 classic
+and 8,527 Gen-2 programs. The comparison checked the entry and exit graphs,
+including type sharing and source positions, as well as the allocator,
+diagnostics and pass state. [Projection composition comparisons](evidence/p3-projection-composition.json)
+
 Rust lowers a fused join, filter and optional map to a single closure. The
 unprojected form binds the joined row once. The projected form applies the map
 only when the predicate succeeds. The comparison covered 198 inner joins,
@@ -914,7 +921,7 @@ grouped COUNT and a second program with LATENESS. All four cross-compiler
 restores resumed without bootstrap and emitted the expected deltas.
 [Reduced G9 checkpoints](evidence/p3-checkpoints.json)
 
-All 8,256 classic executable cases passed on the 99-pass join-filter build. The
+All 8,256 classic executable cases passed on the 99-pass aggregate-fold build. The
 verifier checked 11,407 input commands, 232 expected runtime errors and the
 identities of the 315 compile-only cases across the 8,571-program population.
 [Classic runtime replay](evidence/p3-classic-runtime.json)
