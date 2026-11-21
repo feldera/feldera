@@ -820,6 +820,11 @@ structure, generated names and diagnostics. Both JVMs replayed the same S2
 files to preserve the Calcite relation IDs observed on entry.
 [Join-filter lowering comparisons](evidence/p3-join-filter-map.json)
 
+Rust lowers classic aggregate lists to folds. Java and Rust agreed at all
+8,572 applicable lowering boundaries, including the 815 folds constructed in
+412 programs. The 8,526 programs that enabled Gen-2 kept their aggregate lists.
+[Aggregate fold comparisons](evidence/p3-aggregate-fold.json)
+
 Rust counts distinct uses of an expensive expression within each closure. A
 borrow, clone, dereference or tuple passes its own uses on to its operands.
 Java supplies canonical expression IDs and constructs the lazy bindings.
@@ -924,6 +929,9 @@ The 99-pass build before the retained-relation change measured 1.312×, 1.994× 
 With relational snapshots retained in the JVM the ratios were 1.177×, 2.061× and 1.180×.
 Nexmark exceeded the ceiling with a hybrid p95 of 14.85 s against direct Java's 7.21 s.
 On the UDF and aggregate eligibility build, p95 measured 1.231×, 2.222× and 1.337×, respectively. Each timing covers SQL through emitted classic artifacts.
+On the static-cell build, the subquery measured 4.52 s hybrid and 3.28 s
+direct at p95. Nexmark measured 15.32 s and 8.39 s, and the outer join
+measured 3.70 s and 3.28 s. Only the outer join met the 1.2× ceiling.
 [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-20)
 
 On the 21-pass build, cancellation p95 for four occupied workers was 33.23 ms

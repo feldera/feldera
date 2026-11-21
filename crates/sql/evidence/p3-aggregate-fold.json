@@ -1,0 +1,71 @@
+{
+  "scope": "Classic aggregate lists lowered to DBSPFold in Rust. Java preserves aggregate lists on Gen-2. S4 compares graph structure and sharing, generated names and diagnostics against the same saved S2.",
+  "compiler_commit": "2169db3d2",
+  "shards": {
+    "classic-0": {
+      "cases": 2143,
+      "active_cases": 102,
+      "folds": {
+        "DBSPPartitionedRollingAggregateOperator": 60,
+        "DBSPAggregateOperator": 12,
+        "DBSPStreamAggregateOperator": 83,
+        "DBSPPartitionedRollingAggregateWithWaterlineOperator": 5
+      },
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "java_gzip_sha256": "1889e1f805c9348b56df50cf48c36eaef0c5532246da2d62ca902ae4ab3308a9",
+      "rust_gzip_sha256": "01fd5bd204d96adbe47faac9971589c8ff93c6f8e46d41c225e9fa19c14932a0"
+    },
+    "classic-1": {
+      "cases": 2143,
+      "active_cases": 103,
+      "folds": {
+        "DBSPPartitionedRollingAggregateOperator": 106,
+        "DBSPAggregateOperator": 12,
+        "DBSPStreamAggregateOperator": 90,
+        "DBSPPartitionedRollingAggregateWithWaterlineOperator": 2
+      },
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "java_gzip_sha256": "41ca88f8503a3ccf8786ee57fdc983e5058827520ac48b8b5c8f86e98accb0e3",
+      "rust_gzip_sha256": "8ae021fc191d407d37ac0612bb6994b5b89ed7acece855d2cb7210b32f59e7f2"
+    },
+    "classic-2": {
+      "cases": 2143,
+      "active_cases": 97,
+      "folds": {
+        "DBSPPartitionedRollingAggregateOperator": 71,
+        "DBSPStreamAggregateOperator": 76,
+        "DBSPPartitionedRollingAggregateWithWaterlineOperator": 4,
+        "DBSPAggregateOperator": 12
+      },
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "java_gzip_sha256": "3b25fa4b13361cea2ae375fa36a81b05ab1450b1fc25fc512e1a4951a4f56760",
+      "rust_gzip_sha256": "bfcde6422174d343bf13880f80cc05c12908203a2acbd4ac88c46a718269f0a2"
+    },
+    "classic-3": {
+      "cases": 2142,
+      "active_cases": 110,
+      "folds": {
+        "DBSPPartitionedRollingAggregateOperator": 166,
+        "DBSPStreamAggregateOperator": 81,
+        "DBSPAggregateOperator": 16,
+        "DBSPPartitionedRollingAggregateWithWaterlineOperator": 19
+      },
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "java_gzip_sha256": "2e106a6275417479f41b1fadc591e144766260b037eaf7d07504fe219067fe33",
+      "rust_gzip_sha256": "463a42a6677fd85016ac44265ef747001ab91ebfdb736f64ab453b2114c0f119"
+    },
+    "gen2-classic-mode": {
+      "cases": 1,
+      "active_cases": 0,
+      "folds": {},
+      "population_sha256": "4ad6daa82e767e4ad8853c1098d103a6f050d707a305bde9ecd5f1ea463365a0",
+      "java_gzip_sha256": "9a8738ef1b38f3040984b49446b2cca484834537e9b3ecd7d7e78bc3f00a0487",
+      "rust_gzip_sha256": "9a8738ef1b38f3040984b49446b2cca484834537e9b3ecd7d7e78bc3f00a0487"
+    }
+  },
+  "gen2_enabled_cases_keeping_aggregate_lists": 8526,
+  "directed_jni_tests": 3,
+  "jar_sha256": "55f850deb4037119b661d02c43848a0ffb51bbc3f0b49ad45a3a5a24a861750c",
+  "jni_sha256": "3c69d9035e76b991a673353b80f27428b76a2f61e1ec02c26d64c4d1ffc2cd77",
+  "comparator_sha256": "892ab64da8f07f322b6d361457b3f4563d48c1b90ca8d168fd86cf4b1474b3b0"
+}
