@@ -794,6 +794,12 @@ The circuit and name allocator matched through 497 iterations on 58 classic
 and 58 Gen-2 inputs, including 263 iterations that changed the circuit.
 [Unused-field replay](evidence/p3-map-dependencies.json)
 
+Rust also computes the fields read by a map-index after an aggregate or TopK.
+Java uses those paths to narrow the producer and rewrite the reader. The graphs
+and generated-name counters matched at all 1,872 projection iterations on the
+296 selected inputs. Of those iterations, 770 changed the graph.
+[Projection field comparisons](evidence/p3-projection-fields.json)
+
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations
 across the two populations, including fast paths that returned an unchanged circuit. Final S3, hash inputs, schema, diagnostics,

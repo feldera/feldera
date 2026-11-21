@@ -1,0 +1,28 @@
+{
+  "scope": "Compare the graph and generated names at each OptimizeProjections iteration for the selected aggregate and TopK programs. Rust computes the map-index reader field paths. Java applies the projection rewrite.",
+  "boundaries": {
+    "classic": {
+      "OptimizeProjections": {
+        "cases": 149,
+        "invocations": 943,
+        "changed_circuits": 388,
+        "control_sha256": "5b7be5b2a4e74c527b274ac6a5009e1733b480d68aea9add457ea64cf3ea8946",
+        "candidate_sha256": "5bd5cb8b2c685ae1a331aec8a2f32dba7e8a3dbf0717fbeff8e80633377a93cc",
+        "population_sha256": "1fb7450a77da2e93ab2ca3b540c6ca445180ad9bad0820057329f2a4b6c80e81"
+      }
+    },
+    "gen2": {
+      "OptimizeProjections": {
+        "cases": 147,
+        "invocations": 929,
+        "changed_circuits": 382,
+        "control_sha256": "628a6698804200dbf74accf1ad2ed2e334a454751353006cb0136ae85f533f4f",
+        "candidate_sha256": "55d7ea1d468c19976a3355d1a97f0e81dd2dbdd6222d3138e6ddadab3fa52371",
+        "population_sha256": "22bf9411cbe8dfb9b5d6837bd2fa90f5e08bc71e402d8d758b57c925e604e94d"
+      }
+    }
+  },
+  "jar_sha256": "4a7d058e3a41efef3b60ca97ad7e65379f9c607a69357285eb78511aaa91dcc3",
+  "optimizer_library_sha256": "e51f55859a414e30ca7acb9b4f800327095862085e6f0c753da3ea33bc9e817b",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f"
+}

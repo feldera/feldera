@@ -661,13 +661,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         if (!this.compiler.options.ioOptions.rustOptimizerPasses)
             return this.find.findUsedFields(closure);
         var paths = Objects.requireNonNull(this.nativeMapFields.get(closure.id));
-        var parameter = closure.parameters[0];
-        var use = new ParameterFieldUse();
-        for (var path : paths)
-            new ParameterField(parameter, path).markParameterUse(use);
-        if (paths.isEmpty())
-            use.set(parameter, new FieldUseMap(parameter.getType(), false));
-        return use;
+        return ParameterFieldUse.fromPaths(closure.parameters[0], paths);
     }
 
     @Override

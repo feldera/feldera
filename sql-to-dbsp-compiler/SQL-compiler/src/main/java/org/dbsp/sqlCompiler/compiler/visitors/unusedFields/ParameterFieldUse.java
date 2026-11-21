@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -17,6 +18,16 @@ public class ParameterFieldUse {
 
     public ParameterFieldUse() {
         this.paramMap = new HashMap<>();
+    }
+
+    /** Restore the field-use map for a single closure parameter from Rust's input paths. */
+    public static ParameterFieldUse fromPaths(DBSPParameter parameter, List<List<Integer>> paths) {
+        var uses = new ParameterFieldUse();
+        if (paths.isEmpty())
+            uses.set(parameter, new FieldUseMap(parameter.getType(), false));
+        for (var path : paths)
+            new ParameterField(parameter, path).markParameterUse(uses);
+        return uses;
     }
 
     public Iterable<DBSPParameter> getParameters() {

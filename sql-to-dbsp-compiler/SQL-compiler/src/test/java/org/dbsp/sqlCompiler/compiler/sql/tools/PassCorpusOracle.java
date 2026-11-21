@@ -127,6 +127,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
         if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeProjections
+                && Boolean.getBoolean("feldera.optimizer.compareRustProjectionFields"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if ((pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder
                 || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.MergeFilters
                 || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow)

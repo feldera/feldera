@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -448,14 +449,20 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         super.postorder(operator);
     }
 
+    private ParameterFieldUse indexProjectionFields(DBSPMapIndexOperator map) {
+        DBSPClosureExpression function = map.getClosureFunction();
+        Utilities.enforce(function.parameters.length == 1);
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.indexProjectionFields(this.compiler, this.getCircuit(), map);
+        return new FindUsedFields(this.compiler).findUsedFields(function);
+    }
+
     /** Process an aggregate followed by a MapIndex operator; return 'true' if the operators
      * required changes, false if they are unchanged.  When the operator requires change,
      * it is inserted in the circuit and map is remapped to the new operator. */
     boolean processAggregate(DBSPStreamAggregateOperator aggregate, DBSPMapIndexOperator map) {
-        FindUsedFields unused = new FindUsedFields(this.compiler);
         DBSPClosureExpression function = map.getClosureFunction();
-        Utilities.enforce(function.parameters.length == 1);
-        ParameterFieldUse uses = unused.findUsedFields(function);
+        ParameterFieldUse uses = this.indexProjectionFields(map);
         FieldUseMap useMap = uses.get(function.parameters[0]);
         FieldUseMap valueUse = useMap.field(1);
         DBSPTypeIndexedZSet ix = aggregate.getOutputIndexedZSetType();
@@ -525,10 +532,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         if (produced == null || produced.fields == null || produced.getType().mayBeNull)
             return false;
 
-        FindUsedFields unused = new FindUsedFields(this.compiler);
         DBSPClosureExpression function = map.getClosureFunction();
-        Utilities.enforce(function.parameters.length == 1);
-        ParameterFieldUse uses = unused.findUsedFields(function);
+        ParameterFieldUse uses = this.indexProjectionFields(map);
         FieldUseMap useMap = uses.get(function.parameters[0]);
         useMap.setUsed(0);
         if (!useMap.hasUnusedFields(2))

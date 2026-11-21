@@ -61,6 +61,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChainsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.TrimFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields.TrimInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUse;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
@@ -830,6 +831,19 @@ public final class RustCircuitPass implements CircuitTransform {
                     readers.putIfAbsent(map.getFunction().id, map);
             }
         });
+        return mapFieldDependencies(compiler, circuit, readers);
+    }
+
+    /** Analyze one reader when projection optimization reaches an aggregate or TopK. */
+    public static ParameterFieldUse indexProjectionFields(DBSPCompiler compiler, DBSPCircuit circuit,
+                                                         DBSPMapIndexOperator reader) {
+        var closure = reader.getClosureFunction();
+        var paths = mapFieldDependencies(compiler, circuit, Map.of(closure.id, reader));
+        return ParameterFieldUse.fromPaths(closure.parameters[0], paths.get(closure.id));
+    }
+
+    private static Map<Long, List<List<Integer>>> mapFieldDependencies(DBSPCompiler compiler, DBSPCircuit circuit,
+                                                                      Map<Long, DBSPUnaryOperator> readers) {
         if (readers.isEmpty())
             return Map.of();
         try {
