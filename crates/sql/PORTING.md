@@ -820,7 +820,8 @@ On the 86-pass build all three exceeded the ceiling at 1.293×, 2.781× and 1.28
 The corrected 88-pass build measured 1.161×, 3.221× and 1.403×.
 The 89-pass build measured 1.211×, 2.606× and 1.271×. The 91-pass build
 measured 1.270×, 2.774× and 1.158×. With live graph encoding reuse, the
-91-pass build measured 1.273×, 2.449× and 1.259×.
+91-pass build measured 1.273×, 2.449× and 1.259×. The 94-pass build
+measured 1.303×, 2.693× and 1.230×, all above the 1.2× ceiling.
 Each timing covers SQL through emitted classic artifacts.
 [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-20)
 

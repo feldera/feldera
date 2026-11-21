@@ -50,8 +50,8 @@ Path prefixes used in this document:
   frozen classic and Gen-2 programs. Detached S2 matched direct Java through
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 94 pass kinds
   in Rust. All 8,256 classic executable cases passed on the 92-pass build. Java still runs the
-  remaining passes. On the 91-pass build with the codec change, SQL-to-artifact p95 was
-  1.273× direct Java for the array subquery, 2.449× for Nexmark and 1.259× for the
+  remaining passes. On the 94-pass build, SQL-to-artifact p95 was
+  1.303× direct Java for the array subquery, 2.693× for Nexmark and 1.230× for the
   outer join. All three exceeded the 1.2× ceiling. The owner confirmed that
   the field-shadow gate stays open until qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
