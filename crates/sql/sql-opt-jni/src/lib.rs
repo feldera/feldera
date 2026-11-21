@@ -159,6 +159,10 @@ fn transform(
                 &filters, threshold
             )));
         }
+        "TemporalComparisons" => {
+            let nodes: Vec<feldera_sql_opt::TemporalPredicate> = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::classify_temporal_predicates(&nodes)?)?);
+        }
         "WindowGroups/TemporalOrder" => {
             let bounds: Vec<Option<feldera_sql_opt::TemporalBound>> =
                 serde_json::from_slice(input)?;

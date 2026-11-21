@@ -765,17 +765,23 @@ agree on schema, diagnostics, final S3, persistent-ID inputs and emitted artifac
 [Input trimming comparisons](evidence/p3-trim-inputs.json) · [Upstream fix](https://github.com/feldera/feldera/pull/8035)
 
 In temporal filter analysis, Rust chooses which filters share each window input.
-Java classifies the temporal expressions and supplies their source fingerprints.
+Java supplies source fingerprints for the timestamp expressions.
 Detached replay matched direct Java on all 71 classic and 62 Gen-2 programs in
 the frozen population that ran temporal filter splitting, including competing
 timestamps across views. [Temporal input selection](evidence/p3-temporal-input-selection.json)
 
 Rust also orders the predicates on shared, bounded and upper-only timestamps.
-Java rebuilds the typed conjunction after each partition and classifies any
-casts it introduces. At the two pass boundaries, all 266 invocations matched
+Java rebuilds the typed conjunction after each partition. At the two pass boundaries, all 266 invocations matched
 the Java graph and name allocator. The scans agreed on all 16 selected filter
 inputs, and the reorders agreed on all 19 changed circuits.
 [Temporal filter ordering](evidence/p3-temporal-filter-ordering.json)
+
+The mixed optimizer classifies each filter's conjunction in Rust using clock-use
+and monotonicity facts from Java. A one-sided monotone clock comparison becomes a
+window bound. The first residual condition constrains how the remaining predicates
+can be grouped. Scan, Reorder, MergeFilters and RewriteNow matched at all 532
+observed invocations, including 35 merges and 133 clock rewrites.
+[Temporal comparison replay](evidence/p3-temporal-comparisons.json)
 
 Independent Java controls compiled the frozen SQL. Each candidate loaded a
 detached S2 and ran the mixed schedule. Its Rust pass adapters completed 2,931,889 scheduled invocations

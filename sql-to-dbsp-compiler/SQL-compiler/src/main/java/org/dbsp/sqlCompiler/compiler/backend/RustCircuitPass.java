@@ -191,6 +191,24 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private static native byte[] transformWithContext(String pass, byte[] circuit, long next, String errorView, byte[] state);
 
+    public sealed interface TemporalPredicate {}
+    public record Conjunction(int[] children) implements TemporalPredicate {}
+    public record ClockOperand(boolean clock, boolean monotone) {}
+    public record BinaryPredicate(String opcode, ClockOperand left, ClockOperand right) implements TemporalPredicate {}
+    public record OpaquePredicate(boolean clock) implements TemporalPredicate {}
+    public enum PredicateKind { NoNow, Residual, LT, LTE, GT, GTE }
+    public record PredicatePart(int index, PredicateKind kind) {}
+
+    public static PredicatePart[][] classifyTemporalPredicates(List<TemporalPredicate> predicates) {
+        try {
+            byte[] reply = transformWithContext("TemporalComparisons", MAPPER.writeValueAsBytes(predicates),
+                    0, "", EMPTY_CONTEXT);
+            return MAPPER.readValue(reply, PredicatePart[][].class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid temporal comparison plan from the Rust optimizer", error);
+        }
+    }
+
     public record TemporalCandidate(String fingerprint, int conjunct) {}
     public record TemporalBound(String fingerprint, boolean lower) {}
     public record TimestampPartition(boolean first, Set<String> timestamps) {}

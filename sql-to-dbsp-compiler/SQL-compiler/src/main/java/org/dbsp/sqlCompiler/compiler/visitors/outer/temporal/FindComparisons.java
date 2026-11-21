@@ -66,6 +66,8 @@ class FindComparisons {
                 compiler, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, nonMonotone);
         mono.apply(function);
 
+        if (compiler.options.ioOptions.rustOptimizerPasses)
+            return new NativeTemporalComparisons(mono).decompose(function);
         FindComparisons analyzer = new FindComparisons(function, mono);
         return analyzer.comparisons;
     }

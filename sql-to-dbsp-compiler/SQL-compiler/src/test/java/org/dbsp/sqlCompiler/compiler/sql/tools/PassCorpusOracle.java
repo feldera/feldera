@@ -127,7 +127,9 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         // of the optimizer, including the producer of this pass's state,
         // keeps its original implementation.
         this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
-        if ((pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder)
+        if ((pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder
+                || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.MergeFilters
+                || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow)
                 && Boolean.getBoolean("feldera.optimizer.compareRustTemporalPolicy"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins.ReplaceStarJoins star)

@@ -1,0 +1,85 @@
+{
+  "scope": "One Java prefix per selected temporal pass. The candidate uses Rust classification and, in Scan and Reorder, Rust selection and ordering. Each pair checks both circuit boundaries and the generated-name allocator.",
+  "jar_sha256": "83871a5c25b09a2b1950f03093a81984d9edf3a61db126caf6fbe897ab49d89c",
+  "optimizer_library_sha256": "eda53543ad2e2fc4a7dd464702b56ce0cb5f515c7c1ce8fb2d1c1b8426e2e427",
+  "comparator_sha256": "1a9349410f3e1e2052f272f247bed0761a3985581ae488c584b46c93c1d63f2f",
+  "observer_sha256": "3cce5691594bd6cbc4428b9faaa4c6189c5cc198b53fd7006a424dea6fa27de4",
+  "boundaries": {
+    "classic": {
+      "Scan": {
+        "cases": 71,
+        "invocations": 71,
+        "changed_circuits": 0,
+        "chosen_filter_count": 8,
+        "control_sha256": "3c6ae72353f645f9163dbebf5069ba677308412d3b38c3af6afd2fd12add709d",
+        "candidate_sha256": "3c6ae72353f645f9163dbebf5069ba677308412d3b38c3af6afd2fd12add709d",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f"
+      },
+      "Reorder": {
+        "cases": 71,
+        "invocations": 71,
+        "changed_circuits": 10,
+        "chosen_filter_count": 0,
+        "control_sha256": "fb09f750cf85f5785fd977f1b25bd1fe06a180596e708fc3f9690285958490b9",
+        "candidate_sha256": "5d0446ab52d331994f85c9141cd170351eda639d334aaf64016a17e894b3ee2d",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f"
+      },
+      "MergeFilters": {
+        "cases": 71,
+        "invocations": 71,
+        "changed_circuits": 19,
+        "chosen_filter_count": 0,
+        "control_sha256": "48ac0b00816b8652c32f1207aedf995342a69bc17f69d7801121b78e8a770874",
+        "candidate_sha256": "48ac0b00816b8652c32f1207aedf995342a69bc17f69d7801121b78e8a770874",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f"
+      },
+      "RewriteNow": {
+        "cases": 71,
+        "invocations": 71,
+        "changed_circuits": 71,
+        "chosen_filter_count": 0,
+        "control_sha256": "2f643cfd98d8b8e15a115e18ce050359e4fd3e56b168dc34ca260de19ce6f410",
+        "candidate_sha256": "2f643cfd98d8b8e15a115e18ce050359e4fd3e56b168dc34ca260de19ce6f410",
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f"
+      }
+    },
+    "gen2": {
+      "Scan": {
+        "cases": 62,
+        "invocations": 62,
+        "changed_circuits": 0,
+        "chosen_filter_count": 8,
+        "control_sha256": "007ad864f40450ae525b2ecb226b01d930ce2938b877c263c50e44e6907c26d8",
+        "candidate_sha256": "007ad864f40450ae525b2ecb226b01d930ce2938b877c263c50e44e6907c26d8",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac"
+      },
+      "Reorder": {
+        "cases": 62,
+        "invocations": 62,
+        "changed_circuits": 9,
+        "chosen_filter_count": 0,
+        "control_sha256": "d2acb91a9b1dcafd1307f412570f6bad36c7ed89d337a186424418f6dbafc08e",
+        "candidate_sha256": "dc08c5d825fed8ae3a9aeed21793eda107f80693c4ff27c095104a66ef64d90d",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac"
+      },
+      "MergeFilters": {
+        "cases": 62,
+        "invocations": 62,
+        "changed_circuits": 16,
+        "chosen_filter_count": 0,
+        "control_sha256": "1f185d7f1963bb568509074ca0b3f88469b57dfff8deee98ba149256220cdd54",
+        "candidate_sha256": "1f185d7f1963bb568509074ca0b3f88469b57dfff8deee98ba149256220cdd54",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac"
+      },
+      "RewriteNow": {
+        "cases": 62,
+        "invocations": 62,
+        "changed_circuits": 62,
+        "chosen_filter_count": 0,
+        "control_sha256": "05cf9d69f735e8de66248a75b79b61cdf7aeaf38dba6375e62dca6a8165ee772",
+        "candidate_sha256": "05cf9d69f735e8de66248a75b79b61cdf7aeaf38dba6375e62dca6a8165ee772",
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac"
+      }
+    }
+  }
+}
