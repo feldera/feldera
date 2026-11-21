@@ -44,7 +44,7 @@ class FrozenPlacements(unittest.TestCase):
     def test_temporal_order_requires_a_clock_and_enabled_sharing(self):
         with_clock = {**BASE_COUNTS, "ContainsNow": 2, "DesugarNowEquality": 1, "Graph": BASE_COUNTS["Graph"] + 1}
         verify_placements("sharing off", with_clock, False, clock_scans=2, window_sharing_enabled=False)
-        verify_placements("sharing on", {**with_clock, "Reorder": 1}, False, clock_scans=2)
+        verify_placements("sharing on", {**with_clock, "Scan": 1, "Reorder": 1}, False, clock_scans=2)
         with self.assertRaisesRegex(ValueError, "Rust placements"):
             verify_placements("missing temporal order", with_clock, False, clock_scans=2)
 

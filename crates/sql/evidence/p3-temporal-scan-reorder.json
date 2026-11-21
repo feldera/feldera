@@ -1,0 +1,50 @@
+{
+  "Reorder": {
+    "compiler": {
+      "profile": "Linux ARM64, offline Maven package and release Rust tools",
+      "pass_kinds": 104,
+      "jar_sha256": "39ea6b4273be0c151a2e50c2aa8126b6bbd5a2c66169a6d68d1fcff725ccc638",
+      "driver_sha256": "586c9a92d578cc34dedbaa04bb8d6e5fc9a622816218fda5520c5653d2ff428a",
+      "optimizer_library_sha256": "c469a9963f41df10c6761cd251097c94f336e4fad5f8a2a9603c229c2ced93dd"
+    },
+    "reference_jar_sha256": "27f12abcd5b29172820d419a8eb740a7605d32dfeb2e5ea0274727833f703636",
+    "engines": {
+      "classic": {
+        "matched_invocations": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "reference_gzip_sha256": "10e525e81c66ab6e5f1c230f888dae82254ab77ee9e66f9b9da58da7986e9f04",
+        "hybrid_gzip_sha256": "137aba88467423da67a90f947fba332691b847748faa5a7bf835f2fa9f9415dd"
+      },
+      "gen2": {
+        "matched_invocations": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "reference_gzip_sha256": "da0728ca25d8808299854eff3409765c6482c0b370e9df9d8b68d7cd812d3ffa",
+        "hybrid_gzip_sha256": "b248eefd7d96cfda73215a8af84ac202ed32dca9719fc722125a8ccfe501694f"
+      }
+    }
+  },
+  "Scan": {
+    "compiler": {
+      "profile": "Linux ARM64, offline Maven package and release Rust tools",
+      "pass_kinds": 105,
+      "jar_sha256": "7bd342ad761553917916d18d83481db054e1b35ec2ed6c6bc4bf25c64c72465c",
+      "driver_sha256": "8b54e31fca39c16617ba9b04dd94333467dc7189433349c3feb24d9627434696",
+      "optimizer_library_sha256": "72aebe9a43176fc063fc1283a2402a3760a5df29bcc5bd54b1f0b3968e455401"
+    },
+    "reference_jar_sha256": "27f12abcd5b29172820d419a8eb740a7605d32dfeb2e5ea0274727833f703636",
+    "engines": {
+      "classic": {
+        "matched_invocations": 71,
+        "population_sha256": "b0d05043f2929819a5aa9857efeb7178d793ada39aa49f43ed9e3241bf3ca01f",
+        "reference_gzip_sha256": "0be8258a579d94de3d1a7765529a4d2370ed2a21c0a63ebeefb8a3161f261d21",
+        "hybrid_gzip_sha256": "a6d9c1f2be35d04189a85f1e1d8927afbc981a4b547603f92e15199b63b58863"
+      },
+      "gen2": {
+        "matched_invocations": 62,
+        "population_sha256": "9cc5adbcdb048a2a1dcac9bbef489f657e8ed5dcf36f508435952cf28b4979ac",
+        "reference_gzip_sha256": "a98a1464fd2fe2c5ed19ef6945cdec3cfbcb1669a1fbfd74a223df07d2a67ba3",
+        "hybrid_gzip_sha256": "b02213f843c73b794acdc75ff6bf5f341bd4e9ea5ff90b13a16581a7c82f7a34"
+      }
+    }
+  }
+}

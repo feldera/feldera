@@ -282,6 +282,10 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
         ("TemporalGroups" | "MergeTemporalBounds", roots) => {
             return temporal::groups(&arena, &mut edit, roots, state, pass == "MergeTemporalBounds");
         }
+        ("WindowGroups/ComposeTimestamp", [timestamp, maps @ ..]) => {
+            let timestamp = edit.expression(*timestamp)?;
+            feldera_sql_opt::compose_timestamp(&mut edit, timestamp, maps, &mut warnings)?
+        }
         ("TemporalComparisons", [body]) => return temporal::classify(&arena, &mut edit, *body, state),
         ("MergeFilters/Predicate", [source, filter]) => {
             let source = edit.expression(*source)?;
@@ -563,7 +567,7 @@ fn transform(
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
         "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
-        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds"
+        | "TemporalComparisons" | "TemporalGroups" | "MergeTemporalBounds" | "WindowGroups/ComposeTimestamp"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"

@@ -89,9 +89,11 @@
       "RemoveTable": 17073,
       "RemoveUselessLeftJoinsVisitor": 8571,
       "RemoveViewOperators": 17142,
+      "Reorder": 71,
       "ReplaceCommonProjections": 25214,
       "ReplaceSharedIndexes": 8571,
       "ReplaceStarJoins": 8570,
+      "Scan": 71,
       "SeparateIntegrators": 601,
       "SetOperatorHashes": 17142,
       "ShareOutputIntegrators": 8571,
@@ -110,19 +112,19 @@
     "shards": [
       {
         "manifest_sha256": "00c41018dbfabb0024bbaa87e0fa3c6e01260a386a3a93d0c9f2d4c43472c97c",
-        "records_sha256": "ba78bc4ff216cc0970912355be081eb5d249cf1ac8885799f7a4be4df24e7022"
+        "records_sha256": "fd183c75d89472decf3e8ab28b103872a8c2be912a1eddb8f5261c04f7708809"
       },
       {
         "manifest_sha256": "ca5330c8596f4860dd844964febd707436eae8e92e7092dce7f7c27a68cf18bd",
-        "records_sha256": "69342dcca4814057ad986b6105537167c86c20b9bbe77be437bd6857ec65e737"
+        "records_sha256": "bf9a784e1e2782baf95f8a55fa1049f4da72cec82fa580114fdeae1956beb4d7"
       },
       {
         "manifest_sha256": "32c32263c6515c6734cb3b60ff430745a13ce89d376f139de521f6290594803e",
-        "records_sha256": "a78629795b601a0b60ef42c6e48a7818904685d5717e1b39f824b79cce264861"
+        "records_sha256": "2f93696d29b6496227c3fc80b206fdcafb784d4f67b363ef43e7ac408c7fbc58"
       },
       {
         "manifest_sha256": "ad14be7678a1d49611822c17220eb08e0c4aa01cdde4ced72cbef02a2c3b3330",
-        "records_sha256": "4d1bcf3aeaa0a1c32b30ac369b76c5cfed354a5e8fb3f5a31dd3ea263bb74f52"
+        "records_sha256": "4defc780827db71875361c6b1efa9df339932dbfb460b576c3e687854c310493"
       }
     ]
   },
@@ -217,9 +219,11 @@
       "RemoveTable": 16994,
       "RemoveUselessLeftJoinsVisitor": 8527,
       "RemoveViewOperators": 17054,
+      "Reorder": 62,
       "ReplaceCommonProjections": 25060,
       "ReplaceSharedIndexes": 8527,
       "ReplaceStarJoins": 8526,
+      "Scan": 62,
       "SeparateIntegrators": 8526,
       "SetOperatorHashes": 17054,
       "ShareOutputIntegrators": 8527,
@@ -238,27 +242,27 @@
     "shards": [
       {
         "manifest_sha256": "422b481a7f85824ca7c4db1ddc9051bfbf956e575923ec32185fad1cfa15e772",
-        "records_sha256": "e2b1cce67420ffd86d9e8a323c7777f2bc6c379eb2c5eb57caa09e0be8121ecf"
+        "records_sha256": "fcd5d827360dcd3c99b7d60eb93cfc4e87921d27aae36e7db4192975af55487a"
       },
       {
         "manifest_sha256": "ff1dad87106c66ebc5d53549cc1955d1d911b3eea3a6909bcdd12bd53aa59b5e",
-        "records_sha256": "4b0121ac0e9cfb723f805640df7f316b935fdea0a404ac14ac3c4bd558a1e8b3"
+        "records_sha256": "5c5a2cf5c1c9806bef7591b3dc17dbe7b6ab40a6d1eb0fd594e1749189f3b82f"
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "23aaa5c58293d58dd9e6816afddc577a82d99ff79bf540bcb3453f6874ac6966"
+        "records_sha256": "aaaa7698a90c5f554be0464e582353cde3b9efebac9f35d4e81f5fe2116a4350"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
-        "records_sha256": "76b38de8aa57ae3cf860395498262f822ca57fe5467ca561d4003815b3b6c4de"
+        "records_sha256": "d322bb8e07ac891c5150b18432a4f6c2f396c6bf3fd35d91c98051633cd46f5b"
       }
     ]
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
-    "pass_kinds": 103,
-    "jar_sha256": "27f12abcd5b29172820d419a8eb740a7605d32dfeb2e5ea0274727833f703636",
-    "driver_sha256": "5a1f0e65004735465715b533632499d88c4969488c62a8be9156cd3628ad66ad",
-    "optimizer_library_sha256": "7abefd061f2b5386197685d4700da6e8141f759c429378f920817ae983236a81"
+    "pass_kinds": 105,
+    "jar_sha256": "7bd342ad761553917916d18d83481db054e1b35ec2ed6c6bc4bf25c64c72465c",
+    "driver_sha256": "8b54e31fca39c16617ba9b04dd94333467dc7189433349c3feb24d9627434696",
+    "optimizer_library_sha256": "72aebe9a43176fc063fc1283a2402a3760a5df29bcc5bd54b1f0b3968e455401"
   }
 }

@@ -175,6 +175,7 @@ public final class RustCircuitPass implements CircuitTransform {
     @Nullable private final MultisetAnalysis multiplicities;
     @Nullable private final EnsureDistinctOutputs distinctOutputs;
     @Nullable private final CircuitContainsNow clockUses;
+    @Nullable private final ReorderTemporalFilters.Scan temporalScan;
     @Nullable private final ReorderTemporalFilters.Reorder temporalOrder;
     @Nullable private final CollapseSharedChains collapseChains;
     @Nullable private final FindWindowGroups windowGroups;
@@ -188,6 +189,7 @@ public final class RustCircuitPass implements CircuitTransform {
     public RustCircuitPass(DBSPCompiler compiler, CircuitTransform original, OptimizerSnapshots snapshots) {
         this.compiler = compiler;
         this.name = original.getName();
+        this.temporalScan = original instanceof ReorderTemporalFilters.Scan scan ? scan : null;
         this.temporalOrder = original instanceof ReorderTemporalFilters.Reorder reorder ? reorder : null;
         if (original instanceof DeadCode dead && dead.keepAllSources)
             this.nativeName = "DeadCodeKeepSources";
@@ -910,7 +912,16 @@ public final class RustCircuitPass implements CircuitTransform {
 
     private record TemporalPath(long filter, long source, int port, List<Long> maps) {}
 
-    public static Map<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps> temporalFilterSources(
+    public static DBSPClosureExpression composeTimestamp(DBSPCompiler compiler, DBSPClosureExpression timestamp,
+                                                         List<DBSPClosureExpression> maps) {
+        var inputs = new ArrayList<DBSPClosureExpression>(maps.size() + 1);
+        inputs.add(timestamp);
+        inputs.addAll(maps);
+        return loweredClosure(compiler, invokeLowering(compiler, "WindowGroups/ComposeTimestamp",
+                inputs.toArray(DBSPClosureExpression[]::new)));
+    }
+
+    private static Map<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps> temporalFilterSources(
             DBSPCompiler compiler, DBSPCircuit circuit) {
         var operators = operatorsById(circuit);
         var payloads = new HashSet<Long>();
@@ -922,7 +933,7 @@ public final class RustCircuitPass implements CircuitTransform {
             byte[] result = transformWithContext("WindowGroups/FilterSources",
                     writer.getJsonString().getBytes(StandardCharsets.UTF_8), 0, "", EMPTY_CONTEXT);
             List<TemporalPath> paths = MAPPER.readValue(result, new TypeReference<>() {});
-            var sources = new HashMap<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps>();
+            var sources = new LinkedHashMap<DBSPFilterOperator, ReorderTemporalFilters.SourceAndMaps>();
             for (var path : paths) {
                 var source = Utilities.getExists(operators, path.source()).getOutput(path.port());
                 var maps = path.maps().stream().map(id -> Utilities.getExists(operators, id)
@@ -1743,6 +1754,10 @@ public final class RustCircuitPass implements CircuitTransform {
             }
             if (this.multiplicities != null) {
                 this.analyzeMultiplicities(circuit, initial, this.multiplicities);
+                return circuit;
+            }
+            if (this.temporalScan != null) {
+                this.temporalScan.chooseFromPaths(temporalFilterSources(this.compiler, circuit));
                 return circuit;
             }
             if (this.temporalOrder != null) {

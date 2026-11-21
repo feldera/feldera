@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -71,7 +70,7 @@ public class ReorderTemporalFilters extends Passes {
         Graph graph = new Graph(compiler);
         this.add(select.apply(graph));
         Scan scan = new Scan(compiler, graph.getGraphs());
-        this.add(new Conditional(compiler, scan, () -> !compiler.metadata.windowSharingDisabled()));
+        this.add(new Conditional(compiler, select.apply(scan), () -> !compiler.metadata.windowSharingDisabled()));
         this.add(new Conditional(compiler, select.apply(new Reorder(compiler, scan.chosenConjunct)),
                 () -> !compiler.metadata.windowSharingDisabled()));
     }
@@ -311,8 +310,11 @@ public class ReorderTemporalFilters extends Passes {
         DBSPClosureExpression timestamp = timestampClosure(compiler, filter, parameter, conjunct);
         if (timestamp == null)
             return null;
-        for (DBSPClosureExpression map : source.maps())
-            timestamp = timestamp.applyAfter(compiler, map, Maybe.MAYBE);
+        if (compiler.options.ioOptions.rustOptimizerPasses && !source.maps().isEmpty())
+            timestamp = RustCircuitPass.composeTimestamp(compiler, timestamp, source.maps());
+        else
+            for (DBSPClosureExpression map : source.maps())
+                timestamp = timestamp.applyAfter(compiler, map, Maybe.MAYBE);
         return new PortAndClosure(source.port(), timestamp);
     }
 
@@ -395,8 +397,6 @@ public class ReorderTemporalFilters extends Passes {
          * the closure computing the expression.  Each maps to the position of its conjunct. */
         private final Map<DBSPFilterOperator, Map<String, Integer>> candidates = new LinkedHashMap<>();
 
-        private Map<DBSPFilterOperator, SourceAndMaps> nativeSources = Map.of();
-
         public Scan(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
         }
@@ -404,21 +404,15 @@ public class ReorderTemporalFilters extends Passes {
 
         @Override
         public void postorder(DBSPFilterOperator filter) {
-            DBSPClosureExpression condition;
-            SourceAndMaps source;
-            if (this.compiler().options.ioOptions.rustOptimizerPasses) {
-                source = this.nativeSources.get(filter);
-                if (source == null)
-                    return;
-                condition = filter.getClosureFunction().ensureTree(this.compiler()).to(DBSPClosureExpression.class);
-            } else {
-                condition = condition(this.compiler(), filter);
-                if (condition == null)
-                    return;
-                source = filterSourcePath(this.getGraph(), filter, condition.parameters[0]);
-                if (source == null)
-                    return;
-            }
+            var condition = condition(this.compiler(), filter);
+            if (condition == null)
+                return;
+            var source = filterSourcePath(this.getGraph(), filter, condition.parameters[0]);
+            if (source != null)
+                this.collectCandidates(filter, source, condition);
+        }
+
+        private void collectCandidates(DBSPFilterOperator filter, SourceAndMaps source, DBSPClosureExpression condition) {
             Map<String, Integer> keys = sourceFingerprints(this.compiler(), source, filter, condition);
             if (!keys.isEmpty())
                 this.candidates.put(filter, keys);
@@ -427,26 +421,36 @@ public class ReorderTemporalFilters extends Passes {
         @Override
         public Token startVisit(IDBSPOuterNode node) {
             this.candidates.clear();
-            if (this.compiler().options.ioOptions.rustOptimizerPasses)
-                this.nativeSources = RustCircuitPass.temporalFilterSources(this.compiler(), node.to(DBSPCircuit.class));
             return super.startVisit(node);
         }
 
         /** Compute for each filter the conjunct to place first (chosenConjunct) */
         @Override
         public void endVisit() {
-            this.nativeSources = Map.of();
-            int threshold = this.compiler().metadata.windowSharingThreshold();
             this.chosenConjunct.clear();
-            int sharedInputs = this.compiler().options.ioOptions.rustOptimizerPasses
-                    ? this.chooseWithRust(threshold) : this.chooseWithJava(threshold);
+            this.logGroups(this.chooseWithJava(this.compiler().metadata.windowSharingThreshold()));
+            super.endVisit();
+        }
+
+        /** Consume the eligible filter paths in Rust traversal order. That order breaks ties
+         * between equally large sharing groups. */
+        public void chooseFromPaths(Map<DBSPFilterOperator, SourceAndMaps> paths) {
+            this.candidates.clear();
+            paths.forEach((filter, source) -> {
+                var condition = filter.getClosureFunction().ensureTree(this.compiler()).to(DBSPClosureExpression.class);
+                this.collectCandidates(filter, source, condition);
+            });
+            this.chosenConjunct.clear();
+            this.logGroups(this.chooseWithRust(this.compiler().metadata.windowSharingThreshold()));
+        }
+
+        private void logGroups(int sharedInputs) {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("Shared window inputs: ")
                     .append(sharedInputs)
                     .append(", filters sharing them: ")
                     .append(this.chosenConjunct.size())
                     .newline();
-            super.endVisit();
         }
 
         private int chooseWithRust(int threshold) {

@@ -53,7 +53,7 @@ def read_run(directory, entry):
 # Counts for one uninterrupted top-level optimizer sequence in the frozen replay.
 # The case options, rather than the population label, determine the Gen-2 placement.
 FROZEN_SCHEDULE = {
-    "Reorder": 0,
+    "Scan": 0, "Reorder": 0,
     "LowerCircuitVisitor": 1, "LowerAsofInner": 1,
     "DeferCarriedColumns": 1, "TrimFilters": 1, "TrimWindows": 1, "ReplaceCommonProjections": 1, "FindCommonProjections": 1, "FindUnusedInputFields": 1, "ExpandStreamAggregates": 1, "IndexedInputs": 1, "OptimizeProjectionVisitor": 1, "SimplifyConditionals": 1, "PullFilterVisitor": 1, "PropagateConstants": 1, "Simplify": 4, "ImplementChains": 1,
     "CheckPersistentIds": 1, "DeltaHashPrefixes": 1, "GcHashPrefixes": 1, "SetOperatorHashes": 2,
@@ -115,11 +115,12 @@ def verify_placements(case, counts, gen2, incremental=False, schedule=FROZEN_SCH
                 else:
                     del expected[name]
         expected["Graph"] += asof_retention_moves
-    if "Reorder" in expected:
-        if clock_scans == 2 and window_sharing_enabled:
-            expected["Reorder"] = 1
-        else:
-            del expected["Reorder"]
+    for name in ("Scan", "Reorder"):
+        if name in expected:
+            if clock_scans == 2 and window_sharing_enabled:
+                expected[name] = 1
+            else:
+                del expected[name]
     if trim_inputs:
         expected["TrimInputs"] = 1
     if outputs_are_sets:

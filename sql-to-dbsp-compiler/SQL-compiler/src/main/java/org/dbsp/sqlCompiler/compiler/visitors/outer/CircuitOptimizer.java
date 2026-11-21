@@ -58,6 +58,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.HashPrefixPass;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleHashes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.SetOperatorHashes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.CheckRetain;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.OrderErrorConsumers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.SeparateIntegrators;
@@ -154,7 +155,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof OptimizeProjectionVisitor || pass instanceof PullFilterVisitor
                     || pass instanceof ShareOutputIntegrators || pass instanceof FilterJoinVisitor || pass instanceof AppendOnly
                     || pass instanceof DecomposeExpensiveFilters || pass instanceof CircuitContainsNow || pass instanceof BreakFilters
-                    || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ReorderTemporalFilters.Reorder
+                    || pass instanceof ReorderTemporalFilters.Scan || pass instanceof ReorderTemporalFilters.Reorder
                     || pass instanceof DesugarNowEquality
                     || pass instanceof FuseIntoArrayAgg || pass instanceof ComparatorDeclarations
                     || pass instanceof CompactNames || pass instanceof TagRegions
