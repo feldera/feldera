@@ -812,6 +812,13 @@ structure, generated names and diagnostics. Both JVMs replayed the same S2
 files to preserve the Calcite relation IDs observed on entry.
 [Join-filter lowering comparisons](evidence/p3-join-filter-map.json)
 
+Rust counts distinct uses of an expensive expression within each closure. A
+borrow, clone, dereference or tuple passes its own uses on to its operands.
+Java supplies canonical expression IDs and builds the lazy bindings. All 187
+selected pass invocations matched on entry and exit. Two classic cases and one
+Gen-2 case introduced a lazy binding. The 22 expression-equivalence tests also
+passed with the Rust analysis enabled. [Expression-use comparisons](evidence/p3-expression-uses.json)
+
 To repeat a paired pass comparison, capture the population once, then give
 both JVMs that checkpoint directory. Each observation records the S2 digest.
 

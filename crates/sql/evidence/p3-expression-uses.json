@@ -1,0 +1,28 @@
+{
+  "scope": "Closure-local use counts for expensive, value-numbered expressions in InnerCSE. Java performs value numbering and introduces the lazy bindings.",
+  "comparison": "Saved-S2 Java control and Rust candidate matched canonical entry and exit, name allocation, diagnostics and placement for each invocation.",
+  "engines": {
+    "classic": {
+      "cases": 94,
+      "invocations": 94,
+      "cases_adding_lazy_cells": 2,
+      "lazy_cells_added": 2,
+      "population_sha256": "752e2d6d9f373df4a1e00f6f3c27a556855936531dfbad23d1a65aa12621d6ff",
+      "control_gzip_sha256": "268a566f0719fc91fe7eee6c51e6d52a7a6e6b5e68f36ced312add20ab2eea1c",
+      "candidate_gzip_sha256": "268a566f0719fc91fe7eee6c51e6d52a7a6e6b5e68f36ced312add20ab2eea1c"
+    },
+    "gen2": {
+      "cases": 93,
+      "invocations": 93,
+      "cases_adding_lazy_cells": 1,
+      "lazy_cells_added": 1,
+      "population_sha256": "18f4eaf05bff72f68f542be1f7b3a7d493d7c34266c5f37ec4a16f084fc304f0",
+      "control_gzip_sha256": "a1a685da60ed7285d2be7220ec0e4c298baad07a148e38056188504aff626b71",
+      "candidate_gzip_sha256": "a1a685da60ed7285d2be7220ec0e4c298baad07a148e38056188504aff626b71"
+    }
+  },
+  "junit_rust_equivalence_tests": 22,
+  "jar_sha256": "f111274c312d1f7f4de3f331a1d2742768b80d3abdf6213587c43a8166c76f26",
+  "jni_sha256": "2f0b88bccf7223912056b7968f4cfff074c585d1307a956d41b084a13963866e",
+  "comparator_sha256": "c0853db6ef8a0594d52fcd8fa4946d5ce1aa0659d4c31d8c1509f9c60a768240"
+}

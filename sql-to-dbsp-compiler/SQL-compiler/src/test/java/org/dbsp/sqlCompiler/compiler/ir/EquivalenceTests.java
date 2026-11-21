@@ -68,6 +68,7 @@ public class EquivalenceTests {
     }
 
     static IDBSPInnerNode cse(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        compiler.options.ioOptions.rustOptimizerPasses = Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses");
         DBSPOperator fake = new DBSPConstantOperator(
                 CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()));
         InnerCSE cse = new InnerCSE(compiler);

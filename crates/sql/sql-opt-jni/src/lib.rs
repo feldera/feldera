@@ -130,6 +130,10 @@ fn transform(
         return Ok(json!({"needs_full_snapshot":required}));
     }
     match pass {
+        "InnerCSE/Uses" => {
+            let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
+        }
         "AggregateGroups" => {
             let kinds: Vec<feldera_sql_opt::AggregateKind> = serde_json::from_slice(input)?;
             let append_only: bool = serde_json::from_slice(state)?;

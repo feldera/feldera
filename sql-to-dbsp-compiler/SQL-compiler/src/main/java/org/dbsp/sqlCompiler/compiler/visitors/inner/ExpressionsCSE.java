@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -31,6 +32,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,6 +58,45 @@ public class ExpressionsCSE extends ExpressionTranslator {
      * closure cannot be shared with (nested) sibling closures; each closure gets its own copy. */
     final Map<DBSPClosureExpression, Map<DBSPExpression, DBSPVariablePath>> cseVariables;
     final List<Assignment> assignments;
+    @Nullable private Set<RustCircuitPass.ScopedValue> sharedUses;
+
+    /** Value numbering has already removed reads of mutable bindings. Describe the surviving
+     * users by their canonical identity, retaining the original raw-use threshold for candidates. */
+    private Set<RustCircuitPass.ScopedValue> planSharedUses() {
+        var values = new HashSet<>(this.numbering.values());
+        var graph = new ArrayList<RustCircuitPass.NumberedExpression>();
+        boolean hasCandidate = false;
+        for (var value : values) {
+            boolean wrapper = neverShared(value.expression);
+            boolean candidate = !wrapper && value.expensive && value.users.size() >= 2;
+            if (!candidate && !wrapper)
+                continue;
+            var users = new ArrayList<RustCircuitPass.OperandUse>();
+            for (var use : value.users) {
+                if (use.closure() == null)
+                    continue;
+                var parent = this.numbering.get(use.expression());
+                users.add(new RustCircuitPass.OperandUse(use.closure().id,
+                        parent == null ? use.expression().id : parent.expression.id, use.operand(),
+                        parent != null && neverShared(parent.expression)));
+            }
+            if (!users.isEmpty()) {
+                graph.add(new RustCircuitPass.NumberedExpression(value.expression.id, candidate, users));
+                hasCandidate |= candidate;
+            }
+        }
+        return hasCandidate ? RustCircuitPass.sharedExpressionUses(graph) : Set.of();
+    }
+
+    private boolean manyUsers(ValueNumbering.CanonicalExpression value, DBSPClosureExpression owner) {
+        if (!this.compiler.options.ioOptions.rustOptimizerPasses)
+            return value.manyUsers(this.numbering, owner);
+        if (value.users.size() < 2)
+            return false;
+        if (this.sharedUses == null)
+            this.sharedUses = this.planSharedUses();
+        return this.sharedUses.contains(new RustCircuitPass.ScopedValue(owner.id, value.expression.id));
+    }
 
     record Assignment(DBSPClosureExpression owner, DBSPVariablePath var,
                       DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) {
@@ -132,7 +173,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
                 var = Utilities.getExists(variables, canonical.expression);
             } else if (canonical.expression != result &&
                     canonical.expensive &&
-                    canonical.manyUsers(this.numbering, owner)) {
+                    this.manyUsers(canonical, owner)) {
                 // Variable is worth creating and expression is used at least twice in 'owner'
                 var = new DBSPTypeLazy(expression.getType()).var();
                 Utilities.putNew(variables, canonical.expression, var);
@@ -310,6 +351,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
     public void startVisit(IDBSPInnerNode node) {
         this.assignments.clear();
         this.cseVariables.clear();
+        this.sharedUses = null;
         super.startVisit(node);
     }
 

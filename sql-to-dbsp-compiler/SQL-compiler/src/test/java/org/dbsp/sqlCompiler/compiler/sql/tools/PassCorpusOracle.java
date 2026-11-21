@@ -77,7 +77,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     private boolean selected(CircuitTransform pass) {
         if (this.passClass.equals("Fuse"))
             return pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps.Fuse;
-        if (this.passClass.equals("ExpandSafeCasts") || this.passClass.equals("ExpandUnsafeCasts")
+        if (this.passClass.equals("InnerCSE") || this.passClass.equals("ExpandSafeCasts") || this.passClass.equals("ExpandUnsafeCasts")
                 || this.passClass.equals("EnsureExpressionTrees") || this.passClass.equals("CanonicalForm")
                 || this.passClass.equals("UDFInliner")
                 || this.passClass.equals("SimplifyConditionals")
@@ -126,6 +126,10 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         this.active.set("before", this.snapshot(writer));
         // Switch only for the selected observation, after capturing its Java prefix.
         this.previousRustPasses = this.compiler.options.ioOptions.rustOptimizerPasses;
+        if (pass instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter rewriter
+                && rewriter.transform instanceof org.dbsp.sqlCompiler.compiler.visitors.outer.InnerCSE
+                && Boolean.getBoolean("feldera.optimizer.compareRustExpressionUses"))
+            this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerAsof && Boolean.getBoolean("feldera.optimizer.compareRustAsofRetainers"))
             this.compiler.options.ioOptions.rustOptimizerPasses = true;
         if (pass instanceof LowerCircuitVisitor && Boolean.getBoolean("feldera.optimizer.compareRustJoinFilterMap"))

@@ -32,6 +32,8 @@ mod empty_sources;
 mod error_consumers;
 mod error_wrappers;
 mod expand_aggregates;
+mod expression_uses;
+pub use expression_uses::{shared_expression_uses, NumberedExpression};
 mod expression_visitor;
 pub use expression_visitor::canonicalize_names;
 mod fanout;

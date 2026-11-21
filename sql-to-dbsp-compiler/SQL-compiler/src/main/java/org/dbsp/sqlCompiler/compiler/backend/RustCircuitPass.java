@@ -236,6 +236,25 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
+    public record OperandUse(long closure, long parent, int operand, boolean forwards) {}
+    public record NumberedExpression(long value, boolean candidate, List<OperandUse> users) {}
+    public record ScopedValue(long closure, long value) {}
+
+    public static Set<ScopedValue> sharedExpressionUses(List<NumberedExpression> graph) {
+        try {
+            byte[] reply = transformWithContext("InnerCSE/Uses", MAPPER.writeValueAsBytes(graph), 0, "", EMPTY_CONTEXT);
+            var shared = new HashSet<ScopedValue>();
+            for (long[] pair : MAPPER.readValue(reply, long[][].class)) {
+                if (pair.length != 2)
+                    throw new IllegalStateException("Expected a closure and canonical expression ID");
+                shared.add(new ScopedValue(pair[0], pair[1]));
+            }
+            return shared;
+        } catch (IOException error) {
+            throw new UncheckedIOException("Invalid closure-local expression uses from Rust", error);
+        }
+    }
+
     public static LeftJoinChainsVisitor.KeyChoice chooseChainKey(LeftJoinChainsVisitor.KeyInput facts) {
         try {
             byte[] reply = transformWithContext("LeftJoinChains/Key", MAPPER.writeValueAsBytes(facts), 0, "", EMPTY_CONTEXT);
