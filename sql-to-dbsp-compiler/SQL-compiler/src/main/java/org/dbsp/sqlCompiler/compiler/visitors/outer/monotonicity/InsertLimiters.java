@@ -1857,13 +1857,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPClosureExpression error = lateness.error().body.closure(
                     lateness.error().parameters[0], k.asParameter(), lateness.error().parameters[1], lateness.error().parameters[3]);
             DBSPType keyType = indexedOutputType.keyType;
-            DBSPClosureExpression keyFilter = keyFilter(keyLateness(multisetInput), minValue.getType(), keyType);
-            DBSPClosureExpression keyError = keyError(viewOrTable, minValue.getType(), keyType);
+            LatenessFilter lateKey;
+            if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+                var pair = RustCircuitPass.lateKeyFilter(this.compiler, viewOrTable, keyFields,
+                        monotoneColumns(declared), keyType, minValue.getType());
+                lateKey = new LatenessFilter(pair.left, pair.right);
+            } else {
+                lateKey = new LatenessFilter(keyFilter(keyLateness(multisetInput), minValue.getType(), keyType),
+                        keyError(viewOrTable, minValue.getType(), keyType));
+            }
             newSource = new DBSPInputMapWithWaterlineOperator(
                     multisetInput.getRelNode(), multisetInput.sourceName, keyFields,
                     indexedOutputType, multisetInput.originalRowType, multisetInput.metadata, multisetInput.tableName,
                     multisetInput.kind, minValue.closure(), timestamp.closure(k, t), max,
-                    ff, keyFilter, error, keyError);
+                    ff, lateKey.function(), error, lateKey.error());
             this.errorStreams.add(newSource.getOutput(1));
             waterlineOutputPort = newSource.getOutput(2);
             this.addOperator(newSource);
@@ -2013,6 +2020,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * the filter over (waterline, row), and the error reported for a dropped row. */
     record LatenessFilter(DBSPClosureExpression function, DBSPClosureExpression error) {}
 
+    private static List<Integer> monotoneColumns(PartiallyMonotoneTuple type) {
+        var columns = new ArrayList<Integer>();
+        for (int i = 0; i < type.size(); i++)
+            if (type.getFieldType(i).mayBeMonotone())
+                columns.add(i);
+        return columns;
+    }
+
     LatenessFilter latenessFilter(ProgramIdentifier tableOrViewName, DBSPType rowType,
                                   PartiallyMonotoneTuple monotoneType, DBSPType controlType) {
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
@@ -2020,11 +2035,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 () -> "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
         if (this.compiler.options.ioOptions.rustOptimizerPasses) {
-            var columns = new ArrayList<Integer>();
-            for (int i = 0; i < monotoneType.size(); i++)
-                if (monotoneType.getFieldType(i).mayBeMonotone())
-                    columns.add(i);
-            var pair = RustCircuitPass.latenessFilter(this.compiler, tableOrViewName, columns, rowType, controlType);
+            var pair = RustCircuitPass.latenessFilter(this.compiler, tableOrViewName,
+                    monotoneColumns(monotoneType), rowType, controlType);
             return new LatenessFilter(pair.left, pair.right);
         }
 

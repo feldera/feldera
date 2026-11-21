@@ -145,6 +145,15 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             let (key, left, right) = (edit.type_id(*key)?, edit.type_id(*left)?, edit.type_id(*right)?);
             feldera_sql_opt::asof_projection(&mut edit, *function, key, left, right, &mut next, &mut warnings)?
         }
+        ("Limiters/KeyFilter", [key, waterline]) => {
+            let (name, keys, declared): (String, Vec<usize>, Vec<usize>) = serde_json::from_slice(state)?;
+            let key = edit.type_id(*key)?;
+            let waterline = edit.type_id(*waterline)?;
+            let projection = feldera_sql_opt::limiters::KeyProjection::from_columns(&keys, &declared);
+            let closures = projection.filter(&mut edit, &name, waterline, key, &mut next)?;
+            let functions = edit.circuit().additional_expressions(&arena, &closures)?;
+            return Ok(json!({"functions": functions, "next_generated_name": next}));
+        }
         ("Limiters/RowFilter", [row, waterline]) => {
             let (name, columns): (String, Vec<usize>) = serde_json::from_slice(state)?;
             let row = edit.type_id(*row)?;
@@ -409,7 +418,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"

@@ -25,6 +25,10 @@
     "sql": "CREATE TABLE t (\n    id INT NOT NULL,\n    ts BIGINT NOT NULL LATENESS 100,\n    extra BIGINT NOT NULL LATENESS 100,\n    v INT,\n    PRIMARY KEY (id, ts)\n);\nCREATE VIEW vw AS SELECT * FROM t;",
     "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
   },
+  "interleavedKeyLateness": {
+    "sql": "CREATE TABLE t (payload_time INT NOT NULL LATENESS 3, id INT NOT NULL, revision BIGINT NOT NULL LATENESS 20, other_time INT LATENESS 5, ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY, PRIMARY KEY (id, revision, ts)); CREATE VIEW v AS SELECT * FROM t;",
+    "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"
+  },
   "keynonlate": {
     "sql": "CREATE TABLE T (id INT NOT NULL PRIMARY KEY, ts INT LATENESS 3); CREATE VIEW v AS SELECT * FROM t;",
     "gen2_error": "LATENESS on the primary-key table 't' is not yet supported by the Gen-2 engine; remove the LATENESS annotation or select a different runtime version"

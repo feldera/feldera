@@ -1,0 +1,48 @@
+{
+  "scope": "Rust builds the predicate and diagnostic for primary-key deletions and partial updates, projecting the same table columns from the key and the compacted waterline.",
+  "selection": "All frozen programs whose submitted SQL contains LATENESS or NOW(), case insensitive.",
+  "comparison": "Same detached S2, canonical graphs on entry and exit from InsertLimiters, pass placement, generated names and diagnostics.",
+  "populations": {
+    "classic": {
+      "cases": 291,
+      "invocations": 291,
+      "population_sha256": "82f0eada511f7452044a3a307208c3f2a32e9708cd90935e23e49a1dc7d11f04",
+      "java_gzip_sha256": "fe100f83a360cf462d60b626f01b1ec413803c9ab0bca9740af8b76a9e264316",
+      "rust_gzip_sha256": "a435f7d80849f6711d82c28bdc68f9435b5083aa7e41464c47d33d9ca173e1e1",
+      "new_keyed_sources": 29
+    },
+    "gen2": {
+      "cases": 259,
+      "invocations": 259,
+      "population_sha256": "f1ae14b0d531003fca2fa0172db138af0dd7ddb5b6701d818aeff694d799aa72",
+      "java_gzip_sha256": "6c2b9e5fda042f169aece201e721c978e89edc8e9ed3f538fb35aeaececcab64",
+      "rust_gzip_sha256": "6b7607abbd56f5846f0a881abdb948487b74714d54aba3e53b55e64c902d0b5e",
+      "new_keyed_sources": 0
+    }
+  },
+  "compiler_jar_sha256": "f6fd24471a34e893674a1fa775831770ce4e41aaa1202aef0091d6e446f82d64",
+  "optimizer_library_sha256": "7aad2f2b87805d91b4c65877e8baf739f99ec4c2b2ef7c2e84da226006a3f145",
+  "comparator_sha256": "60f5f6ba66207404b8ad285cad092fa950ddeed5bd9ce712ed435e4fc8601c09",
+  "classic_runtime": {
+    "worker_sha256": "e48140f75a7956d3c9f0f76a52b9bc219dd659bcc01f2b4df4ce16121ad60d9e",
+    "population_sha256": "e1f3717f5cd91f426116ff4e137d69e1594ab4b1066353a2a719fe91e75b5f2a",
+    "batch_receipts_sha256": "336a1096381d4b00614f9a865656e419e1ec460d2b591bad4e35daa950ac8ff8",
+    "total_frozen_cases": 25,
+    "executed": 13,
+    "compile_only": 12,
+    "input_commands": 104,
+    "expected_runtime_errors": 0
+  },
+  "interleaved_key_lateness": {
+    "detached": [
+      {
+        "sequence": 206,
+        "before": 5,
+        "after": 9,
+        "wire_changed": true
+      }
+    ],
+    "generated_rust_sha256": "bda8a4133debec0e1b0b5765bfd6f10f21643b863f61e78f89294b0c8c8f0a14",
+    "gen2_refusal_matched": true
+  }
+}

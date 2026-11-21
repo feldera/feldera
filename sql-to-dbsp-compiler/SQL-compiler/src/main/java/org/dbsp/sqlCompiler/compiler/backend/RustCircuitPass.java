@@ -269,9 +269,18 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public static Pair<DBSPClosureExpression, DBSPClosureExpression> latenessFilter(DBSPCompiler compiler,
             ProgramIdentifier name, List<Integer> columns, DBSPType row, DBSPType waterline) {
+        return lowerLatenessFilter(compiler, "Limiters/RowFilter", List.of(name.name(), columns), row, waterline);
+    }
+
+    public static Pair<DBSPClosureExpression, DBSPClosureExpression> lateKeyFilter(DBSPCompiler compiler,
+            ProgramIdentifier name, List<Integer> keys, List<Integer> columns, DBSPType key, DBSPType waterline) {
+        return lowerLatenessFilter(compiler, "Limiters/KeyFilter", List.of(name.name(), keys, columns), key, waterline);
+    }
+
+    private static Pair<DBSPClosureExpression, DBSPClosureExpression> lowerLatenessFilter(DBSPCompiler compiler,
+            String pass, List<?> fields, DBSPType input, DBSPType waterline) {
         try {
-            var reply = invokeLowering(compiler, "Limiters/RowFilter",
-                    MAPPER.writeValueAsBytes(List.of(name.name(), columns)), row, waterline);
+            var reply = invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(fields), input, waterline);
             return loweredClosurePair(reply);
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode LATENESS columns", error);

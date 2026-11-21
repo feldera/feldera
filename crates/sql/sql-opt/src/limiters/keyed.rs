@@ -1,7 +1,7 @@
 //! An indexed source checks both complete rows and updates that carry only a key.
 
 use super::filter::{arg, late_error, truth, tuple_compare, RowFilter};
-use super::source::{link, Columns, LatenessSite, SourceOutputs};
+use super::source::{link, LatenessSite, SourceOutputs};
 use super::{Bound, Stream, StreamKind};
 use crate::rebuild::deindex_function;
 use feldera_sql_ir::{
@@ -79,33 +79,34 @@ fn add_key_parameter(
     edit.closure_with_parameters(body, &args)
 }
 
-struct KeyProjection {
+/// Positions of the same LATENESS columns in the primary key and in the waterline.
+pub struct KeyProjection {
     key: Vec<usize>,
     waterline: Vec<usize>,
 }
 impl KeyProjection {
-    fn new(columns: &Columns) -> Self {
-        let (key, waterline) = columns
-            .key
+    pub fn from_columns(key_fields: &[usize], lateness_fields: &[usize]) -> Self {
+        let (key, waterline) = key_fields
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| {
-                columns
-                    .declared
-                    .iter()
-                    .position(|(col, _)| col == c)
-                    .map(|j| (i, j))
+            .filter_map(|(index, column)| {
+                let bound = lateness_fields.iter().position(|field| field == column)?;
+                Some((index, bound))
             })
             .unzip();
         Self { key, waterline }
     }
-    fn filter(
+
+    /// Build the predicate and the diagnostic for a deletion or partial update
+    /// that supplies only the key. A key with no LATENESS columns always passes.
+    pub fn filter(
         &self,
         edit: &mut CircuitEditor,
+        table: &str,
         control: TypeId,
         key: TypeId,
         next: &mut u64,
-    ) -> Result<ExpressionId, Error> {
+    ) -> Result<[ExpressionId; 2], Error> {
         let w = arg(edit, control, next)?;
         let k = arg(edit, key, next)?;
         let pred = if self.key.is_empty() {
@@ -115,7 +116,14 @@ impl KeyProjection {
             let right = read_columns(edit, w, &self.waterline, true)?;
             tuple_compare(edit, left, right)?
         };
-        edit.closure_from_variables(pred, &[w, k])
+        let filter = edit.closure_from_variables(pred, &[w, k])?;
+        let w = arg(edit, control, next)?;
+        let k = arg(edit, key, next)?;
+        let weight = edit.standard_type(key.into(), Ty::Weight)?;
+        let weight = edit.variable(weight, next)?;
+        let message = late_error(edit, table, k)?;
+        let error = edit.closure_from_variables(message, &[w, k, weight])?;
+        Ok([filter, error])
     }
 
     fn retain(
@@ -181,6 +189,7 @@ pub(super) fn keyed_source(
     edit: &mut CircuitEditor,
     body: NodeId,
     source: &LatenessSite<'_>,
+    projection: KeyProjection,
     functions: Functions,
     next: &mut u64,
 ) -> Result<SourceOutputs, Error> {
@@ -210,14 +219,7 @@ pub(super) fn keyed_source(
     let ff = add_key_parameter(edit, filter.function, k, false)?;
     let err = add_key_parameter(edit, filter.error, k, true)?;
     let control = edit.expression_type(timestamp)?;
-    let proj = KeyProjection::new(columns);
-    let kfilter = proj.filter(edit, control, key, next)?;
-    let w = arg(edit, control, next)?;
-    let kerr = arg(edit, key, next)?;
-    let weight = edit.standard_type(site, Ty::Weight)?;
-    let weight = edit.variable(weight, next)?;
-    let message = late_error(edit, source.name, kerr)?;
-    let key_error = edit.closure_from_variables(message, &[w, kerr, weight])?;
+    let [key_filter, key_error] = projection.filter(edit, source.name, control, key, next)?;
     let ts = edit.closure_from_variables(timestamp, &[k, row_var])?;
     let error_type = edit.zset_type(filter.error_type)?;
     edit.replace_with_keyed_waterline(
@@ -230,7 +232,7 @@ pub(super) fn keyed_source(
             ("timestamp", link(ts)),
             ("lub", link(max)),
             ("filter", link(ff)),
-            ("keyFilter", link(kfilter)),
+            ("keyFilter", link(key_filter)),
             ("error", link(err)),
             ("keyError", link(key_error)),
         ],
@@ -277,8 +279,8 @@ pub(super) fn keyed_source(
         ty: edit.type_id(indexed)?,
         kind: source.kind,
     };
-    if !columns.materialized && !proj.key.is_empty() {
-        proj.retain(edit, body, indexed, bound, key, next)?;
+    if !columns.materialized && !projection.key.is_empty() {
+        projection.retain(edit, body, indexed, bound, key, next)?;
     }
     let ty = edit.zset_type(row)?;
     let data = edit.append_operator(

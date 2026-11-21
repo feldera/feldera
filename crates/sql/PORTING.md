@@ -863,6 +863,12 @@ steps in this selection and checked 2,076 input commands. The packaged
 build also matched both full frozen populations and restored COUNT and
 LATENESS checkpoints in both directions. [Late-row filter comparisons](evidence/p3-lateness-filters.json)
 
+Rust also filters deletions and partial updates that supply only a primary
+key. The classic build matched Java for all 29 keyed waterline sources in
+25 programs. Thirteen programs supplied runtime inputs and passed all 104
+commands. A directed case checks two late key columns at different positions
+in the key and in the waterline. [Late-key filter comparisons](evidence/p3-late-key-filters.json)
+
 When a view declares LATENESS and inherits a waterline, Rust combines the
 two bounds. A column covered by both takes the maximum. The 550 selected
 limiter boundaries matched Java, including views with a tighter inherited

@@ -258,6 +258,7 @@ pub(super) fn source_bounds(
             edit,
             body,
             &source,
+            super::KeyProjection::from_columns(&columns.key, &indices),
             super::keyed::Functions {
                 row,
                 row_var: t,
