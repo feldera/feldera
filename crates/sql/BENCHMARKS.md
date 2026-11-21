@@ -4,7 +4,7 @@ These experiments compare direct Java compilation with compiler stages split
 across Java and Rust. P3 requires hybrid p95 latency of at most 1.2× direct
 Java p95 on representative workloads.
 
-## Packaged mixed optimizer, 2026-11-20
+## Packaged mixed optimizer, 2026-11-21
 
 The opt-in compiler ran 99 Rust pass kinds. Each timing starts a fresh
 process and ends when it publishes the classic Rust source, UDF stubs,
@@ -14,11 +14,11 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.86 | 2.35 | 2.81 | 3.49 | 1.246× |
-| Nexmark suite | 4.23 | 10.57 | 6.83 | 14.42 | 2.112× |
-| Outer join | 1.70 | 2.03 | 1.94 | 2.36 | 1.214× |
+| Correlated array subquery | 1.45 | 1.73 | 2.27 | 2.43 | 1.072× |
+| Nexmark suite | 3.14 | 7.73 | 4.51 | 10.80 | 2.394× |
+| Outer join | 1.32 | 1.54 | 2.08 | 2.35 | 1.131× |
 
-The table measures the circuit-writer build at `5472764d0` on November 21. All 69 pairs on CPU 15 matched on diagnostics and artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently. All three p95 ratios exceeded 1.2×. [Raw pair digests and summaries](evidence/p3-hybrid-latency.json)
+The table measures the compact consumer graph build at `f08e3eb5d`. All 69 pairs on CPU 15 matched on diagnostics and artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently. Nexmark exceeded the 1.2× ceiling. The earlier circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214× in workload order. [Raw pair digests and summaries](evidence/p3-hybrid-latency.json)
 
 The static-declaration build at `a039e2fda` measured 1.237×, 2.435× and 1.198× in workload order. The directed limiter comparisons overlapped the beginning of that run. The full corpus and restore runs started after that benchmark.
 

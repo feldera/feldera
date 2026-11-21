@@ -51,8 +51,8 @@ Path prefixes used in this document:
   final S3, persistent-ID inputs and emitted artifacts. The verified build ran 99 pass kinds
   in Rust. All 8,256 classic executable cases passed on the filter-bound build
   (`c5c800f7f`). Java still runs the
-  remaining passes. On the circuit-writer build (`5472764d0`), hybrid p95 was
-  1.246× direct Java on the array subquery, 2.112× on Nexmark and 1.214× on the
+  remaining passes. On the consumer graph build (`f08e3eb5d`), hybrid p95 was
+  1.072× direct Java on the array subquery, 2.394× on Nexmark and 1.131× on the
   outer join. The owner confirmed that the field-shadow gate stays open until
   qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)
