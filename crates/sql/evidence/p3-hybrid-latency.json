@@ -3006,6 +3006,82 @@
           ]
         }
       }
+    },
+    {
+      "profile": "Corrected window trimming with reduced expression and retention analysis payloads",
+      "native_pass_kinds": 97,
+      "inputs_sha256": {
+        "array-subquery.sql": "42e09a2b580b083bb2653efdb4e32f8b79c1d1d6ca13796cb13e0eedaa93b33d",
+        "nexmark-suite.sql": "6c5b22aadcbbb8573da250ac99d6036c63c6179072872ae055cd4ee148236c64",
+        "outer-join.sql": "1a475a4c0d4e68f13d124dc2a7c30100baecf86a640ac8ac787ca0bb12d0435d"
+      },
+      "jar_or_classpath_sha256": {
+        "/stage/p3-verified-u0m6raxd/window-identity/maven/sql-compiler.jar": "f027f8f03f95de677087a39d67399f94e68fbd42d21b300d99b3aae63c0710a3"
+      },
+      "compiler_sha256": "920b08b19fbf0e31d9a414831c61d28e39a7592a214a2ade0c9999fd919424de",
+      "jni_sha256": "c88e1d017a64e7fc1539d59aff5b108b383e4c016333828cc8edfb81c097101d",
+      "logical_cpus": [
+        15
+      ],
+      "platform": "Linux-7.2.7-200.fc44.aarch64-aarch64-with-glibc2.39",
+      "java": "openjdk version \"21.0.13.0.3\" 2026-10-24\nOpenJDK Runtime Environment (build 21.0.13.0.3+1-1-24.04.1-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.13.0.3+1-1-24.04.1-Ubuntu, mixed mode, sharing)\n",
+      "matched_pairs": 69,
+      "raw_pairs_sha256": "3d228fe73bb800fb8e6a2320cbd2084f86d2683010da1124c670e33d1ae4b4a8",
+      "environment_sha256": "f1b15e9458c2ab2748f806a82298d3ec55237a6e9662cd8796ff82a60ae904f4",
+      "workspace_archive": ".bench-results/p3-live-compiler/2026-21-11-03-51-36e3c",
+      "results": {
+        "array-subquery.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 3.069661709,
+            "empirical_p95_seconds": 3.411602765
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 2.398807894,
+            "empirical_p95_seconds": 2.903125558
+          },
+          "p95_ratio": 1.1751481969489106,
+          "mean_ratio_paired_95pct_interval": [
+            1.1838863575017977,
+            1.308666800508457
+          ]
+        },
+        "nexmark-suite.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 14.527972837,
+            "empirical_p95_seconds": 15.305097487
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 5.881994772,
+            "empirical_p95_seconds": 7.729517733
+          },
+          "p95_ratio": 1.9800844005645029,
+          "mean_ratio_paired_95pct_interval": [
+            2.197869610486451,
+            2.4290234529014767
+          ]
+        },
+        "outer-join.sql": {
+          "hybrid": {
+            "samples": 21,
+            "p50_seconds": 2.753955039,
+            "empirical_p95_seconds": 3.584999545
+          },
+          "direct": {
+            "samples": 21,
+            "p50_seconds": 2.303010605,
+            "empirical_p95_seconds": 2.889161344
+          },
+          "p95_ratio": 1.240844355212306,
+          "mean_ratio_paired_95pct_interval": [
+            1.1508940500900708,
+            1.248698032421047
+          ]
+        }
+      }
     }
   ],
   "nexmark_profile": {
