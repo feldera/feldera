@@ -1,26 +1,35 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator.Computation;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator.ComputationChain;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator.ComputationKind;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
@@ -49,6 +58,33 @@ public class ReplayTypeIdentityTests {
         var decodedRank = decoder.decodeOuter(mapper.createObjectNode().put("node", rank.id), DBSPRankOperator.class);
         var typeReference = mapper.createObjectNode().put("node", rank.outputType.getId());
         Assert.assertSame(decodedRank.outputType, decoder.decodeInner(typeReference, DBSPTypeIndexedZSet.class));
+    }
+
+    @Test public void successiveChainsRetainTheirSharedCollectionType() throws Exception {
+        var compiler = new DBSPCompiler(new CompilerOptions());
+        var circuit = new DBSPCircuit(new ProgramMetadata(), false);
+        var site = CalciteEmptyRel.INSTANCE;
+        var integer = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false);
+        var input = new DBSPConstantOperator(site, DBSPZSetExpression.emptyWithElementType(integer));
+        var row = integer.ref().var();
+        var map = new Computation(ComputationKind.Map, row.deref().closure(row));
+        var filter = new Computation(ComputationKind.Filter, new DBSPBoolLiteral(true).closure(row));
+        var first = new DBSPChainOperator(site,
+                new ComputationChain(input.outputType).add(map).add(filter), input.outputPort());
+        var second = new DBSPChainOperator(site,
+                new ComputationChain(first.outputType).add(filter).add(filter), first.outputPort());
+        circuit.addOperator(input);
+        circuit.addOperator(first);
+        circuit.addOperator(second);
+
+        var writer = ToJsonOuterVisitor.createForReplay(compiler);
+        writer.apply(circuit);
+        var decoder = new JsonDecoder();
+        var restored = decoder.decodeOuter(Utilities.deterministicObjectMapper().readTree(writer.getJsonString()),
+                DBSPCircuit.class);
+        var consumer = restored.allOperators.getLast().to(DBSPChainOperator.class);
+        Assert.assertSame(consumer.input().outputType(), consumer.chain.inputType());
+        Assert.assertSame(consumer.chain.inputType(), consumer.outputType);
     }
 
     private static void preservesSharedResultType(DBSPExpression expression) throws Exception {

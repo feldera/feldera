@@ -44,7 +44,11 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
     public final ComputationChain chain;
 
     public DBSPChainOperator(CalciteRelNode node, ComputationChain chain, OutputPort source) {
-        super(node, "chain" + chain.summary(), null, chain.getOutputType(), source);
+        this(node, chain, source, chain.getOutputType());
+    }
+
+    private DBSPChainOperator(CalciteRelNode node, ComputationChain chain, OutputPort source, DBSPType outputType) {
+        super(node, "chain" + chain.summary(), null, outputType, source);
         this.chain = chain;
         Utilities.enforce(this.chain.size() > 1);
     }
@@ -378,8 +382,9 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
     public static DBSPChainOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         ComputationChain chain = ComputationChain.fromJson(node, decoder);
+        Utilities.enforce(chain.getOutputType().sameType(info.outputType()));
         return new DBSPChainOperator(CalciteEmptyRel.INSTANCE,
-                chain, info.getInput(0))
+                chain, info.getInput(0), info.outputType())
                 .addAnnotations(info.annotations(), DBSPChainOperator.class);
     }
 }
