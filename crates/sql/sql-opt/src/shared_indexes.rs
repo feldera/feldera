@@ -11,7 +11,7 @@ struct JoinInputs {
     shared_slots: Vec<usize>,
 }
 
-fn is_indexed_join(kind: Option<Op>) -> bool {
+pub(super) fn is_indexed_join(kind: Option<Op>) -> bool {
     matches!(
         kind,
         Some(

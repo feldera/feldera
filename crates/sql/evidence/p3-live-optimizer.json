@@ -90,6 +90,7 @@
       "RemoveUselessLeftJoinsVisitor": 8571,
       "RemoveViewOperators": 17142,
       "ReplaceCommonProjections": 25214,
+      "ReplaceSharedIndexes": 8571,
       "ReplaceStarJoins": 8570,
       "SeparateIntegrators": 601,
       "SetOperatorHashes": 17142,
@@ -117,11 +118,11 @@
       },
       {
         "manifest_sha256": "32c32263c6515c6734cb3b60ff430745a13ce89d376f139de521f6290594803e",
-        "records_sha256": "b91082bbc8a98d9ddd9188e8ae7bb188da75648d0f136000d876c069c0710a9b"
+        "records_sha256": "a78629795b601a0b60ef42c6e48a7818904685d5717e1b39f824b79cce264861"
       },
       {
         "manifest_sha256": "ad14be7678a1d49611822c17220eb08e0c4aa01cdde4ced72cbef02a2c3b3330",
-        "records_sha256": "c291b7e158f2ec759a7532a1131522b7de065907d690b75f4d18ff6b03578b5d"
+        "records_sha256": "4d1bcf3aeaa0a1c32b30ac369b76c5cfed354a5e8fb3f5a31dd3ea263bb74f52"
       }
     ]
   },
@@ -217,6 +218,7 @@
       "RemoveUselessLeftJoinsVisitor": 8527,
       "RemoveViewOperators": 17054,
       "ReplaceCommonProjections": 25060,
+      "ReplaceSharedIndexes": 8527,
       "ReplaceStarJoins": 8526,
       "SeparateIntegrators": 8526,
       "SetOperatorHashes": 17054,
@@ -244,19 +246,19 @@
       },
       {
         "manifest_sha256": "09d90f1d213b979b6e26fac6f0d9ae0429998bd75369d7161be17fd714ca627e",
-        "records_sha256": "ddd2c4bcc1c582decf03dfe1f646552c7e315a9c3b524dd7dff78dae46d97ce7"
+        "records_sha256": "23aaa5c58293d58dd9e6816afddc577a82d99ff79bf540bcb3453f6874ac6966"
       },
       {
         "manifest_sha256": "bf8cd5e5d098fcdd7f5bfeb68c1431831a6e8f2636905fa69c27b4c47005350f",
-        "records_sha256": "996450d91acfbf3d60642e174a1c42c57ffad484df1c5f38a0a7c24c4b5e0cca"
+        "records_sha256": "76b38de8aa57ae3cf860395498262f822ca57fe5467ca561d4003815b3b6c4de"
       }
     ]
   },
   "compiler": {
     "profile": "Linux ARM64, offline Maven package and release Rust tools",
-    "pass_kinds": 102,
-    "jar_sha256": "35faeabb6ed29cc8070cdfa8c5a938943b3334255ac7c2e27174f1a39baf3a46",
-    "driver_sha256": "a28fc29ca8306d9dcbcd4c6780d0a060f263833d42223baed53691af1f8f4a99",
-    "optimizer_library_sha256": "09d596aa8dfd2aeaf3bc77db205e56fed59f854b261c3083937357c1759c34d4"
+    "pass_kinds": 103,
+    "jar_sha256": "6f52bb1d0ba312a224b02b2f469b47999f80cb3472fa2180d3806faade181c2b",
+    "driver_sha256": "e3ebf5a12b4928a31360d9049e2677e4711ebadfd5a96da67991e568ca667288",
+    "optimizer_library_sha256": "91da7202994f3d5c3f495f221242f546d09a879d0bb29359dd0cc86f6266827f"
   }
 }

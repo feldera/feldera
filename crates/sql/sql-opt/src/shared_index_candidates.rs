@@ -11,7 +11,7 @@ use feldera_sql_ir::{
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, serde::Deserialize, Serialize)]
 pub struct IndexReader {
     pub index: u64,
     pub consumer: u64,

@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CreateStarJoins;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseExpensiveMaps;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitStatistics;
@@ -143,6 +144,7 @@ public final class RustCircuitPass implements CircuitTransform {
     private final OptimizerSnapshots snapshots;
     @Nullable private final FindMapChains mapChains;
     @Nullable private final FindSharedIndexes sharedIndexes;
+    @Nullable private final ReplaceSharedIndexes replaceSharedIndexes;
     @Nullable private final FindUnboundedState.DetectStreamingOperations streaming;
     @Nullable private final FindUnboundedState.FindGCedStreams garbageCollected;
     @Nullable private final FindUnboundedState.FindBounded bounded;
@@ -223,6 +225,7 @@ public final class RustCircuitPass implements CircuitTransform {
         this.windowImplementation = original instanceof ImplementWindowGroups windows ? windows : null;
         this.collapseChains = original instanceof CollapseSharedChains collapse ? collapse : null;
         this.sharedIndexes = original instanceof FindSharedIndexes find ? find : null;
+        this.replaceSharedIndexes = original instanceof ReplaceSharedIndexes replace ? replace : null;
         this.mapChains = original instanceof FindMapChains find ? find : null;
         this.errorOrder = original instanceof OrderErrorConsumers order ? order : null;
         this.tableToRemove = original instanceof RemoveTable table ? table.tableName() : null;
@@ -1471,6 +1474,18 @@ public final class RustCircuitPass implements CircuitTransform {
         DBSPVariablePath.restoreGeneratedNames(state.required("next_generated_name").longValue());
     }
 
+    /** The first root is the reader. Each following pair binds a narrow parameter to its wide row. */
+    public static IDBSPInnerNode rewriteIndexReader(DBSPCompiler compiler, List<IDBSPInnerNode> roots,
+                                                     List<List<Integer>> columns) {
+        try {
+            var reply = invokeLowering(compiler, "SharedIndexes/Reader",
+                    MAPPER.writeValueAsBytes(columns), roots.toArray(IDBSPInnerNode[]::new));
+            return expressionDecoder(reply.writer).decodeInner(reply.value, IDBSPInnerNode.class);
+        } catch (IOException error) {
+            throw new UncheckedIOException("Could not encode shared-index reader columns", error);
+        }
+    }
+
     public record WideIndexFields(DBSPVariablePath variable, DBSPExpression key, boolean nullable,
                                   List<DBSPExpression> fields, @Nullable List<List<Integer>> layout,
                                   List<List<DBSPExpression>> rows) {}
@@ -1819,6 +1834,12 @@ public final class RustCircuitPass implements CircuitTransform {
                     return circuit;
                 state = MAPPER.writeValueAsBytes(inputs);
             }
+            if (this.replaceSharedIndexes != null) {
+                var groups = this.replaceSharedIndexes.candidateIds();
+                if (groups.isEmpty())
+                    return circuit;
+                state = MAPPER.writeValueAsBytes(groups);
+            }
             if (this.collapseChains != null) {
                 var chains = this.collapseChains.chainIds();
                 if (chains.stream().noneMatch(chain -> chain.size() > 1))
@@ -1939,6 +1960,8 @@ public final class RustCircuitPass implements CircuitTransform {
                 result = this.invoke("Live/" + this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8),
                         initial, state);
             }
+            if (this.replaceSharedIndexes != null && result.isNull())
+                return this.replaceSharedIndexes.apply(circuit);
             JsonNode counter = result.required("next_generated_name");
             if (!counter.isIntegralNumber() || !counter.canConvertToLong()
                     || counter.longValue() < initial || counter.longValue() == Long.MAX_VALUE)

@@ -41,6 +41,12 @@ pub trait Transformation {
         Ok(node)
     }
 
+    /// Most rewrites simplify a rebuilt null test. Visitors that preserve the
+    /// written test can use its location and its translated operand here.
+    fn rebuild_null_test(&mut self, editor: &mut CircuitEditor, node: NodeId) -> Result<NodeId, Error> {
+        rebuild_result_type(editor, node, Some(ExpressionKind::IsNull), true)
+    }
+
     /// Some constructor rules retain a child of the original expression even
     /// after visiting it. Both operands remain available for that decision.
     fn postorder_rebuilt(
@@ -181,6 +187,8 @@ impl<T: Transformation> Rewrite<T> {
                                 ("mutable", Field::Data(false.into())),
                             ],
                         )?
+                    } else if expr == Some(ExpressionKind::IsNull) {
+                        self.rule.rebuild_null_test(arena, transformed)?
                     } else {
                         rebuild_result_type(arena, transformed, expr, self.expression_translation)?
                     }

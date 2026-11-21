@@ -183,6 +183,19 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
     let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
     let mut warnings = Vec::new();
     let function = match (pass, roots.as_slice()) {
+        ("SharedIndexes/Reader", [reader, bindings @ ..]) => {
+            let columns: Vec<Vec<usize>> = serde_json::from_slice(state)?;
+            let (pairs, rest) = bindings.as_chunks::<2>();
+            if !rest.is_empty() || columns.len() != pairs.len() {
+                return Err("expected a declaration, wide variable and layout for each shared input".into());
+            }
+            let parameters: Vec<_> = pairs.iter().zip(columns).map(|(&[declaration, variable], columns)| {
+                feldera_sql_opt::IndexParameter { declaration, variable, columns }
+            }).collect();
+            let reader = feldera_sql_opt::rewrite_index_reader(&mut edit, *reader, &parameters)?;
+            let nodes = edit.circuit().additional_inner_nodes(&arena, [reader])?;
+            return Ok(nodes.into_iter().next().expect("one shared-index reader"));
+        }
         ("SharedIndexes/Split", roots) => {
             let fixed: Vec<bool> = serde_json::from_slice(state)?;
             let groups = feldera_sql_opt::split_shared_indexes(&arena, roots, &fixed, &mut next, &mut warnings)?;
@@ -556,7 +569,7 @@ fn transform(
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
         "Limiters/DeclaredWaterline" => return declared_waterline(input, state, next),
-        "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
+        "SharedIndexes/Reader" | "SharedIndexes/Split" | "SharedIndexes/WideFields" | "RewriteNow/ClockIndex" | "RewriteNow/ClockAggregate" | "RewriteNow/ScalarClock"
         | "TemporalComparisons" | "WindowGroups/ReorderPredicate"
         | "RewriteNow/Closure" | "RewriteNow/Join" | "RewriteNow/DropClock" | "RewriteNow/Window" | "MergeFilters/Predicate" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/KeyFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
@@ -1034,10 +1047,19 @@ fn transform(
         | "PropagateConstants"
         | "Simplify"
         | "DecomposeExpensiveFilters"
+        | "ReplaceSharedIndexes"
         | "BreakFilters" => {
             let mut weight = None;
             let mut retention = None;
             let (output, warnings) = match pass {
+                "ReplaceSharedIndexes" => {
+                    let groups = serde_json::from_slice::<Vec<Vec<feldera_sql_opt::IndexReader>>>(state)?;
+                    let mut warnings = Vec::new();
+                    let Some(output) = feldera_sql_opt::replace_shared_indexes(circuit, &groups, &mut next, &mut warnings)? else {
+                        return Ok(Value::Null);
+                    };
+                    (output, warnings)
+                }
                 "LowerAsofInner" => {
                     let lowered = feldera_sql_opt::lower_asof(circuit, serde_json::from_slice(state)?, &mut next)?;
                     retention = Some(lowered.retention.into_iter().map(|binding| json!({

@@ -355,7 +355,7 @@ impl CircuitEditor {
         if !matches!(
             (name, kind),
             ("outputType", Some(InnerKind::Type(_)))
-                | ("function", Some(InnerKind::Expression(_)))
+                | ("function" | "partitioningFunction", Some(InnerKind::Expression(_)))
                 | ("aggregate", Some(InnerKind::AggregateList))
         ) {
             return Err(Error(format!("invalid {name} edge to {target:?}")));

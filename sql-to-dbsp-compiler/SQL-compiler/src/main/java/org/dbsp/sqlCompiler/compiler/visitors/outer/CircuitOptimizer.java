@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.DuplicateShared
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindMapChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.FindSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.CollapseSharedChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ReplaceSharedIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
@@ -143,7 +144,7 @@ public class CircuitOptimizer extends Passes {
                     || pass instanceof MergeGC.MergeNoops || pass instanceof MergeGC.MergeRetain
                     || pass instanceof HashPrefixPass || pass instanceof SetOperatorHashes || pass instanceof CheckPersistentIds
                     || pass instanceof MergeGC.FindEquivalentNoops
-                    || pass instanceof MergeGC.FindMultipleRetains || pass instanceof CollapseSharedChains || pass instanceof RemoveUselessLeftJoinsVisitor
+                    || pass instanceof MergeGC.FindMultipleRetains || pass instanceof CollapseSharedChains || pass instanceof ReplaceSharedIndexes || pass instanceof RemoveUselessLeftJoinsVisitor
                     || pass instanceof FindWindowGroups || pass instanceof ImplementWindowGroups
                     || pass instanceof FindMapChains || pass instanceof FindSharedIndexes || pass instanceof DuplicateSharedIndexes
                     || pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ReplaceCommonProjections

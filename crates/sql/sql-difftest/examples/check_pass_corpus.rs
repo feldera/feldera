@@ -424,6 +424,46 @@ fn compare_invocation(
             let groups = serde_json::from_value::<Vec<_>>(invocation["groups"].clone())?;
             feldera_sql_opt::implement_window_groups(input, &groups, &mut next)?
         }
+        "ReplaceSharedIndexes" => {
+            #[derive(serde::Deserialize)]
+            struct Candidate {
+                index: u64,
+            }
+            let candidates: Vec<Vec<Candidate>> =
+                serde_json::from_value(invocation["candidate_indexes"].clone())?;
+            let mut readers = BTreeMap::new();
+            for consumer in input.operator_order(feldera_sql_ir::BodyOrder::Postorder)? {
+                let node = input.node(consumer).expect("validated operator");
+                for (slot, port) in node.inputs().enumerate() {
+                    readers.insert(port.operator, (consumer, slot));
+                }
+            }
+            let mut groups = Vec::with_capacity(candidates.len());
+            for group in candidates {
+                let mut members = Vec::with_capacity(group.len());
+                for Candidate { index } in group {
+                    let &(NodeId::Outer(consumer), slot) = readers
+                        .get(&NodeId::Outer(index))
+                        .ok_or("missing shared-index reader")?
+                    else {
+                        return Err("expected an outer operator".into());
+                    };
+                    members.push(feldera_sql_opt::IndexReader { index, consumer, slot });
+                }
+                groups.push(members);
+            }
+            let mut diagnostics = Vec::new();
+            let graph = feldera_sql_opt::replace_shared_indexes(input, &groups, &mut next, &mut diagnostics)?
+                .ok_or("index replacement required a Java comparison")?;
+            let messages: Vec<_> = diagnostics.into_iter().map(|w| json!({
+                "range":w.position, "error_type":w.kind, "message":w.message,
+                "warning":true, "continuation":false,
+            })).collect();
+            if json!(messages) != invocation["diagnostics"] {
+                return Err("shared-index diagnostics differ".into());
+            }
+            graph
+        }
         "FindSharedIndexes" => {
             let previous = serde_json::from_value(invocation["previously_visited_indexes"].clone())?;
             let mut edit = feldera_sql_ir::CircuitEditor::new(input.clone());

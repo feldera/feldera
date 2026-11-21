@@ -40,6 +40,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,7 +48,7 @@ import java.util.Objects;
 /** Works in tandem with FindSharedIndexes; it replaces multiple
  {@link org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator} with a single wide one
  by adjusting the consumers */
-class ReplaceSharedIndexes extends CircuitCloneVisitor {
+public final class ReplaceSharedIndexes extends CircuitCloneVisitor {
     final FindSharedIndexes finder;
     /** Maps each join, star join, aggregate, or fixed-index operator that reads a shared index
      * to the shared sources of its inputs */
@@ -60,6 +61,11 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
         this.finder = finder;
         this.sharedInputs = new HashMap<>();
         this.sharedIndexes = new HashMap<>();
+    }
+
+    /** Inputs to the Rust replacement, in the order the preceding finder published them. */
+    public List<List<long[]>> candidateIds() {
+        return this.finder.candidateIds();
     }
 
     @Override
@@ -393,13 +399,7 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
 
             // This is the list of fields from the value produced by the MapIndex that this consumer reads
             List<Integer> outputIndexes = this.builder.outputIndexes.get(this.consumerIndex);
-            Map<Integer, Integer> remap = new HashMap<>();
-            for (int i = 0; i < outputIndexes.size(); i++) {
-                int index = outputIndexes.get(i);
-                remap.put(i, index);
-            }
-
-            return new ParameterIndexMap(newVar, remap);
+            return new ParameterIndexMap(newVar, outputIndexes);
         }
 
         @Override
@@ -409,12 +409,12 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
     }
 
     /** {@code indexRemap} maps a field index of the replaced parameter to the field index of {@code var} */
-    record ParameterIndexMap(DBSPVariablePath var, Map<Integer, Integer> indexRemap) {}
+    record ParameterIndexMap(DBSPVariablePath var, List<Integer> indexRemap) {}
 
     /** {@code map} maps a closure parameter to the variable and field remapping that replace it */
     record ParameterIndexMapSet(Map<DBSPParameter, ParameterIndexMap> map) {
         public ParameterIndexMapSet() {
-            this(new HashMap<>());
+            this(new LinkedHashMap<>());
         }
 
         void add(DBSPParameter param, ParameterIndexMap map) {

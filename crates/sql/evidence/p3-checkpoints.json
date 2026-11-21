@@ -1,8 +1,8 @@
 {
   "profile": "classic generated executable with the mixed Rust optimizer and Java printer",
-  "compiler_sha256": "a28fc29ca8306d9dcbcd4c6780d0a060f263833d42223baed53691af1f8f4a99",
-  "optimizer_library_sha256": "09d596aa8dfd2aeaf3bc77db205e56fed59f854b261c3083937357c1759c34d4",
-  "compiler_jar_sha256": "35faeabb6ed29cc8070cdfa8c5a938943b3334255ac7c2e27174f1a39baf3a46",
+  "compiler_sha256": "e3ebf5a12b4928a31360d9049e2677e4711ebadfd5a96da67991e568ca667288",
+  "optimizer_library_sha256": "91da7202994f3d5c3f495f221242f546d09a879d0bb29359dd0cc86f6266827f",
+  "compiler_jar_sha256": "6f52bb1d0ba312a224b02b2f469b47999f80cb3472fa2180d3806faade181c2b",
   "programs": {
     "count": {
       "program_sha256": "90cd8957c2c463295fdb27143e503e0c9383086c87e255659995cedfb840f2e8",
@@ -19,7 +19,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fece-aeea-7b93-808f-d9745d70d78f",
+          "checkpoint_id": "01a1fee2-2f6f-7c50-967c-63cd3c09742f",
           "restored_count_deltas": [
             [
               1,
@@ -35,7 +35,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fece-af1e-7051-b7f5-640a515dac39",
+          "checkpoint_id": "01a1fee2-2f88-7563-ad86-0944eb462b2a",
           "restored_count_deltas": [
             [
               1,
@@ -64,7 +64,7 @@
           "writer": "java",
           "reader": "hybrid",
           "bootstrap": false,
-          "checkpoint_id": "01a1fecf-6929-71b1-9fa3-7a1cc8751d8b",
+          "checkpoint_id": "01a1fee2-cd25-7780-b498-2d1771f31368",
           "restored_count_deltas": [
             [
               1,
@@ -81,7 +81,7 @@
           "writer": "hybrid",
           "reader": "java",
           "bootstrap": false,
-          "checkpoint_id": "01a1fecf-6940-7b12-bc8d-884702a57f64",
+          "checkpoint_id": "01a1fee2-cd3f-73f3-a291-4ce525df47a8",
           "restored_count_deltas": [
             [
               1,
@@ -109,7 +109,7 @@
       "snippet": ""
     }
   ],
-  "pass_kinds": 102,
+  "pass_kinds": 103,
   "ordered_clock_diagnostics": {
     "clock-map": [
       {

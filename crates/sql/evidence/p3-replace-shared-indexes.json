@@ -1,0 +1,75 @@
+{
+  "pass_name": "ReplaceSharedIndexes",
+  "scope": "Rust consumes ordered finder groups, splits them, emits the wide MapIndex at its first reader and rewires its consumers. Standalone comparison with the uninterrupted Java exit covers canonical graphs, generated names and diagnostics.",
+  "cases": 17098,
+  "changed": 321,
+  "mismatches": 0,
+  "checker_sha256": "4d05d5d9ca1636f2458666322e54e00e347fdb7efda33558b0a82266229784db",
+  "java_reference_jar_sha256": "b45aca2433d2d33a6cc435186a22530bbfcb841af6de4b15cdd6d543a436399b",
+  "shards": [
+    {
+      "shard": "classic-0",
+      "cases": 2143,
+      "changed": 33,
+      "population_sha256": "7786018cef2cf899215a936908538f112284ce989a0cfdb0fdb6d597bba6db7f",
+      "reference_sha256": "abf311872164a74265862b9d4e665063eaf62f2e516459a612134304ca14490d",
+      "results_sha256": "24ec1b3f1825ceee97ccac8db8b853afe3849bfaf68e4b3d18712e688547f79e"
+    },
+    {
+      "shard": "classic-1",
+      "cases": 2143,
+      "changed": 45,
+      "population_sha256": "c1915bd0241d422d5d8f37adcbed369a05e21c48cce78ad2ddb07875f96f79b1",
+      "reference_sha256": "8509babf1cbc9deb1385eda738fe915a935312705675d6a6cd0c3b5dd7db2eab",
+      "results_sha256": "6930e2943779a92877161bb610c4c002e356089017a896e179fb88a75526d0f0"
+    },
+    {
+      "shard": "classic-2",
+      "cases": 2143,
+      "changed": 42,
+      "population_sha256": "0705ced9f27fe0edc328711c72066bc578d679b20450e33ffb6699c512949e36",
+      "reference_sha256": "3a88fe06a451f3d0ccae92189a2180ca29644eb3f30c7d19f0d0cc12b365043f",
+      "results_sha256": "9b819ec8559d592772f83743b5608ba8f74aab1523e534c43526b143142ca2d3"
+    },
+    {
+      "shard": "classic-3",
+      "cases": 2142,
+      "changed": 39,
+      "population_sha256": "3442a80944f6c24a4a450adb81f2d316dfed1616795487d57de90baf82c65fab",
+      "reference_sha256": "cf344c9b6cf2f7768ac08f698e34c78700f9f2b94c11d49e0017f4039ce932fd",
+      "results_sha256": "0bada6af7e43c178e7044f6afeb40203656da91b4d0a422075fa4fea4f50de52"
+    },
+    {
+      "shard": "gen2-0",
+      "cases": 2132,
+      "changed": 38,
+      "population_sha256": "c5d57a127364e5aa6b5b4af22006b3e1202b7292031a402cd517ebff5b93848f",
+      "reference_sha256": "4120bd7379356c712b8243e16ef76ee368e3780eae558f7c18a093b1baba5546",
+      "results_sha256": "9576bc5a2608b16eff67077a93b5aff567fdceb45c955bdeb37f102e53323ec2"
+    },
+    {
+      "shard": "gen2-1",
+      "cases": 2132,
+      "changed": 44,
+      "population_sha256": "f624ded4fdfc3764aca730882537bfc067db61b2946527e2f6327f469daaac51",
+      "reference_sha256": "9a594a021ed80173f6c790221c3679edaae087f335a141b20c7dc04f9c198a02",
+      "results_sha256": "bea9ce3c693fcbdc21c463ad6da27af56d366732013aa2fb03a032ac63de4b7c"
+    },
+    {
+      "shard": "gen2-2",
+      "cases": 2132,
+      "changed": 36,
+      "population_sha256": "188a92e66b3b9b112141d7f379aca821265528ff341fc978dc148fca2fa5f48a",
+      "reference_sha256": "45e6ee549b2bc251ff31cf715bcdf27b15748f9d35bb080523a0173313fec6bf",
+      "results_sha256": "2a49811ae9d8ee3195f724ec523252b713bfb189eae5d28a206d44a6c7a1db3c"
+    },
+    {
+      "shard": "gen2-3",
+      "cases": 2131,
+      "changed": 44,
+      "population_sha256": "dc3c974479c43e4cee16e29b24bfc0c5528b2bd33c9760ee3060a643c5bf3f10",
+      "reference_sha256": "51abc48595e8315ba822bb5ca8e3e9dff8c6bc8e4fb0949c4f2a5085a625f153",
+      "results_sha256": "3c4b2f349d7f9a45a3f11ea39a38ae6a265a844334b9d9ccbad7fedeb2a75ede"
+    }
+  ]
+}

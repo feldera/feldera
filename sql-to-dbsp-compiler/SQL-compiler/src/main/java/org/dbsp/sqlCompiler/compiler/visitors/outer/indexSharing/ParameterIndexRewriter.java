@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionTranslator;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -14,6 +15,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 import org.dbsp.util.Linq;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Rewrites a closure whose parameters read the values of {@link DBSPMapIndexOperator}s so that
  * they read the wider values of the shared MapIndexes that replace them. */
@@ -33,7 +37,20 @@ class ParameterIndexRewriter extends ExpressionTranslator {
 
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
-        IDBSPInnerNode result = super.apply(node);
+        IDBSPInnerNode result;
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var roots = new ArrayList<IDBSPInnerNode>();
+            var columns = new ArrayList<List<Integer>>();
+            roots.add(node);
+            this.rewriteMap.map().forEach((parameter, mapping) -> {
+                roots.add(parameter);
+                roots.add(mapping.var());
+                columns.add(mapping.indexRemap());
+            });
+            result = RustCircuitPass.rewriteIndexReader(this.compiler, roots, columns);
+        } else {
+            result = super.apply(node);
+        }
         if (node.is(DBSPClosureExpression.class)) {
             // The closure reads the same fields from a wider value, so it computes the same
             // result.
@@ -83,9 +100,8 @@ class ParameterIndexRewriter extends ExpressionTranslator {
                 if (decl.is(DBSPParameter.class)) {
                     var map = this.rewriteMap.get(decl.to(DBSPParameter.class));
                     if (map != null) {
-                        Integer newField = map.indexRemap().get(field.fieldNo);
-                        if (newField == null)
-                            newField = field.fieldNo;
+                        int newField = field.fieldNo < map.indexRemap().size()
+                                ? map.indexRemap().get(field.fieldNo) : field.fieldNo;
                         this.map(field, map.var().deepCopy().deref().field(newField));
                         return;
                     }
