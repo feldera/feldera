@@ -52,8 +52,8 @@ Path prefixes used in this document:
   in Rust. All 8,256 classic executable cases passed on the filter-bound build
   (`c5c800f7f`). The late-key filter build passed all 104 runtime commands
   in the keyed LATENESS sample and restored COUNT and LATENESS checkpoints in
-  both directions. Java still runs the remaining passes. On the consumer graph build (`f08e3eb5d`), hybrid p95 was
-  1.072× direct Java on the array subquery, 2.394× on Nexmark and 1.131× on the
+  both directions. Java still runs the remaining passes. On the checked waterline build (`5a92a1eb3`), hybrid p95 was
+  1.247× direct Java on the array subquery, 2.521× on Nexmark and 1.117× on the
   outer join. The owner confirmed that the field-shadow gate stays open until
   qualifying field evidence exists.
   [P3 implementation and measurements](crates/sql/PORTING.md#p3-optimizer-replay)

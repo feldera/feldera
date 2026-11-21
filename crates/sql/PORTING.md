@@ -1060,7 +1060,7 @@ measured pairs. Direct Java took 7.567 s. [Checkpoint and compilation measuremen
 The static-declaration build measured 1.237× on the correlated array subquery, 2.435× on Nexmark and 1.198× on the outer join. Each ratio uses 21 measured SQL-to-artifact pairs.
 The subsequent circuit-writer build measured 1.246×, 2.112× and 1.214× on the same workloads. All 69 warmup and measured pairs matched on diagnostics and emitted artifacts.
 With compact consumer graph inputs (`f08e3eb5d`), the ratios were 1.072×, 2.394× and 1.131×. Nexmark exceeded its p95 ceiling by 5.39 seconds. [Paired timings](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
-[Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
+The checked waterline build (`5a92a1eb3`) measured 1.247×, 2.521× and 1.117× in the same workload order. The outer join met the 1.2× ceiling. [Paired latency and profile](BENCHMARKS.md#packaged-mixed-optimizer-2026-11-21)
 
 On the 21-pass build, cancellation p95 for four occupied workers was 33.23 ms
 during runtime replay and 41.06 ms afterwards. All 40 cancellations returned

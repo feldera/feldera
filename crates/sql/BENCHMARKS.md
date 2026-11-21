@@ -14,11 +14,11 @@ the generated Rust and pipeline startup fall outside these times.
 
 | Workload | Java p50 (s) | Hybrid p50 (s) | Java p95 (s) | Hybrid p95 (s) | p95 ratio |
 |---|---:|---:|---:|---:|---:|
-| Correlated array subquery | 1.45 | 1.73 | 2.27 | 2.43 | 1.072× |
-| Nexmark suite | 3.14 | 7.73 | 4.51 | 10.80 | 2.394× |
-| Outer join | 1.32 | 1.54 | 2.08 | 2.35 | 1.131× |
+| Correlated array subquery | 1.53 | 1.93 | 2.26 | 2.81 | 1.247× |
+| Nexmark suite | 3.71 | 9.86 | 5.05 | 12.73 | 2.521× |
+| Outer join | 1.40 | 1.64 | 2.25 | 2.51 | 1.117× |
 
-The table measures the compact consumer graph build at `f08e3eb5d`. All 69 pairs on CPU 15 matched on diagnostics and artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently. Nexmark exceeded the 1.2× ceiling. The earlier circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214× in workload order. [Raw pair digests and summaries](evidence/p3-hybrid-latency.json)
+The table measures the checked waterline build at `5a92a1eb3`. All 69 pairs on CPU 15 matched on diagnostics and emitted artifacts. Each workload used two warmup pairs and 21 measured pairs. Compiler verification ran concurrently for part of the run. The outer join met the latency ceiling. The earlier compact consumer graph build at `f08e3eb5d` measured 1.072×, 2.394× and 1.131× in workload order. The circuit-writer build at `5472764d0` measured 1.246×, 2.112× and 1.214×. [Pair digests and summaries](evidence/p3-hybrid-latency.json)
 
 The static-declaration build at `a039e2fda` measured 1.237×, 2.435× and 1.198× in workload order. The directed limiter comparisons overlapped the beginning of that run. The full corpus and restore runs started after that benchmark.
 
