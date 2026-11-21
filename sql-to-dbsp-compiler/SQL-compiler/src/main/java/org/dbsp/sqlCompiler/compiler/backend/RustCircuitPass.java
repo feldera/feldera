@@ -75,7 +75,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ConstantExpressions;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
@@ -231,20 +230,39 @@ public final class RustCircuitPass implements CircuitTransform {
                 DBSPClosureExpression.class);
     }
 
+    public static DBSPClosureExpression composeProjection(DBSPCompiler compiler,
+            DBSPClosureExpression before, DBSPClosureExpression after) {
+        return lowerFunction(compiler, "ComposeProjection", before, after, DBSPClosureExpression.class);
+    }
+
+    @Nullable
+    public static DBSPClosureExpression tryComposeProjection(DBSPCompiler compiler,
+            DBSPClosureExpression before, DBSPClosureExpression after) {
+        return tryLowerFunction(compiler, "TryComposeProjection", before, after, DBSPClosureExpression.class);
+    }
+
     private static <T extends DBSPExpression> T lowerFunction(DBSPCompiler compiler, String pass,
-            IDBSPInnerNode input, @Nullable DBSPType retainedType, Class<T> kind) {
+            IDBSPInnerNode input, @Nullable IDBSPInnerNode second, Class<T> kind) {
+        return Objects.requireNonNull(tryLowerFunction(compiler, pass, input, second, kind));
+    }
+
+    @Nullable
+    private static <T extends DBSPExpression> T tryLowerFunction(DBSPCompiler compiler, String pass,
+            IDBSPInnerNode input, @Nullable IDBSPInnerNode second, Class<T> kind) {
         var json = JsonStream.compactCircuit();
         var inner = new ToJsonInnerVisitor(compiler, json, 1, true);
         inner.liveNodes = new HashMap<>();
         json.beginArray();
         input.accept(inner);
-        if (retainedType != null)
-            retainedType.accept(inner);
+        if (second != null)
+            second.accept(inner);
         json.endArray();
         try {
             byte[] reply = transformWithContext(pass, json.toString().getBytes(StandardCharsets.UTF_8),
                     DBSPVariablePath.nextGeneratedName(), "", EMPTY_CONTEXT);
             var result = MAPPER.readTree(reply);
+            if (result.isNull())
+                return null;
             var function = loweredFunction(compiler, inner, result, kind);
             DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
             return function;

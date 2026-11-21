@@ -3,11 +3,11 @@ use crate::{
     fanout::expensive,
     projection::{projection, Projection},
 };
-use feldera_sql_expr::parameter_references;
-use feldera_sql_ir::{CircuitEditor, Error, ExpressionKind as Expr, NodeId};
+use feldera_sql_expr::{compose_closures, parameter_references, SimplifyWarning};
+use feldera_sql_ir::{CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, NodeId};
 use std::collections::HashSet;
 
-pub(super) fn should_inline(
+pub(crate) fn should_inline(
     edit: &CircuitEditor,
     after: NodeId,
     before: NodeId,
@@ -18,7 +18,7 @@ pub(super) fn should_inline(
     let op = edit.node(after)?;
     let params = op.edges("parameters")?;
     let [parameter] = params.as_slice() else {
-        return Err(Error::new("chain composition requires one parameter"));
+        return Err(Error::new("projection composition requires one parameter"));
     };
     let body = op.edge("body")?;
     let produced = edit.node(before)?.edge("body")?;
@@ -52,4 +52,20 @@ pub(super) fn should_inline(
         }
     }
     Ok(parameter_references(edit, body, *parameter)? <= 1)
+}
+
+/// Inline a projection after its producer. During map fusion, a consumer that
+/// would duplicate expensive work keeps its own operator.
+pub fn compose_projection(
+    edit: &mut CircuitEditor,
+    before: NodeId,
+    after: NodeId,
+    check_cost: bool,
+    warnings: &mut Vec<SimplifyWarning>,
+) -> Result<Option<ExpressionId>, Error> {
+    if check_cost && !should_inline(edit, after, before)? {
+        return Ok(None);
+    }
+    let before = edit.expression(before)?;
+    compose_closures(edit, before, false, after, Some(warnings)).map(Some)
 }

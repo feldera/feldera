@@ -1,12 +1,13 @@
 //! Fuse output projections into constants, UNNEST and single-reader joins.
 use crate::{
-    collapse_shared_chains::compose_with_warnings,
     projection::{projection, Projection},
     rebuild::ProjectionNames,
     stream_rewrites::{body_members, reader_counts},
 };
-use feldera_sql_expr::{project_flatmap, reduce_closure_body_with_warnings, SimplifyWarning};
 use feldera_sql_expr::constant_rows::{self as rows, multiset};
+use feldera_sql_expr::{
+    compose_closures, project_flatmap, reduce_closure_body_with_warnings, SimplifyWarning,
+};
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, ExpressionKind as Expr, Field, NodeId,
     OperatorKind as Op, OutputPort, TypeKind,
@@ -265,7 +266,7 @@ pub fn project_outputs(
             }
             (_, Some((kind, was_indexed))) => (
                 kind,
-                compose_with_warnings(
+                compose_closures(
                     &mut edit,
                     before,
                     was_indexed,

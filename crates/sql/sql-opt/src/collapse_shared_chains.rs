@@ -1,7 +1,7 @@
 //! Collapse map chains with a common upstream port before comparing their indexes.
 use crate::fanout::expensive;
 use crate::rebuild::rebuild_input_closures;
-use feldera_sql_expr::{reduce_closure_body_with_warnings, SimplifyWarning};
+use feldera_sql_expr::compose_closures;
 use feldera_sql_ir::{
     BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, NodeId, OperatorKind as Op, OutputPort,
 };
@@ -20,31 +20,7 @@ pub(super) fn compose(
     indexed: bool,
     after: NodeId,
 ) -> Result<ExpressionId, Error> {
-    compose_with_warnings(edit, before, indexed, after, None)
-}
-
-pub(super) fn compose_with_warnings(
-    edit: &mut CircuitEditor,
-    before: ExpressionId,
-    indexed: bool,
-    after: NodeId,
-    warnings: Option<&mut Vec<SimplifyWarning>>,
-) -> Result<ExpressionId, Error> {
-    let parameters = edit.node(before.into())?.edges("parameters")?;
-    let row = edit.expression(edit.node(before.into())?.edge("body")?)?;
-    let consumer = edit.node(after)?;
-    let body = consumer.edge("body")?;
-    let params = consumer.edges("parameters")?;
-    let arg = if indexed {
-        let key = edit.tuple_field(row, 0)?;
-        let val = edit.tuple_field(row, 1)?;
-        let fields = [edit.borrow_value(key)?, edit.borrow_value(val)?];
-        edit.tuple_expr(row.into(), true, &fields)?
-    } else {
-        edit.borrow_value(row)?
-    };
-    let reduced = reduce_closure_body_with_warnings(edit, body, &params, &[arg.into()], warnings)?;
-    edit.closure_with_parameters(edit.expression(reduced)?, &parameters)
+    compose_closures(edit, before, indexed, after, None)
 }
 
 /// Chains are ordered downstream first, as FindMapChains publishes them.

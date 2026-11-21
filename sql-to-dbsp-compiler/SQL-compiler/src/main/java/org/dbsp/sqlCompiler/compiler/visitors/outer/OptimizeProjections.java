@@ -78,6 +78,7 @@ import org.dbsp.util.Logger;
 import org.dbsp.util.Maybe;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -94,6 +95,20 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         super(compiler, graphs);
         this.onlyProjections = onlyProjections;
         this.operatorsAnalyzed = operatorsAnalyzed;
+    }
+
+    private DBSPClosureExpression compose(DBSPClosureExpression before, DBSPClosureExpression after) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.composeProjection(this.compiler, before, after);
+        return after.applyAfter(this.compiler, before, Maybe.YES);
+    }
+
+    @Nullable
+    private DBSPClosureExpression tryCompose(DBSPClosureExpression before, DBSPClosureExpression after) {
+        if (this.compiler.options.ioOptions.rustOptimizerPasses)
+            return RustCircuitPass.tryComposeProjection(this.compiler, before, after);
+        return after.shouldInlineComposition(this.compiler, before)
+                ? after.applyAfter(this.compiler, before, Maybe.YES) : null;
     }
 
     boolean done(DBSPOperator operator) {
@@ -125,10 +140,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             // mapIndex(map) = mapIndex
             DBSPClosureExpression sourceFunction = source.simpleNode().getClosureFunction();
             DBSPClosureExpression afterFunction = operator.getClosureFunction();
-            boolean shouldInline = afterFunction.shouldInlineComposition(this.compiler, sourceFunction);
-            if (shouldInline) {
-                DBSPClosureExpression newFunction = afterFunction
-                        .applyAfter(this.compiler(), sourceFunction, Maybe.YES);
+            DBSPClosureExpression newFunction = this.tryCompose(sourceFunction, afterFunction);
+            if (newFunction != null) {
                 CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
                 DBSPSimpleOperator result = new DBSPMapIndexOperator(
                         node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))
@@ -438,8 +451,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             DBSPApplyOperator apply = source.node().to(DBSPApplyOperator.class);
             // apply(apply) = apply
             DBSPClosureExpression expression = apply.getClosureFunction();
-            DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, Maybe.YES);
+            DBSPClosureExpression newFunction = this.compose(expression, operator.getClosureFunction());
             DBSPSimpleOperator result = new DBSPApplyOperator(
                     operator.getRelNode(), newFunction, operator.outputType,
                     apply.inputs.get(0), apply.comment);
@@ -576,8 +588,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
                 DBSPClosureExpression newMap = operator.getClosureFunction();
                 if (jfm.map != null) {
-                    newMap = operator.getClosureFunction()
-                            .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), Maybe.YES);
+                    newMap = this.compose(jfm.map.to(DBSPClosureExpression.class), newMap);
                 }
                 DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
                         jfm.getRelNode(), operator.getOutputZSetType(), jfm.getFunction(),
@@ -597,8 +608,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 DBSPStarJoinFilterMapOperator jfm = source.node().to(DBSPStarJoinFilterMapOperator.class);
                 DBSPClosureExpression newMap = operator.getClosureFunction();
                 if (jfm.map != null) {
-                    newMap = operator.getClosureFunction()
-                            .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), Maybe.YES);
+                    newMap = this.compose(jfm.map.to(DBSPClosureExpression.class), newMap);
                 }
                 DBSPSimpleOperator result = new DBSPStarJoinFilterMapOperator(
                         jfm.getRelNode(), operator.getOutputZSetType(), jfm.getClosureFunction(),
@@ -676,10 +686,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .newline();
             DBSPClosureExpression sourceFunction = source.simpleNode().getClosureFunction();
             DBSPClosureExpression afterFunction = operator.getClosureFunction();
-            boolean shouldInline = afterFunction.shouldInlineComposition(this.compiler, sourceFunction);
-            if (shouldInline) {
-                DBSPClosureExpression newFunction = afterFunction
-                        .applyAfter(this.compiler(), sourceFunction, Maybe.YES);
+            DBSPClosureExpression newFunction = this.tryCompose(sourceFunction, afterFunction);
+            if (newFunction != null) {
                 DBSPSimpleOperator result = source.simpleNode()
                         .withFunction(newFunction, operator.outputType)
                         .to(DBSPSimpleOperator.class);
@@ -691,8 +699,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                     .appendSupplier(() -> source.simpleNode().operation + " -> Map")
                     .newline();
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
-            DBSPClosureExpression newFunction = operator.getClosureFunction()
-                    .applyAfter(this.compiler(), expression, Maybe.YES);
+            DBSPClosureExpression newFunction = this.compose(expression, operator.getClosureFunction());
             OutputPort input = source.simpleNode().inputs.get(0);
             DBSPSimpleOperator result =
                     new DBSPMapOperator(source.node().getRelNode(), newFunction, input);

@@ -1,5 +1,4 @@
 //! Fuse runs of unary maps, indexed maps and filters with a single downstream reader.
-mod inline;
 mod lower;
 pub use lower::implement_chains;
 

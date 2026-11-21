@@ -7,7 +7,7 @@ mod tree;
 pub use tree::{copy_expression, ensure_expression_tree};
 mod beta;
 pub use beta::{
-    apply_closure, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
+    apply_closure, compose_closures, parameter_paths, parameter_references, reduce_closure_body, reduce_closure_body_with_warnings,
     simplify_closure_expression, simplify_closure_with_warnings,
 };
 mod casts;

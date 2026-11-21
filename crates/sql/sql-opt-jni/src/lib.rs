@@ -73,6 +73,51 @@ fn multiplicities(facts: feldera_sql_opt::Multiplicities) -> Value {
     json!(operators)
 }
 
+fn expression_arena(roots: impl IntoIterator<Item = Value>) -> Result<(Circuit, Vec<NodeId>), feldera_sql_ir::Error> {
+    Circuit::from_json(json!({
+        "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
+    }))?.with_inner_roots(roots)
+}
+
+fn lower_function(pass: &str, input: &[u8], mut next: u64) -> Result<Value, Box<dyn std::error::Error>> {
+    let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
+        return Err("expected an array of lowering inputs".into());
+    };
+    let (arena, roots) = expression_arena(roots)?;
+    let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
+    let mut warnings = Vec::new();
+    let function = match (pass, roots.as_slice()) {
+        ("ComposeProjection" | "TryComposeProjection", [before, after]) => {
+            let Some(closure) = feldera_sql_opt::compose_projection(
+                &mut edit, *before, *after, pass == "TryComposeProjection", &mut warnings,
+            )? else {
+                return Ok(Value::Null);
+            };
+            closure
+        }
+        ("LowerAggregateFold", [list]) => feldera_sql_opt::lower_aggregate_fold(
+            &mut edit, *list, None, &mut next, &mut warnings,
+        )?,
+        ("LowerAggregateFold", [list, empty]) => {
+            let ty = edit.type_id(*empty)?;
+            feldera_sql_opt::lower_aggregate_fold(&mut edit, *list, Some(ty), &mut next, &mut warnings)?
+        }
+        ("LowerFlatmap", [flatmap, element]) => {
+            let ty = edit.type_id(*element)?;
+            feldera_sql_opt::lower_flatmap(&mut edit, *flatmap, ty, &mut next, &mut warnings)?
+        }
+        _ => return Err(format!("unexpected inputs to {pass}").into()),
+    };
+    let mut functions = edit.circuit().additional_expressions(&arena, &[function])?;
+    Ok(json!({
+        "function": functions.pop().expect("one requested expression"),
+        "next_generated_name": next,
+        "warnings": warnings.into_iter().map(|w| json!({
+            "range": w.position, "error_type": w.kind, "message": w.message,
+        })).collect::<Vec<_>>()
+    }))
+}
+
 fn transform(
     pass: &str,
     error_view: &str,
@@ -139,41 +184,11 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" | "LowerAggregateFold" | "LowerFlatmap" => {
-            let empty = Circuit::from_json(json!({
-                "class": "DBSPCircuit", "id": 0, "declarations": [], "allOperators": []
-            }))?;
-            if matches!(pass, "LowerAggregateFold" | "LowerFlatmap") {
-                let Value::Array(roots) = feldera_sql_ir::parse_json(input)? else {
-                    return Err("expected an array of lowering inputs".into());
-                };
-                let (arena, roots) = empty.with_inner_roots(roots)?;
-                let mut edit = feldera_sql_ir::CircuitEditor::new(arena.clone());
-                let mut warnings = Vec::new();
-                let function = match (pass, roots.as_slice()) {
-                    ("LowerAggregateFold", [list]) => feldera_sql_opt::lower_aggregate_fold(
-                        &mut edit, *list, None, &mut next, &mut warnings,
-                    )?,
-                    ("LowerAggregateFold", [list, empty]) => {
-                        let ty = edit.type_id(*empty)?;
-                        feldera_sql_opt::lower_aggregate_fold(&mut edit, *list, Some(ty), &mut next, &mut warnings)?
-                    }
-                    ("LowerFlatmap", [flatmap, element]) => {
-                        let ty = edit.type_id(*element)?;
-                        feldera_sql_opt::lower_flatmap(&mut edit, *flatmap, ty, &mut next, &mut warnings)?
-                    }
-                    _ => return Err(format!("unexpected inputs to {pass}").into()),
-                };
-                let mut functions = edit.circuit().additional_expressions(&arena, &[function])?;
-                return Ok(json!({
-                    "function": functions.pop().expect("one requested expression"),
-                    "next_generated_name": next,
-                    "warnings": warnings.into_iter().map(|w| json!({
-                        "range": w.position, "error_type": w.kind, "message": w.message,
-                    })).collect::<Vec<_>>()
-                }));
-            }
-            let (arena, roots) = empty.with_inner_roots([feldera_sql_ir::parse_json(input)?])?;
+        "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection" => {
+            return lower_function(pass, input, next);
+        }
+        "FuseExpensiveMaps/Fragments" | "ImplementStatics/Candidates" => {
+            let (arena, roots) = expression_arena([feldera_sql_ir::parse_json(input)?])?;
             return if pass == "ImplementStatics/Candidates" {
                 Ok(serde_json::to_value(feldera_sql_opt::static_candidates(&arena, roots[0])?)?)
             } else {

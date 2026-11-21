@@ -283,6 +283,32 @@ pub fn apply_closure(
     edit.expression(value)
 }
 
+/// Inline a consumer after a producer, preserving the producer's parameter identities.
+/// An indexed stream supplies a pair of borrowed key and value fields.
+pub fn compose_closures(
+    edit: &mut CircuitEditor,
+    before: ExpressionId,
+    indexed: bool,
+    after: NodeId,
+    warnings: Option<&mut Vec<SimplifyWarning>>,
+) -> Result<ExpressionId, Error> {
+    let parameters = edit.node(before.into())?.edges("parameters")?;
+    let row = edit.expression(edit.node(before.into())?.edge("body")?)?;
+    let consumer = edit.node(after)?;
+    let body = consumer.edge("body")?;
+    let params = consumer.edges("parameters")?;
+    let arg = if indexed {
+        let key = edit.tuple_field(row, 0)?;
+        let val = edit.tuple_field(row, 1)?;
+        let fields = [edit.borrow_value(key)?, edit.borrow_value(val)?];
+        edit.tuple_expr(row.into(), true, &fields)?
+    } else {
+        edit.borrow_value(row)?
+    };
+    let reduced = reduce_closure_body_with_warnings(edit, body, &params, &[arg.into()], warnings)?;
+    edit.closure_with_parameters(edit.expression(reduced)?, &parameters)
+}
+
 /// Reduce an applied closure before inserting its result in the surrounding expression.
 pub fn reduce_closure_body(
     edit: &mut CircuitEditor,
@@ -370,6 +396,17 @@ impl Transformation for SimplifyArgument<'_> {
                     .and_then(|n| usize::try_from(n).ok())
                     .ok_or_else(|| Error::new("expected a tuple field index"))?;
                 match edit.expr_kind(row)? {
+                    Expr::Block => {
+                        let last = edit.expression(edit.node(row.into())?.edge("lastExpression")?)?;
+                        let projected = edit.tuple_field(last, index)?;
+                        edit.derive_unlocated_inner(
+                            row.into(),
+                            [
+                                ("lastExpression", Field::Reference(projected.into())),
+                                ("type", Field::Reference(edit.expression_type(projected)?.into())),
+                            ],
+                        )
+                    }
                     Expr::Clone => {
                         let value = edit.node(row.into())?.edge("expression")?;
                         edit.derive_inner(id, [("expression", Field::Reference(value))])
