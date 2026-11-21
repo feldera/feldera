@@ -1,7 +1,10 @@
 //! Find fanouts whose readers can share a narrower input row.
-use crate::{consumer_graph::consumer_graphs, row_fields::RowFields};
+use crate::{
+    consumer_graph::consumer_graphs, row_fields::RowFields, row_projection::RowProjection,
+};
 use feldera_sql_ir::{
-    BodyOrder, Circuit, Error, InnerKind, NodeId, OperatorKind as Op, TypeKind as Ty,
+    BodyOrder, Circuit, CircuitEditor, Error, ExpressionId, InnerKind, NodeId, OperatorKind as Op,
+    TypeKind as Ty,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -60,6 +63,49 @@ pub struct CommonProjection {
     pub readers: Vec<u64>,
     pub depth: usize,
     pub paths: Paths,
+    #[serde(skip)]
+    first_reader_uses_input: bool,
+}
+
+/// A producer's projection or one of the readers rebound to its narrower input.
+pub struct SharedProjectionClosure {
+    pub operator: u64,
+    pub function: ExpressionId,
+    pub original_output_size: Option<usize>,
+}
+
+pub fn shared_projection_closures(
+    edit: &mut CircuitEditor,
+    next: &mut u64,
+) -> Result<Vec<SharedProjectionClosure>, Error> {
+    let mut result = Vec::new();
+    for group in common_projections(edit.circuit())? {
+        let readers = group
+            .readers
+            .into_iter()
+            .map(|id| Ok((id, edit.node(NodeId::Outer(id))?.edge("function")?)))
+            .collect::<Result<Vec<_>, Error>>()?;
+        let first = readers
+            .first()
+            .ok_or_else(|| Error::new("shared projection has no readers"))?
+            .1;
+        // The shared layout uses the first reader's types. Readers can have
+        // equivalent, separately allocated tuple types at the same fanout.
+        let layout = RowProjection::new(edit, first, &group.paths)?;
+        for (id, closure) in readers {
+            result.push(SharedProjectionClosure {
+                operator: id,
+                function: layout.rebind(edit, closure)?,
+                original_output_size: None,
+            });
+        }
+        result.push(SharedProjectionClosure {
+            operator: group.producer,
+            function: layout.project(edit, next, group.first_reader_uses_input)?,
+            original_output_size: Some(layout.input_width()),
+        });
+    }
+    Ok(result)
 }
 
 pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Error> {
@@ -84,6 +130,7 @@ pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Er
         };
         let mut paths = Paths::new();
         let mut parameter_type = None;
+        let mut first_reader_uses_input = false;
         for &reader in &readers {
             let function = circuit
                 .node(reader)
@@ -108,6 +155,9 @@ pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Er
                 .expect("validated parameter")
                 .edge("type")?;
             let used = feldera_sql_expr::input_field_paths(circuit, function)?;
+            if parameter_type.is_none() {
+                first_reader_uses_input = !used.is_empty();
+            }
             if !shape.unused(ty, &mut Vec::new(), &used, depth, 0)? {
                 parameter_type = None;
                 break;
@@ -122,6 +172,7 @@ pub fn common_projections(circuit: &Circuit) -> Result<Vec<CommonProjection>, Er
                     readers: readers.into_iter().map(outer).collect(),
                     depth,
                     paths,
+                    first_reader_uses_input,
                 });
             }
         }

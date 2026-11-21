@@ -232,6 +232,13 @@ impl RowProjection {
         components.iter().any(|part| part.used.contains(&false))
     }
 
+    pub(super) fn input_width(&self) -> usize {
+        match &self.element {
+            Element::Row(row) => row.used.len(),
+            Element::Indexed(pair) => pair.len(),
+        }
+    }
+
     pub(super) fn used_value_fields(&self) -> Result<&[bool], Error> {
         match &self.element {
             Element::Indexed([_, value]) => Ok(&value.used),
@@ -342,7 +349,16 @@ impl Rebind<'_> {
         edit: &mut CircuitEditor,
         field: NodeId,
     ) -> Result<Option<ExpressionId>, Error> {
-        let deref = edit.node(edit.node(field)?.edge("expression")?)?;
+        let receiver = edit.node(field)?.edge("expression")?;
+        let unwrap = matches!(
+            edit.node(receiver)?.inner_kind(),
+            Some(InnerKind::Expression(Expr::Unwrap))
+        );
+        let deref = if unwrap {
+            edit.node(edit.node(receiver)?.edge("expression")?)?
+        } else {
+            edit.node(receiver)?
+        };
         if !matches!(deref.inner_kind(), Some(InnerKind::Expression(Expr::Deref))) {
             return Ok(None);
         }
@@ -379,7 +395,15 @@ impl Rebind<'_> {
             Some(i) => edit.tuple_field(row, i)?,
             None => row,
         };
-        let source = edit.dereference(source)?;
+        let mut source = edit.dereference(source)?;
+        if unwrap {
+            let nonnull = edit.with_nullability(edit.expression_type(source)?, false)?;
+            let inner = edit.derive_inner(
+                receiver,
+                [("expression", link(source)), ("type", link(nonnull))],
+            )?;
+            source = edit.expression(inner)?;
+        }
         Ok(Some(edit.tuple_field(source, column)?))
     }
 }

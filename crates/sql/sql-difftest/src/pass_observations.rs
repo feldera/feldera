@@ -1,6 +1,7 @@
 //! Compare two PassCorpusOracle streams against the population that produced them.
 use crate::files::Error;
 use feldera_sql_difftest::{compare_circuits, parse_json};
+use feldera_sql_ir::{BodyOrder, Circuit, NodeId};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -94,7 +95,59 @@ struct Chunk {
     invocation: Invocation,
 }
 
-fn compare_invocation(i: usize, left: &Invocation, right: &Invocation) -> Result<(), String> {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectionState {
+    inputs: BTreeMap<u64, Value>,
+    outputs: BTreeMap<u64, Value>,
+    origin: Option<Value>,
+}
+
+impl Invocation {
+    /// Projection closures can reference nodes defined in the entry graph and
+    /// each other. Compare them in that graph's namespace, in operator order.
+    fn attach_projection_state(&mut self) -> Result<(), String> {
+        let Some(value) = self.placement.state.get_mut("projection_closures") else {
+            return Ok(());
+        };
+        let mut state: ProjectionState =
+            serde_json::from_value(value.take()).map_err(|e| e.to_string())?;
+        *value = state.origin.unwrap_or(Value::Null);
+        if state.inputs.is_empty() && state.outputs.is_empty() {
+            return Ok(());
+        }
+        let graph = Circuit::from_json(self.before.clone()).map_err(|e| e.to_string())?;
+        let order = graph
+            .operator_order(BodyOrder::Preorder)
+            .map_err(|e| e.to_string())?;
+        let mut attached = Vec::new();
+        for operator in order {
+            let NodeId::Outer(id) = operator else {
+                return Err("expected an outer operator".into());
+            };
+            let input = state.inputs.remove(&id);
+            let output = state.outputs.remove(&id);
+            if input.is_some() || output.is_some() {
+                attached.push(serde_json::json!({
+                    "owner": {"operator": {"node": id}, "outputNumber": 0},
+                    "input": input, "output": output
+                }));
+            }
+        }
+        if !state.inputs.is_empty() || !state.outputs.is_empty() {
+            return Err("projection state references an operator outside its entry graph".into());
+        }
+        if self.before.get("projection_closures").is_some() {
+            return Err("entry graph already has a projection_closures field".into());
+        }
+        self.before["projection_closures"] = Value::Array(attached);
+        Ok(())
+    }
+}
+
+fn compare_invocation(i: usize, mut left: Invocation, mut right: Invocation) -> Result<(), String> {
+    left.attach_projection_state()?;
+    right.attach_projection_state()?;
     if left.placement != right.placement {
         return Err(format!(
             "invocation {i}: placement, generated names, diagnostics or pass state differs"
@@ -124,7 +177,7 @@ fn compare_chunk(pass: &str, source: &Value, rows: [Value; 2], index: usize) -> 
             ));
         }
     }
-    compare_invocation(index, &left.invocation, &right.invocation)
+    compare_invocation(index, left.invocation, right.invocation)
 }
 
 fn compare_case(
@@ -175,8 +228,8 @@ fn compare_case(
     }
     for (i, (left, right)) in control
         .invocations
-        .iter()
-        .zip(&candidate.invocations)
+        .into_iter()
+        .zip(candidate.invocations)
         .enumerate()
     {
         compare_invocation(i, left, right)?;
@@ -239,4 +292,41 @@ pub fn compare(
         "{pass} matched at {invocations} invocations across {} cases",
         seen.len()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn shared_projection(owner: u64, closure: u64, ty: u64) -> Invocation {
+        let graph = json!({
+            "class": "DBSPCircuit", "id": 0, "declarations": [],
+            "allOperators": [{"class":"DBSPConstantOperator", "id":owner, "inputs":[],
+                              "outputType":{"class":"DBSPTypeBool","id":ty}}]
+        });
+        serde_json::from_value(json!({
+            "before":graph, "after":graph, "container":"Optimizer", "index":0,
+            "iteration":0, "instance":0, "names_before":0,"names_after":1,"diagnostics":[],
+            "projection_closures":{
+                "outputs":{owner.to_string():{"class":"DBSPClosureExpression","id":closure,"type":{"node":ty}}},
+                "inputs":{}
+            }
+        })).unwrap()
+    }
+
+    #[test]
+    fn projection_state_preserves_sharing_with_its_circuit_after_renumbering() {
+        assert!(
+            compare_invocation(0, shared_projection(9, 2, 1), shared_projection(19, 12, 11))
+                .is_ok()
+        );
+        let mut copied = shared_projection(19, 12, 11);
+        copied
+            .placement
+            .state
+            .get_mut("projection_closures")
+            .unwrap()["outputs"]["19"]["type"] = json!({"class":"DBSPTypeBool","id":13});
+        assert!(compare_invocation(0, shared_projection(9, 2, 1), copied).is_err());
+    }
 }

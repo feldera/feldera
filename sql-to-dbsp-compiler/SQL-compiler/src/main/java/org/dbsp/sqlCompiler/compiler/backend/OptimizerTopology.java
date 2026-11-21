@@ -93,8 +93,21 @@ final class OptimizerTopology {
      * full snapshot used when a pass returns new IR. */
     static ToJsonOuterVisitor selectedExpressions(DBSPCompiler compiler, DBSPCircuit circuit,
                                                   Set<Long> selected, Details details) {
-        var json = JsonStream.compactCircuit();
-        var inner = new ToJsonInnerVisitor(compiler, json, 0);
+        return selectedExpressions(compiler, circuit, selected, details,
+                new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 0));
+    }
+
+    /** Keep source ranges and object identities when a pass returns rewritten closures. */
+    static ToJsonOuterVisitor selectedForRewrite(DBSPCompiler compiler, DBSPCircuit circuit,
+                                                 Set<Long> selected, Details details) {
+        var inner = new ToJsonInnerVisitor(compiler, JsonStream.compactCircuit(), 1, true);
+        inner.liveNodes = new HashMap<>();
+        return selectedExpressions(compiler, circuit, selected, details, inner);
+    }
+
+    private static ToJsonOuterVisitor selectedExpressions(DBSPCompiler compiler, DBSPCircuit circuit,
+                                                          Set<Long> selected, Details details, ToJsonInnerVisitor inner) {
+        var json = inner.stream;
         inner.liveShuffles = new HashMap<>();
         var writer = new ToJsonOuterVisitor(compiler, 0, inner);
         json.beginObject().appendClass(circuit).label("id").append(circuit.id);

@@ -88,23 +88,6 @@ public class FindCommonProjections extends CircuitWithGraphsVisitor {
         this.record(operator, readers, uses, depth, reduced);
     }
 
-    /** Construct the Java closures that the subsequent replacement pass consumes. */
-    public void record(DBSPOperator producer, List<DBSPUnaryOperator> readers, int depth,
-                       List<List<Integer>> paths) {
-        var parameter = readers.get(0).getClosureFunction().parameters[0];
-        var uses = new ParameterFieldUse();
-        uses.set(parameter, new FieldUseMap(parameter.getType(), false));
-        for (var path : paths)
-            new ParameterField(parameter, path).markParameterUse(uses);
-        var readerUses = readers.stream().map(reader -> {
-            var use = new ParameterFieldUse();
-            var param = reader.getClosureFunction().parameters[0];
-            use.set(param, uses.get(parameter));
-            return use;
-        }).toList();
-        this.record(producer, readers, readerUses, depth, uses.get(parameter));
-    }
-
     private void record(DBSPOperator operator, List<DBSPUnaryOperator> readers, List<ParameterFieldUse> readerUses,
                         int depth, FieldUseMap reduced) {
         for (int i = 0; i < readers.size(); i++) {

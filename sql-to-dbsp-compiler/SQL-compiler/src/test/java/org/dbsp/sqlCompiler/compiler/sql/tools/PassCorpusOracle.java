@@ -52,6 +52,7 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
     private int streamed;
     private int messagesAtEntry;
     private boolean previousRustPasses;
+    private long sharedProjectionStart;
     @Nullable private ArrayNode diagnostics;
     private final String passClass;
     private final ArrayNode invocations;
@@ -114,6 +115,8 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
 
     @Override
     public void before(String container, int index, int iteration, CircuitTransform pass, DBSPCircuit circuit) {
+        if (this.compareSharedProjections(pass))
+            this.sharedProjectionStart = DBSPVariablePath.nextGeneratedName();
         if (!this.selected(pass))
             return;
         if (this.active != null)
@@ -283,9 +286,26 @@ public final class PassCorpusOracle extends FrozenCircuitObserver {
         }
     }
 
+    private boolean compareSharedProjections(CircuitTransform pass) {
+        return this.passClass.equals("ReplaceCommonProjections")
+                && Boolean.getBoolean("feldera.optimizer.compareRustSharedProjections")
+                && pass instanceof org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindCommonProjections;
+    }
+
     @Override
     public void after(String container, int index, int iteration, CircuitTransform pass,
                       DBSPCircuit circuit, boolean completed) {
+        if (completed && this.compareSharedProjections(pass)) {
+            // Recompute the state consumed by ReplaceCommonProjections at the same
+            // allocator position as its Java prefix. The next observation runs the
+            // same replacement with these reader and producer closures.
+            long expected = DBSPVariablePath.nextGeneratedName();
+            DBSPVariablePath.restoreGeneratedNames(this.sharedProjectionStart);
+            var snapshots = new org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor.OptimizerSnapshots(this.compiler);
+            new org.dbsp.sqlCompiler.compiler.backend.RustCircuitPass(this.compiler, pass, snapshots).apply(circuit);
+            if (DBSPVariablePath.nextGeneratedName() != expected)
+                throw new IllegalStateException("Shared projections changed the generated-name counter");
+        }
         if (!this.selected(pass))
             return;
         if (!completed || circuit == null)

@@ -1078,8 +1078,6 @@ public final class RustCircuitPass implements CircuitTransform {
         }
     }
 
-    private record SharedProjection(long producer, long[] readers, int depth, List<List<Integer>> paths) {}
-
     private void findCommonProjections(DBSPCircuit circuit, long next, FindCommonProjections analysis) throws IOException {
         analysis.clear();
         var details = OptimizerTopology.Details.CONSUMERS;
@@ -1087,14 +1085,22 @@ public final class RustCircuitPass implements CircuitTransform {
         var selected = MAPPER.convertValue(payloads, new TypeReference<Set<Long>>() {});
         if (selected.isEmpty())
             return;
-        var writer = OptimizerTopology.selectedExpressions(this.compiler, circuit, selected, details);
+        var writer = OptimizerTopology.selectedForRewrite(this.compiler, circuit, selected, details);
         var result = this.invoke(this.nativeName, writer.getJsonString().getBytes(StandardCharsets.UTF_8), next, EMPTY_CONTEXT);
+        var decoder = expressionDecoder(writer.innerVisitor);
         var operators = operatorsById(circuit);
-        for (var plan : MAPPER.treeToValue(result, SharedProjection[].class)) {
-            var readers = java.util.Arrays.stream(plan.readers)
-                    .mapToObj(id -> operators.get(id).to(DBSPUnaryOperator.class)).toList();
-            analysis.record(operators.get(plan.producer), readers, plan.depth, plan.paths);
+        for (var entry : result.required("closures")) {
+            var operator = Objects.requireNonNull(operators.get(entry.required("operator").longValue()));
+            var closure = decoder.decodeInner(entry.required("function"), DBSPClosureExpression.class);
+            var width = entry.required("original_output_size");
+            if (width.isNull())
+                Utilities.putNew(analysis.inputProjection, operator, closure);
+            else {
+                Utilities.putNew(analysis.outputProjection, operator, closure);
+                Utilities.putNew(analysis.originalOutputSize, operator, width.intValue());
+            }
         }
+        DBSPVariablePath.restoreGeneratedNames(result.required("next_generated_name").longValue());
     }
 
     /** Analyze each distinct reader closure once per unused-field iteration. */

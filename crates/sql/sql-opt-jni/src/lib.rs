@@ -350,9 +350,14 @@ fn transform(
         return Ok(json!({"join_trees":trees, "next_generated_name":next}));
     }
     if pass == "FindCommonProjections" {
-        return Ok(json!(feldera_sql_opt::common_projections(
-            &circuit
-        )?));
+        let mut edit = feldera_sql_ir::CircuitEditor::new(circuit.clone());
+        let closures = feldera_sql_opt::shared_projection_closures(&mut edit, &mut next)?;
+        let roots = closures.iter().map(|c| c.function).collect::<Vec<_>>();
+        let expressions = edit.circuit().additional_expressions(&circuit, &roots)?;
+        let records = closures.into_iter().zip(expressions).map(|(closure, function)| {
+            json!({"operator": closure.operator, "original_output_size": closure.original_output_size, "function": function})
+        }).collect::<Vec<_>>();
+        return Ok(json!({"closures": records, "next_generated_name": next}));
     }
     if pass == "Topology/FindUnusedInputFields" {
         return Ok(json!(operator_numbers(feldera_sql_opt::input_projections(

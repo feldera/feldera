@@ -28,7 +28,7 @@ pub use replace_projections::{replace_common_projections, ProjectionClosures};
 mod row_fields;
 mod row_projection;
 mod common_projections;
-pub use common_projections::{common_projection_payloads, common_projections, CommonProjection};
+pub use common_projections::{common_projection_payloads, common_projections, shared_projection_closures, CommonProjection, SharedProjectionClosure};
 mod conditionals;
 mod constant_filters;
 mod consumer_graph;
