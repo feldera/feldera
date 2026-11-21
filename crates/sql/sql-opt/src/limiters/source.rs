@@ -196,18 +196,10 @@ fn merge_view_bound(
         raw: false,
         nullable: false,
     };
-    // createApply2 binds the original parameters, then substitutes the parameters
-    // of the final closure during beta reduction.
-    *next = next
-        .checked_add(2)
-        .ok_or_else(|| Error::new("generated names exhausted"))?;
-    let a = edit.ref_parameter(input.ty, next)?;
-    let b = edit.ref_parameter(declared.ty, next)?;
-    let left = edit.deref_parameter(&a)?;
-    let right = edit.deref_parameter(&b)?;
-    let value = projection.merge(edit, left, &declared_shape, right)?;
-    let ty = edit.expression_type(value)?;
-    let function = edit.closure(value, &[a, b])?;
+    let function =
+        projection.merge_view_waterline(edit, input.ty, &declared_shape, declared.ty, next)?;
+    let value = edit.node(function.into())?.edge("body")?;
+    let ty = edit.expression_type(edit.expression(value)?)?;
     let id = edit.append_operator(
         body,
         input.port.operator,

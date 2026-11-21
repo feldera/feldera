@@ -147,6 +147,30 @@ impl Projection {
         }
     }
 
+    /// Build the reduced apply2 closure for a view that has both an inherited
+    /// waterline and its own LATENESS declarations.
+    pub fn merge_view_waterline(
+        &self,
+        edit: &mut CircuitEditor,
+        inherited: TypeId,
+        declared: &Self,
+        declared_type: TypeId,
+        next: &mut u64,
+    ) -> Result<ExpressionId, Error> {
+        // Java builds two parameters before createApply2 rebinds their reads.
+        let mut names = next
+            .checked_add(2)
+            .ok_or_else(|| Error::new("generated names exhausted"))?;
+        let left = edit.ref_parameter(inherited, &mut names)?;
+        let right = edit.ref_parameter(declared_type, &mut names)?;
+        let lhs = edit.deref_parameter(&left)?;
+        let rhs = edit.deref_parameter(&right)?;
+        let merged = self.merge(edit, lhs, declared, rhs)?;
+        let closure = edit.closure(merged, &[left, right])?;
+        *next = names;
+        Ok(closure)
+    }
+
     /// Merge a declared view waterline with the inherited bound. Columns
     /// present on both sides take their maximum, recursively across tuples.
     pub fn merge(

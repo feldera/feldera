@@ -858,7 +858,16 @@ limiter boundaries matched Java. [Join waterline comparisons](evidence/p3-join-w
 For tables and views with LATENESS, Rust builds the predicate that admits a
 row and the error payload for a rejected row. The 550 selected limiter
 boundaries matched Java, including 997 controlled filters and 29 keyed
-sources. [Late-row filter comparisons](evidence/p3-lateness-filters.json)
+sources. The classic runtime replay executed all 217 cases with input
+steps in this selection and checked 2,076 input commands. The packaged
+build also matched both full frozen populations and restored COUNT and
+LATENESS checkpoints in both directions. [Late-row filter comparisons](evidence/p3-lateness-filters.json)
+
+When a view declares LATENESS and inherits a waterline, Rust combines the
+two bounds. A column covered by both takes the maximum. The 550 selected
+limiter boundaries matched Java, including views with a tighter inherited
+bound, a tighter declared bound, and bounds on different columns.
+[View waterline comparisons](evidence/p3-view-waterlines.json)
 
 Rust projects compacted waterline rows and combines bounds with a balanced
 pointwise minimum. All 550 selected limiter boundaries matched, including 386

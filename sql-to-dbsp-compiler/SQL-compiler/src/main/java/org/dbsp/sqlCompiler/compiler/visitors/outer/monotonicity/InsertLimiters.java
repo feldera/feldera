@@ -1991,13 +1991,22 @@ public class InsertLimiters extends CircuitCloneVisitor {
         IMaybeMonotoneType inherited = Monotonicity.getBodyType(inputMonotone);
         OutputPort inheritedBound = this.boundOf(expansion, input);
 
+        if (this.compiler.options.ioOptions.rustOptimizerPasses) {
+            var closure = RustCircuitPass.mergeViewWaterline(this.compiler, inheritedBound, declaredBound, inherited, declared);
+            checkMergedType(closure.getResultType(), combinedType);
+            return this.insertApply2(inheritedBound, declaredBound, closure);
+        }
         DBSPVariablePath inh = this.getLimiterDataOutputType(inheritedBound).ref().var();
         DBSPVariablePath dec = this.getLimiterDataOutputType(declaredBound).ref().var();
         DBSPExpression merged = this.max(inh.deref(), dec.deref(), inherited, declared);
-        DBSPType combined = Objects.requireNonNull(combinedType.getProjectedType());
-        Utilities.enforce(merged.getType().sameType(combined),
-                () -> "Merged waterline type " + merged.getType() + " differs from " + combined);
+        checkMergedType(merged.getType(), combinedType);
         return this.createApply2(inheritedBound, declaredBound, merged.closure(inh, dec));
+    }
+
+    private static void checkMergedType(DBSPType actual, IMaybeMonotoneType combinedType) {
+        DBSPType expected = Objects.requireNonNull(combinedType.getProjectedType());
+        Utilities.enforce(actual.sameType(expected),
+                () -> "Merged waterline type " + actual + " differs from " + expected);
     }
 
     /** The two closures of a controlled key filter that drops rows below the waterline:

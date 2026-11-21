@@ -307,10 +307,20 @@ public final class RustCircuitPass implements CircuitTransform {
 
     public static DBSPClosureExpression projectWaterline(DBSPCompiler compiler, DBSPType input,
             IMaybeMonotoneType source, IMaybeMonotoneType destination) {
+        return waterlineProjection(compiler, "Limiters/Project", input, destination.getType(), source, destination);
+    }
+
+    public static DBSPClosureExpression mergeViewWaterline(DBSPCompiler compiler,
+            OutputPort inherited, OutputPort declared, IMaybeMonotoneType inheritedShape, IMaybeMonotoneType declaredShape) {
+        return waterlineProjection(compiler, "Limiters/MergeView",
+                inherited.outputType(), declared.outputType(), inheritedShape, declaredShape);
+    }
+
+    private static DBSPClosureExpression waterlineProjection(DBSPCompiler compiler, String pass,
+            DBSPType first, DBSPType second, IMaybeMonotoneType firstShape, IMaybeMonotoneType secondShape) {
         try {
-            var shapes = List.of(LimiterInputs.projection(source), LimiterInputs.projection(destination));
-            return loweredClosure(compiler, invokeLowering(compiler, "Limiters/Project",
-                    MAPPER.writeValueAsBytes(shapes), input, destination.getType()));
+            var shapes = List.of(LimiterInputs.projection(firstShape), LimiterInputs.projection(secondShape));
+            return loweredClosure(compiler, invokeLowering(compiler, pass, MAPPER.writeValueAsBytes(shapes), first, second));
         } catch (IOException error) {
             throw new UncheckedIOException("Cannot encode waterline projection", error);
         }

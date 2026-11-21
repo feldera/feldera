@@ -26,5 +26,13 @@
   },
   "compiler_jar_sha256": "2350a3ddda10e802f763ad9cf8b514521fc01985e3e90079b98dda45399307b0",
   "optimizer_library_sha256": "d7d8ee5e364be540c4ef17b83b3b3005259fcb186f5dec7c4e2ab0969ed380fa",
-  "comparator_sha256": "b54092278f23f4c3cb2cd161b3e91bdb2edd572797130e75a48d9ea4a554cc58"
+  "comparator_sha256": "b54092278f23f4c3cb2cd161b3e91bdb2edd572797130e75a48d9ea4a554cc58",
+  "classic_runtime": {
+    "worker_sha256": "a22af3bf4258d7da6993d761178e9360b32e7348ad5078518e96abe93f99ccad",
+    "batch_receipts_sha256": "2fe81cac0dd65a6fbe4e7bc6f59c3b044a07c9f11964a3d5ad6d60285ff11ed3",
+    "executed": 217,
+    "compile_only": 74,
+    "input_commands": 2076,
+    "expected_runtime_errors": 0
+  }
 }

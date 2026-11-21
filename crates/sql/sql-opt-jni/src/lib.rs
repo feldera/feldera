@@ -169,6 +169,12 @@ fn lower_function(pass: &str, input: &[u8], state: &[u8], mut next: u64) -> Resu
             }
             feldera_sql_opt::limiters::join_waterline(&mut edit, sides, &mut next, &mut warnings)?
         }
+        ("Limiters/MergeView", [left, right]) => {
+            let [inherited, declared]: [feldera_sql_opt::limiters::Projection; 2] = serde_json::from_slice(state)?;
+            let left = edit.type_id(*left)?;
+            let right = edit.type_id(*right)?;
+            inherited.merge_view_waterline(&mut edit, left, &declared, right, &mut next)?
+        }
         ("Limiters/Project", [input, declared]) => {
             let [source, destination]: [feldera_sql_opt::limiters::Projection; 2] = serde_json::from_slice(state)?;
             let ty = edit.type_id(*input)?;
@@ -403,7 +409,7 @@ fn transform(
             let graph: Vec<feldera_sql_opt::NumberedExpression> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::shared_expression_uses(&graph))?);
         }
-        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
+        "Asof/LeftIndex" | "Asof/RightIndex" | "Asof/Timestamps" | "Asof/Projection" | "Monotonicity/Cast" | "Limiters/Apply" | "Limiters/Minimum" | "Limiters/Join" | "Limiters/RowFilter" | "Limiters/MergeView" | "Limiters/Project" | "Statics/RenumberErrors" | "Statics/Inline" | "Statics/Define" | "Statics/Declare"
         | "Monotonicity/RowIdentity" | "Monotonicity/IndexedIdentity" | "Monotonicity/FilterBounds"
         | "InnerCSE/Let" | "InnerCSE/Statements" | "ParameterFieldDependencies" | "SplitRowMapInput" | "SplitIndexedMapInput" | "LowerAggregateFold" | "LowerFlatmap" | "ComposeProjection" | "TryComposeProjection"
         | "ComposeIndexedProjection" | "TryIndexedProjection" | "ComposeIndexedJoinOutput" | "AntijoinProjection"
