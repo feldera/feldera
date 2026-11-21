@@ -383,6 +383,10 @@ fn transform(
             let fingerprints: Vec<Vec<usize>> = serde_json::from_slice(input)?;
             return Ok(serde_json::to_value(feldera_sql_opt::map_fusion_groups(&fingerprints))?);
         }
+        "Graph/Inputs" => {
+            let bodies = serde_json::from_slice(input)?;
+            return Ok(serde_json::to_value(feldera_sql_opt::projected_consumer_graphs(bodies)?)?);
+        }
         "AggregateGroups" => {
             let kinds: Vec<feldera_sql_opt::AggregateKind> = serde_json::from_slice(input)?;
             let append_only: bool = serde_json::from_slice(state)?;

@@ -23,5 +23,24 @@
     "placements": 408699,
     "nodes": 4939841,
     "edges": 4040026
+  },
+  "compact_input": {
+    "scope": "Body-local operator IDs, ordered producer IDs and recursive roles. Each per-program oracle record matched the original result shard byte for byte.",
+    "compiler_jar_sha256": "3a2281a9958ebf125939d3e296871b479d843d539a98c6b55275b693ec9f9119",
+    "optimizer_library_sha256": "720d8ba55ebda5191458f952757f43417e3ea3d05e4fa6960b729de20f8250ee",
+    "nexmark": {
+      "method": "Twelve order-balanced pairs of fresh JVMs pinned to CPU 15 on Linux ARM64. Each JVM compiled the same frozen program three times. Sum the elapsed time inside the live Graph adapter across its 98 placements per compilation, discard the first compilation and average the other two. Each arm used the same JAR and JNI library. Concurrent correctness jobs used other cores.",
+      "baseline_adapter_commit": "4c49c03c8",
+      "before_median_ms": 246.90714624999998,
+      "after_median_ms": 80.3314135,
+      "paired_median_difference_ms": -157.9539955,
+      "paired_bootstrap_95pct_difference_ms": [
+        -181.52930025,
+        -132.916874
+      ],
+      "raw_pairs_sha256": "60d77c56a8581a1c3362aebbb34383175c03de09d2764e4dcf26d678b6844325",
+      "fixture_sha256": "032a60bb09beacebb5590c08699dee6f7efa44ac5260bf35970051f31d5cf98c",
+      "workspace_archive": ".bench-results/p3-consumer-graph/2026-21-11-00-59-4c49c"
+    }
   }
 }

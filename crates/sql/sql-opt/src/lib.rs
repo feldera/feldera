@@ -144,7 +144,7 @@ pub use collapse_shared_chains::collapse_shared_chains;
 pub use comparators::declare_comparators;
 pub use conditionals::simplify_conditionals;
 pub use constant_filters::remove_constant_filters;
-pub use consumer_graph::{consumer_graphs, Successors};
+pub use consumer_graph::{consumer_graphs, projected_consumer_graphs, ConsumerBody, Successors};
 pub use cse::{common_subexpressions, common_subexpressions_with_names, cse_payloads, CseState};
 pub use dead_code::{eliminate_dead_code, pruning, remove_dead_operators, DeadCodeResult, Pruning};
 pub use distinct_outputs::ensure_distinct_outputs;

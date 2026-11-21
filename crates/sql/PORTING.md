@@ -684,6 +684,11 @@ matched on 34,196 invocations. All 17,098 expression-tree comparisons preserved 
 expression sharing and generated names. [Consumer graphs](evidence/p3-consumer-graph.json) ·
 [Boundedness](evidence/p3-state-bounds.json) · [Expression trees](evidence/p3-expression-trees.json)
 
+Passing just the ordered inputs and recursive view roles reproduced all 812,633
+consumer graphs. Across 12 paired JVM runs, the median time spent constructing
+the 98 consumer graphs in the frozen Nexmark program fell from 246.9 ms to
+80.3 ms. [Per-pass measurements](evidence/p3-consumer-graph.json)
+
 The GC comparison checks which Noops can share a trace, which policies can be removed, and
 which retainers can be combined. Windows with a finite lower bound keep a private trace.
 [Retention policy results](evidence/p3-merge-gc.json)

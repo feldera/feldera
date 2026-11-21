@@ -1467,9 +1467,9 @@ public final class RustCircuitPass implements CircuitTransform {
                 return circuit;
             }
             if (this.graph != null) {
-                var result = this.invoke(this.nativeName, OptimizerTopology.encode(circuit,
-                        OptimizerTopology.Details.CONSUMERS), initial, state);
-                var edges = MAPPER.convertValue(result, new TypeReference<Map<Long, int[][][]>>() {});
+                byte[] result = transformWithContext("Graph/Inputs", OptimizerTopology.consumerInputs(circuit),
+                        initial, "", EMPTY_CONTEXT);
+                var edges = MAPPER.readValue(result, new TypeReference<Map<Long, int[][][]>>() {});
                 this.graph.restore(circuit, edges);
                 return circuit;
             }

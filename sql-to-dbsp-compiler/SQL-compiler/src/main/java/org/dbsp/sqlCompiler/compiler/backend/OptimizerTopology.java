@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
@@ -43,6 +45,39 @@ final class OptimizerTopology {
     enum Details { NONE, TABLE_NAMES, VIEW_NAMES, ERROR_CONSUMERS, EMPTY_LITERALS, FILTER_PREDICATES, COLUMN_INITIALIZERS, PRIMARY_KEYS, SINK_KIND, RECURSIVE_VIEWS, TRACE_RETENTION, TRACE_INTEGRATORS, GC_GROUPS, PERSISTENT_IDS, CONSUMERS, TABLE_CHANGES, STREAMING, STATE_BOUNDS, AGGREGATE_RESULTS }
 
     private OptimizerTopology() {}
+
+    /** Each body contains its ID and its ordered operators. An operator carries its ID,
+     * ordered producer IDs, and an optional role for recursive feedback. */
+    static byte[] consumerInputs(DBSPCircuit circuit) {
+        var json = JsonStream.compactCircuit();
+        json.beginArray();
+        writeConsumerBody(json, circuit);
+        json.endArray();
+        return json.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void writeConsumerBody(JsonStream json, ICircuit body) {
+        json.beginArray();
+        json.append(body.getId()).beginArray();
+        for (var op : body.getAllOperators()) {
+            json.beginArray();
+            json.append(op.id).beginArray();
+            for (var input : op.inputs)
+                json.append(input.operator.id);
+            json.endArray();
+            if (op instanceof DBSPDeltaOperator)
+                json.append("delta");
+            else if (op instanceof DBSPViewDeclarationOperator decl)
+                json.beginObject().label("declaration").append(decl.tableName.name()).endObject();
+            else if (op instanceof DBSPViewOperator view)
+                json.beginObject().label("view").append(view.viewName.name()).endObject();
+            json.endArray();
+        }
+        json.endArray().endArray();
+        for (var op : body.getAllOperators())
+            if (op instanceof DBSPNestedOperator nested)
+                writeConsumerBody(json, nested);
+    }
 
     static byte[] encode(DBSPCircuit circuit) {
         return encode(circuit, Details.NONE);
