@@ -936,7 +936,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             int i = 0;
             for (int globalIndex : aggregate.getGroupSet()) {
                 if (localKeys.get(globalIndex)) {
-                    reindexFields[globalIndex] = reindexVar
+                    reindexFields[i] = reindexVar
                             .field(0)
                             .deref()
                             .field(localIndex)
@@ -978,13 +978,27 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression mapper = new DBSPTupleExpression(node, tuple, flattenFields).closure(kv);
         DBSPSimpleOperator map = new DBSPMapOperator(node, mapper, TypeCompiler.makeZSet(tuple), result.outputPort());
         this.addOperator(map);
-        if (aggregate.getGroupCount() != 0 || aggregateCalls.isEmpty()) {
+        if (!localKeys.isEmpty()) {
             return map.outputPort();
         }
 
-        DBSPExpression emptyResults = Objects.requireNonNull(aggregates).getEmptySetResult();
-        DBSPBaseTupleExpression emptySetResult = DBSPTupleExpression.flatten(emptyResults);
-        DBSPAggregateZeroOperator zero = new DBSPAggregateZeroOperator(node, emptySetResult, map.outputPort());
+        // The grouping set () produces one row also for an empty input:
+        // NULL for each key, followed by the aggregates of the empty set
+        DBSPExpression[] zeroFields = new DBSPExpression[flattenFields.length];
+        for (int i = 0; i < aggregate.getGroupCount(); i++) {
+            zeroFields[i] = DBSPLiteral.none(tuple.getFieldType(i));
+        }
+        if (aggregates != null) {
+            DBSPBaseTupleExpression emptySetResult = DBSPTupleExpression.flatten(aggregates.getEmptySetResult());
+            for (int i = 0; i < aggType.size(); i++) {
+                CalciteObject aggNode = CalciteObject.create(aggregate, aggregate.getAggCallList().get(i));
+                DBSPExpression emptyAggregate = Objects.requireNonNull(emptySetResult.fields)[i];
+                zeroFields[aggregate.getGroupCount() + i] =
+                        emptyAggregate.cast(aggNode, aggTypes[i], DBSPCastExpression.CastType.SqlUnsafe);
+            }
+        }
+        DBSPTupleExpression zeroRow = new DBSPTupleExpression(node, tuple, zeroFields);
+        DBSPAggregateZeroOperator zero = new DBSPAggregateZeroOperator(node, zeroRow, map.outputPort());
         this.addOperator(zero);
         return zero.outputPort();
     }

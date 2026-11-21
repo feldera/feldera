@@ -261,9 +261,8 @@ public class AggregateCompiler implements ICompilerComponent {
 
     void processGrouping(SqlAbstractGroupFunction function) {
         DBSPExpression zero = this.nullableResultType.to(IsNumericType.class).getZero();
-        if (this.filterArgument() != null) {
-            throw new UnimplementedException("GROUPING with FILTER not implemented", this.node);
-        }
+        // Calcite's AggregateCall does not allow a FILTER on GROUPING
+        Utilities.enforce(this.filterArgument() == null);
 
         long result = 0;
         long mask = 1;
@@ -276,15 +275,15 @@ public class AggregateCompiler implements ICompilerComponent {
             mask <<= 1;
         }
 
-        // TODO: should this be looking at the filter argument?
         DBSPExpression increment = new DBSPI64Literal(result).cast(
                 this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
         DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         // Always non-linear (result can not be zero).
+        // The () row of an empty input has the same mask.
         this.setResult(new NonLinearAggregate(
-                this.node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+                this.node, zero, this.makeRowClosure(increment, accumulator), increment, semigroup));
     }
 
     boolean fp() {
