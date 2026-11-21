@@ -36,7 +36,7 @@
   import { MetricDescriptions } from 'profiler-lib'
   import { createRawSnippet, type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
-  import type { GlobalMetrics } from '../functions/globalMetrics'
+  import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import { createLookupCoordinator, type SearchProgress } from '../functions/lookup'
   import { levelMetrics, metricToSelect } from '../functions/metricLevel'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
@@ -89,6 +89,8 @@
     sqlPanelFullHeight: boolean
     /** Snippet for the "Load profile" button and timestamp selector in graph-panel header */
     loadProfileControl?: Snippet
+    /** Snippet for controls at the right end of the graph-panel header */
+    headerEnd?: Snippet
     /** Ranges of the SQL that the selected node came from. Their `end` names the last character of
      *  the range, not the position after it. */
     onHighlightSourceRanges?: (ranges: SourcePositionRange[]) => void
@@ -114,17 +116,49 @@
     onSelectTimestamp,
     sqlPanelFullHeight = $bindable(),
     loadProfileControl,
+    headerEnd,
     onHighlightSourceRanges,
     onRenderingChange
   }: Props = $props()
 
   const hasProfile = $derived(profileData !== undefined)
+  // Without a profile, the Metrics tab can only show the global stats from `stats.json`.
+  const hasMetrics = $derived(hasProfile || buildGlobalMetrics(globalMetrics).length > 0)
+  // `processProfileFiles` gives an empty `program.sql` a tab. Only empty files count as no code.
+  const hasSourceCode = $derived(sourceFiles.some((f) => f.code.trim() !== ''))
+  // The header notice about the missing parts of the bundle. The first matching row gives the text.
+  const missingDataNotice = $derived(
+    [
+      {
+        matches: !hasProfile && !hasMetrics && !hasSourceCode,
+        text: 'This bundle has no circuit profile and no pipeline code, so the dataflow graph, metrics and code are unavailable.'
+      },
+      {
+        matches: !hasProfile && !hasSourceCode,
+        text: 'This bundle has no circuit profile and no pipeline code, so the dataflow graph and code are unavailable.'
+      },
+      {
+        matches: !hasProfile && !hasMetrics,
+        text: 'This bundle has no circuit profile, so the dataflow graph and metrics are unavailable.'
+      },
+      {
+        matches: !hasProfile,
+        text: 'This bundle has no circuit profile, so the dataflow graph is unavailable.'
+      },
+      {
+        matches: !hasSourceCode,
+        text: 'This bundle has no pipeline code, so the code panel is unavailable.'
+      }
+    ].find((row) => row.matches)?.text
+  )
   const connectorErrorCount = $derived(
     connectorMetrics ? countConnectorErrors(connectorMetrics) : 0
   )
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
+  // In percent. The resizers cannot hide the code panel completely.
+  const codePaneMinSize = 15
   const belowGraphPaneDefaultSize = 100 - graphPaneDefaultSize
 
   let profilerDiagram: ProfilerDiagram | undefined = $state()
@@ -388,7 +422,8 @@
       title: 'Show the measurements of the pipeline, of the current node, or of the top nodes',
       panel: MetricsTab,
       keepAlive: true,
-      tabBarEnd: metricsTabBarEnd
+      tabBarEnd: metricsTabBarEnd,
+      disabled: !hasMetrics
     },
     {
       id: 'Connectors',
@@ -434,6 +469,13 @@
       tabBarEnd: issuesTabBarEnd
     }
   ])
+  // A disabled tab cannot stay selected. For example, the default Metrics tab is disabled for a
+  // bundle with no metrics.
+  $effect.pre(() => {
+    if (analysisTabs.find((t) => t.id === currentTab)?.disabled) {
+      currentTab = (analysisTabs.find((t) => !t.disabled)?.id as AnalysisTab) ?? currentTab
+    }
+  })
 </script>
 
 <!-- ── Graph panel (dataflow graph) ────────────────────────────────────────── -->
@@ -449,6 +491,9 @@
     <div class="flex flex-shrink-0 flex-wrap items-center gap-2 p-4">
       {@render loadProfileControl?.()}
       <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
+      {#if missingDataNotice}
+        <p class="text-surface-800-200">{missingDataNotice}</p>
+      {/if}
       {#if hasProfile}
         <div class="ml-auto">
           <input
@@ -467,10 +512,11 @@
             class="input h-6 w-36 text-sm"
           />
         </div>
-      {:else}
-        <p class="text-surface-800-200">
-          This bundle has no circuit profile, so the dataflow graph is unavailable.
-        </p>
+      {/if}
+      {#if headerEnd}
+        <div class="flex items-center {hasProfile ? '' : 'ml-auto'}">
+          {@render headerEnd()}
+        </div>
       {/if}
     </div>
     <!-- Diagram slot. The actual <ProfilerDiagram> is rendered once outside the layout-
@@ -639,12 +685,6 @@
       tabProps={sourceTabProps}
       tabLabelVariant="file"
     />
-  {:else}
-    <div
-      class="flex h-full items-center justify-center rounded-container bg-surface-50-950 text-surface-600-400"
-    >
-      Profile does not contain the source code
-    </div>
   {/if}
 {/snippet}
 
@@ -659,8 +699,9 @@
   />
 {/snippet}
 
-<!-- ══ Layout: normal (graph top, SQL + tabs bottom) ══════════════════════ -->
-{#if !sqlPanelFullHeight}
+<!-- ══ Layout: normal (graph top, SQL + tabs bottom) ══════════════════════
+     A bundle without code also uses this layout when sqlPanelFullHeight is set. -->
+{#if !sqlPanelFullHeight || !hasSourceCode}
   <PaneGroup direction="vertical" class="!overflow-visible h-full">
     {#if hasProfile}
       <Pane
@@ -678,21 +719,25 @@
       </div>
     {/if}
     <Pane order={2} defaultSize={belowGraphPaneDefaultSize} minSize={15} class="!overflow-visible">
-      <PaneGroup direction="horizontal" class="!overflow-visible h-full">
-        <Pane defaultSize={50} minSize={0} class="!overflow-visible">
-          <div use:sourcePanelRect.placeholder class="h-full"></div>
-        </Pane>
-        <PaneResizer class="pane-divider-vertical mx-1.5" />
-        <Pane minSize={20} class="!overflow-visible">
-          {@render analysisPanel()}
-        </Pane>
-      </PaneGroup>
+      {#if hasSourceCode}
+        <PaneGroup direction="horizontal" class="!overflow-visible h-full">
+          <Pane defaultSize={50} minSize={codePaneMinSize} class="!overflow-visible">
+            <div use:sourcePanelRect.placeholder class="h-full"></div>
+          </Pane>
+          <PaneResizer class="pane-divider-vertical mx-1.5" />
+          <Pane minSize={20} class="!overflow-visible">
+            {@render analysisPanel()}
+          </Pane>
+        </PaneGroup>
+      {:else}
+        {@render analysisPanel()}
+      {/if}
     </Pane>
   </PaneGroup>
 {:else}
   <!-- ══ Layout: SQL full-height (SQL left, graph + tabs right) ═══════════ -->
   <PaneGroup direction="horizontal" class="!overflow-visible h-full">
-    <Pane defaultSize={40} minSize={15} class="!overflow-visible">
+    <Pane defaultSize={40} minSize={codePaneMinSize} class="!overflow-visible">
       <div use:sourcePanelRect.placeholder class="h-full"></div>
     </Pane>
     <PaneResizer class="pane-divider-vertical mx-1.5" />
@@ -748,6 +793,8 @@
 
 <!-- Persistent code panel overlay. It renders once and follows the placeholder of the active {#if}
      branch, so the Monaco editor survives the sqlPanelFullHeight toggle. -->
-<PersistentContent persistent={sourcePanelRect} class="overflow-visible">
-  {@render sourcePanel()}
-</PersistentContent>
+{#if hasSourceCode}
+  <PersistentContent persistent={sourcePanelRect} class="overflow-visible">
+    {@render sourcePanel()}
+  </PersistentContent>
+{/if}

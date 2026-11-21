@@ -16,7 +16,7 @@ import { render } from 'vitest-browser-svelte'
 import type { ClusterHealthStatus } from '#lib/compositions/health/useClusterHealth.svelte.ts'
 import { permissionsOf, roleOf } from '#lib/services/rbac.ts'
 // The app loads the icon font in `+layout.svelte`; the screenshots need it too.
-import '#assets/icons/fd.css'
+import 'feldera-theme/fd.css'
 import '#assets/fonts/generic-icons.css'
 
 // Hoisted so the `$app/state` factory below can close over it: each test sets
